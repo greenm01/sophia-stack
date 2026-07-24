@@ -4035,8 +4035,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 major_opcode,
                 client_id: client.raw(),
             };
-            let mut parse_error = None;
-            let mut request_detail = None;
+            let mut parse_failed = false;
+            let mut request_stage = X11ObservedRequestStage::Other;
             let (
                 mut output,
                 cpu_buffer_update,
@@ -4217,7 +4217,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 })?;
                         }
                     }
-                    request_detail = x11_core_request_trace_detail(&request);
+                    request_stage = x11_observed_request_stage(&request);
                     let queued_present = if let Some((window, pixmap, serial, idle_fence)) =
                         pending_present
                         && let Some(routing) = protocol_routing.as_ref()
@@ -4277,24 +4277,6 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             }
                         }
                     }
-                    if let Some(crate::XClientOutput::Reply(crate::XClientReply::GetGeometry {
-                        geometry,
-                        ..
-                    })) = output.outputs.iter().find(|output| {
-                        matches!(
-                            output,
-                            crate::XClientOutput::Reply(crate::XClientReply::GetGeometry { .. })
-                        )
-                    }) {
-                        request_detail = Some(format!(
-                            "{}:reply={}x{}+{}+{}",
-                            request_detail.as_deref().unwrap_or("GetGeometry"),
-                            geometry.width,
-                            geometry.height,
-                            geometry.x,
-                            geometry.y
-                        ));
-                    }
                     if xkb_get_state {
                         for client_output in &mut output.outputs {
                             if let crate::XClientOutput::Reply(crate::XClientReply::XkbGetState {
@@ -4307,8 +4289,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                     }
                     if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some()
-                        && let Some(detail) = request_detail.as_deref()
-                        && detail.starts_with("GetKeyboardMapping:")
+                        && request_stage == X11ObservedRequestStage::KeyboardMapping
                     {
                         tracing::debug!(
                             "sophia_x11_keyboard_map schema=1 status=served detail_redacted=true"
@@ -4465,13 +4446,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )
                 }
                 Err(error) => {
-                    let head = request
-                        .iter()
-                        .take(24)
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect::<Vec<_>>()
-                        .join("");
-                    parse_error = Some(format!("{error:?}:len={}:head={head}", request.len()));
+                    parse_failed = true;
                     (
                         dispatch_x11_parse_error(dispatch_context, request_minor_code, error),
                         None,
@@ -4573,8 +4548,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     major_opcode,
                     request_minor_code,
                     request.len(),
-                    parse_error.is_some(),
-                    request_detail.is_some(),
+                    parse_failed,
+                    request_stage != X11ObservedRequestStage::Other,
                     replies,
                     errors,
                     events,
@@ -4595,10 +4570,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 resource_id_range,
                 sequence,
                 major_opcode,
-                request_stage: observed_request_stage(request_detail.as_deref()),
-                failure: parse_error
-                    .as_ref()
-                    .map(|_| X11ObservedDispatchFailure::ParseRejected),
+                request_stage,
+                failure: parse_failed.then_some(X11ObservedDispatchFailure::ParseRejected),
                 result: output.clone(),
                 cpu_buffer_update: cpu_buffer_update.clone(),
                 received_fd_count: received_fds.len(),
@@ -6312,33 +6285,32 @@ mod routing_tests {
     }
 }
 
-fn observed_request_stage(detail: Option<&str>) -> X11ObservedRequestStage {
-    let Some(detail) = detail else {
-        return X11ObservedRequestStage::Other;
-    };
-    if detail.starts_with("GLX:QueryServerString") {
-        X11ObservedRequestStage::GlxQueryServerString
-    } else if detail.starts_with("GLX:GetFBConfigs") {
-        X11ObservedRequestStage::GlxGetFbConfigs
-    } else if detail.starts_with("GLX:CreateContext") {
-        X11ObservedRequestStage::GlxCreateContext
-    } else if detail.starts_with("GLX:CreateWindow") {
-        X11ObservedRequestStage::GlxCreateWindow
-    } else if detail.starts_with("DRI3:PixmapFromBuffers") {
-        X11ObservedRequestStage::Dri3PixmapFromBuffers
-    } else if detail.starts_with("PRESENT:Pixmap") {
-        X11ObservedRequestStage::PresentPixmap
-    } else if detail.starts_with("GetKeyboardMapping") {
-        X11ObservedRequestStage::KeyboardMapping
-    } else if detail.starts_with("RequestSelection:") {
-        X11ObservedRequestStage::SelectionRequest
-    } else if detail.starts_with("DisconnectCleanup") {
-        X11ObservedRequestStage::DisconnectCleanup
-    } else {
-        X11ObservedRequestStage::Other
+fn x11_observed_request_stage(request: &crate::XWireRequest) -> X11ObservedRequestStage {
+    match request {
+        crate::XWireRequest::GlxQueryServerString { .. } => {
+            X11ObservedRequestStage::GlxQueryServerString
+        }
+        crate::XWireRequest::GlxGetFbConfigs { .. } => X11ObservedRequestStage::GlxGetFbConfigs,
+        crate::XWireRequest::GlxCreateContext { .. } => X11ObservedRequestStage::GlxCreateContext,
+        crate::XWireRequest::GlxCreateWindow { .. } => X11ObservedRequestStage::GlxCreateWindow,
+        crate::XWireRequest::Dri3PixmapFromBuffers { .. } => {
+            X11ObservedRequestStage::Dri3PixmapFromBuffers
+        }
+        crate::XWireRequest::PresentPixmap { .. }
+        | crate::XWireRequest::Authority(crate::XAuthorityRequestPacket {
+            kind: crate::XAuthorityRequestKind::PresentPixmap { .. },
+            ..
+        }) => X11ObservedRequestStage::PresentPixmap,
+        crate::XWireRequest::GetKeyboardMapping { .. } => X11ObservedRequestStage::KeyboardMapping,
+        crate::XWireRequest::Authority(crate::XAuthorityRequestPacket {
+            kind: crate::XAuthorityRequestKind::RequestSelection { .. },
+            ..
+        }) => X11ObservedRequestStage::SelectionRequest,
+        _ => X11ObservedRequestStage::Other,
     }
 }
 
+#[allow(dead_code)]
 fn x11_core_request_trace_detail(request: &crate::XWireRequest) -> Option<String> {
     match request {
         crate::XWireRequest::CreateWindow { packet, .. } => match &packet.kind {
