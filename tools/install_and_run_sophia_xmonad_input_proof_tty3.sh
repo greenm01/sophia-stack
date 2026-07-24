@@ -37,10 +37,13 @@ artifact_commit="$(sed -n 's/^commit=//p' "$artifact/manifest" | head -n 1)"
     sha256sum -c SHA256SUMS
 )
 
-installed_commit="$(
-    sed -n 's/^commit=//p' /opt/sophia/current/manifest 2>/dev/null |
-        head -n 1
-)"
+installed_commit=""
+if [[ -f /opt/sophia/current/manifest ]]; then
+    installed_commit="$(
+        sed -n 's/^commit=//p' /opt/sophia/current/manifest |
+            head -n 1
+    )"
+fi
 if [[ "$installed_commit" == "$commit" ]]; then
     echo "Matching immutable release is already installed."
 else
