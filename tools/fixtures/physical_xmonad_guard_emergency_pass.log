@@ -1,0 +1,3 @@
+sophia_session_input_guard schema=2 status=ready source=udev seat=seat0 devices=4 keyboards=1
+sophia_session_input_guard schema=1 status=armed
+sophia_session_input_guard schema=1 status=triggered

@@ -155,11 +155,13 @@ if grep -Eq '^sophia_session_input_guard schema=1 status=triggered$' "$GUARD_LOG
 fi
 
 recovery="$(
-    grep -E '^sophia_tty_recovery schema=2 profile=xmonad ' "$RECOVERY_LOG" | tail -n 1
+    grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' "$RECOVERY_LOG" | tail -n 1
 )"
 [[ -n "$recovery" ]] || fail "no xmonad TTY recovery record"
 require_eq "$recovery" termios_restored true
 require_eq "$recovery" emergency false
+require_eq "$recovery" session_shutdown not_requested
+require_eq "$recovery" session_exit_status none
 kd_before="$(field "$recovery" kd_mode_before)" || fail "recovery is missing kd_mode_before"
 kd_after="$(field "$recovery" kd_mode_after)" || fail "recovery is missing kd_mode_after"
 [[ "$kd_before" == "$kd_after" ]] ||

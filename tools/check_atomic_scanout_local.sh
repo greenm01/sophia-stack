@@ -34,6 +34,7 @@ bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
+bash -n tools/start_sophia_xmonad_emergency_tty3.sh
 bash -n tools/install_and_run_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/verify_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/check_sophia_xmonad_input_proof_verifier.sh
@@ -42,12 +43,15 @@ bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
 bash -n tools/verify_sophia_xmonad_tty3.sh
 bash -n tools/check_sophia_xmonad_tty3_verifier.sh
+bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
+bash -n tools/check_sophia_xmonad_emergency_verifier.sh
 bash -n tools/verify_sophia_firefox_physical.sh
 bash -n tools/record_sophia_firefox_physical_run.sh
 bash -n tools/verify_sophia_firefox_physical_runs.sh
 bash -n tools/check_sophia_firefox_physical_verifier.sh
 tools/check_sophia_firefox_physical_verifier.sh
 tools/check_sophia_xmonad_tty3_verifier.sh
+tools/check_sophia_xmonad_emergency_verifier.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh

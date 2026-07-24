@@ -91,6 +91,9 @@ rather than borrowing the completed Kitty-only promotion.
   arming physical input; keep pre-proof cursor motion responsive.
 - [x] Extend the bounded installed proof to require exact keyboard input plus
   routed pointer motion and a button.
+- [x] Give the live owner a bounded graceful emergency-cleanup window before
+  wrapper TERM fallback, record which path completed, and reject fallback-only
+  evidence in the physical emergency verifier.
 - [ ] Start from TTY3 with the independent recovery guard armed and capture the
   launcher, guard, recovery, WM, frontend, and native-session logs.
 - [ ] Automatically present a focused Kitty on the primary output within eight

@@ -28,7 +28,7 @@ run_dir="$RUN_ROOT/$(printf '%04d' "$sequence")"
 install -d -m 700 "$run_dir"
 install -m 600 "$LOG_DIR/session.log" "$run_dir/session.log"
 install -m 600 "$LOG_DIR/input-guard.log" "$run_dir/input-guard.log"
-grep -E '^sophia_tty_recovery schema=2 profile=xmonad ' \
+grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' \
     "$LOG_DIR/recovery.log" | tail -n 1 >"$run_dir/recovery.log"
 if [[ -f "$PREFIX/current/manifest" ]]; then
     (cd "$PREFIX/current" && sha256sum -c SHA256SUMS)

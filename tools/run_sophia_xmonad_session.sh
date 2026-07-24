@@ -102,6 +102,8 @@ keyboard_mode=""
 guard_pid=""
 session_pid=""
 cleanup_done=false
+emergency_session_shutdown=not_requested
+emergency_session_exit_status=none
 terminate_bounded() {
     local target="$1" label="$2"
     if ! kill -0 -- "$target" 2>/dev/null; then
@@ -154,11 +156,13 @@ cleanup() {
         local restored_kd restored_termios
         restored_kd="$(python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
         restored_termios="$(stty -g 2>/dev/null || echo unavailable)"
-        printf 'sophia_tty_recovery schema=2 profile=%s kd_mode_before=%s kd_mode_after=%s termios_restored=%s emergency=%s\n' \
+        printf 'sophia_tty_recovery schema=3 profile=%s kd_mode_before=%s kd_mode_after=%s termios_restored=%s emergency=%s session_shutdown=%s session_exit_status=%s\n' \
             "$SESSION_PROFILE" \
             "$kd_mode" "$restored_kd" \
             "$([[ "$restored_termios" == "$tty_state" ]] && echo true || echo false)" \
-            "$emergency" >>"$RECOVERY_LOG"
+            "$emergency" \
+            "$emergency_session_shutdown" \
+            "$emergency_session_exit_status" >>"$RECOVERY_LOG"
         if [[ "$restored_kd" != "$kd_mode" || "$restored_termios" != "$tty_state" ]]; then
             status=1
         fi
@@ -301,6 +305,20 @@ status=$?
 set -e
 if [[ -s "$GUARD_TRIGGERED_FILE" ]]; then
     echo "Emergency recovery requested."
+    emergency_session_shutdown=fallback_term
+    for _ in {1..100}; do
+        session_state="$(ps -o stat= -p "$session_pid" 2>/dev/null || true)"
+        if [[ -z "$session_state" || "$session_state" == Z* ]]; then
+            set +e
+            wait "$session_pid"
+            emergency_session_exit_status=$?
+            set -e
+            session_pid=""
+            emergency_session_shutdown=graceful
+            break
+        fi
+        sleep 0.05
+    done
     exit 130
 fi
 if ! kill -0 "$session_pid" 2>/dev/null; then

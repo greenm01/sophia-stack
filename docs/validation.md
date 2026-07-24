@@ -322,6 +322,31 @@ untriggered guard, and exact KD mode and termios restoration. Its default eviden
 `/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
 proof.
 
+Run emergency recovery as a separate capture:
+
+```sh
+tools/start_sophia_xmonad_emergency_tty3.sh
+```
+
+After the guard returns the session to the originating TTY, verify it with:
+
+```sh
+tools/verify_sophia_xmonad_emergency_tty3.sh
+```
+
+This verifier requires both the independent guard and live owner loop to
+observe the chord. It rejects process-group `TERM` fallback as successful
+promotion evidence and requires a bounded session completion with drained
+input, no native scanout or Present debt, exact KD-mode restoration, and exact
+termios restoration.
+
+For an installed release, run the same verifier from the immutable current
+artifact:
+
+```sh
+/opt/sophia/current/bin/sophia-verify-emergency-run
+```
+
 ### Physical Firefox workflow
 
 After the normal xmonad input gate passes, run the content-redacted physical

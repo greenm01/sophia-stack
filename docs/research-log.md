@@ -2633,3 +2633,20 @@ These records prove that the requested control path committed; they do not by
 themselves prove that a hidden surface received no routed input. That
 isolation claim remains a physical gate until delivery evidence correlates
 input with the focused visible surface before and after workspace changes.
+
+## 2026-07-24: Independent Recovery Must Not Preempt Owner Cleanup
+
+The independent input guard previously exited 250 milliseconds after detecting
+the emergency chord. The TTY wrapper's `wait -n` then returned and cleanup
+immediately sent `TERM` to the graphical process group. That could preempt the
+live owner loop even when it had independently observed the same chord and was
+draining routed input, native scanout, and Present state.
+
+After a guard trigger, the wrapper now gives the live session a bounded
+five-second window to finish its in-process emergency path. A schema-3 recovery
+record distinguishes `graceful` completion from `fallback_term` and retains the
+session exit status alongside KD and termios restoration. The physical
+emergency verifier requires guard and owner observations, a status-zero
+graceful exit, fully drained input, no native or Present debt, and exact TTY
+restoration. Fixture mutations ensure that a TERM fallback cannot be promoted
+as a successful emergency capture.

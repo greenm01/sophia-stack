@@ -51,6 +51,8 @@ install -m 755 tools/verify_installed_session_soak.sh \
     "$artifact/bin/sophia-verify-soak"
 install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
+install -m 755 tools/verify_sophia_xmonad_emergency_tty3.sh \
+    "$artifact/bin/sophia-verify-emergency-run"
 install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
 install -m 755 tools/verify_sophia_firefox_physical.sh \

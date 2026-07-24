@@ -55,7 +55,7 @@ run_dir="$RUN_ROOT/$(printf '%04d' "$sequence")"
 install -d -m 700 "$run_dir"
 install -m 600 "$SESSION_DIR/session.log" "$run_dir/session.log"
 install -m 600 "$SESSION_DIR/input-guard.log" "$run_dir/input-guard.log"
-grep -E '^sophia_tty_recovery schema=2 profile=xmonad ' \
+grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' \
     "$SESSION_DIR/recovery.log" | tail -n 1 >"$run_dir/recovery.log"
 install -m 600 "$IDENTITY_LOG" "$run_dir/identity.log"
 install -m 600 "$RUNTIME_IDENTITY_LOG" "$run_dir/runtime-identity.log"
