@@ -2827,26 +2827,29 @@ fn run_session_loop(
                     .map_or(&empty_layers[..], |runtime| runtime.input_layers());
                 let report = route_physical_input(
                     poller,
-                    &focus,
-                    committed_surfaces,
-                    input_layers,
-                    &layout.client_routes,
-                    wm_session
-                        .as_mut()
-                        .and_then(|wm_session| wm_session.shortcuts.as_mut()),
-                    input_sender,
-                    &mut modifiers,
-                    &mut emergency_chord,
-                    &mut pointer,
-                    !config.expect_physical_pointer || pointer_checksum.is_some(),
-                    sophia_cli::input_proof::pointer_selection_pending(
-                        config.expect_physical_pointer,
-                        physical_pointer_buttons_routed,
-                    ),
-                    false,
-                    $routing_mode,
-                    &mut next_input_delivery,
-                    physical_text_proof.as_mut(),
+                    PhysicalInputRoutingContext {
+                        focus: &focus,
+                        committed_surfaces,
+                        input_layers,
+                        client_routes: &layout.client_routes,
+                        shortcuts: wm_session
+                            .as_mut()
+                            .and_then(|wm_session| wm_session.shortcuts.as_mut()),
+                        input_sender,
+                        modifiers: &mut modifiers,
+                        emergency_chord: &mut emergency_chord,
+                        pointer: &mut pointer,
+                        pointer_routing_enabled: !config.expect_physical_pointer
+                            || pointer_checksum.is_some(),
+                        pointer_proof_required: sophia_cli::input_proof::pointer_selection_pending(
+                            config.expect_physical_pointer,
+                            physical_pointer_buttons_routed,
+                        ),
+                        pointer_buttons_only: false,
+                        routing_mode: $routing_mode,
+                        next_input_delivery: &mut next_input_delivery,
+                        physical_text_proof: physical_text_proof.as_mut(),
+                    },
                 )?;
                 physical_events = physical_events.saturating_add(report.events);
                 physical_keys_routed = physical_keys_routed.saturating_add(report.keys_routed);
@@ -5057,25 +5060,46 @@ fn place_pointer_event_for_routing(
     !(buttons_only && matches!(event.kind, sophia_protocol::InputEventKind::PointerMotion))
 }
 
-fn route_physical_input<P: NonBlockingInputPoller>(
-    poller: &mut P,
-    focus: &InputFocusState,
-    committed_surfaces: &[CommittedSurfaceState],
-    input_layers: &[LayerSnapshot],
-    client_routes: &XAuthorityClientSurfaceRoutes,
-    shortcuts: Option<&mut WmShortcutRouter>,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
-    modifiers: &mut XCoreKeyboardMapper,
-    emergency_chord: &mut EmergencyChordState,
-    pointer: &mut SessionPointerPlacement,
+struct PhysicalInputRoutingContext<'a> {
+    focus: &'a InputFocusState,
+    committed_surfaces: &'a [CommittedSurfaceState],
+    input_layers: &'a [LayerSnapshot],
+    client_routes: &'a XAuthorityClientSurfaceRoutes,
+    shortcuts: Option<&'a mut WmShortcutRouter>,
+    input_sender: &'a SyncSender<XAuthorityRoutedInput>,
+    modifiers: &'a mut XCoreKeyboardMapper,
+    emergency_chord: &'a mut EmergencyChordState,
+    pointer: &'a mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
     pointer_proof_required: bool,
     pointer_buttons_only: bool,
     routing_mode: PhysicalInputRoutingMode,
-    next_input_delivery: &mut u64,
-    physical_text_proof: Option<&mut PhysicalTextProof>,
+    next_input_delivery: &'a mut u64,
+    physical_text_proof: Option<&'a mut PhysicalTextProof>,
+}
+
+fn route_physical_input<P: NonBlockingInputPoller>(
+    poller: &mut P,
+    context: PhysicalInputRoutingContext<'_>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let events = poller.poll_ready()?;
+    let PhysicalInputRoutingContext {
+        focus,
+        committed_surfaces,
+        input_layers,
+        client_routes,
+        shortcuts,
+        input_sender,
+        modifiers,
+        emergency_chord,
+        pointer,
+        pointer_routing_enabled,
+        pointer_proof_required,
+        pointer_buttons_only,
+        routing_mode,
+        next_input_delivery,
+        physical_text_proof,
+    } = context;
     route_input_events(
         events,
         focus,
