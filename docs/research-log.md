@@ -2587,3 +2587,11 @@ surface entered Engine's committed-surface set; the first focus attempt returned
 `UnknownSurface`, but the owner loop consumed the one-shot focus request anyway.
 WM focus requests now remain pending on that transient result and are consumed
 only after Engine focus and X11 client focus both succeed.
+
+The retry run then committed focus, armed physical input in 800 milliseconds,
+and routed keys. It stopped only because the proof matcher required strict
+press-release pairs and rejected ordinary keyboard rollover when `a` was
+pressed before `i` was released. The proof now validates exact character press
+order while independently tracking balanced releases, accepting natural
+overlap without weakening modifier, repeat, unexpected-release, or submit-key
+checks.

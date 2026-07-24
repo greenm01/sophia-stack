@@ -96,7 +96,7 @@ fn application_text_completes_without_a_submit_key() {
 }
 
 #[test]
-fn rejects_wrong_key_modifier_release_order_and_repeat() {
+fn rejects_wrong_key_modifier_unmatched_release_and_repeat() {
     for wrong in [
         event(40, true),
         PhysicalTextProofEvent {
@@ -117,6 +117,23 @@ fn rejects_wrong_key_modifier_release_order_and_repeat() {
         .expect("first press should match");
     assert!(proof.observe(event(39, true)).is_err());
     assert_eq!(proof.matched_events(), 1);
+}
+
+#[test]
+fn accepts_overlapping_keys_with_releases_in_physical_order() {
+    let mut proof = PhysicalTextProof::new("ia").expect("proof should build");
+    for observed in [
+        event(31, true),
+        event(38, true),
+        event(31, false),
+        event(38, false),
+        event(36, true),
+        event(36, false),
+    ] {
+        proof.observe(observed).expect("rollover should be valid");
+    }
+    assert!(proof.is_complete());
+    assert_eq!(proof.matched_events(), 6);
 }
 
 #[test]

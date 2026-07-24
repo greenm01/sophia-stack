@@ -83,7 +83,9 @@ impl std::error::Error for PhysicalTextProofBuildError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PhysicalTextProof {
     expected: Vec<PhysicalTextProofEvent>,
+    matched_presses: usize,
     matched_events: usize,
+    pressed_keycodes: Vec<u8>,
 }
 
 impl PhysicalTextProof {
@@ -113,7 +115,9 @@ impl PhysicalTextProof {
 
         Ok(Self {
             expected,
+            matched_presses: 0,
             matched_events: 0,
+            pressed_keycodes: Vec::new(),
         })
     }
 
@@ -124,13 +128,30 @@ impl PhysicalTextProof {
         if self.is_complete() {
             return Ok(PhysicalTextProofProgress::Complete);
         }
-        let expected = self.expected[self.matched_events];
-        if observed != expected {
+        let expected_press_index = self.matched_presses.saturating_mul(2);
+        let expected = self
+            .expected
+            .get(expected_press_index)
+            .copied()
+            .unwrap_or(observed);
+        let matches = if observed.pressed {
+            observed == expected && !self.pressed_keycodes.contains(&observed.keycode)
+        } else {
+            observed.state == 0 && self.pressed_keycodes.contains(&observed.keycode)
+        };
+        if !matches {
             return Err(PhysicalTextProofMismatch {
                 event_index: self.matched_events,
                 expected,
                 observed,
             });
+        }
+        if observed.pressed {
+            self.matched_presses = self.matched_presses.saturating_add(1);
+            self.pressed_keycodes.push(observed.keycode);
+        } else {
+            self.pressed_keycodes
+                .retain(|keycode| *keycode != observed.keycode);
         }
         self.matched_events = self.matched_events.saturating_add(1);
         Ok(if self.is_complete() {
@@ -149,7 +170,8 @@ impl PhysicalTextProof {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.matched_events == self.expected.len()
+        self.matched_presses.saturating_mul(2) == self.expected.len()
+            && self.pressed_keycodes.is_empty()
     }
 }
 
