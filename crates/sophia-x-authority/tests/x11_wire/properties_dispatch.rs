@@ -1,0 +1,677 @@
+#[test]
+fn x11_dispatch_create_colormap_accepts_root_visual() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 526, XByteOrder::LittleEndian),
+        &create_colormap_request(
+            XByteOrder::LittleEndian,
+            0x200001,
+            X_SETUP_DEFAULT_ROOT,
+            X_SETUP_DEFAULT_VISUAL,
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        XWireRequest::CreateColormap {
+            colormap: XResourceId::new(0x200001, 1),
+            window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            visual: X_SETUP_DEFAULT_VISUAL,
+        }
+    );
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 78),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(result.outputs.is_empty());
+}
+
+#[test]
+fn x11_dispatch_alloc_named_color_returns_reduced_black_white_pixels() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 542, XByteOrder::LittleEndian),
+        &alloc_named_color_request(XByteOrder::LittleEndian, X_SETUP_DEFAULT_COLORMAP, "black"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        XWireRequest::AllocNamedColor {
+            colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
+            name: "black".to_owned(),
+        }
+    );
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 85),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][12..14]), 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][18..20]), 0);
+
+    let white = decode_x11_core_request(
+        context(namespace, 543, XByteOrder::LittleEndian),
+        &alloc_named_color_request(XByteOrder::LittleEndian, X_SETUP_DEFAULT_COLORMAP, "white"),
+    )
+    .unwrap();
+    let white = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 85),
+        white,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = white.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 1);
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &encoded[0][12..14]),
+        u16::MAX
+    );
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &encoded[0][18..20]),
+        u16::MAX
+    );
+}
+
+#[test]
+fn x11_dispatch_alloc_color_echoes_reduced_rgb_pixel() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 544, XByteOrder::LittleEndian),
+        &alloc_color_request(
+            XByteOrder::LittleEndian,
+            X_SETUP_DEFAULT_COLORMAP,
+            0xff00,
+            0,
+            0,
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        XWireRequest::AllocColor {
+            colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
+            red: 0xff00,
+            green: 0,
+            blue: 0,
+        }
+    );
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 84),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]),
+        0xff00
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][10..12]), 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][12..14]), 0);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][16..20]),
+        0xff0000
+    );
+}
+
+#[test]
+fn x11_dispatch_reads_bounded_property_slices() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let utf8 = atoms
+        .intern(X_ATOM_NAME_UTF8_STRING, false)
+        .unwrap()
+        .unwrap();
+    let net_wm_name = atoms
+        .intern(X_ATOM_NAME_NET_WM_NAME, false)
+        .unwrap()
+        .unwrap();
+    let window = 0x220008;
+
+    let create = decode_x11_core_request(
+        context(namespace, 513, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 300, 200),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let title = b"Secret Terminal Title";
+    let change = decode_x11_core_request(
+        context(namespace, 514, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            window,
+            net_wm_name,
+            utf8,
+            8,
+            title,
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 18),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let read = decode_x11_core_request(
+        context(namespace, 515, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            window,
+            net_wm_name,
+            X_PROPERTY_ANY_TYPE,
+            1,
+            2,
+        ),
+    )
+    .unwrap();
+    let read = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 20),
+        read,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = read.encoded_outputs(XByteOrder::LittleEndian);
+
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(encoded[0][1], 8);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), utf8);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][12..16]),
+        u32::try_from(title.len() - 12).unwrap()
+    );
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][16..20]), 8);
+    assert_eq!(&encoded[0][32..40], &title[4..12]);
+}
+
+#[test]
+fn x11_dispatch_get_selection_owner_reports_no_owner() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 544, XByteOrder::LittleEndian),
+        &resource_request(XByteOrder::LittleEndian, 23, 7),
+    )
+    .unwrap();
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 23),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
+
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 0);
+}
+
+#[test]
+fn x11_dispatch_accepts_root_button_grab_lifecycle() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let grab = decode_x11_core_request(
+        context(namespace, 545, XByteOrder::LittleEndian),
+        &grab_button_request(
+            XByteOrder::LittleEndian,
+            X_SETUP_DEFAULT_ROOT,
+            0x001c,
+            1,
+            0x0040,
+        ),
+    )
+    .unwrap();
+    let grab = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 28),
+        grab,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(grab.outputs.is_empty());
+
+    let ungrab = decode_x11_core_request(
+        context(namespace, 546, XByteOrder::LittleEndian),
+        &ungrab_button_request(XByteOrder::LittleEndian, X_SETUP_DEFAULT_ROOT, 1, 0x0040),
+    )
+    .unwrap();
+    let ungrab = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 29),
+        ungrab,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(ungrab.outputs.is_empty());
+}
+
+#[test]
+fn x11_dispatch_allows_empty_root_property_reads() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let read = decode_x11_core_request(
+        context(namespace, 525, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            X_SETUP_DEFAULT_ROOT,
+            X_ATOM_RESOURCE_MANAGER,
+            X_PROPERTY_ANY_TYPE,
+            0,
+            64,
+        ),
+    )
+    .unwrap();
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 20),
+        read,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(encoded[0][1], 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 0);
+}
+
+#[test]
+fn x11_dispatch_get_property_fails_closed_for_bad_window_atom_and_offset() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let utf8 = atoms
+        .intern(X_ATOM_NAME_UTF8_STRING, false)
+        .unwrap()
+        .unwrap();
+
+    let bad_window = decode_x11_core_request(
+        context(namespace, 516, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            0x220009,
+            X_ATOM_WM_NAME,
+            X_PROPERTY_ANY_TYPE,
+            0,
+            1,
+        ),
+    )
+    .unwrap();
+    let bad_window = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 20),
+        bad_window,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(
+        bad_window.encoded_outputs(XByteOrder::LittleEndian)[0][1],
+        3
+    );
+
+    let create = decode_x11_core_request(
+        context(namespace, 517, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220009, 0, 0, 300, 200),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let bad_atom = decode_x11_core_request(
+        context(namespace, 518, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            0x220009,
+            0x00ff_ffff,
+            X_PROPERTY_ANY_TYPE,
+            0,
+            1,
+        ),
+    )
+    .unwrap();
+    let bad_atom = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 20),
+        bad_atom,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(
+        bad_atom.encoded_outputs(XByteOrder::LittleEndian)[0][1],
+        XErrorCode::BadAtom.wire_code()
+    );
+
+    let change = decode_x11_core_request(
+        context(namespace, 519, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            0x220009,
+            X_ATOM_WM_NAME,
+            utf8,
+            8,
+            b"short",
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 18),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let bad_offset = decode_x11_core_request(
+        context(namespace, 520, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            0x220009,
+            X_ATOM_WM_NAME,
+            X_PROPERTY_ANY_TYPE,
+            2,
+            1,
+        ),
+    )
+    .unwrap();
+    let bad_offset = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 20),
+        bad_offset,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(
+        bad_offset.encoded_outputs(XByteOrder::LittleEndian)[0][1],
+        XErrorCode::BadValue.wire_code()
+    );
+}
+
+#[test]
+fn x11_property_records_emit_metadata_candidates_without_raw_payloads() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let utf8 = atoms
+        .intern(X_ATOM_NAME_UTF8_STRING, false)
+        .unwrap()
+        .unwrap();
+    let net_wm_name = atoms
+        .intern(X_ATOM_NAME_NET_WM_NAME, false)
+        .unwrap()
+        .unwrap();
+    let window = 0x220006;
+    let create = decode_x11_core_request(
+        context(namespace, 511, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 320, 200),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let decoded = decode_x11_core_request(
+        context(namespace, 512, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            window,
+            net_wm_name,
+            utf8,
+            8,
+            b"Secret Terminal Title",
+        ),
+    )
+    .unwrap();
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 18),
+        decoded,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert_eq!(result.outputs.len(), 1);
+    assert_eq!(result.metadata_candidates.len(), 1);
+    let candidate = &result.metadata_candidates[0];
+    assert_eq!(candidate.namespace, namespace);
+    assert_eq!(candidate.window, XResourceId::new(u64::from(window), 1));
+    assert_eq!(candidate.property_name, X_ATOM_NAME_NET_WM_NAME);
+    assert_eq!(
+        candidate.property_type_name.as_deref(),
+        Some(X_ATOM_NAME_UTF8_STRING)
+    );
+    assert_eq!(candidate.byte_len, b"Secret Terminal Title".len());
+}
+
+#[test]
+fn x11_core_decoder_rejects_bad_lengths_and_unknown_opcodes() {
+    assert_eq!(
+        decode_x11_core_request(
+            context(NamespaceId::from_raw(45), 506, XByteOrder::LittleEndian),
+            &[1, 0, 1]
+        ),
+        Err(XWireParseError::Truncated {
+            needed: 4,
+            actual: 3,
+        })
+    );
+
+    let mut unknown = vec![127, 0];
+    push_u16(&mut unknown, XByteOrder::LittleEndian, 1);
+    assert_eq!(
+        decode_x11_core_request(
+            context(NamespaceId::from_raw(45), 507, XByteOrder::LittleEndian),
+            &unknown
+        ),
+        Err(XWireParseError::UnknownOpcode(127))
+    );
+
+    let mut unsupported_shm_minor = vec![X_MIT_SHM_MAJOR_OPCODE, 99];
+    push_u16(&mut unsupported_shm_minor, XByteOrder::LittleEndian, 1);
+    assert_eq!(
+        decode_x11_core_request(
+            context(NamespaceId::from_raw(45), 507, XByteOrder::LittleEndian),
+            &unsupported_shm_minor
+        ),
+        Err(XWireParseError::UnknownOpcode(X_MIT_SHM_MAJOR_OPCODE))
+    );
+
+    let mut oversized_map = vec![8, 0];
+    push_u16(&mut oversized_map, XByteOrder::LittleEndian, 3);
+    push_u32(&mut oversized_map, XByteOrder::LittleEndian, 0x220005);
+    push_u32(&mut oversized_map, XByteOrder::LittleEndian, 0);
+    assert_eq!(
+        decode_x11_core_request(
+            context(NamespaceId::from_raw(45), 508, XByteOrder::LittleEndian),
+            &oversized_map
+        ),
+        Err(XWireParseError::InvalidLength {
+            opcode: 8,
+            expected_at_least: 8,
+            actual: 12,
+        })
+    );
+}
+
+#[test]
+fn x11_client_event_encoders_emit_32_byte_records() {
+    let map = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Event(XClientEvent::MapNotify {
+            sequence: 9,
+            event: XResourceId::new(0x220001, 1),
+            window: XResourceId::new(0x220001, 1),
+            override_redirect: false,
+        }),
+    );
+    assert_eq!(map.len(), 32);
+    assert_eq!(map[0], 19);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &map[2..4]), 9);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &map[4..8]), 0x220001);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &map[8..12]), 0x220001);
+
+    let configure = encode_x_client_output(
+        XByteOrder::BigEndian,
+        XClientOutput::Event(XClientEvent::ConfigureNotify {
+            sequence: 10,
+            event: XResourceId::new(0x220002, 1),
+            window: XResourceId::new(0x220002, 1),
+            above_sibling: None,
+            x: 12,
+            y: 13,
+            width: 640,
+            height: 480,
+            border_width: 0,
+            override_redirect: false,
+        }),
+    );
+    assert_eq!(configure[0], 22);
+    assert_eq!(read_u16(XByteOrder::BigEndian, &configure[2..4]), 10);
+    assert_eq!(read_u32(XByteOrder::BigEndian, &configure[8..12]), 0x220002);
+    assert_eq!(read_u16(XByteOrder::BigEndian, &configure[20..22]), 640);
+    assert_eq!(read_u16(XByteOrder::BigEndian, &configure[22..24]), 480);
+
+    let key = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Event(XClientEvent::Key {
+            sequence: 11,
+            pressed: true,
+            keycode: 38,
+            time: 123,
+            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            event: XResourceId::new(0x220003, 1),
+            state: 1,
+        }),
+    );
+    assert_eq!(key.len(), 32);
+    assert_eq!(key[0], 2);
+    assert_eq!(key[1], 38);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &key[2..4]), 11);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &key[4..8]), 123);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &key[12..16]), 0x220003);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &key[28..30]), 1);
+    assert_eq!(key[30], 1);
+
+    let focus = encode_x_client_output(
+        XByteOrder::BigEndian,
+        XClientOutput::Event(XClientEvent::Focus {
+            sequence: 12,
+            focused: true,
+            detail: 3,
+            event: XResourceId::new(0x220003, 1),
+            mode: 0,
+        }),
+    );
+    assert_eq!(focus.len(), 32);
+    assert_eq!(focus[0], 9);
+    assert_eq!(focus[1], 3);
+    assert_eq!(read_u16(XByteOrder::BigEndian, &focus[2..4]), 12);
+    assert_eq!(read_u32(XByteOrder::BigEndian, &focus[4..8]), 0x220003);
+    assert_eq!(focus[8], 0);
+
+    let motion = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Event(XClientEvent::PointerMotion {
+            sequence: 12,
+            time: 124,
+            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            event: XResourceId::new(0x220003, 1),
+            root_x: 50,
+            root_y: 60,
+            event_x: 10,
+            event_y: 20,
+            state: 1 << 8,
+        }),
+    );
+    assert_eq!(motion[0], 6);
+    assert_eq!(motion[1], 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &motion[2..4]), 12);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &motion[24..26]), 10);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &motion[28..30]), 1 << 8);
+
+    let button = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Event(XClientEvent::PointerButton {
+            sequence: 13,
+            pressed: true,
+            button: 1,
+            time: 125,
+            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            event: XResourceId::new(0x220003, 1),
+            root_x: 50,
+            root_y: 60,
+            event_x: 10,
+            event_y: 20,
+            state: 0,
+        }),
+    );
+    assert_eq!(button[0], 4);
+    assert_eq!(button[1], 1);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &button[2..4]), 13);
+}
+

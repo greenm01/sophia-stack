@@ -1,0 +1,695 @@
+#[test]
+fn x11_client_error_encoder_and_parse_mapping_use_core_error_shape() {
+    let error = x_error_from_wire_parse(&XWireParseError::UnknownOpcode(99), 11, 99, 7);
+    assert_eq!(error.code, XErrorCode::BadRequest);
+
+    let encoded = encode_x_client_output(XByteOrder::LittleEndian, XClientOutput::Error(error));
+    assert_eq!(encoded.len(), 32);
+    assert_eq!(encoded[0], 0);
+    assert_eq!(encoded[1], 1);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[2..4]), 11);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[8..10]), 7);
+    assert_eq!(encoded[10], 99);
+
+    let bad_length = x_error_from_wire_parse(
+        &XWireParseError::InvalidLength {
+            opcode: 8,
+            expected_at_least: 8,
+            actual: 12,
+        },
+        12,
+        8,
+        0,
+    );
+    assert_eq!(bad_length.code, XErrorCode::BadLength);
+}
+
+#[test]
+fn x11_dispatch_emits_configure_map_property_and_selection_failure_outputs() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let create = decode_x11_core_request(
+        context(namespace, 601, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220101, 10, 20, 640, 480),
+    )
+    .unwrap();
+    let create = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(create.outputs.len(), 1);
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, create.outputs[0].clone())[0],
+        22
+    );
+
+    let map = decode_x11_core_request(
+        context(namespace, 602, XByteOrder::LittleEndian),
+        &resource_request(XByteOrder::LittleEndian, 8, 0x220101),
+    )
+    .unwrap();
+    let map = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 8),
+        map,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(map.outputs.len(), 3);
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map.outputs[0].clone())[0],
+        19
+    );
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map.outputs[1].clone())[0],
+        15
+    );
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map.outputs[2].clone())[0],
+        12
+    );
+
+    let unmap = decode_x11_core_request(
+        context(namespace, 603, XByteOrder::LittleEndian),
+        &resource_request(XByteOrder::LittleEndian, 10, 0x220101),
+    )
+    .unwrap();
+    let unmap = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 10),
+        unmap,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(unmap.outputs.is_empty());
+
+    let configure = decode_x11_core_request(
+        context(namespace, 604, XByteOrder::LittleEndian),
+        &configure_window_request(XByteOrder::LittleEndian, 0x220101, 0x000c, &[12, 14]),
+    )
+    .unwrap();
+    let configure = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 12),
+        configure,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(configure.outputs.len(), 1);
+    assert_eq!(
+        configure.outputs[0],
+        XClientOutput::Event(XClientEvent::ConfigureNotify {
+            sequence: 4,
+            event: XResourceId::new(0x220101, 1),
+            window: XResourceId::new(0x220101, 1),
+            above_sibling: None,
+            x: 10,
+            y: 20,
+            width: 12,
+            height: 14,
+            border_width: 0,
+            override_redirect: false,
+        })
+    );
+    assert_eq!(
+        runtime
+            .window_geometry(namespace, XResourceId::new(0x220101, 1))
+            .unwrap(),
+        Rect {
+            x: 10,
+            y: 20,
+            width: 12,
+            height: 14,
+        }
+    );
+
+    let map_subwindows = decode_x11_core_request(
+        context(namespace, 605, XByteOrder::LittleEndian),
+        &resource_request(XByteOrder::LittleEndian, 9, X_SETUP_DEFAULT_ROOT),
+    )
+    .unwrap();
+    let map_subwindows = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 9),
+        map_subwindows,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(map_subwindows.outputs.len(), 3);
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map_subwindows.outputs[0].clone())[0],
+        19
+    );
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map_subwindows.outputs[1].clone())[0],
+        15
+    );
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, map_subwindows.outputs[2].clone())[0],
+        12
+    );
+
+    let attributes = decode_x11_core_request(
+        context(namespace, 606, XByteOrder::LittleEndian),
+        &change_window_attributes_request(XByteOrder::LittleEndian, X_SETUP_DEFAULT_ROOT),
+    )
+    .unwrap();
+    let attributes = dispatch_x11_wire_request(
+        dispatch_context(namespace, 6, XByteOrder::LittleEndian, 2),
+        attributes,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(attributes.outputs.is_empty());
+
+    let property = decode_x11_core_request(
+        context(namespace, 607, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            0x220101,
+            7,
+            8,
+            8,
+            b"hello",
+        ),
+    )
+    .unwrap();
+    let property = dispatch_x11_wire_request(
+        dispatch_context(namespace, 7, XByteOrder::LittleEndian, 18),
+        property,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(property.outputs.len(), 1);
+    assert_eq!(
+        encode_x_client_output(XByteOrder::LittleEndian, property.outputs[0].clone())[0],
+        28
+    );
+
+    let selection = decode_x11_core_request(
+        context(namespace, 608, XByteOrder::LittleEndian),
+        &convert_selection_request(XByteOrder::LittleEndian, 0x220101, 100, 101, 102, 33),
+    )
+    .unwrap();
+    let selection = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 24),
+        selection,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(selection.outputs.len(), 1);
+    let encoded = encode_x_client_output(XByteOrder::LittleEndian, selection.outputs[0].clone());
+    assert_eq!(encoded[0], 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[20..24]),
+        X_ATOM_NONE
+    );
+}
+
+#[test]
+fn x11_dispatch_accepts_destroy_window_for_known_namespace_window() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 601, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220101, 10, 20, 640, 480),
+    )
+    .unwrap();
+    let create = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let surface = create
+        .response
+        .as_ref()
+        .expect("CreateWindow should produce an authority response")
+        .surfaces
+        .first()
+        .expect("CreateWindow should create one surface")
+        .surface;
+    assert_eq!(runtime.window_count(), 1);
+    assert_eq!(runtime.resource_count(), 1);
+
+    let destroy = decode_x11_core_request(
+        context(namespace, 602, XByteOrder::LittleEndian),
+        &resource_request(XByteOrder::LittleEndian, 4, 0x220101),
+    )
+    .unwrap();
+    let destroy = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 4),
+        destroy,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(destroy.outputs.is_empty());
+    assert_eq!(
+        destroy.response.as_ref().unwrap().removed_surfaces,
+        vec![surface]
+    );
+    assert_eq!(runtime.window_count(), 0);
+    assert_eq!(runtime.resource_count(), 0);
+    assert_eq!(
+        XAuthorityObservedTransactionBatch::from_dispatch_result(&destroy),
+        Some(XAuthorityObservedTransactionBatch {
+            client: None,
+            transaction: TransactionId::from_raw(2),
+            transactions: Vec::new(),
+            removed_surfaces: vec![surface],
+            cpu_buffer_updates: Vec::new(),
+            dma_buf_registrations: Vec::new(),
+            fence_registrations: Vec::new(),
+            present_submissions: Vec::new(),
+            released_dma_bufs: Vec::new(),
+            released_fences: Vec::new(),
+            protocol_errors: Vec::new(),
+            expected_protocol_errors: Vec::new(),
+            metadata: Vec::new(),
+            selection_owner_change: false,
+            selection_conversion: false,
+        })
+    );
+}
+
+#[test]
+fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 601, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220101, 10, 20, 640, 480),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let gc = decode_x11_core_request(
+        context(namespace, 602, XByteOrder::LittleEndian),
+        &create_gc_request(XByteOrder::LittleEndian, 0x220102, 0x220101),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 55),
+        gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let clear = decode_x11_core_request(
+        context(namespace, 601, XByteOrder::LittleEndian),
+        &clear_area_request(XByteOrder::LittleEndian, false, 0x220101, 4, 5, 33, 22),
+    )
+    .unwrap();
+    let clear = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 61),
+        clear,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(clear.outputs.is_empty());
+    let response = clear.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 4,
+            y: 5,
+            width: 33,
+            height: 22,
+        })
+    );
+
+    let fill = decode_x11_core_request(
+        context(namespace, 602, XByteOrder::LittleEndian),
+        &poly_fill_rectangle_request(
+            XByteOrder::LittleEndian,
+            0x220101,
+            0x220102,
+            &[(5, 6, 40, 30)],
+        ),
+    )
+    .unwrap();
+    let fill = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 70),
+        fill,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(fill.outputs.is_empty());
+    let response = fill.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220101, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 5,
+            y: 6,
+            width: 40,
+            height: 30,
+        })
+    );
+
+    let segments = decode_x11_core_request(
+        context(namespace, 603, XByteOrder::LittleEndian),
+        &poly_segment_request(
+            XByteOrder::LittleEndian,
+            0x220101,
+            0x220102,
+            &[(2, 3, 12, 8)],
+        ),
+    )
+    .unwrap();
+    let segments = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 66),
+        segments,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(segments.outputs.is_empty());
+    let response = segments.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220101, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 2,
+            y: 3,
+            width: 11,
+            height: 6,
+        })
+    );
+
+    let line = decode_x11_core_request(
+        context(namespace, 604, XByteOrder::LittleEndian),
+        &poly_line_request(
+            XByteOrder::LittleEndian,
+            0x220101,
+            0x220102,
+            &[(1, 2), (11, 7), (5, 18)],
+        ),
+    )
+    .unwrap();
+    let line = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 65),
+        line,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(line.outputs.is_empty());
+    let response = line.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220101, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 1,
+            y: 2,
+            width: 11,
+            height: 17,
+        })
+    );
+
+    let fill_poly = decode_x11_core_request(
+        context(namespace, 605, XByteOrder::LittleEndian),
+        &fill_poly_request(
+            XByteOrder::LittleEndian,
+            0x220101,
+            0x220102,
+            &[(4, 5), (14, 10), (7, 20)],
+        ),
+    )
+    .unwrap();
+    let fill_poly = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 69),
+        fill_poly,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(fill_poly.outputs.is_empty());
+    let response = fill_poly.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220101, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 4,
+            y: 5,
+            width: 11,
+            height: 16,
+        })
+    );
+
+    let fill_arcs = decode_x11_core_request(
+        context(namespace, 606, XByteOrder::LittleEndian),
+        &poly_fill_arc_request(
+            XByteOrder::LittleEndian,
+            0x220101,
+            0x220102,
+            &[(6, 7, 22, 12, 0, 23040)],
+        ),
+    )
+    .unwrap();
+    let fill_arcs = dispatch_x11_wire_request(
+        dispatch_context(namespace, 6, XByteOrder::LittleEndian, 71),
+        fill_arcs,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(fill_arcs.outputs.is_empty());
+    let response = fill_arcs.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220101, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 6,
+            y: 7,
+            width: 22,
+            height: 12,
+        })
+    );
+}
+
+#[test]
+fn x11_dispatch_put_image_emits_software_surface_transaction() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 611, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220111, 10, 20, 640, 480),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let put = decode_x11_core_request(
+        context(namespace, 612, XByteOrder::LittleEndian),
+        &put_image_request(
+            XByteOrder::LittleEndian,
+            0x220111,
+            0x220112,
+            8,
+            4,
+            3,
+            5,
+            &[0xaa; 128],
+        ),
+    )
+    .unwrap();
+    let put = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 72),
+        put,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(put.outputs.is_empty());
+    let response = put.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220111, 1)
+    );
+    assert!(matches!(
+        response.transactions[0].target_buffer,
+        BufferSource::CpuBuffer { .. }
+    ));
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 3,
+            y: 5,
+            width: 8,
+            height: 4,
+        })
+    );
+}
+
+#[test]
+fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 621, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, 0x220121, 10, 20, 640, 480),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let gc = decode_x11_core_request(
+        context(namespace, 622, XByteOrder::LittleEndian),
+        &create_gc_request(XByteOrder::LittleEndian, 0x220123, 0x220121),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 55),
+        gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let pixmap = decode_x11_core_request(
+        context(namespace, 622, XByteOrder::LittleEndian),
+        &create_pixmap_request(XByteOrder::LittleEndian, 24, 0x220122, 0x220121, 64, 32),
+    )
+    .unwrap();
+    let pixmap = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 53),
+        pixmap,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(pixmap.outputs.is_empty());
+
+    let put = decode_x11_core_request(
+        context(namespace, 623, XByteOrder::LittleEndian),
+        &put_image_request(
+            XByteOrder::LittleEndian,
+            0x220122,
+            0x220123,
+            8,
+            4,
+            0,
+            0,
+            &[0xaa; 128],
+        ),
+    )
+    .unwrap();
+    let put = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 72),
+        put,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(put.outputs.is_empty());
+    assert!(put.response.unwrap().transactions.is_empty());
+
+    let copy = decode_x11_core_request(
+        context(namespace, 624, XByteOrder::LittleEndian),
+        &copy_area_request(
+            XByteOrder::LittleEndian,
+            0x220122,
+            0x220121,
+            0x220123,
+            0,
+            0,
+            5,
+            6,
+            8,
+            4,
+        ),
+    )
+    .unwrap();
+    let copy = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 62),
+        copy,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(copy.outputs.is_empty());
+    let response = copy.response.unwrap();
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].surface,
+        SurfaceId::new(0x220121, 1)
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 5,
+            y: 6,
+            width: 8,
+            height: 4,
+        })
+    );
+}
+

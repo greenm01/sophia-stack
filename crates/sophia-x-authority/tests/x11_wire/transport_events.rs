@@ -1,0 +1,733 @@
+
+#[cfg(unix)]
+#[test]
+fn x11_request_reader_receives_bounded_scm_rights_with_the_request_header() {
+    use std::fs::File;
+    use std::io::IoSlice;
+    use std::mem::MaybeUninit;
+    use std::os::fd::AsFd;
+    use std::os::unix::net::UnixStream;
+
+    let (sender, mut receiver) = UnixStream::pair().unwrap();
+    let request =
+        extension_query_version_request(XByteOrder::LittleEndian, X_DRI3_MAJOR_OPCODE, 1, 2);
+    let file = File::open("/dev/null").unwrap();
+    let borrowed = [file.as_fd()];
+    let mut space = [MaybeUninit::uninit();
+        rustix::cmsg_space!(ScmRights(sophia_protocol::DMA_BUF_MAX_PLANES))];
+    let mut ancillary = rustix::net::SendAncillaryBuffer::new(&mut space);
+    assert!(ancillary.push(rustix::net::SendAncillaryMessage::ScmRights(&borrowed)));
+    let sent = rustix::net::sendmsg(
+        sender,
+        &[IoSlice::new(&request)],
+        &mut ancillary,
+        rustix::net::SendFlags::empty(),
+    )
+    .unwrap();
+    assert_eq!(sent, request.len());
+
+    let received = read_x11_core_request(&mut receiver, XByteOrder::LittleEndian)
+        .unwrap()
+        .unwrap();
+    assert_eq!(received.major_opcode, X_DRI3_MAJOR_OPCODE);
+    assert_eq!(received.bytes, request);
+    assert_eq!(received.fds.len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_output_record_sends_bounded_scm_rights_with_the_first_bytes() {
+    use std::fs::File;
+    use std::io::IoSliceMut;
+    use std::mem::MaybeUninit;
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
+
+    for fd_count in [1, sophia_protocol::DMA_BUF_MAX_PLANES] {
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let payload = vec![0x5a; X_CLIENT_OUTPUT_RECORD_LEN];
+        let fds = (0..fd_count)
+            .map(|_| OwnedFd::from(File::open("/dev/null").unwrap()))
+            .collect();
+        let record = X11SocketOutputRecord::new(payload.clone(), fds).unwrap();
+        assert_eq!(record.bytes(), payload);
+        assert_eq!(record.fd_count(), fd_count);
+
+        write_x11_socket_output_record(&mut sender, record).unwrap();
+
+        let mut bytes = [0; X_CLIENT_OUTPUT_RECORD_LEN];
+        let mut iov = [IoSliceMut::new(&mut bytes)];
+        let mut ancillary_space = [MaybeUninit::uninit();
+            rustix::cmsg_space!(ScmRights(sophia_protocol::DMA_BUF_MAX_PLANES))];
+        let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary_space);
+        let received = rustix::net::recvmsg(
+            receiver,
+            &mut iov,
+            &mut ancillary,
+            rustix::net::RecvFlags::CMSG_CLOEXEC,
+        )
+        .unwrap();
+        assert_eq!(received.bytes, payload.len());
+        assert_eq!(bytes, payload.as_slice());
+        let received_fds = ancillary
+            .drain()
+            .flat_map(|message| match message {
+                rustix::net::RecvAncillaryMessage::ScmRights(fds) => fds.collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(received_fds.len(), fd_count);
+        for fd in received_fds {
+            File::from(fd).metadata().unwrap();
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_output_record_rejects_empty_bytes_and_excess_descriptors() {
+    use std::fs::File;
+    use std::os::fd::OwnedFd;
+
+    assert!(X11SocketOutputRecord::new(Vec::new(), Vec::new()).is_err());
+    let fds = (0..=sophia_protocol::DMA_BUF_MAX_PLANES)
+        .map(|_| OwnedFd::from(File::open("/dev/null").unwrap()))
+        .collect();
+    let error = X11SocketOutputRecord::new(vec![0], fds).unwrap_err();
+    assert!(error.to_string().contains("maximum is"));
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_output_record_preserves_byte_only_output() {
+    use std::io::Read;
+    use std::os::unix::net::UnixStream;
+
+    let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+    let payload = vec![0xa5; X_CLIENT_OUTPUT_RECORD_LEN];
+    let record = X11SocketOutputRecord::try_from(payload.clone()).unwrap();
+    write_x11_socket_output_record(&mut sender, record).unwrap();
+    let mut observed = vec![0; payload.len()];
+    receiver.read_exact(&mut observed).unwrap();
+    assert_eq!(observed, payload);
+}
+
+#[test]
+fn mit_shm_completion_uses_the_advertised_extension_event_layout() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let event = encode_x_client_event(
+            byte_order,
+            XClientEvent::ShmCompletion {
+                sequence: 0x1234,
+                drawable: XResourceId::new(0x220701, 1),
+                segment: XResourceId::new(0x440001, 1),
+                offset: 128,
+            },
+        );
+        assert_eq!(event[0], X_MIT_SHM_FIRST_EVENT);
+        assert_eq!(read_u16(byte_order, &event[2..4]), 0x1234);
+        assert_eq!(read_u32(byte_order, &event[4..8]), 0x220701);
+        assert_eq!(
+            read_u16(byte_order, &event[8..10]),
+            u16::from(X_MIT_SHM_PUT_IMAGE_MINOR_OPCODE)
+        );
+        assert_eq!(event[10], X_MIT_SHM_MAJOR_OPCODE);
+        assert_eq!(read_u32(byte_order, &event[12..16]), 0x440001);
+        assert_eq!(read_u32(byte_order, &event[16..20]), 128);
+    }
+}
+
+#[test]
+fn present_complete_and_idle_notifications_use_xge_packed_layouts() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let complete = encode_x_client_event(
+            byte_order,
+            XClientEvent::PresentCompleteNotify {
+                sequence: 0x1234,
+                event_id: XResourceId::new(0x220900, 1),
+                window: XResourceId::new(0x220901, 1),
+                serial: 77,
+                ust: 123_456,
+                msc: 42,
+                mode: 1,
+            },
+        );
+        assert_eq!(complete.len(), 40);
+        assert_eq!(complete[0], 35);
+        assert_eq!(complete[1], X_PRESENT_MAJOR_OPCODE);
+        assert_eq!(read_u32(byte_order, &complete[4..8]), 2);
+        assert_eq!(read_u16(byte_order, &complete[8..10]), 1);
+        assert_eq!(complete[10], 0);
+        assert_eq!(complete[11], 1);
+        assert_eq!(read_u32(byte_order, &complete[12..16]), 0x220900);
+        assert_eq!(read_u32(byte_order, &complete[16..20]), 0x220901);
+        assert_eq!(read_u32(byte_order, &complete[20..24]), 77);
+        assert_eq!(read_u64(byte_order, &complete[24..32]), 123_456);
+        assert_eq!(read_u64(byte_order, &complete[32..40]), 42);
+
+        let idle = encode_x_client_event(
+            byte_order,
+            XClientEvent::PresentIdleNotify {
+                sequence: 0x1235,
+                event_id: XResourceId::new(0x220900, 1),
+                window: XResourceId::new(0x220901, 1),
+                serial: 77,
+                pixmap: XResourceId::new(0x220902, 1),
+                idle_fence: Some(XResourceId::new(0x220903, 1)),
+            },
+        );
+        assert_eq!(idle.len(), 32);
+        assert_eq!(idle[0], 35);
+        assert_eq!(idle[1], X_PRESENT_MAJOR_OPCODE);
+        assert_eq!(read_u32(byte_order, &idle[4..8]), 0);
+        assert_eq!(read_u16(byte_order, &idle[8..10]), 2);
+        assert_eq!(read_u32(byte_order, &idle[24..28]), 0x220902);
+        assert_eq!(read_u32(byte_order, &idle[28..32]), 0x220903);
+    }
+}
+
+#[test]
+fn visibility_notify_uses_the_core_x11_layout() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let event = encode_x_client_event(
+            byte_order,
+            XClientEvent::VisibilityNotify {
+                sequence: 0x1234,
+                window: XResourceId::new(0x220901, 1),
+                state: 0,
+            },
+        );
+        assert_eq!(event.len(), X_CLIENT_OUTPUT_RECORD_LEN);
+        assert_eq!(event[0], 15);
+        assert_eq!(read_u16(byte_order, &event[2..4]), 0x1234);
+        assert_eq!(read_u32(byte_order, &event[4..8]), 0x220901);
+        assert_eq!(event[8], 0);
+    }
+}
+
+#[test]
+fn selection_request_and_clear_events_use_core_x11_layout() {
+    let owner = XResourceId::new(0x200001, 1);
+    let requestor = XResourceId::new(0x400001, 1);
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let clear = encode_x_client_event(
+            byte_order,
+            XClientEvent::SelectionClear {
+                sequence: 9,
+                time: 11,
+                owner,
+                selection: 12,
+            },
+        );
+        assert_eq!(clear[0], 29);
+        assert_eq!(read_u32(byte_order, &clear[4..8]), 11);
+        assert_eq!(read_u32(byte_order, &clear[8..12]), 0x200001);
+        assert_eq!(read_u32(byte_order, &clear[12..16]), 12);
+
+        let request = encode_x_client_event(
+            byte_order,
+            XClientEvent::SelectionRequest {
+                sequence: 10,
+                time: 13,
+                owner,
+                requestor,
+                selection: 14,
+                target: 15,
+                property: 16,
+            },
+        );
+        assert_eq!(request[0], 30);
+        assert_eq!(read_u32(byte_order, &request[8..12]), 0x200001);
+        assert_eq!(read_u32(byte_order, &request[12..16]), 0x400001);
+        assert_eq!(read_u32(byte_order, &request[16..20]), 14);
+        assert_eq!(read_u32(byte_order, &request[20..24]), 15);
+        assert_eq!(read_u32(byte_order, &request[24..28]), 16);
+    }
+}
+
+#[test]
+fn send_event_accepts_selection_notify_and_rejects_input_events() {
+    let namespace = NamespaceId::from_raw(44);
+    let byte_order = XByteOrder::LittleEndian;
+    let mut request = vec![0; 44];
+    request[0] = 25;
+    request[2..4].copy_from_slice(&11u16.to_le_bytes());
+    request[4..8].copy_from_slice(&0x200001u32.to_le_bytes());
+    request[12] = 31;
+    request[16..20].copy_from_slice(&17u32.to_le_bytes());
+    request[20..24].copy_from_slice(&0x200001u32.to_le_bytes());
+    request[24..28].copy_from_slice(&18u32.to_le_bytes());
+    request[28..32].copy_from_slice(&19u32.to_le_bytes());
+    request[32..36].copy_from_slice(&20u32.to_le_bytes());
+
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
+        XWireRequest::SendSelectionNotify {
+            destination: XResourceId::new(0x200001, 1),
+            event_mask: 0,
+            event: XClientEvent::SelectionNotify {
+                sequence: 0,
+                time: 17,
+                requestor: XResourceId::new(0x200001, 1),
+                selection: 18,
+                target: 19,
+                property: 20,
+            },
+        }
+    );
+
+    request[8..12].copy_from_slice(&0x0018_0000u32.to_le_bytes());
+    request[12] = 18;
+    let mut unmap = [0; 32];
+    unmap.copy_from_slice(&request[12..44]);
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
+        XWireRequest::SendSelectionNotify {
+            destination: XResourceId::new(0x200001, 1),
+            event_mask: 0x0018_0000,
+            event: XClientEvent::ClientMessage {
+                sequence: 0,
+                bytes: unmap,
+            },
+        }
+    );
+
+    request[12] = 0xf0;
+    let mut extension_event = [0; 32];
+    extension_event.copy_from_slice(&request[12..44]);
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
+        XWireRequest::SendSelectionNotify {
+            destination: XResourceId::new(0x200001, 1),
+            event_mask: 0x0018_0000,
+            event: XClientEvent::ClientMessage {
+                sequence: 0,
+                bytes: extension_event,
+            },
+        }
+    );
+
+    request[12] = 2;
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, byte_order), &request),
+        Err(XWireParseError::InvalidEventType(2))
+    );
+}
+
+#[test]
+fn xi2_decoder_accepts_query_pointer_and_ungrab_device() {
+    let namespace = NamespaceId::from_raw(44);
+    let mut request = vec![135, 40, 3, 0, 1, 0, 0x20, 0, 2, 0, 0, 0];
+
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
+        XWireRequest::XiQueryPointer {
+            window: XResourceId::new(0x200001, 1),
+            device_id: 2,
+        }
+    );
+
+    request[1] = 52;
+    request[4..8].copy_from_slice(&7u32.to_le_bytes());
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 2, XByteOrder::LittleEndian), &request).unwrap(),
+        XWireRequest::XiUngrabDevice {
+            device_id: 2,
+            time: 7,
+        }
+    );
+}
+
+#[test]
+fn legacy_xinput_device_bell_is_a_bounded_noop() {
+    let namespace = NamespaceId::from_raw(45);
+    let request = vec![
+        X_INPUT_MAJOR_OPCODE,
+        X_INPUT_DEVICE_BELL_MINOR_OPCODE,
+        2,
+        0,
+        2,
+        0,
+        0,
+        0,
+    ];
+    let decoded =
+        decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap();
+    assert_eq!(decoded, XWireRequest::XiDeviceBell);
+
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let dispatched = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
+        decoded,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(dispatched.outputs.is_empty());
+
+    assert!(
+        decode_x11_core_request(
+            context(namespace, 2, XByteOrder::LittleEndian),
+            &request[..4],
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn core_keyboard_control_and_bell_requests_are_bounded() {
+    let namespace = NamespaceId::from_raw(46);
+    let keyboard_control = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &[103, 0, 1, 0],
+    )
+    .unwrap();
+    assert_eq!(keyboard_control, XWireRequest::GetKeyboardControl);
+
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let reply = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 103),
+        keyboard_control,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = reply.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0].len(), 52);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 5);
+
+    let bell = decode_x11_core_request(
+        context(namespace, 2, XByteOrder::LittleEndian),
+        &[104, 0, 1, 0],
+    )
+    .unwrap();
+    assert_eq!(bell, XWireRequest::Bell);
+}
+
+#[test]
+fn x11_setup_parser_accepts_little_endian_auth_fields() {
+    let bytes = setup_request(
+        XByteOrder::LittleEndian,
+        11,
+        0,
+        b"MIT-MAGIC-COOKIE-1",
+        b"0123456789abcdef",
+    );
+
+    let request = parse_x11_setup_request(&bytes).unwrap();
+
+    assert_eq!(request.byte_order, XByteOrder::LittleEndian);
+    assert_eq!(request.major_version, 11);
+    assert_eq!(request.minor_version, 0);
+    assert_eq!(request.authorization_protocol_name, b"MIT-MAGIC-COOKIE-1");
+    assert_eq!(request.authorization_data, b"0123456789abcdef");
+    assert_eq!(
+        x11_setup_request_total_len(&bytes[..12]).unwrap(),
+        bytes.len()
+    );
+}
+
+#[test]
+fn x11_setup_parser_accepts_big_endian_empty_auth() {
+    let bytes = setup_request(XByteOrder::BigEndian, 11, 0, b"", b"");
+
+    let request = parse_x11_setup_request(&bytes).unwrap();
+
+    assert_eq!(request.byte_order, XByteOrder::BigEndian);
+    assert_eq!(request.major_version, 11);
+    assert!(request.authorization_protocol_name.is_empty());
+    assert!(request.authorization_data.is_empty());
+}
+
+#[test]
+fn x11_setup_parser_rejects_malformed_inputs() {
+    assert_eq!(
+        parse_x11_setup_request(&[b'l'; 4]),
+        Err(XSetupParseError::Truncated {
+            needed: 12,
+            actual: 4
+        })
+    );
+    assert_eq!(
+        parse_x11_setup_request(&setup_request(XByteOrder::LittleEndian, 12, 0, b"", b"")),
+        Err(XSetupParseError::UnsupportedMajorVersion(12))
+    );
+    assert_eq!(
+        parse_x11_setup_request(&[b'x', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        Err(XSetupParseError::InvalidByteOrder(b'x'))
+    );
+
+    let mut overlarge = setup_request(XByteOrder::LittleEndian, 11, 0, b"", b"");
+    overlarge[6..8].copy_from_slice(&1025u16.to_le_bytes());
+    assert_eq!(
+        parse_x11_setup_request(&overlarge),
+        Err(XSetupParseError::AuthFieldTooLarge {
+            field: "authorization_protocol_name",
+            len: 1025,
+            max: X_SETUP_MAX_AUTH_FIELD_LEN,
+        })
+    );
+
+    let mut truncated = setup_request(XByteOrder::LittleEndian, 11, 0, b"AUTH", b"DATA");
+    truncated.pop();
+    assert!(matches!(
+        parse_x11_setup_request(&truncated),
+        Err(XSetupParseError::Truncated { .. })
+    ));
+}
+
+#[test]
+fn x11_setup_success_reply_encodes_resource_id_facts() {
+    let reply = encode_x11_setup_success(
+        XByteOrder::LittleEndian,
+        &XSetupSuccess {
+            major_version: 11,
+            minor_version: 0,
+            release: 7,
+            resource_id_base: 0x0020_0000,
+            resource_id_mask: 0x001f_ffff,
+            max_request_units: 4096,
+            vendor: b"Sophia".to_vec(),
+            roots: 0,
+            formats: 0,
+            root_size: Size {
+                width: 1280,
+                height: 720,
+            },
+        },
+    )
+    .unwrap();
+
+    assert_eq!(reply[0], 1);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &reply[2..4]), 11);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &reply[4..6]), 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[8..12]), 7);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reply[12..16]),
+        0x0020_0000
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reply[16..20]),
+        0x001f_ffff
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &reply[24..26]), 6);
+    assert_eq!(&reply[40..46], b"Sophia");
+}
+
+#[test]
+fn x11_setup_success_reply_can_advertise_minimal_root_screen() {
+    let reply = encode_x11_setup_success(
+        XByteOrder::LittleEndian,
+        &XSetupSuccess::client_compatible(),
+    )
+    .unwrap();
+
+    assert_eq!(reply[0], 1);
+    assert_eq!(reply[28], 1);
+    assert_eq!(reply[29], 2);
+    assert_eq!(reply[48], 24);
+    assert_eq!(reply[56], 32);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[64..68]), 0x20);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[96..100]), 0x22);
+    assert_eq!(reply[102], 24);
+    assert_eq!(reply[103], 2);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[112..116]), 0x22);
+    assert_eq!(reply[136], 32);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[144..148]), 0x23);
+}
+
+#[test]
+fn glx_vendor_string_is_nul_terminated_even_at_four_bytes() {
+    let encoded = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Reply(XClientReply::GlxString {
+            sequence: 9,
+            value: "mesa".to_owned(),
+        }),
+    );
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[12..16]), 5);
+    assert_eq!(&encoded[32..37], b"mesa\0");
+    assert_eq!(encoded.len(), 40);
+}
+
+#[test]
+fn glx_config_requests_decode_in_both_byte_orders() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        for (minor, expected) in [
+            (
+                X_GLX_GET_VISUAL_CONFIGS_MINOR_OPCODE,
+                XWireRequest::GlxGetVisualConfigs { screen: 0 },
+            ),
+            (
+                X_GLX_GET_FB_CONFIGS_MINOR_OPCODE,
+                XWireRequest::GlxGetFbConfigs { screen: 0 },
+            ),
+        ] {
+            let mut request = vec![X_GLX_MAJOR_OPCODE, minor, 0, 0, 0, 0, 0, 0];
+            match byte_order {
+                XByteOrder::LittleEndian => request[2..4].copy_from_slice(&2u16.to_le_bytes()),
+                XByteOrder::BigEndian => request[2..4].copy_from_slice(&2u16.to_be_bytes()),
+            }
+            assert_eq!(
+                decode_x11_core_request(context(NamespaceId::from_raw(1), 1, byte_order), &request)
+                    .unwrap(),
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn glx_fb_config_reply_uses_tagged_attribute_pairs() {
+    let configs = vec![vec![(0x8013, 3), (0x800b, X_SETUP_ARGB_VISUAL)]];
+    let encoded = encode_x_client_output(
+        XByteOrder::BigEndian,
+        XClientOutput::Reply(XClientReply::GlxFbConfigs {
+            sequence: 11,
+            configs,
+        }),
+    );
+    assert_eq!(read_u32(XByteOrder::BigEndian, &encoded[8..12]), 1);
+    assert_eq!(read_u32(XByteOrder::BigEndian, &encoded[12..16]), 2);
+    assert_eq!(read_u32(XByteOrder::BigEndian, &encoded[32..36]), 0x8013);
+    assert_eq!(read_u32(XByteOrder::BigEndian, &encoded[36..40]), 3);
+    assert_eq!(
+        read_u32(XByteOrder::BigEndian, &encoded[44..48]),
+        X_SETUP_ARGB_VISUAL
+    );
+}
+
+#[test]
+fn kitty_glx_context_attribs_layout_decodes_the_28_byte_header() {
+    let byte_order = XByteOrder::LittleEndian;
+    let mut request = vec![
+        X_GLX_MAJOR_OPCODE,
+        X_GLX_CREATE_CONTEXT_ATTRIBS_ARB_MINOR_OPCODE,
+    ];
+    push_u16(&mut request, byte_order, 13);
+    push_u32(&mut request, byte_order, 0x0020_000b);
+    push_u32(&mut request, byte_order, 3);
+    push_u32(&mut request, byte_order, 0);
+    push_u32(&mut request, byte_order, 0);
+    request.extend_from_slice(&[1, 0, 0, 0]);
+    push_u32(&mut request, byte_order, 3);
+    for (attribute, value) in [(0x2091, 3), (0x2092, 1), (0x9126, 1)] {
+        push_u32(&mut request, byte_order, attribute);
+        push_u32(&mut request, byte_order, value);
+    }
+    assert_eq!(request.len(), 52);
+    assert_eq!(
+        decode_x11_core_request(context(NamespaceId::from_raw(1), 1, byte_order), &request)
+            .unwrap(),
+        XWireRequest::GlxCreateContext {
+            context: XResourceId::new(0x0020_000b, 1),
+            fbconfig: 3,
+            screen: 0,
+            share: None,
+            direct: true,
+        }
+    );
+}
+
+#[test]
+fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
+    let namespace = NamespaceId::from_raw(1);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 12, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian)
+    .remove(0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[8..12]), 3);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[12..16]), 26);
+    let pair = |config: usize, attribute: usize| 32 + (config * 26 + attribute) * 8;
+    let aux = pair(0, 10);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[aux..aux + 4]),
+        7
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[aux + 4..aux + 8]),
+        0
+    );
+    let blue = pair(0, 13);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[blue..blue + 4]),
+        10
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[blue + 4..blue + 8]),
+        8
+    );
+    let srgb = pair(2, 25);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[srgb..srgb + 4]),
+        0x20b2
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[srgb + 4..srgb + 8]),
+        1
+    );
+}
+
+#[test]
+fn kitty_sync_and_colormap_teardown_requests_decode() {
+    let namespace = NamespaceId::from_raw(1);
+    let mut initialize = vec![
+        X_SYNC_MAJOR_OPCODE,
+        X_SYNC_INITIALIZE_MINOR_OPCODE,
+        2,
+        0,
+        3,
+        1,
+        0,
+        0,
+    ];
+    initialize[2..4].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &initialize)
+            .unwrap(),
+        XWireRequest::SyncInitialize {
+            desired_major: 3,
+            desired_minor: 1
+        }
+    );
+    for (major, minor, expected) in [
+        (
+            X_SYNC_MAJOR_OPCODE,
+            X_SYNC_DESTROY_FENCE_MINOR_OPCODE,
+            XWireRequest::SyncDestroyFence {
+                fence: XResourceId::new(0x0020_000f, 1),
+            },
+        ),
+        (
+            79,
+            0,
+            XWireRequest::FreeColormap {
+                colormap: XResourceId::new(0x0020_0008, 1),
+            },
+        ),
+    ] {
+        let mut request = vec![major, minor, 2, 0];
+        request.extend_from_slice(&0x0020_000fu32.to_le_bytes());
+        if major == 79 {
+            request[4..8].copy_from_slice(&0x0020_0008u32.to_le_bytes());
+        }
+        assert_eq!(
+            decode_x11_core_request(context(namespace, 2, XByteOrder::LittleEndian), &request)
+                .unwrap(),
+            expected
+        );
+    }
+}
+

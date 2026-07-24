@@ -1,0 +1,759 @@
+#[cfg(unix)]
+#[test]
+fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-persistent-core-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        let listener = bind_x11_core_socket_server(&server_path).unwrap();
+        let mut state = X11CoreSocketServerState::new();
+        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &mut state)
+            .unwrap();
+        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &mut state)
+            .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut first = UnixStream::connect(&socket_path).unwrap();
+    first
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut first, XByteOrder::LittleEndian);
+    first
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220701,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let configure = read_x_record(&mut first);
+    assert_eq!(configure[0], 22);
+    drop(first);
+
+    let mut second = UnixStream::connect(&socket_path).unwrap();
+    second
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut second, XByteOrder::LittleEndian);
+    second
+        .write_all(&resource_request(XByteOrder::LittleEndian, 8, 0x220701))
+        .unwrap();
+    let error = read_x_record(&mut second);
+    assert_eq!(error[0], 0);
+    assert_eq!(error[1], 3, "the released window must be BadWindow");
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &error[4..8]), 0x220701);
+
+    drop(second);
+    server.join().unwrap();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-core-draw-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        let mut transactions = 0usize;
+        run_x11_core_socket_server_once_observed(
+            &server_path,
+            NamespaceId::from_raw(48),
+            |result| {
+                if let Some(response) = &result.response {
+                    transactions = transactions.saturating_add(response.transactions.len());
+                }
+            },
+        )
+        .unwrap();
+        transactions
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220301,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let configure = read_x_record(&mut stream);
+    assert_eq!(configure[0], 22);
+
+    stream
+        .write_all(&create_gc_request(
+            XByteOrder::LittleEndian,
+            0x220302,
+            0x220301,
+        ))
+        .unwrap();
+    stream
+        .write_all(&poly_fill_rectangle_request(
+            XByteOrder::LittleEndian,
+            0x220301,
+            0x220302,
+            &[(5, 6, 40, 30)],
+        ))
+        .unwrap();
+
+    drop(stream);
+    let _ = std::fs::remove_file(&socket_path);
+    assert_eq!(server.join().unwrap(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_core_socket_observer_sees_put_image_transaction() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-put-image-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        let mut transactions = 0usize;
+        run_x11_core_socket_server_once_observed(
+            &server_path,
+            NamespaceId::from_raw(49),
+            |result| {
+                if let Some(response) = &result.response {
+                    transactions = transactions.saturating_add(response.transactions.len());
+                }
+            },
+        )
+        .unwrap();
+        transactions
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220401,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let configure = read_x_record(&mut stream);
+    assert_eq!(configure[0], 22);
+
+    stream
+        .write_all(&create_gc_request(
+            XByteOrder::LittleEndian,
+            0x220402,
+            0x220401,
+        ))
+        .unwrap();
+    stream
+        .write_all(&put_image_request(
+            XByteOrder::LittleEndian,
+            0x220401,
+            0x220402,
+            8,
+            4,
+            3,
+            5,
+            &[0xaa; 128],
+        ))
+        .unwrap();
+
+    drop(stream);
+    let _ = std::fs::remove_file(&socket_path);
+    assert_eq!(server.join().unwrap(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_core_socket_observer_sees_sophia_present_transaction() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-present-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        let mut transactions = 0usize;
+        run_x11_core_socket_server_once_observed(
+            &server_path,
+            NamespaceId::from_raw(50),
+            |result| {
+                if let Some(response) = &result.response {
+                    transactions = transactions.saturating_add(response.transactions.len());
+                }
+            },
+        )
+        .unwrap();
+        transactions
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+
+    stream
+        .write_all(&query_extension_request(
+            XByteOrder::LittleEndian,
+            X_SOPHIA_PRESENT_EXTENSION_NAME,
+        ))
+        .unwrap();
+    let query = read_x_record(&mut stream);
+    assert_eq!(query[8], 1);
+    assert_eq!(query[9], X_SOPHIA_PRESENT_MAJOR_OPCODE);
+
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220501,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let configure = read_x_record(&mut stream);
+    assert_eq!(configure[0], 22);
+
+    stream
+        .write_all(&sophia_present_pixmap_request(
+            XByteOrder::LittleEndian,
+            0x220501,
+            0x990,
+            (3, 5, 32, 24),
+            1,
+            250,
+        ))
+        .unwrap();
+
+    drop(stream);
+    let _ = std::fs::remove_file(&socket_path);
+    assert_eq!(server.join().unwrap(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-present-channel-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let (sender, receiver) =
+        std::sync::mpsc::sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    let server = thread::spawn(move || {
+        run_x11_core_socket_server_once_channel(&server_path, NamespaceId::from_raw(51), sender)
+            .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220601,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let configure = read_x_record(&mut stream);
+    assert_eq!(configure[0], 22);
+
+    stream
+        .write_all(&sophia_present_pixmap_request(
+            XByteOrder::LittleEndian,
+            0x220601,
+            0x991,
+            (3, 5, 32, 24),
+            1,
+            250,
+        ))
+        .unwrap();
+
+    drop(stream);
+    let _ = std::fs::remove_file(&socket_path);
+    server.join().unwrap();
+    let batch = receiver.try_recv().unwrap();
+    assert_eq!(batch.client.map(XServerFrontendClientId::raw), Some(1));
+    assert_eq!(batch.transaction, TransactionId::from_raw(2));
+    assert_eq!(batch.transactions.len(), 1);
+    assert_eq!(
+        batch.transactions[0].transaction,
+        TransactionId::from_raw(2)
+    );
+    let surface = batch.transactions[0].surface;
+    let mut routes = XAuthorityClientSurfaceRoutes::default();
+    routes.observe(&batch);
+    assert_eq!(
+        routes
+            .client_for_surface(surface)
+            .map(XServerFrontendClientId::raw),
+        Some(1)
+    );
+    routes.observe(&XAuthorityObservedTransactionBatch {
+        client: None,
+        transaction: TransactionId::from_raw(3),
+        transactions: Vec::new(),
+        removed_surfaces: vec![surface],
+        cpu_buffer_updates: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        present_submissions: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+        protocol_errors: Vec::new(),
+        expected_protocol_errors: Vec::new(),
+        metadata: Vec::new(),
+        selection_owner_change: false,
+        selection_conversion: false,
+    });
+    assert!(routes.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
+    use std::io::{Read, Write};
+    use std::num::NonZeroUsize;
+    use std::os::unix::net::UnixStream;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-routed-worker-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let (transaction_sender, transaction_receiver) =
+        std::sync::mpsc::sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    let (acknowledgement_sender, acknowledgement_receiver) = std::sync::mpsc::sync_channel(4);
+    let broker = XServerFrontendRouteBroker::with_control_ack_sender(
+        NonZeroUsize::new(4).unwrap(),
+        acknowledgement_sender,
+    );
+    let input_sender = broker.routed_input_sender();
+    let control_sender = broker.control_sender();
+    let (service_command_sender, service_command_receiver) = std::sync::mpsc::sync_channel(1);
+    let first_namespace = NamespaceContext::new(
+        NamespaceId::from_raw(852),
+        NamespaceProfile::Confined,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let second_namespace = NamespaceContext::new(
+        NamespaceId::from_raw(853),
+        NamespaceProfile::Confined,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(SequencedXAdmissionPolicy {
+        namespaces: [first_namespace, second_namespace],
+        next_client: std::sync::atomic::AtomicU64::new(0),
+        revoked: std::sync::Mutex::new(Vec::new()),
+    });
+    let config = XServerFrontendConfig::new_with_namespace_context(&server_path, first_namespace)
+        .unwrap()
+        .with_admission_policy(policy.clone())
+        .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_command_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut first = UnixStream::connect(&socket_path).unwrap();
+    first
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut first, XByteOrder::LittleEndian);
+    first
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x0020_0701,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut first)[0], 22);
+    first
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            0x0020_0701,
+            0b11,
+        ))
+        .unwrap();
+    first
+        .write_all(&sophia_present_pixmap_request(
+            XByteOrder::LittleEndian,
+            0x0020_0701,
+            0x992,
+            (0, 0, 16, 16),
+            1,
+            1,
+        ))
+        .unwrap();
+
+    let mut second = UnixStream::connect(&socket_path).unwrap();
+    second
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut second, XByteOrder::LittleEndian);
+    second
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x0040_0702,
+            3,
+            4,
+            300,
+            200,
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut second)[0], 22);
+    second
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            0x0020_0701,
+            0b11,
+        ))
+        .unwrap();
+    let mut error = [0; 32];
+    second.read_exact(&mut error).unwrap();
+    assert_eq!(error[0], 0);
+    assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
+    second
+        .write_all(&sophia_present_pixmap_request(
+            XByteOrder::LittleEndian,
+            0x0040_0702,
+            0x993,
+            (0, 0, 16, 16),
+            1,
+            1,
+        ))
+        .unwrap();
+
+    let mut routes = Vec::new();
+    let mut observed_protocol_error = false;
+    while routes.len() < 2 || !observed_protocol_error {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch.transactions.is_empty() {
+            assert_eq!(batch.protocol_errors.len(), 1);
+            assert_eq!(
+                batch.protocol_errors[0].code,
+                XErrorCode::BadAccess.wire_code()
+            );
+            observed_protocol_error = true;
+            continue;
+        }
+        if routes.len() < 2 {
+            routes.push((
+                batch
+                    .client
+                    .expect("routed worker must identify its client"),
+                batch.transactions[0].surface,
+            ));
+        }
+    }
+    assert!(observed_protocol_error);
+    routes.sort_by_key(|(client, _)| client.raw());
+    assert_ne!(routes[0].0, routes[1].0);
+    for (index, (_, surface)) in routes.iter().copied().enumerate() {
+        input_sender
+            .send(XAuthorityRoutedInput {
+                request: RoutedInputRequest {
+                    serial: 20 + index as u64,
+                    seat: SeatId::from_raw(1),
+                    device: DeviceId::from_raw(1),
+                    time_msec: 10 + index as u64,
+                    target_surface: surface,
+                    global_position: Point::default(),
+                    local_position: Point::default(),
+                    kind: InputEventKind::Key {
+                        keycode: 30 + index as u32,
+                        pressed: true,
+                    },
+                },
+                delivery: None,
+            })
+            .unwrap();
+    }
+    assert_eq!(read_x_record(&mut first)[0], 9);
+    let first_key = read_x_record(&mut first);
+    assert_eq!(first_key[0], 2);
+    assert_eq!(first_key[1], 38);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &first_key[12..16]),
+        0x0020_0701
+    );
+    assert_eq!(read_x_record(&mut second)[0], 9);
+    let second_key = read_x_record(&mut second);
+    assert_eq!(second_key[0], 2);
+    assert_eq!(second_key[1], 39);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &second_key[12..16]),
+        0x0040_0702
+    );
+    for (index, (client, surface)) in routes.iter().copied().enumerate() {
+        control_sender
+            .send(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::ConfigureSurface {
+                    transaction: TransactionId::from_raw(88 + index as u64),
+                    surface,
+                    size: Size {
+                        width: 301 + index as i32,
+                        height: 201 + index as i32,
+                    },
+                },
+            })
+            .unwrap();
+    }
+    let mut acknowledgements = Vec::new();
+    for _ in 0..2 {
+        acknowledgements.push(
+            acknowledgement_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap(),
+        );
+    }
+    for (index, (client, surface)) in routes.iter().copied().enumerate() {
+        assert!(acknowledgements.contains(&XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                transaction: TransactionId::from_raw(88 + index as u64),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        }));
+    }
+    assert_eq!(read_x_record(&mut first)[0], 22);
+    assert_eq!(read_x_record(&mut first)[0], 12);
+    assert_eq!(read_x_record(&mut second)[0], 22);
+    assert_eq!(read_x_record(&mut second)[0], 12);
+
+    drop(first);
+    drop(second);
+    service_command_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_command_sender);
+    drop(input_sender);
+    drop(control_sender);
+    server.join().unwrap();
+    let revoked = policy.revoked.lock().unwrap();
+    assert_eq!(revoked.len(), 2);
+    assert_ne!(revoked[0].namespace.id, revoked[1].namespace.id);
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-randr-update-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let (transaction_sender, _transaction_receiver) =
+        std::sync::mpsc::sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(2);
+    let config = XServerFrontendConfig::new(&server_path, NamespaceId::from_raw(854)).unwrap();
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+    stream
+        .write_all(&randr_select_input_request(
+            XByteOrder::LittleEndian,
+            X_SETUP_DEFAULT_ROOT,
+            0x47,
+        ))
+        .unwrap();
+    stream
+        .write_all(&randr_window_request(
+            XByteOrder::LittleEndian,
+            X_RANDR_GET_SCREEN_RESOURCES_CURRENT_MINOR_OPCODE,
+            X_SETUP_DEFAULT_ROOT,
+        ))
+        .unwrap();
+    assert_eq!(read_x_reply(&mut stream, XByteOrder::LittleEndian)[0], 1);
+
+    let snapshot = OutputTopologySnapshot {
+        generation: 2,
+        primary: OutputId::from_raw(9),
+        outputs: vec![OutputTopologyEntry {
+            output: OutputId::from_raw(9),
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: 1600,
+                height: 900,
+            },
+            pixel_size: Size {
+                width: 1600,
+                height: 900,
+            },
+            scale: 1,
+            refresh_millihz: 60_000,
+        }],
+    };
+    let (ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(1);
+    service_sender
+        .send(XServerFrontendServiceCommand::UpdateOutputTopology {
+            snapshot,
+            acknowledgement: ack_sender,
+        })
+        .unwrap();
+    assert_eq!(
+        ack_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        XAuthorityOutputUpdateOutcome::Applied {
+            generation: 2,
+            notifications: 4,
+        }
+    );
+    let event = read_x_record(&mut stream);
+    assert_eq!(event[0], X_RANDR_FIRST_EVENT, "event={event:?}");
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[8..12]), 2);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[24..26]), 1600);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[26..28]), 900);
+    let crtc = read_x_record(&mut stream);
+    assert_eq!(crtc[0], X_RANDR_FIRST_EVENT + 1);
+    assert_eq!(crtc[1], 0);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &crtc[12..16]),
+        0x1000_0009
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &crtc[28..30]), 1600);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &crtc[30..32]), 900);
+    let output = read_x_record(&mut stream);
+    assert_eq!(output[0], X_RANDR_FIRST_EVENT + 1);
+    assert_eq!(output[1], 1);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &output[16..20]),
+        0x2000_0009
+    );
+    let resources = read_x_record(&mut stream);
+    assert_eq!(resources[0], X_RANDR_FIRST_EVENT + 1);
+    assert_eq!(resources[1], 5);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &resources[4..8]), 2);
+
+    drop(stream);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
