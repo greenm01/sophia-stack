@@ -2705,3 +2705,18 @@ scans `/usr/share/wayland-sessions`. The files were valid yet could not appear
 in the menu. The system installer and current-release verifier now use
 `/usr/share/wayland-sessions`, matching the configured greetd discovery
 boundary. Staging tests continue to override the directory explicitly.
+
+## 2026-07-24: Installed Kitty Baseline Remains Separate From xmonad
+
+The first greetd-launched xmonad capture proved device discovery, 48 routed
+keys, focused X authority, repeated Kitty Present retirement, and a responsive
+hardware cursor, but the operator could not see usable terminal content. This
+is not the earlier missing-device failure: the evidence points to an
+xmonad-managed presentation/layout defect after the first configure.
+
+The installed menu now exposes `Sophia Kitty (Baseline)` separately from
+`Sophia xmonad (Experimental)`. Both use the same immutable binary, runtime
+identity, VT guard, KMS renderer, X frontend, and cleanup path; only the opaque
+session profile differs. Re-proving the known-good Kitty profile isolates the
+shared installed/greetd boundary before changing xmonad layout behavior. It
+does not promote or conceal the failed xmonad capture.

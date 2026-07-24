@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RELEASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export SOPHIA_TTY_PROFILE=kitty
+exec "$RELEASE_DIR/bin/sophia-session" "$@"

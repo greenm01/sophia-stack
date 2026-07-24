@@ -13,7 +13,7 @@ make_artifact() {
     artifact="$TEMP_DIR/artifact-$release_id"
     install -d -m 755 "$artifact/bin" "$artifact/share/wayland-sessions"
     for command in \
-        sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
+        sophia-session sophia-kitty-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
         sophia-record-run sophia-record-emergency-run sophia-record-firefox-run sophia-verify-cycles \
         sophia-verify-firefox-runs sophia-verify-soak; do
         case "$command" in
@@ -31,6 +31,8 @@ make_artifact() {
     done
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-session\n' \
         >"$artifact/share/wayland-sessions/sophia.desktop"
+    printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-kitty-session\n' \
+        >"$artifact/share/wayland-sessions/sophia-kitty.desktop"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-firefox-proof\n' \
         >"$artifact/share/wayland-sessions/sophia-firefox-proof.desktop"
     printf 'schema=1\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\n' \
@@ -53,10 +55,12 @@ env "${install_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$first"
 [[ "$(readlink "$PREFIX/current")" == releases/0001 ]]
 [[ ! -e "$PREFIX/previous" ]]
 grep -Fq "Exec=$PREFIX/current/bin/sophia-session" "$SESSION_DIR/sophia.desktop"
+grep -Fq "Exec=$PREFIX/current/bin/sophia-kitty-session" \
+    "$SESSION_DIR/sophia-kitty.desktop"
 grep -Fq "Exec=$PREFIX/current/bin/sophia-firefox-proof" \
     "$SESSION_DIR/sophia-firefox-proof.desktop"
 for command in \
-    sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
+    sophia-session sophia-kitty-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
     sophia-record-run sophia-record-emergency-run sophia-record-firefox-run sophia-verify-cycles \
     sophia-verify-firefox-runs sophia-verify-soak; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]

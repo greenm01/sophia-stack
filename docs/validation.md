@@ -389,14 +389,16 @@ bridge, resolves the tested xmonad binary, and records SHA-256 digests plus the
 exact Git commit in an immutable release directory. Installation verifies
 those digests, copies the release below `/opt/sophia/releases/`, atomically
 updates `/opt/sophia/current`, preserves the former target as
-`/opt/sophia/previous`, and installs the `Sophia` greetd session entry below
+`/opt/sophia/previous`, and installs the Sophia greetd session entries below
 `/usr/share/wayland-sessions/`, the directory configured for greetd/tuigreet
 session discovery.
 
-The installed login command is `/usr/local/bin/sophia-session`. It performs no
+The installed Kitty baseline is `Sophia Kitty (Baseline)`; the integrated
+policy candidate is `Sophia xmonad (Experimental)`. Both enter through
+`/usr/local/bin/sophia-session`, which performs no
 source build, repository lookup, display-manager takeover, or privileged
 service control. It emits the installed version and commit before entering the
-same guarded xmonad session lifecycle. It fails closed unless greetd supplies
+same guarded session lifecycle. It fails closed unless greetd supplies
 an existing, absolute, user-owned `XDG_RUNTIME_DIR` and a real local Linux VT.
 The lifecycle log records ordered preflight, input-guard, graphics-takeover,
 session, and bounded display-manager-handoff phases without application

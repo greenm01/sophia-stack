@@ -80,6 +80,7 @@ bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
 bash -n tools/installed/sophia-session
+bash -n tools/installed/sophia-kitty-session
 bash -n tools/installed/capture-runtime-identity.sh
 bash -n tools/verify_installed_runtime_identity.sh
 bash -n tools/record_installed_session_run.sh tools/record_installed_emergency_run.sh

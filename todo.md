@@ -85,6 +85,8 @@ rather than borrowing the completed Kitty-only promotion.
 
 ### 9.2 Guarded physical xmonad run
 
+- [x] Keep the proven Kitty-only profile available as a distinct installed
+  greetd baseline while labeling the unpromoted xmonad entry experimental.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

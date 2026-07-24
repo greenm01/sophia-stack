@@ -36,6 +36,8 @@ install -m 755 target/release/sophia-x11-wm-bridge \
     "$artifact/target/release/sophia-x11-wm-bridge"
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
+install -m 755 tools/installed/sophia-kitty-session \
+    "$artifact/bin/sophia-kitty-session"
 install -m 755 tools/installed/sophia-firefox-proof \
     "$artifact/bin/sophia-firefox-proof"
 install -m 755 tools/installed/capture-runtime-identity.sh \
@@ -73,12 +75,20 @@ install -m 644 tools/fixtures/firefox_m8_local_page.html \
 
 printf '%s\n' \
     '[Desktop Entry]' \
-    'Name=Sophia' \
-    'Comment=Sophia native X11 daily-driver candidate' \
+    'Name=Sophia xmonad (Experimental)' \
+    'Comment=Sophia native X11 xmonad promotion candidate' \
     'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-session' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia.desktop"
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Name=Sophia Kitty (Baseline)' \
+    'Comment=Sophia proven Kitty-only physical input baseline' \
+    'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-kitty-session' \
+    'Type=Application' \
+    'DesktopNames=Sophia' \
+    >"$artifact/share/wayland-sessions/sophia-kitty.desktop"
 printf '%s\n' \
     '[Desktop Entry]' \
     'Name=Sophia Firefox Proof' \
