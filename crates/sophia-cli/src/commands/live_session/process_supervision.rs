@@ -18,7 +18,7 @@ impl ManagedSessionChild {
     }
 }
 
-fn terminate_session_child(
+pub(super) fn terminate_session_child(
     child: &mut Child,
     grouped: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
