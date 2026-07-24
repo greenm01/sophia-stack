@@ -21,6 +21,9 @@ Completed evidence is archived in `research-log-archive.md`.
   feedback now crosses the backend/session boundary through a bounded owned
   queue, and KMS retirement performs explicit Engine commit, protocol feedback,
   and output projection steps instead of callback-owned mutation.
+- Removed visual-state seeding from backend and CLI startup. The runtime begins
+  empty, accepts initial generation zero only through normal Engine authority
+  commit, and rejects a forged nonzero initial generation.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument

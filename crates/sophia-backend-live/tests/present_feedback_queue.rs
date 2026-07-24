@@ -33,8 +33,7 @@ fn visual_runtime_drains_owned_present_feedback_in_order() {
         },
         scale: 1,
     };
-    let mut runtime =
-        LiveProductionVisualRuntime::new(&[output], &[], None, None).expect("runtime");
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).expect("runtime");
     runtime.route_present_feedback(feedback(1));
     runtime.route_present_feedback(feedback(2));
 

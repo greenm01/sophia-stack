@@ -25,31 +25,15 @@ const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
 impl LiveProductionVisualRuntime {
     pub fn new(
         outputs: &[sophia_engine::HeadlessOutput],
-        first_transactions: &[SurfaceTransaction],
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
-        initial_native_frames: Option<Vec<LiveProductionComposedFrame>>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_with_committed_surfaces(
-            outputs,
-            seed_committed_surfaces(first_transactions),
-            native_scanout,
-            initial_native_frames,
-        )
-    }
-
-    pub fn new_with_committed_surfaces(
-        outputs: &[sophia_engine::HeadlessOutput],
-        committed_surfaces: Vec<CommittedSurfaceState>,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
         initial_native_frames: Option<Vec<LiveProductionComposedFrame>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let production = sophia_engine::ProductionSessionCoordinator::new(
             sophia_engine::HeadlessEngine::default(),
-        )
-        .with_committed_surfaces(committed_surfaces.clone());
+        );
         let output_runtimes = LiveProductionOutputRuntimeSet::new(
             outputs,
-            &committed_surfaces,
+            &[],
             native_scanout,
             initial_native_frames,
         )?;
@@ -141,19 +125,6 @@ impl LiveProductionVisualRuntime {
             native_scanout
         };
         let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
-        if batch.transactions.iter().any(|transaction| {
-            !self
-                .production
-                .committed_surfaces()
-                .iter()
-                .any(|committed| committed.surface == transaction.surface)
-        }) {
-            let seeded = seed_missing_committed_surfaces(
-                self.production.committed_surfaces(),
-                &active_transactions,
-            );
-            self.production.replace_committed_surfaces(seeded);
-        }
         let intake = AuthorityTransactionIntake::new(batch.transaction, batch.transactions.clone())
             .with_surface_removals(batch.removed_surfaces.clone());
         let (production, outputs) = (&mut self.production, &mut self.outputs);
@@ -595,19 +566,6 @@ impl LiveProductionVisualRuntime {
         let intake = AuthorityTransactionIntake::new(transaction_id, transactions.to_vec())
             .with_surface_removals(removed_surfaces.to_vec());
         let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
-        if transactions.iter().any(|transaction| {
-            !self
-                .production
-                .committed_surfaces()
-                .iter()
-                .any(|committed| committed.surface == transaction.surface)
-        }) {
-            let seeded = seed_missing_committed_surfaces(
-                self.production.committed_surfaces(),
-                &active_transactions,
-            );
-            self.production.replace_committed_surfaces(seeded);
-        }
         let authority_commits = self
             .production
             .commit_authority_batches(std::slice::from_ref(&intake));
@@ -702,7 +660,7 @@ impl LiveProductionVisualRuntime {
                 .map(|(index, transaction)| LayerSnapshot {
                     surface: transaction.surface,
                     authority_local_id: None,
-                    namespace: None,
+                    namespace: transaction.namespace,
                     stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
                     geometry: transaction.target_geometry,
                     source: transaction.target_buffer,
@@ -733,60 +691,10 @@ fn compositor_tick_input(
         wm_update,
         portal_commands: Vec::new(),
         chrome_command_count: 0,
-        layer_templates: layer_templates_from_surface_transactions(transactions),
+        layer_templates: sophia_engine::layer_templates_from_surface_transactions(transactions),
         scanout_submit_state: None,
         scanout_lifecycle_states: Vec::new(),
     }
-}
-
-fn seed_committed_surfaces(transactions: &[SurfaceTransaction]) -> Vec<CommittedSurfaceState> {
-    seed_missing_committed_surfaces(&[], transactions)
-}
-
-fn seed_missing_committed_surfaces(
-    existing: &[CommittedSurfaceState],
-    transactions: &[SurfaceTransaction],
-) -> Vec<CommittedSurfaceState> {
-    let mut surfaces = existing
-        .iter()
-        .cloned()
-        .map(|surface| (surface.surface, surface))
-        .collect::<BTreeMap<_, _>>();
-    for transaction in transactions {
-        surfaces
-            .entry(transaction.surface)
-            .or_insert(CommittedSurfaceState {
-                surface: transaction.surface,
-                committed_generation: transaction.previous_committed_generation,
-                geometry: transaction.target_geometry,
-                buffer: transaction.target_buffer,
-                damage: Region::empty(),
-            });
-    }
-    surfaces.into_values().collect()
-}
-
-fn layer_templates_from_surface_transactions(
-    transactions: &[SurfaceTransaction],
-) -> Vec<LayerSnapshot> {
-    transactions
-        .iter()
-        .enumerate()
-        .map(|(index, transaction)| LayerSnapshot {
-            surface: transaction.surface,
-            authority_local_id: None,
-            namespace: None,
-            stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-            geometry: transaction.target_geometry,
-            source: BufferSource::None,
-            damage: transaction.damage.clone(),
-            opacity: 1.0,
-            crop: None,
-            transform: Transform::IDENTITY,
-            generation: transaction.previous_committed_generation,
-            resize_sync: ResizeSyncCapability::ImplicitOnly,
-        })
-        .collect()
 }
 
 fn authority_transaction_count(transactions: &[SurfaceTransaction]) -> usize {

@@ -203,6 +203,8 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
 - [x] Remove per-event allocation and sorting from Engine input hit testing.
 - [x] Cache the visual runtime's input-layer projection instead of rebuilding a
   vector for every input batch.
+- [x] Centralize authority-transaction layer projection under Engine and
+  preserve `NamespaceId` through backend templates.
 - [ ] Split X authority state, connection service, routing, input, clipboard,
   wire families, dispatch families, and client output behind the existing
   public facades.
@@ -219,8 +221,8 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   protocol-feedback, and output-projection steps.
 - [x] Replace callback-owned Present delivery with a bounded, owned queue
   drained explicitly by the session owner.
-- [ ] Remove synthetic committed-surface seeding; initial authority
-  transactions must pass normal Engine validation and commit.
+- [x] Remove synthetic committed-surface seeding; initial authority
+  transactions pass normal Engine validation and commit.
 - [ ] Remove client-local X identifiers from Engine/session routing and replace
   free-form X trace strings with bounded, typed, redacted observations.
 

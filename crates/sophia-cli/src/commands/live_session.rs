@@ -2942,7 +2942,6 @@ fn run_session_loop(
         Some(
             LiveProductionVisualRuntime::new(
                 &outputs,
-                &[],
                 native_scanout.as_mut(),
                 Some(scene.frames_for_outputs(&outputs)?),
             )?
@@ -3961,17 +3960,12 @@ fn run_session_loop(
                 let production_batch = production_authority_batch(&batch);
                 if runtime.is_none() {
                     runtime = Some(
-                        LiveProductionVisualRuntime::new(
-                            &outputs,
-                            &batch.transactions,
-                            native_scanout.as_mut(),
-                            None,
-                        )?
-                        .with_m4_proof_controls(
-                            config.m4_first_acquire_delay,
-                            config.m4_reject_first_present,
-                            config.m4_diagnose_first_mixed_export,
-                        ),
+                        LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut(), None)?
+                            .with_m4_proof_controls(
+                                config.m4_first_acquire_delay,
+                                config.m4_reject_first_present,
+                                config.m4_diagnose_first_mixed_export,
+                            ),
                     );
                 }
                 let runtime = runtime
@@ -5142,30 +5136,6 @@ fn layer_snapshots_from_committed(
         .collect()
 }
 
-#[cfg(test)]
-fn seed_missing_committed_surfaces(
-    existing: &[CommittedSurfaceState],
-    transactions: &[SurfaceTransaction],
-) -> Vec<CommittedSurfaceState> {
-    let mut surfaces = existing
-        .iter()
-        .cloned()
-        .map(|surface| (surface.surface, surface))
-        .collect::<BTreeMap<_, _>>();
-    for transaction in transactions {
-        surfaces
-            .entry(transaction.surface)
-            .or_insert(CommittedSurfaceState {
-                surface: transaction.surface,
-                committed_generation: transaction.previous_committed_generation,
-                geometry: transaction.target_geometry,
-                buffer: transaction.target_buffer,
-                damage: Region::empty(),
-            });
-    }
-    surfaces.into_values().collect()
-}
-
 fn renderer_cpu_buffer_update(
     update: &sophia_x_authority::XAuthorityCpuBufferUpdate,
 ) -> sophia_backend_live::LiveCpuBufferUpdate {
@@ -5665,7 +5635,7 @@ mod tests {
         global_runtime_deadline_ends_session, layer_snapshots_from_committed,
         physical_input_pixels_already_changed, physical_input_routing_mode,
         place_pointer_event_for_routing, pointer_offset_for_geometry, record_runtime_commits,
-        route_input_events, seed_missing_committed_surfaces, session_protocol_errors_are_fatal,
+        route_input_events, session_protocol_errors_are_fatal,
         successful_primary_exit_ends_session, take_settled_input_delivery_wait,
     };
     use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
@@ -6461,54 +6431,6 @@ mod tests {
     }
 
     #[test]
-    fn newly_observed_surface_seed_preserves_existing_generations() {
-        let primary = sophia_protocol::SurfaceId::new(11, 1);
-        let secondary = sophia_protocol::SurfaceId::new(12, 1);
-        let existing = vec![CommittedSurfaceState {
-            surface: primary,
-            committed_generation: 7,
-            geometry: Rect {
-                x: 0,
-                y: 0,
-                width: 640,
-                height: 480,
-            },
-            buffer: BufferSource::CpuBuffer { handle: 11 },
-            damage: Region::empty(),
-        }];
-        let new_surface_transaction = SurfaceTransaction {
-            transaction: sophia_protocol::TransactionId::from_raw(29),
-            authority: AuthorityKind::SophiaX,
-            surface: secondary,
-            namespace: None,
-            target_geometry: Rect {
-                x: 20,
-                y: 30,
-                width: 320,
-                height: 200,
-            },
-            target_buffer: BufferSource::CpuBuffer { handle: 12 },
-            damage: Region::single(Rect {
-                x: 0,
-                y: 0,
-                width: 320,
-                height: 200,
-            }),
-            readiness: SurfaceTransactionReadiness::Ready,
-            timeout_msec: 250,
-            previous_committed_generation: 3,
-        };
-
-        let seeded = seed_missing_committed_surfaces(&existing, &[new_surface_transaction]);
-
-        assert_eq!(seeded.len(), 2);
-        assert_eq!(seeded[0].surface, primary);
-        assert_eq!(seeded[0].committed_generation, 7);
-        assert_eq!(seeded[1].surface, secondary);
-        assert_eq!(seeded[1].committed_generation, 3);
-    }
-
-    #[test]
     fn authority_batch_commits_once_and_fans_out_one_snapshot() {
         let outputs = [17u64, 18]
             .into_iter()
@@ -6522,33 +6444,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let surface = sophia_protocol::SurfaceId::new(17, 1);
-        let committed = vec![CommittedSurfaceState {
-            surface,
-            committed_generation: 5,
-            geometry: Rect {
-                x: 0,
-                y: 0,
-                width: 640,
-                height: 480,
-            },
-            buffer: BufferSource::CpuBuffer { handle: 17 },
-            damage: Region::single(Rect {
-                x: 0,
-                y: 0,
-                width: 640,
-                height: 480,
-            }),
-        }];
-        let mut runtime = LiveProductionVisualRuntime::new_with_committed_surfaces(
-            &outputs,
-            committed.clone(),
-            None,
-            None,
-        )
-        .unwrap();
-        let mut divergent_projection = committed.clone();
-        divergent_projection[0].committed_generation = 99;
-        assert!(runtime.replace_output_projection(0, divergent_projection));
+        let mut runtime = LiveProductionVisualRuntime::new(&outputs, None, None).unwrap();
         let transaction = SurfaceTransaction {
             transaction: sophia_protocol::TransactionId::from_raw(90),
             authority: AuthorityKind::SophiaX,
@@ -6569,7 +6465,7 @@ mod tests {
             }),
             readiness: SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
-            previous_committed_generation: 5,
+            previous_committed_generation: 0,
         };
 
         let report = runtime
@@ -6593,11 +6489,11 @@ mod tests {
             1
         );
         assert_eq!(runtime.committed_surfaces().len(), 1);
-        assert_eq!(runtime.committed_surfaces()[0].committed_generation, 6);
+        assert_eq!(runtime.committed_surfaces()[0].committed_generation, 1);
         for index in 0..runtime.output_count() {
             let committed = runtime.output_committed(index).unwrap();
             assert_eq!(committed.len(), 1);
-            assert_eq!(committed[0].committed_generation, 6);
+            assert_eq!(committed[0].committed_generation, 1);
         }
     }
 }

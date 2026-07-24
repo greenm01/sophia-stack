@@ -1,9 +1,5 @@
 use crate::prelude::*;
 use sophia_engine::{AuthorityTransactionInbox, AuthorityTransactionIntake};
-use sophia_protocol::{
-    BufferSource, CommittedSurfaceState, LayerSnapshot, Region, ResizeSyncCapability,
-    SurfaceTransaction, Transform,
-};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveSessionCompositionSmokeStatus {
@@ -84,12 +80,9 @@ pub fn run_live_session_composition_smoke(
     }
     drop(sender);
 
-    let assembly = HeadlessCompositorBackendAssembly::new(output)
-        .with_committed_surfaces(seed_committed_states_for_transactions(&transactions))
-        .with_authority_inbox(AuthorityTransactionInbox::new(
-            receiver,
-            authority_batches_input,
-        ));
+    let assembly = HeadlessCompositorBackendAssembly::new(output).with_authority_inbox(
+        AuthorityTransactionInbox::new(receiver, authority_batches_input),
+    );
     let mut runtime = LiveBackendRuntimeAssembly::from_ready_headless_scanout(
         assembly,
         output,
@@ -112,7 +105,9 @@ pub fn run_live_session_composition_smoke(
             wm_update: None,
             portal_commands: Vec::new(),
             chrome_command_count: 0,
-            layer_templates: layer_templates_from_surface_transactions(&transactions),
+            layer_templates: sophia_engine::layer_templates_from_surface_transactions(
+                &transactions,
+            ),
             scanout_submit_state: None,
             scanout_lifecycle_states: Vec::new(),
         },
@@ -210,47 +205,6 @@ pub fn run_live_session_composition_smoke(
         rendered_scanout_in_flight,
         cleanup_pending,
     }
-}
-
-fn seed_committed_states_for_transactions(
-    transactions: &[SurfaceTransaction],
-) -> Vec<CommittedSurfaceState> {
-    let mut surfaces = std::collections::BTreeMap::new();
-    for transaction in transactions {
-        surfaces
-            .entry(transaction.surface)
-            .or_insert(CommittedSurfaceState {
-                surface: transaction.surface,
-                committed_generation: transaction.previous_committed_generation,
-                geometry: transaction.target_geometry,
-                buffer: transaction.target_buffer,
-                damage: Region::empty(),
-            });
-    }
-    surfaces.into_values().collect()
-}
-
-fn layer_templates_from_surface_transactions(
-    transactions: &[SurfaceTransaction],
-) -> Vec<LayerSnapshot> {
-    transactions
-        .iter()
-        .enumerate()
-        .map(|(index, transaction)| LayerSnapshot {
-            surface: transaction.surface,
-            authority_local_id: None,
-            namespace: transaction.namespace,
-            stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-            geometry: transaction.target_geometry,
-            source: BufferSource::None,
-            damage: transaction.damage.clone(),
-            opacity: 1.0,
-            crop: None,
-            transform: Transform::IDENTITY,
-            generation: transaction.previous_committed_generation,
-            resize_sync: ResizeSyncCapability::ImplicitOnly,
-        })
-        .collect()
 }
 
 #[derive(Debug)]
