@@ -352,20 +352,20 @@ fn run_x_authority_external_probe_smoke_spec(
 ) -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary(spec.label, spec.binary)?;
     let (display, socket_path) = temp_xauthority_display(spec.display_base)?;
-    run_x_authority_external_probe_smoke(
-        spec.label,
-        &command,
-        spec.display_mode,
-        spec.args,
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: spec.label,
+        command: &command,
+        display_mode: spec.display_mode,
+        command_args: spec.args,
         display,
         socket_path,
-        NamespaceId::from_raw(spec.namespace),
-        spec.require_transactions,
-        spec.pixel_proof,
-        spec.allow_proof_kill_without_transactions,
-        spec.allow_client_failure_without_x_error,
-        None,
-    )
+        namespace: NamespaceId::from_raw(spec.namespace),
+        require_transactions: spec.require_transactions,
+        pixel_proof: spec.pixel_proof,
+        allow_proof_kill_without_transactions: spec.allow_proof_kill_without_transactions,
+        allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
+        render_device_provider: None,
+    })
 }
 
 struct ExternalProbeRenderDeviceProvider {
@@ -394,11 +394,11 @@ fn run_x_authority_zenity_render_smoke()
         device: first_openable_render_node()?,
     });
     let (display, socket_path) = temp_xauthority_display(7760)?;
-    run_x_authority_external_probe_smoke(
-        "zenity_render",
-        &command,
-        ExternalProbeDisplayMode::Environment,
-        &[
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "zenity_render",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &[
             "--entry",
             "--title",
             "Sophia zenity render",
@@ -407,13 +407,13 @@ fn run_x_authority_zenity_render_smoke()
         ],
         display,
         socket_path,
-        NamespaceId::from_raw(60),
-        true,
-        ExternalProbePixelProof::Nonzero,
-        false,
-        false,
-        Some(provider),
-    )
+        namespace: NamespaceId::from_raw(60),
+        require_transactions: true,
+        pixel_proof: ExternalProbePixelProof::Nonzero,
+        allow_proof_kill_without_transactions: false,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+    })
 }
 
 fn run_x_authority_vkcube_smoke()
@@ -424,20 +424,20 @@ fn run_x_authority_vkcube_smoke()
         device: render_node,
     });
     let (display, socket_path) = temp_xauthority_display(6680)?;
-    run_x_authority_external_probe_smoke(
-        "vkcube",
-        &command,
-        ExternalProbeDisplayMode::Environment,
-        &["--wsi", "xcb", "--c", "2", "--suppress_popups"],
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "vkcube",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &["--wsi", "xcb", "--c", "2", "--suppress_popups"],
         display,
         socket_path,
-        NamespaceId::from_raw(58),
-        false,
-        ExternalProbePixelProof::None,
-        true,
-        false,
-        Some(provider),
-    )
+        namespace: NamespaceId::from_raw(58),
+        require_transactions: false,
+        pixel_proof: ExternalProbePixelProof::None,
+        allow_proof_kill_without_transactions: true,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+    })
 }
 
 fn run_x_authority_kitty_smoke()
@@ -447,11 +447,11 @@ fn run_x_authority_kitty_smoke()
         device: first_openable_render_node()?,
     });
     let (display, socket_path) = temp_xauthority_display(6690)?;
-    run_x_authority_external_probe_smoke(
-        "kitty",
-        &command,
-        ExternalProbeDisplayMode::Environment,
-        &[
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "kitty",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &[
             "--config",
             "NONE",
             "--override",
@@ -464,12 +464,11 @@ fn run_x_authority_kitty_smoke()
         ],
         display,
         socket_path,
-        NamespaceId::from_raw(62),
-        true,
-        ExternalProbePixelProof::None,
-        false,
-        false,
-        Some(provider),
-    )
+        namespace: NamespaceId::from_raw(62),
+        require_transactions: true,
+        pixel_proof: ExternalProbePixelProof::None,
+        allow_proof_kill_without_transactions: false,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+    })
 }
-

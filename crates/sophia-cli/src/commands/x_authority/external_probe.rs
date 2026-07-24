@@ -24,11 +24,11 @@ fn print_external_probe_smoke_report(
     );
 }
 
-fn run_x_authority_external_probe_smoke(
-    label: &str,
-    command: &std::path::Path,
+struct ExternalProbeInvocation<'a> {
+    label: &'a str,
+    command: &'a std::path::Path,
     display_mode: ExternalProbeDisplayMode,
-    command_args: &[&str],
+    command_args: &'a [&'a str],
     display: String,
     socket_path: std::path::PathBuf,
     namespace: NamespaceId,
@@ -37,7 +37,25 @@ fn run_x_authority_external_probe_smoke(
     allow_proof_kill_without_transactions: bool,
     allow_client_failure_without_x_error: bool,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+}
+
+fn run_x_authority_external_probe_smoke(
+    invocation: ExternalProbeInvocation<'_>,
 ) -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let ExternalProbeInvocation {
+        label,
+        command,
+        display_mode,
+        command_args,
+        display,
+        socket_path,
+        namespace,
+        require_transactions,
+        pixel_proof,
+        allow_proof_kill_without_transactions,
+        allow_client_failure_without_x_error,
+        render_device_provider,
+    } = invocation;
     let server_path = socket_path.clone();
     let proof_timeout = if label == "kitty" {
         Duration::from_secs(20)
@@ -455,4 +473,3 @@ enum ExternalProbeObservation {
     Detail(String),
     Error(String),
 }
-

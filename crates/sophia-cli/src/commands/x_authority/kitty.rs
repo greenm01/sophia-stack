@@ -422,20 +422,20 @@ pub(crate) fn collect_x_authority_xterm_render_authority_batches(
         .ok_or("xterm render smoke spec is missing")?;
     let command = resolve_external_probe_binary(spec.label, terminal)?;
     let (display, socket_path) = temp_xauthority_display(spec.display_base)?;
-    let report = run_x_authority_external_probe_smoke(
-        spec.label,
-        &command,
-        spec.display_mode,
-        spec.args,
+    let report = run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: spec.label,
+        command: &command,
+        display_mode: spec.display_mode,
+        command_args: spec.args,
         display,
         socket_path,
-        NamespaceId::from_raw(spec.namespace),
-        spec.require_transactions,
-        spec.pixel_proof,
-        spec.allow_proof_kill_without_transactions,
-        spec.allow_client_failure_without_x_error,
-        None,
-    )?;
+        namespace: NamespaceId::from_raw(spec.namespace),
+        require_transactions: spec.require_transactions,
+        pixel_proof: spec.pixel_proof,
+        allow_proof_kill_without_transactions: spec.allow_proof_kill_without_transactions,
+        allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
+        render_device_provider: None,
+    })?;
     let authority_batches =
         authority_intakes_from_observed_transactions(&report.observed_transactions);
     Ok(XAuthorityTerminalRenderProof {
@@ -487,4 +487,3 @@ pub(crate) fn resolve_external_probe_binary(
     )
     .into())
 }
-
