@@ -208,14 +208,17 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   public facades.
 - [ ] Split live-session configuration/policy, admission, WM/layout, input,
   presentation, process supervision, and the owner loop.
-- [ ] Split native scanout, visual presentation service, and the legacy WM
-  bridge by ownership.
+- [ ] Split native scanout and the legacy WM bridge by ownership.
+- [x] Extract visual diagnostics and asynchronous output servicing from the
+  production visual-runtime facade.
 - [ ] Move every remaining inline test to crate integration tests and split
   oversized test programs around shared `tests/support` fixtures.
 - [ ] Replace remaining library `println!`/`eprintln!` diagnostics with
   structured, redacted `tracing` fields.
-- [ ] Replace callback-owned Present and retirement mutation with bounded
-  queues and explicit Engine/backend completion steps.
+- [x] Replace callback-owned retirement mutation with explicit Engine commit,
+  protocol-feedback, and output-projection steps.
+- [x] Replace callback-owned Present delivery with a bounded, owned queue
+  drained explicitly by the session owner.
 - [ ] Remove synthetic committed-surface seeding; initial authority
   transactions must pass normal Engine validation and commit.
 - [ ] Remove client-local X identifiers from Engine/session routing and replace

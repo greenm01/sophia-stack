@@ -2936,7 +2936,8 @@ fn run_session_loop(
         require_startup_focus.then_some(output.size),
     );
     let mut committed_session_actions = VecDeque::new();
-    let present_observer = Arc::new(Mutex::new(XPresentSessionObserver::new(protocol_router)));
+    let mut present_observer = XPresentSessionObserver::new(protocol_router);
+    let mut present_feedback = Vec::new();
     let mut runtime = if initialize_empty_runtime {
         Some(
             LiveProductionVisualRuntime::new(
@@ -2945,15 +2946,6 @@ fn run_session_loop(
                 native_scanout.as_mut(),
                 Some(scene.frames_for_outputs(&outputs)?),
             )?
-            .with_present_feedback_sink({
-                let observer = Arc::clone(&present_observer);
-                move |outcome| {
-                    observer
-                        .lock()
-                        .expect("X Present observer mutex was poisoned")
-                        .observe_feedback(outcome);
-                }
-            })
             .with_m4_proof_controls(
                 config.m4_first_acquire_delay,
                 config.m4_reject_first_present,
@@ -3975,15 +3967,6 @@ fn run_session_loop(
                             native_scanout.as_mut(),
                             None,
                         )?
-                        .with_present_feedback_sink({
-                            let observer = Arc::clone(&present_observer);
-                            move |outcome| {
-                                observer
-                                    .lock()
-                                    .expect("X Present observer mutex was poisoned")
-                                    .observe_feedback(outcome);
-                            }
-                        })
                         .with_m4_proof_controls(
                             config.m4_first_acquire_delay,
                             config.m4_reject_first_present,
@@ -4489,6 +4472,13 @@ fn run_session_loop(
         {
             input_presented_latency = Some(started.elapsed());
         }
+        if let Some(runtime) = runtime.as_mut() {
+            present_feedback.clear();
+            runtime.drain_present_feedback_into(&mut present_feedback)?;
+            for outcome in present_feedback.drain(..) {
+                present_observer.observe_feedback(outcome);
+            }
+        }
         if (config.exit_after_input_proof || config.inject_text.is_some())
             && input_presented_latency.is_some()
             && input_text_match
@@ -4505,10 +4495,12 @@ fn run_session_loop(
     }
     if let Some(runtime) = runtime.as_mut() {
         let report = runtime.shutdown_presentations();
-        present_observer
-            .lock()
-            .map_err(|_| "X Present observer mutex was poisoned")?
-            .observe_disconnect(report);
+        present_feedback.clear();
+        runtime.drain_present_feedback_into(&mut present_feedback)?;
+        for outcome in present_feedback.drain(..) {
+            present_observer.observe_feedback(outcome);
+        }
+        present_observer.observe_disconnect(report);
     }
     if input_presented_latency.is_none()
         && input_pixel_change
@@ -4715,9 +4707,7 @@ fn run_session_loop(
         expected_protocol_error_count, protocol_error_count,
     );
 
-    let present_observation = present_observer
-        .lock()
-        .map_err(|_| "X Present observer mutex was poisoned")?;
+    let present_observation = &present_observer;
     println!(
         "sophia_live_session schema=14 status=bounded_complete display={} elapsed_msec={} startup_ready_msec={} session_ticks={} authority_batches={} authority_transactions={} authority_queue_capacity={} authority_batches_dropped=0 backend_ticks={} runtime_committed={} runtime_surfaces={} cpu_layers={} cpu_nonzero_pixel_bytes={} cpu_max_nonzero_pixel_bytes={} cpu_nonzero_frames={} cpu_checksum={} cpu_max_compose_msec={} injected_input={} input_events_expected={} input_events_flushed={} input_flush_latency_msec={} input_pixel_change={} input_text_match={} input_presented_latency_msec={} input_dispatch_max_gap_msec={} input_queue_max_depth={} input_queue_dwell_max_msec={} physical_events={} physical_keys_routed={} pointer_pixel_change={} physical_pointer_events={} physical_pointer_routed={} pointer_proof={} native_presentation={} native_submissions={} native_submit_deferred={} native_submit_failures={} native_retirements={} native_retire_failures={} native_max_in_flight_ticks={} native_max_submit_to_page_flip_msec={} native_max_upload_msec={} native_target_creations={} native_target_recreations={} native_pipeline_creations={} native_frame_uploads={} native_callback_accepted={} native_callback_rejected={} native_callback_queue_saturated={} native_nonzero_exports={} native_mixed_exports={} native_export_attempts={} native_in_flight={} native_cleanup_pending={} physical_input={} wm_policy={} wm_requests={} wm_committed={} wm_restarts={} wm_degraded={} namespace_profile={} output_update={} output_notifications={} surface_resize={} present_complete_flip={} present_complete_skip={} present_idle={} present_idle_fence_triggers={} present_disconnect_sources={} present_disconnect_fences={} present_disconnect_failures={} present_live_sources={} present_live_fences={} present_live_transactions={} present_acquire_waits={} present_controlled_rejections={}",
         config.display,

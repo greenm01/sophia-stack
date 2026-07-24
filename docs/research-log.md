@@ -16,6 +16,11 @@ Completed evidence is archived in `research-log-archive.md`.
 - Removed allocation and sorting from Engine input hit testing and cached the
   backend visual runtime's input-layer projection at authority-update
   boundaries.
+- Split the production visual runtime into a 795-line transaction/presentation
+  facade plus focused native-scanout and asynchronous-service modules. Present
+  feedback now crosses the backend/session boundary through a bounded owned
+  queue, and KMS retirement performs explicit Engine commit, protocol feedback,
+  and output projection steps instead of callback-owned mutation.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument
