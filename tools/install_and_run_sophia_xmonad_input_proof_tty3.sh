@@ -53,7 +53,8 @@ fi
 
 echo
 echo "The proof will start after the recovery guard is armed."
-echo "At the Kitty prompt type exactly: sophia"
+echo "After the Kitty prompt appears, wait three seconds for input readiness."
+echo "Then type exactly: sophia"
 echo "Then press Enter once. Do not use Ctrl+Alt+Backspace unless recovery is needed."
 echo
 set +e
