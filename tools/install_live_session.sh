@@ -53,6 +53,7 @@ ln -sfn "releases/$release_id" "$PREFIX/current"
 commands=(
     sophia-session
     sophia-status
+    sophia-stop
     sophia-rollback
     sophia-record-run
     sophia-verify-cycles

@@ -61,6 +61,8 @@ bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
 bash -n tools/installed/sophia-session
+bash -n tools/installed/capture-runtime-identity.sh
+bash -n tools/verify_installed_runtime_identity.sh
 bash -n tools/record_installed_session_run.sh tools/verify_installed_session_cycles.sh
 bash -n tools/verify_installed_session_soak.sh tools/check_installed_session_verifiers.sh
 tools/check_installed_session_verifiers.sh

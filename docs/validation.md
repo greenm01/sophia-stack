@@ -343,8 +343,12 @@ with:
 
 ```sh
 sophia-status
+sophia-stop
 sudo sophia-rollback
 ```
+
+`sophia-stop` requests bounded cleanup from an independently logged-in control
+TTY; Ctrl-Alt-Backspace remains the independent local emergency chord.
 
 The artifact also installs repository-independent evidence commands:
 
@@ -369,6 +373,11 @@ mixed commits, modified evidence, emergency exits, incomplete input/WM/native
 cleanup, or fewer than the requested number of runs. `sophia-verify-soak`
 requires one clean schema-14 completion, the requested elapsed time and action
 counts, and zero WM, Present, callback, native, or cleanup debt.
+Each installed launch also rotates a content-free runtime identity record with
+the kernel and Mesa versions, Kitty/Firefox/xmonad binary digests, a hashed
+input-device identity, and connector plus EDID hashes. The verifier rejects
+missing identities and fields that could contain typed, clipboard, or window
+content.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
 non-system staging installation for verifier tests. A release is not promoted

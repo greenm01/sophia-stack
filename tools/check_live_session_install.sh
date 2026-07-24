@@ -13,7 +13,7 @@ make_artifact() {
     artifact="$TEMP_DIR/artifact-$release_id"
     install -d -m 755 "$artifact/bin" "$artifact/share/wayland-sessions"
     for command in \
-        sophia-session sophia-status sophia-rollback sophia-record-run \
+        sophia-session sophia-status sophia-stop sophia-rollback sophia-record-run \
         sophia-verify-cycles sophia-verify-soak; do
         case "$command" in
             sophia-status)
@@ -51,7 +51,7 @@ env "${install_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$first"
 [[ ! -e "$PREFIX/previous" ]]
 grep -Fq "Exec=$PREFIX/current/bin/sophia-session" "$SESSION_DIR/sophia.desktop"
 for command in \
-    sophia-session sophia-status sophia-rollback sophia-record-run \
+    sophia-session sophia-status sophia-stop sophia-rollback sophia-record-run \
     sophia-verify-cycles sophia-verify-soak; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done

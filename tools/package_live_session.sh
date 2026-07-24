@@ -36,7 +36,10 @@ install -m 755 target/release/sophia-x11-wm-bridge \
     "$artifact/target/release/sophia-x11-wm-bridge"
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
+install -m 755 tools/installed/capture-runtime-identity.sh \
+    "$artifact/bin/capture-runtime-identity"
 install -m 755 tools/status_live_session.sh "$artifact/bin/sophia-status"
+install -m 755 tools/stop_sophia_xmonad_session.sh "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
 install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
@@ -46,6 +49,8 @@ install -m 755 tools/verify_installed_session_soak.sh \
     "$artifact/bin/sophia-verify-soak"
 install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
+install -m 755 tools/verify_installed_runtime_identity.sh \
+    "$artifact/bin/sophia-verify-runtime-identity"
 install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmonad.sh "$artifact/tools/"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"

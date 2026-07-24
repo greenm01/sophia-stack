@@ -4,8 +4,12 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 VERIFY_XMONAD="${SOPHIA_VERIFY_XMONAD_BIN:-$SCRIPT_DIR/sophia-verify-xmonad-run}"
+VERIFY_IDENTITY="${SOPHIA_VERIFY_IDENTITY_BIN:-$SCRIPT_DIR/sophia-verify-runtime-identity}"
 if [[ ! -x "$VERIFY_XMONAD" && -x "$SCRIPT_DIR/verify_sophia_xmonad_tty3.sh" ]]; then
     VERIFY_XMONAD="$SCRIPT_DIR/verify_sophia_xmonad_tty3.sh"
+fi
+if [[ ! -x "$VERIFY_IDENTITY" && -x "$SCRIPT_DIR/verify_installed_runtime_identity.sh" ]]; then
+    VERIFY_IDENTITY="$SCRIPT_DIR/verify_installed_runtime_identity.sh"
 fi
 required="${1:-3}"
 [[ "$required" =~ ^[1-9][0-9]*$ ]] || {
@@ -32,6 +36,7 @@ for run in "${runs[@]}"; do
     )
     "$VERIFY_XMONAD" \
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
+    "$VERIFY_IDENTITY" "$run/runtime-identity.log"
     commit="$(sed -n 's/^commit=//p' "$run/manifest" | head -n 1)"
     [[ -n "$commit" ]] || {
         echo "run has no release commit: $run" >&2

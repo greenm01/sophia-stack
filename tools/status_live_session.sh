@@ -26,3 +26,6 @@ for profile in xmonad kitty; do
     printf '%s_logs=%s\n' "$profile" "$state"
     tail -n 1 "$state/recovery.log" 2>/dev/null || true
 done
+runtime_identity="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/installed-session/runtime-identity.log"
+printf 'runtime_identity=%s\n' "$runtime_identity"
+[[ ! -s "$runtime_identity" ]] || cat "$runtime_identity"
