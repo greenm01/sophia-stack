@@ -6968,11 +6968,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             .unwrap();
         let first_request = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-            if trace
-                .request_detail
-                .as_deref()
-                .is_some_and(|detail| detail.starts_with("RequestSelection:"))
-            {
+            if trace.request_stage == X11ObservedRequestStage::SelectionRequest {
                 request_sender.send(()).unwrap();
                 if first_request.swap(false, std::sync::atomic::Ordering::AcqRel) {
                     coordinate_sender.send(()).unwrap();
@@ -7417,7 +7413,7 @@ fn x_server_frontend_emits_surface_removal_when_a_client_disconnects() {
         let mut removals = Vec::new();
         frontend
             .serve_next_traced(|trace| {
-                if trace.request_detail.as_deref() == Some("DisconnectCleanup") {
+                if trace.request_stage == X11ObservedRequestStage::DisconnectCleanup {
                     removals.push((
                         trace.client.raw(),
                         trace

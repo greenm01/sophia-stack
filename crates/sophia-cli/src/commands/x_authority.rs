@@ -2166,13 +2166,15 @@ fn run_x_authority_external_probe_smoke(
             proof_timeout,
             |trace| {
                 let _ = sender.try_send(ExternalProbeObservation::Opcode(trace.major_opcode));
-                if let Some(detail) = &trace.request_detail {
-                    let _ = sender.try_send(ExternalProbeObservation::Detail(detail.clone()));
+                if trace.request_stage != sophia_x_authority::X11ObservedRequestStage::Other {
+                    let _ = sender.try_send(ExternalProbeObservation::Detail(
+                        trace.request_stage.evidence_name().to_owned(),
+                    ));
                 }
-                if let Some(error) = &trace.parse_error {
+                if trace.failure.is_some() {
                     let _ = sender.try_send(ExternalProbeObservation::Error(format!(
-                        "parse_error:major={}:{}",
-                        trace.major_opcode, error
+                        "parse_error:major={}",
+                        trace.major_opcode
                     )));
                 }
                 for output in &trace.result.outputs {
@@ -2348,8 +2350,8 @@ fn run_x_authority_external_probe_smoke(
 
     if label == "kitty" {
         for required in [
-            "GLX:QueryServerString:name=0x20f6",
-            "GLX:GetFBConfigs:screen=0",
+            "GLX:QueryServerString",
+            "GLX:GetFBConfigs",
             "GLX:CreateContext",
             "GLX:CreateWindow",
             "DRI3:PixmapFromBuffers",

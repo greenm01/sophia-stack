@@ -33,7 +33,7 @@ use crate::{
     XSetupRequest, XSetupSuccess, XWireClientContext, decode_x11_core_request,
     dispatch_x11_parse_error, dispatch_x11_wire_request, encode_x_client_event,
     encode_x11_setup_failure, encode_x11_setup_success, parse_x11_setup_request,
-    try_emit_x_authority_trace, x11_setup_request_total_len,
+    try_emit_x_authority_observation, x11_setup_request_total_len,
 };
 #[cfg(unix)]
 use sophia_protocol::{
@@ -844,7 +844,7 @@ impl XServerFrontend {
 
     pub fn serve_next_traced(
         &mut self,
-        observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+        observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
     ) -> Result<(), X11SetupSocketError> {
         serve_x11_core_socket_listener_once_with_setup_authorization(
             &self.listener,
@@ -863,7 +863,7 @@ impl XServerFrontend {
 
     pub fn serve_forever_traced(
         &mut self,
-        observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+        observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
     ) -> Result<(), X11SetupSocketError> {
         serve_x11_core_socket_listener_with_setup_authorization(
             &self.listener,
@@ -1240,10 +1240,8 @@ pub fn coordinate_x11_clipboard_transfer(
 
 /// A trace callback used by a bounded concurrent frontend worker.
 #[cfg(unix)]
-pub type X11CoreTraceObserver = dyn for<'trace> Fn(X11CoreDispatchTrace<'trace>) -> Result<(), X11SetupSocketError>
-    + Send
-    + Sync
-    + 'static;
+pub type X11CoreTraceObserver =
+    dyn Fn(X11DispatchObservation) -> Result<(), X11SetupSocketError> + Send + Sync + 'static;
 
 #[cfg(unix)]
 struct X11CoreClientWorkerCompletion {
@@ -1266,23 +1264,59 @@ struct X11CoreClientWorkerAdmission {
 }
 
 #[cfg(unix)]
-#[derive(Clone, Debug)]
-pub struct X11CoreDispatchTrace<'a> {
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum X11ObservedRequestStage {
+    GlxQueryServerString,
+    GlxGetFbConfigs,
+    GlxCreateContext,
+    GlxCreateWindow,
+    Dri3PixmapFromBuffers,
+    PresentPixmap,
+    KeyboardMapping,
+    SelectionRequest,
+    DisconnectCleanup,
+    Other,
+}
+
+impl X11ObservedRequestStage {
+    pub const fn evidence_name(self) -> &'static str {
+        match self {
+            Self::GlxQueryServerString => "GLX:QueryServerString",
+            Self::GlxGetFbConfigs => "GLX:GetFBConfigs",
+            Self::GlxCreateContext => "GLX:CreateContext",
+            Self::GlxCreateWindow => "GLX:CreateWindow",
+            Self::Dri3PixmapFromBuffers => "DRI3:PixmapFromBuffers",
+            Self::PresentPixmap => "PRESENT:Pixmap",
+            Self::KeyboardMapping => "GetKeyboardMapping",
+            Self::SelectionRequest => "RequestSelection",
+            Self::DisconnectCleanup => "DisconnectCleanup",
+            Self::Other => "Other",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum X11ObservedDispatchFailure {
+    ParseRejected,
+}
+
+#[derive(Debug)]
+pub struct X11DispatchObservation {
     pub client: XServerFrontendClientId,
     pub resource_id_range: crate::XWireClientResourceRange,
     pub sequence: u16,
     pub major_opcode: u8,
-    pub request_detail: Option<String>,
-    pub parse_error: Option<String>,
-    pub result: &'a XDispatchResult,
-    pub cpu_buffer_update: Option<&'a XAuthorityCpuBufferUpdate>,
+    pub request_stage: X11ObservedRequestStage,
+    pub failure: Option<X11ObservedDispatchFailure>,
+    pub result: XDispatchResult,
+    pub cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
     pub received_fd_count: usize,
-    pub received_fds: &'a [OwnedFd],
+    pub received_fds: Vec<OwnedFd>,
     pub dri3_pixmap_import: Option<XAuthorityDri3PixmapImport>,
     pub dri3_fence_import: Option<XAuthorityDri3FenceImport>,
     pub present_submission: Option<XAuthorityPresentSubmission>,
-    pub released_dma_bufs: &'a [sophia_protocol::BufferHandle],
-    pub released_fences: &'a [sophia_protocol::FenceHandle],
+    pub released_dma_bufs: Vec<sophia_protocol::BufferHandle>,
+    pub released_fences: Vec<sophia_protocol::FenceHandle>,
     pub server_reply_fd_count: usize,
 }
 
@@ -3450,7 +3484,7 @@ pub fn run_x11_core_socket_server_observed(
     mut observer: impl FnMut(&XDispatchResult),
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_traced(path, namespace, move |trace| {
-        observer(trace.result);
+        observer(&trace.result);
         Ok(())
     })
 }
@@ -3459,7 +3493,7 @@ pub fn run_x11_core_socket_server_observed(
 pub fn run_x11_core_socket_server_traced(
     path: impl AsRef<Path>,
     namespace: NamespaceId,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let config = XServerFrontendConfig::new(path.as_ref(), namespace)?;
     let mut frontend = XServerFrontend::bind(config)?;
@@ -3473,7 +3507,7 @@ pub fn run_x11_core_socket_server_channel(
     sender: SyncSender<XAuthorityObservedTransactionBatch>,
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_traced(path, namespace, move |trace| {
-        try_emit_x_authority_trace(&sender, &trace)
+        try_emit_x_authority_observation(&sender, &trace)
             .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         Ok(())
     })
@@ -3487,7 +3521,7 @@ pub fn run_x11_core_socket_server_once_observed(
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_once_traced(path, namespace, move |trace| {
         let result = trace.result;
-        observer(result);
+        observer(&result);
         Ok(())
     })
 }
@@ -3496,7 +3530,7 @@ pub fn run_x11_core_socket_server_once_observed(
 pub fn run_x11_core_socket_server_once_traced(
     path: impl AsRef<Path>,
     namespace: NamespaceId,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_once_with_trace_observer(path, namespace, None, observer)
 }
@@ -3506,7 +3540,7 @@ pub fn run_x11_core_socket_server_once_traced_with_idle_timeout(
     path: impl AsRef<Path>,
     namespace: NamespaceId,
     idle_timeout: Duration,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_once_with_trace_observer(
         path,
@@ -3524,7 +3558,7 @@ pub fn run_x11_core_socket_server_once_traced_with_idle_timeout(
 pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
     config: XServerFrontendConfig,
     idle_timeout: Duration,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let listener = bind_x11_core_socket_server(config.socket_path())?;
     let state = X11CoreSocketServerState::with_output_topology_and_xkb_config(
@@ -3550,7 +3584,7 @@ pub fn run_x11_core_socket_server_once_channel(
     sender: SyncSender<XAuthorityObservedTransactionBatch>,
 ) -> Result<(), X11SetupSocketError> {
     run_x11_core_socket_server_once_with_trace_observer(path, namespace, None, move |trace| {
-        try_emit_x_authority_trace(&sender, &trace)
+        try_emit_x_authority_observation(&sender, &trace)
             .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         Ok(())
     })
@@ -3579,7 +3613,7 @@ pub fn run_x11_core_socket_server_once_channels(
         None,
         None,
         move |trace| {
-            try_emit_x_authority_trace(&transaction_sender, &trace)
+            try_emit_x_authority_observation(&transaction_sender, &trace)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
             Ok(())
         },
@@ -3617,7 +3651,7 @@ pub fn run_x11_core_socket_server_once_session_channels(
         None,
         None,
         move |trace| {
-            try_emit_x_authority_trace(&transaction_sender, &trace)
+            try_emit_x_authority_observation(&transaction_sender, &trace)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
             Ok(())
         },
@@ -3648,7 +3682,7 @@ pub fn run_x11_core_socket_server_once_routed(
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .set_input_authority(broker.registry.input_authority.clone());
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-        try_emit_x_authority_trace(&transaction_sender, &trace)
+        try_emit_x_authority_observation(&transaction_sender, &trace)
             .map(|_| ())
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
     });
@@ -3689,7 +3723,7 @@ pub fn run_x_server_frontend_routed_until_stopped(
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .set_input_authority(broker.registry.input_authority.clone());
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-        try_emit_x_authority_trace(&transaction_sender, &trace)
+        try_emit_x_authority_observation(&transaction_sender, &trace)
             .map(|_| ())
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
     });
@@ -3781,7 +3815,7 @@ fn run_x11_core_socket_server_once_with_trace_observer(
     path: impl AsRef<Path>,
     namespace: NamespaceId,
     idle_timeout: Option<Duration>,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let listener = bind_x11_core_socket_server(path)?;
     let mut state = X11CoreSocketServerState::new();
@@ -3855,7 +3889,7 @@ pub fn serve_x11_core_socket_listener_once_traced(
     listener: &UnixListener,
     namespace: NamespaceId,
     state: &X11CoreSocketServerState,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let authorization = XServerFrontendSetupAuthorization::default();
     serve_x11_core_socket_listener_once_with_setup_authorization(
@@ -3883,7 +3917,7 @@ pub fn serve_x11_core_socket_listener_traced(
     listener: &UnixListener,
     namespace: NamespaceId,
     state: &X11CoreSocketServerState,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let authorization = XServerFrontendSetupAuthorization::default();
     serve_x11_core_socket_listener_with_setup_authorization(
@@ -3903,7 +3937,7 @@ fn serve_x11_core_socket_listener_with_setup_authorization(
     state: &X11CoreSocketServerState,
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
-    mut observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     loop {
         serve_x11_core_socket_listener_once_with_setup_authorization(
@@ -3926,7 +3960,7 @@ fn serve_x11_core_socket_listener_once_with_setup_authorization(
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     idle_timeout: Option<Duration>,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let (mut stream, _) = listener.accept().map_err(|error| {
         X11SetupSocketError::new(format!("failed to accept X11 core client: {error}"))
@@ -4065,7 +4099,7 @@ pub fn serve_x11_core_socket_client_with_state_observed(
     mut observer: impl FnMut(&XDispatchResult) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     serve_x11_core_socket_client_with_trace_observer(stream, namespace, state, move |trace| {
-        observer(trace.result)
+        observer(&trace.result)
     })
 }
 
@@ -4074,7 +4108,7 @@ fn serve_x11_core_socket_client_with_trace_observer(
     stream: &mut UnixStream,
     namespace: NamespaceId,
     state: &X11CoreSocketServerState,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let authorization = XServerFrontendSetupAuthorization::default();
     serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
@@ -4094,7 +4128,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
     state: &X11CoreSocketServerState,
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     serve_x11_core_socket_client_with_trace_observer_and_setup_authorization_and_routing(
         stream,
@@ -4117,7 +4151,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization_and_
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     client_routing: Option<XServerFrontendRouteRegistry>,
     worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
-    observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     serve_x11_core_socket_client_with_trace_observer_and_input(
         stream,
@@ -4144,7 +4178,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
-    mut observer: impl FnMut(X11CoreDispatchTrace<'_>) -> Result<(), X11SetupSocketError>,
+    mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let peer_credentials = if admission_policy.is_some() {
         x11_peer_credentials(stream)?
@@ -4883,22 +4917,33 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     output.response.is_some(),
                 );
             }
-            observer(X11CoreDispatchTrace {
+            let observed_received_fds = received_fds
+                .iter()
+                .map(OwnedFd::try_clone)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to retain received X11 descriptor for observation: {error}"
+                    ))
+                })?;
+            observer(X11DispatchObservation {
                 client,
                 resource_id_range,
                 sequence,
                 major_opcode,
-                request_detail,
-                parse_error,
-                result: &output,
-                cpu_buffer_update: cpu_buffer_update.as_ref(),
+                request_stage: observed_request_stage(request_detail.as_deref()),
+                failure: parse_error
+                    .as_ref()
+                    .map(|_| X11ObservedDispatchFailure::ParseRejected),
+                result: output.clone(),
+                cpu_buffer_update: cpu_buffer_update.clone(),
                 received_fd_count: received_fds.len(),
-                received_fds: &received_fds,
+                received_fds: observed_received_fds,
                 dri3_pixmap_import,
                 dri3_fence_import,
                 present_submission,
-                released_dma_bufs: &released_dma_bufs,
-                released_fences: &released_fences,
+                released_dma_bufs: released_dma_bufs.clone(),
+                released_fences: released_fences.clone(),
                 server_reply_fd_count: server_reply_fds.len(),
             })?;
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
@@ -4997,22 +5042,22 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             outputs: Vec::new(),
             metadata_candidates: Vec::new(),
         };
-        observer(X11CoreDispatchTrace {
+        observer(X11DispatchObservation {
             client,
             resource_id_range,
             sequence,
             major_opcode: 0,
-            request_detail: Some("DisconnectCleanup".to_owned()),
-            parse_error: None,
-            result: &cleanup,
+            request_stage: X11ObservedRequestStage::DisconnectCleanup,
+            failure: None,
+            result: cleanup,
             cpu_buffer_update: None,
             received_fd_count: 0,
-            received_fds: &[],
+            received_fds: Vec::new(),
             dri3_pixmap_import: None,
             dri3_fence_import: None,
             present_submission: None,
-            released_dma_bufs: &release.released_dma_bufs,
-            released_fences: &release.released_fences,
+            released_dma_bufs: release.released_dma_bufs,
+            released_fences: release.released_fences,
             server_reply_fd_count: 0,
         })
     };
@@ -6600,6 +6645,33 @@ mod routing_tests {
 
         selections.observe_unmapped(lower);
         assert_eq!(selections.keyboard_target(root), upper);
+    }
+}
+
+fn observed_request_stage(detail: Option<&str>) -> X11ObservedRequestStage {
+    let Some(detail) = detail else {
+        return X11ObservedRequestStage::Other;
+    };
+    if detail.starts_with("GLX:QueryServerString") {
+        X11ObservedRequestStage::GlxQueryServerString
+    } else if detail.starts_with("GLX:GetFBConfigs") {
+        X11ObservedRequestStage::GlxGetFbConfigs
+    } else if detail.starts_with("GLX:CreateContext") {
+        X11ObservedRequestStage::GlxCreateContext
+    } else if detail.starts_with("GLX:CreateWindow") {
+        X11ObservedRequestStage::GlxCreateWindow
+    } else if detail.starts_with("DRI3:PixmapFromBuffers") {
+        X11ObservedRequestStage::Dri3PixmapFromBuffers
+    } else if detail.starts_with("PRESENT:Pixmap") {
+        X11ObservedRequestStage::PresentPixmap
+    } else if detail.starts_with("GetKeyboardMapping") {
+        X11ObservedRequestStage::KeyboardMapping
+    } else if detail.starts_with("RequestSelection:") {
+        X11ObservedRequestStage::SelectionRequest
+    } else if detail.starts_with("DisconnectCleanup") {
+        X11ObservedRequestStage::DisconnectCleanup
+    } else {
+        X11ObservedRequestStage::Other
     }
 }
 

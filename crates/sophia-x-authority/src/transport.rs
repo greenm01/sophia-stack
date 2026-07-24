@@ -6,7 +6,7 @@ use std::sync::mpsc::{SyncSender, TrySendError};
 use sophia_protocol::{SurfaceId, SurfaceTransaction, TransactionId};
 
 use crate::{
-    X11CoreDispatchTrace, XAuthorityCpuBufferUpdate, XClientOutput, XDispatchResult,
+    X11DispatchObservation, XAuthorityCpuBufferUpdate, XClientOutput, XDispatchResult,
     XServerFrontendClientId,
 };
 
@@ -144,7 +144,7 @@ impl XAuthorityObservedTransactionBatch {
         })
     }
 
-    pub fn from_dispatch_trace(trace: &X11CoreDispatchTrace<'_>) -> Option<Self> {
+    pub fn from_dispatch_observation(trace: &X11DispatchObservation) -> Option<Self> {
         let dma_buf_registrations = trace
             .dri3_pixmap_import
             .and_then(|import| {
@@ -232,7 +232,7 @@ impl XAuthorityObservedTransactionBatch {
             ),
             transactions,
             removed_surfaces,
-            cpu_buffer_updates: trace.cpu_buffer_update.cloned().into_iter().collect(),
+            cpu_buffer_updates: trace.cpu_buffer_update.clone().into_iter().collect(),
             dma_buf_registrations,
             fence_registrations,
             present_submissions: trace.present_submission.into_iter().collect(),
@@ -375,11 +375,11 @@ pub fn try_emit_x_authority_transactions(
     Ok(Some(batch))
 }
 
-pub fn try_emit_x_authority_trace(
+pub fn try_emit_x_authority_observation(
     sender: &SyncSender<XAuthorityObservedTransactionBatch>,
-    trace: &X11CoreDispatchTrace<'_>,
+    trace: &X11DispatchObservation,
 ) -> Result<Option<XAuthorityObservedTransactionBatch>, XAuthorityTransportError> {
-    let Some(batch) = XAuthorityObservedTransactionBatch::from_dispatch_trace(trace) else {
+    let Some(batch) = XAuthorityObservedTransactionBatch::from_dispatch_observation(trace) else {
         return Ok(None);
     };
 
