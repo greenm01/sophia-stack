@@ -31,6 +31,9 @@ Completed evidence is archived in `research-log-archive.md`.
 - Replaced direct native-scanout library printing with `tracing` while
   preserving the stable evidence message bodies emitted through CLI-installed
   subscribers.
+- Converted native EGL/GBM pixel and lifecycle diagnostics to `tracing` and
+  removed the process ID from DMA-BUF lifecycle output. Pixel evidence message
+  bodies remain compatible with the existing verifier.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument

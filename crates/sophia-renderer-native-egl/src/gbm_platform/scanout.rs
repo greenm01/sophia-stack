@@ -1,7 +1,7 @@
 use std::{
     ffi::c_void,
     os::fd::{AsRawFd, BorrowedFd, OwnedFd},
-    process, ptr,
+    ptr,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
     time::Instant,
@@ -1477,7 +1477,7 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
     if trace_pixels {
-        eprintln!(
+        tracing::info!(
             "sophia_native_composition_pixels schema=1 status=enabled width={} height={} layers={}",
             frame.width,
             frame.height,
@@ -1580,7 +1580,7 @@ fn trace_composition_pixels(
     stride: u32,
 ) {
     match pipeline.read_composition_pixels() {
-        Ok(metrics) => eprintln!(
+        Ok(metrics) => tracing::info!(
             "sophia_native_composition_pixels schema=1 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} checksum={}",
             target.width,
             target.height,
@@ -1593,9 +1593,12 @@ fn trace_composition_pixels(
             metrics.alpha_opaque_pixels,
             metrics.checksum,
         ),
-        Err(_) => eprintln!(
+        Err(_) => tracing::warn!(
             "sophia_native_composition_pixels schema=1 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
-            target.width, target.height, target.x, target.y,
+            target.width,
+            target.height,
+            target.x,
+            target.y,
         ),
     }
 }
@@ -1690,16 +1693,13 @@ fn draw_composition_dmabuf_layer(
 
 fn trace_dmabuf_lifecycle(stage: &str) {
     if std::env::var_os("SOPHIA_WAYLAND_DMABUF_DIAGNOSTIC").is_some() {
-        eprintln!(
-            "sophia_dmabuf_lifecycle schema=1 pid={} stage={stage}",
-            process::id()
-        );
+        tracing::info!("sophia_dmabuf_lifecycle schema=1 stage={stage}");
     }
 }
 
 fn trace_native_lifecycle(stage: &str) {
     if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
-        eprintln!("sophia_native_lifecycle schema=1 stage={stage}");
+        tracing::info!("sophia_native_lifecycle schema=1 stage={stage}");
     }
 }
 
