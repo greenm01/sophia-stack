@@ -36,19 +36,22 @@ use crate::{
     XAuthorityObservedTransactionBatch, XAuthorityPointerEvent, XAuthorityPointerEventKind,
     XAuthorityPresentSubmission, XAuthorityResponsePacket, XAuthorityRoutedInput,
     XAuthorityRuntime, XByteOrder, XClientEvent, XDispatchContext, XDispatchResult,
-    XPresentCompletionMode, XPropertyTable, XResourceId, XServerFrontendRouteError,
-    XServerFrontendServiceCommand, XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
-    decode_x11_core_request, dispatch_x11_parse_error, dispatch_x11_wire_request,
-    encode_x_client_event, encode_x11_setup_failure, encode_x11_setup_success,
-    parse_x11_setup_request, try_emit_x_authority_observation, x11_setup_request_total_len,
+    XPresentCompletionMode, XPropertyTable, XResourceId, XServerFrontendAdmissionError,
+    XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendClientId,
+    XServerFrontendPeerCredentials, XServerFrontendRenderDeviceError,
+    XServerFrontendRenderDeviceProvider, XServerFrontendRouteError, XServerFrontendServiceCommand,
+    XServerFrontendSetupAuthorization, XSetupFailure, XSetupRequest, XSetupSuccess,
+    XWireClientContext, decode_x11_core_request, dispatch_x11_parse_error,
+    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
+    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
+    x11_setup_request_total_len,
 };
 #[cfg(all(unix, test))]
 use sophia_protocol::RoutedInputRequest;
 #[cfg(unix)]
 use sophia_protocol::{
-    ClientAdmissionContext, ClientAdmissionId, ClientAuthenticationMethod, InputEventKind,
-    NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile, SeatId, Size,
-    SurfaceId, TransactionId,
+    ClientAdmissionContext, ClientAdmissionId, InputEventKind, NamespaceCapabilities,
+    NamespaceContext, NamespaceId, NamespaceProfile, SeatId, Size, SurfaceId, TransactionId,
 };
 
 #[cfg(unix)]
@@ -150,26 +153,6 @@ impl core::fmt::Display for X11SetupSocketError {
 
 impl std::error::Error for X11SetupSocketError {}
 
-/// Monotonically assigned identity for one live X11 client connection.
-///
-/// The XID range identifies resources the client is allowed to create. This
-/// identity identifies the connection that owns lifecycle cleanup, event
-/// delivery, and later concurrent-dispatch bookkeeping.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct XServerFrontendClientId(u64);
-
-#[cfg(unix)]
-impl XServerFrontendClientId {
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
-    }
-}
-
 /// The setup allocation retained for one connected X11 client.
 ///
 /// The range is a connection lease, not a namespace boundary: in a classic
@@ -181,151 +164,6 @@ impl XServerFrontendClientId {
 struct XServerFrontendClientLease {
     client: XServerFrontendClientId,
     resource_id_range: crate::XWireClientResourceRange,
-}
-
-/// The X11 setup authorization policy for one local frontend listener.
-///
-/// `UnauthenticatedLocal` retains the bounded smoke-helper behavior and relies
-/// on the listener's owner-only Unix-socket permissions. Production callers
-/// should instead provide a session-scoped MIT-MAGIC-COOKIE-1 value.
-#[cfg(unix)]
-#[derive(Clone, Eq, PartialEq)]
-pub enum XServerFrontendSetupAuthorization {
-    UnauthenticatedLocal,
-    MitMagicCookie([u8; 16]),
-}
-
-#[cfg(unix)]
-impl Default for XServerFrontendSetupAuthorization {
-    fn default() -> Self {
-        Self::UnauthenticatedLocal
-    }
-}
-
-#[cfg(unix)]
-impl core::fmt::Debug for XServerFrontendSetupAuthorization {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnauthenticatedLocal => formatter.write_str("UnauthenticatedLocal"),
-            Self::MitMagicCookie(_) => formatter.write_str("MitMagicCookie([redacted])"),
-        }
-    }
-}
-
-#[cfg(unix)]
-impl XServerFrontendSetupAuthorization {
-    fn permits(&self, request: &XSetupRequest) -> bool {
-        match self {
-            Self::UnauthenticatedLocal => true,
-            Self::MitMagicCookie(expected) => {
-                request.authorization_protocol_name == b"MIT-MAGIC-COOKIE-1"
-                    && x11_authorization_data_eq(&request.authorization_data, expected)
-            }
-        }
-    }
-
-    const fn authentication_method(&self) -> ClientAuthenticationMethod {
-        match self {
-            Self::UnauthenticatedLocal => ClientAuthenticationMethod::TrustedLocal,
-            Self::MitMagicCookie(_) => ClientAuthenticationMethod::MitMagicCookie1,
-        }
-    }
-}
-
-/// Kernel-authenticated identity of one local Unix-socket peer.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct XServerFrontendPeerCredentials {
-    pub process_id: u32,
-    pub user_id: u32,
-    pub group_id: u32,
-}
-
-/// Bounded facts supplied to session admission after X setup authentication.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XServerFrontendAdmissionRequest {
-    pub setup_authentication: ClientAuthenticationMethod,
-    pub peer_credentials: Option<XServerFrontendPeerCredentials>,
-}
-
-/// Fail-closed result from the session admission boundary.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XServerFrontendAdmissionError {
-    Denied,
-    Unavailable,
-}
-
-#[cfg(unix)]
-impl core::fmt::Display for XServerFrontendAdmissionError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Denied => formatter.write_str("X11 client admission denied"),
-            Self::Unavailable => formatter.write_str("X11 client admission unavailable"),
-        }
-    }
-}
-
-#[cfg(unix)]
-impl std::error::Error for XServerFrontendAdmissionError {}
-
-/// Session policy called once after setup authentication and once at teardown.
-///
-/// Implementations may allocate and revoke identities in a session registry.
-/// They receive no raw cookie bytes or X11 resource identity.
-#[cfg(unix)]
-pub trait XServerFrontendAdmissionPolicy: Send + Sync + 'static {
-    fn admit(
-        &self,
-        request: XServerFrontendAdmissionRequest,
-    ) -> Result<ClientAdmissionContext, XServerFrontendAdmissionError>;
-
-    fn revoke(&self, context: ClientAdmissionContext) -> Result<(), XServerFrontendAdmissionError>;
-}
-
-/// Backend-owned capability for independently opening the Engine-selected render device.
-///
-/// The frontend receives a one-shot descriptor and never learns or retains a
-/// device path. Each call must return a new kernel file description rather
-/// than `dup`ing the backend's descriptor: DRM driver contexts and virtual
-/// address state are scoped to that file description and must not be shared
-/// between the server renderer and a DRI3 client.
-#[cfg(unix)]
-pub trait XServerFrontendRenderDeviceProvider: Send + Sync + 'static {
-    fn open_render_device_fd(&self) -> Result<OwnedFd, XServerFrontendRenderDeviceError>;
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XServerFrontendRenderDeviceError {
-    Unavailable,
-    OpenFailed,
-}
-
-#[cfg(unix)]
-impl core::fmt::Display for XServerFrontendRenderDeviceError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Unavailable => formatter.write_str("render device unavailable"),
-            Self::OpenFailed => formatter.write_str("render device open failed"),
-        }
-    }
-}
-
-#[cfg(unix)]
-impl std::error::Error for XServerFrontendRenderDeviceError {}
-
-#[cfg(unix)]
-fn x11_authorization_data_eq(actual: &[u8], expected: &[u8]) -> bool {
-    actual.len() == expected.len()
-        && actual
-            .iter()
-            .zip(expected)
-            .fold(0u8, |difference, (actual, expected)| {
-                difference | (actual ^ expected)
-            })
-            == 0
 }
 
 /// Configuration owned by one local Sophia X Server Frontend listener.
