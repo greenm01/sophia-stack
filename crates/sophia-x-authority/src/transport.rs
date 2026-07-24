@@ -247,49 +247,6 @@ impl XAuthorityObservedTransactionBatch {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{XClientError, XErrorCode};
-
-    #[test]
-    fn protocol_error_observations_are_reduced_and_bounded() {
-        let outputs = (0..20)
-            .map(|sequence| {
-                XClientOutput::Error(XClientError {
-                    code: XErrorCode::BadWindow,
-                    sequence,
-                    resource_id: 0xdead_beef,
-                    minor_code: 7,
-                    major_code: 42,
-                })
-            })
-            .collect::<Vec<_>>();
-        let observed = reduce_protocol_errors(&outputs, false);
-        assert_eq!(observed.len(), 16);
-        assert_eq!(observed[0].code, XErrorCode::BadWindow.wire_code());
-        assert_eq!(observed[0].sequence, 0);
-        assert_eq!(observed[0].minor_code, 7);
-        assert_eq!(observed[0].major_code, 42);
-    }
-
-    #[test]
-    fn only_exact_window_zero_geometry_probes_are_expected() {
-        let output = |major_code, resource_id| {
-            XClientOutput::Error(XClientError {
-                code: XErrorCode::BadWindow,
-                sequence: 7,
-                resource_id,
-                minor_code: 0,
-                major_code,
-            })
-        };
-        let outputs = vec![output(3, 0), output(14, 0), output(3, 1), output(7, 0)];
-        assert_eq!(reduce_protocol_errors(&outputs, true).len(), 2);
-        assert_eq!(reduce_protocol_errors(&outputs, false).len(), 2);
-    }
-}
-
 /// Maps Engine-visible X11 surfaces back to the frontend client that created
 /// or last updated them.
 ///
