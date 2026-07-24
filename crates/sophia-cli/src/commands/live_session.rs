@@ -488,23 +488,29 @@ pub(crate) fn run_persistent_xterm_session(
     let (primary_child, secondary_children) = process.children_mut();
     let result = run_session_loop(
         &config,
-        &authority_receiver,
-        &input_sender,
-        &control_sender,
-        &control_ack_receiver,
-        &input_delivery_receiver,
-        primary_child,
-        secondary_children,
-        xauthority.path(),
-        &mut physical_input,
-        &mut native_scanout,
-        &mut wm_session,
-        protocol_router,
-        input_proof_result.as_ref(),
-        client_stdout_capture.as_ref(),
-        false,
-        initial_authority_batch,
-        output_notifications,
+        SessionLoopChannels {
+            authority: &authority_receiver,
+            input: &input_sender,
+            control: &control_sender,
+            control_acknowledgements: &control_ack_receiver,
+            input_deliveries: &input_delivery_receiver,
+        },
+        SessionLoopResources {
+            child: primary_child,
+            secondary_children,
+            physical_input: &mut physical_input,
+            native_scanout: &mut native_scanout,
+            wm_session: &mut wm_session,
+        },
+        SessionLoopStartup {
+            xauthority: xauthority.path(),
+            protocol_router,
+            input_proof_result: input_proof_result.as_ref(),
+            client_stdout_capture: client_stdout_capture.as_ref(),
+            require_startup_focus: false,
+            initial_authority_batch,
+            output_notifications,
+        },
     );
     drop(randr_witness);
     // Stop frontend routing before terminating its clients. Pointer motion can
@@ -2605,26 +2611,61 @@ fn execute_committed_session_actions(
     }
     Ok(logout)
 }
+struct SessionLoopChannels<'a> {
+    authority: &'a Receiver<XAuthorityObservedTransactionBatch>,
+    input: &'a SyncSender<XAuthorityRoutedInput>,
+    control: &'a SyncSender<XAuthorityClientControlCommand>,
+    control_acknowledgements: &'a Receiver<XAuthorityClientControlAck>,
+    input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
+}
+
+struct SessionLoopResources<'a> {
+    child: Option<&'a mut Child>,
+    secondary_children: &'a mut Vec<ManagedSessionChild>,
+    physical_input: &'a mut Option<SessionPhysicalInput>,
+    native_scanout: &'a mut Option<LiveProductionNativeScanout>,
+    wm_session: &'a mut Option<LiveWmSession>,
+}
+
+struct SessionLoopStartup<'a> {
+    xauthority: &'a std::path::Path,
+    protocol_router: XServerFrontendProtocolRouter,
+    input_proof_result: Option<&'a LiveInputProofResult>,
+    client_stdout_capture: Option<&'a LiveClientStdoutCapture>,
+    require_startup_focus: bool,
+    initial_authority_batch: Option<XAuthorityObservedTransactionBatch>,
+    output_notifications: usize,
+}
+
 fn run_session_loop(
     config: &PersistentXtermSessionConfig,
-    authority_receiver: &Receiver<XAuthorityObservedTransactionBatch>,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
-    control_sender: &SyncSender<XAuthorityClientControlCommand>,
-    control_ack_receiver: &Receiver<XAuthorityClientControlAck>,
-    input_delivery_receiver: &Receiver<XAuthorityClientInputDelivery>,
-    mut child: Option<&mut Child>,
-    secondary_children: &mut Vec<ManagedSessionChild>,
-    xauthority: &std::path::Path,
-    physical_input: &mut Option<SessionPhysicalInput>,
-    native_scanout: &mut Option<LiveProductionNativeScanout>,
-    wm_session: &mut Option<LiveWmSession>,
-    protocol_router: XServerFrontendProtocolRouter,
-    input_proof_result: Option<&LiveInputProofResult>,
-    client_stdout_capture: Option<&LiveClientStdoutCapture>,
-    require_startup_focus: bool,
-    mut initial_authority_batch: Option<XAuthorityObservedTransactionBatch>,
-    output_notifications: usize,
+    channels: SessionLoopChannels<'_>,
+    resources: SessionLoopResources<'_>,
+    startup: SessionLoopStartup<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let SessionLoopChannels {
+        authority: authority_receiver,
+        input: input_sender,
+        control: control_sender,
+        control_acknowledgements: control_ack_receiver,
+        input_deliveries: input_delivery_receiver,
+    } = channels;
+    let SessionLoopResources {
+        mut child,
+        secondary_children,
+        physical_input,
+        native_scanout,
+        wm_session,
+    } = resources;
+    let SessionLoopStartup {
+        xauthority,
+        protocol_router,
+        input_proof_result,
+        client_stdout_capture,
+        require_startup_focus,
+        mut initial_authority_batch,
+        output_notifications,
+    } = startup;
     let started = Instant::now();
     let deadline = config.max_runtime.map(|duration| started + duration);
     let blank_normal_session = config.normal_session && config.applications.startup.is_empty();
