@@ -21,6 +21,7 @@ target/debug/sophia sophia-live-session \
     --session-mode=normal \
     "--session-app=terminal=$kitty_bin" \
     --session-start=terminal \
+    --session-action-app=terminal=terminal \
     --session-app-arg=terminal=--config \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \
@@ -33,6 +34,8 @@ target/debug/sophia sophia-live-session \
     --display="$DISPLAY_NAME" \
     --max-runtime-ms=12000 \
     --inject-surface-resize=960x640 \
+    --inject-text=sophia \
+    --exit-after-input-proof \
     --wm-process="$ROOT_DIR/target/debug/sophia-x11-wm-bridge" \
     --wm-process-arg="--wm=$xmonad_bin" \
     --wm-process-arg=--profile=xmonad \
@@ -52,6 +55,8 @@ completion="$(grep -E '^sophia_live_session schema=14 status=bounded_complete ' 
 [[ " $completion " == *" startup_ready_msec="* ]]
 [[ " $completion " == *" cpu_nonzero_frames="* ]]
 [[ " $completion " == *" surface_resize=committed "* ]]
+[[ " $completion " == *" input_pixel_change=true "* ]]
+[[ " $completion " == *" input_text_match=true "* ]]
 [[ " $completion " == *" wm_policy=external "* ]]
 [[ " $completion " == *" wm_degraded=false "* ]]
 [[ " $completion " == *" present_live_sources=0 "* ]]

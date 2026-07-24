@@ -289,8 +289,9 @@ tools/xmonad_live_session_smoke.sh
 It launches the installed Kitty binary through the normal application
 registry, supervises the generic bridge and real xmonad, waits for visible
 startup, commits a 960x640 resize with ConfigureNotify acknowledgement and
-later pixels, then requires zero unexpected protocol errors and clean frontend
-worker teardown. It retains evidence at
+later pixels, routes exact shell input only after that commit, and requires the
+shell's semantic result plus another changed frame, zero unexpected protocol
+errors, and clean frontend worker teardown. It retains evidence at
 `/tmp/sophia-xmonad-live-session.log`.
 
 The launcher shares the proven Kitty takeover and recovery lifecycle, but adds
@@ -316,6 +317,53 @@ mode and termios restoration. Its default evidence is under
 `~/.local/state/sophia/xmonad-session/`; launcher output is retained at
 `/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
 proof.
+
+## Installed Daily-Driver Candidate
+
+An installed release is built and frozen separately from login:
+
+```sh
+tools/package_live_session.sh
+sudo tools/install_live_session.sh .artifacts/sophia-VERSION-COMMIT
+```
+
+Packaging refuses a dirty worktree, builds optimized Sophia and the generic WM
+bridge, resolves the tested xmonad binary, and records SHA-256 digests plus the
+exact Git commit in an immutable release directory. Installation verifies
+those digests, copies the release below `/opt/sophia/releases/`, atomically
+updates `/opt/sophia/current`, preserves the former target as
+`/opt/sophia/previous`, and installs the `Sophia` greetd session entry below
+`/usr/local/share/wayland-sessions/`.
+
+The installed login command is `/usr/local/bin/sophia-session`. It performs no
+source build, repository lookup, display-manager takeover, or privileged
+service control. It emits the installed version and commit before entering the
+same guarded xmonad session lifecycle. Inspect or roll back the installation
+with:
+
+```sh
+tools/status_live_session.sh
+sudo tools/rollback_live_session.sh
+```
+
+`SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
+non-system staging installation for verifier tests. A release is not promoted
+to daily-driver status merely because installation succeeds; the three-login,
+recovery, fallback, repeated-cycle, and soak gates remain mandatory.
+
+If an interactive physical run loses visible terminal content after typing,
+capture a bounded exact-input diagnostic instead of repeating an open-ended
+session:
+
+```sh
+tools/start_sophia_xmonad_input_proof_tty3.sh
+```
+
+Wait for the physical-input readiness marker, type `sophia`, and press Return.
+The command exits automatically only after the shell reports the exact result
+and a later native frame is presented. This diagnostic enables continuous
+pixel tracing; ordinary Kitty and xmonad sessions intentionally omit verbose
+per-frame EGL/X11 tracing to avoid perturbing latency.
 
 The generic development runner still supports
 `tools/run_sophia_session.sh --wm=xmonad`; `--wm=native` selects the Sophia WM

@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
+SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
+TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
+BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
+MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 if [[ "$SESSION_PROFILE" != xmonad && "$SESSION_PROFILE" != kitty ]]; then
@@ -74,11 +79,21 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
 fi
 
 cd "$ROOT_DIR"
-cargo build --offline --release -p sophia-cli --features atomic-scanout-live
-if [[ "$SESSION_PROFILE" == xmonad ]]; then
-    cargo build --offline --release -p sophia-x11-wm-bridge
+if [[ "$BUILD_SESSION" == true ]]; then
+    cargo build --offline --release -p sophia-cli --features atomic-scanout-live
+    if [[ "$SESSION_PROFILE" == xmonad ]]; then
+        cargo build --offline --release -p sophia-x11-wm-bridge
+    fi
+    tools/atomic_scanout_preflight.sh
 fi
-tools/atomic_scanout_preflight.sh
+[[ -x "$SOPHIA_BIN" ]] || {
+    echo "Sophia session binary is not executable: $SOPHIA_BIN" >&2
+    exit 1
+}
+if [[ "$SESSION_PROFILE" == xmonad && ! -x "$SOPHIA_WM_BRIDGE_BIN" ]]; then
+    echo "Sophia WM bridge is not executable: $SOPHIA_WM_BRIDGE_BIN" >&2
+    exit 1
+fi
 
 keyd_was_running=false
 tty_state=""
@@ -118,10 +133,10 @@ cleanup() {
     guard_pid=""
     rm -f "$PID_FILE"
     if [[ -n "$kd_mode" ]]; then
-        python3 "$ROOT_DIR/tools/sophia_tty_mode.py" "$kd_mode" 2>/dev/null || status=1
+        python3 "$TTY_MODE_HELPER" "$kd_mode" 2>/dev/null || status=1
     fi
     if [[ -n "$keyboard_mode" ]]; then
-        python3 "$ROOT_DIR/tools/sophia_tty_mode.py" "keyboard-$keyboard_mode" 2>/dev/null || status=1
+        python3 "$TTY_MODE_HELPER" "keyboard-$keyboard_mode" 2>/dev/null || status=1
     fi
     if [[ -n "$tty_state" ]]; then
         stty "$tty_state" 2>/dev/null || status=1
@@ -137,7 +152,7 @@ cleanup() {
     rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
     if [[ -n "$kd_mode" && -n "$tty_state" ]]; then
         local restored_kd restored_termios
-        restored_kd="$(python3 "$ROOT_DIR/tools/sophia_tty_mode.py" get 2>/dev/null || echo unavailable)"
+        restored_kd="$(python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
         restored_termios="$(stty -g 2>/dev/null || echo unavailable)"
         printf 'sophia_tty_recovery schema=2 profile=%s kd_mode_before=%s kd_mode_after=%s termios_restored=%s emergency=%s\n' \
             "$SESSION_PROFILE" \
@@ -160,10 +175,10 @@ trap 'stop_from_signal 143' TERM
 printf '%s\n' "$$" >"$PID_FILE"
 
 tty_state="$(stty -g)"
-kd_mode="$(python3 "$ROOT_DIR/tools/sophia_tty_mode.py" get)"
-keyboard_mode="$(python3 "$ROOT_DIR/tools/sophia_tty_mode.py" get-keyboard)"
+kd_mode="$(python3 "$TTY_MODE_HELPER" get)"
+keyboard_mode="$(python3 "$TTY_MODE_HELPER" get-keyboard)"
 
-if pgrep -x keyd >/dev/null 2>&1; then
+if [[ "$MANAGE_KEYD" == true ]] && pgrep -x keyd >/dev/null 2>&1; then
     echo "Temporarily stopping keyd so Sophia can own the keyboard..."
     sudo -v
     sudo sv down keyd
@@ -174,7 +189,7 @@ fi
 : >"$GUARD_LOG"
 chmod 600 "$GUARD_LOG"
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
-target/release/sophia sophia-session-input-guard \
+"$SOPHIA_BIN" sophia-session-input-guard \
     "${input_source_args[@]}" \
     --armed-file="$GUARD_ARMED_FILE" \
     --triggered-file="$GUARD_TRIGGERED_FILE" \
@@ -235,7 +250,7 @@ session_args=(
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     session_args+=(
         --session-action-app=terminal=terminal
-        --wm-process="$ROOT_DIR/target/release/sophia-x11-wm-bridge"
+        --wm-process="$SOPHIA_WM_BRIDGE_BIN"
         --wm-process-arg="--wm=$xmonad_bin"
         --wm-process-arg=--profile=xmonad
         --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
@@ -259,20 +274,24 @@ session_args+=("$@")
 session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
-    SOPHIA_LIVE_SESSION_DIAGNOSTIC=1
-    SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1
-    SOPHIA_X11_AUTHORITY_TRACE=1
 )
+if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then
+    session_environment+=(
+        SOPHIA_LIVE_SESSION_DIAGNOSTIC=1
+        SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous
+        SOPHIA_X11_AUTHORITY_TRACE=1
+    )
+fi
 session_command=(
     env
     -u WAYLAND_DISPLAY
     -u WAYLAND_SOCKET
     "${session_environment[@]}"
-    target/release/sophia
+    "$SOPHIA_BIN"
     "${session_args[@]}"
 )
-python3 "$ROOT_DIR/tools/sophia_tty_mode.py" graphics
-python3 "$ROOT_DIR/tools/sophia_tty_mode.py" keyboard-off
+python3 "$TTY_MODE_HELPER" graphics
+python3 "$TTY_MODE_HELPER" keyboard-off
 stty raw -echo
 setsid "${session_command[@]}" > >(tee "$SESSION_LOG") 2>&1 &
 session_pid=$!

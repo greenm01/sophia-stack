@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RELEASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export SOPHIA_TTY_PROFILE=xmonad
+export SOPHIA_BUILD_SESSION=false
+export SOPHIA_MANAGE_KEYD=false
+export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
+export SOPHIA_X11_WM_BRIDGE_BIN="$RELEASE_DIR/target/release/sophia-x11-wm-bridge"
+export SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"
+export SOPHIA_TTY_MODE_HELPER="$RELEASE_DIR/tools/sophia_tty_mode.py"
+
+manifest="$RELEASE_DIR/manifest"
+version="$(sed -n 's/^version=//p' "$manifest" | head -n 1)"
+commit="$(sed -n 's/^commit=//p' "$manifest" | head -n 1)"
+printf 'sophia_installed_session schema=1 status=starting version=%s commit=%s release=%s\n' \
+    "${version:-unknown}" "${commit:-unknown}" "$RELEASE_DIR"
+
+exec "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"

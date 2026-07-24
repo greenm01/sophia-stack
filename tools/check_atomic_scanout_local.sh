@@ -33,10 +33,11 @@ bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
+bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
 bash -n tools/verify_sophia_xmonad_tty3.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
-grep -Fq 'sophia_tty_mode.py" "$kd_mode"' tools/run_sophia_xmonad_session.sh
+grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh
 grep -Fq 'SOPHIA_TTY_PROFILE=kitty' tools/run_sophia_kitty_session.sh
 grep -Fq 'DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null' tools/run_sophia_xmonad_session.sh
@@ -55,6 +56,9 @@ if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
 fi
 bash -n tools/stop_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
+bash -n tools/package_live_session.sh tools/install_live_session.sh
+bash -n tools/rollback_live_session.sh tools/status_live_session.sh
+bash -n tools/installed/sophia-session
 bash -n tools/live_session_persistent_hardware_proof.sh
 bash -n tools/live_session_milestone5_gtk_hardware_proof.sh
 if ! grep -Fq -- '--namespace-profile="$profile" --software-client-rendering' tools/live_session_milestone5_gtk_hardware_proof.sh; then

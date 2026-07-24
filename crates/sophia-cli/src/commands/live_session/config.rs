@@ -255,6 +255,11 @@ impl PersistentXtermSessionConfig {
             }
         }
         if normal_session {
+            let terminal_proof = args.iter().any(|arg| {
+                arg.starts_with("--inject-text=") || arg.starts_with("--expect-physical-text=")
+            });
+            let startup_terminal = applications.startup.len() == 1
+                && applications.terminal.as_ref() == applications.startup.first();
             if applications.startup.is_empty()
                 && applications.terminal.is_none()
                 && applications.launcher.is_none()
@@ -270,8 +275,9 @@ impl PersistentXtermSessionConfig {
                     || arg.starts_with("--client=")
                     || arg.starts_with("--terminal=")
                     || arg.starts_with("--terminal-exec=")
-                    || arg.starts_with("--inject-text=")
-                    || arg.starts_with("--expect-physical-text=")
+                    || ((arg.starts_with("--inject-text=")
+                        || arg.starts_with("--expect-physical-text="))
+                        && !startup_terminal)
             });
             if proof_only {
                 return Err(
@@ -288,6 +294,12 @@ impl PersistentXtermSessionConfig {
             if startup_ready_timeout.is_some() && applications.startup.is_empty() {
                 return Err(
                     "--startup-ready-timeout-ms requires at least one startup application".into(),
+                );
+            }
+            if terminal_proof && !startup_terminal {
+                return Err(
+                    "normal-session input proof requires one startup app mapped to the terminal action"
+                        .into(),
                 );
             }
         } else if !applications.applications.is_empty()
@@ -704,4 +716,3 @@ impl FirefoxM8StageProof {
         self.completed_stage == Self::STAGES.len()
     }
 }
-

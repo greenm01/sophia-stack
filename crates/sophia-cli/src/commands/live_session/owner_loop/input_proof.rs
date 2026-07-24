@@ -8,7 +8,9 @@
                         })
                     })
             });
-        let input_start_stable = if config.expect_physical_text.is_some() {
+        let input_start_stable = if config.inject_surface_resize.is_some() {
+            resize_proof_complete
+        } else if config.expect_physical_text.is_some() {
             focus_ready_at.is_some_and(|ready| ready.elapsed() >= Duration::from_secs(2))
         } else {
             last_authority_update.elapsed() >= Duration::from_millis(config.input_quiet_msec)
@@ -31,6 +33,7 @@
             && input_start_stable
             && focused_client_ready
             && terminal_content_ready
+            && (config.inject_surface_resize.is_none() || resize_proof_complete)
         {
             injection_checksum = scene.last_report().map(|report| report.checksum);
             input_change_submission_baseline = native_scanout

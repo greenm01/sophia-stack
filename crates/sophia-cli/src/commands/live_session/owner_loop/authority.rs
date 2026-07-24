@@ -134,6 +134,7 @@
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
                     && startup_ready_reported
+                    && wm_session.as_ref().is_none_or(|wm| wm.committed > 0)
                     && layout.layers.len() >= if config.secondary_terminal { 2 } else { 1 }
                     && layout.pending.is_none()
                 {

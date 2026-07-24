@@ -72,7 +72,7 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
 - [x] Drive an xmonad layout resize and require the matching ConfigureNotify,
   configure acknowledgement, updated Engine surface bounds, and a later Kitty
   Present at the new size.
-- [ ] Route exact shell input after the resize and require both the shell result
+- [x] Route exact shell input after the resize and require both the shell result
   and a later presented frame.
 - [ ] Close Kitty and xmonad normally and require zero live Present sources,
   fences, transactions, pending WM work, pending input, or native cleanup.

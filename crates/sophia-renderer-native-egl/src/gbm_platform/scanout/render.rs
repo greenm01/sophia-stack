@@ -435,10 +435,12 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
     target.pipeline.begin_composition();
     trace_native_lifecycle("composition_started");
     static PIXEL_TRACE_CLAIMED: AtomicBool = AtomicBool::new(false);
-    let trace_pixels = std::env::var_os("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").is_some()
-        && PIXEL_TRACE_CLAIMED
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok();
+    let pixel_trace = std::env::var("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").ok();
+    let trace_pixels = pixel_trace.as_deref() == Some("continuous")
+        || (pixel_trace.is_some()
+            && PIXEL_TRACE_CLAIMED
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok());
     if trace_pixels {
         tracing::info!(
             "sophia_native_composition_pixels schema=1 status=enabled width={} height={} layers={}",
