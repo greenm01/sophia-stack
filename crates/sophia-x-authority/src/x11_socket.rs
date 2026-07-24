@@ -28,20 +28,27 @@ use std::{
 use crate::{
     X_ATOM_NAME_WM_DELETE_WINDOW, X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN,
     X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT, X11DispatchObservation,
-    X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable, XAuthorityDri3FenceImport,
-    XAuthorityDri3PixmapImport, XAuthorityObservedTransactionBatch, XAuthorityPresentSubmission,
-    XAuthorityResponsePacket, XAuthorityRuntime, XByteOrder, XClientEvent, XDispatchContext,
-    XDispatchResult, XPropertyTable, XResourceId, XSetupFailure, XSetupRequest, XSetupSuccess,
-    XWireClientContext, decode_x11_core_request, dispatch_x11_parse_error,
-    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
-    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
-    x11_setup_request_total_len,
+    X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable, XAuthorityClientControlAck,
+    XAuthorityClientControlCommand, XAuthorityClientInputDelivery, XAuthorityClientInputEvent,
+    XAuthorityControlAck, XAuthorityControlCommand, XAuthorityControlOutcome,
+    XAuthorityDri3FenceImport, XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId,
+    XAuthorityInputDeliveryOutcome, XAuthorityInputEvent, XAuthorityKeyEvent,
+    XAuthorityObservedTransactionBatch, XAuthorityPointerEvent, XAuthorityPointerEventKind,
+    XAuthorityPresentSubmission, XAuthorityResponsePacket, XAuthorityRoutedInput,
+    XAuthorityRuntime, XByteOrder, XClientEvent, XDispatchContext, XDispatchResult,
+    XPresentCompletionMode, XPropertyTable, XResourceId, XServerFrontendRouteError,
+    XServerFrontendServiceCommand, XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
+    decode_x11_core_request, dispatch_x11_parse_error, dispatch_x11_wire_request,
+    encode_x_client_event, encode_x11_setup_failure, encode_x11_setup_success,
+    parse_x11_setup_request, try_emit_x_authority_observation, x11_setup_request_total_len,
 };
+#[cfg(all(unix, test))]
+use sophia_protocol::RoutedInputRequest;
 #[cfg(unix)]
 use sophia_protocol::{
     ClientAdmissionContext, ClientAdmissionId, ClientAuthenticationMethod, InputEventKind,
-    NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile, RoutedInputRequest,
-    SeatId, Size, SurfaceId, TransactionId,
+    NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile, SeatId, Size,
+    SurfaceId, TransactionId,
 };
 
 #[cfg(unix)]
@@ -1268,273 +1275,6 @@ struct X11CoreClientWorkerAdmission {
     worker_id: u64,
     admission: ClientAdmissionId,
 }
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum XPresentCompletionMode {
-    Copy = 0,
-    Flip = 1,
-    Skip = 2,
-    SuboptimalCopy = 3,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityKeyEvent {
-    pub keycode: u8,
-    pub pressed: bool,
-    pub state: u16,
-    pub time_msec: u32,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XAuthorityPointerEventKind {
-    Motion,
-    Button { button: u8, pressed: bool },
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityPointerEvent {
-    pub kind: XAuthorityPointerEventKind,
-    pub surface: SurfaceId,
-    pub root_x: i16,
-    pub root_y: i16,
-    pub event_x: i16,
-    pub event_y: i16,
-    pub state: u16,
-    pub time_msec: u32,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XAuthorityInputEvent {
-    Key(XAuthorityKeyEvent),
-    Pointer(XAuthorityPointerEvent),
-}
-
-/// An Engine-selected input event addressed to one live X11 connection.
-///
-/// The Engine chooses the target surface from its committed scene and uses the
-/// transaction-side surface route table to select this client. The frontend
-/// refuses to deliver a route addressed to another connection.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityClientInputEvent {
-    pub client: XServerFrontendClientId,
-    pub event: XAuthorityInputEvent,
-    pub target_window: Option<XResourceId>,
-    pub xi_event_type: Option<u16>,
-    pub xi_transition_mask: u16,
-    /// Opaque Engine-assigned token used to prove that the owning X11 worker
-    /// flushed this event to its client socket. It deliberately carries no
-    /// X11 resource, key, or text identity.
-    pub delivery: Option<XAuthorityInputDeliveryId>,
-}
-
-/// Protocol-neutral physical input after Engine hit-testing and focus policy.
-/// The X authority, not Engine, resolves this Sophia surface to an X11 client
-/// and applies its keyboard/pointer protocol state.
-#[cfg(unix)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct XAuthorityRoutedInput {
-    pub request: RoutedInputRequest,
-    pub delivery: Option<XAuthorityInputDeliveryId>,
-}
-
-/// Opaque per-session identifier for one routed input event.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct XAuthorityInputDeliveryId(u64);
-
-#[cfg(unix)]
-impl XAuthorityInputDeliveryId {
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
-    }
-}
-
-/// Reduced outcome for one Engine-addressed input event.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XAuthorityInputDeliveryOutcome {
-    /// The owning worker serialized and flushed the event to the X11 client.
-    Flushed,
-    /// The route could not reach its private client queue.
-    RouteRejected,
-    /// The owning worker could not write or flush the event.
-    WriteFailed,
-}
-
-/// Delivery result returned from a routed X11 worker to the Engine.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityClientInputDelivery {
-    pub client: XServerFrontendClientId,
-    pub delivery: XAuthorityInputDeliveryId,
-    pub outcome: XAuthorityInputDeliveryOutcome,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XAuthorityControlCommand {
-    ConfigureSurface {
-        transaction: TransactionId,
-        surface: SurfaceId,
-        size: Size,
-    },
-    FocusSurface {
-        transaction: TransactionId,
-        surface: SurfaceId,
-    },
-    CloseSurface {
-        transaction: TransactionId,
-        surface: SurfaceId,
-    },
-}
-
-/// An Engine control request addressed to the frontend connection that owns
-/// the referenced X11 surface.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityClientControlCommand {
-    pub client: XServerFrontendClientId,
-    pub command: XAuthorityControlCommand,
-}
-
-#[cfg(unix)]
-impl XAuthorityControlCommand {
-    pub const fn transaction(self) -> TransactionId {
-        match self {
-            Self::ConfigureSurface { transaction, .. }
-            | Self::FocusSurface { transaction, .. }
-            | Self::CloseSurface { transaction, .. } => transaction,
-        }
-    }
-
-    pub const fn surface(self) -> SurfaceId {
-        match self {
-            Self::ConfigureSurface { surface, .. }
-            | Self::FocusSurface { surface, .. }
-            | Self::CloseSurface { surface, .. } => surface,
-        }
-    }
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XAuthorityControlOutcome {
-    Delivered,
-    UnknownSurface,
-    InvalidSize,
-    AuthorityRejected,
-    UnsupportedProtocol,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityControlAck {
-    pub transaction: TransactionId,
-    pub surface: SurfaceId,
-    pub outcome: XAuthorityControlOutcome,
-}
-
-/// A control acknowledgement bound to the connection that applied it.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityClientControlAck {
-    pub client: XServerFrontendClientId,
-    pub acknowledgement: XAuthorityControlAck,
-}
-
-/// Service-supervision command for a long-running routed X11 frontend.
-#[cfg(unix)]
-#[derive(Clone, Debug)]
-pub enum XServerFrontendServiceCommand {
-    /// Stop accepting new clients and drain workers that are already connected.
-    StopAccepting,
-    /// Disconnect the worker holding this session-issued admission. Its normal
-    /// teardown releases routes and resources before revoking the lease.
-    RevokeAdmission { admission: ClientAdmissionId },
-    /// Apply a newer Engine output snapshot and notify subscribed clients.
-    UpdateOutputTopology {
-        snapshot: sophia_protocol::OutputTopologySnapshot,
-        acknowledgement: SyncSender<XAuthorityOutputUpdateOutcome>,
-    },
-}
-
-/// Routing failure between the Engine-facing ingress queues and a live X11
-/// client worker.
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XServerFrontendRouteError {
-    UnknownClient { client: XServerFrontendClientId },
-    UnknownSurface { surface: SurfaceId },
-    ClientQueueFull { client: XServerFrontendClientId },
-    DuplicatePresentation { transaction: TransactionId },
-    ClientQueueDisconnected { client: XServerFrontendClientId },
-    DuplicateClient { client: XServerFrontendClientId },
-    InputDeliveryQueueFull,
-    RegistryPoisoned,
-}
-
-#[cfg(unix)]
-impl core::fmt::Display for XServerFrontendRouteError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnknownClient { client } => {
-                write!(
-                    formatter,
-                    "X11 route targets unknown client {}",
-                    client.raw()
-                )
-            }
-            Self::UnknownSurface { surface } => write!(
-                formatter,
-                "X11 route targets unknown Sophia surface {}:{}",
-                surface.index(),
-                surface.generation()
-            ),
-            Self::ClientQueueFull { client } => {
-                write!(
-                    formatter,
-                    "X11 route queue is full for client {}",
-                    client.raw()
-                )
-            }
-            Self::DuplicatePresentation { transaction } => write!(
-                formatter,
-                "X11 Present transaction {} is already pending",
-                transaction.raw()
-            ),
-            Self::ClientQueueDisconnected { client } => write!(
-                formatter,
-                "X11 route queue disconnected for client {}",
-                client.raw()
-            ),
-            Self::DuplicateClient { client } => {
-                write!(
-                    formatter,
-                    "X11 route client {} is already registered",
-                    client.raw()
-                )
-            }
-            Self::InputDeliveryQueueFull => {
-                formatter.write_str("X11 input delivery acknowledgement queue is full")
-            }
-            Self::RegistryPoisoned => formatter.write_str("X11 route registry lock poisoned"),
-        }
-    }
-}
-
-#[cfg(unix)]
-impl std::error::Error for XServerFrontendRouteError {}
 
 /// Engine-facing ingress and per-client queue registry for a routed X11
 /// session.
