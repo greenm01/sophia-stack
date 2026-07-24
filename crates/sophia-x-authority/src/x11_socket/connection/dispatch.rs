@@ -1,16 +1,36 @@
 #[cfg(unix)]
+struct X11ClientConnectionInputs {
+    input_receiver: Option<X11InputEventReceiver>,
+    control_channels: Option<X11ControlChannels>,
+    client_routing: Option<XServerFrontendRouteRegistry>,
+}
+
+#[cfg(unix)]
+struct X11ClientAdmissionContext<'a> {
+    authorization: &'a XServerFrontendSetupAuthorization,
+    admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
+}
+
+#[cfg(unix)]
 fn serve_x11_core_socket_client_with_trace_observer_and_input(
     stream: &mut UnixStream,
     namespace: NamespaceId,
     state: &X11CoreSocketServerState,
-    input_receiver: Option<X11InputEventReceiver>,
-    control_channels: Option<X11ControlChannels>,
-    client_routing: Option<XServerFrontendRouteRegistry>,
-    authorization: &XServerFrontendSetupAuthorization,
-    admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
-    worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
+    inputs: X11ClientConnectionInputs,
+    admission: X11ClientAdmissionContext<'_>,
     mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
+    let X11ClientConnectionInputs {
+        input_receiver,
+        control_channels,
+        client_routing,
+    } = inputs;
+    let X11ClientAdmissionContext {
+        authorization,
+        admission_policy,
+        worker_admission,
+    } = admission;
     let peer_credentials = if admission_policy.is_some() {
         x11_peer_credentials(stream)?
     } else {
@@ -112,15 +132,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let input_writer = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(
-                output_stream.clone(),
-                setup.byte_order,
-                event_sequence.clone(),
-                focused_surface_window.clone(),
-                core_event_selections.clone(),
-                xkb_state_details.clone(),
-                xkb_modifiers.clone(),
-                surface_windows.clone(),
-                client,
+                X11InputWriterState {
+                    stream: output_stream.clone(),
+                    byte_order: setup.byte_order,
+                    sequence: event_sequence.clone(),
+                    focused_surface_window: focused_surface_window.clone(),
+                    core_event_selections: core_event_selections.clone(),
+                    xkb_state_details: xkb_state_details.clone(),
+                    xkb_modifiers: xkb_modifiers.clone(),
+                    surface_windows: surface_windows.clone(),
+                    client,
+                },
                 receiver,
             )
         })

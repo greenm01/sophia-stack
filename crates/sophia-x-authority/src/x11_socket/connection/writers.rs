@@ -394,7 +394,7 @@ fn clamp_engine_i16(value: i32) -> i16 {
 }
 
 #[cfg(unix)]
-fn spawn_x11_input_event_writer(
+struct X11InputWriterState {
     stream: Arc<Mutex<UnixStream>>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
@@ -404,8 +404,24 @@ fn spawn_x11_input_event_writer(
     xkb_modifiers: Arc<AtomicU16>,
     surface_windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
     client: XServerFrontendClientId,
+}
+
+#[cfg(unix)]
+fn spawn_x11_input_event_writer(
+    state: X11InputWriterState,
     receiver: X11InputEventReceiver,
 ) -> Result<X11InputEventWriter, X11SetupSocketError> {
+    let X11InputWriterState {
+        stream,
+        byte_order,
+        sequence,
+        focused_surface_window,
+        core_event_selections,
+        xkb_state_details,
+        xkb_modifiers,
+        surface_windows,
+        client,
+    } = state;
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {

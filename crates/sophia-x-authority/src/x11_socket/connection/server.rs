@@ -137,17 +137,21 @@ pub fn run_x11_core_socket_server_once_channels(
     let (mut stream, _) = listener.accept().map_err(|error| {
         X11SetupSocketError::new(format!("failed to accept X11 core client: {error}"))
     })?;
-    let mut state = X11CoreSocketServerState::new();
+    let state = X11CoreSocketServerState::new();
     serve_x11_core_socket_client_with_trace_observer_and_input(
         &mut stream,
         namespace,
-        &mut state,
-        Some(X11InputEventReceiver::Plain(input_receiver)),
-        None,
-        None,
-        &XServerFrontendSetupAuthorization::default(),
-        None,
-        None,
+        &state,
+        X11ClientConnectionInputs {
+            input_receiver: Some(X11InputEventReceiver::Plain(input_receiver)),
+            control_channels: None,
+            client_routing: None,
+        },
+        X11ClientAdmissionContext {
+            authorization: &XServerFrontendSetupAuthorization::default(),
+            admission_policy: None,
+            worker_admission: None,
+        },
         move |trace| {
             try_emit_x_authority_observation(&transaction_sender, &trace)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
@@ -169,23 +173,27 @@ pub fn run_x11_core_socket_server_once_session_channels(
     let (mut stream, _) = listener.accept().map_err(|error| {
         X11SetupSocketError::new(format!("failed to accept X11 core client: {error}"))
     })?;
-    let mut state = X11CoreSocketServerState::new();
+    let state = X11CoreSocketServerState::new();
     serve_x11_core_socket_client_with_trace_observer_and_input(
         &mut stream,
         namespace,
-        &mut state,
-        Some(X11InputEventReceiver::Routed {
-            receiver: input_receiver,
-            deliveries: None,
-        }),
-        Some(X11ControlChannels::Routed {
-            receiver: control_receiver,
-            acknowledgements: control_ack_sender,
-        }),
-        None,
-        &XServerFrontendSetupAuthorization::default(),
-        None,
-        None,
+        &state,
+        X11ClientConnectionInputs {
+            input_receiver: Some(X11InputEventReceiver::Routed {
+                receiver: input_receiver,
+                deliveries: None,
+            }),
+            control_channels: Some(X11ControlChannels::Routed {
+                receiver: control_receiver,
+                acknowledgements: control_ack_sender,
+            }),
+            client_routing: None,
+        },
+        X11ClientAdmissionContext {
+            authorization: &XServerFrontendSetupAuthorization::default(),
+            admission_policy: None,
+            worker_admission: None,
+        },
         move |trace| {
             try_emit_x_authority_observation(&transaction_sender, &trace)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
@@ -666,39 +674,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
-    serve_x11_core_socket_client_with_trace_observer_and_setup_authorization_and_routing(
-        stream,
-        namespace,
-        state,
-        authorization,
-        admission_policy,
-        None,
-        None,
-        observer,
-    )
-}
-
-#[cfg(unix)]
-fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization_and_routing(
-    stream: &mut UnixStream,
-    namespace: NamespaceId,
-    state: &X11CoreSocketServerState,
-    authorization: &XServerFrontendSetupAuthorization,
-    admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
-    client_routing: Option<XServerFrontendRouteRegistry>,
-    worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
-    observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
-) -> Result<(), X11SetupSocketError> {
     serve_x11_core_socket_client_with_trace_observer_and_input(
         stream,
         namespace,
         state,
-        None,
-        None,
-        client_routing,
-        authorization,
-        admission_policy,
-        worker_admission,
+        X11ClientConnectionInputs {
+            input_receiver: None,
+            control_channels: None,
+            client_routing: None,
+        },
+        X11ClientAdmissionContext {
+            authorization,
+            admission_policy,
+            worker_admission: None,
+        },
         observer,
     )
 }

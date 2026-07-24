@@ -346,14 +346,20 @@ impl XServerFrontend {
             .name(format!("sophia-x11-client-{worker_id}"))
             .spawn(move || {
                 let result = catch_unwind(AssertUnwindSafe(|| {
-                    serve_x11_core_socket_client_with_trace_observer_and_setup_authorization_and_routing(
+                    serve_x11_core_socket_client_with_trace_observer_and_input(
                         &mut stream,
                         namespace,
                         &state,
-                        &authorization,
-                        admission_policy,
-                        routing,
-                        Some((worker_id, admission_event_sender)),
+                        X11ClientConnectionInputs {
+                            input_receiver: None,
+                            control_channels: None,
+                            client_routing: routing,
+                        },
+                        X11ClientAdmissionContext {
+                            authorization: &authorization,
+                            admission_policy,
+                            worker_admission: Some((worker_id, admission_event_sender)),
+                        },
                         move |trace| observer(trace),
                     )
                 }))
@@ -482,4 +488,3 @@ pub enum XAuthorityOutputUpdateOutcome {
         error: sophia_protocol::OutputTopologyError,
     },
 }
-
