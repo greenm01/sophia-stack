@@ -1,0 +1,562 @@
+fn clone_io_result<T: Clone>(result: &io::Result<T>) -> io::Result<T> {
+    result
+        .as_ref()
+        .cloned()
+        .map_err(|error| io::Error::new(error.kind(), "synthetic property lookup failure"))
+}
+
+fn property_handle(raw: u32) -> drm::control::property::Handle {
+    drm::control::from_u32(raw).expect("test property handle should be nonzero")
+}
+
+fn connector_handle() -> drm::control::connector::Handle {
+    drm::control::from_u32(11).expect("test connector handle should be nonzero")
+}
+
+fn crtc_handle() -> drm::control::crtc::Handle {
+    drm::control::from_u32(12).expect("test crtc handle should be nonzero")
+}
+
+fn encoder_handle() -> drm::control::encoder::Handle {
+    drm::control::from_u32(16).expect("test encoder handle should be nonzero")
+}
+
+fn plane_handle() -> drm::control::plane::Handle {
+    drm::control::from_u32(13).expect("test plane handle should be nonzero")
+}
+
+fn framebuffer_handle() -> drm::control::framebuffer::Handle {
+    drm::control::from_u32(14).expect("test framebuffer handle should be nonzero")
+}
+
+fn buffer_handle(raw: u32) -> drm::buffer::Handle {
+    drm::control::from_u32(raw).expect("test buffer handle should be nonzero")
+}
+
+fn primary_plane_properties() -> LibdrmNativePrimaryPlanePropertyHandles {
+    LibdrmNativePrimaryPlanePropertyHandles::new(
+        property_handle(101),
+        property_handle(102),
+        property_handle(103),
+        property_handle(104),
+        property_handle(105),
+        property_handle(106),
+        property_handle(107),
+        property_handle(108),
+        property_handle(109),
+        property_handle(110),
+        property_handle(111),
+        property_handle(112),
+        property_handle(113),
+    )
+}
+
+fn primary_plane_objects(size: Size) -> LibdrmNativePrimaryPlaneObjects {
+    LibdrmNativePrimaryPlaneObjects::new(
+        connector_handle(),
+        crtc_handle(),
+        plane_handle(),
+        framebuffer_handle(),
+        15,
+        size,
+    )
+}
+
+fn full_property_lookup_device() -> FakeNativePropertyLookupDevice {
+    FakeNativePropertyLookupDevice {
+        connector: Ok(LibdrmNativePropertyHandleSet::new([(
+            "CRTC_ID",
+            property_handle(101),
+        )])),
+        crtc: Ok(LibdrmNativePropertyHandleSet::new([
+            ("MODE_ID", property_handle(102)),
+            ("ACTIVE", property_handle(103)),
+        ])),
+        plane: Ok(LibdrmNativePropertyHandleSet::new([
+            ("FB_ID", property_handle(104)),
+            ("CRTC_ID", property_handle(105)),
+            ("SRC_X", property_handle(106)),
+            ("SRC_Y", property_handle(107)),
+            ("SRC_W", property_handle(108)),
+            ("SRC_H", property_handle(109)),
+            ("CRTC_X", property_handle(110)),
+            ("CRTC_Y", property_handle(111)),
+            ("CRTC_W", property_handle(112)),
+            ("CRTC_H", property_handle(113)),
+            ("IN_FORMATS", property_handle(114)),
+        ])),
+        connector_value: Ok(None),
+    }
+}
+
+fn kms_selection_device_with_mode_size(size: Size) -> FakeNativeKmsSelectionDevice {
+    FakeNativeKmsSelectionDevice {
+        connectors: Ok(vec![connector_handle()]),
+        crtcs: Ok(vec![crtc_handle()]),
+        planes: Ok(vec![plane_handle()]),
+        connector_snapshot: Ok(LibdrmNativeConnectorSnapshot::new(
+            true,
+            Some(encoder_handle()),
+            [encoder_handle()],
+            Some(size),
+        )),
+        encoder_snapshot: Ok(LibdrmNativeEncoderSnapshot::new(
+            Some(crtc_handle()),
+            [crtc_handle()],
+        )),
+        plane_snapshot: Ok(LibdrmNativePlaneSnapshot::new([crtc_handle()])),
+        plane_type: Ok(Some(drm::control::PlaneType::Primary)),
+    }
+}
+
+fn full_kms_selection_device() -> FakeNativeKmsSelectionDevice {
+    kms_selection_device_with_mode_size(Size {
+        width: 1280,
+        height: 720,
+    })
+}
+
+fn full_primary_plane_resource_device() -> FakeNativePrimaryPlaneResourceDevice {
+    FakeNativePrimaryPlaneResourceDevice {
+        mode_blob: Ok(15),
+        framebuffer: Ok(framebuffer_handle()),
+        destroy_framebuffer: Ok(()),
+        destroy_mode_blob: Ok(()),
+    }
+}
+
+fn full_prime_primary_plane_resource_device() -> FakePrimePrimaryPlaneResourceDevice {
+    let imported = buffer_handle(33);
+    FakePrimePrimaryPlaneResourceDevice {
+        mode_blob: Ok(15),
+        framebuffer: Ok(framebuffer_handle()),
+        imported_buffer: Ok(imported),
+        close_buffer: Ok(()),
+        destroy_framebuffer: Ok(()),
+        destroy_mode_blob: Ok(()),
+        expected_framebuffer_buffer: Some(imported),
+    }
+}
+
+fn test_dma_buf_plane_fds() -> [Option<OwnedFd>; 4] {
+    let fd: OwnedFd = std::fs::File::open("/dev/null")
+        .expect("test host should expose /dev/null")
+        .into();
+    [Some(fd), None, None, None]
+}
+
+fn full_primary_plane_scanout_device() -> FakeNativePrimaryPlaneScanoutDevice {
+    FakeNativePrimaryPlaneScanoutDevice {
+        selection: full_kms_selection_device(),
+        properties: full_property_lookup_device(),
+        resources: full_primary_plane_resource_device(),
+        submit: Ok(()),
+    }
+}
+
+fn scanout_descriptor(size: Size) -> sophia_renderer_live::LiveRendererScanoutBufferDescriptor {
+    let mut exporter =
+        FakeRendererScanoutBufferExporter::new(LiveRendererScanoutBufferExportStatus::Exported)
+            .with_descriptor(
+                size.width as u32 * 4,
+                LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                17,
+            );
+
+    exporter
+        .export_scanout_buffer(LiveGbmEglFrameTargetRecord::new(size))
+        .descriptor
+        .expect("ready fake renderer export should include a scanout descriptor")
+}
+
+fn scanout_buffer(size: Size) -> LibdrmRendererScanoutBuffer {
+    LibdrmRendererScanoutBuffer::from_descriptor(scanout_descriptor(size))
+        .expect("ready renderer descriptor should become a backend-private DRM buffer")
+}
+
+struct FakeDrmBuffer {
+    size: (u32, u32),
+    pitch: u32,
+    format: drm::buffer::DrmFourcc,
+    handle: drm::buffer::Handle,
+    plane_handles: [Option<drm::buffer::Handle>; 4],
+    plane_pitches: [u32; 4],
+    plane_offsets: [u32; 4],
+    modifier: Option<drm::buffer::DrmModifier>,
+}
+
+impl FakeDrmBuffer {
+    fn xrgb8888(size: Size) -> Self {
+        Self {
+            size: (size.width as u32, size.height as u32),
+            pitch: size.width as u32 * 4,
+            format: drm::buffer::DrmFourcc::Xrgb8888,
+            handle: drm::control::from_u32(17).expect("test buffer handle should be nonzero"),
+            plane_handles: [
+                Some(drm::control::from_u32(17).expect("test buffer handle should be nonzero")),
+                None,
+                None,
+                None,
+            ],
+            plane_pitches: [size.width as u32 * 4, 0, 0, 0],
+            plane_offsets: [0, 0, 0, 0],
+            modifier: None,
+        }
+    }
+
+    fn with_pitch(mut self, pitch: u32) -> Self {
+        self.pitch = pitch;
+        self.plane_pitches[0] = pitch;
+        self
+    }
+
+    fn with_format(mut self, format: drm::buffer::DrmFourcc) -> Self {
+        self.format = format;
+        self
+    }
+
+    fn with_two_planes(mut self) -> Self {
+        self.plane_handles[1] =
+            Some(drm::control::from_u32(18).expect("test buffer handle should be nonzero"));
+        self.plane_pitches[1] = self.pitch;
+        self
+    }
+
+    fn with_modifier(mut self, modifier: drm::buffer::DrmModifier) -> Self {
+        self.modifier = Some(modifier);
+        self
+    }
+}
+
+impl drm::buffer::Buffer for FakeDrmBuffer {
+    fn size(&self) -> (u32, u32) {
+        self.size
+    }
+
+    fn format(&self) -> drm::buffer::DrmFourcc {
+        self.format
+    }
+
+    fn pitch(&self) -> u32 {
+        self.pitch
+    }
+
+    fn handle(&self) -> drm::buffer::Handle {
+        self.handle
+    }
+}
+
+impl drm::buffer::PlanarBuffer for FakeDrmBuffer {
+    fn size(&self) -> (u32, u32) {
+        drm::buffer::Buffer::size(self)
+    }
+
+    fn format(&self) -> drm::buffer::DrmFourcc {
+        drm::buffer::Buffer::format(self)
+    }
+
+    fn modifier(&self) -> Option<drm::buffer::DrmModifier> {
+        self.modifier
+    }
+
+    fn pitches(&self) -> [u32; 4] {
+        self.plane_pitches
+    }
+
+    fn handles(&self) -> [Option<drm::buffer::Handle>; 4] {
+        self.plane_handles
+    }
+
+    fn offsets(&self) -> [u32; 4] {
+        self.plane_offsets
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct FakeRenderedScanoutOwner {
+    raw: u32,
+}
+
+impl LiveRenderedScanoutBufferPrimeSource for FakeRenderedScanoutOwner {
+    fn export_scanout_dma_buf_fds(&self) -> io::Result<Option<LiveRenderedScanoutDmaBufFds>> {
+        Ok(None)
+    }
+}
+
+struct FakeRenderedScanoutExporter {
+    status: LiveRendererScanoutBufferExportStatus,
+    descriptor: Option<sophia_renderer_live::LiveRendererScanoutBufferDescriptor>,
+    owner: Option<FakeRenderedScanoutOwner>,
+    export_attempts: usize,
+}
+
+#[cfg(feature = "gbm-probe")]
+struct MissingRenderDevice;
+
+#[cfg(feature = "gbm-probe")]
+impl RenderDeviceDiscoveryBackend for MissingRenderDevice {
+    type Device = std::fs::File;
+
+    fn open_render_device(&self) -> io::Result<Self::Device> {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "test render device unavailable",
+        ))
+    }
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn pending_rendered_frame_is_a_latest_frame_wins_slot() {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_pending_cpu_frame(LiveCpuComposedFrame {
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        stride: 8,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        bytes: vec![0; 16],
+    });
+    assert!(exporter.pending_cpu_frame());
+
+    exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        layers: Vec::new(),
+    });
+    assert!(!exporter.pending_cpu_frame());
+    assert!(exporter.pending_mixed_frame());
+    assert!(exporter.pending_frame());
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn hardware_cursor_mode_never_enters_cpu_composition() {
+    let position = sophia_protocol::Point { x: 12.0, y: 34.0 };
+
+    assert_eq!(
+        LiveProductionCursorPresentation::HardwarePlane.composition_position(),
+        None
+    );
+    assert_eq!(
+        LiveProductionCursorPresentation::Software(Some(position)).composition_position(),
+        Some(position)
+    );
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
+    let transaction = TransactionId::from_raw(41);
+    let displayed = Some(LiveProductionScanoutContent::Mixed { transaction });
+
+    assert!(live_production_scanout_is_stable_present(
+        displayed,
+        None,
+        false,
+        transaction,
+    ));
+    assert!(!live_production_scanout_is_stable_present(
+        displayed,
+        Some(LiveProductionScanoutContent::Cpu { checksum: 9 }),
+        false,
+        transaction,
+    ));
+    assert!(!live_production_scanout_is_stable_present(
+        displayed,
+        None,
+        true,
+        transaction,
+    ));
+    assert!(!live_production_scanout_is_stable_present(
+        displayed,
+        None,
+        false,
+        TransactionId::from_raw(42),
+    ));
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn production_output_runtime_resolves_primary_by_output_identity() {
+    let outputs = [
+        sophia_engine::HeadlessOutput {
+            id: OutputId::from_raw(9),
+            size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            scale: 1,
+        },
+        sophia_engine::HeadlessOutput {
+            id: OutputId::from_raw(3),
+            size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            scale: 1,
+        },
+    ];
+    let runtimes = LiveProductionOutputRuntimeSet::new(&outputs, &[], None, None).unwrap();
+
+    assert_eq!(runtimes.primary_output(), Some(OutputId::from_raw(3)));
+    assert_eq!(runtimes.output_index(OutputId::from_raw(3)), Some(0));
+    assert_eq!(runtimes.output_index(OutputId::from_raw(9)), Some(1));
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn output_scoped_service_retires_secondary_without_blocking_primary_present() {
+    let observation = reduce_live_production_async_service_observation(
+        &[
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(9),
+                primary: false,
+                in_flight: true,
+                cleanup_pending: false,
+                frame_pending: true,
+            },
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(3),
+                primary: true,
+                in_flight: false,
+                cleanup_pending: false,
+                frame_pending: false,
+            },
+        ],
+        true,
+    )
+    .unwrap();
+
+    assert!(observation.retirement_required);
+    assert!(!observation.present_output_blocked);
+    assert!(observation.present_queued);
+    assert!(!observation.pending_output_ready);
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn output_scoped_service_selects_idle_pending_output_while_primary_is_blocked() {
+    let observation = reduce_live_production_async_service_observation(
+        &[
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(3),
+                primary: true,
+                in_flight: true,
+                cleanup_pending: false,
+                frame_pending: false,
+            },
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(9),
+                primary: false,
+                in_flight: false,
+                cleanup_pending: false,
+                frame_pending: true,
+            },
+        ],
+        false,
+    )
+    .unwrap();
+
+    assert!(observation.retirement_required);
+    assert!(observation.present_output_blocked);
+    assert!(observation.pending_output_ready);
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn queued_present_reserves_idle_primary_from_pending_cpu_frame() {
+    let observation = reduce_live_production_async_service_observation(
+        &[
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(3),
+                primary: true,
+                in_flight: false,
+                cleanup_pending: false,
+                frame_pending: true,
+            },
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(9),
+                primary: false,
+                in_flight: true,
+                cleanup_pending: false,
+                frame_pending: false,
+            },
+        ],
+        true,
+    )
+    .unwrap();
+
+    assert!(observation.present_queued);
+    assert!(!observation.present_output_blocked);
+    assert!(!observation.pending_output_ready);
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn queued_present_still_allows_idle_secondary_pending_frame() {
+    let observation = reduce_live_production_async_service_observation(
+        &[
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(3),
+                primary: true,
+                in_flight: false,
+                cleanup_pending: false,
+                frame_pending: true,
+            },
+            LiveProductionOutputServiceState {
+                output: OutputId::from_raw(9),
+                primary: false,
+                in_flight: false,
+                cleanup_pending: false,
+                frame_pending: true,
+            },
+        ],
+        true,
+    )
+    .unwrap();
+
+    assert!(observation.present_queued);
+    assert!(!observation.present_output_blocked);
+    assert!(observation.pending_output_ready);
+}
+
+impl FakeRenderedScanoutExporter {
+    fn exported(size: Size) -> Self {
+        Self {
+            status: LiveRendererScanoutBufferExportStatus::Exported,
+            descriptor: Some(scanout_descriptor(size)),
+            owner: Some(FakeRenderedScanoutOwner { raw: 7 }),
+            export_attempts: 0,
+        }
+    }
+
+    fn unavailable() -> Self {
+        Self {
+            status: LiveRendererScanoutBufferExportStatus::Unavailable,
+            descriptor: None,
+            owner: None,
+            export_attempts: 0,
+        }
+    }
+
+    fn export_attempts(&self) -> usize {
+        self.export_attempts
+    }
+}
+
+impl LiveRenderedScanoutBufferExporter for FakeRenderedScanoutExporter {
+    type Owner = FakeRenderedScanoutOwner;
+
+    fn export_rendered_scanout_buffer(
+        &mut self,
+        _target: LiveGbmEglFrameTargetRecord,
+    ) -> LiveRenderedScanoutBufferExport<Self::Owner> {
+        self.export_attempts = self.export_attempts.saturating_add(1);
+        LiveRenderedScanoutBufferExport {
+            status: self.status,
+            detail: LiveRendererScanoutBufferExportDetail::from_status(self.status),
+            descriptor: self.descriptor,
+            owner: self.owner.take(),
+        }
+    }
+}
