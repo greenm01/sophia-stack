@@ -1,0 +1,274 @@
+fn serve_legacy_wm(
+    stream: &mut UnixStream,
+    commands: Receiver<ServerCommand>,
+    legacy: SyncSender<LegacyWmRequest>,
+    initial_root: Rect,
+) -> Result<(), BridgeRuntimeError> {
+    let setup = serve_x11_setup_socket_client_with_root_size(
+        stream,
+        sophia_protocol::Size {
+            width: initial_root.width,
+            height: initial_root.height,
+        },
+    )
+    .map_err(|error| BridgeRuntimeError::new(format!("X11 setup failed: {error}")))?;
+    if setup.byte_order != XByteOrder::LittleEndian {
+        return Err(BridgeRuntimeError::new(
+            "private legacy WM server currently requires little-endian X11",
+        ));
+    }
+    stream.set_read_timeout(Some(IO_POLL)).map_err(|error| {
+        BridgeRuntimeError::new(format!("failed to configure X11 socket timeout: {error}"))
+    })?;
+    let mut state = XServerState::new(initial_root);
+    let mut pending_focus_queries = Vec::new();
+    let mut last_socket_activity = Instant::now();
+    loop {
+        loop {
+            match commands.try_recv() {
+                Ok(ServerCommand::QueryFocus(reply)) => {
+                    pending_focus_queries.push(reply);
+                    last_socket_activity = Instant::now();
+                }
+                Ok(command) => apply_server_command(stream, &mut state, command)?,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return Ok(()),
+            }
+        }
+        let mut header = [0_u8; 4];
+        match stream.read_exact(&mut header) {
+            Ok(()) => {}
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                if last_socket_activity.elapsed() >= QUIET_PERIOD {
+                    for reply in pending_focus_queries.drain(..) {
+                        let _ = reply.send(synthetic_id(&state, state.input_focus));
+                    }
+                }
+                continue;
+            }
+            Err(error) if error.kind() == ErrorKind::UnexpectedEof => return Ok(()),
+            Err(error) => {
+                return Err(BridgeRuntimeError::new(format!(
+                    "failed to read legacy WM request header: {error}"
+                )));
+            }
+        }
+        let units = usize::from(u16::from_le_bytes([header[2], header[3]]));
+        if units == 0 || units > 65_535 {
+            return Err(BridgeRuntimeError::new(format!(
+                "invalid legacy WM request length {units}"
+            )));
+        }
+        let mut body = vec![0_u8; units * 4 - 4];
+        stream.read_exact(&mut body).map_err(|error| {
+            BridgeRuntimeError::new(format!("failed to read legacy WM request body: {error}"))
+        })?;
+        last_socket_activity = Instant::now();
+        state.sequence = state.sequence.wrapping_add(1);
+        if std::env::var_os("SOPHIA_X11_WM_TRACE").is_some() {
+            tracing::trace!(
+                "sophia_x11_wm_bridge schema=1 sequence={} opcode={}",
+                state.sequence,
+                header[0]
+            );
+        }
+        dispatch_request(stream, &mut state, &legacy, header[0], header[1], &body)?;
+    }
+}
+
+fn apply_server_command(
+    stream: &mut UnixStream,
+    state: &mut XServerState,
+    command: ServerCommand,
+) -> Result<(), BridgeRuntimeError> {
+    match command {
+        ServerCommand::Root(bounds) => {
+            state.root = bounds;
+            write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, bounds)?;
+        }
+        ServerCommand::Map(window, geometry) => {
+            state.windows.insert(
+                window.raw(),
+                WindowState {
+                    geometry,
+                    mapped: false,
+                },
+            );
+            let mut event = vec![20, 0];
+            push_u16(&mut event, state.sequence);
+            push_u32(&mut event, SYNTHETIC_ROOT_XID);
+            push_u32(&mut event, window.raw());
+            event.resize(32, 0);
+            write_packet(stream, &event)?;
+        }
+        ServerCommand::Configure(window, geometry) => {
+            if let Some(entry) = state.windows.get_mut(&window.raw()) {
+                entry.geometry = geometry;
+            }
+            // A root ConfigureNotify is the bounded, metadata-free signal that
+            // makes compatible WMs re-run their current layout for an existing set.
+            write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
+        }
+        ServerCommand::Unmap(window) => {
+            state.windows.remove(&window.raw());
+            write_window_event(stream, state.sequence, 18, window.raw())?;
+        }
+        ServerCommand::Destroy(window) => {
+            state.windows.remove(&window.raw());
+            write_window_event(stream, state.sequence, 17, window.raw())?;
+        }
+        ServerCommand::Key { keycode, pressed } => {
+            let modifiers = 1 << 3;
+            let mut event = vec![if pressed { 2 } else { 3 }, keycode];
+            push_u16(&mut event, state.sequence);
+            push_u32(&mut event, 0);
+            push_u32(&mut event, SYNTHETIC_ROOT_XID);
+            push_u32(&mut event, SYNTHETIC_ROOT_XID);
+            push_u32(&mut event, 0);
+            push_i16(&mut event, 0);
+            push_i16(&mut event, 0);
+            push_i16(&mut event, 0);
+            push_i16(&mut event, 0);
+            push_u16(&mut event, modifiers);
+            event.push(1);
+            event.push(0);
+            write_packet(stream, &event)?;
+        }
+        ServerCommand::Wake => {
+            write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
+        }
+        ServerCommand::QueryFocus(_) => unreachable!("focus queries are socket-order barriers"),
+    }
+    Ok(())
+}
+
+fn dispatch_request(
+    stream: &mut UnixStream,
+    state: &mut XServerState,
+    legacy: &SyncSender<LegacyWmRequest>,
+    opcode: u8,
+    detail: u8,
+    body: &[u8],
+) -> Result<(), BridgeRuntimeError> {
+    match opcode {
+        2 => {}
+        3 => reply_window_attributes(stream, state, read_u32(body, 0))?,
+        8 => {
+            let window = read_u32(body, 0);
+            if let Some(entry) = state.windows.get_mut(&window) {
+                entry.mapped = true;
+            }
+        }
+        10 => {
+            let window = read_u32(body, 0);
+            if let Some(entry) = state.windows.get_mut(&window) {
+                entry.mapped = false;
+            }
+        }
+        12 => configure_window(state, legacy, body)?,
+        14 => reply_geometry(stream, state, read_u32(body, 0))?,
+        15 => reply_query_tree(stream, state)?,
+        16 => reply_intern_atom(stream, state, detail != 0, body)?,
+        17 => reply_atom_name(stream, state, read_u32(body, 0))?,
+        18 | 19 => {}
+        20 => reply_empty_property(stream, state.sequence)?,
+        21 => reply_list_properties(stream, state.sequence)?,
+        22 => {}
+        23 => reply_u32(stream, state.sequence, 0, 0)?,
+        25 | 28 | 29 | 30 | 32 | 35 | 36 | 37 | 39 | 41 => {}
+        33 => {
+            if read_u32(body, 0) != SYNTHETIC_ROOT_XID {
+                return Err(BridgeRuntimeError::new(
+                    "private GrabKey targeted a non-root window",
+                ));
+            }
+            let grab = (body[6], read_u16(body, 4));
+            if !state.key_grabs.contains(&grab) && state.key_grabs.len() >= MAX_PRIVATE_KEY_GRABS {
+                return Err(BridgeRuntimeError::new("private key grab limit reached"));
+            }
+            state.key_grabs.insert(grab);
+        }
+        34 => {
+            let modifiers = read_u16(body, 4);
+            if detail == 0 {
+                state
+                    .key_grabs
+                    .retain(|(_, registered)| *registered != modifiers);
+            } else {
+                state.key_grabs.remove(&(detail, modifiers));
+            }
+        }
+        26 => reply_simple(stream, state.sequence, 0)?,
+        31 => reply_simple(stream, state.sequence, 0)?,
+        38 => reply_query_pointer(stream, state)?,
+        40 => reply_translate_coordinates(stream, state)?,
+        42 => {
+            let window = read_u32(body, 0);
+            state.input_focus = window;
+            if let Some(window) = synthetic_id(state, window) {
+                legacy
+                    .send(LegacyWmRequest::FocusWindow { window })
+                    .map_err(|_| BridgeRuntimeError::new("legacy request channel disconnected"))?;
+            }
+        }
+        43 => reply_u32(stream, state.sequence, 0, state.input_focus)?,
+        44 => reply_query_keymap(stream, state.sequence)?,
+        53..=83 => {}
+        84 => reply_alloc_color(stream, state.sequence, body)?,
+        85 => reply_alloc_named_color(stream, state.sequence)?,
+        91 => reply_best_size(stream, state, body)?,
+        98 => reply_query_extension(stream, state.sequence)?,
+        99 => reply_list_extensions(stream, state.sequence)?,
+        101 => reply_keyboard_mapping(stream, state.sequence, detail, body)?,
+        103 => reply_keyboard_control(stream, state.sequence)?,
+        106 => reply_pointer_control(stream, state.sequence)?,
+        108 => reply_screen_saver(stream, state.sequence)?,
+        117 => reply_pointer_mapping(stream, state.sequence)?,
+        119 => reply_modifier_mapping(stream, state.sequence)?,
+        127 => {}
+        other => {
+            return Err(BridgeRuntimeError::new(format!(
+                "unsupported legacy WM core request opcode {other}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn configure_window(
+    state: &mut XServerState,
+    legacy: &SyncSender<LegacyWmRequest>,
+    body: &[u8],
+) -> Result<(), BridgeRuntimeError> {
+    let raw = read_u32(body, 0);
+    let mask = read_u16(body, 4);
+    let Some(window) = synthetic_id(state, raw) else {
+        return Ok(());
+    };
+    let entry = state.windows.get_mut(&raw).expect("known synthetic window");
+    let mut geometry = entry.geometry;
+    let mut cursor = 8;
+    for bit in 0..7 {
+        if mask & (1 << bit) == 0 {
+            continue;
+        }
+        let value = read_u32(body, cursor);
+        cursor += 4;
+        match bit {
+            0 => geometry.x = value as i32,
+            1 => geometry.y = value as i32,
+            2 => geometry.width = value as i32,
+            3 => geometry.height = value as i32,
+            _ => {}
+        }
+    }
+    entry.geometry = geometry;
+    legacy
+        .send(LegacyWmRequest::ConfigureWindow {
+            window,
+            geometry,
+            z_index: 0,
+        })
+        .map_err(|_| BridgeRuntimeError::new("legacy request channel disconnected"))
+}
+
