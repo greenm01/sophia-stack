@@ -3,6 +3,9 @@ sophia_session_app schema=1 status=started id=terminal source=startup
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_acks=1 outcome=Committed
 sophia_live_wm schema=1 status=focus_committed transaction=1 target=surface
+sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=2
+sophia_live_native_page_flip schema=1 status=retired output=2 submission=2
 sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_present_scanout
 sophia_live_session_input_pipeline schema=1 status=key_observed
 sophia_live_session_input_pipeline schema=1 status=key_routed
@@ -10,6 +13,11 @@ sophia_live_session_input schema=1 status=ready source=physical text=sophia
 sophia_live_session_pointer schema=1 status=ready source=physical action=select
 sophia_live_session_pointer schema=2 status=motion_routed
 sophia_live_session_pointer schema=2 status=button_routed count=1
+sophia_live_wm schema=1 status=physical_action_committed action=1
+sophia_live_wm schema=1 status=physical_action_committed action=3
+sophia_live_wm schema=1 status=physical_action_committed action=257
+sophia_live_wm schema=1 status=physical_action_committed action=258
+sophia_live_wm schema=1 status=physical_action_committed action=769
 sophia_session_app schema=1 status=started id=firefox source=action
 sophia_firefox_m8 schema=1 status=page_ready title_bytes=16 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=loaded index=0 title_bytes=24 content=redacted
@@ -25,4 +33,5 @@ sophia_firefox_m8 schema=1 status=complete stages=6 selection_owner_changes=2 se
 sophia_live_wm schema=1 status=session_action_committed transaction=20 action=Logout
 sophia_live_session_protocol_errors schema=1 expected=2 unexpected=0
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session_cursor schema=2 moves_coalesced=0 max_motion_to_submit_msec=5 buttons_routed=4 hardware_updates=8 hardware_failures=0
 sophia_live_session schema=14 status=bounded_complete elapsed_msec=120000 startup_ready_msec=700 physical_events=40 physical_keys_routed=30 physical_pointer_events=10 physical_pointer_routed=10 pointer_pixel_change=true pointer_proof=enabled wm_requests=20 wm_committed=20 native_submissions=100 native_retirements=100 native_frame_uploads=100 input_events_expected=40 input_events_flushed=40 input_pixel_change=true input_text_match=true native_presentation=enabled physical_input=enabled wm_policy=external wm_restarts=0 wm_degraded=false native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0

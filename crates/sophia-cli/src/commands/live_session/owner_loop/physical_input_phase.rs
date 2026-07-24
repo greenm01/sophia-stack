@@ -83,6 +83,8 @@ macro_rules! drain_physical_input {
                 if let Some(mut result) =
                     layout.stage(proposal, control_sender, control_ack_receiver)?
                 {
+                    let committed =
+                        result.update.commit.outcome == TransactionOutcome::Committed;
                     if result.update.commit.outcome == TransactionOutcome::Committed
                         && let Some(effects) = result.effects.take()
                     {
@@ -96,6 +98,12 @@ macro_rules! drain_physical_input {
                         }
                     }
                     wm.mark_committed();
+                    if committed {
+                        println!(
+                            "sophia_live_wm schema=1 status=physical_action_committed action={}",
+                            action.raw(),
+                        );
+                    }
                 }
             }
             if report.return_suppressed && !input_observations.return_suppressed {

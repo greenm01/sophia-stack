@@ -39,6 +39,18 @@ require_positive() {
     [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
     (( actual > 0 )) || fail "$key did not record activity"
 }
+require_count_at_least() {
+    local pattern="$1" file="$2" minimum="$3" description="$4" count
+    count="$(grep -Ec "$pattern" "$file" || true)"
+    (( count >= minimum )) ||
+        fail "$description: observed $count, required $minimum ($file)"
+}
+require_value_at_least() {
+    local line="$1" key="$2" minimum="$3" actual
+    actual="$(field "$line" "$key")" || fail "record is missing $key"
+    [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
+    (( actual >= minimum )) || fail "$key is $actual, expected at least $minimum"
+}
 
 require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
@@ -54,12 +66,38 @@ require_line '^sophia_session_app schema=1 status=started id=terminal source=sta
     "$SESSION_LOG" "startup Kitty was not launched"
 require_line '^sophia_session_app schema=1 status=started id=terminal source=action$' \
     "$SESSION_LOG" "Super-Enter did not launch a second Kitty"
+require_count_at_least \
+    '^sophia_session_app schema=1 status=started id=terminal source=(startup|action)$' \
+    "$SESSION_LOG" 2 "two independent Kitty launches were not recorded"
 require_line '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' \
     "$SESSION_LOG" "xmonad did not commit a layout"
 require_line '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' \
     "$SESSION_LOG" "xmonad did not commit focus"
 require_line '^sophia_live_wm schema=1 status=session_action_committed .* action=Logout$' \
     "$SESSION_LOG" "normal Super-Shift-Q logout was not committed"
+for action in \
+    1 \
+    3 \
+    257 \
+    258 \
+    769; do
+    require_line \
+        "^sophia_live_wm schema=1 status=physical_action_committed action=${action}$" \
+        "$SESSION_LOG" "required physical WM action $action was not committed"
+done
+require_line \
+    '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
+    "$SESSION_LOG" "two-output native ownership was not established"
+for output in 1 2; do
+    require_line \
+        "sophia_live_native_page_flip schema=1 status=retired output=${output} " \
+        "$SESSION_LOG" "physical output $output did not retire a page flip"
+done
+cursor="$(
+    grep -E '^sophia_live_session_cursor schema=2 ' "$SESSION_LOG" | tail -n 1
+)"
+[[ -n "$cursor" ]] || fail "final cursor health record is missing"
+require_value_at_least "$cursor" buttons_routed 2
 require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false$' \
     "$SESSION_LOG" "final session health was not clean"
 
