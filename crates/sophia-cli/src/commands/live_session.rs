@@ -2,7 +2,7 @@ use super::prelude::*;
 
 use sophia_backend_live::{
     ClassicHardwareCursorUpdate, LiveProductionAuthorityBatch, LiveProductionCpuScene,
-    LiveProductionCursorPresentation, LiveProductionDmaBufRegistration,
+    LiveProductionCursorPresentation, LiveProductionCycleRequest, LiveProductionDmaBufRegistration,
     LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionPresentSubmission,
     LiveProductionVisualRuntime,
 };

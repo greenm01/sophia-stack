@@ -199,10 +199,12 @@ fn x11_core_socket_observer_sees_put_image_transaction() {
             XByteOrder::LittleEndian,
             0x220401,
             0x220402,
-            8,
-            4,
-            3,
-            5,
+            PutImageGeometry {
+                width: 8,
+                height: 4,
+                dst_x: 3,
+                dst_y: 5,
+            },
             &[0xaa; 128],
         ))
         .unwrap();

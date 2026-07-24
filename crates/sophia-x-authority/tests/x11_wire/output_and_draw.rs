@@ -545,10 +545,12 @@ fn x11_dispatch_put_image_emits_software_surface_transaction() {
             XByteOrder::LittleEndian,
             0x220111,
             0x220112,
-            8,
-            4,
-            3,
-            5,
+            PutImageGeometry {
+                width: 8,
+                height: 4,
+                dst_x: 3,
+                dst_y: 5,
+            },
             &[0xaa; 128],
         ),
     )
@@ -634,10 +636,12 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
             XByteOrder::LittleEndian,
             0x220122,
             0x220123,
-            8,
-            4,
-            0,
-            0,
+            PutImageGeometry {
+                width: 8,
+                height: 4,
+                dst_x: 0,
+                dst_y: 0,
+            },
             &[0xaa; 128],
         ),
     )
@@ -692,4 +696,3 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
         })
     );
 }
-

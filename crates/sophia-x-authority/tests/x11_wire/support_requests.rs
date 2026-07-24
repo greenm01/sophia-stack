@@ -706,14 +706,18 @@ fn fill_poly_request(
     out
 }
 
-fn put_image_request(
-    byte_order: XByteOrder,
-    drawable: u32,
-    gc: u32,
+struct PutImageGeometry {
     width: u16,
     height: u16,
     dst_x: i16,
     dst_y: i16,
+}
+
+fn put_image_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    geometry: PutImageGeometry,
     data: &[u8],
 ) -> Vec<u8> {
     let mut out = vec![72, 2];
@@ -721,10 +725,10 @@ fn put_image_request(
     push_u16(&mut out, byte_order, len_units as u16);
     push_u32(&mut out, byte_order, drawable);
     push_u32(&mut out, byte_order, gc);
-    push_u16(&mut out, byte_order, width);
-    push_u16(&mut out, byte_order, height);
-    push_i16(&mut out, byte_order, dst_x);
-    push_i16(&mut out, byte_order, dst_y);
+    push_u16(&mut out, byte_order, geometry.width);
+    push_u16(&mut out, byte_order, geometry.height);
+    push_i16(&mut out, byte_order, geometry.dst_x);
+    push_i16(&mut out, byte_order, geometry.dst_y);
     out.push(0);
     out.push(24);
     push_u16(&mut out, byte_order, 0);
@@ -732,4 +736,3 @@ fn put_image_request(
     pad_to_four(&mut out);
     out
 }
-

@@ -31,14 +31,16 @@ impl RealAtomicScanoutSubmittedSmokePhase {
     ) -> LibdrmNativeAtomicScanoutSmokeEvidence {
         reduced_smoke_evidence_for_phase(
             self.phase,
-            self.scanout_target,
-            self.rendered_context,
-            self.export_status,
-            self.export_detail,
-            Some(&self.submit),
-            poll,
-            callback,
-            retire,
+            LibdrmNativeScanoutPipelineReports {
+                scanout_target: self.scanout_target,
+                rendered_context: self.rendered_context,
+                gbm_export: self.export_status,
+                gbm_export_detail: self.export_detail,
+                submit: Some(&self.submit),
+                poll,
+                callback,
+                retire,
+            },
         )
     }
 }
@@ -157,14 +159,17 @@ impl RealAtomicScanoutPageFlipSession {
         if scanout_target != LiveKmsScanoutTargetStatus::Ready {
             return Err(reduced_smoke_evidence_for_phase(
                 phase,
-                scanout_target,
-                None,
-                LiveRendererScanoutBufferExportStatus::Unavailable,
-                LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
-                None,
-                None,
-                None,
-                None,
+                LibdrmNativeScanoutPipelineReports {
+                    scanout_target,
+                    rendered_context: None,
+                    gbm_export: LiveRendererScanoutBufferExportStatus::Unavailable,
+                    gbm_export_detail:
+                        LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable,
+                    submit: None,
+                    poll: None,
+                    callback: None,
+                    retire: None,
+                },
             ));
         }
 
@@ -174,28 +179,32 @@ impl RealAtomicScanoutPageFlipSession {
         if export.status != LiveRendererScanoutBufferExportStatus::Exported {
             return Err(reduced_smoke_evidence_for_phase(
                 phase,
-                scanout_target,
-                rendered_context,
-                export.status,
-                export.detail,
-                None,
-                None,
-                None,
-                None,
+                LibdrmNativeScanoutPipelineReports {
+                    scanout_target,
+                    rendered_context,
+                    gbm_export: export.status,
+                    gbm_export_detail: export.detail,
+                    submit: None,
+                    poll: None,
+                    callback: None,
+                    retire: None,
+                },
             ));
         }
 
         let (Some(descriptor), Some(owned_buffer)) = (export.descriptor, export.owner) else {
             let mut evidence = reduced_smoke_evidence_for_phase(
                 phase,
-                scanout_target,
-                rendered_context,
-                export.status,
-                export.detail,
-                None,
-                None,
-                None,
-                None,
+                LibdrmNativeScanoutPipelineReports {
+                    scanout_target,
+                    rendered_context,
+                    gbm_export: export.status,
+                    gbm_export_detail: export.detail,
+                    submit: None,
+                    poll: None,
+                    callback: None,
+                    retire: None,
+                },
             );
             evidence.status = LibdrmNativeAtomicScanoutSmokeStatus::RetainedResourceMissing;
             return Err(evidence);
@@ -228,27 +237,31 @@ impl RealAtomicScanoutPageFlipSession {
         {
             return Err(reduced_smoke_evidence_for_phase(
                 phase,
-                scanout_target,
-                rendered_context,
-                export.status,
-                export.detail,
-                Some(&submit),
-                None,
-                None,
-                None,
+                LibdrmNativeScanoutPipelineReports {
+                    scanout_target,
+                    rendered_context,
+                    gbm_export: export.status,
+                    gbm_export_detail: export.detail,
+                    submit: Some(&submit),
+                    poll: None,
+                    callback: None,
+                    retire: None,
+                },
             ));
         }
         let Some(submission) = submit.submission.take() else {
             let mut evidence = reduced_smoke_evidence_for_phase(
                 phase,
-                scanout_target,
-                rendered_context,
-                export.status,
-                export.detail,
-                Some(&submit),
-                None,
-                None,
-                None,
+                LibdrmNativeScanoutPipelineReports {
+                    scanout_target,
+                    rendered_context,
+                    gbm_export: export.status,
+                    gbm_export_detail: export.detail,
+                    submit: Some(&submit),
+                    poll: None,
+                    callback: None,
+                    retire: None,
+                },
             );
             evidence.status = LibdrmNativeAtomicScanoutSmokeStatus::RetainedResourceMissing;
             return Err(evidence);

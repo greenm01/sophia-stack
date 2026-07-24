@@ -7,5 +7,6 @@ mod status;
 
 pub use page_flip_wait::*;
 pub use phase::*;
+pub use pipeline::*;
 pub use record::*;
 pub use status::*;

@@ -226,10 +226,12 @@ fn x11_core_decoder_captures_put_image_requests() {
             XByteOrder::LittleEndian,
             0x220020,
             0x220021,
-            8,
-            4,
-            3,
-            5,
+            PutImageGeometry {
+                width: 8,
+                height: 4,
+                dst_x: 3,
+                dst_y: 5,
+            },
             &[0xaa; 128],
         ),
     )
@@ -699,4 +701,3 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         );
     }
 }
-

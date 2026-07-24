@@ -22,6 +22,28 @@ pub struct LiveProductionVisualRuntime {
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
 
+pub struct LiveProductionCycleRequest<'a> {
+    pub batch: &'a LiveProductionAuthorityBatch,
+    pub scene: &'a mut LiveProductionCpuScene,
+    pub updates: Vec<crate::LiveCpuBufferUpdate>,
+    pub raised_surface: Option<SurfaceId>,
+    pub cursor_presentation: LiveProductionCursorPresentation,
+    pub defer_frame: bool,
+    pub output_descriptors: &'a [sophia_engine::HeadlessOutput],
+    pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
+    pub wm_update: Option<WmTransactionUpdate>,
+}
+
+pub struct LiveAuthorityTransactionRun<'a> {
+    pub transaction_id: TransactionId,
+    pub transactions: &'a [SurfaceTransaction],
+    pub removed_surfaces: &'a [SurfaceId],
+    pub event_count: usize,
+    pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
+    pub native_frames: Option<Vec<LiveProductionComposedFrame>>,
+    pub wm_update: Option<WmTransactionUpdate>,
+}
+
 impl LiveProductionVisualRuntime {
     pub fn new(
         outputs: &[sophia_engine::HeadlessOutput],
@@ -84,15 +106,7 @@ impl LiveProductionVisualRuntime {
 
     pub fn run_cpu_production_cycle(
         &mut self,
-        batch: &LiveProductionAuthorityBatch,
-        scene: &mut LiveProductionCpuScene,
-        updates: Vec<crate::LiveCpuBufferUpdate>,
-        raised_surface: Option<SurfaceId>,
-        cursor_presentation: LiveProductionCursorPresentation,
-        defer_frame: bool,
-        output_descriptors: &[sophia_engine::HeadlessOutput],
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
-        wm_update: Option<WmTransactionUpdate>,
+        request: LiveProductionCycleRequest<'_>,
     ) -> Result<
         (
             LiveProductionCpuCycleSubmission<crate::LiveBackendRuntimeTickReport>,
@@ -100,6 +114,17 @@ impl LiveProductionVisualRuntime {
         ),
         Box<dyn std::error::Error>,
     > {
+        let LiveProductionCycleRequest {
+            batch,
+            scene,
+            updates,
+            raised_surface,
+            cursor_presentation,
+            defer_frame,
+            output_descriptors,
+            native_scanout,
+            wm_update,
+        } = request;
         self.presentation_feedback
             .observe_authority_resources(batch)?;
         self.layers
@@ -198,17 +223,20 @@ impl LiveProductionVisualRuntime {
 
     pub fn run_gpu_production_cycle(
         &mut self,
-        batch: &LiveProductionAuthorityBatch,
-        scene: &mut LiveProductionCpuScene,
-        updates: Vec<crate::LiveCpuBufferUpdate>,
-        raised_surface: Option<SurfaceId>,
-        cursor_presentation: LiveProductionCursorPresentation,
-        defer_frame: bool,
-        output_descriptors: &[sophia_engine::HeadlessOutput],
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
-        wm_update: Option<WmTransactionUpdate>,
+        request: LiveProductionCycleRequest<'_>,
     ) -> Result<(LiveProductionCpuSubmission, Vec<CommittedSurfaceState>), Box<dyn std::error::Error>>
     {
+        let LiveProductionCycleRequest {
+            batch,
+            scene,
+            updates,
+            raised_surface,
+            cursor_presentation,
+            defer_frame,
+            output_descriptors,
+            mut native_scanout,
+            wm_update,
+        } = request;
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
         let compose_started = Instant::now();
@@ -288,15 +316,15 @@ impl LiveProductionVisualRuntime {
             self.rebuild_input_layers();
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
         }
-        self.run_authority_transactions(
-            batch.transaction,
-            &batch.transactions,
-            &batch.removed_surfaces,
-            authority_transaction_count(&batch.transactions),
+        self.run_authority_transactions(LiveAuthorityTransactionRun {
+            transaction_id: batch.transaction,
+            transactions: &batch.transactions,
+            removed_surfaces: &batch.removed_surfaces,
+            event_count: authority_transaction_count(&batch.transactions),
             native_scanout,
             native_frames,
             wm_update,
-        )
+        })
     }
 
     pub fn drive_gpu_presentation(
@@ -628,14 +656,17 @@ impl LiveProductionVisualRuntime {
 
     pub fn run_authority_transactions(
         &mut self,
-        transaction_id: TransactionId,
-        transactions: &[SurfaceTransaction],
-        removed_surfaces: &[SurfaceId],
-        event_count: usize,
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
-        native_frames: Option<Vec<LiveProductionComposedFrame>>,
-        wm_update: Option<WmTransactionUpdate>,
+        run: LiveAuthorityTransactionRun<'_>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        let LiveAuthorityTransactionRun {
+            transaction_id,
+            transactions,
+            removed_surfaces,
+            event_count,
+            native_scanout,
+            native_frames,
+            wm_update,
+        } = run;
         let prepared =
             self.prepare_authority_transactions(transaction_id, transactions, removed_surfaces)?;
         self.run_prepared_authority_transactions(

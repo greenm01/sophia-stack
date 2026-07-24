@@ -681,8 +681,10 @@ fn xkb_state_uses_deterministic_rmlvo_and_tracks_effective_modifiers() {
 #[test]
 fn xkb_snapshot_drives_core_and_xkb_maps_from_the_same_rmlvo() {
     let us = XkbKeymapSnapshot::new(&XkbRmlvoConfig::default()).unwrap();
-    let mut de_config = XkbRmlvoConfig::default();
-    de_config.layout = "de".to_owned();
+    let de_config = XkbRmlvoConfig {
+        layout: "de".to_owned(),
+        ..XkbRmlvoConfig::default()
+    };
     let de = XkbKeymapSnapshot::new(&de_config).unwrap();
 
     assert_eq!(us.config().layout, "us");
@@ -701,11 +703,12 @@ fn xkb_rmlvo_validation_rejects_empty_and_unbounded_configuration() {
         XkbKeyboardError::InvalidConfiguration
     );
 
-    let mut unbounded = XkbRmlvoConfig::default();
-    unbounded.options = "x".repeat(XKB_RMLVO_FIELD_MAX_BYTES + 1);
+    let unbounded = XkbRmlvoConfig {
+        options: "x".repeat(XKB_RMLVO_FIELD_MAX_BYTES + 1),
+        ..XkbRmlvoConfig::default()
+    };
     assert_eq!(
         XkbKeyboardState::new(&unbounded).unwrap_err(),
         XkbKeyboardError::InvalidConfiguration
     );
 }
-

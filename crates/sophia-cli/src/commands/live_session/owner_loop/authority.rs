@@ -222,21 +222,22 @@
                 };
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if batch.present_submissions.is_empty() {
-                        let (submission, committed_surfaces) = runtime.run_cpu_production_cycle(
-                            &production_batch,
-                            &mut scene,
-                            updates,
-                            raised_surface,
-                            cursor_presentation,
-                            defer_cpu_frame,
-                            &outputs,
-                            if defer_cpu_frame {
-                                None
-                            } else {
-                                native_scanout.as_mut()
-                            },
-                            wm_update,
-                        )?;
+                        let (submission, committed_surfaces) =
+                            runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
+                                batch: &production_batch,
+                                scene: &mut scene,
+                                updates,
+                                raised_surface,
+                                cursor_presentation,
+                                defer_frame: defer_cpu_frame,
+                                output_descriptors: &outputs,
+                                native_scanout: if defer_cpu_frame {
+                                    None
+                                } else {
+                                    native_scanout.as_mut()
+                                },
+                                wm_update,
+                            })?;
                         (
                             submission.tick,
                             submission.composition,
@@ -245,21 +246,22 @@
                             submission.compose_elapsed,
                         )
                     } else {
-                        let (submission, committed_surfaces) = runtime.run_gpu_production_cycle(
-                            &production_batch,
-                            &mut scene,
-                            updates,
-                            raised_surface,
-                            cursor_presentation,
-                            defer_cpu_frame,
-                            &outputs,
-                            if defer_cpu_frame {
-                                None
-                            } else {
-                                native_scanout.as_mut()
-                            },
-                            wm_update,
-                        )?;
+                        let (submission, committed_surfaces) =
+                            runtime.run_gpu_production_cycle(LiveProductionCycleRequest {
+                                batch: &production_batch,
+                                scene: &mut scene,
+                                updates,
+                                raised_surface,
+                                cursor_presentation,
+                                defer_frame: defer_cpu_frame,
+                                output_descriptors: &outputs,
+                                native_scanout: if defer_cpu_frame {
+                                    None
+                                } else {
+                                    native_scanout.as_mut()
+                                },
+                                wm_update,
+                            })?;
                         (
                             submission.tick,
                             submission.composition,

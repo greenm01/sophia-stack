@@ -862,15 +862,15 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
     };
 
     let report = runtime
-        .run_authority_transactions(
-            sophia_protocol::TransactionId::from_raw(90),
-            std::slice::from_ref(&transaction),
-            &[],
-            1,
-            None,
-            None,
-            None,
-        )
+        .run_authority_transactions(sophia_backend_live::LiveAuthorityTransactionRun {
+            transaction_id: sophia_protocol::TransactionId::from_raw(90),
+            transactions: std::slice::from_ref(&transaction),
+            removed_surfaces: &[],
+            event_count: 1,
+            native_scanout: None,
+            native_frames: None,
+            wm_update: None,
+        })
         .unwrap();
 
     assert_eq!(
