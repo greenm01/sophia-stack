@@ -482,24 +482,7 @@ impl RealAtomicScanoutPageFlipSession {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::nonblocking_atomic_cursor_commit_is_deferred;
-    use std::io;
-
-    #[test]
-    fn nonblocking_cursor_commit_defers_would_block_and_linux_ebusy() {
-        assert!(nonblocking_atomic_cursor_commit_is_deferred(
-            &io::Error::from(io::ErrorKind::WouldBlock)
-        ));
-        assert!(nonblocking_atomic_cursor_commit_is_deferred(
-            &io::Error::from_raw_os_error(16)
-        ));
-        assert!(!nonblocking_atomic_cursor_commit_is_deferred(
-            &io::Error::from_raw_os_error(22)
-        ));
-    }
-}
+mod tests;
 
 impl Drop for RealAtomicScanoutPageFlipSession {
     fn drop(&mut self) {

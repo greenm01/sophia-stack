@@ -22,11 +22,19 @@ while IFS= read -r file; do
         printf '%s\n' "error: $relative has $lines lines and no reviewed cohesion exception" >&2
         status=1
     fi
-    if rg -q '#\[cfg\(test\)\]|#\[test\]' "$file" &&
-        ! is_recorded inline-tests "$relative"; then
-        printf '%s\n' "error: inline tests in $relative" >&2
-        status=1
-    fi
+    case "$relative" in
+        */src/tests.rs|*/src/tests/*.rs|*/src/*/tests.rs|*/src/*/tests/*.rs|\
+        */src/*/*/tests.rs|*/src/*/*/tests/*.rs|*/src/*/*/*/tests.rs|\
+        */src/*/*/*/tests/*.rs|*/src/*/*/*/*/tests.rs|*/src/*/*/*/*/tests/*.rs)
+            ;;
+        *)
+            if rg -q '#\[cfg\(test\)\]|#\[test\]' "$file" &&
+                ! is_recorded inline-tests "$relative"; then
+                printf '%s\n' "error: inline tests in $relative" >&2
+                status=1
+            fi
+            ;;
+    esac
     case "$relative" in
         crates/sophia-cli/*|*/src/main.rs) ;;
         *)
