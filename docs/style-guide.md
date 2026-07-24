@@ -60,6 +60,13 @@ public module as a facade when callers already depend on that path. Do not split
 purely to satisfy a number if the result would obscure ownership or scatter one
 tightly coupled algorithm across files.
 
+Run `tools/audit_source_layout.sh` during local validation. It reports
+production files at 800 lines, tests at 800 lines, and rejects unreviewed
+production files over 1000 lines, inline production tests, and direct printing
+from libraries. `docs/source-layout-exceptions.txt` is an exact-path migration
+ledger, not a permanent allowlist; remove entries as each owning domain is
+extracted.
+
 ### Engine Crate Modules
 
 `crates/sophia-engine/src/lib.rs` is the public facade for the engine crate. It

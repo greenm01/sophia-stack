@@ -1,6 +1,8 @@
 use super::LayoutNodeSnapshot;
 use crate::geometry::{Rect, Size, Transform};
-use crate::ids::{OutputId, SurfaceId, TransactionId, WmActionId, WorkspaceId};
+use crate::ids::{
+    OutputId, SessionApplicationId, SurfaceId, TransactionId, WmActionId, WorkspaceId,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayoutTransaction {
@@ -11,7 +13,7 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 2;
+pub const WM_API_VERSION: u16 = 3;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -68,9 +70,7 @@ pub struct WmOutputWorkspace {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WmSessionAction {
-    LaunchTerminal,
-    LaunchApplicationMenu,
-    LaunchFirefox,
+    LaunchApplication { application: SessionApplicationId },
     CloseFocused,
     Logout,
 }

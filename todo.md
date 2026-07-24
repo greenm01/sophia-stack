@@ -28,7 +28,8 @@ The following foundations are established:
 - Namespace admission, bounded portals, and text `CLIPBOARD` plus `PRIMARY`.
 - Concurrent native-X clients, XKB and XI2 input, focus/grabs, RandR,
   software rendering, MIT-SHM, GLX, DRI3, Present, and mixed composition.
-- Engine-owned multi-output KMS presentation and classic hardware cursor.
+- Engine-owned multi-output KMS presentation and a protocol-neutral default
+  hardware cursor.
 - Blind WM API, supervised xmonad bridge, workspaces, named application
   actions, logout, and bridge recovery.
 - Unattended xmonad/Firefox mixed and soak evidence in two-output QEMU.
@@ -190,6 +191,35 @@ blocker. Work on it only when it shortens one of the active milestones.
 - [ ] Gate the supported interactive backend with visible pointer movement,
   terminal launch, typed text, focus change, application close, and clean
   manual shutdown.
+
+## Architecture Conformance Debt
+
+The source-layout audit now prevents new unreviewed large modules, inline
+production tests, and direct library printing. Existing exceptions remain an
+explicit migration ledger in `docs/source-layout-exceptions.txt`.
+
+- [x] Replace application-specific WM launch variants with opaque
+  `SessionApplicationId` values owned by session configuration.
+- [x] Remove per-event allocation and sorting from Engine input hit testing.
+- [x] Cache the visual runtime's input-layer projection instead of rebuilding a
+  vector for every input batch.
+- [ ] Split X authority state, connection service, routing, input, clipboard,
+  wire families, dispatch families, and client output behind the existing
+  public facades.
+- [ ] Split live-session configuration/policy, admission, WM/layout, input,
+  presentation, process supervision, and the owner loop.
+- [ ] Split native scanout, visual presentation service, and the legacy WM
+  bridge by ownership.
+- [ ] Move every remaining inline test to crate integration tests and split
+  oversized test programs around shared `tests/support` fixtures.
+- [ ] Replace remaining library `println!`/`eprintln!` diagnostics with
+  structured, redacted `tracing` fields.
+- [ ] Replace callback-owned Present and retirement mutation with bounded
+  queues and explicit Engine/backend completion steps.
+- [ ] Remove synthetic committed-surface seeding; initial authority
+  transactions must pass normal Engine validation and commit.
+- [ ] Remove client-local X identifiers from Engine/session routing and replace
+  free-form X trace strings with bounded, typed, redacted observations.
 
 ## Evidence-Driven Compatibility Follow-ups
 

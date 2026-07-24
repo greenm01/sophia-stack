@@ -4,7 +4,8 @@ use sophia_protocol::{
     WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeState, XMONAD_ACTION_TERMINAL,
+    LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeState,
+    XMONAD_ACTION_APPLICATION_1,
 };
 
 fn node(raw: u32) -> LayoutNodeSnapshot {
@@ -37,7 +38,7 @@ fn xmonad_launches_the_terminal_with_super_enter() {
     let binding = hello
         .bindings
         .iter()
-        .find(|binding| binding.action.raw() == XMONAD_ACTION_TERMINAL)
+        .find(|binding| binding.action.raw() == XMONAD_ACTION_APPLICATION_1)
         .expect("xmonad terminal binding");
     assert_eq!(binding.keycode, 28);
     assert_eq!(binding.modifiers.bits, WmModifierMask::SUPER);

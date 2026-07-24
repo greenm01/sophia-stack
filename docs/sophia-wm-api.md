@@ -22,18 +22,18 @@ bounded policy changes and never receives:
 The Engine validates every proposal and preserves the last committed layout when
 a WM is absent, incompatible, timed out, malformed, or restarting.
 
-## Version 2 Session Negotiation
+## Version 3 Session Negotiation
 
-WM API version 2 uses the existing Sophia IPC frame version. It does not change
+WM API version 3 uses the existing Sophia IPC frame version. It does not change
 the framing or the protocol versions of brokers and authorities.
 
 After Engine connects to the supervised WM socket, the WM sends one bounded
-`WmHello` containing API version 2, capability bits, and at most 256 binding
+`WmHello` containing API version 3, capability bits, and at most 256 binding
 registrations. Engine rejects unsupported capabilities, duplicate chords or
 action IDs, invalid modifier masks, zero action IDs, excessive registrations,
 and Ctrl-Alt-Backspace. Engine replies with one `WmSessionDescriptor` containing
 the configured outputs, nine opaque workspace IDs by default, the active
-workspace for every output, and the named session actions available to that WM.
+workspace for every output, and the opaque session actions available to that WM.
 No layout or action request is sent before this exchange succeeds.
 
 A restart repeats negotiation, restores the committed workspace/output mapping,
@@ -53,10 +53,13 @@ workspace, focused surface, and an immutable layout-node snapshot. The WM may
 respond with the same transactional layout commands used for manage and relayout
 requests.
 
-Named session actions are advertised tokens. A WM may request an advertised
-token with an optional opaque target surface. It cannot supply an executable,
-arguments, environment, signal, or protocol handle. Initial configured tokens
-cover terminal, application launcher, Firefox, close-focused, and logout.
+Session actions are advertised tokens. Application launches carry only a
+nonzero `SessionApplicationId`; the session maps that ID to its private
+executable registry. A WM may request an advertised token with an optional
+opaque target surface. It cannot supply an executable, arguments, environment,
+signal, or protocol handle. Initial configured tokens cover applications,
+close-focused, and logout. Application names and roles never cross into Engine
+or the WM.
 
 ## Workspace Model
 
@@ -84,7 +87,7 @@ by a bounded profile. A profile declares bindings and maps action IDs to either
 synthetic policy input or a private Sophia action message.
 
 The bundled xmonad profile preserves familiar focus, layout, workspace,
-move-to-workspace, terminal, close, launcher, Firefox, and logout chords.
+move-to-workspace, three opaque application slots, close, and logout chords.
 Policy-only actions become bounded synthetic events on xmonad's private display.
 Workspace and session actions use private bridge messages and emerge as normal
 Sophia WM commands. They never execute an application on the synthetic display.

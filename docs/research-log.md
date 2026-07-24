@@ -3,6 +3,24 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-24: Architecture Conformance First Slice
+
+- Audited production and test source layout against `docs/style-guide.md` and
+  `docs/dod.md`; added an executable exact-path exception ledger so existing
+  debt is visible and new unreviewed violations fail validation.
+- Advanced the blind WM contract to API v3. Launch requests now carry only an
+  opaque nonzero `SessionApplicationId`; executable names and application roles
+  remain session-owned. Existing CLI evidence labels remain stable.
+- Removed the application-protocol name from the renderer's built-in default
+  cursor without changing its dimensions, hotspot, or pixels.
+- Removed allocation and sorting from Engine input hit testing and cached the
+  backend visual runtime's input-layer projection at authority-update
+  boundaries.
+- All workspace targets compile with all features. Focused protocol, Engine,
+  renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
+  a tracked migration gate because pre-existing native renderer argument
+  bundles and style warnings are not yet clean.
+
 ## 2026-07-19: X-Centric Product Direction And Wayland Retirement
 
 Sophia is an X-centric product built on a protocol-neutral architecture. X11

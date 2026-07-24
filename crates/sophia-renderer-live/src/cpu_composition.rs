@@ -153,9 +153,9 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
     })
 }
 
-pub const CLASSIC_X11_CURSOR_EDGE: usize = 16;
-pub const CLASSIC_X11_CURSOR_HOTSPOT: (i32, i32) = (0, 0);
-pub const CLASSIC_X11_CURSOR_SHAPE: [&[u8]; CLASSIC_X11_CURSOR_EDGE] = [
+pub const DEFAULT_CURSOR_EDGE: usize = 16;
+pub const DEFAULT_CURSOR_HOTSPOT: (i32, i32) = (0, 0);
+pub const DEFAULT_CURSOR_SHAPE: [&[u8]; DEFAULT_CURSOR_EDGE] = [
     b"##..............",
     b"#W#.............",
     b"#WW#............",
@@ -187,7 +187,7 @@ fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point) {
     let origin_x = position.x.floor() as i32;
     let origin_y = position.y.floor() as i32;
 
-    for (row, pixels) in CLASSIC_X11_CURSOR_SHAPE.iter().enumerate() {
+    for (row, pixels) in DEFAULT_CURSOR_SHAPE.iter().enumerate() {
         for (column, pixel) in pixels.iter().enumerate() {
             let color = match pixel {
                 b'W' => [0xff, 0xff, 0xff, 0xff],

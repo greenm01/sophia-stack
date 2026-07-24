@@ -3006,29 +3006,23 @@ impl X11InputEventReceiver {
         ),
         RecvTimeoutError,
     > {
-        loop {
-            match self {
-                Self::Plain(receiver) => {
-                    return receiver
-                        .recv_timeout(Duration::from_millis(10))
-                        .map(|event| (event, None, None, 0, None));
-                }
-                Self::Routed { receiver, .. } => {
-                    match receiver.recv_timeout(Duration::from_millis(10)) {
-                        Ok(route) if route.client == client => {
-                            return Ok((
-                                route.event,
-                                route.target_window,
-                                route.xi_event_type,
-                                route.xi_transition_mask,
-                                route.delivery,
-                            ));
-                        }
-                        // Drop one misaddressed route, then let the writer loop
-                        // observe its stop flag before it receives again.
-                        Ok(_) => return Err(RecvTimeoutError::Timeout),
-                        Err(error) => return Err(error),
-                    }
+        match self {
+            Self::Plain(receiver) => receiver
+                .recv_timeout(Duration::from_millis(10))
+                .map(|event| (event, None, None, 0, None)),
+            Self::Routed { receiver, .. } => {
+                match receiver.recv_timeout(Duration::from_millis(10)) {
+                    Ok(route) if route.client == client => Ok((
+                        route.event,
+                        route.target_window,
+                        route.xi_event_type,
+                        route.xi_transition_mask,
+                        route.delivery,
+                    )),
+                    // Drop one misaddressed route, then let the writer loop
+                    // observe its stop flag before it receives again.
+                    Ok(_) => Err(RecvTimeoutError::Timeout),
+                    Err(error) => Err(error),
                 }
             }
         }
@@ -3081,21 +3075,17 @@ impl X11ControlChannels {
         &self,
         client: XServerFrontendClientId,
     ) -> Result<XAuthorityControlCommand, RecvTimeoutError> {
-        loop {
-            match self {
-                Self::Routed { receiver, .. } => {
-                    match receiver.recv_timeout(Duration::from_millis(10)) {
-                        Ok(route) if route.client == client => return Ok(route.command),
-                        // Drop one misaddressed route, then let the writer
-                        // loop observe its stop flag before it receives again.
-                        Ok(_) => return Err(RecvTimeoutError::Timeout),
-                        Err(error) => return Err(error),
-                    }
-                }
-                Self::ClientBound { receiver, .. } => {
-                    return receiver.recv_timeout(Duration::from_millis(10));
+        match self {
+            Self::Routed { receiver, .. } => {
+                match receiver.recv_timeout(Duration::from_millis(10)) {
+                    Ok(route) if route.client == client => Ok(route.command),
+                    // Drop one misaddressed route, then let the writer
+                    // loop observe its stop flag before it receives again.
+                    Ok(_) => Err(RecvTimeoutError::Timeout),
+                    Err(error) => Err(error),
                 }
             }
+            Self::ClientBound { receiver, .. } => receiver.recv_timeout(Duration::from_millis(10)),
         }
     }
 

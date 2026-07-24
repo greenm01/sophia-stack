@@ -983,7 +983,7 @@ fn output_topology_rejects_duplicate_and_unbounded_facts() {
     );
 }
 #[test]
-fn wm_api_v2_negotiation_and_actions_round_trip() {
+fn wm_api_v3_negotiation_and_opaque_application_actions_round_trip() {
     let hello = WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
@@ -1010,7 +1010,9 @@ fn wm_api_v2_negotiation_and_actions_round_trip() {
             workspace: WorkspaceId::from_raw(1),
         }],
         session_actions: vec![
-            WmSessionAction::LaunchTerminal,
+            WmSessionAction::LaunchApplication {
+                application: SessionApplicationId::from_raw(1),
+            },
             WmSessionAction::CloseFocused,
             WmSessionAction::Logout,
         ],
@@ -1065,7 +1067,9 @@ fn wm_api_v2_negotiation_and_actions_round_trip() {
                 workspace: WorkspaceId::from_raw(2),
             },
             WmCommand::RequestSessionAction {
-                action: WmSessionAction::LaunchTerminal,
+                action: WmSessionAction::LaunchApplication {
+                    application: SessionApplicationId::from_raw(1),
+                },
                 target: None,
             },
         ],

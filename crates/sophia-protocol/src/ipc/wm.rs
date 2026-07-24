@@ -1,8 +1,8 @@
 use crate::{
-    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, WmActionActivation, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmManageSurface, WmModifierMask,
-    WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmResponsePacket,
-    WmSessionAction, WmSessionDescriptor,
+    SessionApplicationId, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
+    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmCommand, WmHello,
+    WmManageSurface, WmModifierMask, WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind,
+    WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor,
 };
 
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
@@ -114,7 +114,7 @@ pub fn encode_wm_session_descriptor_frame(
     }
     push_u32(&mut payload, descriptor.session_actions.len() as u32);
     for action in &descriptor.session_actions {
-        push_u16(&mut payload, encode_session_action(*action));
+        encode_session_action(*action, &mut payload);
     }
     encode_frame(
         IpcMessageKind::WmSessionDescriptor,
@@ -146,7 +146,7 @@ pub fn decode_wm_session_descriptor_frame(
     let action_count = decode_count(&mut cursor)?;
     let mut session_actions = Vec::with_capacity(action_count);
     for _ in 0..action_count {
-        session_actions.push(decode_session_action(cursor.u16()?)?);
+        session_actions.push(decode_session_action(&mut cursor)?);
     }
     cursor.finish()?;
     Ok(WmSessionDescriptor {
@@ -157,23 +157,31 @@ pub fn decode_wm_session_descriptor_frame(
     })
 }
 
-fn encode_session_action(action: WmSessionAction) -> u16 {
+fn encode_session_action(action: WmSessionAction, out: &mut Vec<u8>) {
     match action {
-        WmSessionAction::LaunchTerminal => 1,
-        WmSessionAction::LaunchApplicationMenu => 2,
-        WmSessionAction::LaunchFirefox => 3,
-        WmSessionAction::CloseFocused => 4,
-        WmSessionAction::Logout => 5,
+        WmSessionAction::LaunchApplication { application } => {
+            push_u16(out, 1);
+            push_u64(out, application.raw());
+        }
+        WmSessionAction::CloseFocused => push_u16(out, 2),
+        WmSessionAction::Logout => push_u16(out, 3),
     }
 }
 
-fn decode_session_action(value: u16) -> Result<WmSessionAction, IpcCodecError> {
-    match value {
-        1 => Ok(WmSessionAction::LaunchTerminal),
-        2 => Ok(WmSessionAction::LaunchApplicationMenu),
-        3 => Ok(WmSessionAction::LaunchFirefox),
-        4 => Ok(WmSessionAction::CloseFocused),
-        5 => Ok(WmSessionAction::Logout),
+fn decode_session_action(cursor: &mut Cursor<'_>) -> Result<WmSessionAction, IpcCodecError> {
+    match cursor.u16()? {
+        1 => {
+            let application = SessionApplicationId::from_raw(cursor.u64()?);
+            if !application.is_valid() {
+                return Err(IpcCodecError::InvalidEnum {
+                    field: "session_application",
+                    value: 0,
+                });
+            }
+            Ok(WmSessionAction::LaunchApplication { application })
+        }
+        2 => Ok(WmSessionAction::CloseFocused),
+        3 => Ok(WmSessionAction::Logout),
         other => Err(IpcCodecError::InvalidEnum {
             field: "wm_session_action",
             value: u32::from(other),
@@ -358,7 +366,7 @@ fn encode_wm_response_payload(
             }
             WmCommand::RequestSessionAction { action, target } => {
                 push_u16(out, 6);
-                push_u16(out, encode_session_action(*action));
+                encode_session_action(*action, out);
                 encode_option_surface(*target, out);
             }
         }
@@ -396,7 +404,7 @@ fn decode_wm_response_payload(
                 workspace: decode_workspace_id(cursor)?,
             },
             6 => WmCommand::RequestSessionAction {
-                action: decode_session_action(cursor.u16()?)?,
+                action: decode_session_action(cursor)?,
                 target: decode_option_surface(cursor)?,
             },
             other => {

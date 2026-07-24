@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 cargo fmt --check
+tools/audit_source_layout.sh
 cargo check --offline -p sophia-cli --features atomic-scanout-smoke-live --quiet
 cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test backend_evidence --quiet
 cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test input_proof --quiet

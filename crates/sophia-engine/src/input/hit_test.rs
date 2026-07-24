@@ -19,10 +19,8 @@ fn hit_test_layers(event: &InputEventPacket, layers: &[LayerSnapshot]) -> InputR
         return missed_input_route(event, Point::default());
     };
 
-    let mut ordered_layers = layers.iter().collect::<Vec<_>>();
-    ordered_layers.sort_by_key(|layer| layer.stack_rank);
-
-    for layer in ordered_layers.into_iter().rev() {
+    let mut topmost = None;
+    for layer in layers {
         if !layer.surface.is_valid() || !should_render(layer) {
             continue;
         }
@@ -36,7 +34,7 @@ fn hit_test_layers(event: &InputEventPacket, layers: &[LayerSnapshot]) -> InputR
             continue;
         }
 
-        return InputRoute {
+        let route = InputRoute {
             input_serial: event.serial,
             target_surface: Some(layer.surface),
             global_position,
@@ -47,9 +45,18 @@ fn hit_test_layers(event: &InputEventPacket, layers: &[LayerSnapshot]) -> InputR
             transform: layer.transform,
             outcome: InputRouteOutcome::Routed,
         };
+        if topmost
+            .as_ref()
+            .is_none_or(|(rank, _): &(u32, InputRoute)| layer.stack_rank >= *rank)
+        {
+            topmost = Some((layer.stack_rank, route));
+        }
     }
 
-    missed_input_route(event, global_position)
+    topmost.map_or_else(
+        || missed_input_route(event, global_position),
+        |(_, route)| route,
+    )
 }
 
 fn missed_input_route(event: &InputEventPacket, global_position: Point) -> InputRoute {

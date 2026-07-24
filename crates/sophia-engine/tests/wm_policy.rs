@@ -107,7 +107,9 @@ fn workspace_plan_moves_focus_and_validates_named_actions_atomically() {
                 workspace: WorkspaceId::from_raw(2),
             },
             WmCommand::RequestSessionAction {
-                action: WmSessionAction::LaunchTerminal,
+                action: WmSessionAction::LaunchApplication {
+                    application: sophia_protocol::SessionApplicationId::from_raw(1),
+                },
                 target: None,
             },
         ],
@@ -115,7 +117,12 @@ fn workspace_plan_moves_focus_and_validates_named_actions_atomically() {
     };
 
     let plan = state
-        .plan_response(&response, &[WmSessionAction::LaunchTerminal])
+        .plan_response(
+            &response,
+            &[WmSessionAction::LaunchApplication {
+                application: sophia_protocol::SessionApplicationId::from_raw(1),
+            }],
+        )
         .unwrap();
 
     assert_eq!(
@@ -124,7 +131,12 @@ fn workspace_plan_moves_focus_and_validates_named_actions_atomically() {
     );
     assert_eq!(
         plan.session_action,
-        Some((WmSessionAction::LaunchTerminal, None))
+        Some((
+            WmSessionAction::LaunchApplication {
+                application: sophia_protocol::SessionApplicationId::from_raw(1),
+            },
+            None,
+        ))
     );
     assert_eq!(
         state.surface_workspace(surface),
@@ -139,7 +151,9 @@ fn workspace_plan_rejects_unadvertised_or_duplicate_side_effects() {
     let unadvertised = WmResponsePacket {
         transaction: TransactionId::from_raw(11),
         commands: vec![WmCommand::RequestSessionAction {
-            action: WmSessionAction::LaunchFirefox,
+            action: WmSessionAction::LaunchApplication {
+                application: sophia_protocol::SessionApplicationId::from_raw(2),
+            },
             target: None,
         }],
         timeout_msec: 300,

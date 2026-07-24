@@ -382,9 +382,9 @@ archived unless a later specification decision admits a bounded provider.
 - macOS WindowServer/Core Animation: transaction-first presentation and
   fail-closed visual integrity.
 
-The WM policy boundary is versioned independently at Sophia WM API v2. Engine
+The WM policy boundary is versioned independently at Sophia WM API v3. Engine
 owns physical shortcut matching, workspace visibility, transaction validation,
-and named session actions. A WM registers bounded keycode/modifier chords to
+and opaque session actions. A WM registers bounded keycode/modifier chords to
 opaque action IDs during startup and receives only opaque layout nodes and
 action activations. Native Sophia WMs consume this contract directly; legacy
 X11 WMs require the metadata-blind compatibility bridge and a bounded profile.

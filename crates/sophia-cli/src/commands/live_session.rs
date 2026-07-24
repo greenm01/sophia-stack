@@ -17,8 +17,8 @@ use sophia_engine::{
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
-    SeatId, WM_DEFAULT_WORKSPACES, WmActionActivation, WmActionId, WmManageSurface,
-    WmSessionAction,
+    SeatId, SessionApplicationId, WM_DEFAULT_WORKSPACES, WmActionActivation, WmActionId,
+    WmManageSurface, WmSessionAction,
 };
 use sophia_runtime::NamespaceRegistry;
 use sophia_x_authority::{
@@ -907,6 +907,33 @@ struct SessionApplicationConfig {
     firefox: Option<String>,
 }
 
+const TERMINAL_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(1);
+const LAUNCHER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(2);
+const BROWSER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(3);
+
+fn session_action_evidence_name(action: WmSessionAction) -> &'static str {
+    match action {
+        WmSessionAction::LaunchApplication { application }
+            if application == TERMINAL_APPLICATION_ID =>
+        {
+            "LaunchTerminal"
+        }
+        WmSessionAction::LaunchApplication { application }
+            if application == LAUNCHER_APPLICATION_ID =>
+        {
+            "LaunchApplicationMenu"
+        }
+        WmSessionAction::LaunchApplication { application }
+            if application == BROWSER_APPLICATION_ID =>
+        {
+            "LaunchFirefox"
+        }
+        WmSessionAction::LaunchApplication { .. } => "LaunchApplication",
+        WmSessionAction::CloseFocused => "CloseFocused",
+        WmSessionAction::Logout => "Logout",
+    }
+}
+
 #[derive(Clone, Debug)]
 struct PersistentXtermSessionConfig {
     display: String,
@@ -1395,9 +1422,22 @@ impl PersistentXtermSessionConfig {
 
     fn application_for_action(&self, action: WmSessionAction) -> Option<&SessionApplicationSpec> {
         let id = match action {
-            WmSessionAction::LaunchTerminal => self.applications.terminal.as_ref(),
-            WmSessionAction::LaunchApplicationMenu => self.applications.launcher.as_ref(),
-            WmSessionAction::LaunchFirefox => self.applications.firefox.as_ref(),
+            WmSessionAction::LaunchApplication { application }
+                if application == TERMINAL_APPLICATION_ID =>
+            {
+                self.applications.terminal.as_ref()
+            }
+            WmSessionAction::LaunchApplication { application }
+                if application == LAUNCHER_APPLICATION_ID =>
+            {
+                self.applications.launcher.as_ref()
+            }
+            WmSessionAction::LaunchApplication { application }
+                if application == BROWSER_APPLICATION_ID =>
+            {
+                self.applications.firefox.as_ref()
+            }
+            WmSessionAction::LaunchApplication { .. } => None,
             WmSessionAction::CloseFocused | WmSessionAction::Logout => None,
         }?;
         self.applications.applications.get(id)
@@ -1780,19 +1820,29 @@ impl LiveWmSession {
             WmWorkspaceState::new(wm_output_bounds(outputs), WM_DEFAULT_WORKSPACES)?;
         let mut session_actions = vec![WmSessionAction::CloseFocused, WmSessionAction::Logout];
         if !config.normal_session || config.applications.terminal.is_some() {
-            session_actions.push(WmSessionAction::LaunchTerminal);
+            session_actions.push(WmSessionAction::LaunchApplication {
+                application: TERMINAL_APPLICATION_ID,
+            });
         }
         if config.normal_session && config.applications.launcher.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplicationMenu);
+            session_actions.push(WmSessionAction::LaunchApplication {
+                application: LAUNCHER_APPLICATION_ID,
+            });
         }
         if config.normal_session && config.applications.firefox.is_some() {
-            session_actions.push(WmSessionAction::LaunchFirefox);
+            session_actions.push(WmSessionAction::LaunchApplication {
+                application: BROWSER_APPLICATION_ID,
+            });
         }
         if config.session_launcher.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplicationMenu);
+            session_actions.push(WmSessionAction::LaunchApplication {
+                application: LAUNCHER_APPLICATION_ID,
+            });
         }
         if config.session_firefox.is_some() {
-            session_actions.push(WmSessionAction::LaunchFirefox);
+            session_actions.push(WmSessionAction::LaunchApplication {
+                application: BROWSER_APPLICATION_ID,
+            });
         }
         let mut session = Self {
             supervisor: ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec),
@@ -2736,7 +2786,9 @@ fn execute_committed_session_actions(
     let mut logout = false;
     while let Some((transaction, action, target)) = actions.pop_front() {
         match action {
-            WmSessionAction::LaunchTerminal => {
+            WmSessionAction::LaunchApplication { application }
+                if application == TERMINAL_APPLICATION_ID =>
+            {
                 if children.len() >= 16 {
                     return Err("approved session child limit reached".into());
                 }
@@ -2768,7 +2820,7 @@ fn execute_committed_session_actions(
                     ));
                 }
             }
-            WmSessionAction::LaunchApplicationMenu | WmSessionAction::LaunchFirefox => {
+            WmSessionAction::LaunchApplication { application } => {
                 if children.len() >= 16 {
                     return Err("approved session child limit reached".into());
                 }
@@ -2789,12 +2841,10 @@ fn execute_committed_session_actions(
                         app.id
                     );
                 } else {
-                    let program = match action {
-                        WmSessionAction::LaunchApplicationMenu => {
-                            config.session_launcher.as_deref()
-                        }
-                        WmSessionAction::LaunchFirefox => config.session_firefox.as_deref(),
-                        _ => unreachable!(),
+                    let program = match application {
+                        LAUNCHER_APPLICATION_ID => config.session_launcher.as_deref(),
+                        BROWSER_APPLICATION_ID => config.session_firefox.as_deref(),
+                        _ => None,
                     }
                     .ok_or("WM requested an unadvertised session executable")?;
                     children.push(ManagedSessionChild::new(
@@ -2840,8 +2890,9 @@ fn execute_committed_session_actions(
             WmSessionAction::Logout => logout = true,
         }
         println!(
-            "sophia_live_wm schema=1 status=session_action_committed transaction={} action={action:?}",
-            transaction.raw()
+            "sophia_live_wm schema=1 status=session_action_committed transaction={} action={}",
+            transaction.raw(),
+            session_action_evidence_name(action)
         );
     }
     Ok(logout)
@@ -3030,14 +3081,15 @@ fn run_session_loop(
                 let committed_surfaces = runtime
                     .as_ref()
                     .map_or(&empty_committed[..], |runtime| runtime.committed_surfaces());
+                let empty_layers = [];
                 let input_layers = runtime
                     .as_ref()
-                    .map_or_else(Vec::new, |runtime| runtime.input_layers());
+                    .map_or(&empty_layers[..], |runtime| runtime.input_layers());
                 let report = route_physical_input(
                     poller,
                     &focus,
                     committed_surfaces,
-                    &input_layers,
+                    input_layers,
                     &layout.client_routes,
                     wm_session
                         .as_mut()
@@ -4302,7 +4354,7 @@ fn run_session_loop(
                     events,
                     &focus,
                     runtime.committed_surfaces(),
-                    &runtime.input_layers(),
+                    runtime.input_layers(),
                     &layout.client_routes,
                     input_sender,
                     &mut modifiers,
@@ -4361,7 +4413,7 @@ fn run_session_loop(
                 .as_ref()
                 .ok_or("pointer proof became ready before the backend runtime")?;
             pointer
-                .arm_at_focused_surface_center(focus.focused_surface(seat), &runtime.input_layers())
+                .arm_at_focused_surface_center(focus.focused_surface(seat), runtime.input_layers())
                 .ok_or("pointer proof has no focused application surface to place the cursor")?;
             cursor_dirty_since.get_or_insert_with(Instant::now);
             cursor_dirty = true;
@@ -5971,7 +6023,9 @@ mod tests {
         assert_eq!(config.applications.startup, ["terminal"]);
         assert_eq!(
             config
-                .application_for_action(WmSessionAction::LaunchTerminal)
+                .application_for_action(WmSessionAction::LaunchApplication {
+                    application: super::TERMINAL_APPLICATION_ID,
+                })
                 .unwrap()
                 .arguments,
             ["-cm"]
@@ -5986,7 +6040,9 @@ mod tests {
         assert!(blank.applications.startup.is_empty());
         assert!(
             blank
-                .application_for_action(WmSessionAction::LaunchTerminal)
+                .application_for_action(WmSessionAction::LaunchApplication {
+                    application: super::TERMINAL_APPLICATION_ID,
+                })
                 .is_some()
         );
 

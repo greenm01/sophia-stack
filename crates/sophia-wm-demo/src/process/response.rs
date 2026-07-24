@@ -195,26 +195,35 @@ pub fn decode_process_response(line: &str) -> Result<WmResponsePacket, WmProcess
         timeout_msec,
     })
 }
-fn encode_session_action(action: WmSessionAction) -> &'static str {
+fn encode_session_action(action: WmSessionAction) -> String {
     match action {
-        WmSessionAction::LaunchTerminal => "terminal",
-        WmSessionAction::LaunchApplicationMenu => "launcher",
-        WmSessionAction::LaunchFirefox => "firefox",
-        WmSessionAction::CloseFocused => "close",
-        WmSessionAction::Logout => "logout",
+        WmSessionAction::LaunchApplication { application } => {
+            format!("application-{}", application.raw())
+        }
+        WmSessionAction::CloseFocused => "close".to_owned(),
+        WmSessionAction::Logout => "logout".to_owned(),
     }
 }
 
 fn decode_session_action(value: &str) -> Result<WmSessionAction, WmProcessError> {
     match value {
-        "terminal" => Ok(WmSessionAction::LaunchTerminal),
-        "launcher" => Ok(WmSessionAction::LaunchApplicationMenu),
-        "firefox" => Ok(WmSessionAction::LaunchFirefox),
         "close" => Ok(WmSessionAction::CloseFocused),
         "logout" => Ok(WmSessionAction::Logout),
-        _ => Err(WmProcessError::new(format!(
-            "invalid session action: {value}"
-        ))),
+        _ => {
+            let raw = value
+                .strip_prefix("application-")
+                .ok_or_else(|| WmProcessError::new(format!("invalid session action: {value}")))?;
+            let application = sophia_protocol::SessionApplicationId::from_raw(parse_u64_field(
+                raw,
+                "session application",
+            )?);
+            if !application.is_valid() {
+                return Err(WmProcessError::new(format!(
+                    "invalid session action: {value}"
+                )));
+            }
+            Ok(WmSessionAction::LaunchApplication { application })
+        }
     }
 }
 

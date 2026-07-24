@@ -176,7 +176,7 @@ impl RealAtomicScanoutPageFlipSession {
             {
                 let mut mapping = self.card.map_dumb_buffer(&mut buffer)?;
                 mapping.fill(0);
-                for (y, row) in sophia_renderer_live::CLASSIC_X11_CURSOR_SHAPE
+                for (y, row) in sophia_renderer_live::DEFAULT_CURSOR_SHAPE
                     .iter()
                     .enumerate()
                 {

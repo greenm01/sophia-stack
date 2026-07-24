@@ -28,10 +28,10 @@ pub const XMONAD_ACTION_FOCUS_PREVIOUS: u64 = 2;
 pub const XMONAD_ACTION_NEXT_LAYOUT: u64 = 3;
 pub const XMONAD_ACTION_VIEW_WORKSPACE_BASE: u64 = 0x100;
 pub const XMONAD_ACTION_MOVE_WORKSPACE_BASE: u64 = 0x200;
-pub const XMONAD_ACTION_TERMINAL: u64 = 0x300;
+pub const XMONAD_ACTION_APPLICATION_1: u64 = 0x300;
 pub const XMONAD_ACTION_CLOSE: u64 = 0x301;
-pub const XMONAD_ACTION_LAUNCHER: u64 = 0x302;
-pub const XMONAD_ACTION_FIREFOX: u64 = 0x303;
+pub const XMONAD_ACTION_APPLICATION_2: u64 = 0x302;
+pub const XMONAD_ACTION_APPLICATION_3: u64 = 0x303;
 pub const XMONAD_ACTION_LOGOUT: u64 = 0x304;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -66,10 +66,10 @@ fn xmonad_bindings() -> Vec<WmBindingRegistration> {
         binding(XMONAD_ACTION_FOCUS_NEXT, 36, super_only),
         binding(XMONAD_ACTION_FOCUS_PREVIOUS, 37, super_only),
         binding(XMONAD_ACTION_NEXT_LAYOUT, 57, super_only),
-        binding(XMONAD_ACTION_TERMINAL, 28, super_only),
+        binding(XMONAD_ACTION_APPLICATION_1, 28, super_only),
         binding(XMONAD_ACTION_CLOSE, 46, super_shift),
-        binding(XMONAD_ACTION_LAUNCHER, 25, super_only),
-        binding(XMONAD_ACTION_FIREFOX, 33, super_only),
+        binding(XMONAD_ACTION_APPLICATION_2, 25, super_only),
+        binding(XMONAD_ACTION_APPLICATION_3, 33, super_only),
         binding(XMONAD_ACTION_LOGOUT, 16, super_shift),
     ];
     for slot in 1..=9_u64 {
@@ -194,10 +194,24 @@ pub fn translate_xmonad_profile_action(
         WmCommand::AssignWorkspace { surface, workspace }
     } else {
         let action = match raw {
-            XMONAD_ACTION_TERMINAL => WmSessionAction::LaunchTerminal,
+            XMONAD_ACTION_APPLICATION_1
+            | XMONAD_ACTION_APPLICATION_2
+            | XMONAD_ACTION_APPLICATION_3 => {
+                let slot = match raw {
+                    XMONAD_ACTION_APPLICATION_1 => 0,
+                    XMONAD_ACTION_APPLICATION_2 => 1,
+                    XMONAD_ACTION_APPLICATION_3 => 2,
+                    _ => unreachable!(),
+                };
+                session
+                    .session_actions
+                    .iter()
+                    .filter(|action| matches!(action, WmSessionAction::LaunchApplication { .. }))
+                    .nth(slot)
+                    .copied()
+                    .ok_or(X11WmBridgeError::UnavailableSessionAction)?
+            }
             XMONAD_ACTION_CLOSE => WmSessionAction::CloseFocused,
-            XMONAD_ACTION_LAUNCHER => WmSessionAction::LaunchApplicationMenu,
-            XMONAD_ACTION_FIREFOX => WmSessionAction::LaunchFirefox,
             XMONAD_ACTION_LOGOUT => WmSessionAction::Logout,
             XMONAD_ACTION_FOCUS_NEXT | XMONAD_ACTION_FOCUS_PREVIOUS | XMONAD_ACTION_NEXT_LAYOUT => {
                 return Ok(None);

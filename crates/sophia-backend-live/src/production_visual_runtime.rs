@@ -9,6 +9,7 @@ pub struct LiveProductionVisualRuntime {
     production: sophia_engine::ProductionSessionCoordinator,
     outputs: LiveProductionOutputRuntimeSet,
     layers: BTreeMap<SurfaceId, SurfaceTransaction>,
+    input_layers: Vec<LayerSnapshot>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
     present_feedback_sink: Box<dyn FnMut(crate::LivePresentFeedbackOutcome)>,
@@ -64,6 +65,7 @@ impl LiveProductionVisualRuntime {
             production,
             outputs: output_runtimes,
             layers: BTreeMap::new(),
+            input_layers: Vec::new(),
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
             present_feedback_sink: Box::new(|_| {}),
@@ -136,6 +138,7 @@ impl LiveProductionVisualRuntime {
         for transaction in &batch.transactions {
             self.layers.insert(transaction.surface, transaction.clone());
         }
+        self.rebuild_input_layers();
         let preserve_gpu_scanout = native_scanout.is_some()
             && (self
                 .production
@@ -326,6 +329,7 @@ impl LiveProductionVisualRuntime {
             for transaction in &batch.transactions {
                 self.layers.insert(transaction.surface, transaction.clone());
             }
+            self.rebuild_input_layers();
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
         }
         self.run_authority_transactions(
@@ -587,6 +591,7 @@ impl LiveProductionVisualRuntime {
         for transaction in transactions {
             self.layers.insert(transaction.surface, transaction.clone());
         }
+        self.rebuild_input_layers();
         let intake = AuthorityTransactionIntake::new(transaction_id, transactions.to_vec())
             .with_surface_removals(removed_surfaces.to_vec());
         let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
@@ -688,25 +693,31 @@ impl LiveProductionVisualRuntime {
         self.production.committed_surfaces()
     }
 
-    pub fn input_layers(&self) -> Vec<LayerSnapshot> {
-        self.layers
-            .values()
-            .enumerate()
-            .map(|(index, transaction)| LayerSnapshot {
-                surface: transaction.surface,
-                authority_local_id: None,
-                namespace: None,
-                stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-                geometry: transaction.target_geometry,
-                source: transaction.target_buffer,
-                damage: transaction.damage.clone(),
-                opacity: 1.0,
-                crop: None,
-                transform: Transform::IDENTITY,
-                generation: transaction.previous_committed_generation,
-                resize_sync: ResizeSyncCapability::ImplicitOnly,
-            })
-            .collect()
+    fn rebuild_input_layers(&mut self) {
+        self.input_layers.clear();
+        self.input_layers.extend(
+            self.layers
+                .values()
+                .enumerate()
+                .map(|(index, transaction)| LayerSnapshot {
+                    surface: transaction.surface,
+                    authority_local_id: None,
+                    namespace: None,
+                    stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
+                    geometry: transaction.target_geometry,
+                    source: transaction.target_buffer,
+                    damage: transaction.damage.clone(),
+                    opacity: 1.0,
+                    crop: None,
+                    transform: Transform::IDENTITY,
+                    generation: transaction.previous_committed_generation,
+                    resize_sync: ResizeSyncCapability::ImplicitOnly,
+                }),
+        );
+    }
+
+    pub fn input_layers(&self) -> &[LayerSnapshot] {
+        &self.input_layers
     }
 
     pub fn drain_native_scanout(

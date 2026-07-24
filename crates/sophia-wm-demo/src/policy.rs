@@ -134,7 +134,9 @@ pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
                     workspace: WorkspaceId::from_raw(2),
                 }],
                 3 => vec![WmCommand::RequestSessionAction {
-                    action: WmSessionAction::LaunchTerminal,
+                    action: WmSessionAction::LaunchApplication {
+                        application: sophia_protocol::SessionApplicationId::from_raw(1),
+                    },
                     target: None,
                 }],
                 _ => Vec::new(),

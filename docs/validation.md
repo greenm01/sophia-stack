@@ -19,6 +19,7 @@ Run before committing ordinary changes:
 
 ```sh
 cargo fmt --check
+tools/audit_source_layout.sh
 cargo test --workspace --offline
 ```
 

@@ -35,6 +35,7 @@ simple_id!(IconTokenId);
 simple_id!(BufferHandle);
 simple_id!(FenceHandle);
 simple_id!(WmActionId);
+simple_id!(SessionApplicationId);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SurfaceId {
@@ -140,3 +141,4 @@ allocator_next!(IconTokenId);
 allocator_next!(BufferHandle);
 allocator_next!(FenceHandle);
 allocator_next!(WmActionId);
+allocator_next!(SessionApplicationId);

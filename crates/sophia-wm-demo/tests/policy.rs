@@ -217,7 +217,9 @@ mod tests {
             }),
         });
         assert!(launch.commands.contains(&WmCommand::RequestSessionAction {
-            action: WmSessionAction::LaunchTerminal,
+            action: WmSessionAction::LaunchApplication {
+                application: sophia_protocol::SessionApplicationId::from_raw(1),
+            },
             target: None,
         }));
 
