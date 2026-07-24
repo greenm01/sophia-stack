@@ -111,7 +111,7 @@ QEMU already proves the bounded Firefox protocol workflow. This milestone
 tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
 than adding speculative browser compatibility.
 
-- [ ] Register an explicit Firefox application action in the guarded physical
+- [x] Register an explicit Firefox application action in the guarded physical
   session and launch a local/offline deterministic page.
 - [ ] Require visible page rendering plus keyboard, pointer, scroll, resize,
   refocus, dialog open/close, and status-zero browser exit.

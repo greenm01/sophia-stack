@@ -36,6 +36,8 @@ install -m 755 target/release/sophia-x11-wm-bridge \
     "$artifact/target/release/sophia-x11-wm-bridge"
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
+install -m 755 tools/installed/sophia-firefox-proof \
+    "$artifact/bin/sophia-firefox-proof"
 install -m 755 tools/installed/capture-runtime-identity.sh \
     "$artifact/bin/capture-runtime-identity"
 install -m 755 tools/status_live_session.sh "$artifact/bin/sophia-status"
@@ -51,6 +53,12 @@ install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
 install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
+install -m 755 tools/verify_sophia_firefox_physical.sh \
+    "$artifact/bin/sophia-verify-firefox-run"
+install -m 755 tools/record_sophia_firefox_physical_run.sh \
+    "$artifact/bin/sophia-record-firefox-run"
+install -m 755 tools/verify_sophia_firefox_physical_runs.sh \
+    "$artifact/bin/sophia-verify-firefox-runs"
 install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmonad.sh "$artifact/tools/"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
@@ -65,6 +73,14 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia.desktop"
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Name=Sophia Firefox Proof' \
+    'Comment=Sophia installed physical Firefox promotion workflow' \
+    'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-firefox-proof' \
+    'Type=Application' \
+    'DesktopNames=Sophia' \
+    >"$artifact/share/wayland-sessions/sophia-firefox-proof.desktop"
 printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >"$artifact/manifest"

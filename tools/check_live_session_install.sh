@@ -13,8 +13,9 @@ make_artifact() {
     artifact="$TEMP_DIR/artifact-$release_id"
     install -d -m 755 "$artifact/bin" "$artifact/share/wayland-sessions"
     for command in \
-        sophia-session sophia-status sophia-stop sophia-rollback sophia-record-run \
-        sophia-verify-cycles sophia-verify-soak; do
+        sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
+        sophia-record-run sophia-record-firefox-run sophia-verify-cycles \
+        sophia-verify-firefox-runs sophia-verify-soak; do
         case "$command" in
             sophia-status)
                 cp "$ROOT_DIR/tools/status_live_session.sh" "$artifact/bin/$command"
@@ -30,6 +31,8 @@ make_artifact() {
     done
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-session\n' \
         >"$artifact/share/wayland-sessions/sophia.desktop"
+    printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-firefox-proof\n' \
+        >"$artifact/share/wayland-sessions/sophia-firefox-proof.desktop"
     printf 'schema=1\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\n' \
         "$release_id" "$release_id" >"$artifact/manifest"
     (
@@ -50,9 +53,12 @@ env "${install_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$first"
 [[ "$(readlink "$PREFIX/current")" == releases/0001 ]]
 [[ ! -e "$PREFIX/previous" ]]
 grep -Fq "Exec=$PREFIX/current/bin/sophia-session" "$SESSION_DIR/sophia.desktop"
+grep -Fq "Exec=$PREFIX/current/bin/sophia-firefox-proof" \
+    "$SESSION_DIR/sophia-firefox-proof.desktop"
 for command in \
-    sophia-session sophia-status sophia-stop sophia-rollback sophia-record-run \
-    sophia-verify-cycles sophia-verify-soak; do
+    sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
+    sophia-record-run sophia-record-firefox-run sophia-verify-cycles \
+    sophia-verify-firefox-runs sophia-verify-soak; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done
 

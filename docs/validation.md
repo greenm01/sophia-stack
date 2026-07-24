@@ -318,6 +318,32 @@ mode and termios restoration. Its default evidence is under
 `/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
 proof.
 
+### Physical Firefox workflow
+
+After the normal xmonad input gate passes, run the content-redacted physical
+Firefox workflow from TTY3:
+
+```sh
+tools/start_sophia_xmonad_firefox_proof_tty3.sh
+```
+
+The launcher prints the exact interaction sequence. It uses the offline fixture
+and requires keyboard, `CLIPBOARD`, `PRIMARY`, resize, and dialog stages,
+two Firefox launches with status-zero exits, an independently interactive
+second Kitty, and normal xmonad logout. Verify and retain the run with:
+
+```sh
+tools/verify_sophia_firefox_physical.sh
+tools/record_sophia_firefox_physical_run.sh
+tools/verify_sophia_firefox_physical_runs.sh 3
+```
+
+The installed artifact exposes the same workflow as the `Sophia Firefox Proof`
+greetd entry. After each installed run use `sophia-record-firefox-run`; after
+three runs use `sophia-verify-firefox-runs 3`. Those commands verify immutable
+release digests and privacy-safe runtime identities in addition to the browser,
+WM, input, renderer, and teardown evidence.
+
 ## Installed Daily-Driver Candidate
 
 An installed release is built and frozen separately from login:

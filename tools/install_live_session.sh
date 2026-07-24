@@ -52,11 +52,14 @@ fi
 ln -sfn "releases/$release_id" "$PREFIX/current"
 commands=(
     sophia-session
+    sophia-firefox-proof
     sophia-status
     sophia-stop
     sophia-rollback
     sophia-record-run
+    sophia-record-firefox-run
     sophia-verify-cycles
+    sophia-verify-firefox-runs
     sophia-verify-soak
 )
 for command in "${commands[@]}"; do
@@ -66,15 +69,17 @@ for command in "${commands[@]}"; do
     }
     ln -sfn "$PREFIX/current/bin/$command" "$COMMAND_DIR/$command"
 done
-install -m 644 "$target/share/wayland-sessions/sophia.desktop" \
-    "$SESSION_DIR/sophia.desktop.template"
-sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
-    "$SESSION_DIR/sophia.desktop.template" >"$SESSION_DIR/sophia.desktop"
-chmod 644 "$SESSION_DIR/sophia.desktop"
-rm -f "$SESSION_DIR/sophia.desktop.template"
+for desktop in sophia sophia-firefox-proof; do
+    install -m 644 "$target/share/wayland-sessions/$desktop.desktop" \
+        "$SESSION_DIR/$desktop.desktop.template"
+    sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
+        "$SESSION_DIR/$desktop.desktop.template" >"$SESSION_DIR/$desktop.desktop"
+    chmod 644 "$SESSION_DIR/$desktop.desktop"
+    rm -f "$SESSION_DIR/$desktop.desktop.template"
+done
 trap - EXIT
 
 echo "Installed Sophia release: $release_id"
 echo "Current: $PREFIX/current"
-echo "Session entry: $SESSION_DIR/sophia.desktop"
+echo "Session entries: $SESSION_DIR/sophia.desktop $SESSION_DIR/sophia-firefox-proof.desktop"
 echo "Operator commands: ${commands[*]}"
