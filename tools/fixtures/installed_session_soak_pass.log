@@ -2,5 +2,17 @@ sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=firefox source=action
 sophia_session_app schema=1 status=started id=firefox source=action
+sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=2 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=3 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=4 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=focus_committed transaction=4 target=surface
+sophia_live_wm schema=1 status=session_action_committed transaction=5 action=CloseFocused
+sophia_live_wm schema=1 status=session_action_committed transaction=6 action=CloseFocused
+sophia_firefox_m8 schema=1 status=complete stages=6 selection_owner_changes=2 selection_conversions=2 content=redacted
+sophia_live_session_protocol_errors schema=1 expected=2 unexpected=0
+sophia_live_output schema=1 status=complete output=1 checksum=10 submissions=20 retirements=20 callbacks=20 nonzero_exports=20
+sophia_live_output schema=1 status=complete output=2 checksum=20 submissions=20 retirements=20 callbacks=20 nonzero_exports=20
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
-sophia_live_session schema=14 status=bounded_complete elapsed_msec=7200000 wm_degraded=false native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0
+sophia_live_session schema=14 status=bounded_complete elapsed_msec=7200000 physical_events=100 physical_keys_routed=80 physical_pointer_events=20 physical_pointer_routed=20 wm_requests=30 wm_committed=30 native_submissions=500 native_retirements=500 native_frame_uploads=500 wm_degraded=false native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0

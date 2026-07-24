@@ -50,6 +50,18 @@ firefox_actions="$(
     grep -Ec '^sophia_session_app schema=1 status=started id=firefox source=action$' \
         "$session_log" || true
 )"
+layout_commits="$(
+    grep -Ec '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' \
+        "$session_log" || true
+)"
+focus_commits="$(
+    grep -Ec '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' \
+        "$session_log" || true
+)"
+close_actions="$(
+    grep -Ec '^sophia_live_wm schema=1 status=session_action_committed .* action=CloseFocused$' \
+        "$session_log" || true
+)"
 (( terminal_actions >= minimum_terminal_actions )) || {
     echo "soak has $terminal_actions terminal actions; $minimum_terminal_actions required" >&2
     exit 1
@@ -58,6 +70,50 @@ firefox_actions="$(
     echo "soak has $firefox_actions Firefox actions; $minimum_firefox_actions required" >&2
     exit 1
 }
+(( layout_commits >= minimum_terminal_actions + minimum_firefox_actions )) || {
+    echo "soak has $layout_commits layout commits; $((minimum_terminal_actions + minimum_firefox_actions)) required" >&2
+    exit 1
+}
+(( focus_commits > 0 )) || {
+    echo "soak has no committed focus changes" >&2
+    exit 1
+}
+(( close_actions >= minimum_firefox_actions )) || {
+    echo "soak has $close_actions close actions; $minimum_firefox_actions required" >&2
+    exit 1
+}
+grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=6 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
+    "$session_log" || {
+    echo "soak is missing the complete redacted Firefox interaction proof" >&2
+    exit 1
+}
+grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
+    "$session_log" || {
+    echo "soak protocol-error summary is missing or nonzero" >&2
+    exit 1
+}
+outputs="$(
+    grep -Ec '^sophia_live_output schema=1 status=complete .*callbacks=[1-9][0-9]* .*nonzero_exports=[1-9][0-9]*$' \
+        "$session_log" || true
+)"
+(( outputs >= 2 )) || {
+    echo "soak has $outputs clean output summaries; two required" >&2
+    exit 1
+}
+grep -Eq '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed$' \
+    "$session_log" || {
+    echo "soak final process/frontend cleanup is not clean" >&2
+    exit 1
+}
+for positive in physical_events physical_keys_routed physical_pointer_events \
+    physical_pointer_routed wm_requests wm_committed native_submissions \
+    native_retirements native_frame_uploads; do
+    actual="$(field "$positive")"
+    [[ "$actual" =~ ^[0-9]+$ ]] && (( actual > 0 )) || {
+        echo "soak completion has no $positive activity" >&2
+        exit 1
+    }
+done
 for assignment in \
     wm_degraded=false \
     native_submit_failures=0 \
@@ -81,4 +137,4 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pend
     exit 1
 }
 
-echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions"
+echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits close_actions=$close_actions outputs=$outputs"

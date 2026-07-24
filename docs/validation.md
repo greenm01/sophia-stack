@@ -389,9 +389,19 @@ sophia-verify-cycles 3
 # Firefox action launches:
 sophia-verify-soak \
   ~/.local/state/sophia/xmonad-session/session.log 7200000 10 5
+
+# Ten clean installed login cycles:
+sophia-verify-cycles 10
+
+# Full eight-hour workday, with proportionally broader app exercise:
+sophia-verify-soak \
+  ~/.local/state/sophia/xmonad-session/session.log 28800000 30 15
 ```
 
-`sophia-record-run` first applies the strict physical xmonad verifier, checks
+Run the long gates through the installed `Sophia Firefox Proof` entry so the
+same log also contains the redacted keyboard, `CLIPBOARD`, `PRIMARY`, resize,
+and dialog contract. `sophia-record-run` first applies the strict physical
+xmonad verifier, checks
 the running release identity and every packaged SHA-256 digest, and only then
 copies the session, guard, recovery, identity, and release manifest into a
 numbered, checksummed promotion-run directory. `sophia-verify-cycles` rejects
