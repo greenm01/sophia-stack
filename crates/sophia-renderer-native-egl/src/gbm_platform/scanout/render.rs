@@ -1,3 +1,26 @@
+struct NativeEglScanoutDevice<'a, T: std::os::fd::AsFd> {
+    egl: &'a khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+    display: khronos_egl::Display,
+    gbm_device: &'a gbm::Device<T>,
+}
+
+struct PersistentTargetSpec {
+    width: u32,
+    height: u32,
+    preferred_modifiers: Vec<u64>,
+    config: khronos_egl::Config,
+    candidate: RenderedScanoutCandidate,
+}
+
+struct RenderedFrontBufferSpec<'a> {
+    width: u32,
+    height: u32,
+    config: khronos_egl::Config,
+    surface_format: gbm::Format,
+    surface_modifiers: &'a [gbm::Modifier],
+    surface_usage: gbm::BufferObjectFlags,
+}
+
 fn render_gbm_scanout_front_buffer<T: std::os::fd::AsFd>(
     device: T,
     width: u32,
@@ -61,15 +84,19 @@ fn render_initialized_gbm_scanout_front_buffer<T: std::os::fd::AsFd>(
         };
 
         match render_initialized_gbm_scanout_front_buffer_with_config(
-            egl,
-            display,
-            gbm_device,
-            width,
-            height,
-            config,
-            candidate.format,
-            &candidate.modifiers,
-            candidate.usage,
+            NativeEglScanoutDevice {
+                egl,
+                display,
+                gbm_device,
+            },
+            RenderedFrontBufferSpec {
+                width,
+                height,
+                config,
+                surface_format: candidate.format,
+                surface_modifiers: &candidate.modifiers,
+                surface_usage: candidate.usage,
+            },
             frame,
         ) {
             Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
@@ -89,15 +116,21 @@ fn render_initialized_gbm_scanout_front_buffer<T: std::os::fd::AsFd>(
 }
 
 fn create_persistent_target<T: std::os::fd::AsFd>(
-    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
-    display: khronos_egl::Display,
-    gbm_device: &gbm::Device<T>,
-    width: u32,
-    height: u32,
-    preferred_modifiers: Vec<u64>,
-    config: khronos_egl::Config,
-    candidate: RenderedScanoutCandidate,
+    device: NativeEglScanoutDevice<'_, T>,
+    spec: PersistentTargetSpec,
 ) -> Result<PersistentNativeFrameTarget, NativeGbmScanoutBufferExportDetail> {
+    let NativeEglScanoutDevice {
+        egl,
+        display,
+        gbm_device,
+    } = device;
+    let PersistentTargetSpec {
+        width,
+        height,
+        preferred_modifiers,
+        config,
+        candidate,
+    } = spec;
     use gbm::AsRaw as _;
 
     let gbm_surface = create_rendered_scanout_surface(
@@ -634,17 +667,23 @@ fn trace_native_lifecycle(stage: &str) {
 }
 
 fn render_initialized_gbm_scanout_front_buffer_with_config<T: std::os::fd::AsFd>(
-    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
-    display: khronos_egl::Display,
-    gbm_device: &gbm::Device<T>,
-    width: u32,
-    height: u32,
-    config: khronos_egl::Config,
-    surface_format: gbm::Format,
-    surface_modifiers: &[gbm::Modifier],
-    surface_usage: gbm::BufferObjectFlags,
+    device: NativeEglScanoutDevice<'_, T>,
+    spec: RenderedFrontBufferSpec<'_>,
     frame: Option<NativeXrgb8888Frame<'_>>,
 ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+    let NativeEglScanoutDevice {
+        egl,
+        display,
+        gbm_device,
+    } = device;
+    let RenderedFrontBufferSpec {
+        width,
+        height,
+        config,
+        surface_format,
+        surface_modifiers,
+        surface_usage,
+    } = spec;
     use gbm::AsRaw as _;
 
     let gbm_surface = create_rendered_scanout_surface(

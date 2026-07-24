@@ -266,14 +266,18 @@ where
                 continue;
             };
             let target = create_persistent_target(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                frame.width,
-                frame.height,
-                preferred_modifiers.clone(),
-                config,
-                candidate,
+                NativeEglScanoutDevice {
+                    egl: &self.egl,
+                    display: self.display,
+                    gbm_device: &self.gbm_device,
+                },
+                PersistentTargetSpec {
+                    width: frame.width,
+                    height: frame.height,
+                    preferred_modifiers: preferred_modifiers.clone(),
+                    config,
+                    candidate,
+                },
             );
             let mut target = match target {
                 Ok(target) => target,
@@ -360,14 +364,18 @@ where
                 continue;
             };
             let target = create_persistent_target(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                frame.width,
-                frame.height,
-                preferred_modifiers.clone(),
-                config,
-                candidate,
+                NativeEglScanoutDevice {
+                    egl: &self.egl,
+                    display: self.display,
+                    gbm_device: &self.gbm_device,
+                },
+                PersistentTargetSpec {
+                    width: frame.width,
+                    height: frame.height,
+                    preferred_modifiers: preferred_modifiers.clone(),
+                    config,
+                    candidate,
+                },
             );
             let mut target = match target {
                 Ok(target) => target,
@@ -507,14 +515,18 @@ where
                 continue;
             };
             let target = create_persistent_target(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                width,
-                height,
-                preferred_modifiers.clone(),
-                config,
-                candidate,
+                NativeEglScanoutDevice {
+                    egl: &self.egl,
+                    display: self.display,
+                    gbm_device: &self.gbm_device,
+                },
+                PersistentTargetSpec {
+                    width,
+                    height,
+                    preferred_modifiers: preferred_modifiers.clone(),
+                    config,
+                    candidate,
+                },
             );
             let mut target = match target {
                 Ok(target) => target,
