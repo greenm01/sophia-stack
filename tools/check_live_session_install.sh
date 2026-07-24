@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
-PREFIX="$TEMP_DIR/prefix"
-SESSION_DIR="$TEMP_DIR/sessions"
-COMMAND_DIR="$TEMP_DIR/commands"
+PREFIX="$TEMP_DIR/nested/install/prefix"
+SESSION_DIR="$TEMP_DIR/nested/share/wayland-sessions"
+COMMAND_DIR="$TEMP_DIR/nested/commands"
 
 make_artifact() {
     local release_id="$1" artifact command

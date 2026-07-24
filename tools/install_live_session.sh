@@ -11,10 +11,18 @@ PREFIX="${SOPHIA_INSTALL_PREFIX:-/opt/sophia}"
 SESSION_DIR="${SOPHIA_SESSION_DIR:-/usr/local/share/wayland-sessions}"
 COMMAND_DIR="${SOPHIA_COMMAND_DIR:-/usr/local/bin}"
 
-[[ "$(id -u)" == 0 || -w "$(dirname "$PREFIX")" ]] || {
-    echo "Installation requires root for $PREFIX; run with sudo." >&2
-    exit 1
-}
+if [[ "$(id -u)" != 0 ]]; then
+    writable_ancestor="$PREFIX"
+    while [[ ! -e "$writable_ancestor" ]]; do
+        parent="$(dirname "$writable_ancestor")"
+        [[ "$parent" != "$writable_ancestor" ]] || break
+        writable_ancestor="$parent"
+    done
+    [[ -d "$writable_ancestor" && -w "$writable_ancestor" ]] || {
+        echo "Installation requires root for $PREFIX; run with sudo." >&2
+        exit 1
+    }
+fi
 release_id="$(sed -n 's/^release_id=//p' "$artifact/manifest" | head -n 1)"
 [[ "$release_id" =~ ^[0-9A-Za-z._-]+$ ]] || {
     echo "Artifact has an invalid release_id." >&2
