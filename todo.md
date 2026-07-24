@@ -232,6 +232,9 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
     physical-input routing state.
   - [ ] Extract configuration, WM/layout, input execution, presentation, and
     the owner loop itself.
+    - [x] Extract configuration, WM/layout, input execution, presentation, and
+      the owner-loop facade into explicit domain files.
+    - [ ] Split owner-loop state and per-tick phases into bounded owners.
 - [x] Split native scanout and the legacy WM bridge by ownership.
   - [x] Separate passive DMA-BUF/composition records from GBM/EGL execution.
   - [x] Separate legacy-WM wire framing from runtime supervision.
