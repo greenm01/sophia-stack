@@ -169,11 +169,7 @@ fn encode_randr_reply(
                     put_u32(byte_order, &mut out[8..12], property_type);
                     put_u32(byte_order, &mut out[12..16], bytes_after);
                     let item_width = usize::from(format).checked_div(8).unwrap_or(0);
-                    let items = if item_width == 0 {
-                        0
-                    } else {
-                        data.len() / item_width
-                    };
+                    let items = data.len().checked_div(item_width).unwrap_or(0);
                     put_u32(
                         byte_order,
                         &mut out[16..20],

@@ -18,6 +18,27 @@ pub struct LiveRendererScanoutBufferDescriptor {
     pub modifier: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveRendererScanoutBufferPlanes {
+    pub count: u8,
+    pub handles: [u32; 4],
+    pub pitches: [u32; 4],
+    pub offsets: [u32; 4],
+    pub modifier: Option<u64>,
+}
+
+impl LiveRendererScanoutBufferPlanes {
+    pub const fn single(handle: u32, pitch: u32) -> Self {
+        Self {
+            count: 1,
+            handles: [handle, 0, 0, 0],
+            pitches: [pitch, 0, 0, 0],
+            offsets: [0, 0, 0, 0],
+            modifier: None,
+        }
+    }
+}
+
 impl LiveRendererScanoutBufferDescriptor {
     pub const fn new(size: Size, pitch: u32, format: u32, gem_handle: u32) -> Self {
         Self::new_with_planes(
@@ -25,11 +46,7 @@ impl LiveRendererScanoutBufferDescriptor {
             pitch,
             format,
             gem_handle,
-            1,
-            [gem_handle, 0, 0, 0],
-            [pitch, 0, 0, 0],
-            [0, 0, 0, 0],
-            None,
+            LiveRendererScanoutBufferPlanes::single(gem_handle, pitch),
         )
     }
 
@@ -38,23 +55,10 @@ impl LiveRendererScanoutBufferDescriptor {
         pitch: u32,
         format: u32,
         gem_handle: u32,
-        plane_count: u8,
-        plane_handles: [u32; 4],
-        plane_pitches: [u32; 4],
-        plane_offsets: [u32; 4],
-        modifier: Option<u64>,
+        planes: LiveRendererScanoutBufferPlanes,
     ) -> Self {
         Self {
-            status: if is_valid_scanout_buffer_shape(
-                size,
-                pitch,
-                format,
-                gem_handle,
-                plane_count,
-                plane_handles,
-                plane_pitches,
-                plane_offsets,
-            ) {
+            status: if is_valid_scanout_buffer_shape(size, pitch, format, gem_handle, planes) {
                 LiveRendererScanoutBufferStatus::Ready
             } else {
                 LiveRendererScanoutBufferStatus::Invalid
@@ -63,11 +67,11 @@ impl LiveRendererScanoutBufferDescriptor {
             pitch,
             format,
             gem_handle,
-            plane_count,
-            plane_handles,
-            plane_pitches,
-            plane_offsets,
-            modifier,
+            plane_count: planes.count,
+            plane_handles: planes.handles,
+            plane_pitches: planes.pitches,
+            plane_offsets: planes.offsets,
+            modifier: planes.modifier,
         }
     }
 
@@ -78,10 +82,13 @@ impl LiveRendererScanoutBufferDescriptor {
                 self.pitch,
                 self.format,
                 self.gem_handle,
-                self.plane_count,
-                self.plane_handles,
-                self.plane_pitches,
-                self.plane_offsets,
+                LiveRendererScanoutBufferPlanes {
+                    count: self.plane_count,
+                    handles: self.plane_handles,
+                    pitches: self.plane_pitches,
+                    offsets: self.plane_offsets,
+                    modifier: self.modifier,
+                },
             )
     }
 }
@@ -91,10 +98,7 @@ const fn is_valid_scanout_buffer_shape(
     pitch: u32,
     format: u32,
     gem_handle: u32,
-    plane_count: u8,
-    plane_handles: [u32; 4],
-    plane_pitches: [u32; 4],
-    _plane_offsets: [u32; 4],
+    planes: LiveRendererScanoutBufferPlanes,
 ) -> bool {
     size.width > 0
         && size.height > 0
@@ -105,9 +109,9 @@ const fn is_valid_scanout_buffer_shape(
         && is_valid_scanout_planes(
             size.width,
             gem_handle,
-            plane_count,
-            plane_handles,
-            plane_pitches,
+            planes.count,
+            planes.handles,
+            planes.pitches,
         )
 }
 

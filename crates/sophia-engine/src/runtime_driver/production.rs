@@ -191,10 +191,7 @@ impl ProductionSessionCoordinator {
         &mut self,
         authority_batches: &[AuthorityTransactionIntake],
         adapter: &mut A,
-    ) -> Result<
-        ProductionSessionCycleReport<A::Submission, A::Evidence>,
-        ProductionSessionCycleError<A::Error>,
-    >
+    ) -> ProductionAdapterCycleResult<A>
     where
         A: ProductionPresentationAdapter,
     {
@@ -248,6 +245,14 @@ impl ProductionSessionCoordinator {
         })
     }
 }
+
+type ProductionAdapterCycleResult<A> = Result<
+    ProductionSessionCycleReport<
+        <A as ProductionPresentationAdapter>::Submission,
+        <A as ProductionPresentationAdapter>::Evidence,
+    >,
+    ProductionSessionCycleError<<A as ProductionPresentationAdapter>::Error>,
+>;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProductionAsyncServiceObservation {

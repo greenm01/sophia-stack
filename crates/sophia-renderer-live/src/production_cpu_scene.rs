@@ -212,8 +212,8 @@ impl LiveProductionCpuScene {
                 continue;
             }
             let marker_size = Size {
-                width: output.size.width.min(64).max(1),
-                height: output.size.height.min(64).max(1),
+                width: output.size.width.clamp(1, 64),
+                height: output.size.height.clamp(1, 64),
             };
             let marker_width = usize::try_from(marker_size.width)?;
             let marker_height = usize::try_from(marker_size.height)?;

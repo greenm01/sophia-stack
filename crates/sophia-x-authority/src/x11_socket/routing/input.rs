@@ -170,20 +170,20 @@ enum X11InputEventReceiver {
 }
 
 #[cfg(unix)]
+type X11ReceivedInputEvent = (
+    XAuthorityInputEvent,
+    Option<XResourceId>,
+    Option<u16>,
+    u16,
+    Option<XAuthorityInputDeliveryId>,
+);
+
+#[cfg(unix)]
 impl X11InputEventReceiver {
     fn recv_timeout(
         &self,
         client: XServerFrontendClientId,
-    ) -> Result<
-        (
-            XAuthorityInputEvent,
-            Option<XResourceId>,
-            Option<u16>,
-            u16,
-            Option<XAuthorityInputDeliveryId>,
-        ),
-        RecvTimeoutError,
-    > {
+    ) -> Result<X11ReceivedInputEvent, RecvTimeoutError> {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
@@ -297,4 +297,3 @@ impl From<XAuthorityKeyEvent> for XAuthorityInputEvent {
         Self::Key(event)
     }
 }
-

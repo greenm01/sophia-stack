@@ -6,8 +6,8 @@ use crate::{
     XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket, XAuthorityRuntime,
     XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XErrorCode,
     XMetadataPropertyCandidate, XPropertyError, XPropertyTable, XRandrModeInfo, XRandrMonitorInfo,
-    XResourceId, XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo,
-    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
+    XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError, XWireRequest, XXiDeviceClass,
+    XXiDeviceInfo, encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
     x_error_from_wire_parse, x_selection_failure_event,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
@@ -267,10 +267,7 @@ fn dispatch_text_draw(
     runtime: &mut XAuthorityRuntime,
     drawable: XResourceId,
     gc: XResourceId,
-    x: i16,
-    y: i16,
-    text: Vec<u8>,
-    opaque: bool,
+    draw: XTextDraw<'_>,
 ) -> XDispatchResult {
     let transaction = TransactionId::from_raw(u64::from(context.sequence));
     if runtime
@@ -298,16 +295,8 @@ fn dispatch_text_draw(
             };
         }
     };
-    let response = runtime.apply_text_draw(
-        transaction,
-        context.namespace,
-        drawable,
-        x,
-        y,
-        &text,
-        opaque,
-        &gc_values,
-    );
+    let response =
+        runtime.apply_text_draw(transaction, context.namespace, drawable, draw, &gc_values);
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
             error,
@@ -438,7 +427,7 @@ fn extension_query_result(name: &str) -> XExtensionQueryResult {
     }
 }
 
-fn copy_shm_image_region(
+struct XShmImageCopy {
     shmid: u32,
     offset: u32,
     total_width: u16,
@@ -449,7 +438,21 @@ fn copy_shm_image_region(
     src_height: u16,
     depth: u8,
     format: u8,
-) -> Option<Vec<u8>> {
+}
+
+fn copy_shm_image_region(copy: XShmImageCopy) -> Option<Vec<u8>> {
+    let XShmImageCopy {
+        shmid,
+        offset,
+        total_width,
+        total_height,
+        src_x,
+        src_y,
+        src_width,
+        src_height,
+        depth,
+        format,
+    } = copy;
     const Z_PIXMAP: u8 = 2;
     const BYTES_PER_PIXEL: usize = 4;
     const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;

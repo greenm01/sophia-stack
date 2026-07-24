@@ -7,7 +7,7 @@ use sophia_renderer_live::{
     LiveRendererPresentationReport, LiveRendererPresentationStatus,
     LiveRendererScanoutBufferDescriptor, LiveRendererScanoutBufferExportReport,
     LiveRendererScanoutBufferExportStatus, LiveRendererScanoutBufferExporter,
-    LiveRendererScanoutBufferStatus, Size,
+    LiveRendererScanoutBufferPlanes, LiveRendererScanoutBufferStatus, Size,
 };
 
 #[test]
@@ -276,11 +276,13 @@ fn renderer_scanout_buffer_descriptor_validates_scanout_shape() {
         1920 * 4,
         LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
         44,
-        0,
-        [44, 0, 0, 0],
-        [1920 * 4, 0, 0, 0],
-        [0, 0, 0, 0],
-        Some(0),
+        LiveRendererScanoutBufferPlanes {
+            count: 0,
+            handles: [44, 0, 0, 0],
+            pitches: [1920 * 4, 0, 0, 0],
+            offsets: [0, 0, 0, 0],
+            modifier: Some(0),
+        },
     );
     assert_eq!(
         invalid_plane_count.status,
@@ -295,11 +297,13 @@ fn renderer_scanout_buffer_descriptor_validates_scanout_shape() {
         1920 * 4,
         LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
         44,
-        1,
-        [44, 0, 0, 0],
-        [1920 * 4, 0, 0, 0],
-        [0, 0, 0, 0],
-        Some(0),
+        LiveRendererScanoutBufferPlanes {
+            count: 1,
+            handles: [44, 0, 0, 0],
+            pitches: [1920 * 4, 0, 0, 0],
+            offsets: [0, 0, 0, 0],
+            modifier: Some(0),
+        },
     );
     assert_eq!(
         valid_modified.status,

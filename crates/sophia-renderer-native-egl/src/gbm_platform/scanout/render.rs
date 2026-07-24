@@ -458,14 +458,16 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
                 let result = target
                     .pipeline
                     .draw_cpu_layer(
-                        layer.width,
-                        layer.height,
-                        layer.stride,
-                        layer.pixels,
+                        GlCpuLayer {
+                            width: layer.width,
+                            height: layer.height,
+                            stride: layer.stride,
+                            pixels: layer.pixels,
+                            alpha: layer.alpha,
+                            has_alpha: layer.format == 0x3432_5241,
+                        },
                         layer.target.into(),
                         layer.clip.map(Into::into),
-                        layer.alpha,
-                        layer.format == 0x3432_5241,
                     )
                     .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed);
                 if result.is_ok() {
@@ -591,10 +593,14 @@ fn draw_composition_dmabuf_layer(
         EGL_LINUX_DRM_FOURCC_EXT,
         layer.frame.format as khronos_egl::Attrib,
     ];
-    for index in 0..usize::from(layer.frame.plane_count) {
+    for (index, keys) in PLANE_ATTRIBUTES
+        .iter()
+        .copied()
+        .enumerate()
+        .take(usize::from(layer.frame.plane_count))
+    {
         let plane = layer.frame.planes[index]
             .ok_or(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
-        let keys = PLANE_ATTRIBUTES[index];
         attributes.extend_from_slice(&[
             keys[0],
             plane.fd.as_raw_fd() as khronos_egl::Attrib,

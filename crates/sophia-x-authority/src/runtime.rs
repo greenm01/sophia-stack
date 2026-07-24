@@ -17,7 +17,7 @@ use crate::{
     XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder, XDrawingUpdate,
     XGraphicsContextTable, XGraphicsContextValues, XPoint, XPropertyChange, XPropertyMode,
     XPropertyTable, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
-    XShmSegmentTable, XSoftwareBufferStore, XWindowLifecycleEvent, XWindowTable,
+    XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
     clipboard_selection_failure_notify, dispatch_clipboard_selection_request,
     surface_transaction_from_drawing_update,
 };

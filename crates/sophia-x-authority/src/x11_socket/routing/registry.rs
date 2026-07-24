@@ -100,10 +100,16 @@ enum XkbWorkerCommand {
 }
 
 #[cfg(unix)]
+type XkbKeyboardReply = Option<(u8, u16)>;
+
+#[cfg(unix)]
+type SharedXkbKeyboardReplies = Arc<Mutex<Receiver<XkbKeyboardReply>>>;
+
+#[cfg(unix)]
 #[derive(Clone)]
 struct XkbKeyboardWorker {
     commands: SyncSender<XkbWorkerCommand>,
-    replies: Arc<Mutex<Receiver<Option<(u8, u16)>>>>,
+    replies: SharedXkbKeyboardReplies,
 }
 
 #[cfg(unix)]
@@ -984,4 +990,3 @@ impl Drop for XServerFrontendClientRouteRegistration {
         }
     }
 }
-

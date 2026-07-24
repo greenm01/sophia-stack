@@ -33,6 +33,15 @@ pub(crate) struct GlCompositionRect {
     pub height: i32,
 }
 
+pub(crate) struct GlCpuLayer<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixels: &'a [u8],
+    pub alpha: f32,
+    pub has_alpha: bool,
+}
+
 #[cfg(feature = "gbm-platform")]
 impl PersistentXrgb8888GlPipeline {
     pub(crate) unsafe fn new(
@@ -237,15 +246,18 @@ impl PersistentXrgb8888GlPipeline {
 
     pub(crate) fn draw_cpu_layer(
         &self,
-        width: u32,
-        height: u32,
-        stride: u32,
-        pixels: &[u8],
+        layer: GlCpuLayer<'_>,
         target: GlCompositionRect,
         clip: Option<GlCompositionRect>,
-        alpha: f32,
-        has_alpha: bool,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
+        let GlCpuLayer {
+            width,
+            height,
+            stride,
+            pixels,
+            alpha,
+            has_alpha,
+        } = layer;
         let expected_stride = width
             .checked_mul(4)
             .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;

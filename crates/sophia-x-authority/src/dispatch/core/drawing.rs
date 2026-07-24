@@ -231,14 +231,36 @@ fn dispatch_core_drawing_request(
                     x,
                     y,
                     text,
-                } => dispatch_text_draw(context, runtime, drawable, gc, x, y, text, false),
+                } => dispatch_text_draw(
+                    context,
+                    runtime,
+                    drawable,
+                    gc,
+                    XTextDraw {
+                        x,
+                        baseline: y,
+                        text: &text,
+                        opaque: false,
+                    },
+                ),
                 XWireRequest::ImageText8 {
                     drawable,
                     gc,
                     x,
                     y,
                     text,
-                } => dispatch_text_draw(context, runtime, drawable, gc, x, y, text, true),
+                } => dispatch_text_draw(
+                    context,
+                    runtime,
+                    drawable,
+                    gc,
+                    XTextDraw {
+                        x,
+                        baseline: y,
+                        text: &text,
+                        opaque: true,
+                    },
+                ),
                 XWireRequest::FillPoly {
                     drawable, damage, ..
                 } => {

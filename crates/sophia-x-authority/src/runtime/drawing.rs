@@ -380,15 +380,12 @@ impl XAuthorityRuntime {
          ))
      }
  
-     pub fn apply_text_draw(
+     pub(crate) fn apply_text_draw(
          &mut self,
          transaction: TransactionId,
          namespace: NamespaceId,
          window: crate::XResourceId,
-         x: i16,
-         baseline: i16,
-         text: &[u8],
-         opaque: bool,
+         draw: XTextDraw<'_>,
          gc: &XGraphicsContextValues,
      ) -> XAuthorityResponsePacket {
          let Some(record) = self.windows.get(window) else {
@@ -398,9 +395,9 @@ impl XAuthorityRuntime {
              );
          };
          let damage = Region::single(Rect {
-             x: i32::from(x),
-             y: i32::from(baseline).saturating_sub(10),
-             width: i32::try_from(text.len().saturating_mul(8))
+             x: i32::from(draw.x),
+             y: i32::from(draw.baseline).saturating_sub(10),
+             width: i32::try_from(draw.text.len().saturating_mul(8))
                  .unwrap_or(i32::MAX)
                  .max(1),
              height: 12,
@@ -411,10 +408,7 @@ impl XAuthorityRuntime {
                  width: record.geometry.width,
                  height: record.geometry.height,
              },
-             x,
-             baseline,
-             text,
-             opaque,
+             draw,
              gc,
          ) else {
              return XAuthorityResponsePacket::rejected(

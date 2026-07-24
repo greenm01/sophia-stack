@@ -2,7 +2,8 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 
 use crate::{
     LiveCpuBufferSourceRef, LiveGbmEglFrameTargetRecord, LiveRendererScanoutBufferDescriptor,
-    LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus, Size,
+    LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
+    LiveRendererScanoutBufferPlanes, Size,
 };
 use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, Rect, Transform};
 
@@ -587,11 +588,13 @@ fn reduced_native_owned_scanout_buffer_export_report(
             buffer.pitch(),
             buffer.format(),
             buffer.gem_handle(),
-            buffer.plane_count(),
-            buffer.plane_handles(),
-            buffer.plane_pitches(),
-            buffer.plane_offsets(),
-            buffer.modifier(),
+            LiveRendererScanoutBufferPlanes {
+                count: buffer.plane_count(),
+                handles: buffer.plane_handles(),
+                pitches: buffer.plane_pitches(),
+                offsets: buffer.plane_offsets(),
+                modifier: buffer.modifier(),
+            },
         );
         descriptor
             .is_valid_scanout_buffer()

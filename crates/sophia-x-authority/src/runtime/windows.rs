@@ -194,21 +194,17 @@ impl XAuthorityRuntime {
          &mut self,
          namespace: NamespaceId,
          window: crate::XResourceId,
-         x: Option<i16>,
-         y: Option<i16>,
-         width: Option<u16>,
-         height: Option<u16>,
-         generation: u64,
+         update: XWindowGeometryUpdate,
      ) -> Result<(), XAuthorityRuntimeError> {
          self.resources
              .lookup(namespace, window, XResourceKind::Window)?;
          self.windows.apply(XWindowLifecycleEvent::Configured {
              id: window,
-             x,
-             y,
-             width,
-             height,
-             generation,
+             x: update.x,
+             y: update.y,
+             width: update.width,
+             height: update.height,
+             generation: update.generation,
          })?;
          Ok(())
      }
@@ -363,11 +359,12 @@ impl XAuthorityRuntime {
          self.configure_window_geometry(
              namespace,
              window,
-             None,
-             None,
-             Some(u16::try_from(size.width).expect("validated above")),
-             Some(u16::try_from(size.height).expect("validated above")),
-             generation,
+             XWindowGeometryUpdate {
+                 width: Some(u16::try_from(size.width).expect("validated above")),
+                 height: Some(u16::try_from(size.height).expect("validated above")),
+                 generation,
+                 ..XWindowGeometryUpdate::default()
+             },
          )?;
          Ok(Rect {
              width: size.width,
@@ -393,4 +390,12 @@ impl XAuthorityRuntime {
          Ok(surfaces)
      }
  
+}
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct XWindowGeometryUpdate {
+    pub x: Option<i16>,
+    pub y: Option<i16>,
+    pub width: Option<u16>,
+    pub height: Option<u16>,
+    pub generation: u64,
 }

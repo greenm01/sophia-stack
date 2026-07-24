@@ -178,7 +178,7 @@ fn dispatch_shm_request(
                         .shm_segment_shmid(context.namespace, segment)
                         .ok()
                         .and_then(|shmid| {
-                            copy_shm_image_region(
+                            copy_shm_image_region(XShmImageCopy {
                                 shmid,
                                 offset,
                                 total_width,
@@ -189,7 +189,7 @@ fn dispatch_shm_request(
                                 src_height,
                                 depth,
                                 format,
-                            )
+                            })
                         });
                     let response = runtime.apply_put_image(
                         transaction,

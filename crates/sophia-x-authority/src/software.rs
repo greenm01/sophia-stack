@@ -123,12 +123,15 @@ impl XSoftwareBufferStore {
         &mut self,
         drawable: XResourceId,
         size: Size,
-        x: i16,
-        baseline: i16,
-        text: &[u8],
-        opaque: bool,
+        draw: XTextDraw<'_>,
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuBufferUpdate> {
+        let XTextDraw {
+            x,
+            baseline,
+            text,
+            opaque,
+        } = draw;
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let top = i32::from(baseline).saturating_sub(10);
@@ -715,4 +718,10 @@ fn apply_packed_patch(
         target.copy_from_slice(source);
     }
     Ok(())
+}
+pub(crate) struct XTextDraw<'a> {
+    pub x: i16,
+    pub baseline: i16,
+    pub text: &'a [u8],
+    pub opaque: bool,
 }

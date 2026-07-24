@@ -15,8 +15,8 @@ use crate::gbm_platform::{
     config::{window_config_attributes, xrgb_window_config_attributes},
 };
 use crate::gl::{
-    PersistentXrgb8888GlPipeline, context_attributes, draw_xrgb8888_current_gl_context_with_loader,
-    smoke_current_gl_context_with_loader,
+    GlCpuLayer, PersistentXrgb8888GlPipeline, context_attributes,
+    draw_xrgb8888_current_gl_context_with_loader, smoke_current_gl_context_with_loader,
 };
 use crate::{
     NativeGbmRenderedScanoutContextStatus, NativeGbmScanoutBufferExportDetail,

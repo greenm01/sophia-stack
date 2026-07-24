@@ -253,7 +253,14 @@ fn repeated_runtime_draws_advance_surface_generations() {
     });
     assert_eq!(mapped.outcome, XAuthorityResponseOutcome::Accepted);
     runtime
-        .configure_window_geometry(namespace, window, None, None, None, None, 100)
+        .configure_window_geometry(
+            namespace,
+            window,
+            XWindowGeometryUpdate {
+                generation: 100,
+                ..XWindowGeometryUpdate::default()
+            },
+        )
         .unwrap();
     let second = runtime.apply_core_draw(TransactionId::from_raw(15), namespace, window, damage);
 
@@ -510,4 +517,3 @@ fn cpu_buffer_submissions_are_immutable_and_keep_generation_order() {
     assert_eq!(resized.size.width, 120);
     assert_eq!(resized.size.height, 70);
 }
-

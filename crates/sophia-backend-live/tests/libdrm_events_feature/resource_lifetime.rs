@@ -326,11 +326,13 @@ fn native_libdrm_renderer_scanout_buffer_rejects_invalid_renderer_descriptors() 
             1280 * 4,
             LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             20,
-            1,
-            [20, 0, 0, 0],
-            [1280 * 4, 0, 0, 0],
-            [0, 0, 0, 0],
-            Some(u64::from(drm::buffer::DrmModifier::Linear)),
+            sophia_renderer_live::LiveRendererScanoutBufferPlanes {
+                count: 1,
+                handles: [20, 0, 0, 0],
+                pitches: [1280 * 4, 0, 0, 0],
+                offsets: [0, 0, 0, 0],
+                modifier: Some(u64::from(drm::buffer::DrmModifier::Linear)),
+            },
         );
     let linear_buffer = LibdrmRendererScanoutBuffer::from_descriptor(linear_descriptor)
         .expect("linear modified descriptors should stay valid");
@@ -384,11 +386,13 @@ fn native_libdrm_renderer_scanout_buffer_rejects_invalid_renderer_descriptors() 
             1280 * 4,
             LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             21,
-            1,
-            [21, 0, 0, 0],
-            [1280 * 4, 0, 0, 0],
-            [0, 0, 0, 0],
-            Some(u64::from(drm::buffer::DrmModifier::I915_x_tiled)),
+            sophia_renderer_live::LiveRendererScanoutBufferPlanes {
+                count: 1,
+                handles: [21, 0, 0, 0],
+                pitches: [1280 * 4, 0, 0, 0],
+                offsets: [0, 0, 0, 0],
+                modifier: Some(u64::from(drm::buffer::DrmModifier::I915_x_tiled)),
+            },
         );
     let tiled_buffer = LibdrmRendererScanoutBuffer::from_descriptor(tiled_descriptor)
         .expect("nonlinear modified descriptors should stay valid");

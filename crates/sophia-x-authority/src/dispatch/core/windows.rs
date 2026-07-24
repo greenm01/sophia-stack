@@ -281,11 +281,13 @@ fn dispatch_core_window_request(
                     let outputs = if let Err(error) = runtime.configure_window_geometry(
                         context.namespace,
                         window,
-                        x,
-                        y,
-                        width,
-                        height,
-                        u64::from(context.sequence),
+                        XWindowGeometryUpdate {
+                            x,
+                            y,
+                            width,
+                            height,
+                            generation: u64::from(context.sequence),
+                        },
                     ) {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,

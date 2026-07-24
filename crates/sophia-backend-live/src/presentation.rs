@@ -105,10 +105,14 @@ impl LivePresentationResourceSession {
             .descriptor(handle)
             .ok_or(LiveBufferRegistryError::UnknownHandle)?;
         let mut planes: [Option<LiveOwnedDmaBufPlane>; 4] = std::array::from_fn(|_| None);
-        for index in 0..usize::from(descriptor.plane_count) {
+        for (index, target_plane) in planes
+            .iter_mut()
+            .enumerate()
+            .take(usize::from(descriptor.plane_count))
+        {
             let plane =
                 descriptor.planes[index].ok_or(LiveBufferRegistryError::PlaneFdCountMismatch)?;
-            planes[index] = Some(LiveOwnedDmaBufPlane {
+            *target_plane = Some(LiveOwnedDmaBufPlane {
                 fd: self
                     .registry
                     .try_clone_presentation_plane_fd(transaction, index)?,
