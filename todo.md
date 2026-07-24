@@ -208,13 +208,33 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
 - [ ] Split X authority state, connection service, routing, input, clipboard,
   wire families, dispatch families, and client output behind the existing
   public facades.
+  - [x] Extract owned, value-free dispatch observations and frontend import
+    records.
+  - [x] Extract passive routed-input, control, acknowledgement, supervision,
+    and route-error records.
+  - [x] Extract frontend client identity, setup authorization, admission, peer,
+    and render-device provider contracts.
+  - [ ] Move the mutable route registry, connection workers, input writers,
+    clipboard coordinator, and remaining state into their owning modules.
 - [ ] Split live-session configuration/policy, admission, WM/layout, input,
   presentation, process supervision, and the owner loop.
+  - [x] Extract Xauthority ownership, proof artifacts, X frontend adapters, and
+    process-group supervision.
+  - [x] Bundle owner-loop channels, mutable resources, startup evidence, and
+    physical-input routing state.
+  - [ ] Extract configuration, WM/layout, input execution, presentation, and
+    the owner loop itself.
 - [ ] Split native scanout and the legacy WM bridge by ownership.
+  - [x] Separate passive DMA-BUF/composition records from GBM/EGL execution.
+  - [x] Separate legacy-WM wire framing from runtime supervision.
+  - [ ] Extract scanout resource lifetime, composition execution, bridge
+    server state, and legacy request dispatch.
 - [x] Extract visual diagnostics and asynchronous output servicing from the
   production visual-runtime facade.
 - [ ] Move every remaining inline test to crate integration tests and split
   oversized test programs around shared `tests/support` fixtures.
+  - [x] Move X-authority transport reduction tests through the public owned
+    observation boundary.
 - [x] Replace remaining library `println!`/`eprintln!` diagnostics with
   structured, redacted `tracing` fields.
 - [x] Replace callback-owned retirement mutation with explicit Engine commit,

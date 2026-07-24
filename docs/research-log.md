@@ -2508,3 +2508,23 @@ TTY modes were restored without emergency recovery. A separate report-field
 bug falsely rejected that successful run because the stable-Present readiness
 path logged readiness without persisting its elapsed time; both paths now
 populate the same readiness measurement.
+
+## 2026-07-24: Architecture Debt Moves Behind Stable Facades
+
+The conformance pass now treats file size as evidence of mixed ownership rather
+than a mechanical target. X authority dispatch observations are owned,
+value-free records; routing packets and frontend admission/provider contracts
+live in separate data modules while the existing crate facade remains stable.
+The live-session command now delegates secure Xauthority files, proof
+artifacts, X frontend adapters, and process-group supervision to their owning
+modules. Its owner loop and physical-input poll boundary receive explicit
+channel/resource/startup records instead of 18- and 16-argument call sites.
+
+Native scanout now separates passive DMA-BUF and composition records from
+GBM/EGL execution, and the legacy WM bridge separates wire framing from runtime
+supervision. X transport reduction tests moved from production source to an
+integration test through the public owned-observation API. Focused all-feature
+checks and tests pass for the affected crates. The remaining work is the
+mutable registry/worker and protocol-family extraction, the live owner/WM/input
+split, scanout lifetime/composition execution, legacy bridge server/dispatch,
+and the remaining oversized integration fixtures.
