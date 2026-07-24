@@ -1,5 +1,11 @@
 {
-        let input_baseline_presented = input_baseline_presented_before_wait
+        let focused_client_ready = focus
+            .focused_surface(seat)
+            .is_some_and(|surface| applied_client_focus == Some(surface));
+        let focused_content_ready = focus
+            .focused_surface(seat)
+            .is_some_and(|surface| input_content_surface == Some(surface));
+        let cpu_baseline_presented = input_baseline_presented_before_wait
             || scene.last_report().is_some_and(|report| {
                 report.nonzero_pixel_bytes > 0
                     && native_scanout.as_ref().is_none_or(|native| {
@@ -8,12 +14,8 @@
                         })
                     })
             });
-        let focused_client_ready = focus
-            .focused_surface(seat)
-            .is_some_and(|surface| applied_client_focus == Some(surface));
-        let focused_content_ready = focus
-            .focused_surface(seat)
-            .is_some_and(|surface| input_content_surface == Some(surface));
+        let input_baseline_presented =
+            input_baseline_is_presented(focused_content_ready, cpu_baseline_presented);
         let input_start_stable = if config.inject_surface_resize.is_some() {
             resize_proof_complete
         } else if config.expect_physical_text.is_some() {

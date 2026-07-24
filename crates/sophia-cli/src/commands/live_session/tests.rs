@@ -6,10 +6,10 @@ use super::{
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
     center_geometry_without_scaling, global_runtime_deadline_ends_session,
-    physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, pointer_offset_for_geometry, record_runtime_commits,
-    route_input_events, session_protocol_errors_are_fatal, successful_primary_exit_ends_session,
-    take_settled_input_delivery_wait,
+    input_baseline_is_presented, physical_input_pixels_already_changed,
+    physical_input_routing_mode, place_pointer_event_for_routing, pointer_offset_for_geometry,
+    record_runtime_commits, route_input_events, session_protocol_errors_are_fatal,
+    successful_primary_exit_ends_session, take_settled_input_delivery_wait,
 };
 use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
 use sophia_protocol::{
@@ -298,6 +298,13 @@ fn completed_physical_input_reconciles_pixels_that_arrived_before_return() {
         Some(10),
         true
     ));
+}
+
+#[test]
+fn stable_focused_gpu_content_arms_input_without_cpu_scene_pixels() {
+    assert!(input_baseline_is_presented(true, false));
+    assert!(input_baseline_is_presented(false, true));
+    assert!(!input_baseline_is_presented(false, false));
 }
 
 #[test]

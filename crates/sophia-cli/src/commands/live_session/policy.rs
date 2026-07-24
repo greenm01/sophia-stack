@@ -119,6 +119,13 @@ fn physical_input_pixels_already_changed(
             .is_some_and(|(baseline, current)| baseline != current)
 }
 
+fn input_baseline_is_presented(
+    focused_content_ready: bool,
+    cpu_baseline_presented: bool,
+) -> bool {
+    focused_content_ready || cpu_baseline_presented
+}
+
 fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bool {
     batch.removed_surfaces.is_empty()
         && batch.dma_buf_registrations.is_empty()

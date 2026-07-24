@@ -2556,3 +2556,12 @@ and buttons are discarded without entering the exact-text matcher or X11
 route. The installed gate now requires exact `sophia` input followed by routed
 pointer motion and one button. All decisions use opaque surfaces and generic
 presentation facts; Engine contains no Kitty-specific behavior.
+
+The first installed rerun confirmed the WM, focus, cursor polling, and stable
+Present changes, but physical input still remained in cursor-only mode. The
+proof had a second baseline predicate requiring nonzero CPU-scene pixels even
+after the focused stable DMA-BUF surface was accepted. GPU-only Kitty therefore
+reached content readiness without satisfying the duplicate CPU gate. Baseline
+readiness now consumes the same focused-content fact used by startup and input
+arming; CPU composition remains an alternative source rather than an additional
+requirement. A regression fixes the GPU-ready/CPU-empty combination.
