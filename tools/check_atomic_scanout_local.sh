@@ -34,6 +34,10 @@ bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
+bash -n tools/install_and_run_sophia_xmonad_input_proof_tty3.sh
+bash -n tools/verify_sophia_xmonad_input_proof_tty3.sh
+bash -n tools/check_sophia_xmonad_input_proof_verifier.sh
+tools/check_sophia_xmonad_input_proof_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
 bash -n tools/verify_sophia_xmonad_tty3.sh
