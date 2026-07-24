@@ -2595,3 +2595,19 @@ pressed before `i` was released. The proof now validates exact character press
 order while independently tracking balanced releases, accepting natural
 overlap without weakening modifier, repeat, unexpected-release, or submit-key
 checks.
+
+## 2026-07-24: Owner-Loop State And Oversized Tests Split By Domain
+
+The remaining live-session owner-loop state now has explicit delivery,
+observation, cursor-update, and metrics records. Input-delivery draining is an
+owned phase with one state boundary instead of a macro mutating seven ambient
+delivery variables. The 168-line owner-loop facade initializes resources and
+state, then delegates lifecycle, authority, input proof, physical input, and
+completion to bounded phase owners.
+
+Oversized test programs were split along real ownership seams: live-session
+presentation, Engine rendering transactions, runtime process supervision,
+atomic-scanout retirement, and native page-flip decoding. The source-layout
+audit no longer reports any test program at 800 lines. The split modules reuse
+their parent fixtures and preserve the same behavioral assertions; focused
+CLI, Engine, runtime, and all-feature backend suites pass.

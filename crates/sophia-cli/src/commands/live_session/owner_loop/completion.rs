@@ -54,14 +54,18 @@
     let report = scene
         .last_report()
         .ok_or("persistent live session received no composable X pixels")?;
-    if config.input_proof_requested() && input_events_expected != input_events_flushed {
+    if config.input_proof_requested()
+        && input_delivery.events_expected != input_delivery.events_flushed
+    {
         return Err(format!(
-            "persistent live session completed with unflushed X11 input: expected={input_events_expected} flushed={input_events_flushed} pending={}",
-            pending_input_deliveries.len(),
+            "persistent live session completed with unflushed X11 input: expected={} flushed={} pending={}",
+            input_delivery.events_expected,
+            input_delivery.events_flushed,
+            input_delivery.pending.len(),
         )
         .into());
     }
-    if config.input_proof_requested() && input_flush_latency.is_none() {
+    if config.input_proof_requested() && input_delivery.flush_latency.is_none() {
         return Err("persistent live session input proof never observed flushed X11 input".into());
     }
     if config.input_proof_requested() && !input_pixel_change {
@@ -175,14 +179,14 @@
     if config.normal_session
         && (layout.pending.is_some()
             || !committed_session_actions.is_empty()
-            || !pending_input_deliveries.is_empty()
+            || !input_delivery.pending.is_empty()
             || wm_session.as_ref().is_some_and(|wm| wm.degraded))
     {
         return Err(format!(
             "normal session ended with pending work: wm={} actions={} input={} degraded={}",
             usize::from(layout.pending.is_some()),
             committed_session_actions.len(),
-            pending_input_deliveries.len(),
+            input_delivery.pending.len(),
             wm_session.as_ref().is_some_and(|wm| wm.degraded),
         )
         .into());
@@ -233,7 +237,7 @@
         protocol_error_count,
         usize::from(layout.pending.is_some()),
         committed_session_actions.len(),
-        pending_input_deliveries.len(),
+        input_delivery.pending.len(),
         wm_session.as_ref().is_some_and(|wm| wm.degraded),
     );
     println!(
@@ -261,9 +265,11 @@
         report.checksum,
         max_compose.as_millis(),
         config.inject_text.is_some(),
-        input_events_expected,
-        input_events_flushed,
-        input_flush_latency.map_or(0, |duration| duration.as_millis()),
+        input_delivery.events_expected,
+        input_delivery.events_flushed,
+        input_delivery
+            .flush_latency
+            .map_or(0, |duration| duration.as_millis()),
         input_pixel_change,
         input_text_match,
         input_presented_latency

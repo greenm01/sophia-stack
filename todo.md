@@ -230,17 +230,17 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
     modules behind the existing CLI command facade.
   - [x] Move the mutable route registry, connection workers, input writers,
     clipboard coordinator, and remaining state into their owning modules.
-- [ ] Split live-session configuration/policy, admission, WM/layout, input,
+- [x] Split live-session configuration/policy, admission, WM/layout, input,
   presentation, process supervision, and the owner loop.
   - [x] Extract Xauthority ownership, proof artifacts, X frontend adapters, and
     process-group supervision.
   - [x] Bundle owner-loop channels, mutable resources, startup evidence, and
     physical-input routing state.
-  - [ ] Extract configuration, WM/layout, input execution, presentation, and
+  - [x] Extract configuration, WM/layout, input execution, presentation, and
     the owner loop itself.
     - [x] Extract configuration, WM/layout, input execution, presentation, and
       the owner-loop facade into explicit domain files.
-    - [ ] Split owner-loop state and per-tick phases into bounded owners.
+    - [x] Split owner-loop state and per-tick phases into bounded owners.
 - [x] Split native scanout and the legacy WM bridge by ownership.
   - [x] Separate passive DMA-BUF/composition records from GBM/EGL execution.
   - [x] Separate legacy-WM wire framing from runtime supervision.
@@ -248,7 +248,7 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   - [x] Extract bridge server state and legacy request dispatch.
 - [x] Extract visual diagnostics and asynchronous output servicing from the
   production visual-runtime facade.
-- [ ] Move every remaining inline test to crate integration tests and split
+- [x] Move every remaining inline test to crate integration tests and split
   oversized test programs around shared `tests/support` fixtures.
   - [x] Move X-authority transport reduction tests through the public owned
     observation boundary.

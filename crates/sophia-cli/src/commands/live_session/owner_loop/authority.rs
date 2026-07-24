@@ -4,7 +4,7 @@
             .or_else(|| pending_authority_batches.pop_front())
             .map_or_else(
                 || {
-                    authority_receiver.recv_timeout(if cursor_dirty {
+                    authority_receiver.recv_timeout(if cursor_updates.dirty {
                         Duration::from_millis(1)
                     } else {
                         Duration::from_millis(25)

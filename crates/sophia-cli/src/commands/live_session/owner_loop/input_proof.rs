@@ -78,7 +78,7 @@
                     false,
                     false,
                     PhysicalInputRoutingMode::Full,
-                    &mut next_input_delivery,
+                    &mut input_delivery.next,
                     None,
                 )?;
                 if report.keys_routed != expected {
@@ -88,19 +88,22 @@
                     )
                     .into());
                 }
-                input_events_expected =
-                    input_events_expected.saturating_add(report.deliveries.len());
-                pending_input_deliveries.extend(report.deliveries.iter().copied());
-                input_delivery_wait_started_at = Some(Instant::now());
-                input_delivery_source = Some("synthetic");
+                input_delivery.events_expected = input_delivery
+                    .events_expected
+                    .saturating_add(report.deliveries.len());
+                input_delivery
+                    .pending
+                    .extend(report.deliveries.iter().copied());
+                input_delivery.wait_started_at = Some(Instant::now());
+                input_delivery.source = Some("synthetic");
                 input_batch_baseline = Some(metrics.batches);
                 input_cpu_update_baseline = Some(metrics.cpu_buffer_updates);
-                if !key_routed_reported {
+                if !input_observations.key_routed {
                     println!(
                         "sophia_live_session_input_pipeline schema=1 status=key_routed source=synthetic"
                     );
                     std::io::stdout().flush()?;
-                    key_routed_reported = true;
+                    input_observations.key_routed = true;
                 }
             } else {
                 input_batch_baseline = Some(metrics.batches);
@@ -128,8 +131,10 @@
             pointer
                 .arm_at_focused_surface_center(focus.focused_surface(seat), runtime.input_layers())
                 .ok_or("pointer proof has no focused application surface to place the cursor")?;
-            cursor_dirty_since.get_or_insert_with(Instant::now);
-            cursor_dirty = true;
+            cursor_updates
+                .dirty_since
+                .get_or_insert_with(Instant::now);
+            cursor_updates.dirty = true;
         }
         if application_surface_missing_since
             .is_some_and(|started| started.elapsed() >= Duration::from_millis(500))
@@ -176,10 +181,11 @@
             &mut committed_session_actions,
         )? {
             logout_requested = true;
-            let discarded = pending_input_deliveries.len();
-            input_events_expected = input_events_expected.saturating_sub(discarded);
-            pending_input_deliveries.clear();
-            input_delivery_wait_started_at = None;
+            let discarded = input_delivery.pending.len();
+            input_delivery.events_expected =
+                input_delivery.events_expected.saturating_sub(discarded);
+            input_delivery.pending.clear();
+            input_delivery.wait_started_at = None;
             if discarded != 0 {
                 println!(
                     "sophia_live_session_input_pipeline schema=2 status=logout_discarded pending={discarded}"
@@ -187,7 +193,7 @@
                 std::io::stdout().flush()?;
             }
         }
-        if logout_requested && pending_input_deliveries.is_empty() {
+        if logout_requested && input_delivery.pending.is_empty() {
             break;
         }
         if input_presented_latency.is_none()

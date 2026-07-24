@@ -95,8 +95,14 @@
                 secondary_index += 1;
             }
         }
-        drain_input_deliveries!();
-        if emergency_exit_requested && pending_input_deliveries.is_empty() {
+        InputDeliveryPhase {
+            receiver: input_delivery_receiver,
+            state: &mut input_delivery,
+            proof_started_at: &mut input_proof_started_at,
+            post_input_deadline: &mut post_input_deadline,
+        }
+        .drain()?;
+        if emergency_exit_requested && input_delivery.pending.is_empty() {
             break;
         }
         if !input_text_match
@@ -144,7 +150,9 @@
         {
             if !input_pixel_change {
                 return Err(format!(
-                    "persistent live session timed out waiting for pixels after flushed X11 input: expected={input_events_expected} flushed={input_events_flushed} authority_batches_after_input={} cpu_updates_after_input={} baseline_checksum={injection_checksum:?} final_checksum={:?} baseline_generation={input_surface_generation:?} final_generation={:?} input_surface_pixel_change={input_surface_pixel_change} native_submission_baseline={input_change_submission_baseline:?} native_submissions={} native_callbacks={}",
+                    "persistent live session timed out waiting for pixels after flushed X11 input: expected={} flushed={} authority_batches_after_input={} cpu_updates_after_input={} baseline_checksum={injection_checksum:?} final_checksum={:?} baseline_generation={input_surface_generation:?} final_generation={:?} input_surface_pixel_change={input_surface_pixel_change} native_submission_baseline={input_change_submission_baseline:?} native_submissions={} native_callbacks={}",
+                    input_delivery.events_expected,
+                    input_delivery.events_flushed,
                     metrics.batches.saturating_sub(input_batch_baseline.unwrap_or(metrics.batches)),
                     metrics.cpu_buffer_updates.saturating_sub(input_cpu_update_baseline.unwrap_or(metrics.cpu_buffer_updates)),
                     scene.last_report().map(|report| report.checksum),
@@ -229,18 +237,18 @@
                 focused_client_control: &mut focused_client_control,
             })?;
         }
-        if cursor_dirty
+        if cursor_updates.dirty
             && let (Some(native_scanout), Some(position)) =
                 (native_scanout.as_mut(), pointer.position)
         {
             match native_scanout.update_classic_hardware_cursor(position) {
                 Ok(ClassicHardwareCursorUpdate::Visible) => {
                     pointer_pixel_change |= metrics.physical_pointer_routed > 0;
-                    if let Some(started) = cursor_dirty_since.take() {
+                    if let Some(started) = cursor_updates.dirty_since.take() {
                         metrics.cursor_max_motion_to_submit =
                             metrics.cursor_max_motion_to_submit.max(started.elapsed());
                     }
-                    cursor_dirty = false;
+                    cursor_updates.dirty = false;
                     if !cursor_visible_reported {
                         println!(
                             "sophia_live_session_pointer schema=2 status=visible source=hardware_cursor"
@@ -264,7 +272,7 @@
                     }
                 }
                 Ok(ClassicHardwareCursorUpdate::Hidden) => {
-                    cursor_dirty = false;
+                    cursor_updates.dirty = false;
                 }
                 Ok(ClassicHardwareCursorUpdate::Deferred) => {}
                 Err(error) => {
@@ -515,7 +523,7 @@
                 )
                 .into());
             }
-        } else if input_delivery_wait_started_at.is_none()
+        } else if input_delivery.wait_started_at.is_none()
             && (input_proof_started_at.is_none() || input_presented_latency.is_some())
         {
             if config
