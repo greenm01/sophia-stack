@@ -24,6 +24,10 @@ Completed evidence is archived in `research-log-archive.md`.
 - Removed visual-state seeding from backend and CLI startup. The runtime begins
   empty, accepts initial generation zero only through normal Engine authority
   commit, and rejects a forged nonzero initial generation.
+- Centralized authority-transaction layer templates under Engine, preserving
+  namespace identity and stack order for both production and deterministic
+  backend paths. Moved protocol cursor coverage to the crate boundary and
+  removed implementation-only legacy-WM builder and atomic-helper inline tests.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument

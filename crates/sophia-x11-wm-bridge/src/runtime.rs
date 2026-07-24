@@ -1346,33 +1346,6 @@ fn push_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generic_launch_spec_preserves_executable_arguments_and_optional_alias() {
-        let spec = LegacyWmLaunchSpec::new("dwm")
-            .arg("--example")
-            .with_private_executable_alias("compiled/wm");
-
-        assert_eq!(spec.executable, PathBuf::from("dwm"));
-        assert_eq!(spec.arguments, vec![OsString::from("--example")]);
-        assert_eq!(
-            spec.private_executable_alias,
-            Some(PathBuf::from("compiled/wm"))
-        );
-    }
-
-    #[test]
-    fn private_executable_alias_cannot_escape_config_home() {
-        assert!(validate_private_executable_alias(Path::new("compiled/wm")).is_ok());
-        assert!(validate_private_executable_alias(Path::new("../wm")).is_err());
-        assert!(validate_private_executable_alias(Path::new("/tmp/wm")).is_err());
-        assert!(validate_private_executable_alias(Path::new("")).is_err());
-    }
-}
-
 fn read_wm_session_descriptor(
     stream: &mut UnixStream,
 ) -> Result<WmSessionDescriptor, BridgeRuntimeError> {

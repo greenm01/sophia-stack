@@ -10,13 +10,10 @@ large-source crates/sophia-x-authority/src/runtime.rs
 large-source crates/sophia-x11-wm-bridge/src/runtime.rs
 
 inline-tests crates/sophia-backend-live/src/hardware_validation/atomic_scanout_card/session.rs
-inline-tests crates/sophia-backend-live/src/input/libinput/threaded.rs
 inline-tests crates/sophia-cli/src/commands/live_session.rs
-inline-tests crates/sophia-protocol/src/cursor.rs
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout.rs
 inline-tests crates/sophia-x-authority/src/transport.rs
 inline-tests crates/sophia-x-authority/src/x11_socket.rs
-inline-tests crates/sophia-x11-wm-bridge/src/runtime.rs
 
 direct-printing crates/sophia-backend-live/src/production_session/native_scanout.rs
 direct-printing crates/sophia-renderer-native-egl/src/gbm_platform/scanout.rs

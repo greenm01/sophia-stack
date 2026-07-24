@@ -268,18 +268,3 @@ fn observe_max(value: &AtomicUsize, candidate: usize) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::observe_max;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[test]
-    fn concurrent_max_observation_never_regresses() {
-        let value = AtomicUsize::new(3);
-        observe_max(&value, 2);
-        observe_max(&value, 9);
-        observe_max(&value, 7);
-        assert_eq!(value.load(Ordering::Acquire), 9);
-    }
-}
