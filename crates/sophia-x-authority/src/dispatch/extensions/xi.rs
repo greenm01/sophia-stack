@@ -3,7 +3,7 @@ fn dispatch_x_input_request(
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::XiGetExtensionVersion
@@ -19,9 +19,9 @@ fn dispatch_x_input_request(
             | XWireRequest::XiGetFocus { .. }
             | XWireRequest::XiGetProperty
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::XiGetExtensionVersion => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XiGetExtensionVersion {

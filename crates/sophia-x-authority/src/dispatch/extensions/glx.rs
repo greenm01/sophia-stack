@@ -3,7 +3,7 @@ fn dispatch_glx_request(
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::GlxQueryVersion { .. }
@@ -19,9 +19,9 @@ fn dispatch_glx_request(
             | XWireRequest::GlxQueryExtensionsString
             | XWireRequest::GlxQueryServerString { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::GlxQueryVersion { .. } => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GlxQueryVersion {

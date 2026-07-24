@@ -2,7 +2,7 @@ fn dispatch_present_request(
     context: XDispatchContext,
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::PresentQueryVersion { .. }
@@ -10,9 +10,9 @@ fn dispatch_present_request(
             | XWireRequest::PresentSelectInput { .. }
             | XWireRequest::PresentPixmap { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::PresentQueryVersion { .. } => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::PresentQueryVersion {
@@ -141,7 +141,7 @@ fn dispatch_present_request(
                                 idle_fence.is_some(),
                             );
                         }
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: None,
                             outputs: vec![XClientOutput::Error(x_error_from_runtime(
                                 error,

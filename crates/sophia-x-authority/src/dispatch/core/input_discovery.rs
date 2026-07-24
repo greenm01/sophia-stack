@@ -4,7 +4,7 @@ fn dispatch_core_input_discovery_request(
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
     _properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::GetInputFocus
@@ -24,9 +24,9 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::AllocNamedColor { .. }
             | XWireRequest::AllocColor { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::GetInputFocus => {
                     let (focus, revert_to) = runtime.input_focus(context.namespace);
                     XDispatchResult {

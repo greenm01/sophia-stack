@@ -3,16 +3,16 @@ fn dispatch_extension_version_request(
     request: XWireRequest,
     _runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::ShmQueryVersion
             | XWireRequest::Dri3QueryVersion { .. }
             | XWireRequest::XfixesQueryVersion { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::ShmQueryVersion => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::ShmQueryVersion {

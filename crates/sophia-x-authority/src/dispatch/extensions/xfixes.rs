@@ -3,7 +3,7 @@ fn dispatch_xfixes_request(
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::XfixesCreateRegion { .. }
@@ -11,9 +11,9 @@ fn dispatch_xfixes_request(
             | XWireRequest::XfixesDestroyRegion { .. }
             | XWireRequest::XfixesSelectSelectionInput { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::XfixesCreateRegion { region, rectangles } => {
                     let output = runtime
                         .create_xfixes_region(

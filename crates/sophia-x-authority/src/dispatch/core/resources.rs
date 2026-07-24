@@ -4,7 +4,7 @@ fn dispatch_core_resource_request(
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
     _properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::CreateGraphicsContext { .. }
@@ -24,9 +24,9 @@ fn dispatch_core_resource_request(
             | XWireRequest::CreatePixmap { .. }
             | XWireRequest::FreePixmap { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::CreateGraphicsContext {
                     gc,
                     drawable,

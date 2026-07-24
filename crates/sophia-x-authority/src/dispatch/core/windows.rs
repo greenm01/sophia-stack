@@ -4,7 +4,7 @@ fn dispatch_core_window_request(
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
     properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::CreateWindow { .. }
@@ -20,9 +20,9 @@ fn dispatch_core_window_request(
             | XWireRequest::GetImage { .. }
             | XWireRequest::QueryTree { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::CreateWindow {
                     packet,
                     background_pixel,

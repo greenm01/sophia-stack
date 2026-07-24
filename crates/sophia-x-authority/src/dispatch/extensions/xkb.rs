@@ -3,7 +3,7 @@ fn dispatch_xkb_request(
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::XkbUseExtension { .. }
@@ -17,9 +17,9 @@ fn dispatch_xkb_request(
             | XWireRequest::XkbSelectEvents { .. }
             | XWireRequest::XkbPerClientFlags { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::XkbUseExtension { .. } => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XkbUseExtension {

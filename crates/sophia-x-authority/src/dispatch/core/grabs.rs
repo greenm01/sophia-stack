@@ -4,7 +4,7 @@ fn dispatch_core_grab_request(
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
     _properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::GrabPointer { .. }
@@ -19,9 +19,9 @@ fn dispatch_core_grab_request(
             | XWireRequest::GrabServer
             | XWireRequest::UngrabServer
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::GrabPointer {
                     window,
                     event_mask,

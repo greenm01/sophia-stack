@@ -3,7 +3,7 @@ fn dispatch_shm_request(
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::BigRequestsEnable
@@ -12,9 +12,9 @@ fn dispatch_shm_request(
             | XWireRequest::ShmCreatePixmap { .. }
             | XWireRequest::ShmPutImage { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::BigRequestsEnable => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::BigRequestsEnable {
@@ -137,7 +137,7 @@ fn dispatch_shm_request(
                         .validate_shm_segment_access(context.namespace, segment)
                         .is_err()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: vec![XClientOutput::Error(crate::XClientError {
                                 code: XErrorCode::BadAccess,
@@ -162,7 +162,7 @@ fn dispatch_shm_request(
                             }))
                             .into_iter()
                             .collect();
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs,
                             metadata_candidates: Vec::new(),

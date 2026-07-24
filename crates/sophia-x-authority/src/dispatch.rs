@@ -151,6 +151,13 @@ impl XDispatchResult {
     }
 }
 
+enum XDispatchFamilyResult {
+    Handled(XDispatchResult),
+    Unhandled(XWireRequest),
+}
+
+use XDispatchFamilyResult::{Handled, Unhandled};
+
 fn xkb_empty_device_reply(
     context: XDispatchContext,
     device_spec: u16,
@@ -185,72 +192,72 @@ pub fn dispatch_x11_wire_request(
 ) -> XDispatchResult {
     runtime.begin_dispatch();
     let request = match dispatch_xfixes_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_dri3_request(context, request, runtime) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_present_request(context, request, runtime) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_randr_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_extension_version_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_xkb_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_glx_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_sync_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_x_input_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_shm_request(context, request, runtime, atoms) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_core_window_request(context, request, runtime, atoms, properties) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_core_property_request(context, request, runtime, atoms, properties)
     {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_core_grab_request(context, request, runtime, atoms, properties) {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request = match dispatch_core_resource_request(context, request, runtime, atoms, properties)
     {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     let request =
         match dispatch_core_input_discovery_request(context, request, runtime, atoms, properties) {
-            Ok(result) => return result,
-            Err(request) => request,
+            Handled(result) => return result,
+            Unhandled(request) => request,
         };
     let _request = match dispatch_core_drawing_request(context, request, runtime, atoms, properties)
     {
-        Ok(result) => return result,
-        Err(request) => request,
+        Handled(result) => return result,
+        Unhandled(request) => request,
     };
     unreachable!("extension request escaped its family dispatcher")
 }

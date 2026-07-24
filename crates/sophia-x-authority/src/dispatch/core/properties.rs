@@ -4,7 +4,7 @@ fn dispatch_core_property_request(
     runtime: &mut XAuthorityRuntime,
     atoms: &mut XAtomTable,
     properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::InternAtom { .. }
@@ -16,9 +16,9 @@ fn dispatch_core_property_request(
             | XWireRequest::GetSelectionOwner { .. }
             | XWireRequest::SendSelectionNotify { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::InternAtom {
                     only_if_exists,
                     name,

@@ -2,7 +2,7 @@ fn dispatch_dri3_request(
     context: XDispatchContext,
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::Dri3Open { .. }
@@ -11,9 +11,9 @@ fn dispatch_dri3_request(
             | XWireRequest::Dri3FenceFromFd { .. }
             | XWireRequest::Dri3GetSupportedModifiers { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::Dri3Open { drawable, provider } => {
                     let outputs = if provider != 0 {
                         vec![XClientOutput::Error(crate::XClientError {

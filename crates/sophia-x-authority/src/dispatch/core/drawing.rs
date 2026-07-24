@@ -4,7 +4,7 @@ fn dispatch_core_drawing_request(
     runtime: &mut XAuthorityRuntime,
     _atoms: &mut XAtomTable,
     _properties: &mut XPropertyTable,
-) -> Result<XDispatchResult, XWireRequest> {
+) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::PolyFillRectangle { .. }
@@ -17,9 +17,9 @@ fn dispatch_core_drawing_request(
             | XWireRequest::FillPoly { .. }
             | XWireRequest::PutImage { .. }
     ) {
-        return Err(request);
+        return Unhandled(request);
     }
-    Ok(match request {
+    Handled(match request {
                 XWireRequest::PolyFillRectangle {
                     drawable,
                     gc,
@@ -30,7 +30,7 @@ fn dispatch_core_drawing_request(
                         .validate_pixmap_access(context.namespace, drawable)
                         .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
@@ -121,7 +121,7 @@ fn dispatch_core_drawing_request(
                             .validate_pixmap_access(context.namespace, drawable)
                             .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
@@ -161,7 +161,7 @@ fn dispatch_core_drawing_request(
                         .validate_pixmap_access(context.namespace, drawable)
                         .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
@@ -197,7 +197,7 @@ fn dispatch_core_drawing_request(
                         .validate_pixmap_access(context.namespace, drawable)
                         .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
@@ -248,7 +248,7 @@ fn dispatch_core_drawing_request(
                             .validate_pixmap_access(context.namespace, drawable)
                             .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
@@ -290,7 +290,7 @@ fn dispatch_core_drawing_request(
                         .validate_pixmap_access(context.namespace, drawable)
                         .is_ok()
                     {
-                        return Ok(XDispatchResult {
+                        return Handled(XDispatchResult {
                             response: Some(XAuthorityResponsePacket::accepted(transaction)),
                             outputs: Vec::new(),
                             metadata_candidates: Vec::new(),
