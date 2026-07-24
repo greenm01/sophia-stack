@@ -961,7 +961,11 @@ impl XServerFrontend {
         })?;
         match completion.result {
             Err(error) if error.client_failure || error.client_disconnect => {
-                eprintln!("Sophia X Server Frontend disconnected one client: {error}");
+                tracing::debug!(
+                    client_failure = error.client_failure,
+                    client_disconnect = error.client_disconnect,
+                    "Sophia X Server Frontend disconnected one client"
+                );
                 Ok(())
             }
             result => result,
@@ -4197,7 +4201,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     })?;
     let client = client_lease.client;
     if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-        eprintln!(
+        tracing::debug!(
             "sophia_x11_client_route schema=1 stage=accepted client={}",
             client.raw()
         );
@@ -4608,7 +4612,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         && let Some(detail) = request_detail.as_deref()
                         && detail.starts_with("GetKeyboardMapping:")
                     {
-                        eprintln!("sophia_x11_keyboard_map schema=1 {detail}");
+                        tracing::debug!(
+                            "sophia_x11_keyboard_map schema=1 status=served detail_redacted=true"
+                        );
                     }
                     let dispatch_succeeded = !output
                         .outputs
@@ -4848,11 +4854,6 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 output.outputs.remove(index);
             }
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                let request_head = request
-                    .iter()
-                    .take(24)
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>();
                 let replies = output
                     .outputs
                     .iter()
@@ -4868,25 +4869,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     .iter()
                     .filter(|item| matches!(item, crate::XClientOutput::Event(_)))
                     .count();
-                let first_error = output.outputs.iter().find_map(|item| match item {
-                    crate::XClientOutput::Error(error) => {
-                        Some(format!("{:?}:minor={}", error.code, error.minor_code))
-                    }
-                    _ => None,
-                });
-                eprintln!(
-                    "sophia_x11_dispatch schema=1 sequence={} major={} minor={} request_len={} request_head={} parse={} detail={} replies={} errors={} events={} first_error={} response={}",
+                tracing::debug!(
+                    "sophia_x11_dispatch schema=1 sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={}",
                     sequence,
                     major_opcode,
                     request_minor_code,
                     request.len(),
-                    request_head,
-                    x11_trace_token(parse_error.as_deref()),
-                    x11_trace_token(request_detail.as_deref()),
+                    parse_error.is_some(),
+                    request_detail.is_some(),
                     replies,
                     errors,
                     events,
-                    first_error.as_deref().unwrap_or("none"),
                     output.response.is_some(),
                 );
             }
@@ -5248,15 +5241,9 @@ fn spawn_x11_protocol_event_writer(
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                use std::os::fd::AsRawFd;
-                eprintln!(
-                    "sophia_x11_socket_write schema=1 writer=protocol fd={} bytes={} head={:02x}{:02x}{:02x}{:02x}",
-                    stream.as_raw_fd(),
+                tracing::trace!(
+                    "sophia_x11_socket_write schema=1 writer=protocol bytes={} payload_redacted=true",
                     record.len(),
-                    record[0],
-                    record[1],
-                    record[2],
-                    record[3],
                 );
             }
             if let Err(error) = stream.write_all(&record) {
@@ -5472,7 +5459,7 @@ fn spawn_x11_control_writer(
                         drop(properties);
                         terminate_client!(transaction, surface);
                     }
-                    eprintln!(
+                    tracing::debug!(
                         "sophia_x11_close_target schema=1 surface_map_hit=true exact_delete={} fallback_used={} protocol_windows={}",
                         decision.exact_advertises_delete,
                         decision.fallback_used,
@@ -5565,15 +5552,9 @@ fn spawn_x11_control_writer(
             for mut record in records {
                 write_xi_u16(byte_order, &mut record[2..4], event_sequence);
                 if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                    use std::os::fd::AsRawFd;
-                    eprintln!(
-                        "sophia_x11_socket_write schema=1 writer=control fd={} bytes={} head={:02x}{:02x}{:02x}{:02x}",
-                        stream.as_raw_fd(),
+                    tracing::trace!(
+                        "sophia_x11_socket_write schema=1 writer=control bytes={} payload_redacted=true",
                         record.len(),
-                        record[0],
-                        record[1],
-                        record[2],
-                        record[3],
                     );
                 }
                 if let Err(error) = stream.write_all(&record) {
@@ -5674,29 +5655,21 @@ fn spawn_x11_input_event_writer(
                 std::thread::sleep(Duration::from_millis(5));
             };
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
-                && let XAuthorityInputEvent::Key(key) = event
+                && matches!(event, XAuthorityInputEvent::Key(_))
             {
-                eprintln!(
-                    "sophia_x11_key_delivery schema=2 stage=target_resolved client={} keycode={} pressed={} focus_window={:#x} routed_window={} keyboard_selected={} xi_event_type={} xi_transition_mask={:#x} wait_msec={}",
+                tracing::debug!(
+                    "sophia_x11_key_delivery schema=2 stage=target_resolved client={} keyboard_selected={} explicit_target={} xi_event={} wait_msec={} input_redacted=true",
                     client.raw(),
-                    key.keycode,
-                    key.pressed,
-                    focused_window.local.raw(),
-                    routed_keyboard_window
-                        .map(|window| format!("{:#x}", window.local.raw()))
-                        .unwrap_or_else(|| "none".to_owned()),
                     keyboard_selected,
-                    xi_event_type
-                        .map(|event_type| event_type.to_string())
-                        .unwrap_or_else(|| "none".to_owned()),
-                    xi_transition_mask,
+                    routed_keyboard_window.is_some(),
+                    xi_event_type.is_some(),
                     keyboard_wait_started.elapsed().as_millis(),
                 );
             }
             if let XAuthorityInputEvent::Key(_) = event
                 && routed_keyboard_window.is_some_and(|window| window != focused_window)
             {
-                eprintln!(
+                tracing::warn!(
                     "sophia_x11_key_delivery schema=1 target_matches_focus=false explicit_target=true",
                 );
             }
@@ -5883,25 +5856,16 @@ fn spawn_x11_input_event_writer(
                     }
                 })?;
                 if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                    use std::os::fd::AsRawFd;
-                    eprintln!(
-                        "sophia_x11_socket_write schema=1 writer=input fd={} bytes={} head={:02x}{:02x}{:02x}{:02x}",
-                        stream.as_raw_fd(),
+                    tracing::trace!(
+                        "sophia_x11_socket_write schema=1 writer=input bytes={} payload_redacted=true",
                         record.len(),
-                        record[0],
-                        record[1],
-                        record[2],
-                        record[3],
                     );
                 }
                 if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
-                    && let XAuthorityInputEvent::Key(key) = event
+                    && matches!(event, XAuthorityInputEvent::Key(_))
                 {
-                    eprintln!(
-                        "sophia_x11_key_delivery schema=2 stage=wire_flushed keycode={} pressed={} window={:#x} sequence={sequence}",
-                        key.keycode,
-                        key.pressed,
-                        delivered_window.local.raw(),
+                    tracing::debug!(
+                        "sophia_x11_key_delivery schema=2 stage=wire_flushed sequence={sequence} input_redacted=true"
                     );
                 }
                 if let XAuthorityInputEvent::Key(key) = event {
@@ -6637,27 +6601,6 @@ mod routing_tests {
         selections.observe_unmapped(lower);
         assert_eq!(selections.keyboard_target(root), upper);
     }
-}
-
-#[cfg(unix)]
-fn x11_trace_token(value: Option<&str>) -> String {
-    value
-        .unwrap_or("none")
-        .chars()
-        .take(512)
-        .map(|character| {
-            if character.is_ascii_alphanumeric()
-                || matches!(
-                    character,
-                    '-' | '_' | '.' | ':' | '=' | ',' | '{' | '}' | '[' | ']'
-                )
-            {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 fn x11_core_request_trace_detail(request: &crate::XWireRequest) -> Option<String> {

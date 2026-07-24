@@ -34,6 +34,10 @@ Completed evidence is archived in `research-log-archive.md`.
 - Converted native EGL/GBM pixel and lifecycle diagnostics to `tracing` and
   removed the process ID from DMA-BUF lifecycle output. Pixel evidence message
   bodies remain compatible with the existing verifier.
+- Converted X authority dispatch, socket-write, close, and input diagnostics to
+  `tracing`. Request-byte prefixes, file descriptors, raw XIDs, and key details
+  are now redacted; diagnostics retain only opaque client IDs, protocol
+  opcodes/counts, routing decisions, and bounded timing.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument

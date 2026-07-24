@@ -12,6 +12,7 @@ sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 xkbcommon = "0.8"
+tracing.workspace = true
 
 [lints]
 workspace = true

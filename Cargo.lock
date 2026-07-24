@@ -480,6 +480,7 @@ dependencies = [
  "sophia-portal",
  "sophia-protocol",
  "sophia-sysv-shm",
+ "tracing",
  "xkbcommon",
 ]
 

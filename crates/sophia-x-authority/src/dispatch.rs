@@ -2158,30 +2158,14 @@ pub fn dispatch_x11_wire_request(
             };
             if let Err(error) = validation {
                 if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                    eprintln!(
-                        "sophia_present_validation schema=1 sequence={} invalid={} target_crtc={:#x} options={:#x} divisor={} remainder={} window={:?} pixmap={:?} valid_region={:?} update_region={:?} wait_fence={:?} idle_fence={:?}",
+                    tracing::warn!(
+                        "sophia_present_validation schema=1 sequence={} status=rejected invalid_field={} has_valid_region={} has_update_region={} has_wait_fence={} has_idle_fence={}",
                         context.sequence,
                         invalid_value,
-                        target_crtc,
-                        options,
-                        divisor,
-                        remainder,
-                        runtime.validate_window_access(context.namespace, window),
-                        runtime.validate_pixmap_access(context.namespace, pixmap),
-                        (valid_region != 0).then(|| runtime.validate_xfixes_region_access(
-                            context.namespace,
-                            XResourceId::new(u64::from(valid_region), 1)
-                        )),
-                        (update_region != 0).then(|| runtime.validate_xfixes_region_access(
-                            context.namespace,
-                            XResourceId::new(u64::from(update_region), 1)
-                        )),
-                        wait_fence
-                            .map(|fence| runtime
-                                .validate_dri3_fence_access(context.namespace, fence)),
-                        idle_fence
-                            .map(|fence| runtime
-                                .validate_dri3_fence_access(context.namespace, fence)),
+                        valid_region != 0,
+                        update_region != 0,
+                        wait_fence.is_some(),
+                        idle_fence.is_some(),
                     );
                 }
                 return XDispatchResult {
