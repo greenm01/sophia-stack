@@ -278,6 +278,11 @@ pub fn run_x_server_frontend_routed_until_stopped(
             Ok(XServerFrontendServiceCommand::StopAccepting) | Err(TryRecvError::Disconnected) => {
                 accepting = false
             }
+            Ok(XServerFrontendServiceCommand::StopAndDisconnect) => {
+                accepting = false;
+                frontend.shutdown_all_client_workers()?;
+                progressed = true;
+            }
             Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
                 progressed |= frontend.revoke_admission(admission)?;
             }

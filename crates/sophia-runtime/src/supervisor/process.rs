@@ -1,9 +1,11 @@
 use super::*;
+use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessLaunchSpec {
     pub program: OsString,
     pub args: Vec<OsString>,
+    pub process_group: bool,
 }
 
 impl ProcessLaunchSpec {
@@ -11,11 +13,17 @@ impl ProcessLaunchSpec {
         Self {
             program: program.into(),
             args: Vec::new(),
+            process_group: false,
         }
     }
 
     pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
         self.args.push(arg.into());
+        self
+    }
+
+    pub fn process_group(mut self) -> Self {
+        self.process_group = true;
         self
     }
 }
@@ -132,14 +140,38 @@ impl ProcessSupervisor {
             return Ok(());
         };
 
-        if child
+        let running = child
             .try_wait()
             .map_err(|error| ProcessSupervisorError::WaitFailed {
                 process: self.process,
                 message: error.to_string(),
             })?
-            .is_none()
-        {
+            .is_none();
+        if running && self.spec.process_group {
+            let pid = rustix::process::Pid::from_raw(child.id() as i32).ok_or_else(|| {
+                ProcessSupervisorError::WaitFailed {
+                    process: self.process,
+                    message: "supervised process PID is invalid".to_owned(),
+                }
+            })?;
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if child
+                    .try_wait()
+                    .map_err(|error| ProcessSupervisorError::WaitFailed {
+                        process: self.process,
+                        message: error.to_string(),
+                    })?
+                    .is_some()
+                {
+                    let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        } else if running {
             child
                 .kill()
                 .map_err(|error| ProcessSupervisorError::WaitFailed {
@@ -170,6 +202,10 @@ impl ProcessSupervisor {
 
         let mut command = Command::new(&self.spec.program);
         command.args(&self.spec.args);
+        #[cfg(unix)]
+        if self.spec.process_group {
+            std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        }
         let child = command
             .spawn()
             .map_err(|error| ProcessSupervisorError::SpawnFailed {

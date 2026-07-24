@@ -133,6 +133,7 @@
                     }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
+                    && startup_ready_reported
                     && layout.layers.len() >= if config.secondary_terminal { 2 } else { 1 }
                     && layout.pending.is_none()
                 {

@@ -32,7 +32,9 @@ bash -n tools/atomic_scanout_hardware_status.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
-bash -n tools/start_sophia_kitty_tty3.sh tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
+bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
+bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
+bash -n tools/verify_sophia_xmonad_tty3.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'sophia_tty_mode.py" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh
@@ -43,7 +45,8 @@ grep -Fq 'linux_display_server=x11' tools/run_sophia_xmonad_session.sh
 grep -Fq 'background_opacity=1' tools/run_sophia_xmonad_session.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_DIAGNOSTIC=1' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--startup-ready-timeout-ms=8000' tools/run_sophia_xmonad_session.sh
-grep -Fq 'tools/run_sophia_kitty_session.sh' tools/start_sophia_kitty_tty3.sh
+grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
+grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
 grep -Fq -- '--exit-when-startup-exits' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--input-seat=$input_seat' tools/run_sophia_xmonad_session.sh
 if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
@@ -51,7 +54,7 @@ if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
     exit 1
 fi
 bash -n tools/stop_sophia_xmonad_session.sh
-bash -n tools/xmonad_live_session_smoke.sh
+bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
 bash -n tools/live_session_persistent_hardware_proof.sh
 bash -n tools/live_session_milestone5_gtk_hardware_proof.sh
 if ! grep -Fq -- '--namespace-profile="$profile" --software-client-rendering' tools/live_session_milestone5_gtk_hardware_proof.sh; then

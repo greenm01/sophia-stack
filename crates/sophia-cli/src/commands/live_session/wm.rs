@@ -50,7 +50,8 @@ impl LiveWmSession {
         let spec = config.wm_process_args.iter().fold(
             ProcessLaunchSpec::new(process)
                 .arg("serve-socket")
-                .arg(socket_arg),
+                .arg(socket_arg)
+                .process_group(),
             |spec, argument| spec.arg(argument),
         );
         let workspace_state =
@@ -872,4 +873,3 @@ fn successful_primary_exit_ends_session(input_proof_requested: bool) -> bool {
 fn global_runtime_deadline_ends_session(input_proof_requested: bool) -> bool {
     !input_proof_requested
 }
-

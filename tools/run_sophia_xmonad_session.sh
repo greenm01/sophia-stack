@@ -70,23 +70,7 @@ fi
 
 xmonad_bin=""
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
-    xmonad_bin="${SOPHIA_XMONAD_BIN:-}"
-    if [[ -z "$xmonad_bin" ]] && command -v xmonad >/dev/null 2>&1; then
-        xmonad_bin="$(command -v xmonad)"
-    fi
-    if [[ -z "$xmonad_bin" ]]; then
-        xmonad_source="${SOPHIA_XMONAD_SOURCE:-$HOME/src/xmonad}"
-        xmonad_out="${SOPHIA_XMONAD_NIX_OUT:-/tmp/sophia-xmonad}"
-        if [[ ! -x "$xmonad_out/bin/xmonad" ]]; then
-            if [[ ! -f "$xmonad_source/flake.nix" ]]; then
-                echo "xmonad not found; set SOPHIA_XMONAD_BIN or SOPHIA_XMONAD_SOURCE." >&2
-                exit 1
-            fi
-            nix build "$xmonad_source#defaultPackage.x86_64-linux" \
-                --out-link "$xmonad_out"
-        fi
-        xmonad_bin="$xmonad_out/bin/xmonad"
-    fi
+    xmonad_bin="$("$ROOT_DIR/tools/resolve_sophia_xmonad.sh")"
 fi
 
 cd "$ROOT_DIR"
@@ -238,6 +222,15 @@ session_args=(
     --display="$DISPLAY_NAME"
     --native-scanout
     "${input_source_args[@]}"
+    --session-app-arg=terminal=--config
+    --session-app-arg=terminal=NONE
+    --session-app-arg=terminal=--override
+    --session-app-arg=terminal=linux_display_server=x11
+    --session-app-arg=terminal=--override
+    --session-app-arg=terminal=background_opacity=1
+    --session-app-arg=terminal=--title
+    "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
+    --startup-ready-timeout-ms=8000
 )
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     session_args+=(
@@ -247,30 +240,29 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         --wm-process-arg=--profile=xmonad
         --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
     )
+    firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
+    if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then
+        session_args+=(
+            "--session-app=firefox=$firefox_bin"
+            --session-action-app=firefox=firefox
+            --session-app-arg=firefox=--no-remote
+            --session-app-arg=firefox=--new-instance
+            "--session-app-arg=firefox=file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
+        )
+    fi
 else
     session_args+=(
-        --session-app-arg=terminal=--config
-        --session-app-arg=terminal=NONE
-        --session-app-arg=terminal=--override
-        --session-app-arg=terminal=linux_display_server=x11
-        --session-app-arg=terminal=--override
-        --session-app-arg=terminal=background_opacity=1
-        --session-app-arg=terminal=--title
-        "--session-app-arg=terminal=Sophia Kitty TTY3"
         --exit-when-startup-exits
-        --startup-ready-timeout-ms=8000
     )
 fi
 session_args+=("$@")
-session_environment=(SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1)
-if [[ "$SESSION_PROFILE" == kitty ]]; then
-    session_environment+=(
-        DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
-        SOPHIA_LIVE_SESSION_DIAGNOSTIC=1
-        SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1
-        SOPHIA_X11_AUTHORITY_TRACE=1
-    )
-fi
+session_environment=(
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
+    SOPHIA_LIVE_SESSION_DIAGNOSTIC=1
+    SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1
+    SOPHIA_X11_AUTHORITY_TRACE=1
+)
 session_command=(
     env
     -u WAYLAND_DISPLAY

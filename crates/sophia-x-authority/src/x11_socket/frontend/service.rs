@@ -103,6 +103,15 @@ impl XServerFrontend {
         self.reap_finished_client_workers()
     }
 
+    /// Shuts down every accepted client stream while leaving worker threads
+    /// responsible for their normal route and resource cleanup.
+    pub fn shutdown_all_client_workers(&self) -> Result<(), X11SetupSocketError> {
+        for worker_id in self.workers.keys().copied() {
+            self.shutdown_worker(worker_id)?;
+        }
+        Ok(())
+    }
+
     /// Disconnects the worker holding one session-issued admission.
     ///
     /// The worker retains teardown ownership: it stops its private writers,

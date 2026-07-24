@@ -273,16 +273,53 @@ add/remove events. `SOPHIA_OPERATOR_INPUT_SEAT` selects another seat.
 override for deterministic diagnostics; ordinary sessions do not enumerate
 `/dev/input/by-id` in shell.
 
-The xmonad path is retained as experimental:
+The xmonad path remains a guarded promotion candidate. Run it only from
+`/dev/tty3`:
 
 ```sh
-tools/run_sophia_session.sh --wm=xmonad
+tools/start_sophia_xmonad_tty3.sh
 ```
 
-It starts the generic bridge as `sophia-live-session`'s supervised WM process,
-uses xmonad only as the selected bridge client, and launches approved applications
-from the bounded normal-session registry. `--wm=native` selects the Sophia WM API
-demo and `--wm=none` runs without an external policy process. The unattended
+Before a physical run, the bounded real-client resize gate must pass:
+
+```sh
+tools/xmonad_live_session_smoke.sh
+```
+
+It launches the installed Kitty binary through the normal application
+registry, supervises the generic bridge and real xmonad, waits for visible
+startup, commits a 960x640 resize with ConfigureNotify acknowledgement and
+later pixels, then requires zero unexpected protocol errors and clean frontend
+worker teardown. It retains evidence at
+`/tmp/sophia-xmonad-live-session.log`.
+
+The launcher shares the proven Kitty takeover and recovery lifecycle, but adds
+the generic bridge as `sophia-live-session`'s supervised WM process and uses
+xmonad only as the selected policy client. Kitty remains a normal application
+in the bounded session registry; neither Engine nor X Authority contains
+Kitty-specific window-management behavior.
+
+Arm the independent guard when prompted. For the normal promotion capture,
+move and click the pointer, type in the initial Kitty, use Super-Enter to open
+a second Kitty, change focus and layout, then use Super-Shift-Q for normal
+logout. Do not use Ctrl-Alt-Backspace in that capture. After returning to
+TTY3, run:
+
+```sh
+tools/verify_sophia_xmonad_tty3.sh
+```
+
+The verifier requires physical keyboard and pointer routing, startup and
+action-launched Kitty processes, committed xmonad layout and focus, normal
+logout, clean native retirement, an armed but untriggered guard, and exact KD
+mode and termios restoration. Its default evidence is under
+`~/.local/state/sophia/xmonad-session/`; launcher output is retained at
+`/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
+proof.
+
+The generic development runner still supports
+`tools/run_sophia_session.sh --wm=xmonad`; `--wm=native` selects the Sophia WM
+API demo and `--wm=none` runs without external policy. The unattended
 `tools/qemu_xmonad_m8_launcher_acceptance.sh` gate proves startup, xmonad-driven
 terminal launch and close, logout, bridge restart recovery, and clean two-output
 shutdown. The frozen Milestone 7 regression remains

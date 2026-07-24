@@ -156,6 +156,7 @@ pub struct XAuthorityClientControlAck {
 #[derive(Clone, Debug)]
 pub enum XServerFrontendServiceCommand {
     StopAccepting,
+    StopAndDisconnect,
     RevokeAdmission {
         admission: ClientAdmissionId,
     },

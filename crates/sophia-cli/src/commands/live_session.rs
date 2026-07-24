@@ -517,18 +517,23 @@ pub(crate) fn run_persistent_xterm_session(
         },
     );
     drop(randr_witness);
+    println!("sophia_live_session_lifecycle schema=1 status=stopping_frontend");
     // Stop frontend routing before terminating its clients. Pointer motion can
     // leave a bounded burst in the Engine ingress queue; killing xterm first
     // turns that normal shutdown backlog into a client-queue disconnect.
     let _ = service_command_sender.send(XServerFrontendServiceCommand::StopAccepting);
     drop(input_sender);
     drop(control_sender);
+    println!("sophia_live_session_lifecycle schema=1 status=stopping_clients");
     process.terminate()?;
+    let _ = service_command_sender.send(XServerFrontendServiceCommand::StopAndDisconnect);
+    println!("sophia_live_session_lifecycle schema=1 status=joining_frontend");
     let server_result = server
         .take()
         .expect("X Server Frontend handle is retained after startup")
         .join()
         .map_err(|_| "persistent X authority server thread panicked")?;
+    println!("sophia_live_session_lifecycle schema=1 status=frontend_joined");
     server_result.map_err(|error| format!("persistent X authority server failed: {error}"))?;
     namespace_registry
         .lock()

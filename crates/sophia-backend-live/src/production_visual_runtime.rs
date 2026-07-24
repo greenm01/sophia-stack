@@ -127,9 +127,13 @@ impl LiveProductionVisualRuntime {
         } = request;
         self.presentation_feedback
             .observe_authority_resources(batch)?;
+        let rebased_transactions = sophia_engine::rebase_full_state_present_transactions(
+            &batch.transactions,
+            self.production.committed_surfaces(),
+        );
         self.layers
             .retain(|surface, _| !batch.removed_surfaces.contains(surface));
-        for transaction in &batch.transactions {
+        for transaction in &rebased_transactions {
             self.layers.insert(transaction.surface, transaction.clone());
         }
         self.rebuild_input_layers();
@@ -150,7 +154,7 @@ impl LiveProductionVisualRuntime {
             native_scanout
         };
         let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
-        let intake = AuthorityTransactionIntake::new(batch.transaction, batch.transactions.clone())
+        let intake = AuthorityTransactionIntake::new(batch.transaction, rebased_transactions)
             .with_surface_removals(batch.removed_surfaces.clone());
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();

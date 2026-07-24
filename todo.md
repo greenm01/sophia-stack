@@ -65,11 +65,11 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
 
 ### 9.1 Real-Kitty xmonad resize regression
 
-- [ ] Add a bounded automated session using the real Kitty binary, the generic
+- [x] Add a bounded automated session using the real Kitty binary, the generic
   WM bridge, and real xmonad.
-- [ ] Require WM hello/binding handshake, automatic Kitty map, Engine focus,
+- [x] Require WM hello/binding handshake, automatic Kitty map, Engine focus,
   initial DRI3/Present frame, and zero client-visible protocol errors.
-- [ ] Drive an xmonad layout resize and require the matching ConfigureNotify,
+- [x] Drive an xmonad layout resize and require the matching ConfigureNotify,
   configure acknowledgement, updated Engine surface bounds, and a later Kitty
   Present at the new size.
 - [ ] Route exact shell input after the resize and require both the shell result

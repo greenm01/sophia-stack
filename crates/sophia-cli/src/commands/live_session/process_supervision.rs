@@ -38,6 +38,10 @@ pub(super) fn terminate_session_child(
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
             if child.try_wait()?.is_some() {
+                // The process-group leader can exit before terminal helpers
+                // that inherited the X connection. Drain the whole group or
+                // frontend shutdown can wait forever on an orphaned client.
+                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
                 return Ok(());
             }
             std::thread::sleep(Duration::from_millis(25));

@@ -1,5 +1,5 @@
 const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_session.sh");
-const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_kitty_tty3.sh");
+const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 
 fn offset(needle: &str) -> usize {
     SESSION_LAUNCHER
@@ -48,7 +48,7 @@ fn kitty_gate_always_retains_one_shot_composition_pixel_evidence() {
 }
 
 #[test]
-fn kitty_gate_reactivates_its_originating_vt_after_display_manager_restore() {
+fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
     let restore_manager = TTY3_LAUNCHER
         .find("sudo sv up \"$display_manager\"")
         .unwrap();
