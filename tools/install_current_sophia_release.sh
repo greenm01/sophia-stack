@@ -72,7 +72,7 @@ installed_commit="$(
     exit 1
 }
 
-session_entry="/usr/local/share/wayland-sessions/sophia.desktop"
+session_entry="/usr/share/wayland-sessions/sophia.desktop"
 if [[ "$PREFIX" == /opt/sophia && ! -r "$session_entry" ]]; then
     echo "Installed commit is correct, but the greetd session entry is missing:" >&2
     echo "  $session_entry" >&2

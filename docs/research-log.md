@@ -2696,3 +2696,12 @@ Repeated-cycle verification rechecks the lifecycle of every archived run.
 This proves the installed-path contract and makes failures diagnosable; it does
 not replace the remaining physical three-login, fallback-session, emergency,
 ten-cycle, or soak captures.
+
+## 2026-07-24: Installed Session Entries Follow Greetd Discovery
+
+The first immutable lifecycle release installed its desktop entries below
+`/usr/local/share/wayland-sessions`, but this host's explicit tuigreet command
+scans `/usr/share/wayland-sessions`. The files were valid yet could not appear
+in the menu. The system installer and current-release verifier now use
+`/usr/share/wayland-sessions`, matching the configured greetd discovery
+boundary. Staging tests continue to override the directory explicitly.

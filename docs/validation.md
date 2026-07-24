@@ -390,7 +390,8 @@ exact Git commit in an immutable release directory. Installation verifies
 those digests, copies the release below `/opt/sophia/releases/`, atomically
 updates `/opt/sophia/current`, preserves the former target as
 `/opt/sophia/previous`, and installs the `Sophia` greetd session entry below
-`/usr/local/share/wayland-sessions/`.
+`/usr/share/wayland-sessions/`, the directory configured for greetd/tuigreet
+session discovery.
 
 The installed login command is `/usr/local/bin/sophia-session`. It performs no
 source build, repository lookup, display-manager takeover, or privileged

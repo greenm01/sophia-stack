@@ -8,7 +8,7 @@ artifact="${1:-}"
 }
 artifact="$(cd "$artifact" && pwd)"
 PREFIX="${SOPHIA_INSTALL_PREFIX:-/opt/sophia}"
-SESSION_DIR="${SOPHIA_SESSION_DIR:-/usr/local/share/wayland-sessions}"
+SESSION_DIR="${SOPHIA_SESSION_DIR:-/usr/share/wayland-sessions}"
 COMMAND_DIR="${SOPHIA_COMMAND_DIR:-/usr/local/bin}"
 
 if [[ "$(id -u)" != 0 ]]; then
