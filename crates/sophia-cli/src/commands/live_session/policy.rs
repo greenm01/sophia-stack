@@ -29,6 +29,13 @@ fn physical_input_routing_mode(
     }
 }
 
+fn pending_wm_focus_after_engine_decision(
+    request: (TransactionId, SurfaceId),
+    decision: InputFocusDecision,
+) -> Option<(TransactionId, SurfaceId)> {
+    (decision != InputFocusDecision::Focused).then_some(request)
+}
+
 struct InitialSessionFocusContext<'a> {
     runtime: &'a LiveProductionVisualRuntime,
     focus: &'a mut InputFocusState,

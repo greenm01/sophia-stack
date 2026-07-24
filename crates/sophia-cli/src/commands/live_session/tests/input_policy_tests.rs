@@ -1,4 +1,19 @@
 use super::*;
+use sophia_engine::InputFocusDecision;
+use sophia_protocol::TransactionId;
+
+#[test]
+fn unknown_surface_keeps_wm_focus_request_pending() {
+    let request = (TransactionId::from_raw(7), SurfaceId::new(41, 1));
+    assert_eq!(
+        pending_wm_focus_after_engine_decision(request, InputFocusDecision::UnknownSurface),
+        Some(request),
+    );
+    assert_eq!(
+        pending_wm_focus_after_engine_decision(request, InputFocusDecision::Focused),
+        None,
+    );
+}
 
 #[test]
 fn held_application_pointer_delivery_does_not_freeze_cursor() {

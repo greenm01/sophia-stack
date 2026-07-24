@@ -2579,3 +2579,11 @@ delivery remained gated until the later pointer-proof phase. Cursor placement
 was incorrectly behind that delivery gate, freezing the compositor-owned
 hardware cursor. Placement now occurs before the application-delivery decision,
 so cursor motion remains responsive without prematurely routing pointer events.
+
+The following physical run displayed a blinking prompt but did not echo input.
+Its retained evidence contained `key_observed` without `key_routed` and ended at
+`focus_control_pending`. The WM layout committed before the corresponding
+surface entered Engine's committed-surface set; the first focus attempt returned
+`UnknownSurface`, but the owner loop consumed the one-shot focus request anyway.
+WM focus requests now remain pending on that transient result and are consumed
+only after Engine focus and X11 client focus both succeed.

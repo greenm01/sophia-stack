@@ -352,41 +352,53 @@
                     next_focus_control_transaction: &mut next_focus_control_transaction,
                     focused_client_control: &mut focused_client_control,
                 })?;
-                if let Some((transaction, surface)) = layout.focus_to_apply.take() {
+                if let Some((transaction, surface)) = layout.focus_to_apply {
                     let decision = focus.focus_surface(seat, surface, runtime.committed_surfaces());
-                    if decision == InputFocusDecision::Focused && wm_session.is_some() {
-                        let client = layout
-                            .client_routes
-                            .client_for_surface(surface)
-                            .ok_or("WM focus has no X11 client route")?;
-                        control_sender.try_send(XAuthorityClientControlCommand {
-                            client,
-                            command: XAuthorityControlCommand::FocusSurface {
-                                transaction,
-                                surface,
-                            },
-                        })?;
-                        let acknowledgement =
-                            control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-                        if acknowledgement.client != client
-                            || acknowledgement.acknowledgement.transaction != transaction
-                            || acknowledgement.acknowledgement.surface != surface
-                            || acknowledgement.acknowledgement.outcome
-                                != XAuthorityControlOutcome::Delivered
-                        {
-                            return Err("X Authority rejected WM focus reconciliation".into());
-                        }
-                        applied_client_focus = Some(surface);
-                    }
-                    println!(
-                        "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
-                        transaction.raw()
+                    layout.focus_to_apply = pending_wm_focus_after_engine_decision(
+                        (transaction, surface),
+                        decision,
                     );
-                    if decision == InputFocusDecision::Focused {
-                        println!(
-                            "sophia_live_wm schema=1 status=focus_committed transaction={} target=surface",
-                            transaction.raw()
-                        );
+                    match decision {
+                        InputFocusDecision::Focused => {
+                            if wm_session.is_some() {
+                                let client = layout
+                                    .client_routes
+                                    .client_for_surface(surface)
+                                    .ok_or("WM focus has no X11 client route")?;
+                                control_sender.try_send(XAuthorityClientControlCommand {
+                                    client,
+                                    command: XAuthorityControlCommand::FocusSurface {
+                                        transaction,
+                                        surface,
+                                    },
+                                })?;
+                                let acknowledgement =
+                                    control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
+                                if acknowledgement.client != client
+                                    || acknowledgement.acknowledgement.transaction != transaction
+                                    || acknowledgement.acknowledgement.surface != surface
+                                    || acknowledgement.acknowledgement.outcome
+                                        != XAuthorityControlOutcome::Delivered
+                                {
+                                    return Err(
+                                        "X Authority rejected WM focus reconciliation".into()
+                                    );
+                                }
+                                applied_client_focus = Some(surface);
+                            }
+                            println!(
+                                "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
+                                transaction.raw()
+                            );
+                            println!(
+                                "sophia_live_wm schema=1 status=focus_committed transaction={} target=surface",
+                                transaction.raw()
+                            );
+                        }
+                        InputFocusDecision::UnknownSurface => {}
+                        InputFocusDecision::InvalidSeat => {
+                            return Err("WM focus reconciliation used an invalid seat".into());
+                        }
                     }
                 }
                 if !focus_ready_reported && focus.focused_surface(seat).is_some() {
