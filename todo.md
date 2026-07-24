@@ -235,8 +235,8 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
 - [ ] Split native scanout and the legacy WM bridge by ownership.
   - [x] Separate passive DMA-BUF/composition records from GBM/EGL execution.
   - [x] Separate legacy-WM wire framing from runtime supervision.
-  - [ ] Extract scanout resource lifetime, composition execution, bridge
-    server state, and legacy request dispatch.
+  - [x] Extract scanout resource lifetime and composition execution.
+  - [ ] Extract bridge server state and legacy request dispatch.
 - [x] Extract visual diagnostics and asynchronous output servicing from the
   production visual-runtime facade.
 - [ ] Move every remaining inline test to crate integration tests and split

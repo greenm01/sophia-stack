@@ -1,0 +1,222 @@
+pub struct NativeGbmRenderedScanoutContextReport<T: std::os::fd::AsFd> {
+    pub status: NativeGbmRenderedScanoutContextStatus,
+    pub context: Option<NativeGbmRenderedScanoutContext<T>>,
+}
+
+pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd>(
+    device: std::io::Result<T>,
+    width: u32,
+    height: u32,
+) -> NativeGbmOwnedScanoutBufferExportReport {
+    if width == 0 || height == 0 {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
+            detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
+            buffer: None,
+        };
+    }
+
+    let Ok(device) = device else {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::Unavailable,
+            detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
+            buffer: None,
+        };
+    };
+    let Ok(device) = gbm::Device::new(device) else {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::Unavailable,
+            detail: NativeGbmScanoutBufferExportDetail::GbmDeviceUnavailable,
+            buffer: None,
+        };
+    };
+    let Ok(buffer) = device.create_buffer_object::<()>(
+        width,
+        height,
+        gbm::Format::Xrgb8888,
+        gbm::BufferObjectFlags::SCANOUT | gbm::BufferObjectFlags::RENDERING,
+    ) else {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::Unavailable,
+            detail: NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable,
+            buffer: None,
+        };
+    };
+
+    match native_owned_scanout_buffer_from_bo(width, height, buffer, None) {
+        Ok(buffer) => exported_scanout_buffer_report(buffer),
+        Err(detail) => failed_scanout_buffer_report(detail),
+    }
+}
+
+pub fn export_rendered_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd>(
+    device: std::io::Result<T>,
+    width: u32,
+    height: u32,
+) -> NativeGbmOwnedScanoutBufferExportReport {
+    export_rendered_gbm_scanout_buffer_with_modifiers_from_backend_device_result(
+        device,
+        width,
+        height,
+        &[],
+    )
+}
+
+pub fn export_rendered_gbm_scanout_buffer_with_modifiers_from_backend_device_result<
+    T: std::os::fd::AsFd,
+>(
+    device: std::io::Result<T>,
+    width: u32,
+    height: u32,
+    preferred_modifiers: &[u64],
+) -> NativeGbmOwnedScanoutBufferExportReport {
+    if width == 0 || height == 0 {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
+            detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
+            buffer: None,
+        };
+    }
+
+    let Ok(device) = device else {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::Unavailable,
+            detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
+            buffer: None,
+        };
+    };
+
+    match render_gbm_scanout_front_buffer(device, width, height, preferred_modifiers) {
+        Ok(buffer) => exported_scanout_buffer_report(buffer),
+        Err(detail) => failed_scanout_buffer_report(detail),
+    }
+}
+
+fn native_owned_scanout_buffer_from_bo(
+    width: u32,
+    height: u32,
+    buffer: gbm::BufferObject<()>,
+    surface: Option<gbm::Surface<()>>,
+) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+    let pitch = buffer.stride();
+    let format = buffer.format() as u32;
+    let gem_handle = unsafe { buffer.handle().u32_ };
+    let plane_count = buffer.plane_count();
+    let plane_handles = scanout_plane_handles(&buffer, plane_count);
+    let plane_pitches = scanout_plane_pitches(&buffer, plane_count);
+    let plane_offsets = scanout_plane_offsets(&buffer, plane_count);
+    let plane_fds = capture_scanout_plane_fds(&buffer, plane_count).ok();
+    if pitch == 0
+        || gem_handle == 0
+        || !is_supported_scanout_format(format)
+        || !is_valid_scanout_planes(gem_handle, plane_count, plane_handles, plane_pitches)
+    {
+        return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
+    }
+
+    Ok(NativeGbmOwnedScanoutBuffer {
+        width,
+        height,
+        pitch,
+        format,
+        gem_handle,
+        plane_count: plane_count as u8,
+        plane_handles,
+        plane_pitches,
+        plane_offsets,
+        plane_fds,
+        modifier: normalized_scanout_modifier(buffer.modifier()),
+        _buffer: Some(buffer),
+        _egl_surface: None,
+        _surface: surface,
+    })
+}
+
+fn normalized_scanout_modifier(modifier: gbm::Modifier) -> Option<u64> {
+    (!matches!(modifier, gbm::Modifier::Invalid)).then(|| modifier.into())
+}
+
+fn scanout_plane_handles(buffer: &gbm::BufferObject<()>, plane_count: u32) -> [u32; 4] {
+    [
+        plane_handle(buffer, plane_count, 0),
+        plane_handle(buffer, plane_count, 1),
+        plane_handle(buffer, plane_count, 2),
+        plane_handle(buffer, plane_count, 3),
+    ]
+}
+
+fn scanout_plane_pitches(buffer: &gbm::BufferObject<()>, plane_count: u32) -> [u32; 4] {
+    [
+        plane_pitch(buffer, plane_count, 0),
+        plane_pitch(buffer, plane_count, 1),
+        plane_pitch(buffer, plane_count, 2),
+        plane_pitch(buffer, plane_count, 3),
+    ]
+}
+
+fn scanout_plane_offsets(buffer: &gbm::BufferObject<()>, plane_count: u32) -> [u32; 4] {
+    [
+        plane_offset(buffer, plane_count, 0),
+        plane_offset(buffer, plane_count, 1),
+        plane_offset(buffer, plane_count, 2),
+        plane_offset(buffer, plane_count, 3),
+    ]
+}
+
+fn plane_handle(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
+    (plane < plane_count as i32)
+        .then(|| unsafe { buffer.handle_for_plane(plane).u32_ })
+        .unwrap_or(0)
+}
+
+fn plane_pitch(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
+    (plane < plane_count as i32)
+        .then(|| buffer.stride_for_plane(plane))
+        .unwrap_or(0)
+}
+
+fn plane_offset(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
+    (plane < plane_count as i32)
+        .then(|| buffer.offset(plane))
+        .unwrap_or(0)
+}
+
+fn capture_scanout_plane_fds(
+    buffer: &gbm::BufferObject<()>,
+    plane_count: u32,
+) -> Result<[Option<OwnedFd>; 4], NativeGbmScanoutBufferExportDetail> {
+    let mut plane_fds = std::array::from_fn(|_| None);
+    let mut index = 0;
+    while index < plane_count as usize {
+        plane_fds[index] = Some(
+            buffer
+                .fd_for_plane(index as i32)
+                .map_err(|_error| NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?,
+        );
+        index += 1;
+    }
+    Ok(plane_fds)
+}
+
+fn is_valid_scanout_planes(
+    gem_handle: u32,
+    plane_count: u32,
+    plane_handles: [u32; 4],
+    plane_pitches: [u32; 4],
+) -> bool {
+    plane_count > 0
+        && plane_count <= 4
+        && plane_handles[0] == gem_handle
+        && plane_handles
+            .iter()
+            .zip(plane_pitches)
+            .enumerate()
+            .all(|(index, (handle, pitch))| {
+                if index < plane_count as usize {
+                    *handle != 0 && pitch != 0
+                } else {
+                    *handle == 0 && pitch == 0
+                }
+            })
+}
+
