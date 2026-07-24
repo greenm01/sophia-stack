@@ -1,4 +1,2 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
-large-source crates/sophia-cli/src/commands/live_session/owner_loop.rs
-
 inline-tests crates/sophia-x-authority/src/x11_socket.rs
