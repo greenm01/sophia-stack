@@ -1,0 +1,179 @@
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use sophia_protocol::{NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile};
+
+use crate::{
+    X11SetupSocketError, XServerFrontendAdmissionPolicy, XServerFrontendRenderDeviceProvider,
+    XServerFrontendSetupAuthorization,
+};
+
+const DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16) {
+    Some(value) => value,
+    None => unreachable!(),
+};
+
+#[derive(Clone)]
+pub struct XServerFrontendConfig {
+    socket_path: PathBuf,
+    namespace: NamespaceContext,
+    setup_authorization: XServerFrontendSetupAuthorization,
+    admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+    max_concurrent_clients: NonZeroUsize,
+    output_topology: sophia_protocol::OutputTopologySnapshot,
+    xkb_config: crate::XkbRmlvoConfig,
+}
+
+impl core::fmt::Debug for XServerFrontendConfig {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("XServerFrontendConfig")
+            .field("socket_path", &self.socket_path)
+            .field("namespace", &self.namespace)
+            .field("setup_authorization", &self.setup_authorization)
+            .field("has_admission_policy", &self.admission_policy.is_some())
+            .field(
+                "has_render_device_provider",
+                &self.render_device_provider.is_some(),
+            )
+            .field("max_concurrent_clients", &self.max_concurrent_clients)
+            .field("output_topology", &self.output_topology)
+            .field("xkb_config", &self.xkb_config)
+            .finish()
+    }
+}
+
+impl XServerFrontendConfig {
+    pub fn new(
+        socket_path: impl Into<PathBuf>,
+        namespace: NamespaceId,
+    ) -> Result<Self, X11SetupSocketError> {
+        let namespace = NamespaceContext::new(
+            namespace,
+            NamespaceProfile::ClassicShared,
+            NamespaceCapabilities::NONE,
+        )
+        .ok_or_else(|| {
+            X11SetupSocketError::new("Sophia X Server Frontend namespace must be valid")
+        })?;
+        Self::new_with_namespace_context(socket_path, namespace)
+    }
+
+    pub fn new_with_namespace_context(
+        socket_path: impl Into<PathBuf>,
+        namespace: NamespaceContext,
+    ) -> Result<Self, X11SetupSocketError> {
+        let socket_path = socket_path.into();
+        if socket_path.as_os_str().is_empty() {
+            return Err(X11SetupSocketError::new(
+                "Sophia X Server Frontend socket path must not be empty",
+            ));
+        }
+        if !namespace.is_valid() {
+            return Err(X11SetupSocketError::new(
+                "Sophia X Server Frontend namespace must be valid",
+            ));
+        }
+        Ok(Self {
+            socket_path,
+            namespace,
+            setup_authorization: XServerFrontendSetupAuthorization::default(),
+            admission_policy: None,
+            render_device_provider: None,
+            max_concurrent_clients: DEFAULT_MAX_CONCURRENT_CLIENTS,
+            output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
+            xkb_config: crate::XkbRmlvoConfig::default(),
+        })
+    }
+
+    pub fn with_setup_authorization(
+        mut self,
+        setup_authorization: XServerFrontendSetupAuthorization,
+    ) -> Self {
+        self.setup_authorization = setup_authorization;
+        self
+    }
+
+    pub fn with_admission_policy(
+        mut self,
+        admission_policy: Arc<dyn XServerFrontendAdmissionPolicy>,
+    ) -> Self {
+        self.admission_policy = Some(admission_policy);
+        self
+    }
+
+    pub fn with_render_device_provider(
+        mut self,
+        provider: Arc<dyn XServerFrontendRenderDeviceProvider>,
+    ) -> Self {
+        self.render_device_provider = Some(provider);
+        self
+    }
+
+    pub fn with_max_concurrent_clients(mut self, max_concurrent_clients: NonZeroUsize) -> Self {
+        self.max_concurrent_clients = max_concurrent_clients;
+        self
+    }
+
+    pub fn with_output_topology(
+        mut self,
+        output_topology: sophia_protocol::OutputTopologySnapshot,
+    ) -> Result<Self, X11SetupSocketError> {
+        output_topology.validate().map_err(|error| {
+            X11SetupSocketError::new(format!("invalid Engine output topology: {error:?}"))
+        })?;
+        self.output_topology = output_topology;
+        Ok(self)
+    }
+
+    pub fn output_topology(&self) -> &sophia_protocol::OutputTopologySnapshot {
+        &self.output_topology
+    }
+
+    pub fn with_xkb_config(
+        mut self,
+        xkb_config: crate::XkbRmlvoConfig,
+    ) -> Result<Self, X11SetupSocketError> {
+        xkb_config.validate().map_err(|error| {
+            X11SetupSocketError::new(format!("invalid XKB configuration: {error}"))
+        })?;
+        self.xkb_config = xkb_config;
+        Ok(self)
+    }
+
+    pub const fn xkb_config(&self) -> &crate::XkbRmlvoConfig {
+        &self.xkb_config
+    }
+
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
+
+    pub const fn namespace(&self) -> NamespaceId {
+        self.namespace.id
+    }
+
+    pub const fn namespace_context(&self) -> NamespaceContext {
+        self.namespace
+    }
+
+    pub const fn setup_authorization(&self) -> &XServerFrontendSetupAuthorization {
+        &self.setup_authorization
+    }
+
+    pub(crate) fn admission_policy(&self) -> Option<Arc<dyn XServerFrontendAdmissionPolicy>> {
+        self.admission_policy.clone()
+    }
+
+    pub(crate) fn render_device_provider(
+        &self,
+    ) -> Option<Arc<dyn XServerFrontendRenderDeviceProvider>> {
+        self.render_device_provider.clone()
+    }
+
+    pub const fn max_concurrent_clients(&self) -> NonZeroUsize {
+        self.max_concurrent_clients
+    }
+}

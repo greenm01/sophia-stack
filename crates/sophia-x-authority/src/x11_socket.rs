@@ -16,7 +16,7 @@ use std::{
     num::NonZeroUsize,
     os::fd::{AsFd, OwnedFd},
     panic::{AssertUnwindSafe, catch_unwind},
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
@@ -38,7 +38,7 @@ use crate::{
     XAuthorityRuntime, XByteOrder, XClientEvent, XDispatchContext, XDispatchResult,
     XPresentCompletionMode, XPropertyTable, XResourceId, XServerFrontendAdmissionError,
     XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendClientId,
-    XServerFrontendPeerCredentials, XServerFrontendRenderDeviceError,
+    XServerFrontendConfig, XServerFrontendPeerCredentials, XServerFrontendRenderDeviceError,
     XServerFrontendRenderDeviceProvider, XServerFrontendRouteError, XServerFrontendServiceCommand,
     XServerFrontendSetupAuthorization, XSetupFailure, XSetupRequest, XSetupSuccess,
     XWireClientContext, decode_x11_core_request, dispatch_x11_parse_error,
@@ -50,8 +50,8 @@ use crate::{
 use sophia_protocol::RoutedInputRequest;
 #[cfg(unix)]
 use sophia_protocol::{
-    ClientAdmissionContext, ClientAdmissionId, InputEventKind, NamespaceCapabilities,
-    NamespaceContext, NamespaceId, NamespaceProfile, SeatId, Size, SurfaceId, TransactionId,
+    ClientAdmissionContext, ClientAdmissionId, InputEventKind, NamespaceId, SeatId, Size,
+    SurfaceId, TransactionId,
 };
 
 #[cfg(unix)]
@@ -59,11 +59,6 @@ const X11_CLIENT_RESOURCE_RANGE_SIZE: u32 = X_SETUP_DEFAULT_RESOURCE_ID_MASK + 1
 #[cfg(unix)]
 const X11_MAX_CLIENT_RESOURCE_RANGES: u16 = (u32::MAX / X11_CLIENT_RESOURCE_RANGE_SIZE) as u16;
 #[cfg(unix)]
-const X_SERVER_FRONTEND_DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16) {
-    Some(value) => value,
-    None => unreachable!(),
-};
-
 /// One ordered X11 socket write and the descriptors attached to its first byte.
 ///
 /// Protocol dispatch remains byte-only and data-oriented. Native descriptor
@@ -164,181 +159,6 @@ impl std::error::Error for X11SetupSocketError {}
 struct XServerFrontendClientLease {
     client: XServerFrontendClientId,
     resource_id_range: crate::XWireClientResourceRange,
-}
-
-/// Configuration owned by one local Sophia X Server Frontend listener.
-///
-/// A production session should construct this from its session-owned namespace
-/// registry. The legacy constructor retains fixed classic-shared behavior for
-/// existing smoke helpers while callers migrate to an immutable context.
-#[cfg(unix)]
-#[derive(Clone)]
-pub struct XServerFrontendConfig {
-    socket_path: PathBuf,
-    namespace: NamespaceContext,
-    setup_authorization: XServerFrontendSetupAuthorization,
-    admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
-    render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
-    max_concurrent_clients: NonZeroUsize,
-    output_topology: sophia_protocol::OutputTopologySnapshot,
-    xkb_config: crate::XkbRmlvoConfig,
-}
-
-#[cfg(unix)]
-impl core::fmt::Debug for XServerFrontendConfig {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("XServerFrontendConfig")
-            .field("socket_path", &self.socket_path)
-            .field("namespace", &self.namespace)
-            .field("setup_authorization", &self.setup_authorization)
-            .field("has_admission_policy", &self.admission_policy.is_some())
-            .field(
-                "has_render_device_provider",
-                &self.render_device_provider.is_some(),
-            )
-            .field("max_concurrent_clients", &self.max_concurrent_clients)
-            .field("output_topology", &self.output_topology)
-            .field("xkb_config", &self.xkb_config)
-            .finish()
-    }
-}
-
-#[cfg(unix)]
-impl XServerFrontendConfig {
-    pub fn new(
-        socket_path: impl Into<PathBuf>,
-        namespace: NamespaceId,
-    ) -> Result<Self, X11SetupSocketError> {
-        let namespace = NamespaceContext::new(
-            namespace,
-            NamespaceProfile::ClassicShared,
-            NamespaceCapabilities::NONE,
-        )
-        .ok_or_else(|| {
-            X11SetupSocketError::new("Sophia X Server Frontend namespace must be valid")
-        })?;
-        Self::new_with_namespace_context(socket_path, namespace)
-    }
-
-    pub fn new_with_namespace_context(
-        socket_path: impl Into<PathBuf>,
-        namespace: NamespaceContext,
-    ) -> Result<Self, X11SetupSocketError> {
-        let socket_path = socket_path.into();
-        if socket_path.as_os_str().is_empty() {
-            return Err(X11SetupSocketError::new(
-                "Sophia X Server Frontend socket path must not be empty",
-            ));
-        }
-        if !namespace.is_valid() {
-            return Err(X11SetupSocketError::new(
-                "Sophia X Server Frontend namespace must be valid",
-            ));
-        }
-        Ok(Self {
-            socket_path,
-            namespace,
-            setup_authorization: XServerFrontendSetupAuthorization::default(),
-            admission_policy: None,
-            render_device_provider: None,
-            max_concurrent_clients: X_SERVER_FRONTEND_DEFAULT_MAX_CONCURRENT_CLIENTS,
-            output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
-            xkb_config: crate::XkbRmlvoConfig::default(),
-        })
-    }
-
-    pub fn with_setup_authorization(
-        mut self,
-        setup_authorization: XServerFrontendSetupAuthorization,
-    ) -> Self {
-        self.setup_authorization = setup_authorization;
-        self
-    }
-
-    pub fn with_admission_policy(
-        mut self,
-        admission_policy: Arc<dyn XServerFrontendAdmissionPolicy>,
-    ) -> Self {
-        self.admission_policy = Some(admission_policy);
-        self
-    }
-
-    pub fn with_render_device_provider(
-        mut self,
-        provider: Arc<dyn XServerFrontendRenderDeviceProvider>,
-    ) -> Self {
-        self.render_device_provider = Some(provider);
-        self
-    }
-
-    /// Sets the upper bound for simultaneously dispatched X11 clients.
-    ///
-    /// The default allows sixteen connections. This bound applies only to the
-    /// opt-in concurrent dispatcher; the existing sequential APIs still serve
-    /// one connection at a time.
-    pub fn with_max_concurrent_clients(mut self, max_concurrent_clients: NonZeroUsize) -> Self {
-        self.max_concurrent_clients = max_concurrent_clients;
-        self
-    }
-
-    pub fn with_output_topology(
-        mut self,
-        output_topology: sophia_protocol::OutputTopologySnapshot,
-    ) -> Result<Self, X11SetupSocketError> {
-        output_topology.validate().map_err(|error| {
-            X11SetupSocketError::new(format!("invalid Engine output topology: {error:?}"))
-        })?;
-        self.output_topology = output_topology;
-        Ok(self)
-    }
-
-    pub fn output_topology(&self) -> &sophia_protocol::OutputTopologySnapshot {
-        &self.output_topology
-    }
-
-    pub fn with_xkb_config(
-        mut self,
-        xkb_config: crate::XkbRmlvoConfig,
-    ) -> Result<Self, X11SetupSocketError> {
-        xkb_config.validate().map_err(|error| {
-            X11SetupSocketError::new(format!("invalid XKB configuration: {error}"))
-        })?;
-        self.xkb_config = xkb_config;
-        Ok(self)
-    }
-
-    pub const fn xkb_config(&self) -> &crate::XkbRmlvoConfig {
-        &self.xkb_config
-    }
-
-    pub fn socket_path(&self) -> &Path {
-        &self.socket_path
-    }
-
-    pub const fn namespace(&self) -> NamespaceId {
-        self.namespace.id
-    }
-
-    pub const fn namespace_context(&self) -> NamespaceContext {
-        self.namespace
-    }
-
-    pub const fn setup_authorization(&self) -> &XServerFrontendSetupAuthorization {
-        &self.setup_authorization
-    }
-
-    fn admission_policy(&self) -> Option<Arc<dyn XServerFrontendAdmissionPolicy>> {
-        self.admission_policy.clone()
-    }
-
-    fn render_device_provider(&self) -> Option<Arc<dyn XServerFrontendRenderDeviceProvider>> {
-        self.render_device_provider.clone()
-    }
-
-    pub const fn max_concurrent_clients(&self) -> NonZeroUsize {
-        self.max_concurrent_clients
-    }
 }
 
 #[cfg(all(unix, target_os = "linux"))]
