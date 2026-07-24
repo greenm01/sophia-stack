@@ -117,19 +117,9 @@ fn run_session_loop(
     let mut pointer_cursor_checksum = None;
     let mut pointer_phase_started_at = None;
     let mut pointer_pixel_change = false;
-    let mut batches = 0usize;
-    let mut transactions = 0usize;
-    let mut cpu_buffer_updates = 0usize;
-    let mut dma_buf_registrations_observed = 0usize;
-    let mut fence_registrations_observed = 0usize;
-    let mut present_submissions_observed = 0usize;
-    let mut cpu_compositions = usize::from(initialize_empty_runtime);
-    let mut coalesced_batches = 0usize;
+    let mut metrics = SessionLoopMetrics::new(initialize_empty_runtime);
     let mut input_batch_baseline = None;
     let mut input_cpu_update_baseline = None;
-    let mut backend_ticks = 0usize;
-    let mut runtime_committed = 0u64;
-    let mut runtime_surfaces = 0u64;
     let mut focus = InputFocusState::new();
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency_chord = EmergencyChordState::armed();
@@ -137,12 +127,6 @@ fn run_session_loop(
     if native_scanout.is_some() {
         pointer.center_on_primary_output(output.size);
     }
-    let mut physical_events = 0usize;
-    let mut physical_keys_routed = 0usize;
-    let mut physical_pointer_events = 0usize;
-    let mut physical_pointer_routed = 0usize;
-    let mut physical_pointer_buttons_routed = 0usize;
-    let mut session_ticks = 0usize;
     let seat = SeatId::from_raw(SESSION_SEAT_RAW);
     let mut focus_deadline_started_at = None;
     let mut focus_ready_reported = false;
@@ -158,7 +142,6 @@ fn run_session_loop(
     let mut pointer_motion_routed_reported = false;
     let mut pointer_button_observed_reported = false;
     let mut pointer_button_routed_reported = false;
-    let mut max_compose = Duration::ZERO;
     let mut next_input_delivery = 1u64;
     let mut pending_input_deliveries = BTreeSet::new();
     let mut logout_requested = false;
@@ -177,8 +160,6 @@ fn run_session_loop(
     let mut primary_exit_status = None;
     let mut application_surface_missing_since: Option<Instant> = None;
     let mut client_stdout = Vec::new();
-    let mut protocol_error_count = 0usize;
-    let mut expected_protocol_error_count = 0usize;
     let mut firefox_m8_proof = FirefoxM8StageProof::default();
     let mut firefox_m8_page_ready_reported = false;
     let mut firefox_m8_selection_owner_changes = 0usize;
@@ -188,8 +169,6 @@ fn run_session_loop(
     let mut return_suppressed_reported = false;
     let mut cursor_dirty = pointer.position.is_some();
     let mut cursor_dirty_since = cursor_dirty.then_some(Instant::now());
-    let mut cursor_moves_coalesced = 0_u64;
-    let mut cursor_max_motion_to_submit = Duration::ZERO;
     let startup_ready_deadline = config
         .startup_ready_timeout
         .map(|timeout| started + timeout);
@@ -230,7 +209,7 @@ fn run_session_loop(
                             || pointer_checksum.is_some(),
                         pointer_proof_required: sophia_cli::input_proof::pointer_selection_pending(
                             config.expect_physical_pointer,
-                            physical_pointer_buttons_routed,
+                            metrics.physical_pointer_buttons_routed,
                         ),
                         pointer_buttons_only: false,
                         routing_mode: $routing_mode,
@@ -238,14 +217,14 @@ fn run_session_loop(
                         physical_text_proof: physical_text_proof.as_mut(),
                     },
                 )?;
-                physical_events = physical_events.saturating_add(report.events);
-                physical_keys_routed = physical_keys_routed.saturating_add(report.keys_routed);
-                physical_pointer_events =
-                    physical_pointer_events.saturating_add(report.pointer_events);
-                physical_pointer_routed =
-                    physical_pointer_routed.saturating_add(report.pointer_routed);
-                physical_pointer_buttons_routed =
-                    physical_pointer_buttons_routed.saturating_add(report.pointer_buttons_routed);
+                metrics.physical_events = metrics.physical_events.saturating_add(report.events);
+                metrics.physical_keys_routed = metrics.physical_keys_routed.saturating_add(report.keys_routed);
+                metrics.physical_pointer_events =
+                    metrics.physical_pointer_events.saturating_add(report.pointer_events);
+                metrics.physical_pointer_routed =
+                    metrics.physical_pointer_routed.saturating_add(report.pointer_routed);
+                metrics.physical_pointer_buttons_routed =
+                    metrics.physical_pointer_buttons_routed.saturating_add(report.pointer_buttons_routed);
                 input_events_expected =
                     input_events_expected.saturating_add(report.deliveries.len());
                 pending_input_deliveries.extend(report.deliveries.iter().copied());
@@ -257,8 +236,8 @@ fn run_session_loop(
                     .saturating_sub(report.pointer_buttons_observed);
                 if pointer_motions_observed > 0 && pointer.position.is_some() {
                     if cursor_dirty {
-                        cursor_moves_coalesced =
-                            cursor_moves_coalesced.saturating_add(pointer_motions_observed as u64);
+                        metrics.cursor_moves_coalesced =
+                            metrics.cursor_moves_coalesced.saturating_add(pointer_motions_observed as u64);
                     } else {
                         cursor_dirty_since = Some(Instant::now());
                     }
@@ -358,7 +337,7 @@ fn run_session_loop(
                 if !pointer_button_routed_reported && report.pointer_buttons_routed > 0 {
                     println!(
                         "sophia_live_session_pointer schema=2 status=button_routed count={}",
-                        physical_pointer_buttons_routed
+                        metrics.physical_pointer_buttons_routed
                     );
                     pointer_button_routed_reported = true;
                 }
@@ -435,7 +414,7 @@ fn run_session_loop(
             primary_exit_status = Some(status);
             if status.success()
                 && config.expect_physical_pointer
-                && physical_pointer_buttons_routed == 0
+                && metrics.physical_pointer_buttons_routed == 0
             {
                 return Err(
                     "session client exited before the required physical pointer selection".into(),
@@ -574,8 +553,8 @@ fn run_session_loop(
             if !input_pixel_change {
                 return Err(format!(
                     "persistent live session timed out waiting for pixels after flushed X11 input: expected={input_events_expected} flushed={input_events_flushed} authority_batches_after_input={} cpu_updates_after_input={} baseline_checksum={injection_checksum:?} final_checksum={:?} baseline_generation={input_surface_generation:?} final_generation={:?} input_surface_pixel_change={input_surface_pixel_change} native_submission_baseline={input_change_submission_baseline:?} native_submissions={} native_callbacks={}",
-                    batches.saturating_sub(input_batch_baseline.unwrap_or(batches)),
-                    cpu_buffer_updates.saturating_sub(input_cpu_update_baseline.unwrap_or(cpu_buffer_updates)),
+                    metrics.batches.saturating_sub(input_batch_baseline.unwrap_or(metrics.batches)),
+                    metrics.cpu_buffer_updates.saturating_sub(input_cpu_update_baseline.unwrap_or(metrics.cpu_buffer_updates)),
                     scene.last_report().map(|report| report.checksum),
                     input_surface.and_then(|surface| {
                         runtime.as_ref().and_then(|runtime| {
@@ -634,7 +613,7 @@ fn run_session_loop(
                     !stable,
                 );
             }
-            runtime_surfaces =
+            metrics.runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
             reconcile_initial_session_focus(InitialSessionFocusContext {
                 runtime,
@@ -653,10 +632,10 @@ fn run_session_loop(
         {
             match native_scanout.update_classic_hardware_cursor(position) {
                 Ok(ClassicHardwareCursorUpdate::Visible) => {
-                    pointer_pixel_change |= physical_pointer_routed > 0;
+                    pointer_pixel_change |= metrics.physical_pointer_routed > 0;
                     if let Some(started) = cursor_dirty_since.take() {
-                        cursor_max_motion_to_submit =
-                            cursor_max_motion_to_submit.max(started.elapsed());
+                        metrics.cursor_max_motion_to_submit =
+                            metrics.cursor_max_motion_to_submit.max(started.elapsed());
                     }
                     cursor_dirty = false;
                     if pointer_checksum.is_none() {
@@ -814,6 +793,13 @@ fn run_session_loop(
                     || "none".to_owned(),
                     LiveProductionVisualRuntime::native_diagnostic
                 ),
+                batches = metrics.batches,
+                transactions = metrics.transactions,
+                runtime_surfaces = metrics.runtime_surfaces,
+                dma_buf_registrations_observed = metrics.dma_buf_registrations_observed,
+                fence_registrations_observed = metrics.fence_registrations_observed,
+                present_submissions_observed = metrics.present_submissions_observed,
+                protocol_error_count = metrics.protocol_error_count,
             );
             return Err(format!(
                 "startup application was not visibly presented within {} milliseconds: stage={stage}",
@@ -867,7 +853,7 @@ fn run_session_loop(
             physical_sequence_complete,
             input_pixel_change,
             pointer_checksum.is_some(),
-            physical_pointer_buttons_routed,
+            metrics.physical_pointer_buttons_routed,
             pointer_pixel_change,
         );
         if waiting_for_keyboard_sequence {
@@ -878,6 +864,7 @@ fn run_session_loop(
                     "persistent live session timed out waiting for exact physical input sequence: matched_events={} expected_events={} keyboard_routed={physical_keys_routed}",
                     proof.matched_events(),
                     proof.expected_events(),
+                    physical_keys_routed = metrics.physical_keys_routed,
                 )
                 .into());
             }
@@ -886,7 +873,11 @@ fn run_session_loop(
             if started_at.elapsed() >= Duration::from_millis(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC)
             {
                 return Err(format!(
-                    "persistent live session timed out waiting for a routed physical pointer button: pointer_observed={physical_pointer_events} pointer_routed={physical_pointer_routed} pointer_buttons={physical_pointer_buttons_routed} pointer_pixels={pointer_pixel_change}"
+                    "persistent live session timed out waiting for a routed physical pointer button: pointer_observed={physical_pointer_events} pointer_routed={physical_pointer_routed} pointer_buttons={physical_pointer_buttons_routed} pointer_pixels={pointer_pixel_change}",
+                    physical_pointer_events = metrics.physical_pointer_events,
+                    physical_pointer_routed = metrics.physical_pointer_routed,
+                    physical_pointer_buttons_routed =
+                        metrics.physical_pointer_buttons_routed,
                 )
                 .into());
             }
@@ -895,11 +886,11 @@ fn run_session_loop(
         {
             if config
                 .max_ticks
-                .is_some_and(|max_ticks| session_ticks >= max_ticks)
+                .is_some_and(|max_ticks| metrics.session_ticks >= max_ticks)
             {
                 break;
             }
-            session_ticks = session_ticks.saturating_add(1);
+            metrics.session_ticks = metrics.session_ticks.saturating_add(1);
         }
 
         let authority_batch = initial_authority_batch
@@ -937,10 +928,10 @@ fn run_session_loop(
                         .front()
                         .is_some_and(software_batch_may_coalesce);
                 for error in &batch.protocol_errors {
-                    protocol_error_count = protocol_error_count.saturating_add(1);
+                    metrics.protocol_error_count = metrics.protocol_error_count.saturating_add(1);
                     first_protocol_error.get_or_insert(*error);
                 }
-                expected_protocol_error_count = expected_protocol_error_count
+                metrics.expected_protocol_error_count = metrics.expected_protocol_error_count
                     .saturating_add(batch.expected_protocol_errors.len());
                 if config.firefox_m8_proof {
                     if batch.selection_owner_change {
@@ -989,17 +980,21 @@ fn run_session_loop(
                     continue;
                 }
                 last_authority_update = Instant::now();
-                batches = batches.saturating_add(1);
-                transactions =
-                    transactions.saturating_add(authority_transaction_count(&batch.transactions));
-                cpu_buffer_updates =
-                    cpu_buffer_updates.saturating_add(batch.cpu_buffer_updates.len());
-                dma_buf_registrations_observed = dma_buf_registrations_observed
+                metrics.batches = metrics.batches.saturating_add(1);
+                metrics.transactions =
+                    metrics
+                        .transactions
+                        .saturating_add(authority_transaction_count(&batch.transactions));
+                metrics.cpu_buffer_updates =
+                    metrics
+                        .cpu_buffer_updates
+                        .saturating_add(batch.cpu_buffer_updates.len());
+                metrics.dma_buf_registrations_observed = metrics.dma_buf_registrations_observed
                     .saturating_add(batch.dma_buf_registrations.len());
-                fence_registrations_observed =
-                    fence_registrations_observed.saturating_add(batch.fence_registrations.len());
-                present_submissions_observed =
-                    present_submissions_observed.saturating_add(batch.present_submissions.len());
+                metrics.fence_registrations_observed =
+                    metrics.fence_registrations_observed.saturating_add(batch.fence_registrations.len());
+                metrics.present_submissions_observed =
+                    metrics.present_submissions_observed.saturating_add(batch.present_submissions.len());
                 let removed_surfaces = batch.removed_surfaces.clone();
                 if let Some(wm_session) = wm_session.as_mut() {
                     for surface in &removed_surfaces {
@@ -1170,10 +1165,10 @@ fn run_session_loop(
                         )
                     };
                 if composed {
-                    max_compose = max_compose.max(compose_elapsed);
-                    cpu_compositions = cpu_compositions.saturating_add(1);
+                    metrics.max_compose = metrics.max_compose.max(compose_elapsed);
+                    metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);
                 } else {
-                    coalesced_batches = coalesced_batches.saturating_add(1);
+                    metrics.coalesced_batches = metrics.coalesced_batches.saturating_add(1);
                 }
                 if let (Some(surface), Some(before_surface)) =
                     (input_surface, input_surface_generation)
@@ -1192,20 +1187,20 @@ fn run_session_loop(
                 }
                 if let Some(before_frame) = pointer_checksum
                     && report.checksum != before_frame
-                    && physical_pointer_routed > 0
+                    && metrics.physical_pointer_routed > 0
                 {
                     pointer_pixel_change = true;
                 }
-                backend_ticks = backend_ticks.saturating_add(1);
-                runtime_committed = record_runtime_commits(
-                    runtime_committed,
+                metrics.backend_ticks = metrics.backend_ticks.saturating_add(1);
+                metrics.runtime_committed = record_runtime_commits(
+                    metrics.runtime_committed,
                     authority_transaction_count(&batch.transactions),
                 );
-                runtime_surfaces =
+                metrics.runtime_surfaces =
                     u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
                 for surface in removed_surfaces {
                     if config.application_proof_requested()
-                        && physical_pointer_buttons_routed == 0
+                        && metrics.physical_pointer_buttons_routed == 0
                         && Some(surface) == input_surface
                     {
                         application_surface_missing_since.get_or_insert_with(Instant::now);
@@ -1349,10 +1344,10 @@ fn run_session_loop(
                         );
                     }
                     if let Some(tick) = service.tick {
-                        backend_ticks = backend_ticks.saturating_add(1);
+                        metrics.backend_ticks = metrics.backend_ticks.saturating_add(1);
                         let _ = tick;
                     }
-                    runtime_surfaces =
+                    metrics.runtime_surfaces =
                         u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
                     reconcile_initial_session_focus(InitialSessionFocusContext {
                         runtime,
@@ -1496,8 +1491,8 @@ fn run_session_loop(
                 pending_input_deliveries.extend(report.deliveries.iter().copied());
                 input_delivery_wait_started_at = Some(Instant::now());
                 input_delivery_source = Some("synthetic");
-                input_batch_baseline = Some(batches);
-                input_cpu_update_baseline = Some(cpu_buffer_updates);
+                input_batch_baseline = Some(metrics.batches);
+                input_cpu_update_baseline = Some(metrics.cpu_buffer_updates);
                 if !key_routed_reported {
                     println!(
                         "sophia_live_session_input_pipeline schema=1 status=key_routed source=synthetic"
@@ -1506,8 +1501,8 @@ fn run_session_loop(
                     key_routed_reported = true;
                 }
             } else {
-                input_batch_baseline = Some(batches);
-                input_cpu_update_baseline = Some(cpu_buffer_updates);
+                input_batch_baseline = Some(metrics.batches);
+                input_cpu_update_baseline = Some(metrics.cpu_buffer_updates);
                 physical_input_ready_at = Some(Instant::now());
                 println!(
                     "sophia_live_session_input schema=1 status=ready source=physical text={}",
@@ -1560,7 +1555,7 @@ fn run_session_loop(
                 input_text_match,
                 physical_input_completion_reported,
                 pointer_pixel_change,
-                physical_pointer_buttons_routed,
+                metrics.physical_pointer_buttons_routed,
                 primary_child_exited,
             )
             .into());
@@ -1624,6 +1619,31 @@ fn run_session_loop(
             break;
         }
     }
+
+    let SessionLoopMetrics {
+        batches,
+        transactions,
+        cpu_buffer_updates: _,
+        dma_buf_registrations_observed: _,
+        fence_registrations_observed: _,
+        present_submissions_observed: _,
+        cpu_compositions,
+        coalesced_batches,
+        backend_ticks,
+        runtime_committed,
+        runtime_surfaces,
+        physical_events,
+        physical_keys_routed,
+        physical_pointer_events,
+        physical_pointer_routed,
+        physical_pointer_buttons_routed,
+        session_ticks,
+        max_compose,
+        protocol_error_count,
+        expected_protocol_error_count,
+        cursor_moves_coalesced,
+        cursor_max_motion_to_submit,
+    } = metrics;
 
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
         runtime.drain_native_scanout(native_scanout, Duration::from_secs(2))?;
