@@ -74,9 +74,9 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
   Present at the new size.
 - [x] Route exact shell input after the resize and require both the shell result
   and a later presented frame.
-- [ ] Close Kitty and xmonad normally and require zero live Present sources,
+- [x] Close Kitty and xmonad normally and require zero live Present sources,
   fences, transactions, pending WM work, pending input, or native cleanup.
-- [ ] Retain a focused regression for every protocol correction; do not add
+- [x] Retain a focused regression for every protocol correction; do not add
   Kitty or xmonad branches to Engine.
 
 Gate command and verifier must be documented in `docs/validation.md`; the

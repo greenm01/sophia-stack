@@ -42,7 +42,21 @@ if [[ -n "$old_current" ]]; then
     ln -sfn "$old_current" "$PREFIX/previous"
 fi
 ln -sfn "releases/$release_id" "$PREFIX/current"
-ln -sfn "$PREFIX/current/bin/sophia-session" "$COMMAND_DIR/sophia-session"
+commands=(
+    sophia-session
+    sophia-status
+    sophia-rollback
+    sophia-record-run
+    sophia-verify-cycles
+    sophia-verify-soak
+)
+for command in "${commands[@]}"; do
+    [[ -x "$target/bin/$command" ]] || {
+        echo "Release is missing operator command: $command" >&2
+        exit 1
+    }
+    ln -sfn "$PREFIX/current/bin/$command" "$COMMAND_DIR/$command"
+done
 install -m 644 "$target/share/wayland-sessions/sophia.desktop" \
     "$SESSION_DIR/sophia.desktop.template"
 sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
@@ -54,3 +68,4 @@ trap - EXIT
 echo "Installed Sophia release: $release_id"
 echo "Current: $PREFIX/current"
 echo "Session entry: $SESSION_DIR/sophia.desktop"
+echo "Operator commands: ${commands[*]}"

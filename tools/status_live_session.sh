@@ -14,7 +14,13 @@ if [[ -n "$current" && -f "$PREFIX/$current/manifest" ]]; then
     )
 fi
 printf 'graphical_processes='
-pgrep -a -x sophia xmonad kitty firefox 2>/dev/null || echo none
+found_graphical=false
+for process in sophia xmonad kitty firefox; do
+    if pgrep -a -x "$process" 2>/dev/null; then
+        found_graphical=true
+    fi
+done
+[[ "$found_graphical" == true ]] || echo none
 for profile in xmonad kitty; do
     state="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/$profile-session"
     printf '%s_logs=%s\n' "$profile" "$state"

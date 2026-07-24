@@ -58,7 +58,12 @@ bash -n tools/stop_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
 bash -n tools/package_live_session.sh tools/install_live_session.sh
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
+bash -n tools/check_live_session_install.sh
+tools/check_live_session_install.sh
 bash -n tools/installed/sophia-session
+bash -n tools/record_installed_session_run.sh tools/verify_installed_session_cycles.sh
+bash -n tools/verify_installed_session_soak.sh tools/check_installed_session_verifiers.sh
+tools/check_installed_session_verifiers.sh
 bash -n tools/live_session_persistent_hardware_proof.sh
 bash -n tools/live_session_milestone5_gtk_hardware_proof.sh
 if ! grep -Fq -- '--namespace-profile="$profile" --software-client-rendering' tools/live_session_milestone5_gtk_hardware_proof.sh; then

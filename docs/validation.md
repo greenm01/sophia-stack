@@ -342,9 +342,33 @@ same guarded xmonad session lifecycle. Inspect or roll back the installation
 with:
 
 ```sh
-tools/status_live_session.sh
-sudo tools/rollback_live_session.sh
+sophia-status
+sudo sophia-rollback
 ```
+
+The artifact also installs repository-independent evidence commands:
+
+```sh
+# After each complete normal physical run:
+sophia-record-run
+
+# Require the latest three recorded runs to be clean and from one commit:
+sophia-verify-cycles 3
+
+# Verify a completed two-hour session with at least ten terminal and five
+# Firefox action launches:
+sophia-verify-soak \
+  ~/.local/state/sophia/xmonad-session/session.log 7200000 10 5
+```
+
+`sophia-record-run` first applies the strict physical xmonad verifier, checks
+the running release identity and every packaged SHA-256 digest, and only then
+copies the session, guard, recovery, identity, and release manifest into a
+numbered, checksummed promotion-run directory. `sophia-verify-cycles` rejects
+mixed commits, modified evidence, emergency exits, incomplete input/WM/native
+cleanup, or fewer than the requested number of runs. `sophia-verify-soak`
+requires one clean schema-14 completion, the requested elapsed time and action
+counts, and zero WM, Present, callback, native, or cleanup debt.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
 non-system staging installation for verifier tests. A release is not promoted

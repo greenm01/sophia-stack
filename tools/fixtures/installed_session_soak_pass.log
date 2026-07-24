@@ -1,0 +1,6 @@
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session schema=14 status=bounded_complete elapsed_msec=7200000 wm_degraded=false native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0
