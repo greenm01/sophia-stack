@@ -40,10 +40,9 @@ impl HeadlessEngine {
                 continue;
             }
 
-            let target = layer.crop.map_or_else(
-                || Region::single(layer.geometry),
-                |crop| Region::single(crop),
-            );
+            let target = layer
+                .crop
+                .map_or_else(|| Region::single(layer.geometry), Region::single);
 
             if target.is_empty() {
                 empty_targets += 1;
@@ -127,17 +126,17 @@ impl HeadlessEngine {
                 return Err(EngineError::InvalidOutput);
             }
 
-            if let Some(source) = command.source {
-                if !source.is_valid() || !surfaces.contains(&source) {
-                    warn!(
-                        output = frame.output.raw(),
-                        frame_serial = frame.frame_serial,
-                        command_index,
-                        has_source = command.source.is_some(),
-                        "rejected frame replay with invalid command source"
-                    );
-                    return Err(EngineError::InvalidSurface);
-                }
+            if let Some(source) = command.source
+                && (!source.is_valid() || !surfaces.contains(&source))
+            {
+                warn!(
+                    output = frame.output.raw(),
+                    frame_serial = frame.frame_serial,
+                    command_index,
+                    has_source = command.source.is_some(),
+                    "rejected frame replay with invalid command source"
+                );
+                return Err(EngineError::InvalidSurface);
             }
 
             steps.push(ReplayStep {

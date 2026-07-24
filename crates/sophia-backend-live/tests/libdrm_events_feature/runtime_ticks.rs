@@ -57,7 +57,7 @@ fn live_runtime_tick_retries_pending_rendered_scanout_cleanup_before_submit() {
             .status,
         LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
     );
-    assert_eq!(tick.rendered_primary_plane_scanout_cleanup_pending, false);
+    assert!(!tick.rendered_primary_plane_scanout_cleanup_pending);
     assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
     assert_eq!(
         tick.rendered_primary_plane_scanout_submit
@@ -133,7 +133,7 @@ fn live_runtime_tick_reports_failed_rendered_scanout_cleanup_retry() {
             .reduced_log_line(),
         "sophia_runtime_rendered_scanout_cleanup schema=1 status=CleanupFailed destroy=FramebufferDestroyFailed cleanup_pending=true"
     );
-    assert_eq!(tick.rendered_primary_plane_scanout_cleanup_pending, true);
+    assert!(tick.rendered_primary_plane_scanout_cleanup_pending);
     assert!(assembly.rendered_primary_plane_scanout_cleanup_pending());
     assert_eq!(
         tick.rendered_primary_plane_scanout_submit
@@ -145,7 +145,7 @@ fn live_runtime_tick_reports_failed_rendered_scanout_cleanup_retry() {
         tick.engine.runtime.runtime_state.last_scanout_state,
         Some(RuntimeScanoutState::Deferred)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -209,7 +209,7 @@ fn live_runtime_tick_submits_rendered_scanout_when_runtime_requests_scanout() {
         tick.engine.runtime.runtime_state.last_scanout_frame_serial,
         Some(tick.engine.tick.frame_serial)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 0);
     assert_eq!(assembly.pending_runtime_scanout_state_count(), 0);
     assert_eq!(tick.rendered_primary_plane_scanout_in_flight_ticks, 0);
@@ -281,7 +281,7 @@ fn live_runtime_tick_submits_rendered_scanout_when_runtime_requests_scanout() {
             .last_scanout_state,
         Some(RuntimeScanoutState::Deferred)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 1);
     assert_eq!(
         deferred_tick.rendered_primary_plane_scanout_backpressure,
@@ -367,7 +367,7 @@ fn live_runtime_tick_submits_rendered_scanout_when_runtime_requests_scanout() {
             .in_flight_scanouts,
         1
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 0);
     assert_eq!(
         retire_and_submit_tick.rendered_primary_plane_scanout_in_flight_ticks,
@@ -471,7 +471,7 @@ fn live_runtime_tick_reads_native_page_flip_events_before_rendered_scanout() {
             rejected_callbacks: 0,
         }
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 0);
 
     std::fs::remove_dir_all(root).unwrap();
@@ -560,7 +560,7 @@ fn live_runtime_tick_polls_libinput_shaped_input_while_retiring_and_submitting_s
             .status,
         LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -757,7 +757,7 @@ fn live_session_loop_tick_skips_page_flip_read_until_reduced_ready() {
             .status,
         LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::AlreadyInFlight
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
 
     std::fs::remove_dir_all(root).unwrap();
 }

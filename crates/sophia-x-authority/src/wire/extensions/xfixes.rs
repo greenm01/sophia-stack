@@ -23,7 +23,7 @@ fn decode_xfixes(
         }
         X_XFIXES_CREATE_REGION_MINOR_OPCODE => {
             require_len(X_XFIXES_MAJOR_OPCODE, 8, bytes.len())?;
-            if (bytes.len() - 8) % 8 != 0 {
+            if !(bytes.len() - 8).is_multiple_of(8) {
                 return Err(XWireParseError::InvalidLength {
                     opcode: X_XFIXES_MAJOR_OPCODE,
                     expected_at_least: 8,
@@ -48,7 +48,7 @@ fn decode_xfixes(
         }
         X_XFIXES_SET_REGION_MINOR_OPCODE => {
             require_len(X_XFIXES_MAJOR_OPCODE, 8, bytes.len())?;
-            if (bytes.len() - 8) % 8 != 0 {
+            if !(bytes.len() - 8).is_multiple_of(8) {
                 return Err(XWireParseError::InvalidLength {
                     opcode: X_XFIXES_MAJOR_OPCODE,
                     expected_at_least: 8,

@@ -835,7 +835,7 @@ fn native_libdrm_page_flip_decode_batch_is_bounded_and_reduced() {
     let limited = decode_native_page_flip_batch(&callbacks, &routes, &sender, 1);
     assert_eq!(limited.read_loop.decoded_callbacks, 1);
     assert_eq!(limited.poll.callbacks.emitted, 1);
-    assert_eq!(limited.poll.callbacks.max_reached, true);
+    assert!(limited.poll.callbacks.max_reached);
     assert_eq!(limited.poll.callbacks.queued_remaining, 3);
 }
 

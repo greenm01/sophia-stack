@@ -2,16 +2,11 @@ use sophia_protocol::{PortalGrant, PortalRequest, PortalTransferId};
 
 use crate::{PortalLifecycleError, PortalPolicyDecision, PortalRequestGrantLifecycle};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub enum HeadlessPortalPolicy {
+    #[default]
     Deny,
     Allow,
-}
-
-impl Default for HeadlessPortalPolicy {
-    fn default() -> Self {
-        Self::Deny
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

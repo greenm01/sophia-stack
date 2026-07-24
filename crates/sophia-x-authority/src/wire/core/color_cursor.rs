@@ -4,7 +4,7 @@ fn decode_query_colors(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_QUERY_COLORS, X_QUERY_COLORS_REQ_LEN, bytes.len())?;
     let pixel_bytes = &bytes[X_QUERY_COLORS_REQ_LEN..];
-    if pixel_bytes.len() % 4 != 0 {
+    if !pixel_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_QUERY_COLORS,
             expected_at_least: X_QUERY_COLORS_REQ_LEN + ((pixel_bytes.len() + 3) & !3),
@@ -156,7 +156,7 @@ fn decode_set_clip_rectangles(
         bytes.len(),
     )?;
     let rectangle_bytes = &bytes[X_SET_CLIP_RECTANGLES_REQ_LEN..];
-    if rectangle_bytes.len() % 8 != 0 {
+    if !rectangle_bytes.len().is_multiple_of(8) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_SET_CLIP_RECTANGLES,
             expected_at_least: X_SET_CLIP_RECTANGLES_REQ_LEN + ((rectangle_bytes.len() + 7) & !7),

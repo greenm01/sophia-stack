@@ -63,10 +63,7 @@ fn dispatch_core_property_request(
                     }
                 }
                 XWireRequest::ChangeProperty(change) => {
-                    let window_access = (change.window.local.raw()
-                        == u64::from(crate::X_SETUP_DEFAULT_ROOT))
-                    .then_some(Ok(()))
-                    .unwrap_or_else(|| runtime.validate_window_access(context.namespace, change.window));
+                    let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { runtime.validate_window_access(context.namespace, change.window) };
                     let (output, metadata_candidates) = match window_access {
                         Err(error) => (
                             XClientOutput::Error(x_error_from_runtime(

@@ -35,16 +35,16 @@ impl LiveAtomicScanoutCommitReport {
     ) -> Self {
         match callback.decision {
             LivePageFlipCallbackDecision::Accepted => {
-                if let Some(outcome_frame_serial) = page_flip_outcome_frame_serial(outcome) {
-                    if callback.event.frame_serial != Some(outcome_frame_serial) {
-                        return Self {
-                            status: LiveAtomicScanoutCommitStatus::Rejected,
-                            page_flip: LivePageFlipEvent {
-                                status: LivePageFlipEventStatus::Rejected,
-                                frame_serial: callback.event.frame_serial,
-                            },
-                        };
-                    }
+                if let Some(outcome_frame_serial) = page_flip_outcome_frame_serial(outcome)
+                    && callback.event.frame_serial != Some(outcome_frame_serial)
+                {
+                    return Self {
+                        status: LiveAtomicScanoutCommitStatus::Rejected,
+                        page_flip: LivePageFlipEvent {
+                            status: LivePageFlipEventStatus::Rejected,
+                            frame_serial: callback.event.frame_serial,
+                        },
+                    };
                 }
 
                 Self::from_page_flip_outcome(outcome)

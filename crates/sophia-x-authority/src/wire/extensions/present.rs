@@ -15,7 +15,7 @@ fn decode_present(
         ),
         X_PRESENT_PIXMAP_MINOR_OPCODE => {
             require_len(X_PRESENT_MAJOR_OPCODE, 72, bytes.len())?;
-            if (bytes.len() - 72) % 8 != 0 {
+            if !(bytes.len() - 72).is_multiple_of(8) {
                 return Err(XWireParseError::InvalidLength {
                     opcode: X_PRESENT_MAJOR_OPCODE,
                     expected_at_least: 72,

@@ -63,7 +63,7 @@ fn dispatch_core_window_request(
                             colormap.unwrap_or(XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1)),
                         );
                     }
-                    let outputs = outputs_from_authority_response(context.clone(), &kind, &response);
+                    let outputs = outputs_from_authority_response(context, &kind, &response);
                     XDispatchResult {
                         response: Some(response),
                         outputs,

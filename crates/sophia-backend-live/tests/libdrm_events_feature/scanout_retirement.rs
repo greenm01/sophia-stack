@@ -123,8 +123,8 @@ fn live_runtime_assembly_rejects_page_flip_replay_at_submission_baseline() {
         LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip
     );
     assert_eq!(waiting.runtime_scanout_state, None);
-    assert_eq!(waiting.in_flight, true);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(waiting.in_flight);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
 
     let newer = LivePageFlipCallbackReport {
         decision: LivePageFlipCallbackDecision::Accepted,
@@ -144,8 +144,8 @@ fn live_runtime_assembly_rejects_page_flip_replay_at_submission_baseline() {
         retired.runtime_scanout_state,
         Some(RuntimeScanoutState::Retired)
     );
-    assert_eq!(retired.in_flight, false);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!retired.in_flight);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -171,9 +171,9 @@ fn live_runtime_assembly_does_not_track_failed_rendered_scanout_submit() {
         submitted.runtime_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(submitted.in_flight, false);
+    assert!(!submitted.in_flight);
     assert_eq!(submitted.in_flight_ticks, 0);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(
         assembly.rendered_primary_plane_runtime_scanout_state(),
         Some(RuntimeScanoutState::Rejected)
@@ -206,7 +206,7 @@ fn live_runtime_assembly_does_not_track_failed_rendered_scanout_submit() {
         LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission
     );
     assert_eq!(retired.runtime_scanout_state, None);
-    assert_eq!(retired.in_flight, false);
+    assert!(!retired.in_flight);
     assert_eq!(retired.in_flight_ticks, 0);
 
     std::fs::remove_dir_all(root).unwrap();
@@ -272,7 +272,7 @@ fn live_runtime_assembly_retains_submit_failure_cleanup_for_retry() {
         submitted.runtime_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(submitted.in_flight, false);
+    assert!(!submitted.in_flight);
     assert!(assembly.rendered_primary_plane_scanout_cleanup_pending());
 
     let mut blocked_exporter = FakeRenderedScanoutExporter::exported(Size {
@@ -309,7 +309,7 @@ fn live_runtime_assembly_retains_submit_failure_cleanup_for_retry() {
         cleanup.status,
         LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
     );
-    assert_eq!(cleanup.cleanup_pending, false);
+    assert!(!cleanup.cleanup_pending);
     assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
 
     std::fs::remove_dir_all(root).unwrap();
@@ -341,7 +341,7 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         submitted.status,
         LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
     );
-    assert_eq!(submitted.in_flight, true);
+    assert!(submitted.in_flight);
     assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
 
     let accepted = LivePageFlipCallbackReport {
@@ -362,8 +362,8 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         retired.runtime_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(retired.in_flight, false);
-    assert_eq!(retired.cleanup_pending, true);
+    assert!(!retired.in_flight);
+    assert!(retired.cleanup_pending);
     assert_eq!(
         retired.reduced_log_line(),
         "sophia_runtime_rendered_scanout_retire schema=1 status=ResourceRetireFailed destroy=FramebufferDestroyFailed runtime_scanout_state=Rejected in_flight=false in_flight_ticks=0 cleanup_pending=true"
@@ -378,7 +378,7 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         tick.runtime_scanout_states,
         vec![RuntimeScanoutState::Rejected]
     );
-    assert_eq!(tick.rendered_primary_plane_scanout_cleanup_pending, true);
+    assert!(tick.rendered_primary_plane_scanout_cleanup_pending);
 
     let mut blocked_exporter = FakeRenderedScanoutExporter::exported(Size {
         width: 1280,
@@ -394,7 +394,7 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         blocked.runtime_scanout_state,
         Some(RuntimeScanoutState::Deferred)
     );
-    assert_eq!(blocked.in_flight, false);
+    assert!(!blocked.in_flight);
     assert!(assembly.rendered_primary_plane_scanout_cleanup_pending());
 
     let cleanup = assembly.retry_tracked_rendered_primary_plane_scanout_cleanup(&retry_device);
@@ -411,7 +411,7 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         cleanup.reduced_log_line(),
         "sophia_runtime_rendered_scanout_cleanup schema=1 status=CleanedUp destroy=Destroyed cleanup_pending=false"
     );
-    assert_eq!(cleanup.cleanup_pending, false);
+    assert!(!cleanup.cleanup_pending);
     assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
 
     let no_cleanup = assembly.retry_tracked_rendered_primary_plane_scanout_cleanup(&retry_device);
@@ -424,14 +424,13 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
         no_cleanup.reduced_log_line(),
         "sophia_runtime_rendered_scanout_cleanup schema=1 status=NoCleanupPending destroy=none cleanup_pending=false"
     );
-    assert_eq!(no_cleanup.cleanup_pending, false);
+    assert!(!no_cleanup.cleanup_pending);
 
     let clean_tick = assembly
         .run_tick(CompositorBackendTickInput::default())
         .expect("runtime tick should observe cleared cleanup state");
-    assert_eq!(
-        clean_tick.rendered_primary_plane_scanout_cleanup_pending,
-        false
+    assert!(
+        !clean_tick.rendered_primary_plane_scanout_cleanup_pending
     );
 
     std::fs::remove_dir_all(root).unwrap();

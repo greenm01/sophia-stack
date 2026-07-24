@@ -17,10 +17,10 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
     let server_path = socket_path.clone();
     let server = thread::spawn(move || {
         let listener = bind_x11_core_socket_server(&server_path).unwrap();
-        let mut state = X11CoreSocketServerState::new();
-        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &mut state)
+        let state = X11CoreSocketServerState::new();
+        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &state)
             .unwrap();
-        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &mut state)
+        serve_x11_core_socket_listener_once(&listener, NamespaceId::from_raw(52), &state)
             .unwrap();
     });
 
@@ -756,4 +756,3 @@ fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
     server.join().unwrap();
     std::fs::remove_file(&socket_path).unwrap();
 }
-

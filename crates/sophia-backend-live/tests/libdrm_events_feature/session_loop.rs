@@ -280,13 +280,13 @@ fn live_runtime_tick_rejects_rendered_scanout_when_kms_target_is_not_ready() {
     );
     assert_eq!(submit.export, None);
     assert_eq!(submit.submit, None);
-    assert_eq!(submit.in_flight, false);
+    assert!(!submit.in_flight);
     assert_eq!(exporter.export_attempts(), 0);
     assert_eq!(
         tick.engine.runtime.runtime_state.last_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -410,7 +410,7 @@ fn live_runtime_tick_defers_rendered_scanout_when_previous_submit_is_in_flight()
         tick.engine.runtime.runtime_state.last_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.pending_runtime_scanout_state_count(), 0);
 
     std::fs::remove_dir_all(root).unwrap();

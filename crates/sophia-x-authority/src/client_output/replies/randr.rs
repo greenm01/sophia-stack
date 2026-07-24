@@ -150,7 +150,7 @@ fn encode_randr_reply(
                     payload.resize(padded_payload_len, 0);
                     out.truncate(36);
                     out.extend_from_slice(&payload);
-                    let reply_units = (out.len().saturating_sub(32) + 3) / 4;
+                    let reply_units = out.len().saturating_sub(32).div_ceil(4);
                     out.resize(32 + reply_units * 4, 0);
                     put_u32(byte_order, &mut out[4..8], reply_units as u32);
                     out

@@ -8,6 +8,8 @@ fn encode_render_extension_reply(
             | XClientReply::Dri3QueryVersion { .. }
             | XClientReply::Dri3Open { .. }
             | XClientReply::Dri3GetSupportedModifiers { .. }
+            | XClientReply::XfixesQueryVersion { .. }
+            | XClientReply::PresentQueryVersion { .. }
             | XClientReply::PresentQueryCapabilities { .. }
     ) {
         return Err(reply);

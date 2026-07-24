@@ -128,19 +128,19 @@ impl NativeLibinputEventReader {
             }
             NativeLibinputEvent::Device(DeviceEvent::Removed(event)) => {
                 let device = event.device();
-                if let Ok(mut policy) = self.policy.lock() {
-                    if policy.udev_managed {
-                        policy.devices_removed = policy.devices_removed.saturating_add(1);
-                        policy.active_devices = policy.active_devices.saturating_sub(1);
-                        if device.has_capability(DeviceCapability::Keyboard) {
-                            policy.keyboards = policy.keyboards.saturating_sub(1);
-                        }
-                        if device.has_capability(DeviceCapability::Pointer) {
-                            policy.pointers = policy.pointers.saturating_sub(1);
-                        }
-                        if device.has_capability(DeviceCapability::Touch) {
-                            policy.touch_devices = policy.touch_devices.saturating_sub(1);
-                        }
+                if let Ok(mut policy) = self.policy.lock()
+                    && policy.udev_managed
+                {
+                    policy.devices_removed = policy.devices_removed.saturating_add(1);
+                    policy.active_devices = policy.active_devices.saturating_sub(1);
+                    if device.has_capability(DeviceCapability::Keyboard) {
+                        policy.keyboards = policy.keyboards.saturating_sub(1);
+                    }
+                    if device.has_capability(DeviceCapability::Pointer) {
+                        policy.pointers = policy.pointers.saturating_sub(1);
+                    }
+                    if device.has_capability(DeviceCapability::Touch) {
+                        policy.touch_devices = policy.touch_devices.saturating_sub(1);
                     }
                 }
                 None

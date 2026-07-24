@@ -93,7 +93,7 @@ fn decode_poly_text8(
 
         let remaining = item_bytes.len().saturating_sub(offset);
         let glyph_len = usize::from(len);
-        if remaining >= 1 + glyph_len {
+        if remaining > glyph_len {
             offset += 1;
             text.extend_from_slice(&item_bytes[offset..offset + glyph_len]);
             offset += glyph_len;
@@ -178,7 +178,7 @@ fn decode_poly_segment(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_SEGMENT, X_POLY_SEGMENT_REQ_LEN, bytes.len())?;
     let segment_bytes = &bytes[X_POLY_SEGMENT_REQ_LEN..];
-    if segment_bytes.len() % 8 != 0 {
+    if !segment_bytes.len().is_multiple_of(8) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_POLY_SEGMENT,
             expected_at_least: X_POLY_SEGMENT_REQ_LEN + ((segment_bytes.len() + 7) & !7),
@@ -213,7 +213,7 @@ fn decode_poly_line(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_LINE, X_POLY_LINE_REQ_LEN, bytes.len())?;
     let point_bytes = &bytes[X_POLY_LINE_REQ_LEN..];
-    if point_bytes.len() % 4 != 0 {
+    if !point_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_POLY_LINE,
             expected_at_least: X_POLY_LINE_REQ_LEN + ((point_bytes.len() + 3) & !3),
@@ -248,7 +248,7 @@ fn decode_fill_poly(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_FILL_POLY, X_FILL_POLY_REQ_LEN, bytes.len())?;
     let point_bytes = &bytes[X_FILL_POLY_REQ_LEN..];
-    if point_bytes.len() % 4 != 0 {
+    if !point_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_FILL_POLY,
             expected_at_least: X_FILL_POLY_REQ_LEN + ((point_bytes.len() + 3) & !3),
@@ -298,7 +298,7 @@ fn decode_poly_fill_rectangle(
         bytes.len(),
     )?;
     let rectangle_bytes = &bytes[X_POLY_FILL_RECTANGLE_REQ_LEN..];
-    if rectangle_bytes.len() % 8 != 0 {
+    if !rectangle_bytes.len().is_multiple_of(8) {
         return Err(XWireParseError::InvalidLength {
             opcode: X_POLY_FILL_RECTANGLE,
             expected_at_least: X_POLY_FILL_RECTANGLE_REQ_LEN + ((rectangle_bytes.len() + 7) & !7),
@@ -340,10 +340,10 @@ fn arc_damage_bounds(
     bytes: &[u8],
 ) -> Result<Vec<Rect>, XWireParseError> {
     let arc_bytes = &bytes[header_len..];
-    if arc_bytes.len() % 12 != 0 {
+    if !arc_bytes.len().is_multiple_of(12) {
         return Err(XWireParseError::InvalidLength {
             opcode,
-            expected_at_least: header_len + ((arc_bytes.len() + 11) / 12) * 12,
+            expected_at_least: header_len + arc_bytes.len().div_ceil(12) * 12,
             actual: bytes.len(),
         });
     }

@@ -78,13 +78,13 @@ impl BrokerHealthPacket {
     }
 
     pub fn validate(&self) -> Result<(), BrokerHealthError> {
-        if let Some(message) = &self.message {
-            if message.len() > SOPHIA_BROKER_HEALTH_MAX_MESSAGE_LEN {
-                return Err(BrokerHealthError::MessageTooLong {
-                    len: message.len(),
-                    max: SOPHIA_BROKER_HEALTH_MAX_MESSAGE_LEN,
-                });
-            }
+        if let Some(message) = &self.message
+            && message.len() > SOPHIA_BROKER_HEALTH_MAX_MESSAGE_LEN
+        {
+            return Err(BrokerHealthError::MessageTooLong {
+                len: message.len(),
+                max: SOPHIA_BROKER_HEALTH_MAX_MESSAGE_LEN,
+            });
         }
 
         Ok(())

@@ -362,12 +362,12 @@ fn run_x11_core_socket_server_once_with_trace_observer(
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let listener = bind_x11_core_socket_server(path)?;
-    let mut state = X11CoreSocketServerState::new();
+    let state = X11CoreSocketServerState::new();
     let authorization = XServerFrontendSetupAuthorization::default();
     serve_x11_core_socket_listener_once_with_setup_authorization(
         &listener,
         namespace,
-        &mut state,
+        &state,
         &authorization,
         None,
         idle_timeout,
@@ -609,8 +609,8 @@ pub fn serve_x11_core_socket_client(
     stream: &mut UnixStream,
     namespace: NamespaceId,
 ) -> Result<(), X11SetupSocketError> {
-    let mut state = X11CoreSocketServerState::new();
-    serve_x11_core_socket_client_with_state(stream, namespace, &mut state)
+    let state = X11CoreSocketServerState::new();
+    serve_x11_core_socket_client_with_state(stream, namespace, &state)
 }
 
 #[cfg(unix)]
@@ -628,8 +628,8 @@ pub fn serve_x11_core_socket_client_observed(
     namespace: NamespaceId,
     mut observer: impl FnMut(&XDispatchResult),
 ) -> Result<(), X11SetupSocketError> {
-    let mut state = X11CoreSocketServerState::new();
-    serve_x11_core_socket_client_with_state_observed(stream, namespace, &mut state, move |result| {
+    let state = X11CoreSocketServerState::new();
+    serve_x11_core_socket_client_with_state_observed(stream, namespace, &state, move |result| {
         observer(result);
         Ok(())
     })

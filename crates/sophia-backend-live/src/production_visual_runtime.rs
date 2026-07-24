@@ -301,7 +301,7 @@ impl LiveProductionVisualRuntime {
 
     pub fn drive_gpu_presentation(
         &mut self,
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let transaction = match self
             .present_scheduler
@@ -318,7 +318,7 @@ impl LiveProductionVisualRuntime {
             }
             LiveProductionPresentGate::Ready(transaction) => transaction,
         };
-        let Some(native_scanout) = native_scanout.as_deref_mut() else {
+        let Some(native_scanout) = native_scanout else {
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction, 0, 0);
             return self.run_observation_tick();
@@ -405,11 +405,11 @@ impl LiveProductionVisualRuntime {
                     return Err("GPU presentation invoked more than one primary output".into());
                 }
                 outputs.run_output(primary_index, committed, |runtime| {
-                    Ok(native_scanout.run_tick(
+                    native_scanout.run_tick(
                         primary_index,
                         runtime,
                         compositor_tick_input(&transactions, 0, Vec::new(), None),
-                    )?)
+                    )
                 })
             },
         );

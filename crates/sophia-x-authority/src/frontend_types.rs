@@ -16,16 +16,11 @@ impl XServerFrontendClientId {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Default)]
 pub enum XServerFrontendSetupAuthorization {
+    #[default]
     UnauthenticatedLocal,
     MitMagicCookie([u8; 16]),
-}
-
-impl Default for XServerFrontendSetupAuthorization {
-    fn default() -> Self {
-        Self::UnauthenticatedLocal
-    }
 }
 
 impl core::fmt::Debug for XServerFrontendSetupAuthorization {

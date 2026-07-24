@@ -39,7 +39,7 @@ fn live_runtime_tick_native_gbm_rendered_scanout_fails_closed_when_render_device
         Some(RuntimeScanoutState::Rejected)
     );
     assert_eq!(tick.engine.runtime.runtime_state.scanout_rejections, 1);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(exporter.export_attempts(), 1);
     assert_eq!(exporter.context_open_attempts(), 1);
     assert_eq!(
@@ -181,7 +181,7 @@ fn live_runtime_tick_native_gbm_rendered_scanout_reads_native_page_flips_before_
         report.tick.engine.runtime.runtime_state.last_scanout_state,
         Some(RuntimeScanoutState::Rejected)
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(exporter.export_attempts(), 1);
     assert_eq!(exporter.context_open_attempts(), 1);
     assert_eq!(

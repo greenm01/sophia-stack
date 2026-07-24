@@ -164,21 +164,15 @@ fn scanout_plane_offsets(buffer: &gbm::BufferObject<()>, plane_count: u32) -> [u
 }
 
 fn plane_handle(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    (plane < plane_count as i32)
-        .then(|| unsafe { buffer.handle_for_plane(plane).u32_ })
-        .unwrap_or(0)
+    if plane < plane_count as i32 { unsafe { buffer.handle_for_plane(plane).u32_ } } else { 0 }
 }
 
 fn plane_pitch(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    (plane < plane_count as i32)
-        .then(|| buffer.stride_for_plane(plane))
-        .unwrap_or(0)
+    if plane < plane_count as i32 { buffer.stride_for_plane(plane) } else { 0 }
 }
 
 fn plane_offset(buffer: &gbm::BufferObject<()>, plane_count: u32, plane: i32) -> u32 {
-    (plane < plane_count as i32)
-        .then(|| buffer.offset(plane))
-        .unwrap_or(0)
+    if plane < plane_count as i32 { buffer.offset(plane) } else { 0 }
 }
 
 fn capture_scanout_plane_fds(

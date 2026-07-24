@@ -611,9 +611,9 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
         submitted.request_scope,
         Some(LibdrmNativeAtomicCommitRequestScope::PageFlip)
     );
-    assert_eq!(submitted.in_flight, true);
+    assert!(submitted.in_flight);
     assert_eq!(submitted.in_flight_ticks, 0);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 0);
     assert_eq!(
         assembly.rendered_primary_plane_scanout_backpressure_report(2),
@@ -640,9 +640,9 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
         blocked.runtime_scanout_state,
         Some(RuntimeScanoutState::Deferred)
     );
-    assert_eq!(blocked.in_flight, true);
+    assert!(blocked.in_flight);
     assert_eq!(blocked.in_flight_ticks, 0);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(
         assembly.rendered_primary_plane_runtime_scanout_state(),
         Some(RuntimeScanoutState::Deferred)
@@ -719,13 +719,13 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
         LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip
     );
     assert_eq!(waiting.runtime_scanout_state, None);
-    assert_eq!(waiting.in_flight, true);
+    assert!(waiting.in_flight);
     assert_eq!(waiting.in_flight_ticks, 2);
     assert_eq!(
         waiting.reduced_log_line(),
         "sophia_runtime_rendered_scanout_retire schema=1 status=WaitingForAcceptedPageFlip destroy=none runtime_scanout_state=none in_flight=true in_flight_ticks=2 cleanup_pending=false"
     );
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), true);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
 
     let accepted = LivePageFlipCallbackReport {
         decision: LivePageFlipCallbackDecision::Accepted,
@@ -749,9 +749,9 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
         retired.reduced_log_line(),
         "sophia_runtime_rendered_scanout_retire schema=1 status=RetiredAfterPageFlip destroy=Destroyed runtime_scanout_state=Retired in_flight=false in_flight_ticks=0 cleanup_pending=false"
     );
-    assert_eq!(retired.in_flight, false);
+    assert!(!retired.in_flight);
     assert_eq!(retired.in_flight_ticks, 0);
-    assert_eq!(assembly.rendered_primary_plane_scanout_in_flight(), false);
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
     assert_eq!(assembly.rendered_primary_plane_scanout_in_flight_ticks(), 0);
     assert_eq!(
         assembly.rendered_primary_plane_scanout_backpressure_report(2),

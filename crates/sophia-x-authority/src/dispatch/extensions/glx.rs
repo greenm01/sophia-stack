@@ -83,7 +83,7 @@ fn dispatch_glx_request(
                 } => {
                     let valid = screen == 0
                         && (1..=3).contains(&fbconfig)
-                        && share.map_or(true, |share| {
+                        && share.is_none_or(|share| {
                             runtime.glx_context(context.namespace, share).is_ok()
                         });
                     let outputs = if valid {

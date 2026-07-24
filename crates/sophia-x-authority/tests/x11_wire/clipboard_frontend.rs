@@ -52,9 +52,25 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         let first_request = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
             if trace.request_stage == X11ObservedRequestStage::SelectionRequest {
-                request_sender.send(()).unwrap();
+                let transfer = trace
+                    .result
+                    .response
+                    .as_ref()
+                    .and_then(|response| {
+                        response
+                            .portal_commands
+                            .iter()
+                            .find_map(|command| match command {
+                                XAuthorityPortalCommand::PromptClipboardTransfer(transfer) => {
+                                    Some(transfer.transfer)
+                                }
+                                _ => None,
+                            })
+                        })
+                    .expect("cross-namespace selection must emit a clipboard transfer");
+                request_sender.send(transfer).unwrap();
                 if first_request.swap(false, std::sync::atomic::Ordering::AcqRel) {
-                    coordinate_sender.send(()).unwrap();
+                    coordinate_sender.send(transfer).unwrap();
                 }
             }
             Ok(())
@@ -65,11 +81,11 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         frontend
             .serve_next_concurrently_routed_traced(&broker, observer)
             .unwrap();
-        coordinate_receiver.recv().unwrap();
+        let transfer = coordinate_receiver.recv().unwrap();
         let request = PortalBrokerRequestPacket {
             request: PortalRequest {
                 transfer: PortalTransfer {
-                    transfer: PortalTransferId::from_raw(2),
+                    transfer,
                     source_namespace: source.id,
                     target_namespace: target.id,
                     kind: PortalTransferKind::Clipboard,
@@ -237,7 +253,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             12,
         ))
         .unwrap();
-    request_receiver.recv().unwrap();
+    let stale_transfer = request_receiver.recv().unwrap();
     owner
         .write_all(&set_selection_owner_request(
             XByteOrder::LittleEndian,
@@ -250,7 +266,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         .write_all(&resource_request(XByteOrder::LittleEndian, 23, selection))
         .unwrap();
     assert_eq!(read_x_record(&mut owner)[0], 1);
-    let stale_transfer = PortalTransferId::from_raw(4);
     assert!(
         executor
             .request_source(&PortalGrant {
@@ -275,11 +290,11 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
     assert_eq!(notify[0], 31);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &notify[20..24]), 0);
 
-    for (sequence, failure) in [
-        (5, ClipboardSelectionExecutionError::Denied),
-        (6, ClipboardSelectionExecutionError::Expired),
-        (7, ClipboardSelectionExecutionError::Disconnected),
-        (8, ClipboardSelectionExecutionError::ExecutorFailure),
+    for failure in [
+        ClipboardSelectionExecutionError::Denied,
+        ClipboardSelectionExecutionError::Expired,
+        ClipboardSelectionExecutionError::Disconnected,
+        ClipboardSelectionExecutionError::ExecutorFailure,
     ] {
         requestor
             .write_all(&convert_selection_request(
@@ -291,10 +306,8 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
                 12,
             ))
             .unwrap();
-        request_receiver.recv().unwrap();
-        let outcome = executor
-            .fail(PortalTransferId::from_raw(sequence), failure)
-            .unwrap();
+        let transfer = request_receiver.recv().unwrap();
+        let outcome = executor.fail(transfer, failure).unwrap();
         assert!(matches!(
             outcome,
             ClipboardSelectionExecutionOutcome::Failed { error, .. } if error == failure
@@ -762,4 +775,3 @@ fn x11_core_socket_smoke_round_trips_atom_property_and_window_events() {
     let _ = std::fs::remove_file(&socket_path);
     server.join().unwrap();
 }
-

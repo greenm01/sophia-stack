@@ -233,7 +233,7 @@ fn committed_surface_projection_drives_frame_planning() {
         }),
     };
     let layers = engine
-        .project_committed_surface_states(&[committed.clone()], &[template])
+        .project_committed_surface_states(std::slice::from_ref(&committed), &[template])
         .unwrap();
 
     let frame = engine

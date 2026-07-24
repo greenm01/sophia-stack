@@ -130,8 +130,8 @@ impl LiveRenderedOutputTable {
 
     pub fn insert(&mut self, state: LiveRenderedOutputState) -> LiveRenderedOutputTableUpdate {
         let output = state.output;
-        if self.outputs.contains_key(&output) {
-            self.outputs.insert(output, state);
+        if let std::collections::btree_map::Entry::Occupied(mut e) = self.outputs.entry(output) {
+            e.insert(state);
             return LiveRenderedOutputTableUpdate::Replaced;
         }
         if self.outputs.len() >= LIVE_RENDERED_OUTPUT_CAPACITY {

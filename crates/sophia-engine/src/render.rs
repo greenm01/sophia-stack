@@ -164,10 +164,10 @@ fn collect_buffer_imports(
         if !seen.insert(surface) {
             continue;
         }
-        if let Some(layer) = layers_by_surface.get(&surface) {
-            if let Some(import) = buffer_import_report(layer, import_source) {
-                imports.push(import);
-            }
+        if let Some(layer) = layers_by_surface.get(&surface)
+            && let Some(import) = buffer_import_report(layer, import_source)
+        {
+            imports.push(import);
         }
     }
 

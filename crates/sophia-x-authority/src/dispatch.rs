@@ -247,14 +247,12 @@ pub fn dispatch_x11_wire_request(
             Ok(result) => return result,
             Err(request) => request,
         };
-    let request = match dispatch_core_drawing_request(context, request, runtime, atoms, properties)
+    let _request = match dispatch_core_drawing_request(context, request, runtime, atoms, properties)
     {
         Ok(result) => return result,
         Err(request) => request,
     };
-    match request {
-        _ => unreachable!("extension request escaped its family dispatcher"),
-    }
+    unreachable!("extension request escaped its family dispatcher")
 }
 
 fn dispatch_text_draw(
@@ -559,7 +557,7 @@ fn randr_monitors(
         .iter()
         .map(|entry| {
             let name = atoms
-                .intern(&format!("SOPHIA-{}", entry.output.raw()), false)
+                .intern(format!("SOPHIA-{}", entry.output.raw()), false)
                 .ok()
                 .flatten()
                 .unwrap_or(X_ATOM_NONE);
@@ -620,39 +618,34 @@ fn outputs_from_authority_response(
         time,
         ..
     } = kind
+        && let Some(artifact) = response.selection_artifacts.first()
     {
-        if let Some(artifact) = response.selection_artifacts.first() {
-            return vec![XClientOutput::Event(match artifact {
-                crate::XAuthoritySelectionArtifact::Failure(_) => x_selection_failure_event(
-                    context.sequence,
-                    *time,
-                    *requestor,
-                    *selection,
-                    *target,
-                ),
-                crate::XAuthoritySelectionArtifact::Request(request) => {
-                    XClientEvent::SelectionRequest {
-                        sequence: context.sequence,
-                        time: request.time,
-                        owner: request.owner,
-                        requestor: request.requestor,
-                        selection: request.selection,
-                        target: request.target,
-                        property: request.property,
-                    }
-                }
-                crate::XAuthoritySelectionArtifact::Clear {
-                    owner,
-                    selection,
-                    time,
-                } => XClientEvent::SelectionClear {
+        return vec![XClientOutput::Event(match artifact {
+            crate::XAuthoritySelectionArtifact::Failure(_) => {
+                x_selection_failure_event(context.sequence, *time, *requestor, *selection, *target)
+            }
+            crate::XAuthoritySelectionArtifact::Request(request) => {
+                XClientEvent::SelectionRequest {
                     sequence: context.sequence,
-                    time: *time,
-                    owner: *owner,
-                    selection: *selection,
-                },
-            })];
-        }
+                    time: request.time,
+                    owner: request.owner,
+                    requestor: request.requestor,
+                    selection: request.selection,
+                    target: request.target,
+                    property: request.property,
+                }
+            }
+            crate::XAuthoritySelectionArtifact::Clear {
+                owner,
+                selection,
+                time,
+            } => XClientEvent::SelectionClear {
+                sequence: context.sequence,
+                time: *time,
+                owner: *owner,
+                selection: *selection,
+            },
+        })];
     }
 
     if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {

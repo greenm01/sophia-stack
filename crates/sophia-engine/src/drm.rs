@@ -55,8 +55,10 @@ impl DrmKmsOutputRegistry {
     }
 
     pub fn upsert(&mut self, output: DrmKmsOutputDescriptor) -> DrmKmsOutputRegistryUpdate {
-        if self.outputs.contains_key(&output.output) {
-            self.outputs.insert(output.output, output);
+        if let std::collections::btree_map::Entry::Occupied(mut e) =
+            self.outputs.entry(output.output)
+        {
+            e.insert(output);
             return DrmKmsOutputRegistryUpdate::Replaced;
         }
         if self.outputs.len() >= MAX_DRM_KMS_OUTPUTS {

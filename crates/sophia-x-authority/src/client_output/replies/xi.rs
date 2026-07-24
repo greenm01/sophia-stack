@@ -105,7 +105,7 @@ fn encode_x_input_reply(
                                     button_count,
                                 } => {
                                     push_u16(byte_order, &mut body, 1);
-                                    push_u16(byte_order, &mut body, 2 + 1 + *button_count * 1);
+                                    push_u16(byte_order, &mut body, 2 + 1 + *button_count);
                                     push_u16(byte_order, &mut body, *source_id);
                                     push_u16(byte_order, &mut body, *button_count);
                                     push_u32(byte_order, &mut body, 0);

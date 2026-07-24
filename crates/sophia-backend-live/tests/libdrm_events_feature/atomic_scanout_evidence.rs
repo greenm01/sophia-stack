@@ -218,7 +218,7 @@ fn native_atomic_scanout_smoke_evidence_fails_closed_before_page_flip() {
         Some(LibdrmNativeAtomicScanoutPageFlipWaitStatus::CallbackMissing)
     );
     assert_eq!(evidence.retire_destroy, None);
-    assert_eq!(evidence.retire_cleanup_pending, false);
+    assert!(!evidence.retire_cleanup_pending);
     assert_eq!(
         submission.retire(&device).status,
         LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
@@ -277,7 +277,7 @@ fn native_atomic_scanout_smoke_evidence_records_waiting_retire_on_missing_page_f
         Some(LibdrmNativeAtomicScanoutPageFlipWaitStatus::CallbackMissing)
     );
     assert_eq!(evidence.retire_destroy, None);
-    assert_eq!(evidence.retire_cleanup_pending, false);
+    assert!(!evidence.retire_cleanup_pending);
     assert_eq!(
         submission.retire(&device).status,
         LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
@@ -752,7 +752,7 @@ fn native_atomic_scanout_smoke_evidence_reports_resource_retire_failure() {
         evidence.retire_destroy,
         Some(LibdrmNativePrimaryPlaneResourceDestroyStatus::FramebufferDestroyFailed)
     );
-    assert_eq!(evidence.retire_cleanup_pending, true);
+    assert!(evidence.retire_cleanup_pending);
 }
 
 #[test]
