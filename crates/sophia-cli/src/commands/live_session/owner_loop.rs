@@ -1022,11 +1022,9 @@ fn run_session_loop(
                 }
                 if layout.pending.is_none()
                     && let Some(wm_session) = wm_session.as_mut()
-                {
-                    if let Some(proposal) = wm_session.poll_restart(&layout, output)? {
+                    && let Some(proposal) = wm_session.poll_restart(&layout, output)? {
                         wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
                     }
-                }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
                     && layout.layers.len() >= if config.secondary_terminal { 2 } else { 1 }
@@ -1313,8 +1311,7 @@ fn run_session_loop(
                     && last_authority_update.elapsed()
                         >= Duration::from_millis(config.input_quiet_msec)
                     && let Some(wm_session) = wm_session.as_mut()
-                {
-                    if let Some(surface) = layout.take_next_unmanaged_surface() {
+                    && let Some(surface) = layout.take_next_unmanaged_surface() {
                         let proposal = wm_session.request_manage(surface, &layout, output)?;
                         if layout
                             .stage(proposal, control_sender, control_ack_receiver)?
@@ -1323,7 +1320,6 @@ fn run_session_loop(
                             wm_session.mark_committed();
                         }
                     }
-                }
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())
                 {

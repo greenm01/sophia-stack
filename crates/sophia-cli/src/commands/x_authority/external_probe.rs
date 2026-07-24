@@ -102,13 +102,12 @@ fn run_x_authority_external_probe_smoke(
                         )));
                     }
                 }
-                if let Some(response) = &trace.result.response {
-                    if !response.transactions.is_empty() {
+                if let Some(response) = &trace.result.response
+                    && !response.transactions.is_empty() {
                         let _ = sender.try_send(ExternalProbeObservation::Transactions(
                             response.transactions.clone(),
                         ));
                     }
-                }
                 if let Some(buffer) = trace.cpu_buffer_update {
                     let _ =
                         sender.try_send(ExternalProbeObservation::CpuBufferUpdate(buffer.clone()));

@@ -300,15 +300,14 @@ fn run_x_authority_kitty_input_smoke()
         .into())
     })();
 
-    if child.try_wait()?.is_none() {
-        if let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
+    if child.try_wait()?.is_none()
+        && let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
             let _ = rustix::process::kill_process_group(group, rustix::process::Signal::TERM);
             std::thread::sleep(Duration::from_millis(50));
             if child.try_wait()?.is_none() {
                 let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
             }
         }
-    }
     eprintln!("sophia_kitty_input_smoke schema=1 stage=client_stopping");
     let output = child.wait_with_output()?;
     let _ = service_sender.send(XServerFrontendServiceCommand::StopAccepting);

@@ -635,21 +635,13 @@ impl PersistentXtermSessionConfig {
     }
 }
 
+#[derive(Default)]
 struct FirefoxM8StageProof {
     baseline_title_bytes: [Option<usize>; 16],
     active_residue: Option<usize>,
     completed_stage: usize,
 }
 
-impl Default for FirefoxM8StageProof {
-    fn default() -> Self {
-        Self {
-            baseline_title_bytes: [None; 16],
-            active_residue: None,
-            completed_stage: 0,
-        }
-    }
-}
 
 impl FirefoxM8StageProof {
     const STAGES: [&'static str; 6] = [

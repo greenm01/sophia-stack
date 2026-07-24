@@ -156,20 +156,22 @@ fn execute_committed_session_actions(
     let mut retained = Vec::with_capacity(children.len());
     for mut child in children.drain(..) {
         let status = child.child.try_wait()?;
-        if status.is_none() {
-            retained.push(child);
-        } else if let Some(id) = child.id.as_deref() {
-            terminate_session_child(&mut child.child, true)?;
-            let status = status.expect("checked above");
-            if !status.success() {
-                return Err(format!(
-                    "managed session application {id:?} exited abnormally: {status}"
-                )
-                .into());
+        match status {
+            None => retained.push(child),
+            Some(status) => {
+                if let Some(id) = child.id.as_deref() {
+                    terminate_session_child(&mut child.child, true)?;
+                    if !status.success() {
+                        return Err(format!(
+                            "managed session application {id:?} exited abnormally: {status}"
+                        )
+                        .into());
+                    }
+                    println!(
+                        "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}"
+                    );
+                }
             }
-            println!(
-                "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}"
-            );
         }
     }
     *children = retained;

@@ -142,11 +142,8 @@ pub(crate) fn run_persistent_xterm_session(
     } else {
         None
     };
-    if physical_input.is_some() {
-        let policy = physical_input
-            .as_ref()
-            .expect("configured input devices create a poller")
-            .policy_report();
+    if let Some(physical_input) = physical_input.as_ref() {
+        let policy = physical_input.policy_report();
         println!(
             "sophia_live_session_input_pipeline schema=3 status=poller_ready source={} seat={} devices={} active={} keyboards={} pointers={} touch={} tap_capable={} tap_enabled={}",
             if policy.udev_managed { "udev" } else { "paths" },

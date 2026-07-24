@@ -34,7 +34,7 @@ fn first_present_rebases_to_the_empty_engine_generation() {
     let surface = SurfaceId::new(1, 1);
     let observed = transaction(surface, 7);
 
-    let rebased = rebase_full_state_present_transactions(&[observed.clone()], &[]);
+    let rebased = rebase_full_state_present_transactions(std::slice::from_ref(&observed), &[]);
 
     assert_eq!(rebased[0].previous_committed_generation, 0);
     assert_eq!(rebased[0].target_geometry, observed.target_geometry);

@@ -236,8 +236,8 @@ fn route_input_events(
                 let Some((keycode, state)) = modifiers.map_evdev_key(keycode, pressed) else {
                     continue;
                 };
-                if let Some(proof) = physical_text_proof.as_deref_mut() {
-                    if !proof.is_complete() {
+                if let Some(proof) = physical_text_proof.as_deref_mut()
+                    && !proof.is_complete() {
                         let observed = PhysicalTextProofEvent {
                             keycode,
                             pressed,
@@ -257,7 +257,6 @@ fn route_input_events(
                         .into());
                         }
                     }
-                }
                 let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
                 *next_input_delivery = next_input_delivery
                     .checked_add(1)
