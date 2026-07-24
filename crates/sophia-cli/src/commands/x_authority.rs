@@ -223,7 +223,8 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 
 include!("x_authority/reports.rs");
 include!("x_authority/basic_smokes.rs");
-include!("x_authority/kitty.rs");
+include!("x_authority/kitty_input_smoke.rs");
+include!("x_authority/terminal_probe.rs");
 include!("x_authority/xterm.rs");
 include!("x_authority/external_probe.rs");
 include!("x_authority/runtime_proofs.rs");
