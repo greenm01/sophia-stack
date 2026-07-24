@@ -10,7 +10,7 @@ cd "$ROOT_DIR"
     exit 1
 }
 commit="$(git rev-parse HEAD)"
-version="$(sed -n 's/^version = \"\\([^\"]*\\)\"/\\1/p' Cargo.toml | head -n 1)"
+version="$(awk -F'"' '$1 ~ /^version = / { print $2; exit }' Cargo.toml)"
 [[ -n "$version" ]] || {
     echo "Could not resolve workspace version." >&2
     exit 1
