@@ -205,7 +205,7 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   vector for every input batch.
 - [x] Centralize authority-transaction layer projection under Engine and
   preserve `NamespaceId` through backend templates.
-- [ ] Split X authority state, connection service, routing, input, clipboard,
+- [x] Split X authority state, connection service, routing, input, clipboard,
   wire families, dispatch families, and client output behind the existing
   public facades.
   - [x] Extract owned, value-free dispatch observations and frontend import
