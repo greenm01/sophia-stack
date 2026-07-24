@@ -218,6 +218,8 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
     owners behind the existing dispatch facade.
   - [x] Split core and extension wire decoding into bounded protocol-family
     owners behind the existing wire facade.
+  - [x] Split reply and event encoding into bounded protocol-family owners
+    behind the existing client-output facade.
   - [x] Move the mutable route registry, connection workers, input writers,
     clipboard coordinator, and remaining state into their owning modules.
 - [ ] Split live-session configuration/policy, admission, WM/layout, input,
