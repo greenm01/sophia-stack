@@ -46,12 +46,29 @@ grep -Eq '^sophia_session_app schema=1 status=started id=terminal source=startup
     "$SESSION_LOG" || fail "startup terminal was not launched"
 grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' \
     "$SESSION_LOG" || fail "xmonad layout was not committed"
+grep -Eq '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' \
+    "$SESSION_LOG" || fail "xmonad focus was not committed"
+grep -Eq '^sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_present_scanout$' \
+    "$SESSION_LOG" || fail "focused DMA-BUF content was not stably presented"
 grep -Eq '^sophia_live_session_input_pipeline schema=1 status=key_observed$' \
     "$SESSION_LOG" || fail "physical key was not observed"
 grep -Eq '^sophia_live_session_input_pipeline schema=1 status=key_routed$' \
     "$SESSION_LOG" || fail "physical key was not routed"
 grep -Eq '^sophia_live_session_input schema=1 status=ready source=physical text=sophia$' \
-    "$SESSION_LOG" || fail "exact physical text did not match"
+    "$SESSION_LOG" || fail "exact physical text proof never became ready"
+grep -Eq '^sophia_live_session_pointer schema=2 status=motion_routed$' \
+    "$SESSION_LOG" || fail "physical pointer motion was not routed"
+grep -Eq '^sophia_live_session_pointer schema=2 status=button_routed count=[1-9][0-9]*$' \
+    "$SESSION_LOG" || fail "physical pointer button was not routed"
+grep -Eq '^sophia_live_session_pointer schema=1 status=ready source=physical action=select$' \
+    "$SESSION_LOG" || fail "physical pointer proof never became ready"
+
+layout_line="$(grep -n -m1 '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' "$SESSION_LOG" | cut -d: -f1)"
+focus_line="$(grep -n -m1 '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' "$SESSION_LOG" | cut -d: -f1)"
+content_line="$(grep -n -m1 '^sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_present_scanout$' "$SESSION_LOG" | cut -d: -f1)"
+input_line="$(grep -n -m1 '^sophia_live_session_input schema=1 status=ready source=physical text=sophia$' "$SESSION_LOG" | cut -d: -f1)"
+(( layout_line < input_line && focus_line < input_line && content_line < input_line )) ||
+    fail "physical input became ready before layout, focus, and content"
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false$' \
     "$SESSION_LOG" || fail "final health was not clean"
 
@@ -64,6 +81,8 @@ completion="${completions[0]}"
 for assignment in \
     input_pixel_change=true \
     input_text_match=true \
+    pointer_pixel_change=true \
+    pointer_proof=enabled \
     native_presentation=enabled \
     physical_input=enabled \
     wm_policy=external \
@@ -80,8 +99,9 @@ for assignment in \
     present_live_transactions=0; do
     require_eq "$completion" "${assignment%%=*}" "${assignment#*=}"
 done
-for key in physical_events physical_keys_routed native_submissions \
-    native_retirements native_frame_uploads wm_committed; do
+for key in physical_events physical_keys_routed physical_pointer_events \
+    physical_pointer_routed native_submissions native_retirements \
+    native_frame_uploads wm_committed; do
     require_positive "$completion" "$key"
 done
 expected="$(field "$completion" input_events_expected)" ||

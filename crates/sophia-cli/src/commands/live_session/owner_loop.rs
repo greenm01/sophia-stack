@@ -116,6 +116,7 @@ fn run_session_loop(
     let mut pointer_checksum = None;
     let mut pointer_cursor_checksum = None;
     let mut pointer_phase_started_at = None;
+    let mut cursor_visible_reported = false;
     let mut pointer_pixel_change = false;
     let mut metrics = SessionLoopMetrics::new(initialize_empty_runtime);
     let mut input_batch_baseline = None;
@@ -130,8 +131,7 @@ fn run_session_loop(
     let seat = SeatId::from_raw(SESSION_SEAT_RAW);
     let mut focus_deadline_started_at = None;
     let mut focus_ready_reported = false;
-    let mut focus_ready_at: Option<Instant> = None;
-    let mut focused_client_ready = wm_session.is_some();
+    let mut applied_client_focus: Option<SurfaceId> = None;
     let mut focused_client_control: Option<(TransactionId, SurfaceId)> = None;
     let mut next_focus_control_transaction = 1_000_000u64;
     let mut resize_proof: Option<(TransactionId, SurfaceId, Size)> = None;
@@ -152,7 +152,7 @@ fn run_session_loop(
     let mut input_flush_latency: Option<Duration> = None;
     let mut post_input_deadline: Option<Instant> = None;
     let mut application_surface_gone_at: Option<Instant> = None;
-    let mut terminal_content_ready = blank_normal_session;
+    let mut input_content_surface: Option<SurfaceId> = None;
     let mut startup_content_ready = blank_normal_session;
     let mut startup_ready_msec = blank_normal_session.then_some(0);
     let mut input_text_match = false;
@@ -180,9 +180,7 @@ fn run_session_loop(
     macro_rules! drain_physical_input {
         ($routing_mode:expr) => {{
             let emergency_exit = false;
-            if let Some(poller) = physical_input.as_mut()
-                && (config.expect_physical_text.is_none() || physical_input_ready_at.is_some())
-            {
+            if let Some(poller) = physical_input.as_mut() {
                 let empty_committed = [];
                 let committed_surfaces = runtime
                     .as_ref()

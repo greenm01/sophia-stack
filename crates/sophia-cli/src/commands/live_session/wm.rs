@@ -523,10 +523,12 @@ impl PersistentLiveLayout {
         }
     }
 
-    fn take_next_unmanaged_surface(&mut self) -> Option<SurfaceId> {
-        let surface = self.unmanaged_surfaces.iter().next().copied()?;
+    fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
+        self.unmanaged_surfaces.iter().next().copied()
+    }
+
+    fn mark_surface_managed(&mut self, surface: SurfaceId) {
         self.unmanaged_surfaces.remove(&surface);
-        Some(surface)
     }
 
     fn stage(

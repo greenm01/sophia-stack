@@ -131,6 +131,15 @@
                     && let Some(proposal) = wm_session.poll_restart(&layout, output)? {
                         wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
                     }
+                if wm_update.is_none()
+                    && layout.pending.is_none()
+                    && let Some(surface) = layout.next_unmanaged_surface()
+                    && let Some(wm_session) = wm_session.as_mut()
+                {
+                    let proposal = wm_session.request_manage(surface, &layout, output)?;
+                    wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                    layout.mark_surface_managed(surface);
+                }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
                     && startup_ready_reported
@@ -317,6 +326,12 @@
                         application_surface_gone_at.get_or_insert_with(Instant::now);
                     }
                     focus.clear_surface(surface);
+                    if applied_client_focus == Some(surface) {
+                        applied_client_focus = None;
+                    }
+                    if input_content_surface == Some(surface) {
+                        input_content_surface = None;
+                    }
                 }
                 if let Some(surface) = input_surface
                     && runtime
@@ -361,6 +376,7 @@
                         {
                             return Err("X Authority rejected WM focus reconciliation".into());
                         }
+                        applied_client_focus = Some(surface);
                     }
                     println!(
                         "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
@@ -377,7 +393,6 @@
                     println!("sophia_live_session_input_pipeline schema=1 status=focus_ready");
                     std::io::stdout().flush()?;
                     focus_ready_reported = true;
-                    focus_ready_at = Some(Instant::now());
                 }
                 if let Some(surface) = focus.focused_surface(seat) {
                     let cpu_visual_detail =
@@ -399,14 +414,6 @@
                         );
                         std::io::stdout().flush()?;
                     }
-                    if !terminal_content_ready && cpu_visual_detail {
-                        terminal_content_ready = true;
-                        startup_ready_msec = Some(started.elapsed().as_millis());
-                        println!(
-                            "sophia_live_session_input_pipeline schema=1 status=terminal_content_ready"
-                        );
-                        std::io::stdout().flush()?;
-                    }
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -418,18 +425,18 @@
                     let _ = layout.stage(proposal, control_sender, control_ack_receiver)?;
                 }
                 if layout.pending.is_none()
-                    && last_authority_update.elapsed()
-                        >= Duration::from_millis(config.input_quiet_msec)
+                    && let Some(surface) = layout.next_unmanaged_surface()
                     && let Some(wm_session) = wm_session.as_mut()
-                    && let Some(surface) = layout.take_next_unmanaged_surface() {
-                        let proposal = wm_session.request_manage(surface, &layout, output)?;
-                        if layout
-                            .stage(proposal, control_sender, control_ack_receiver)?
-                            .is_some()
-                        {
-                            wm_session.mark_committed();
-                        }
+                {
+                    let proposal = wm_session.request_manage(surface, &layout, output)?;
+                    if layout
+                        .stage(proposal, control_sender, control_ack_receiver)?
+                        .is_some()
+                    {
+                        wm_session.mark_committed();
                     }
+                    layout.mark_surface_managed(surface);
+                }
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())
                 {
@@ -509,7 +516,7 @@
                     .into());
                 }
                 focused_client_control = None;
-                focused_client_ready = true;
+                applied_client_focus = Some(surface);
                 println!(
                     "sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control"
                 );

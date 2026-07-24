@@ -53,9 +53,10 @@ fi
 
 echo
 echo "The proof will start after the recovery guard is armed."
-echo "After the Kitty prompt appears, wait three seconds for input readiness."
+echo "Wait for Kitty to finish its initial xmonad resize and show a prompt."
 echo "Then type exactly: sophia"
-echo "Then press Enter once. Do not use Ctrl+Alt+Backspace unless recovery is needed."
+echo "Press Enter once, wait one second, then move the pointer and click once."
+echo "Do not use Ctrl+Alt+Backspace unless recovery is needed."
 echo
 set +e
 "$ROOT_DIR/tools/start_sophia_xmonad_input_proof_tty3.sh"

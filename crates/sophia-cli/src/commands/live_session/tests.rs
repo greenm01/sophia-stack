@@ -2,9 +2,9 @@
 use super::{
     BufferSource, CommittedSurfaceState, LayerSnapshot, LiveClientStdoutCapture,
     LiveProductionCpuScene, LiveProductionVisualRuntime, LiveXAuthorityFile,
-    PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode, Rect,
-    Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SessionPointerPlacement,
-    SessionProcessGuard, Size, Transform, authority_transaction_count,
+    PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
+    PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
+    SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
     center_geometry_without_scaling, global_runtime_deadline_ends_session,
     physical_input_pixels_already_changed, physical_input_routing_mode,
     place_pointer_event_for_routing, pointer_offset_for_geometry, record_runtime_commits,
@@ -195,6 +195,79 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
     assert_eq!(report.keys_observed, 2);
     assert_eq!(report.keys_routed, 0);
     assert!(input_receiver.try_recv().is_err());
+}
+
+#[test]
+fn pending_physical_proof_moves_cursor_without_routing_application_input() {
+    let events = vec![
+        InputEventPacket {
+            serial: 1,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: 1,
+            kind: InputEventKind::PointerMotion,
+            global_position: Some(Point { x: 12.0, y: -8.0 }),
+            target_surface: None,
+            local_position: None,
+        },
+        InputEventPacket {
+            serial: 2,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(1),
+            time_msec: 2,
+            kind: InputEventKind::Key {
+                keycode: 31,
+                pressed: true,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        },
+    ];
+    let (input_sender, input_receiver) = sync_channel(2);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut pointer = SessionPointerPlacement::default();
+    pointer.center_on_primary_output(Size {
+        width: 2560,
+        height: 1440,
+    });
+    let mut proof = PhysicalTextProof::new("sophia").unwrap();
+    let mut next_delivery = 1;
+
+    let report = route_input_events(
+        events,
+        &InputFocusState::new(),
+        &[],
+        &[],
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut emergency,
+        None,
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::CursorOnly,
+        &mut next_delivery,
+        Some(&mut proof),
+    )
+    .unwrap();
+
+    assert_eq!(report.pointer_events, 1);
+    assert_eq!(report.pointer_routed, 0);
+    assert_eq!(report.keys_observed, 1);
+    assert_eq!(report.keys_routed, 0);
+    assert_eq!(proof.matched_events(), 0);
+    assert!(input_receiver.try_recv().is_err());
+    assert_ne!(
+        pointer.position,
+        Some(Point {
+            x: 1280.0,
+            y: 720.0
+        })
+    );
 }
 
 #[test]

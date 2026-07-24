@@ -205,7 +205,9 @@ fn route_input_events(
                     report.emergency_exit = true;
                     continue;
                 }
-                if let Some(shortcuts) = shortcuts.as_deref_mut() {
+                if routing_mode != PhysicalInputRoutingMode::CursorOnly
+                    && let Some(shortcuts) = shortcuts.as_deref_mut()
+                {
                     let decision = shortcuts.route_key(event.seat, keycode, pressed);
                     if decision.consumed {
                         report.wm_actions.extend(decision.action);
@@ -279,7 +281,10 @@ fn route_input_events(
             }
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }) => {
-                if routing_mode != PhysicalInputRoutingMode::Full {
+                if matches!(
+                    routing_mode,
+                    PhysicalInputRoutingMode::Suppressed | PhysicalInputRoutingMode::ShortcutsOnly
+                ) {
                     continue;
                 }
                 if let Some(raw) = event.global_position {
@@ -292,6 +297,19 @@ fn route_input_events(
                         report.pointer_buttons_observed.saturating_add(1);
                 }
                 report.pointer_events = report.pointer_events.saturating_add(1);
+                if routing_mode == PhysicalInputRoutingMode::CursorOnly {
+                    if !is_button {
+                        let focused_surface = focus.focused_surface(event.seat);
+                        let _ = place_pointer_event_for_routing(
+                            &mut event,
+                            focused_surface,
+                            input_layers,
+                            pointer,
+                            false,
+                        );
+                    }
+                    continue;
+                }
                 if !pointer_routing_enabled {
                     continue;
                 }

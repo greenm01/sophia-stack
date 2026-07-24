@@ -85,6 +85,12 @@ rather than borrowing the completed Kitty-only promotion.
 
 ### 9.2 Guarded physical xmonad run
 
+- [x] Remove global-authority quiet-time starvation from initial WM management;
+  continuous application Presents cannot postpone layout indefinitely.
+- [x] Require applied X11 focus and accept stable DMA-BUF presentation before
+  arming physical input; keep pre-proof cursor motion responsive.
+- [x] Extend the bounded installed proof to require exact keyboard input plus
+  routed pointer motion and a button.
 - [ ] Start from TTY3 with the independent recovery guard armed and capture the
   launcher, guard, recovery, WM, frontend, and native-session logs.
 - [ ] Automatically present a focused Kitty on the primary output within eight

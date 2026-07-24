@@ -8,10 +8,19 @@
                         })
                     })
             });
+        let focused_client_ready = focus
+            .focused_surface(seat)
+            .is_some_and(|surface| applied_client_focus == Some(surface));
+        let focused_content_ready = focus
+            .focused_surface(seat)
+            .is_some_and(|surface| input_content_surface == Some(surface));
         let input_start_stable = if config.inject_surface_resize.is_some() {
             resize_proof_complete
         } else if config.expect_physical_text.is_some() {
-            focus_ready_at.is_some_and(|ready| ready.elapsed() >= Duration::from_secs(2))
+            layout.pending.is_none()
+                && wm_session
+                    .as_ref()
+                    .is_none_or(|wm_session| wm_session.committed > 0)
         } else {
             last_authority_update.elapsed() >= Duration::from_millis(config.input_quiet_msec)
                 || wm_session.as_ref().is_some_and(|wm| {
@@ -32,7 +41,7 @@
             && input_baseline_presented
             && input_start_stable
             && focused_client_ready
-            && terminal_content_ready
+            && focused_content_ready
             && (config.inject_surface_resize.is_none() || resize_proof_complete)
         {
             injection_checksum = scene.last_report().map(|report| report.checksum);
@@ -108,7 +117,7 @@
         if config.expect_physical_pointer
             && physical_input_completion_reported
             && input_pixel_change
-            && pointer_checksum.is_none()
+            && pointer_phase_started_at.is_none()
             && pointer_cursor_checksum.is_none()
         {
             let runtime = runtime

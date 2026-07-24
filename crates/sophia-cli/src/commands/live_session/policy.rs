@@ -9,6 +9,7 @@ fn session_protocol_errors_are_fatal(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhysicalInputRoutingMode {
     Suppressed,
+    CursorOnly,
     ShortcutsOnly,
     Full,
 }

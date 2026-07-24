@@ -183,7 +183,7 @@ if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]]; then
     fi
 fi
 if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]] && [[ "${observed[input_events_expected]}" != "0" ]]; then
-    if [[ "$(grep -Fxc 'sophia_live_session_input_pipeline schema=1 status=terminal_content_ready' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
+    if [[ "$(grep -Ec '^sophia_live_session_input_pipeline schema=(1 status=terminal_content_ready|2 status=content_ready source=(cpu_visual_detail|stable_present_scanout))$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
         echo "persistent live-session evidence is missing terminal-content readiness" >&2
         exit 1
     fi

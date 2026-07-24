@@ -2528,3 +2528,31 @@ checks and tests pass for the affected crates. The remaining work is the
 mutable registry/worker and protocol-family extraction, the live owner/WM/input
 split, scanout lifetime/composition execution, legacy bridge server/dispatch,
 and the remaining oversized integration fixtures.
+
+## 2026-07-24: Continuous Present Starved WM And GPU Input Readiness
+
+The installed xmonad proof still appeared to lose both keyboard and pointer
+input after tracing was disabled. The retained session showed fourteen active
+libinput devices, stable mixed Present retirement, a visible hardware cursor,
+and Engine focus, but no WM layout commit, applied X11 focus, or physical-input
+readiness marker. Disabling tracing changed timing only; it could not repair
+either missing state transition.
+
+Initial WM management waited for 500 milliseconds without any authority work.
+Kitty's continuing Presents reset that global timer, so xmonad could remain
+ready yet never receive its first opaque surface. Unmanaged surfaces are now
+submitted whenever no WM transaction is pending, one at a time, independent of
+application frame cadence. Startup and proof readiness also track the surface
+whose X11 focus was actually acknowledged instead of treating the presence of
+an external WM as proof that focus was applied.
+
+The same stable DMA-BUF retirement that satisfied visible startup did not set
+the older CPU-only terminal-content flag. The proof therefore never armed and
+the session deliberately skipped libinput polling. Focused content readiness
+now accepts either CPU visual detail or a stable retired Present belonging to
+the focused surface. Libinput is always drained: before proof readiness,
+pointer motion updates only the compositor-owned cursor while ordinary keys
+and buttons are discarded without entering the exact-text matcher or X11
+route. The installed gate now requires exact `sophia` input followed by routed
+pointer motion and one button. All decisions use opaque surfaces and generic
+presentation facts; Engine contains no Kitty-specific behavior.

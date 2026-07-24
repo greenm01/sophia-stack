@@ -177,12 +177,15 @@
                 break;
             }
         }
-        let input_routing_mode = physical_input_routing_mode(
+        let mut input_routing_mode = physical_input_routing_mode(
             primary_child_exited,
             focus.focused_surface(seat),
             input_surface,
             wm_session.as_ref().is_some_and(|wm| wm.shortcuts.is_some()),
         );
+        if config.expect_physical_text.is_some() && physical_input_ready_at.is_none() {
+            input_routing_mode = PhysicalInputRoutingMode::CursorOnly;
+        }
         if input_routing_mode != PhysicalInputRoutingMode::Suppressed
             && drain_physical_input!(input_routing_mode)
         {
@@ -230,11 +233,26 @@
                             metrics.cursor_max_motion_to_submit.max(started.elapsed());
                     }
                     cursor_dirty = false;
-                    if pointer_checksum.is_none() {
-                        pointer_checksum = Some(0);
+                    if !cursor_visible_reported {
                         println!(
                             "sophia_live_session_pointer schema=2 status=visible source=hardware_cursor"
                         );
+                        cursor_visible_reported = true;
+                    }
+                    if config.expect_physical_pointer
+                        && physical_input_completion_reported
+                        && input_pixel_change
+                        && pointer_phase_started_at.is_none()
+                    {
+                        pointer_checksum = Some(0);
+                        pointer_phase_started_at = Some(Instant::now());
+                        println!(
+                            "sophia_live_session_pointer schema=1 status=visible source=physical position=center"
+                        );
+                        println!(
+                            "sophia_live_session_pointer schema=1 status=ready source=physical action=select"
+                        );
+                        std::io::stdout().flush()?;
                     }
                 }
                 Ok(ClassicHardwareCursorUpdate::Hidden) => {
@@ -288,6 +306,20 @@
                                 .as_ref()
                                 .is_some_and(|native| runtime.stable_present(native, *transaction))
                     });
+            if input_content_surface != Some(surface)
+                && (cpu_visual_detail || retired_gpu_detail)
+            {
+                input_content_surface = Some(surface);
+                println!(
+                    "sophia_live_session_input_pipeline schema=2 status=content_ready source={}",
+                    if retired_gpu_detail {
+                        "stable_present_scanout"
+                    } else {
+                        "cpu_visual_detail"
+                    }
+                );
+                std::io::stdout().flush()?;
+            }
             if !startup_content_ready && (cpu_visual_detail || retired_gpu_detail) {
                 startup_content_ready = true;
                 println!(
@@ -302,6 +334,8 @@
             }
         }
         let focused_surface = focus.focused_surface(seat);
+        let focused_client_ready =
+            focused_surface.is_some() && applied_client_focus == focused_surface;
         let startup_frame_presented = native_scanout.as_ref().is_none_or(|native| {
             focused_surface.is_some_and(|surface| {
                 retired_present_surfaces

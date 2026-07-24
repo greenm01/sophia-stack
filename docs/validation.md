@@ -428,11 +428,13 @@ session:
 tools/start_sophia_xmonad_input_proof_tty3.sh
 ```
 
-Wait for the physical-input readiness marker, type `sophia`, and press Return.
-The command exits automatically only after the shell reports the exact result
-and a later native frame is presented. This diagnostic enables continuous
-pixel tracing; ordinary Kitty and xmonad sessions intentionally omit verbose
-per-frame EGL/X11 tracing to avoid perturbing latency.
+Wait for Kitty to finish its initial xmonad resize and show a prompt. Type
+`sophia`, press Return, wait one second, then move the pointer and click once.
+The command exits automatically only after the exact keyboard sequence reaches
+the terminal, a later native frame is presented, and physical pointer motion
+plus a button are routed. The diagnostic uses the ordinary reduced session
+evidence; verbose per-frame EGL/X11 tracing remains disabled so observation
+does not perturb the timing under test.
 
 The generic development runner still supports
 `tools/run_sophia_session.sh --wm=xmonad`; `--wm=native` selects the Sophia WM
