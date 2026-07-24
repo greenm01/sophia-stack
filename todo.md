@@ -254,7 +254,7 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   drained explicitly by the session owner.
 - [x] Remove synthetic committed-surface seeding; initial authority
   transactions pass normal Engine validation and commit.
-- [ ] Remove client-local X identifiers from Engine/session routing and replace
+- [x] Remove client-local X identifiers from Engine/session routing and replace
   free-form X trace strings with bounded, typed, redacted observations.
 
 ## Evidence-Driven Compatibility Follow-ups

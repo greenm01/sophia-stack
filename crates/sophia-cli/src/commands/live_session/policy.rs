@@ -28,16 +28,30 @@ fn physical_input_routing_mode(
     }
 }
 
-fn reconcile_initial_session_focus(
-    runtime: &LiveProductionVisualRuntime,
-    focus: &mut InputFocusState,
+struct InitialSessionFocusContext<'a> {
+    runtime: &'a LiveProductionVisualRuntime,
+    focus: &'a mut InputFocusState,
     seat: SeatId,
     wm_session_present: bool,
-    layout: &PersistentLiveLayout,
-    control_sender: &SyncSender<XAuthorityClientControlCommand>,
-    next_focus_control_transaction: &mut u64,
-    focused_client_control: &mut Option<(TransactionId, SurfaceId)>,
+    layout: &'a PersistentLiveLayout,
+    control_sender: &'a SyncSender<XAuthorityClientControlCommand>,
+    next_focus_control_transaction: &'a mut u64,
+    focused_client_control: &'a mut Option<(TransactionId, SurfaceId)>,
+}
+
+fn reconcile_initial_session_focus(
+    context: InitialSessionFocusContext<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let InitialSessionFocusContext {
+        runtime,
+        focus,
+        seat,
+        wm_session_present,
+        layout,
+        control_sender,
+        next_focus_control_transaction,
+        focused_client_control,
+    } = context;
     if focus.focused_surface(seat).is_some() {
         return Ok(());
     }
@@ -114,17 +128,31 @@ fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bo
         && (!batch.transactions.is_empty() || !batch.cpu_buffer_updates.is_empty())
 }
 
-fn execute_committed_session_actions(
-    config: &PersistentXtermSessionConfig,
-    xauthority: &std::path::Path,
-    children: &mut Vec<ManagedSessionChild>,
-    layout: &PersistentLiveLayout,
-    focus: &InputFocusState,
+struct SessionActionExecutionContext<'a> {
+    config: &'a PersistentXtermSessionConfig,
+    xauthority: &'a std::path::Path,
+    children: &'a mut Vec<ManagedSessionChild>,
+    layout: &'a PersistentLiveLayout,
+    focus: &'a InputFocusState,
     seat: SeatId,
-    control_sender: &SyncSender<XAuthorityClientControlCommand>,
-    control_ack_receiver: &Receiver<XAuthorityClientControlAck>,
+    control_sender: &'a SyncSender<XAuthorityClientControlCommand>,
+    control_ack_receiver: &'a Receiver<XAuthorityClientControlAck>,
+}
+
+fn execute_committed_session_actions(
+    context: SessionActionExecutionContext<'_>,
     actions: &mut VecDeque<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let SessionActionExecutionContext {
+        config,
+        xauthority,
+        children,
+        layout,
+        focus,
+        seat,
+        control_sender,
+        control_ack_receiver,
+    } = context;
     let mut retained = Vec::with_capacity(children.len());
     for mut child in children.drain(..) {
         let status = child.child.try_wait()?;

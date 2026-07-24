@@ -636,16 +636,16 @@ fn run_session_loop(
             }
             runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
-            reconcile_initial_session_focus(
+            reconcile_initial_session_focus(InitialSessionFocusContext {
                 runtime,
-                &mut focus,
+                focus: &mut focus,
                 seat,
-                wm_session.is_some(),
-                &layout,
+                wm_session_present: wm_session.is_some(),
+                layout: &layout,
                 control_sender,
-                &mut next_focus_control_transaction,
-                &mut focused_client_control,
-            )?;
+                next_focus_control_transaction: &mut next_focus_control_transaction,
+                focused_client_control: &mut focused_client_control,
+            })?;
         }
         if cursor_dirty
             && let (Some(native_scanout), Some(position)) =
@@ -1224,16 +1224,16 @@ fn run_session_loop(
                     application_surface_missing_since = None;
                     application_surface_gone_at = None;
                 }
-                reconcile_initial_session_focus(
+                reconcile_initial_session_focus(InitialSessionFocusContext {
                     runtime,
-                    &mut focus,
+                    focus: &mut focus,
                     seat,
-                    wm_session.is_some(),
-                    &layout,
+                    wm_session_present: wm_session.is_some(),
+                    layout: &layout,
                     control_sender,
-                    &mut next_focus_control_transaction,
-                    &mut focused_client_control,
-                )?;
+                    next_focus_control_transaction: &mut next_focus_control_transaction,
+                    focused_client_control: &mut focused_client_control,
+                })?;
                 if let Some((transaction, surface)) = layout.focus_to_apply.take() {
                     let decision = focus.focus_surface(seat, surface, runtime.committed_surfaces());
                     if decision == InputFocusDecision::Focused && wm_session.is_some() {
@@ -1354,16 +1354,16 @@ fn run_session_loop(
                     }
                     runtime_surfaces =
                         u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
-                    reconcile_initial_session_focus(
+                    reconcile_initial_session_focus(InitialSessionFocusContext {
                         runtime,
-                        &mut focus,
+                        focus: &mut focus,
                         seat,
-                        wm_session.is_some(),
-                        &layout,
+                        wm_session_present: wm_session.is_some(),
+                        layout: &layout,
                         control_sender,
-                        &mut next_focus_control_transaction,
-                        &mut focused_client_control,
-                    )?;
+                        next_focus_control_transaction: &mut next_focus_control_transaction,
+                        focused_client_control: &mut focused_client_control,
+                    })?;
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -1566,14 +1566,16 @@ fn run_session_loop(
             .into());
         }
         if execute_committed_session_actions(
-            config,
-            xauthority,
-            secondary_children,
-            &layout,
-            &focus,
-            seat,
-            control_sender,
-            control_ack_receiver,
+            SessionActionExecutionContext {
+                config,
+                xauthority,
+                children: secondary_children,
+                layout: &layout,
+                focus: &focus,
+                seat,
+                control_sender,
+                control_ack_receiver,
+            },
             &mut committed_session_actions,
         )? {
             logout_requested = true;
@@ -2090,4 +2092,3 @@ fn run_session_loop(
     }
     Ok(())
 }
-
