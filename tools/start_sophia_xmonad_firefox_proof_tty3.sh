@@ -10,10 +10,13 @@ Physical Firefox proof:
   3. Type sophia.
   4. Ctrl+A, Ctrl+C, Tab, Ctrl+V.
   5. Middle-click the full-page PRIMARY target.
-  6. Super+Space to resize.
-  7. Tab to the dialog button, Enter, then Enter to dismiss.
-  8. Ctrl+Q; relaunch with Super+F; confirm Kitty remains interactive; Ctrl+Q.
-  9. Super+Shift+Q for normal logout.
+  6. Scroll vertically over the Firefox page.
+  7. Super+Space to resize.
+  8. Super+J away from Firefox, then Super+J back to it.
+  9. Click the dialog button with the pointer, then Enter to dismiss.
+ 10. Ctrl+Q; relaunch with Super+F; confirm both Kitty windows remain
+     interactive; use Super+Shift+C on Firefox, then Ctrl+Q if needed.
+ 11. Super+Shift+Q for normal logout.
 Do not use Ctrl+Alt+Backspace in the normal proof run.
 INSTRUCTIONS
 exec "$ROOT_DIR/tools/start_sophia_tty3.sh" --firefox-m8-proof "$@"

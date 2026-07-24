@@ -303,9 +303,10 @@ Kitty-specific window-management behavior.
 Arm the independent guard when prompted. For the normal promotion capture,
 type in the initial Kitty and click-drag a selection; move the cursor across
 both outputs; use Super-Enter and type independently in the second Kitty;
-use Super-J to change focus and Super-Space to change layout; use Super-2 and
-Super-1 to leave and return to the workspace while confirming hidden windows
-receive no input; use Super-Shift-C to close a focused Kitty; then use
+use Super-J to change focus and Super-Space to change layout; use Super-2,
+type one harmless key while the workspace is empty, then use Super-1 to return
+while confirming the hidden window received no input; use Super-Shift-C to
+close a focused Kitty; then use
 Super-Shift-Q for normal logout. Do not use Ctrl-Alt-Backspace in that capture.
 After returning to TTY3, run:
 
@@ -357,9 +358,10 @@ tools/start_sophia_xmonad_firefox_proof_tty3.sh
 ```
 
 The launcher prints the exact interaction sequence. It uses the offline fixture
-and requires keyboard, `CLIPBOARD`, `PRIMARY`, resize, and dialog stages,
-two Firefox launches with status-zero exits, an independently interactive
-second Kitty, and normal xmonad logout. Verify and retain the run with:
+and requires keyboard, `CLIPBOARD`, `PRIMARY`, physical scroll, resize,
+focus-away/focus-return, and a pointer-opened dialog, two Firefox launches with
+status-zero exits, an independently interactive second Kitty, and normal
+xmonad logout. Verify and retain the run with:
 
 ```sh
 tools/verify_sophia_firefox_physical.sh

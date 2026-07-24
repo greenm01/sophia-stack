@@ -29,4 +29,18 @@ impl XCorePointerMapper {
         }
         Some((button, state))
     }
+
+    pub const fn map_axis_to_button(horizontal_v120: i32, vertical_v120: i32) -> Option<u8> {
+        if vertical_v120 < 0 {
+            Some(4)
+        } else if vertical_v120 > 0 {
+            Some(5)
+        } else if horizontal_v120 < 0 {
+            Some(6)
+        } else if horizontal_v120 > 0 {
+            Some(7)
+        } else {
+            None
+        }
+    }
 }

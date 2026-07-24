@@ -51,6 +51,9 @@ require_value_at_least() {
     [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
     (( actual >= minimum )) || fail "$key is $actual, expected at least $minimum"
 }
+line_number() {
+    grep -nEm1 "$1" "$2" | cut -d: -f1
+}
 
 require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
@@ -85,6 +88,18 @@ for action in \
         "^sophia_live_wm schema=1 status=physical_action_committed action=${action}$" \
         "$SESSION_LOG" "required physical WM action $action was not committed"
 done
+require_line '^sophia_live_wm schema=1 status=hidden_focus_cleared transaction=[0-9]+$' \
+    "$SESSION_LOG" "workspace-away did not clear Engine and X11 focus"
+require_line '^sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus$' \
+    "$SESSION_LOG" "no key was suppressed while the workspace had no focus"
+workspace_away_line="$(line_number 'status=physical_action_committed action=258$' "$SESSION_LOG")"
+focus_clear_line="$(line_number 'status=hidden_focus_cleared ' "$SESSION_LOG")"
+suppressed_key_line="$(line_number 'status=key_suppressed reason=no_focus$' "$SESSION_LOG")"
+workspace_return_line="$(line_number 'status=physical_action_committed action=257$' "$SESSION_LOG")"
+(( workspace_away_line < focus_clear_line
+    && focus_clear_line < suppressed_key_line
+    && suppressed_key_line < workspace_return_line )) ||
+    fail "hidden-workspace focus clearing and key suppression are out of order"
 require_line \
     '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
     "$SESSION_LOG" "two-output native ownership was not established"

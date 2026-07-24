@@ -8,7 +8,8 @@ printf '%s\n' \
     '  1. Type in Kitty; move across both outputs and click-drag a selection.' \
     '  2. Press Super+Enter and type independently in the second Kitty.' \
     '  3. Press Super+J to change focus and Super+Space to change layout.' \
-    '  4. Press Super+2, then Super+1, verifying hidden windows receive no input.' \
+    '  4. Press Super+2, type a harmless key while no window is visible, then' \
+    '     press Super+1 and verify the hidden window received no input.' \
     '  5. Press Super+Shift+C to close a focused Kitty.' \
     '  6. Press Super+Shift+Q for normal logout.' \
     'Do not press Ctrl+Alt+Backspace during this normal capture.'

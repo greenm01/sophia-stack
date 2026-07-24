@@ -101,6 +101,10 @@ pub enum XAuthorityControlCommand {
         transaction: TransactionId,
         surface: SurfaceId,
     },
+    ClearFocus {
+        transaction: TransactionId,
+        surface: SurfaceId,
+    },
     CloseSurface {
         transaction: TransactionId,
         surface: SurfaceId,
@@ -112,6 +116,7 @@ impl XAuthorityControlCommand {
         match self {
             Self::ConfigureSurface { transaction, .. }
             | Self::FocusSurface { transaction, .. }
+            | Self::ClearFocus { transaction, .. }
             | Self::CloseSurface { transaction, .. } => transaction,
         }
     }
@@ -120,6 +125,7 @@ impl XAuthorityControlCommand {
         match self {
             Self::ConfigureSurface { surface, .. }
             | Self::FocusSurface { surface, .. }
+            | Self::ClearFocus { surface, .. }
             | Self::CloseSurface { surface, .. } => surface,
         }
     }

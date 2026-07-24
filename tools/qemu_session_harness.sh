@@ -169,7 +169,9 @@ run_firefox_m8_interactions() {
     local keyboard_complete=false
     local clipboard_complete=false
     local primary_complete=false
+    local scroll_complete=false
     local resize_complete=false
+    local refocus_complete=false
     local dialog_complete=false
     wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=page_ready ' 0 800
     for _ in $(seq 1 10); do
@@ -239,6 +241,18 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage primary
     for _ in $(seq 1 10); do
+        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
+        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' 0 20; then
+            scroll_complete=true
+            break
+        fi
+    done
+    if [[ "$scroll_complete" != true ]]; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_stage_timeout stage=scroll" | tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    wait_for_firefox_stage scroll
+    for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+spc
         echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+spc phase=firefox-resize" | tee -a "$EVIDENCE_FILE"
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=resize ' 0 20; then
@@ -256,11 +270,27 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage resize
     for _ in $(seq 1 10); do
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+l
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" f6
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" tab
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ' 0 20; then
+            refocus_complete=true
+            break
+        fi
+    done
+    if [[ "$refocus_complete" != true ]]; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_stage_timeout stage=refocus" | tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    wait_for_firefox_stage refocus
+    for _ in $(seq 1 10); do
+        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 -4096 0 left
+        for _row in $(seq 1 4); do
+            "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 160 0 left
+            for _column in $(seq 1 4); do
+                "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 320 0 1 left
+                "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
+            done
+        done
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ' 0 20; then
             dialog_complete=true
             break
@@ -275,7 +305,7 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage dialog
-    echo "sophia_qemu_firefox_m8 schema=1 status=interactions_complete keyboard=true clipboard=true primary=true resize=true dialog=true" | tee -a "$EVIDENCE_FILE"
+    echo "sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true" | tee -a "$EVIDENCE_FILE"
 }
 
 cleanup() {

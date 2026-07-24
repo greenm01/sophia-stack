@@ -16,8 +16,18 @@ pub struct InputEventPacket {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputEventKind {
     PointerMotion,
-    PointerButton { button: u32, pressed: bool },
-    Key { keycode: u32, pressed: bool },
+    PointerButton {
+        button: u32,
+        pressed: bool,
+    },
+    PointerAxis {
+        horizontal_v120: i32,
+        vertical_v120: i32,
+    },
+    Key {
+        keycode: u32,
+        pressed: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

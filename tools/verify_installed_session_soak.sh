@@ -82,7 +82,7 @@ close_actions="$(
     echo "soak has $close_actions close actions; $minimum_firefox_actions required" >&2
     exit 1
 }
-grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=6 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
+grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
     "$session_log" || {
     echo "soak is missing the complete redacted Firefox interaction proof" >&2
     exit 1

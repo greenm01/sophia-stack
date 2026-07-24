@@ -8,6 +8,7 @@
   input, button { box-sizing: border-box; display: block; width: 100%; margin: 3vh 0; padding: 2vh; font: inherit; }
   #status { min-height: 2em; padding: 2vh; background: #284a78; }
   .primary-proof #primary { position: fixed; inset: 0; z-index: 10; margin: 0; }
+  .dialog-proof #dialog { position: fixed; inset: 0; z-index: 10; margin: 0; }
 </style>
 <main>
   <h1>Sophia Firefox offline proof</h1>
@@ -18,14 +19,16 @@
   <div id="status">waiting</div>
 </main>
 <script>
-  const stages = [16, 32, 48, 64, 80, 96];
+  const stages = [16, 32, 48, 64, 80, 96, 112, 128];
   let stage = 0;
+  let refocusArmed = false;
   const status = document.querySelector('#status');
   const source = document.querySelector('#source');
   let typed = '';
   function advance(label) {
     stage += 1;
     document.body.classList.toggle('primary-proof', stage === 2);
+    document.body.classList.toggle('dialog-proof', stage === 6);
     document.title = '0'.repeat(stages[stage]);
     status.textContent = label;
     document.body.style.background = `hsl(${stage * 47} 55% 24%)`;
@@ -38,18 +41,17 @@
     if (stage === 1 || stage === 2) {
       source.focus();
       source.select();
+    } else if (stage === 5 && refocusArmed) {
+      advance('refocus complete');
     }
+  });
+  addEventListener('blur', () => {
+    if (stage === 5) refocusArmed = true;
   });
   source.addEventListener('input', event => {
     if (stage === 0 && event.target.value === 'sophia') advance('keyboard complete');
   });
   addEventListener('keydown', event => {
-    if (stage === 4 && event.key === 'Enter') {
-      event.preventDefault();
-      alert('Sophia dialog proof');
-      advance('dialog complete');
-      return;
-    }
     if (stage !== 0 || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
     typed = (typed + event.key).slice(-6);
     if (typed === 'sophia') {
@@ -76,11 +78,14 @@
   document.querySelector('#primary').addEventListener('input', event => {
     if (stage === 2 && event.target.value === 'sophia') advance('primary complete');
   });
+  addEventListener('wheel', event => {
+    if (stage === 3 && event.deltaY !== 0) advance('scroll complete');
+  }, { passive: true });
   addEventListener('resize', () => {
-    if (stage === 3) advance('resize complete');
+    if (stage === 4) advance('resize complete');
   });
   document.querySelector('#dialog').addEventListener('click', () => {
-    if (stage === 4) {
+    if (stage === 6) {
       alert('Sophia dialog proof');
       advance('dialog complete');
     }

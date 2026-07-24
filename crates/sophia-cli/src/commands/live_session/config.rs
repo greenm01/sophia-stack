@@ -656,12 +656,14 @@ struct FirefoxM8StageProof {
 
 
 impl FirefoxM8StageProof {
-    const STAGES: [&'static str; 6] = [
+    const STAGES: [&'static str; 8] = [
         "loaded",
         "keyboard",
         "clipboard",
         "primary",
+        "scroll",
         "resize",
+        "refocus",
         "dialog",
     ];
 

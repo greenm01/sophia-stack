@@ -26,7 +26,7 @@ close_actions=$(tr ' ' '\n' <<<"$summary" | sed -n 's/^close_actions=//p')
     echo "M8 soak did not commit 60 close actions: ${close_actions:-missing}" >&2
     exit 1
 }
-grep -q '^sophia_firefox_m8 schema=1 status=complete stages=6 ' "$evidence"
+grep -q '^sophia_firefox_m8 schema=1 status=complete stages=8 ' "$evidence"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' "$evidence"
 grep -q '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' "$evidence"
 grep -q '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed$' "$evidence"

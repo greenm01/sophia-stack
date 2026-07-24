@@ -122,6 +122,12 @@ than adding speculative browser compatibility.
 
 - [x] Register an explicit Firefox application action in the guarded physical
   session and launch a local/offline deterministic page.
+- [x] Route protocol-neutral wheel-axis packets through Engine and translate
+  them into X11 core scroll events only at the X frontend; extend the
+  deterministic page and verifiers with scroll, refocus, and pointer-dialog
+  stages.
+- [x] Clear Engine and X11 focus atomically when a workspace hides the focused
+  surface, suppress no-focus keys, and require ordered physical evidence.
 - [ ] Require visible page rendering plus keyboard, pointer, scroll, resize,
   refocus, dialog open/close, and status-zero browser exit.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

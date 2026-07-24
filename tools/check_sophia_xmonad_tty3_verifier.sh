@@ -13,6 +13,8 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
 
 for mutation in \
     'status=physical_action_committed action=258' \
+    'status=hidden_focus_cleared ' \
+    'status=key_suppressed reason=no_focus' \
     'status=retired output=2 ' \
     'sophia_live_session_cursor schema=2 '; do
     grep -Fv "$mutation" "$SESSION" >"$TEMP_FILE"

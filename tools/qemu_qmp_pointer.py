@@ -35,8 +35,8 @@ def main():
             fail("pointer movement must be within +/-4096 and clicks within 0-4")
     if len(sys.argv) == 6:
         button_name = sys.argv[5]
-        if button_name not in ("left", "middle", "right"):
-            fail("BUTTON must be left, middle, or right")
+        if button_name not in ("left", "middle", "right", "wheel-up", "wheel-down"):
+            fail("BUTTON must be left, middle, right, wheel-up, or wheel-down")
     with QmpClient(socket_path) as qmp:
         send(qmp, [relative("x", dx), relative("y", dy)])
         for _ in range(clicks):

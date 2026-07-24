@@ -29,15 +29,15 @@ count() {
     fail "Firefox did not exit successfully twice"
 grep -Eq '^sophia_firefox_m8 schema=1 status=page_ready .* content=redacted$' \
     "$SESSION_LOG" || fail "offline Firefox page never became ready"
-for stage in loaded keyboard clipboard primary resize dialog; do
+for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
     [[ "$(count "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage ")" == 1 ]] ||
         fail "Firefox stage did not complete exactly once: $stage"
 done
 complete="$(
-    grep -E '^sophia_firefox_m8 schema=1 status=complete stages=6 ' "$SESSION_LOG" |
+    grep -E '^sophia_firefox_m8 schema=1 status=complete stages=8 ' "$SESSION_LOG" |
         tail -n 1
 )"
-[[ -n "$complete" ]] || fail "Firefox six-stage proof did not complete"
+[[ -n "$complete" ]] || fail "Firefox eight-stage proof did not complete"
 for field in selection_owner_changes selection_conversions; do
     value="$(
         for token in $complete; do
@@ -52,5 +52,7 @@ for field in selection_owner_changes selection_conversions; do
 done
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" || fail "protocol-error summary is missing or nonzero"
+grep -Eq '^sophia_live_session_pointer schema=3 status=axis_routed$' \
+    "$SESSION_LOG" || fail "physical scroll was not routed"
 
 echo "physical Firefox workflow verified: $SESSION_LOG"

@@ -9,7 +9,10 @@ use input::event::{
     Event as NativeLibinputEvent, EventTrait,
     device::DeviceEvent,
     keyboard::{KeyState, KeyboardEvent, KeyboardEventTrait},
-    pointer::{ButtonState, PointerEvent, PointerEventTrait},
+    pointer::{
+        Axis, ButtonState, PointerEvent, PointerEventTrait, PointerScrollEvent,
+        PointerScrollWheelEvent,
+    },
 };
 use sophia_protocol::{InputEventKind, Point};
 use std::os::fd::OwnedFd;
@@ -27,6 +30,34 @@ pub struct NativeLibinputEventReader {
 }
 
 impl NativeLibinputEventReader {
+    fn wheel_axis_packet(&mut self, event: PointerScrollWheelEvent) -> Option<InputEventPacket> {
+        let device = self.devices.pointer_device?;
+        let axis = |axis| {
+            if event.has_axis(axis) {
+                event
+                    .scroll_value_v120(axis)
+                    .round()
+                    .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+            } else {
+                0
+            }
+        };
+        let horizontal_v120 = axis(Axis::Horizontal);
+        let vertical_v120 = axis(Axis::Vertical);
+        if horizontal_v120 == 0 && vertical_v120 == 0 {
+            return None;
+        }
+        Some(self.event_packet(
+            device,
+            u64::from(event.time()),
+            InputEventKind::PointerAxis {
+                horizontal_v120,
+                vertical_v120,
+            },
+            Some(self.pointer_position),
+        ))
+    }
+
     pub fn new(libinput: input::Libinput, devices: NativeLibinputDeviceMap) -> Self {
         Self::new_with_policy(libinput, devices, NativeLibinputPolicyReport::default())
     }
@@ -167,6 +198,9 @@ impl NativeLibinputEventReader {
                     },
                     Some(self.pointer_position),
                 ))
+            }
+            NativeLibinputEvent::Pointer(PointerEvent::ScrollWheel(event)) => {
+                self.wheel_axis_packet(event)
             }
             NativeLibinputEvent::Keyboard(KeyboardEvent::Key(event)) => {
                 let device = self.devices.keyboard_device?;

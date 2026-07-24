@@ -61,10 +61,13 @@ impl Default for InputDeliveryState {
 struct InputObservationState {
     key_observed: bool,
     key_routed: bool,
+    key_suppressed_no_focus: bool,
     pointer_motion_observed: bool,
     pointer_motion_routed: bool,
     pointer_button_observed: bool,
     pointer_button_routed: bool,
+    pointer_axis_observed: bool,
+    pointer_axis_routed: bool,
     return_suppressed: bool,
 }
 

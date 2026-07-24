@@ -76,3 +76,21 @@ fn engine_focus_rejects_unknown_and_stale_surfaces() {
         FocusedInputRoute::NoFocus(_)
     ));
 }
+
+#[test]
+fn clearing_a_seat_focus_prevents_hidden_surface_keyboard_delivery() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(9, 1);
+    let committed = vec![committed(surface)];
+    let mut focus = InputFocusState::new();
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+
+    assert_eq!(focus.clear_focus(seat), Some(surface));
+    assert!(matches!(
+        focus.route_keyboard_event(key(seat), &committed),
+        FocusedInputRoute::NoFocus(_)
+    ));
+}

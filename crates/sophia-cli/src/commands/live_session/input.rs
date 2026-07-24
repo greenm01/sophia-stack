@@ -3,8 +3,11 @@ struct PhysicalInputRouteReport {
     events: usize,
     wm_actions: Vec<WmActionId>,
     keys_observed: usize,
+    keys_suppressed_no_focus: usize,
     pointer_buttons_observed: usize,
     pointer_buttons_routed: usize,
+    pointer_axes_observed: usize,
+    pointer_axes_routed: usize,
     keys_routed: usize,
     pointer_events: usize,
     pointer_routed: usize,
@@ -188,11 +191,14 @@ fn route_input_events(
         events: events.len(),
         wm_actions: Vec::new(),
         keys_observed: 0,
+        keys_suppressed_no_focus: 0,
         keys_routed: 0,
         pointer_events: 0,
         pointer_buttons_observed: 0,
+        pointer_axes_observed: 0,
         pointer_routed: 0,
         pointer_buttons_routed: 0,
+        pointer_axes_routed: 0,
         deliveries: Vec::new(),
         emergency_exit: false,
         return_suppressed: false,
@@ -227,10 +233,15 @@ fn route_input_events(
                     report.return_suppressed = true;
                     continue;
                 }
-                let FocusedInputRoute::Routed(event) =
-                    focus.route_keyboard_event(event, committed_surfaces)
-                else {
-                    continue;
+                let event = match focus.route_keyboard_event(event, committed_surfaces) {
+                    FocusedInputRoute::Routed(event) => event,
+                    FocusedInputRoute::NoFocus(_) => {
+                        report.keys_suppressed_no_focus =
+                            report.keys_suppressed_no_focus.saturating_add(1);
+                        continue;
+                    }
+                    FocusedInputRoute::StaleFocus(_)
+                    | FocusedInputRoute::UnsupportedEvent(_) => continue,
                 };
                 let Some(target_surface) = event.target_surface else {
                     continue;
@@ -280,7 +291,8 @@ fn route_input_events(
                 report.deliveries.push(delivery);
             }
             kind @ (sophia_protocol::InputEventKind::PointerMotion
-            | sophia_protocol::InputEventKind::PointerButton { .. }) => {
+            | sophia_protocol::InputEventKind::PointerButton { .. }
+            | sophia_protocol::InputEventKind::PointerAxis { .. }) => {
                 if matches!(
                     routing_mode,
                     PhysicalInputRoutingMode::Suppressed | PhysicalInputRoutingMode::ShortcutsOnly
@@ -292,9 +304,15 @@ fn route_input_events(
                 }
                 let is_button =
                     matches!(kind, sophia_protocol::InputEventKind::PointerButton { .. });
+                let is_axis =
+                    matches!(kind, sophia_protocol::InputEventKind::PointerAxis { .. });
                 if is_button {
                     report.pointer_buttons_observed =
                         report.pointer_buttons_observed.saturating_add(1);
+                }
+                if is_axis {
+                    report.pointer_axes_observed =
+                        report.pointer_axes_observed.saturating_add(1);
                 }
                 report.pointer_events = report.pointer_events.saturating_add(1);
                 if routing_mode == PhysicalInputRoutingMode::CursorOnly {
@@ -351,6 +369,9 @@ fn route_input_events(
                 report.pointer_routed = report.pointer_routed.saturating_add(1);
                 if is_button {
                     report.pointer_buttons_routed = report.pointer_buttons_routed.saturating_add(1);
+                }
+                if is_axis {
+                    report.pointer_axes_routed = report.pointer_axes_routed.saturating_add(1);
                 }
                 report.deliveries.push(delivery);
             }

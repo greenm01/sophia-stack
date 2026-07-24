@@ -39,6 +39,15 @@ fn evdev_pointer_mapping_preserves_core_button_state_order() {
 }
 
 #[test]
+fn protocol_neutral_axes_map_to_x11_core_scroll_buttons_at_the_frontend() {
+    assert_eq!(XCorePointerMapper::map_axis_to_button(0, -120), Some(4));
+    assert_eq!(XCorePointerMapper::map_axis_to_button(0, 120), Some(5));
+    assert_eq!(XCorePointerMapper::map_axis_to_button(-120, 0), Some(6));
+    assert_eq!(XCorePointerMapper::map_axis_to_button(120, 0), Some(7));
+    assert_eq!(XCorePointerMapper::map_axis_to_button(0, 0), None);
+}
+
+#[test]
 fn drawing_updates_fail_closed_for_cross_namespace_or_unknown_windows() {
     let owner = NamespaceId::from_raw(1);
     let other = NamespaceId::from_raw(2);
@@ -402,4 +411,3 @@ fn x_authority_codec_rejects_bad_magic_and_trailing_bytes() {
         Err(IpcCodecError::TrailingBytes(1))
     );
 }
-

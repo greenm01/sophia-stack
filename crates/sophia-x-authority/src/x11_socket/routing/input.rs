@@ -297,3 +297,126 @@ impl From<XAuthorityKeyEvent> for XAuthorityInputEvent {
         Self::Key(event)
     }
 }
+
+#[cfg(unix)]
+impl XServerFrontendRouteRegistry {
+    fn route_resolved_input(
+        &self,
+        namespace: NamespaceId,
+        client: XServerFrontendClientId,
+        surface_window: XResourceId,
+        target_window: Option<XResourceId>,
+        event: XAuthorityInputEvent,
+        delivery: Option<XAuthorityInputDeliveryId>,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let (xi_device, selected_type) = match event {
+            XAuthorityInputEvent::Key(key) => (3, if key.pressed { 2 } else { 3 }),
+            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                kind: XAuthorityPointerEventKind::Button { pressed, .. },
+                ..
+            }) => (2, if pressed { 4 } else { 5 }),
+            XAuthorityInputEvent::Pointer(_) => (2, 6),
+        };
+        let event_window = target_window.unwrap_or(surface_window);
+        let xi_event_type = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .xi_event_selected(
+                namespace,
+                client.raw(),
+                event_window,
+                xi_device,
+                selected_type,
+            )
+            .then_some(selected_type);
+        let transition_types: &[u16] = if xi_device == 3 { &[9, 10] } else { &[7, 8] };
+        let authority = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let xi_transition_mask = transition_types.iter().fold(0u16, |mask, event_type| {
+            if authority.xi_event_selected(
+                namespace,
+                client.raw(),
+                event_window,
+                xi_device,
+                *event_type,
+            ) {
+                mask | (1 << event_type)
+            } else {
+                mask
+            }
+        });
+        self.route_input(XAuthorityClientInputEvent {
+            client,
+            event,
+            target_window,
+            xi_event_type,
+            xi_transition_mask,
+            delivery,
+        })
+    }
+
+    fn route_is_frozen(
+        &self,
+        route: &XAuthorityRoutedInput,
+        namespace: NamespaceId,
+    ) -> Result<bool, XServerFrontendRouteError> {
+        let authority = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        Ok(match route.request.kind {
+            InputEventKind::Key { .. } => authority.keyboard_frozen(namespace),
+            InputEventKind::PointerMotion
+            | InputEventKind::PointerButton { .. }
+            | InputEventKind::PointerAxis { .. } => authority.pointer_frozen(namespace),
+        })
+    }
+
+    fn drain_thawed_input(&self) -> Result<usize, XServerFrontendRouteError> {
+        let queued = self
+            .frozen_input
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .len();
+        let mut routed = 0usize;
+        for _ in 0..queued {
+            let deferred = self
+                .frozen_input
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                .pop_front();
+            let Some(deferred) = deferred else { break };
+            let route = deferred.route;
+            let surface_route = self
+                .surfaces
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                .get(&route.request.target_surface)
+                .copied();
+            let Some(surface_route) = surface_route else {
+                self.send_input_delivery(
+                    deferred.client,
+                    route.delivery,
+                    XAuthorityInputDeliveryOutcome::RouteRejected,
+                )?;
+                continue;
+            };
+            if self.route_is_frozen(&route, surface_route.namespace)? {
+                self.frozen_input
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                    .push_back(XDeferredRoutedInput {
+                        client: deferred.client,
+                        route,
+                    });
+            } else {
+                self.route_engine_input(route)?;
+                routed = routed.saturating_add(1);
+            }
+        }
+        Ok(routed)
+    }
+}

@@ -18,7 +18,7 @@ if "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2>&
     echo "M8 mix verifier accepted missing Firefox PRIMARY evidence" >&2
     exit 1
 fi
-sed '/status=complete stages=6 /d' "$mix" > "$tmp"
+sed '/status=complete stages=8 /d' "$mix" > "$tmp"
 if "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2>&1; then
     echo "M8 mix verifier accepted missing Firefox selection evidence" >&2
     exit 1

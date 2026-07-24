@@ -770,117 +770,79 @@ impl XServerFrontendRouteRegistry {
                     time_msec,
                 })
             }
-        };
-        drop(pointers);
-        let (xi_device, selected_type) = match event {
-            XAuthorityInputEvent::Key(key) => (3, if key.pressed { 2 } else { 3 }),
-            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                kind: XAuthorityPointerEventKind::Button { pressed, .. },
-                ..
-            }) => (2, if pressed { 4 } else { 5 }),
-            XAuthorityInputEvent::Pointer(_) => (2, 6),
-        };
-        let event_window = target_window.unwrap_or(surface_route.window);
-        let xi_event_type = self
-            .input_authority
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .xi_event_selected(
-                surface_route.namespace,
-                client.raw(),
-                event_window,
-                xi_device,
-                selected_type,
-            )
-            .then_some(selected_type);
-        let transition_types: &[u16] = if xi_device == 3 { &[9, 10] } else { &[7, 8] };
-        let authority = self
-            .input_authority
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        let xi_transition_mask = transition_types.iter().fold(0u16, |mask, event_type| {
-            if authority.xi_event_selected(
-                surface_route.namespace,
-                client.raw(),
-                event_window,
-                xi_device,
-                *event_type,
-            ) {
-                mask | (1 << event_type)
-            } else {
-                mask
-            }
-        });
-        self.route_input(XAuthorityClientInputEvent {
-            client,
-            event,
-            target_window,
-            xi_event_type,
-            xi_transition_mask,
-            delivery: route.delivery,
-        })
-    }
-
-    fn route_is_frozen(
-        &self,
-        route: &XAuthorityRoutedInput,
-        namespace: NamespaceId,
-    ) -> Result<bool, XServerFrontendRouteError> {
-        let authority = self
-            .input_authority
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        Ok(match route.request.kind {
-            InputEventKind::Key { .. } => authority.keyboard_frozen(namespace),
-            InputEventKind::PointerMotion | InputEventKind::PointerButton { .. } => {
-                authority.pointer_frozen(namespace)
-            }
-        })
-    }
-
-    fn drain_thawed_input(&self) -> Result<usize, XServerFrontendRouteError> {
-        let queued = self
-            .frozen_input
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .len();
-        let mut routed = 0usize;
-        for _ in 0..queued {
-            let deferred = self
-                .frozen_input
-                .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                .pop_front();
-            let Some(deferred) = deferred else { break };
-            let route = deferred.route;
-            let surface_route = self
-                .surfaces
-                .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                .get(&route.request.target_surface)
-                .copied();
-            let Some(surface_route) = surface_route else {
-                self.send_input_delivery(
-                    deferred.client,
-                    route.delivery,
-                    XAuthorityInputDeliveryOutcome::RouteRejected,
-                )?;
-                continue;
-            };
-            if self.route_is_frozen(&route, surface_route.namespace)? {
-                self.frozen_input
+            InputEventKind::PointerAxis {
+                horizontal_v120,
+                vertical_v120,
+            } => {
+                if let Some(grab) = self
+                    .input_authority
                     .lock()
                     .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .push_back(XDeferredRoutedInput {
-                        client: deferred.client,
-                        route,
+                    .pointer_grab(surface_route.namespace)
+                {
+                    client = XServerFrontendClientId(grab.owner);
+                    target_window = Some(if grab.owner_events && client == surface_route.client {
+                        surface_route.window
+                    } else {
+                        grab.window
                     });
-            } else {
-                self.route_engine_input(route)?;
-                routed = routed.saturating_add(1);
+                }
+                let Some(button) =
+                    crate::XCorePointerMapper::map_axis_to_button(horizontal_v120, vertical_v120)
+                else {
+                    return self.send_input_delivery(
+                        client,
+                        route.delivery,
+                        XAuthorityInputDeliveryOutcome::RouteRejected,
+                    );
+                };
+                let state = self
+                    .xkb_worker
+                    .request(XkbWorkerCommand::Modifiers {
+                        seat: route.request.seat,
+                    })?
+                    .map_or(0, |(_, state)| state)
+                    | pointer.state();
+                let pointer_event = |pressed| {
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind: XAuthorityPointerEventKind::Button { button, pressed },
+                        surface: route.request.target_surface,
+                        root_x: clamp_input_coordinate(route.request.global_position.x),
+                        root_y: clamp_input_coordinate(route.request.global_position.y),
+                        event_x: clamp_input_coordinate(route.request.local_position.x),
+                        event_y: clamp_input_coordinate(route.request.local_position.y),
+                        state,
+                        time_msec,
+                    })
+                };
+                drop(pointers);
+                self.route_resolved_input(
+                    surface_route.namespace,
+                    client,
+                    surface_route.window,
+                    target_window,
+                    pointer_event(true),
+                    None,
+                )?;
+                return self.route_resolved_input(
+                    surface_route.namespace,
+                    client,
+                    surface_route.window,
+                    target_window,
+                    pointer_event(false),
+                    route.delivery,
+                );
             }
-        }
-        Ok(routed)
+        };
+        drop(pointers);
+        self.route_resolved_input(
+            surface_route.namespace,
+            client,
+            surface_route.window,
+            target_window,
+            event,
+            route.delivery,
+        )
     }
 
     fn route_control(

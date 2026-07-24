@@ -40,6 +40,10 @@ impl InputFocusState {
         before.saturating_sub(self.focused_surfaces.len())
     }
 
+    pub fn clear_focus(&mut self, seat: SeatId) -> Option<SurfaceId> {
+        self.focused_surfaces.remove(&seat)
+    }
+
     pub fn route_keyboard_event(
         &self,
         mut event: InputEventPacket,

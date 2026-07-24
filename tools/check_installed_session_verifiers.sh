@@ -21,7 +21,7 @@ if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200000 2 3; then
     echo "installed soak verifier accepted too few Firefox actions" >&2
     exit 1
 fi
-sed '/status=complete stages=6 /d' "$PASS" >"$TEMP_FILE"
+sed '/status=complete stages=8 /d' "$PASS" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
     echo "installed soak verifier accepted no Firefox interaction proof" >&2
     exit 1

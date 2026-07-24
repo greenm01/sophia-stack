@@ -338,6 +338,43 @@ fn spawn_x11_control_writer(
                     ));
                     records
                 }
+                XAuthorityControlCommand::ClearFocus { .. } => {
+                    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+                    {
+                        let mut runtime = runtime.lock().map_err(|_| {
+                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
+                        })?;
+                        if runtime.set_input_focus(namespace, root, 1).is_err() {
+                            channels.send_ack(
+                                client,
+                                XAuthorityControlAck {
+                                    transaction,
+                                    surface,
+                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                },
+                            )?;
+                            continue;
+                        }
+                    }
+                    let previous = XResourceId::new(
+                        focused_surface_window.swap(root.local.raw(), Ordering::AcqRel),
+                        1,
+                    );
+                    if previous == root {
+                        Vec::new()
+                    } else {
+                        vec![encode_x_client_event(
+                            byte_order,
+                            XClientEvent::Focus {
+                                sequence: event_sequence,
+                                focused: false,
+                                detail: 3,
+                                event: previous,
+                                mode: 0,
+                            },
+                        )]
+                    }
+                }
             };
 
             let mut stream = stream

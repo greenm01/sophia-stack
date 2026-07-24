@@ -110,6 +110,22 @@ fn routed_input_request_is_protocol_neutral_and_surface_targeted() {
 }
 
 #[test]
+fn pointer_axis_packet_uses_protocol_neutral_v120_units() {
+    let kind = InputEventKind::PointerAxis {
+        horizontal_v120: -120,
+        vertical_v120: 240,
+    };
+
+    assert_eq!(
+        kind,
+        InputEventKind::PointerAxis {
+            horizontal_v120: -120,
+            vertical_v120: 240,
+        }
+    );
+}
+
+#[test]
 fn routed_input_decision_carries_authority_rejection() {
     let decision = RoutedInputDecision {
         serial: 100,

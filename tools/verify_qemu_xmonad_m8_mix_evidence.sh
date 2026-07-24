@@ -31,8 +31,11 @@ for stage in loaded keyboard clipboard primary resize dialog; do
         exit 1
     }
 done
-grep -q '^sophia_qemu_firefox_m8 schema=1 status=interactions_complete keyboard=true clipboard=true primary=true resize=true dialog=true$' "$evidence"
-grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=6 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' "$evidence"
+grep -q '^sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true$' "$evidence"
+for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
+    grep -q "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage " "$evidence"
+done
+grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' "$evidence"
 for chord in meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+shift+1 meta_l+f meta_l+p; do
     grep -q "^sophia_qemu_xmonad_input schema=1 status=sent chord=$chord$" "$evidence" || {
         echo "M8 mix is missing chord $chord" >&2
