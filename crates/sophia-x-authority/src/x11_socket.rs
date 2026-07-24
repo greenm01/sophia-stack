@@ -27,13 +27,15 @@ use std::{
 #[cfg(unix)]
 use crate::{
     X_ATOM_NAME_WM_DELETE_WINDOW, X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN,
-    X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT, XAtomTable, XAuthorityCpuBufferUpdate,
-    XAuthorityObservedTransactionBatch, XAuthorityResponsePacket, XAuthorityRuntime, XByteOrder,
-    XClientEvent, XDispatchContext, XDispatchResult, XPropertyTable, XResourceId, XSetupFailure,
-    XSetupRequest, XSetupSuccess, XWireClientContext, decode_x11_core_request,
-    dispatch_x11_parse_error, dispatch_x11_wire_request, encode_x_client_event,
-    encode_x11_setup_failure, encode_x11_setup_success, parse_x11_setup_request,
-    try_emit_x_authority_observation, x11_setup_request_total_len,
+    X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT, X11DispatchObservation,
+    X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable, XAuthorityDri3FenceImport,
+    XAuthorityDri3PixmapImport, XAuthorityObservedTransactionBatch, XAuthorityPresentSubmission,
+    XAuthorityResponsePacket, XAuthorityRuntime, XByteOrder, XClientEvent, XDispatchContext,
+    XDispatchResult, XPropertyTable, XResourceId, XSetupFailure, XSetupRequest, XSetupSuccess,
+    XWireClientContext, decode_x11_core_request, dispatch_x11_parse_error,
+    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
+    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
+    x11_setup_request_total_len,
 };
 #[cfg(unix)]
 use sophia_protocol::{
@@ -1261,88 +1263,6 @@ struct X11CoreClientWorker {
 struct X11CoreClientWorkerAdmission {
     worker_id: u64,
     admission: ClientAdmissionId,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum X11ObservedRequestStage {
-    GlxQueryServerString,
-    GlxGetFbConfigs,
-    GlxCreateContext,
-    GlxCreateWindow,
-    Dri3PixmapFromBuffers,
-    PresentPixmap,
-    KeyboardMapping,
-    SelectionRequest,
-    DisconnectCleanup,
-    Other,
-}
-
-impl X11ObservedRequestStage {
-    pub const fn evidence_name(self) -> &'static str {
-        match self {
-            Self::GlxQueryServerString => "GLX:QueryServerString",
-            Self::GlxGetFbConfigs => "GLX:GetFBConfigs",
-            Self::GlxCreateContext => "GLX:CreateContext",
-            Self::GlxCreateWindow => "GLX:CreateWindow",
-            Self::Dri3PixmapFromBuffers => "DRI3:PixmapFromBuffers",
-            Self::PresentPixmap => "PRESENT:Pixmap",
-            Self::KeyboardMapping => "GetKeyboardMapping",
-            Self::SelectionRequest => "RequestSelection",
-            Self::DisconnectCleanup => "DisconnectCleanup",
-            Self::Other => "Other",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum X11ObservedDispatchFailure {
-    ParseRejected,
-}
-
-#[derive(Debug)]
-pub struct X11DispatchObservation {
-    pub client: XServerFrontendClientId,
-    pub resource_id_range: crate::XWireClientResourceRange,
-    pub sequence: u16,
-    pub major_opcode: u8,
-    pub request_stage: X11ObservedRequestStage,
-    pub failure: Option<X11ObservedDispatchFailure>,
-    pub result: XDispatchResult,
-    pub cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
-    pub received_fd_count: usize,
-    pub received_fds: Vec<OwnedFd>,
-    pub dri3_pixmap_import: Option<XAuthorityDri3PixmapImport>,
-    pub dri3_fence_import: Option<XAuthorityDri3FenceImport>,
-    pub present_submission: Option<XAuthorityPresentSubmission>,
-    pub released_dma_bufs: Vec<sophia_protocol::BufferHandle>,
-    pub released_fences: Vec<sophia_protocol::FenceHandle>,
-    pub server_reply_fd_count: usize,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityDri3PixmapImport {
-    pub pixmap: XResourceId,
-    pub descriptor: sophia_protocol::DmaBufDescriptor,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityDri3FenceImport {
-    pub fence: XResourceId,
-    pub handle: sophia_protocol::FenceHandle,
-    pub initially_triggered: bool,
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct XAuthorityPresentSubmission {
-    pub transaction: TransactionId,
-    pub surface: SurfaceId,
-    pub buffer: sophia_protocol::BufferHandle,
-    pub acquire_fence: Option<sophia_protocol::FenceHandle>,
-    pub idle_fence: Option<sophia_protocol::FenceHandle>,
 }
 
 #[cfg(unix)]
