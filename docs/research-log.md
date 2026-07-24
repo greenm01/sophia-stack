@@ -38,6 +38,8 @@ Completed evidence is archived in `research-log-archive.md`.
   `tracing`. Request-byte prefixes, file descriptors, raw XIDs, and key details
   are now redacted; diagnostics retain only opaque client IDs, protocol
   opcodes/counts, routing decisions, and bounded timing.
+- Converted the private legacy-WM opcode trace to `tracing`; the source-layout
+  ledger now has no direct-library-printing exceptions.
 - All workspace targets compile with all features. Focused protocol, Engine,
   renderer, backend, WM, and bridge tests pass. Strict workspace Clippy remains
   a tracked migration gate because pre-existing native renderer argument

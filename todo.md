@@ -215,7 +215,7 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
   production visual-runtime facade.
 - [ ] Move every remaining inline test to crate integration tests and split
   oversized test programs around shared `tests/support` fixtures.
-- [ ] Replace remaining library `println!`/`eprintln!` diagnostics with
+- [x] Replace remaining library `println!`/`eprintln!` diagnostics with
   structured, redacted `tracing` fields.
 - [x] Replace callback-owned retirement mutation with explicit Engine commit,
   protocol-feedback, and output-projection steps.

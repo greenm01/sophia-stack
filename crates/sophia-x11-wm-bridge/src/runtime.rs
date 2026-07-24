@@ -746,9 +746,10 @@ fn serve_legacy_wm(
         last_socket_activity = Instant::now();
         state.sequence = state.sequence.wrapping_add(1);
         if std::env::var_os("SOPHIA_X11_WM_TRACE").is_some() {
-            eprintln!(
-                "sophia-x11-wm-bridge: seq={} opcode={}",
-                state.sequence, header[0]
+            tracing::trace!(
+                "sophia_x11_wm_bridge schema=1 sequence={} opcode={}",
+                state.sequence,
+                header[0]
             );
         }
         dispatch_request(stream, &mut state, &legacy, header[0], header[1], &body)?;
