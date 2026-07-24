@@ -9,7 +9,8 @@ use super::{
     input_baseline_is_presented, physical_input_pixels_already_changed,
     physical_input_routing_mode, place_pointer_event_for_routing, pointer_offset_for_geometry,
     record_runtime_commits, route_input_events, session_protocol_errors_are_fatal,
-    successful_primary_exit_ends_session, take_settled_input_delivery_wait,
+    stable_gpu_frame_proves_post_input_pixels, successful_primary_exit_ends_session,
+    take_settled_input_delivery_wait,
 };
 use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
 use sophia_protocol::{
@@ -23,6 +24,8 @@ use sophia_x_authority::{XAuthorityClientSurfaceRoutes, XCoreKeyboardMapper};
 use std::io::Write;
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
+
+mod input_policy_tests;
 
 fn layer_snapshots_from_committed(
     committed_surfaces: &[CommittedSurfaceState],

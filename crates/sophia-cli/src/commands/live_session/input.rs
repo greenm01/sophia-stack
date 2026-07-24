@@ -310,9 +310,6 @@ fn route_input_events(
                     }
                     continue;
                 }
-                if !pointer_routing_enabled {
-                    continue;
-                }
                 let focused_surface = focus.focused_surface(event.seat);
                 if !place_pointer_event_for_routing(
                     &mut event,
@@ -321,6 +318,9 @@ fn route_input_events(
                     pointer,
                     pointer_buttons_only,
                 ) {
+                    continue;
+                }
+                if !pointer_routing_enabled {
                     continue;
                 }
                 let route = sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);

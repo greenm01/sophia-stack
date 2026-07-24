@@ -2565,3 +2565,17 @@ reached content readiness without satisfying the duplicate CPU gate. Baseline
 readiness now consumes the same focused-content fact used by startup and input
 arming; CPU composition remains an alternative source rather than an additional
 requirement. A regression fixes the GPU-ready/CPU-empty combination.
+
+The next installed run proved that exact physical `sophia` input reached the
+shell and all fourteen X11 events flushed. Thirty later authority batches and
+stable native Presents followed, but the post-input verifier still required a
+CPU-buffer checksum or generation change and timed out a GPU-only terminal.
+A stable retired Present on the exact proof surface after input delivery now
+provides the corresponding GPU presentation evidence.
+
+That run also exposed a separate cursor ordering error. Once text input was
+ready, pointer motion entered full routing mode, but application pointer
+delivery remained gated until the later pointer-proof phase. Cursor placement
+was incorrectly behind that delivery gate, freezing the compositor-owned
+hardware cursor. Placement now occurs before the application-delivery decision,
+so cursor motion remains responsive without prematurely routing pointer events.

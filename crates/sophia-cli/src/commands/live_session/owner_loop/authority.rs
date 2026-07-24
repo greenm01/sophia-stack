@@ -444,6 +444,14 @@
                     if let Some(retired) = service.retired_present {
                         let stable = runtime.stable_present(native_scanout, retired.transaction);
                         retired_present_surfaces.insert(retired.surface, retired.transaction);
+                        if stable_gpu_frame_proves_post_input_pixels(
+                            input_proof_started_at.is_some(),
+                            input_surface,
+                            retired.surface,
+                            stable,
+                        ) {
+                            input_pixel_change = true;
+                        }
                         println!(
                             "sophia_live_session_present schema=1 status=retired transaction={} surface={}",
                             retired.transaction.raw(),

@@ -126,6 +126,15 @@ fn input_baseline_is_presented(
     focused_content_ready || cpu_baseline_presented
 }
 
+fn stable_gpu_frame_proves_post_input_pixels(
+    input_delivery_complete: bool,
+    input_surface: Option<SurfaceId>,
+    retired_surface: SurfaceId,
+    stable: bool,
+) -> bool {
+    input_delivery_complete && stable && input_surface == Some(retired_surface)
+}
+
 fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bool {
     batch.removed_surfaces.is_empty()
         && batch.dma_buf_registrations.is_empty()
