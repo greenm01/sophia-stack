@@ -214,6 +214,8 @@ explicit migration ledger in `docs/source-layout-exceptions.txt`.
     and route-error records.
   - [x] Extract frontend client identity, setup authorization, admission, peer,
     and render-device provider contracts.
+  - [x] Split core and extension request dispatch into bounded protocol-family
+    owners behind the existing dispatch facade.
   - [x] Move the mutable route registry, connection workers, input writers,
     clipboard coordinator, and remaining state into their owning modules.
 - [ ] Split live-session configuration/policy, admission, WM/layout, input,

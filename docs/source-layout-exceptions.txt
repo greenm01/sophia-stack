@@ -1,6 +1,5 @@
 # Temporary legacy exceptions. Remove each entry when its domain split lands.
 large-source crates/sophia-cli/src/commands/live_session.rs
-large-source crates/sophia-x-authority/src/dispatch.rs
 large-source crates/sophia-x-authority/src/wire.rs
 large-source crates/sophia-cli/src/commands/x_authority.rs
 large-source crates/sophia-x-authority/src/client_output.rs
