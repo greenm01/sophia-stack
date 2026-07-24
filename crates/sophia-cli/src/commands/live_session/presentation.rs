@@ -158,30 +158,6 @@ fn production_authority_batch(
     }
 }
 
-#[cfg(test)]
-fn layer_snapshots_from_committed(
-    committed_surfaces: &[CommittedSurfaceState],
-) -> Vec<LayerSnapshot> {
-    committed_surfaces
-        .iter()
-        .enumerate()
-        .map(|(stack_rank, surface)| LayerSnapshot {
-            surface: surface.surface,
-            authority_local_id: None,
-            namespace: None,
-            stack_rank: u32::try_from(stack_rank).unwrap_or(u32::MAX),
-            geometry: surface.geometry,
-            source: surface.buffer,
-            damage: surface.damage.clone(),
-            opacity: 1.0,
-            crop: None,
-            transform: Transform::IDENTITY,
-            generation: surface.committed_generation,
-            resize_sync: ResizeSyncCapability::ImplicitOnly,
-        })
-        .collect()
-}
-
 fn renderer_cpu_buffer_update(
     update: &sophia_x_authority::XAuthorityCpuBufferUpdate,
 ) -> sophia_backend_live::LiveCpuBufferUpdate {
