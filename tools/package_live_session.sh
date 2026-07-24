@@ -45,6 +45,8 @@ install -m 755 tools/stop_sophia_xmonad_session.sh "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
 install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
+install -m 755 tools/record_installed_emergency_run.sh \
+    "$artifact/bin/sophia-record-emergency-run"
 install -m 755 tools/verify_installed_session_cycles.sh \
     "$artifact/bin/sophia-verify-cycles"
 install -m 755 tools/verify_installed_session_soak.sh \
@@ -55,6 +57,8 @@ install -m 755 tools/verify_sophia_xmonad_emergency_tty3.sh \
     "$artifact/bin/sophia-verify-emergency-run"
 install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
+install -m 755 tools/verify_installed_session_lifecycle.sh \
+    "$artifact/bin/sophia-verify-lifecycle"
 install -m 755 tools/verify_sophia_firefox_physical.sh \
     "$artifact/bin/sophia-verify-firefox-run"
 install -m 755 tools/record_sophia_firefox_physical_run.sh \

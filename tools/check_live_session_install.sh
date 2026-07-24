@@ -14,7 +14,7 @@ make_artifact() {
     install -d -m 755 "$artifact/bin" "$artifact/share/wayland-sessions"
     for command in \
         sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
-        sophia-record-run sophia-record-firefox-run sophia-verify-cycles \
+        sophia-record-run sophia-record-emergency-run sophia-record-firefox-run sophia-verify-cycles \
         sophia-verify-firefox-runs sophia-verify-soak; do
         case "$command" in
             sophia-status)
@@ -57,7 +57,7 @@ grep -Fq "Exec=$PREFIX/current/bin/sophia-firefox-proof" \
     "$SESSION_DIR/sophia-firefox-proof.desktop"
 for command in \
     sophia-session sophia-firefox-proof sophia-status sophia-stop sophia-rollback \
-    sophia-record-run sophia-record-firefox-run sophia-verify-cycles \
+    sophia-record-run sophia-record-emergency-run sophia-record-firefox-run sophia-verify-cycles \
     sophia-verify-firefox-runs sophia-verify-soak; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done

@@ -7,6 +7,9 @@ SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophi
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
+INSTALLED_SESSION="${SOPHIA_INSTALLED_SESSION:-false}"
+REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
+REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 if [[ "$SESSION_PROFILE" != xmonad && "$SESSION_PROFILE" != kitty ]]; then
@@ -14,12 +17,38 @@ if [[ "$SESSION_PROFILE" != xmonad && "$SESSION_PROFILE" != kitty ]]; then
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
-STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/sophia-${SESSION_PROFILE}-session-${UID}"
+runtime_root="${XDG_RUNTIME_DIR:-/tmp}"
+if [[ ! -t 0 ]]; then
+    echo "Run this interactively from a dedicated local TTY." >&2
+    exit 1
+fi
+tty_name="$(tty 2>/dev/null || true)"
+if [[ "$REQUIRE_RUNTIME_DIR" == true ]]; then
+    [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]] || {
+        echo "Installed Sophia requires an existing XDG_RUNTIME_DIR." >&2
+        exit 1
+    }
+    [[ "$XDG_RUNTIME_DIR" == /* && "$(stat -c %u "$XDG_RUNTIME_DIR")" == "$UID" ]] || {
+        echo "Installed Sophia requires an absolute, user-owned XDG_RUNTIME_DIR." >&2
+        exit 1
+    }
+fi
+if [[ "$REQUIRE_LOCAL_VT" == true && ! "$tty_name" =~ ^/dev/tty[0-9]+$ ]]; then
+    echo "Installed Sophia requires a local Linux VT; observed: $tty_name" >&2
+    exit 1
+fi
+if [[ "$INSTALLED_SESSION" == true
+    && ( "$BUILD_SESSION" != false || "$MANAGE_KEYD" != false ) ]]; then
+    echo "Installed Sophia forbids source builds and manual service control." >&2
+    exit 1
+fi
+STATE_DIR="$runtime_root/sophia-${SESSION_PROFILE}-session-${UID}"
 PID_FILE="$STATE_DIR/wrapper.pid"
 LOG_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/sophia/${SESSION_PROFILE}-session"
 GUARD_LOG="$LOG_DIR/input-guard.log"
 RECOVERY_LOG="$LOG_DIR/recovery.log"
 SESSION_LOG="$LOG_DIR/session.log"
+LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
 GUARD_ARMED_FILE="$STATE_DIR/input-guard.armed"
 GUARD_TRIGGERED_FILE="$STATE_DIR/input-guard.triggered"
 
@@ -27,6 +56,17 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"
+[[ ! -f "$LIFECYCLE_LOG" ]] || mv -f "$LIFECYCLE_LOG" "$LIFECYCLE_LOG.previous"
+: >"$LIFECYCLE_LOG"
+chmod 600 "$LIFECYCLE_LOG"
+lifecycle_phase() {
+    printf 'sophia_session_lifecycle schema=1 status=%s phase=%s installed=%s build=%s manual_service=%s runtime=%s vt=%s\n' \
+        "$1" "$2" "$INSTALLED_SESSION" "$BUILD_SESSION" "$MANAGE_KEYD" \
+        "$([[ "$runtime_root" == /tmp ]] && echo temporary || echo owner)" \
+        "$([[ "$tty_name" =~ ^/dev/tty[0-9]+$ ]] && echo local || echo other)" \
+        >>"$LIFECYCLE_LOG"
+}
+lifecycle_phase entering preflight
 if [[ -s "$PID_FILE" ]]; then
     previous_pid="$(<"$PID_FILE")"
     if [[ "$previous_pid" =~ ^[0-9]+$ ]] && kill -0 "$previous_pid" 2>/dev/null; then
@@ -35,11 +75,6 @@ if [[ -s "$PID_FILE" ]]; then
         exit 1
     fi
     rm -f "$PID_FILE"
-fi
-
-if [[ ! -t 0 ]]; then
-    echo "Run this interactively from a dedicated local TTY." >&2
-    exit 1
 fi
 
 live_named_processes() {
@@ -94,6 +129,7 @@ if [[ "$SESSION_PROFILE" == xmonad && ! -x "$SOPHIA_WM_BRIDGE_BIN" ]]; then
     echo "Sophia WM bridge is not executable: $SOPHIA_WM_BRIDGE_BIN" >&2
     exit 1
 fi
+lifecycle_phase complete preflight
 
 keyd_was_running=false
 tty_state=""
@@ -167,6 +203,8 @@ cleanup() {
             status=1
         fi
     fi
+    printf 'sophia_session_lifecycle schema=1 status=returned phase=handoff installed=%s exit_status=%s emergency=%s handoff=display_manager\n' \
+        "$INSTALLED_SESSION" "$status" "$emergency" >>"$LIFECYCLE_LOG"
     return "$status"
 }
 stop_from_signal() {
@@ -193,6 +231,7 @@ fi
 : >"$GUARD_LOG"
 chmod 600 "$GUARD_LOG"
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
+lifecycle_phase entering input_guard
 "$SOPHIA_BIN" sophia-session-input-guard \
     "${input_source_args[@]}" \
     --armed-file="$GUARD_ARMED_FILE" \
@@ -214,6 +253,7 @@ done
     exit 1
 }
 echo "Emergency input guard armed."
+lifecycle_phase complete input_guard
 
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Starting Sophia with experimental xmonad layout policy on $DISPLAY_NAME."
@@ -297,8 +337,11 @@ session_command=(
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off
 stty raw -echo
+lifecycle_phase entering graphics_takeover
 setsid "${session_command[@]}" > >(tee "$SESSION_LOG") 2>&1 &
 session_pid=$!
+lifecycle_phase complete graphics_takeover
+lifecycle_phase entering session
 set +e
 wait -n "$session_pid" "$guard_pid"
 status=$?

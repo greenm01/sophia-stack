@@ -24,6 +24,7 @@ done
 for profile in xmonad kitty; do
     state="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/$profile-session"
     printf '%s_logs=%s\n' "$profile" "$state"
+    tail -n 1 "$state/lifecycle.log" 2>/dev/null || true
     tail -n 1 "$state/recovery.log" 2>/dev/null || true
 done
 runtime_identity="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/installed-session/runtime-identity.log"

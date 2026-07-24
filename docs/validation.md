@@ -395,8 +395,11 @@ updates `/opt/sophia/current`, preserves the former target as
 The installed login command is `/usr/local/bin/sophia-session`. It performs no
 source build, repository lookup, display-manager takeover, or privileged
 service control. It emits the installed version and commit before entering the
-same guarded xmonad session lifecycle. Inspect or roll back the installation
-with:
+same guarded xmonad session lifecycle. It fails closed unless greetd supplies
+an existing, absolute, user-owned `XDG_RUNTIME_DIR` and a real local Linux VT.
+The lifecycle log records ordered preflight, input-guard, graphics-takeover,
+session, and bounded display-manager-handoff phases without application
+content. Inspect the latest phase or roll back the installation with:
 
 ```sh
 sophia-status
@@ -412,6 +415,9 @@ The artifact also installs repository-independent evidence commands:
 ```sh
 # After each complete normal physical run:
 sophia-record-run
+
+# After one separate Ctrl-Alt-Backspace recovery run:
+sophia-record-emergency-run
 
 # Require the latest three recorded runs to be clean and from one commit:
 sophia-verify-cycles 3
@@ -435,9 +441,13 @@ and dialog contract. `sophia-record-run` first applies the strict physical
 xmonad verifier, checks
 the running release identity and every packaged SHA-256 digest, and only then
 copies the session, guard, recovery, identity, and release manifest into a
-numbered, checksummed promotion-run directory. `sophia-verify-cycles` rejects
-mixed commits, modified evidence, emergency exits, incomplete input/WM/native
-cleanup, or fewer than the requested number of runs. `sophia-verify-soak`
+numbered, checksummed promotion-run directory. It also requires the ordered
+installed lifecycle and display-manager handoff. `sophia-record-emergency-run`
+applies the independent guard/owner recovery verifier and archives the
+emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived
+lifecycle and rejects mixed commits, modified evidence, emergency exits,
+incomplete input/WM/native cleanup, or fewer than the requested number of runs.
+`sophia-verify-soak`
 requires one clean schema-14 completion, the requested elapsed time and action
 counts, and zero WM, Present, callback, native, or cleanup debt.
 Each installed launch also rotates a content-free runtime identity record with

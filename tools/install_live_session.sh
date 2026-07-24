@@ -57,6 +57,7 @@ commands=(
     sophia-stop
     sophia-rollback
     sophia-record-run
+    sophia-record-emergency-run
     sophia-record-firefox-run
     sophia-verify-cycles
     sophia-verify-firefox-runs

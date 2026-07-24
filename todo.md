@@ -149,6 +149,13 @@ consecutive passing runs.
 
 ## Milestone 11: Installed Daily-Driver Candidate
 
+- [x] Make the installed launcher fail closed unless login supplies an
+  owner-controlled `XDG_RUNTIME_DIR` and a real local VT; prohibit source
+  builds and manual service control on that path.
+- [x] Record and verify ordered preflight, input-guard, graphics-takeover,
+  session, and display-manager-handoff phases for normal and emergency exits.
+- [x] Archive lifecycle and immutable runtime identity evidence with every
+  normal, Firefox, and emergency promotion capture.
 - [ ] Install versioned release binaries and a real greetd session entry; do not
   compile from source during login.
 - [ ] Replace development takeover behavior with explicit seat/VT lifecycle
