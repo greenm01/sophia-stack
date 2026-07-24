@@ -362,7 +362,7 @@ mod persistent_native_scanout {
                         let output = self.heads[index].output.id;
                         let cycle =
                             u64::try_from(self.heads[index].submissions).unwrap_or(u64::MAX);
-                        eprintln!(
+                        tracing::info!(
                             "sophia_live_native_page_flip schema=1 status=submitted output={} submission={} content={:?}",
                             output.raw(),
                             cycle,
@@ -446,7 +446,7 @@ mod persistent_native_scanout {
             match retire.status {
                 Status::RetiredAfterPageFlip => {
                     trace_live_native_lifecycle("kms_buffer_retired");
-                    eprintln!(
+                    tracing::info!(
                         "sophia_live_native_page_flip schema=1 status=retired output={} submission={}",
                         self.heads[index].output.id.raw(),
                         self.heads[index]
@@ -478,7 +478,7 @@ mod persistent_native_scanout {
                 .saturating_add(report.accepted);
             if report.accepted > 0 {
                 trace_live_native_lifecycle("page_flip_callback_accepted");
-                eprintln!(
+                tracing::info!(
                     "sophia_live_native_page_flip schema=1 status=callback_accepted output={} callbacks={} kernel_sequence={}",
                     self.heads[index].output.id.raw(),
                     report.accepted,
@@ -578,7 +578,7 @@ mod persistent_native_scanout {
         ) {
             let head = &mut self.heads[index];
             if let Some(superseded) = head.pending_content {
-                eprintln!(
+                tracing::warn!(
                     "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
                     head.output.id.raw(),
                     transaction.raw(),
@@ -714,7 +714,7 @@ mod persistent_native_scanout {
 
     fn trace_live_native_lifecycle(stage: &str) {
         if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
-            eprintln!("sophia_live_native_lifecycle schema=1 stage={stage}");
+            tracing::info!("sophia_live_native_lifecycle schema=1 stage={stage}");
         }
     }
 }
