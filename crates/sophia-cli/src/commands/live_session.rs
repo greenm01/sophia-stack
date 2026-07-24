@@ -46,10 +46,12 @@ mod authority_file;
 pub(super) mod input_guard;
 mod process_supervision;
 mod proof_artifacts;
+mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
 use process_supervision::{ManagedSessionChild, SessionProcessGuard, terminate_session_child};
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
+use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 
 const SESSION_AUTHORITY_CAPACITY: usize = 256;
 const SESSION_KEY_CAPACITY: usize = 64;
@@ -65,94 +67,6 @@ const SESSION_POINTER_DEVICE_RAW: u64 = 2;
 const PRIMARY_INPUT_PROOF_SCRIPT: &str = r#"printf 'type %s then Return: ' "$1"; IFS= read -r line; umask 077; printf '%s' "$line" > "$2"; printf '\nreceived:%s\n' "$line"; sleep 300"#;
 const SECONDARY_POINTER_WITNESS_SCRIPT: &str = r#"saved=$(stty -g); stty raw -echo; printf '\033[?1000h\033[?1006hPointer witness: click here\r\n'; dd bs=1 count=1 >/dev/null 2>&1; printf '\033[?1000l\033[?1006l'; stty "$saved"; printf 'Pointer input received\n'; sleep 300"#;
 static NEXT_SESSION_GENERATION: AtomicU64 = AtomicU64::new(1);
-
-struct LiveXAdmissionPolicy {
-    registry: Arc<Mutex<NamespaceRegistry>>,
-    namespace: NamespaceId,
-    session_user_id: u32,
-}
-
-impl XServerFrontendAdmissionPolicy for LiveXAdmissionPolicy {
-    fn admit(
-        &self,
-        request: XServerFrontendAdmissionRequest,
-    ) -> Result<ClientAdmissionContext, XServerFrontendAdmissionError> {
-        let peer = request
-            .peer_credentials
-            .ok_or(XServerFrontendAdmissionError::Denied)?;
-        if peer.user_id != self.session_user_id {
-            return Err(XServerFrontendAdmissionError::Denied);
-        }
-        self.registry
-            .lock()
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
-            .admit(self.namespace, request.setup_authentication)
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)
-    }
-
-    fn revoke(&self, context: ClientAdmissionContext) -> Result<(), XServerFrontendAdmissionError> {
-        if context.namespace.id != self.namespace {
-            return Err(XServerFrontendAdmissionError::Unavailable);
-        }
-        self.registry
-            .lock()
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
-            .revoke_admission(context.client_id)
-            .map(|_| ())
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)
-    }
-}
-
-struct LiveXRenderDeviceProvider {
-    device: std::fs::File,
-}
-
-impl XServerFrontendRenderDeviceProvider for LiveXRenderDeviceProvider {
-    fn open_render_device_fd(
-        &self,
-    ) -> Result<std::os::fd::OwnedFd, XServerFrontendRenderDeviceError> {
-        use std::os::fd::AsRawFd as _;
-
-        let proc_path = format!("/proc/self/fd/{}", self.device.as_raw_fd());
-        let selected_node = std::fs::read_link(&proc_path)
-            .map_err(|_| XServerFrontendRenderDeviceError::Unavailable)?;
-        let selected_name = selected_node
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or(XServerFrontendRenderDeviceError::Unavailable)?;
-
-        let render_node = if selected_name.starts_with("renderD") {
-            selected_node
-        } else {
-            let selected_device =
-                std::fs::canonicalize(format!("/sys/class/drm/{selected_name}/device"))
-                    .map_err(|_| XServerFrontendRenderDeviceError::Unavailable)?;
-            std::fs::read_dir("/sys/class/drm")
-                .map_err(|_| XServerFrontendRenderDeviceError::Unavailable)?
-                .filter_map(Result::ok)
-                .take(64)
-                .find_map(|entry| {
-                    let name = entry.file_name();
-                    let name = name.to_str()?;
-                    if !name.starts_with("renderD") {
-                        return None;
-                    }
-                    let device = std::fs::canonicalize(entry.path().join("device")).ok()?;
-                    (device == selected_device).then(|| std::path::Path::new("/dev/dri").join(name))
-                })
-                .ok_or(XServerFrontendRenderDeviceError::Unavailable)?
-        };
-
-        // A fresh render-node open gives each DRI3 client its own DRM file
-        // description and withholds the compositor's primary/KMS node.
-        std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(render_node)
-            .map(std::os::fd::OwnedFd::from)
-            .map_err(|_| XServerFrontendRenderDeviceError::OpenFailed)
-    }
-}
 
 enum SessionPhysicalInput {
     Threaded(sophia_backend_live::ThreadedNativeLibinputEventPoller),
