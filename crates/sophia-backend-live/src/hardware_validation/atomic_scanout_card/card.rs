@@ -5,31 +5,66 @@ use std::path::Path;
 use crate::prelude::*;
 
 #[derive(Debug)]
-pub struct RealAtomicScanoutCard(std::fs::File);
+enum RealAtomicScanoutCardFd {
+    Direct(std::fs::File),
+    #[cfg(feature = "seat-control")]
+    Seat(crate::LiveSeatDevice),
+}
+
+#[derive(Debug)]
+pub struct RealAtomicScanoutCard(RealAtomicScanoutCardFd);
 
 impl RealAtomicScanoutCard {
     pub(super) fn open_nonblocking(path: &Path) -> io::Result<Self> {
-        Ok(Self(
+        Ok(Self(RealAtomicScanoutCardFd::Direct(
             std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
                 .open(path)?,
-        ))
+        )))
+    }
+
+    #[cfg(feature = "seat-control")]
+    pub(super) fn open_with_seat(
+        opener: &crate::LiveSeatDeviceOpener,
+        path: &Path,
+    ) -> io::Result<Self> {
+        opener
+            .open(path)
+            .map(RealAtomicScanoutCardFd::Seat)
+            .map(Self)
+            .map_err(io::Error::other)
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self(self.0.try_clone()?))
+        match &self.0 {
+            RealAtomicScanoutCardFd::Direct(file) => {
+                Ok(Self(RealAtomicScanoutCardFd::Direct(file.try_clone()?)))
+            }
+            #[cfg(feature = "seat-control")]
+            RealAtomicScanoutCardFd::Seat(device) => {
+                Ok(Self(RealAtomicScanoutCardFd::Seat(device.try_clone()?)))
+            }
+        }
     }
 
     pub fn try_clone_file(&self) -> io::Result<std::fs::File> {
-        self.0.try_clone()
+        match &self.0 {
+            RealAtomicScanoutCardFd::Direct(file) => file.try_clone(),
+            #[cfg(feature = "seat-control")]
+            RealAtomicScanoutCardFd::Seat(device) => device.try_clone_file(),
+        }
     }
 }
 
 impl AsFd for RealAtomicScanoutCard {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        self.0.as_fd()
+        match &self.0 {
+            RealAtomicScanoutCardFd::Direct(file) => file.as_fd(),
+            #[cfg(feature = "seat-control")]
+            RealAtomicScanoutCardFd::Seat(device) => device.as_fd(),
+        }
     }
 }
 

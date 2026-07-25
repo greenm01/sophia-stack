@@ -105,6 +105,7 @@ impl SessionPhysicalInput {
 fn open_session_physical_input(
     config: &PersistentXtermSessionConfig,
     device_map: sophia_backend_live::NativeLibinputDeviceMap,
+    seat_opener: Option<sophia_backend_live::LiveSeatDeviceOpener>,
 ) -> Result<Option<SessionPhysicalInput>, Box<dyn std::error::Error>> {
     if !config.input_devices.is_empty() {
         return Ok(Some(SessionPhysicalInput::Threaded(
@@ -120,9 +121,15 @@ fn open_session_physical_input(
         .input_seat
         .as_deref()
         .map(|seat_name| {
-            sophia_backend_live::open_threaded_native_libinput_udev_poller(
-                seat_name, device_map, 64, 256,
-            )
+            if let Some(opener) = seat_opener {
+                sophia_backend_live::open_threaded_native_libinput_udev_poller_with_seat(
+                    seat_name, device_map, 64, 256, opener,
+                )
+            } else {
+                sophia_backend_live::open_threaded_native_libinput_udev_poller(
+                    seat_name, device_map, 64, 256,
+                )
+            }
             .map(SessionPhysicalInput::Threaded)
             .map_err(|error| error.into())
         })
@@ -155,15 +162,21 @@ pub(crate) fn run_persistent_xterm_session(
             controller.name()
         );
     }
-    let mut native_scanout = config
-        .native_scanout
-        .then(LiveProductionNativeScanout::new)
+    let mut native_scanout = seat_controller
+        .as_ref()
+        .map(|controller| LiveProductionNativeScanout::new_with_seat(&controller.device_opener()))
         .transpose()?;
     let device_map =
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
             .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
-    let mut physical_input = open_session_physical_input(&config, device_map)?;
+    let mut physical_input = open_session_physical_input(
+        &config,
+        device_map,
+        seat_controller
+            .as_ref()
+            .map(sophia_backend_live::LiveSeatController::device_opener),
+    )?;
     if let Some(physical_input) = physical_input.as_ref() {
         let policy = physical_input.policy_report();
         println!(

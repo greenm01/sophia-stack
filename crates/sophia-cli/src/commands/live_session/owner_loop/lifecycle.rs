@@ -26,7 +26,8 @@
             }
             if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
                 println!("sophia_live_seat schema=1 status=acquire_pending");
-                let mut resumed = LiveProductionNativeScanout::new()?;
+                let mut resumed =
+                    LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
                 if resumed.outputs() != outputs {
                     return Err("seat resume changed the physical output topology".into());
                 }
@@ -40,7 +41,11 @@
                 )
                 .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
                 .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
-                *physical_input = open_session_physical_input(config, device_map)?;
+                *physical_input = open_session_physical_input(
+                    config,
+                    device_map,
+                    Some(controller.device_opener()),
+                )?;
                 cursor_updates = CursorUpdateState::new(pointer.position.is_some());
                 seat_state = seat_state.acquired();
                 println!("sophia_live_seat schema=1 status=active source=resume");

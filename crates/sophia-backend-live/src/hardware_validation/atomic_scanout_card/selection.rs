@@ -103,8 +103,26 @@ pub fn select_real_atomic_scanout_cards() -> RealAtomicScanoutSelectionSet {
     select_real_atomic_scanout_cards_from_dev_dri(Path::new("/dev/dri"))
 }
 
+#[cfg(feature = "seat-control")]
+pub fn select_real_atomic_scanout_cards_with_seat(
+    opener: &crate::LiveSeatDeviceOpener,
+) -> RealAtomicScanoutSelectionSet {
+    select_real_atomic_scanout_cards_from_dev_dri_with(Path::new("/dev/dri"), |path| {
+        RealAtomicScanoutCard::open_with_seat(opener, path)
+    })
+}
+
 pub fn select_real_atomic_scanout_cards_from_dev_dri(
     dev_dri: &Path,
+) -> RealAtomicScanoutSelectionSet {
+    select_real_atomic_scanout_cards_from_dev_dri_with(dev_dri, |path| {
+        RealAtomicScanoutCard::open_nonblocking(path)
+    })
+}
+
+fn select_real_atomic_scanout_cards_from_dev_dri_with(
+    dev_dri: &Path,
+    mut open: impl FnMut(&Path) -> io::Result<RealAtomicScanoutCard>,
 ) -> RealAtomicScanoutSelectionSet {
     let Ok(entries) = std::fs::read_dir(dev_dri) else {
         return RealAtomicScanoutSelectionSet {
@@ -131,7 +149,7 @@ pub fn select_real_atomic_scanout_cards_from_dev_dri(
     let mut connected_connectors = 0usize;
     let mut incomplete = false;
     for path in candidates {
-        let Ok(card) = RealAtomicScanoutCard::open_nonblocking(&path) else {
+        let Ok(card) = open(&path) else {
             continue;
         };
         if !admit_atomic_scanout_client_capabilities(&card) {

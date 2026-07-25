@@ -2774,3 +2774,17 @@ stops input, drains and releases native scanout, and acknowledges suspension;
 acquisition rebuilds both hardware domains and repaints the retained scene.
 Kitty, X11 clients, focus, and Engine state remain above that hardware
 lifecycle, and Engine gains no application-specific branch.
+
+The first physical return from tty3 exposed an incomplete authority boundary.
+libseat delivered disable and enable correctly, but Sophia reopened
+`/dev/dri/card*` with ordinary filesystem access after enable. AMDGPU rejected
+the initialization with `EACCES`, and the session exited cleanly to greetd.
+Login-session ACLs are not the device authority once libseat owns the session.
+
+The live backend now runs the non-`Send` libseat handle on a dedicated broker
+thread. KMS card and udev-libinput opens request libseat device leases; backend
+objects receive duplicated descriptors while the broker retains and closes
+the lease token. Suspension drops input and KMS resources before acknowledging
+disable, and acquisition obtains fresh leases before rebuilding them. Direct
+device opens remain available only to standalone validation paths that do not
+participate in the managed live-session lifecycle.

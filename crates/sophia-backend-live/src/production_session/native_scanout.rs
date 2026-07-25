@@ -81,10 +81,22 @@ mod persistent_native_scanout {
 
     impl LiveProductionNativeScanout {
         pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+            Self::new_with_selection(crate::select_real_atomic_scanout_cards())
+        }
+
+        #[cfg(feature = "seat-control")]
+        pub fn new_with_seat(
+            opener: &crate::LiveSeatDeviceOpener,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            Self::new_with_selection(crate::select_real_atomic_scanout_cards_with_seat(opener))
+        }
+
+        fn new_with_selection(
+            selection: crate::RealAtomicScanoutSelectionSet,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
             let authority = crate::RealAtomicScanoutSmokeConfig::default_primary_output()
                 .ok_or("persistent native scanout config is invalid")?
                 .authority;
-            let selection = crate::select_real_atomic_scanout_cards();
             let mut sessions = selection.into_page_flip_sessions(authority);
             if sessions.status != crate::RealAtomicScanoutPageFlipSessionSetStatus::Ready {
                 return Err(format!(

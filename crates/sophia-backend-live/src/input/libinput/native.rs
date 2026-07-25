@@ -275,6 +275,43 @@ impl input::LibinputInterface for DirectLibinputInterface {
     }
 }
 
+#[cfg(feature = "seat-control")]
+pub struct SeatLibinputInterface {
+    opener: crate::LiveSeatDeviceOpener,
+    leases: std::collections::HashMap<std::os::fd::RawFd, crate::LiveSeatDevice>,
+}
+
+#[cfg(feature = "seat-control")]
+impl SeatLibinputInterface {
+    fn new(opener: crate::LiveSeatDeviceOpener) -> Self {
+        Self {
+            opener,
+            leases: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[cfg(feature = "seat-control")]
+impl input::LibinputInterface for SeatLibinputInterface {
+    fn open_restricted(&mut self, path: &Path, _flags: i32) -> Result<OwnedFd, i32> {
+        use std::os::fd::AsRawFd;
+
+        let lease = self.opener.open(path).map_err(|_| 13)?;
+        let fd = lease
+            .duplicate_owned_fd()
+            .map_err(|error| error.raw_os_error().unwrap_or(1))?;
+        self.leases.insert(fd.as_raw_fd(), lease);
+        Ok(fd)
+    }
+
+    fn close_restricted(&mut self, fd: OwnedFd) {
+        use std::os::fd::AsRawFd;
+
+        self.leases.remove(&fd.as_raw_fd());
+        drop(fd);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeLibinputOpenError {
     NoDevices,
@@ -369,6 +406,51 @@ pub fn open_native_libinput_udev_poller(
     libinput
         .udev_assign_seat(seat_name)
         .map_err(|_| NativeLibinputOpenError::SeatAssignmentFailed)?;
+    let mut reader = NativeLibinputEventReader::new_with_policy(
+        libinput,
+        devices,
+        NativeLibinputPolicyReport {
+            udev_managed: true,
+            ..NativeLibinputPolicyReport::default()
+        },
+    );
+    let _ = reader.read_ready_input_events(256);
+    let policy = reader.policy_report();
+    if policy.keyboards == 0 {
+        return Err(NativeLibinputOpenError::MissingKeyboard);
+    }
+    if policy.pointers == 0 && policy.touch_devices == 0 {
+        return Err(NativeLibinputOpenError::MissingPointer);
+    }
+    Ok(NativeLibinputEventPoller::new(
+        reader,
+        max_read_per_poll.clamp(1, 256),
+    ))
+}
+
+#[cfg(feature = "seat-control")]
+pub fn open_native_libinput_udev_poller_with_seat(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    opener: crate::LiveSeatDeviceOpener,
+) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
+    if seat_name.is_empty() || seat_name.len() > 64 || !seat_name.is_ascii() {
+        return Err(NativeLibinputOpenError::SeatAssignmentFailed);
+    }
+    let mut libinput = input::Libinput::new_with_udev(SeatLibinputInterface::new(opener));
+    libinput
+        .udev_assign_seat(seat_name)
+        .map_err(|_| NativeLibinputOpenError::SeatAssignmentFailed)?;
+    finish_udev_open(libinput, devices, max_read_per_poll)
+}
+
+#[cfg(feature = "seat-control")]
+fn finish_udev_open(
+    libinput: input::Libinput,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
     let mut reader = NativeLibinputEventReader::new_with_policy(
         libinput,
         devices,

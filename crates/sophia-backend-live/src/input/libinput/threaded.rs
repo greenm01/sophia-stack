@@ -8,6 +8,8 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::prelude::*;
 
+#[cfg(feature = "seat-control")]
+use super::open_native_libinput_udev_poller_with_seat;
 use super::{
     NativeLibinputDeviceMap, NativeLibinputOpenError, NativeLibinputPolicyReport,
     open_native_libinput_path_poller, open_native_libinput_udev_poller,
@@ -134,9 +136,27 @@ pub fn open_threaded_native_libinput_udev_poller(
     )
 }
 
+#[cfg(feature = "seat-control")]
+pub fn open_threaded_native_libinput_udev_poller_with_seat(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    queue_capacity: usize,
+    opener: crate::LiveSeatDeviceOpener,
+) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
+    open_threaded_native_libinput_poller(
+        NativeLibinputSource::SeatUdev(seat_name.to_owned(), opener),
+        devices,
+        max_read_per_poll,
+        queue_capacity,
+    )
+}
+
 enum NativeLibinputSource {
     Paths(Vec<std::path::PathBuf>),
     Udev(String),
+    #[cfg(feature = "seat-control")]
+    SeatUdev(String, crate::LiveSeatDeviceOpener),
 }
 
 fn open_threaded_native_libinput_poller(
@@ -165,6 +185,15 @@ fn open_threaded_native_libinput_poller(
             }
             NativeLibinputSource::Udev(seat) => {
                 open_native_libinput_udev_poller(&seat, devices, max_read_per_poll)
+            }
+            #[cfg(feature = "seat-control")]
+            NativeLibinputSource::SeatUdev(seat, opener) => {
+                open_native_libinput_udev_poller_with_seat(
+                    &seat,
+                    devices,
+                    max_read_per_poll,
+                    opener,
+                )
             }
         };
         let mut poller = match opened {
