@@ -1,7 +1,8 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct LiveProductionRevokedSuspendReport {
+pub struct LiveProductionNativeSuspendReport {
+    pub drained: bool,
     pub abandoned_scanouts: usize,
     pub skipped_present: Option<TransactionId>,
 }
@@ -12,21 +13,26 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
         timeout: Duration,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.drain_native_scanout(native_scanout, timeout)?;
-        self.outputs = LiveProductionOutputRuntimeSet::new(
-            outputs,
-            self.production.committed_surfaces(),
-            None,
-            None,
-        )?;
-        Ok(())
+    ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
+        if self.drain_native_scanout_until(native_scanout, timeout)? {
+            self.detach_native_scanout(outputs, true)
+        } else {
+            self.detach_native_scanout(outputs, false)
+        }
     }
 
     pub fn suspend_revoked_native_scanout(
         &mut self,
         outputs: &[sophia_engine::HeadlessOutput],
-    ) -> Result<LiveProductionRevokedSuspendReport, Box<dyn std::error::Error>> {
+    ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
+        self.detach_native_scanout(outputs, false)
+    }
+
+    fn detach_native_scanout(
+        &mut self,
+        outputs: &[sophia_engine::HeadlessOutput],
+        drained: bool,
+    ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         let abandoned_scanouts = self.outputs.native_scanout_in_flight_count();
         let skipped_present = self
             .present_scheduler
@@ -41,7 +47,8 @@ impl LiveProductionVisualRuntime {
             None,
             None,
         )?;
-        Ok(LiveProductionRevokedSuspendReport {
+        Ok(LiveProductionNativeSuspendReport {
+            drained,
             abandoned_scanouts,
             skipped_present,
         })
@@ -67,13 +74,24 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         timeout: Duration,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.drain_native_scanout_until(native_scanout, timeout)? {
+            return Err("persistent native scanout remained in flight during teardown".into());
+        }
+        Ok(())
+    }
+
+    fn drain_native_scanout_until(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        timeout: Duration,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let deadline = Instant::now() + timeout;
         while self.native_scanout_in_flight() && Instant::now() < deadline {
             self.retire_native_scanout(native_scanout)?;
             std::thread::sleep(Duration::from_millis(5));
         }
         if self.native_scanout_in_flight() {
-            return Err("persistent native scanout remained in flight during teardown".into());
+            return Ok(false);
         }
         let output_count = self.outputs.output_count();
         let production = &self.production;
@@ -93,7 +111,7 @@ impl LiveProductionVisualRuntime {
             },
         );
         let _ = production.run_outputs(&mut adapter)?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn run_native_idle(

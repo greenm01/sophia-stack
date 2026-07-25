@@ -25,7 +25,16 @@
     } = metrics;
 
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
-        runtime.drain_native_scanout(native_scanout, Duration::from_secs(2))?;
+        let report =
+            runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2))?;
+        println!(
+            "sophia_live_session_native_suspend schema=1 status=complete drained={} abandoned_scanouts={} skipped_present={}",
+            report.drained,
+            report.abandoned_scanouts,
+            report
+                .skipped_present
+                .map_or_else(|| "none".to_owned(), |transaction| transaction.raw().to_string()),
+        );
     }
     if let Some(runtime) = runtime.as_mut() {
         let report = runtime.shutdown_presentations();

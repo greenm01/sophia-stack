@@ -92,6 +92,7 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
         .expect("duplicate revoked suspension");
 
     assert_eq!(first.abandoned_scanouts, 0);
+    assert!(!first.drained);
     assert_eq!(first.skipped_present, None);
     assert_eq!(second, first);
     assert_eq!(runtime.output_count(), 1);

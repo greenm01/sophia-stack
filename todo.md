@@ -96,6 +96,9 @@ rather than borrowing the completed Kitty-only promotion.
 - [x] Quiesce native presentation before an owner-requested VT switch and make
   unsolicited seat revocation a nonfatal forced-detach path; physically prove
   the continuously presenting xmonad profile before promoting that profile.
+- [x] Bound quiescence when one physical output loses a page-flip callback:
+  prefer exact retirement, then perform one controlled pre-release detach
+  shared by VT preparation and final teardown instead of wedging the session.
 - [x] Release client-visible Ctrl/Alt state and clear WM shortcut modifiers
   before VT suspension; require delivery acknowledgement before switching.
 - [x] Treat an in-flight Present whose surface exits or advances before page

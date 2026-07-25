@@ -2877,3 +2877,20 @@ acknowledge those deliveries before KMS quiesce and `switch_session`. Failure
 to flush rejects the switch without ending the graphical session. Suspension
 still clears local keyboard state as a second boundary, but no longer relies
 on that local reset to repair client-visible XKB state.
+
+The next physical xmonad capture isolated a distinct multi-output retirement
+failure. Output 2 submitted its third startup frame but never produced another
+page-flip callback; output 1 continued submitting and retiring normally. Both
+VT attempts therefore reached the prepare boundary with one permanently
+in-flight output and timed out before `switch_session`. Emergency shutdown hit
+the same strict drain and returned status 1.
+
+Native suspension now has one data-oriented result for both authority states:
+whether all callbacks drained, how many scanouts were abandoned, and which
+submitted Present was settled as a Skip. While authority remains active the
+owner still attempts exact retirement first. A bounded timeout transitions to
+the same detached runtime representation used after unsolicited revocation,
+then drops the native leases before requesting the VT switch. Final teardown
+uses this operation as well. This keeps the missing kernel callback observable
+without allowing it to wedge VT control or emergency recovery, and avoids
+duplicating detach/Present-settlement policy across lifecycle callers.

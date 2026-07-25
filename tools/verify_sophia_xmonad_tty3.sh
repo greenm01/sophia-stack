@@ -131,7 +131,7 @@ done
 for record in \
     'sophia_live_session_vt schema=4 status=queued target=[0-9]+ modifier_releases=[2-4]' \
     'sophia_live_session_vt schema=4 status=preparing target=[0-9]+' \
-    'sophia_live_session_vt schema=4 status=quiesced target=[0-9]+' \
+    'sophia_live_session_vt schema=5 status=quiesced target=[0-9]+ drained=(true|false) abandoned_scanouts=[0-9]+ skipped_present=(none|[0-9]+)' \
     'sophia_live_session_vt schema=4 status=requested target=[0-9]+' \
     'sophia_live_seat schema=1 status=release_pending' \
     'sophia_live_seat schema=1 status=suspended' \
@@ -141,7 +141,7 @@ for record in \
 done
 queued_vt_line="$(line_number 'schema=4 status=queued target=' "$SESSION_LOG")"
 preparing_vt_line="$(line_number 'schema=4 status=preparing target=' "$SESSION_LOG")"
-quiesced_vt_line="$(line_number 'schema=4 status=quiesced target=' "$SESSION_LOG")"
+quiesced_vt_line="$(line_number 'schema=5 status=quiesced target=' "$SESSION_LOG")"
 requested_vt_line="$(line_number 'schema=4 status=requested target=' "$SESSION_LOG")"
 release_vt_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
 suspended_vt_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"

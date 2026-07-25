@@ -18,7 +18,7 @@ for mutation in \
     'status=hidden_focus_cleared ' \
     'status=key_suppressed reason=no_focus' \
     'status=retired output=2 ' \
-    'schema=4 status=quiesced target=' \
+    'schema=5 status=quiesced target=' \
     'schema=1 status=active source=resume' \
     'sophia_live_session_cursor schema=2 '; do
     grep -Fv "$mutation" "$SESSION" >"$TEMP_FILE"

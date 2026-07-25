@@ -43,16 +43,20 @@
                 {
                     runtime
                         .suspend_native_scanout(native, &outputs, Duration::from_secs(2))
-                        .map(|()| true)
                 } else {
-                    Ok(false)
+                    Ok(Default::default())
                 };
                 match quiesced {
-                    Ok(_) => {
+                    Ok(report) => {
                         native_scanout.take();
                         seat_release_prepared = true;
                         println!(
-                            "sophia_live_session_vt schema=4 status=quiesced target={terminal}"
+                            "sophia_live_session_vt schema=5 status=quiesced target={terminal} drained={} abandoned_scanouts={} skipped_present={}",
+                            report.drained,
+                            report.abandoned_scanouts,
+                            report
+                                .skipped_present
+                                .map_or_else(|| "none".to_owned(), |transaction| transaction.raw().to_string()),
                         );
                         match controller.switch_session(terminal) {
                             Ok(()) => {
