@@ -163,7 +163,7 @@ struct SessionActionExecutionContext<'a> {
     launch_admission_started_at: &'a mut Option<Instant>,
     startup_ready: bool,
     admission_pipeline_idle: bool,
-    stable_admission_surface: Option<SurfaceId>,
+    presented_admission_surface: Option<SurfaceId>,
     layout: &'a PersistentLiveLayout,
     focus: &'a InputFocusState,
     seat: SeatId,
@@ -183,7 +183,7 @@ fn execute_committed_session_actions(
         launch_admission_started_at,
         startup_ready,
         admission_pipeline_idle,
-        stable_admission_surface,
+        presented_admission_surface,
         layout,
         focus,
         seat,
@@ -191,7 +191,7 @@ fn execute_committed_session_actions(
         control_ack_receiver,
     } = context;
     if let Some(admission) =
-        launches.complete_if_settled(admission_pipeline_idle, stable_admission_surface)
+        launches.complete_if_presented(admission_pipeline_idle, presented_admission_surface)
     {
         *launch_admission_started_at = None;
         println!(

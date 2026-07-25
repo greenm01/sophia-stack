@@ -170,20 +170,10 @@
         }
         let admission_pipeline_idle =
             layout.pending.is_none() && layout.next_unmanaged_surface().is_none();
-        let stable_admission_surface = session_launches
+        let presented_admission_surface = session_launches
             .admission()
             .and_then(|admission| admission.observed_surface)
-            .filter(|surface| {
-                retired_present_surfaces
-                    .get(surface)
-                    .is_some_and(|transaction| {
-                        runtime.as_ref().is_some_and(|runtime| {
-                            native_scanout
-                                .as_ref()
-                                .is_none_or(|native| runtime.stable_present(native, *transaction))
-                        })
-                    })
-            });
+            .filter(|surface| retired_present_surfaces.contains_key(surface));
         if execute_committed_session_actions(
             SessionActionExecutionContext {
                 config,
@@ -193,7 +183,7 @@
                 launch_admission_started_at: &mut launch_admission_started_at,
                 startup_ready: startup_ready_reported || config.startup_ready_timeout.is_none(),
                 admission_pipeline_idle,
-                stable_admission_surface,
+                presented_admission_surface,
                 layout: &layout,
                 focus: &focus,
                 seat,

@@ -77,15 +77,15 @@ impl SessionLaunchQueue {
         false
     }
 
-    pub fn complete_if_settled(
+    pub fn complete_if_presented(
         &mut self,
         admission_pipeline_idle: bool,
-        stable_surface: Option<SurfaceId>,
+        presented_surface: Option<SurfaceId>,
     ) -> Option<SessionLaunchAdmission> {
         let admission = self.admission?;
         if !admission_pipeline_idle
             || admission.observed_surface.is_none()
-            || admission.observed_surface != stable_surface
+            || admission.observed_surface != presented_surface
         {
             return None;
         }

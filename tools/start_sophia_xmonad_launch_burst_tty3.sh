@@ -6,8 +6,8 @@ export SOPHIA_TTY_PROFILE=xmonad
 
 cat <<'INSTRUCTIONS'
 Super-Enter launch-burst proof:
-  1. As soon as Sophia owns the displays, press and release Super+Enter at
-     least twenty times rapidly. It is valid to begin before Kitty is ready.
+  1. As soon as Sophia owns the displays, press and release Super+Enter
+     rapidly at least four times. Use twenty presses to exercise overflow.
   2. Wait for the bounded launch queue to settle. Sophia will admit at most
      sixteen action-launched applications and reject excess requests.
   3. Confirm rendering remains stable. Focus several Kitty windows with

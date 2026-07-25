@@ -3075,8 +3075,10 @@ the startup surface rather than whichever later surface owns focus.
 
 Application launch pressure is also bounded independently from visual
 authority. The CLI session supervisor retains a sixteen-entry FIFO across
-active and queued action applications, waits for one opaque surface admission
-and stable presentation before spawning the next, and treats capacity, spawn,
-exit, or admission timeout as an application outcome rather than a fatal
-session error. Logout cancels pending work. Engine and the blind WM remain
-application-agnostic.
+active and queued action applications, waits for one opaque surface admission,
+matching pixel retirement, and a settled layout pipeline before spawning the
+next, and treats capacity, spawn, exit, or admission timeout as an application
+outcome rather than a fatal session error. Global scanout quiescence is not an
+admission condition: continuously presenting clients may supersede frames
+without invalidating the fact that the new surface was displayed. Logout
+cancels pending work. Engine and the blind WM remain application-agnostic.

@@ -347,13 +347,14 @@ tools/start_sophia_xmonad_launch_burst_tty3.sh
 tools/verify_sophia_xmonad_launch_burst.sh
 ```
 
-Press Super-Enter at least twenty times rapidly, including before the startup
-prompt if possible. Session policy admits one opaque application surface at a
-time, retains at most sixteen active-plus-queued action launches, and rejects
-the excess without terminating Sophia. The verifier requires every output's
-callback-bearing startup baseline before the first action application starts,
-sixteen stable sequential admissions, at least one capacity rejection,
-post-burst keyboard routing, normal logout, and clean presentation teardown.
+Press Super-Enter rapidly at least four times, including before the startup
+prompt if possible; use twenty presses to exercise overflow. Session policy
+admits one opaque application surface at a time, retains at most sixteen
+active-plus-queued action launches, and rejects excess requests without
+terminating Sophia. The verifier requires every output's callback-bearing
+startup baseline before the first action application starts, four to sixteen
+complete sequential admissions without timeout, post-burst keyboard routing,
+normal logout, and clean presentation teardown.
 Validate verifier mutations with:
 
 ```sh

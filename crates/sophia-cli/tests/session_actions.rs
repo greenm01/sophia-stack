@@ -39,10 +39,10 @@ fn launches_advance_only_after_the_observed_surface_is_stable() {
 
     let surface = SurfaceId::new(7, 1);
     assert!(queue.observe_surface(surface));
-    assert_eq!(queue.complete_if_settled(false, Some(surface)), None);
+    assert_eq!(queue.complete_if_presented(false, Some(surface)), None);
     assert_eq!(
         queue
-            .complete_if_settled(true, Some(surface))
+            .complete_if_presented(true, Some(surface))
             .map(|admission| admission.intent),
         Some(intent(1))
     );
