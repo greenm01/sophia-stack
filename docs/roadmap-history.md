@@ -4,6 +4,57 @@ This file archives completed and prototype roadmap items that previously lived
 in `todo.md`. Keep active work in `todo.md`; keep detailed rationale and
 validation evidence in `docs/research-log.md`.
 
+## 2026-07-25 Architecture Conformance And Domain Split
+
+- [x] Replaced application-specific session launch variants with opaque
+  configuration-owned application IDs and kept Engine policy protocol-neutral.
+- [x] Removed per-event input projection allocation and centralized
+  authority-layer projection under Engine.
+- [x] Split X authority state, service, routing, input, clipboard, wire,
+  dispatch, and client output into bounded domain owners behind stable facades.
+- [x] Split live-session policy, admission, WM/layout, input, presentation,
+  process supervision, owner-loop state, and tick phases by ownership.
+- [x] Split native scanout resource lifetime from composition execution and
+  legacy-WM framing from runtime supervision.
+- [x] Extracted visual diagnostics and asynchronous output servicing from the
+  production runtime facade.
+- [x] Moved production inline tests into integration tests and shared fixtures.
+- [x] Replaced direct library printing and free-form traces with structured,
+  bounded, redacted observations.
+- [x] Replaced callback-owned mutation and Present delivery with explicit
+  Engine projection and owner-drained queues.
+- [x] Removed synthetic committed-surface seeding and client-local X
+  identifiers from Engine/session routing.
+
+The source-layout audit now prevents new unreviewed large modules, inline
+production tests, and direct library printing. Reviewed exceptions remain in
+`docs/source-layout-exceptions.txt`. Future splits follow domain ownership and
+data flow rather than a strict line-count target.
+
+---
+
+## 2026-07-25 Physical Session Infrastructure
+
+- [x] Added a fail-closed installed launcher requiring an owner-controlled
+  runtime directory and real local VT.
+- [x] Recorded ordered preflight, input-guard, graphics-takeover, session, and
+  display-manager-handoff phases for normal and emergency exits.
+- [x] Added immutable runtime identity and lifecycle evidence to promotion
+  captures.
+- [x] Installed versioned release binaries and a greetd session entry without
+  compiling during login.
+- [x] Replaced development takeover assumptions with explicit seat/VT
+  ownership and bounded display-manager handoff.
+- [x] Added the configured Firefox action, protocol-neutral wheel routing,
+  deterministic physical verifier stages, and atomic no-focus behavior for
+  hidden workspaces.
+
+These mechanisms are established but do not constitute installed-session
+promotion. The active roadmap still requires a repository-independent release
+path and repeated physical workflow evidence.
+
+---
+
 ## 2026-07-24 Physical Kitty Recovery And Input Promotion
 
 - [x] Added a guarded two-output Kitty-only TTY3 launcher with independent

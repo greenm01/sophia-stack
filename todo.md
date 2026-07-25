@@ -23,22 +23,24 @@ physical input, focus authority, scene state, rendering, presentation, and
 scanout. X11 is the sole supported application protocol; the retired Wayland
 and XLibre prototypes remain under `research/` as architectural evidence.
 
-The following foundations are established:
+The development TTY profile now establishes:
 
-- Namespace admission, bounded portals, and text `CLIPBOARD` plus `PRIMARY`.
-- Concurrent native-X clients, XKB and XI2 input, focus/grabs, RandR,
-  software rendering, MIT-SHM, GLX, DRI3, Present, and mixed composition.
-- Engine-owned multi-output KMS presentation and a protocol-neutral default
-  hardware cursor.
-- Blind WM API, supervised xmonad bridge, workspaces, named application
-  actions, logout, and bridge recovery.
-- Unattended xmonad/Firefox mixed and soak evidence in two-output QEMU.
-- Guarded physical Kitty-only TTY3 startup, keyboard, pointer, presentation,
-  clean exit, and TTY/display-manager recovery.
+- Guarded two-output startup with automatic Kitty, keyboard, pointer, focus,
+  atomic xmonad resize, presentation, and clean teardown.
+- Bounded Super-Enter admission and four concurrently presented Kitty clients
+  without flashing in the latest focused physical captures.
+- Engine-owned KMS presentation, protocol-neutral cursor and input policy, a
+  blind WM API, and a supervised xmonad bridge.
+- Native-X Kitty and Firefox protocol coverage plus unattended two-output QEMU
+  mix and soak evidence.
 
-The missing product proof is one integrated physical xmonad desktop. Broader
-protocol compatibility, interactive-QEMU polish, and speculative compositor
-features do not precede that proof.
+This is still development evidence: the captured lifecycle reports
+`installed=false`, `build=true`, and `manual_service=true`. The immediate
+blocker is native presentation lifetime and latency. A stable scene currently
+recreates GBM/EGL targets and pipelines far too often, with observed page-flip
+and input dwell spikes. Installed-session promotion cannot begin until stable
+output epochs reuse rendering resources and the complete physical workflow is
+repeatable.
 
 ## Daily-Driver Promotion Contract
 
@@ -60,110 +62,48 @@ xmonad session proves all of the following:
 
 ## Milestone 9: Physical xmonad Session Promotion
 
-This is the active milestone. The Kitty-only physical gate is complete; xmonad
-remains disabled until its real-Kitty resize and physical-session gates pass.
+This is the active milestone. The Kitty-only physical baseline and the
+underlying xmonad protocol/resize corrections are established and archived.
+Promotion now follows the gates below in order.
 
-### 9.1 Real-Kitty xmonad resize regression
+### 9.1 Native presentation lifetime and latency
 
-- [x] Add a bounded automated session using the real Kitty binary, the generic
-  WM bridge, and real xmonad.
-- [x] Require WM hello/binding handshake, automatic Kitty map, Engine focus,
-  initial DRI3/Present frame, and zero client-visible protocol errors.
-- [x] Drive an xmonad layout resize and require the matching ConfigureNotify,
-  configure acknowledgement, updated Engine surface bounds, and a later Kitty
-  Present at the new size.
-- [x] Route exact shell input after the resize and require both the shell result
-  and a later presented frame.
-- [x] Close Kitty and xmonad normally and require zero live Present sources,
-  fences, transactions, pending WM work, pending input, or native cleanup.
-- [x] Retain a focused regression for every protocol correction; do not add
-  Kitty or xmonad branches to Engine.
-- [x] Keep resize Presents quarantined across asynchronous native-service
-  ticks, abort the complete queue on rollback, and use the bounded two-second
-  xmonad resize deadline.
-- [ ] Physically prove the four-Kitty Tall transition commits one full-height
-  pane plus three pixel-matched stack panes without exposing staging geometry.
-  - [x] Prevent primary-only mixed Presents from issuing empty native commits
-    on secondary outputs and suppress unchanged per-output CPU frames.
-  - [x] Make the focused verifier reject forced detach, abandoned scanouts,
-    empty submissions, callback imbalance, and incomplete cleanup evidence.
-  - [x] Preserve surfaces admitted while an older resize proposal is pending;
-    committing that proposal must not restore a stale pre-admission snapshot.
-  - [x] Require an event-bearing baseline flip before deduplicating unchanged
-    per-output content, and gate action launches on monotonic startup readiness.
-  - [ ] Physically pass the bounded Super-Enter burst proof with sequential
-    admissions, zero admission timeouts, and clean logout; use twenty presses
-    for the separate nonfatal capacity-rejection capture.
-  - [ ] Repeat the normal four-Kitty proof for three consecutive clean cycles.
+- [ ] Decouple exported scanout-buffer ownership from the persistent EGL
+  context, GL pipeline, and GBM target lifetime.
+- [ ] Retain per-output rendering resources across a stable
+  size/format/modifier epoch; recreate them only for topology change,
+  incompatible target change, or explicit bounded recovery.
+- [ ] Emit reduced recreation-reason and lifetime evidence without native
+  handles or application metadata.
+- [ ] Prove a stable physical workload has zero per-frame target or pipeline
+  recreation, zero launch-admission timeouts, and bounded input-to-submit and
+  presentation latency.
+- [ ] Retain focused rollback, resize, output-change, and recovery regressions
+  proving resources retire exactly once.
 
-Gate command and verifier must be documented in `docs/validation.md`; the
-physical xmonad result must receive its own compatibility/session evidence
-rather than borrowing the completed Kitty-only promotion.
+### 9.2 Complete physical xmonad workflow
 
-### 9.2 Guarded physical xmonad run
-
-- [x] Keep the proven Kitty-only profile available as a distinct installed
-  greetd baseline while labeling the unpromoted xmonad entry experimental.
-- [ ] Preserve full pc105 US shifted punctuation through XKB post-event state
-  and physically prove libseat-backed Ctrl-Alt-F1 through Ctrl-Alt-F12
-  suspend/resume while `K_OFF` is active.
-- [x] Physically prove the Kitty baseline survives repeated Ctrl-Alt-F3/F7
-  release/acquire cycles with its terminal, keyboard, pointer, and rendered
-  contents retained; keep the broader F1-through-F12 matrix above open.
-- [x] Quiesce native presentation before an owner-requested VT switch and make
-  unsolicited seat revocation a nonfatal forced-detach path; physically prove
-  the continuously presenting xmonad profile before promoting that profile.
-- [x] Bound quiescence when one physical output loses a page-flip callback:
-  prefer exact retirement, then perform one controlled pre-release detach
-  shared by VT preparation and final teardown instead of wedging the session.
-- [x] Release client-visible Ctrl/Alt state and clear WM shortcut modifiers
-  before VT suspension; require delivery acknowledgement before switching.
-- [x] Treat an in-flight Present whose surface exits or advances before page
-  flip retirement as a controlled Skip/Idle settlement; preserve newer Engine
-  state, retire resources exactly once, and queue a correction frame when the
-  last active GPU surface disappears.
-- [x] Keep physical cursor motion and global shortcuts active on an empty
-  xmonad desktop after the startup application exits; suppress ordinary keys
-  through the existing no-focus route and retain ordered verifier evidence.
-- [x] Seed conventional RandR output-property atoms and return bounded,
-  hardware-neutral property values; require the real-Kitty two-output smoke to
-  complete without unexpected X errors.
-- [x] Classify only RANDR `GetOutputProperty` probes using atom `None` as
-  expected client errors, retain strict nonzero `BadAtom` evidence, and verify
-  Super-Enter with its actual WM action identity.
-- [x] Remove global-authority quiet-time starvation from initial WM management;
-  continuous application Presents cannot postpone layout indefinitely.
-- [x] Require applied X11 focus and accept stable DMA-BUF presentation before
-  arming physical input; keep pre-proof cursor motion responsive.
-- [x] Replace transaction-only startup readiness with bounded GPU pixel
-  evidence plus callbacks from every owned output; perform one full native
-  rebuild when an output callback or visible mixed frame stalls.
-- [x] Extend the bounded installed proof to require exact keyboard input plus
-  routed pointer motion and a button.
-- [x] Give the live owner a bounded graceful emergency-cleanup window before
-  wrapper TERM fallback, record which path completed, and reject fallback-only
-  evidence in the physical emergency verifier.
-- [ ] Start from TTY3 with the independent recovery guard armed and capture the
-  launcher, guard, recovery, WM, frontend, and native-session logs.
-- [ ] Automatically present a focused Kitty on the primary output within eight
-  seconds, with nonzero mixed-composition evidence and `outputs_ready=2/2`.
-- [ ] Prove typing, pointer motion, click-drag selection, and Super-Enter
-  launching a second independently interactive Kitty.
-- [ ] Prove keyboard and pointer focus changes, tiling resize, workspace
-  switching, and no input delivery to hidden or unfocused windows.
-- [ ] Prove correct retained content, cursor behavior, and independent
-  page-flip retirement on both physical outputs.
-- [x] Emit mask-selected Present ConfigureNotify and require actual DMA-BUF or
-  CPU-buffer dimensions—not updated window geometry—as resize readiness.
-- [x] Queue partial resize Presents until the layout is ready, reject
-  mismatched pixels instead of treating clipping as resize completion, and
-  submit mixed/retained frames on every active output.
-- [ ] Physically prove three tiled Kitty windows remain simultaneously visible
-  without blinking before and after a TTY2/TTY3 round-trip.
-- [ ] Close both terminals and request xmonad logout; require normal return to
-  the originating TTY and successful greetd restoration.
-- [ ] Run emergency recovery separately and require bounded input flush, KMS
-  cleanup, exact TTY restoration, and a usable greetd session.
+- [ ] Capture the documented standard run from TTY3 with launcher, guard,
+  recovery, WM, frontend, renderer, and lifecycle evidence.
+- [ ] Require focused Kitty within eight seconds, `outputs_ready=2/2`, nonzero
+  mixed composition, and correct retained content on both outputs.
+- [ ] Prove typing, pointer motion, click-drag selection, focus changes,
+  Super-Enter, tiling resize, workspace switching, and no input delivery to
+  hidden or unfocused windows.
+- [ ] Prove the four-Kitty Tall layout has one full-height pane and three
+  pixel-matched stack panes with no staging geometry, flashing, or corruption.
+- [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
+- [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
+  capacity-overflow proof with bounded rejection and no session failure.
+- [ ] Prove three tiled Kitty windows remain usable before and after a
+  TTY2/TTY3 round-trip, with keyboard and pointer restored.
+- [ ] Validate full pc105 US shifted punctuation and libseat-backed
+  Ctrl-Alt-F1 through Ctrl-Alt-F12 suspend/resume while `K_OFF` is active.
+- [ ] Close applications and request xmonad logout; require zero pending input,
+  WM work, Presents, fences, scanouts, or cleanup debt, followed by correct TTY
+  and greetd restoration.
+- [ ] Run emergency recovery separately from the same commit and require
+  bounded input flush, KMS cleanup, exact TTY restoration, and usable greetd.
 
 Milestone 9 exits only when the automated resize regression and both physical
 normal/emergency captures pass from the same committed release.
@@ -176,27 +116,20 @@ QEMU already proves the bounded Firefox protocol workflow. This milestone
 tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
 than adding speculative browser compatibility.
 
-- [x] Register an explicit Firefox application action in the guarded physical
-  session and launch a local/offline deterministic page.
-- [x] Route protocol-neutral wheel-axis packets through Engine and translate
-  them into X11 core scroll events only at the X frontend; extend the
-  deterministic page and verifiers with scroll, refocus, and pointer-dialog
-  stages.
-- [x] Clear Engine and X11 focus atomically when a workspace hides the focused
-  surface, suppress no-focus keys, and require ordered physical evidence.
-- [ ] Require visible page rendering plus keyboard, pointer, scroll, resize,
-  refocus, dialog open/close, and status-zero browser exit.
+- [ ] Run the deterministic local Firefox workload beside two independently
+  usable Kitty windows.
+- [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
+  workspace hide/show, refocus, dialog open/close, and status-zero exit.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
-- [ ] Close and restart Firefox while both Kitty windows remain interactive and
-  retain their content, focus, and workspaces.
-- [ ] Verify browser failure or forced close cannot terminate the X frontend,
-  WM, or unrelated applications.
+- [ ] Close, restart, and force-close Firefox while both Kitty windows retain
+  their content, focus, workspaces, and interactivity.
 - [ ] Audit only the desktop services observed by this run—such as DBus,
   PipeWire, or portal helpers—and add session integration only for evidenced
   failures.
-- [ ] Retain zero unexpected X11 errors, pending actions/input, native resource
-  debt, and protocol-specific state below Engine.
+- [ ] Retain zero unexpected X11 errors, pending actions/input, native cleanup
+  debt, unrelated-client failure, or protocol-specific state below Engine.
+- [ ] Pass the complete workflow three consecutive times from one commit.
 
 Milestone 10 exits with one strict physical workflow verifier and three
 consecutive passing runs.
@@ -205,23 +138,14 @@ consecutive passing runs.
 
 ## Milestone 11: Installed Daily-Driver Candidate
 
-- [x] Make the installed launcher fail closed unless login supplies an
-  owner-controlled `XDG_RUNTIME_DIR` and a real local VT; prohibit source
-  builds and manual service control on that path.
-- [x] Record and verify ordered preflight, input-guard, graphics-takeover,
-  session, and display-manager-handoff phases for normal and emergency exits.
-- [x] Archive lifecycle and immutable runtime identity evidence with every
-  normal, Firefox, and emergency promotion capture.
-- [x] Install versioned release binaries and a real greetd session entry; do not
-  compile from source during login.
-- [x] Replace development takeover behavior with explicit seat/VT lifecycle
-  ownership and bounded display-manager handoff.
-- [ ] Remove ordinary-login dependence on manual `sudo`, manual process kills,
-  temporary paths, and repository-relative binaries.
+- [ ] Promote one immutable, versioned release and greetd entry that uses no
+  source build, repository-relative binary, temporary path, manual `sudo`,
+  process kill, or service repair during ordinary login.
 - [ ] Preserve the independent emergency path, a known-good fallback session,
   and a documented rollback procedure.
 - [ ] Add startup diagnostics that identify the installed version and exact
-  failing phase without exposing application content.
+  preflight, guard, takeover, session, or handoff failure without exposing
+  application content.
 - [ ] Validate three consecutive installed logins, normal logouts, one
   emergency recovery, and successful fallback-session login.
 - [ ] Document supported hardware, required services, known limitations, and
@@ -269,71 +193,6 @@ blocker. Work on it only when it shortens one of the active milestones.
 - [ ] Gate the supported interactive backend with visible pointer movement,
   terminal launch, typed text, focus change, application close, and clean
   manual shutdown.
-
-## Architecture Conformance Debt
-
-The source-layout audit now prevents new unreviewed large modules, inline
-production tests, and direct library printing. Existing exceptions remain an
-explicit migration ledger in `docs/source-layout-exceptions.txt`.
-
-- [x] Replace application-specific WM launch variants with opaque
-  `SessionApplicationId` values owned by session configuration.
-- [x] Remove per-event allocation and sorting from Engine input hit testing.
-- [x] Cache the visual runtime's input-layer projection instead of rebuilding a
-  vector for every input batch.
-- [x] Centralize authority-transaction layer projection under Engine and
-  preserve `NamespaceId` through backend templates.
-- [x] Split X authority state, connection service, routing, input, clipboard,
-  wire families, dispatch families, and client output behind the existing
-  public facades.
-  - [x] Extract owned, value-free dispatch observations and frontend import
-    records.
-  - [x] Extract passive routed-input, control, acknowledgement, supervision,
-    and route-error records.
-  - [x] Extract frontend client identity, setup authorization, admission, peer,
-    and render-device provider contracts.
-  - [x] Split core and extension request dispatch into bounded protocol-family
-    owners behind the existing dispatch facade.
-  - [x] Split core and extension wire decoding into bounded protocol-family
-    owners behind the existing wire facade.
-  - [x] Split reply and event encoding into bounded protocol-family owners
-    behind the existing client-output facade.
-  - [x] Split X authority smoke tooling into bounded workload and proof
-    modules behind the existing CLI command facade.
-  - [x] Move the mutable route registry, connection workers, input writers,
-    clipboard coordinator, and remaining state into their owning modules.
-- [x] Split live-session configuration/policy, admission, WM/layout, input,
-  presentation, process supervision, and the owner loop.
-  - [x] Extract Xauthority ownership, proof artifacts, X frontend adapters, and
-    process-group supervision.
-  - [x] Bundle owner-loop channels, mutable resources, startup evidence, and
-    physical-input routing state.
-  - [x] Extract configuration, WM/layout, input execution, presentation, and
-    the owner loop itself.
-    - [x] Extract configuration, WM/layout, input execution, presentation, and
-      the owner-loop facade into explicit domain files.
-    - [x] Split owner-loop state and per-tick phases into bounded owners.
-- [x] Split native scanout and the legacy WM bridge by ownership.
-  - [x] Separate passive DMA-BUF/composition records from GBM/EGL execution.
-  - [x] Separate legacy-WM wire framing from runtime supervision.
-  - [x] Extract scanout resource lifetime and composition execution.
-  - [x] Extract bridge server state and legacy request dispatch.
-- [x] Extract visual diagnostics and asynchronous output servicing from the
-  production visual-runtime facade.
-- [x] Move every remaining inline test to crate integration tests and split
-  oversized test programs around shared `tests/support` fixtures.
-  - [x] Move X-authority transport reduction tests through the public owned
-    observation boundary.
-- [x] Replace remaining library `println!`/`eprintln!` diagnostics with
-  structured, redacted `tracing` fields.
-- [x] Replace callback-owned retirement mutation with explicit Engine commit,
-  protocol-feedback, and output-projection steps.
-- [x] Replace callback-owned Present delivery with a bounded, owned queue
-  drained explicitly by the session owner.
-- [x] Remove synthetic committed-surface seeding; initial authority
-  transactions pass normal Engine validation and commit.
-- [x] Remove client-local X identifiers from Engine/session routing and replace
-  free-form X trace strings with bounded, typed, redacted observations.
 
 ## Evidence-Driven Compatibility Follow-ups
 
