@@ -21,7 +21,6 @@ use crate::gl::{
 use crate::{
     NativeCompositionPixelMetrics, NativeGbmRenderedScanoutContextStatus,
     NativeGbmScanoutBufferExportDetail, NativeGbmScanoutBufferExportStatus,
-    native_composition_pixel_metrics_from_rows,
 };
 
 include!("scanout/buffer.rs");

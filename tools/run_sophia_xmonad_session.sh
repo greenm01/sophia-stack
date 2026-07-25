@@ -323,7 +323,7 @@ session_environment=(
 if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then
     session_environment+=(
         SOPHIA_LIVE_SESSION_DIAGNOSTIC=1
-        SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous
+        SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1
         SOPHIA_X11_AUTHORITY_TRACE=1
     )
 fi

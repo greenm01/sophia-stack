@@ -48,7 +48,8 @@ fn detached_graphical_owner_does_not_attempt_direct_vt_activation() {
 
 #[test]
 fn kitty_gate_always_retains_one_shot_composition_pixel_evidence() {
-    assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
+    assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1"));
+    assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
     assert!(SESSION_LAUNCHER.contains("SOPHIA_SESSION_VERBOSE_TRACE:-false"));
 }
 

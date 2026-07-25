@@ -478,6 +478,7 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
             }
         };
     }
+    let mut pixel_metrics = None;
     let result = draw_result
         .and_then(|()| {
             target
@@ -487,6 +488,26 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
         })
         .and_then(|()| {
             trace_native_lifecycle("composition_finished");
+            if capture_pixels {
+                match target.pipeline.read_composition_pixels() {
+                    Ok(metrics) => {
+                        tracing::info!(
+                            "sophia_native_composition_frame schema=1 status=verified width={} height={} pixels={} nonzero_rgb_pixels={} checksum={}",
+                            target.width,
+                            target.height,
+                            metrics.pixels,
+                            metrics.nonzero_rgb_pixels,
+                            metrics.checksum,
+                        );
+                        pixel_metrics = Some(metrics);
+                    }
+                    Err(_) => tracing::warn!(
+                        "sophia_native_composition_frame schema=1 status=unverified width={} height={}",
+                        target.width,
+                        target.height,
+                    ),
+                }
+            }
             egl.swap_buffers(display, egl_surface)
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed)
         })
@@ -495,41 +516,9 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
             let buffer = unsafe { target.surface.gbm_surface().lock_front_buffer() }
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed)?;
             trace_native_lifecycle("composition_front_buffer_locked");
-            let pixel_metrics = if capture_pixels {
-                match post_swap_front_buffer_pixel_metrics(&buffer, target.width, target.height) {
-                    Ok(metrics) => {
-                        tracing::info!(
-                            "sophia_native_scanout_front_buffer schema=1 status=verified width={} height={} pitch={} format={:#x} modifier={:#x} planes={} handle={} pixels={} nonzero_rgb_pixels={} checksum={}",
-                            target.width,
-                            target.height,
-                            buffer.stride(),
-                            buffer.format() as u32,
-                            u64::from(buffer.modifier()),
-                            buffer.plane_count(),
-                            unsafe { buffer.handle().u32_ },
-                            metrics.pixels,
-                            metrics.nonzero_rgb_pixels,
-                            metrics.checksum,
-                        );
-                        Some(metrics)
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            "sophia_native_scanout_front_buffer schema=1 status=unverified width={} height={} pitch={} format={:#x} modifier={:#x} planes={} handle={} error={error}",
-                            target.width,
-                            target.height,
-                            buffer.stride(),
-                            buffer.format() as u32,
-                            u64::from(buffer.modifier()),
-                            buffer.plane_count(),
-                            unsafe { buffer.handle().u32_ },
-                        );
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+            // Locked front buffers are opaque scanout leases. Do not CPU-map
+            // them for diagnostics; future resource reuse must not inherit
+            // mapping side effects from this ownership boundary.
             let mut buffer = native_owned_scanout_buffer_from_bo(
                 target.width,
                 target.height,
@@ -541,23 +530,6 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
         });
     let _ = egl.make_current(display, None, None, None);
     result
-}
-
-fn post_swap_front_buffer_pixel_metrics(
-    buffer: &gbm::BufferObject<()>,
-    width: u32,
-    height: u32,
-) -> Result<NativeCompositionPixelMetrics, std::io::Error> {
-    buffer
-        .map(0, 0, width, height, |mapped| {
-            native_composition_pixel_metrics_from_rows(
-                mapped.buffer(),
-                width,
-                height,
-                mapped.stride(),
-            )
-        })?
-        .ok_or_else(|| std::io::Error::other("mapped front buffer has an invalid row layout"))
 }
 
 fn trace_composition_pixels(

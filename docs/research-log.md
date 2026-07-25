@@ -3251,7 +3251,7 @@ state-only releases for its residual key records; X authority updates XKB
 without resolving a surface or emitting an event to the newly focused client.
 This preserves global keyboard state without inventing an application target.
 
-## 2026-07-25: Composition Targets Follow Epoch Lifetime
+## 2026-07-25: Composition Reuse Requires A Lease-Aware Pool
 
 The successful keyboard proof still reported 201 composition-target and GL
 pipeline creations for 201 mixed exports. CPU and direct DMA-BUF paths already
@@ -3260,10 +3260,21 @@ front buffer. The mixed-composition path instead destroyed its target on every
 successful export even though the exported buffer retained an `Arc` lease on
 the GBM/EGL surface until scanout retirement.
 
-Mixed composition now follows the same lifetime rule as the other native
-paths: a successful export returns the context, surface, and GL pipeline to
-the per-output target slot. The exported front buffer independently retains
-the originating surface. Target destruction remains limited to an incompatible
-size/modifier epoch or explicit recovery. The four-Kitty verifier now requires
-zero target recreations and at most one retained composition target per output,
-rather than encoding per-frame destruction as the expected result.
+An attempted optimization returned the context, surface, and GL pipeline to
+the per-output target slot after a successful export. The exported front
+buffer independently retained the originating surface, and the verifier was
+temporarily changed to require zero target recreations.
+
+The first physical run of this lifetime change aborted on the third render
+after AMDGPU rejected the command stream. Moving startup proof from a
+post-swap CPU map to a pre-swap GL readback produced the same third-render
+abort, disproving front-buffer mapping as the root cause.
+
+The invalid lifetime is single-surface reuse while a front buffer from that
+GBM surface remains leased to KMS. Mixed composition therefore returns to the
+previous fail-safe rule: destroy its rendering target after each successful
+export while the exported buffer's independent surface lease survives through
+scanout retirement. Future reuse must use a bounded lease-aware pool and only
+select a target whose surface has no exported buffer owners. Verbose tracing
+still captures one representative composition frame instead of synchronously
+reading every frame.

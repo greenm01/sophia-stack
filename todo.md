@@ -36,11 +36,11 @@ The development TTY profile now establishes:
 
 This is still development evidence: the captured lifecycle reports
 `installed=false`, `build=true`, and `manual_service=true`. The immediate
-blocker is native presentation lifetime and latency. A stable scene currently
-recreates GBM/EGL targets and pipelines far too often, with observed page-flip
-and input dwell spikes. Installed-session promotion cannot begin until stable
-output epochs reuse rendering resources and the complete physical workflow is
-repeatable.
+blocker is native presentation lifetime and latency. Mixed composition uses
+fail-safe per-export GBM/EGL target retirement because reusing one surface
+while its scanout buffer remains leased makes AMDGPU reject the third render.
+Installed-session promotion requires lease-aware resource reuse and a
+repeatable physical workflow with bounded page-flip and input latency.
 
 ## Daily-Driver Promotion Contract
 
@@ -70,9 +70,9 @@ Promotion now follows the gates below in order.
 
 - [x] Decouple exported scanout-buffer ownership from the persistent EGL
   context, GL pipeline, and GBM target lifetime.
-- [x] Retain per-output rendering resources across a stable
-  size/format/modifier epoch; recreate them only for topology change,
-  incompatible target change, or explicit bounded recovery.
+- [ ] Retain composition rendering resources across a stable
+  size/format/modifier epoch with a bounded lease-aware target pool; never
+  render through a GBM surface while one of its buffers is leased to scanout.
 - [x] Emit reduced recreation-reason and lifetime evidence without native
   handles or application metadata.
 - [x] Remove blocking X11 configure/focus/close acknowledgements from the
