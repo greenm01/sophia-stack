@@ -527,5 +527,28 @@
             },
         );
     }
+    let control_metrics = session_controls.metrics();
+    println!(
+        "sophia_live_session_control schema=1 status=complete enqueued={} dispatched={} delivered={} rejected={} timed_out={} unexpected={} pending={} peak_depth={} max_queue_dwell_msec={} max_ack_msec={}",
+        control_metrics.enqueued,
+        control_metrics.dispatched,
+        control_metrics.delivered,
+        control_metrics.rejected,
+        control_metrics.timed_out,
+        control_metrics.unexpected,
+        session_controls.pending_len(),
+        control_metrics.peak_depth,
+        control_metrics.max_queue_dwell.as_millis(),
+        control_metrics.max_acknowledgement_latency.as_millis(),
+    );
+    if session_controls.pending_len() != 0
+        || control_metrics.enqueued != control_metrics.dispatched
+        || control_metrics.dispatched != control_metrics.delivered
+        || control_metrics.rejected != 0
+        || control_metrics.timed_out != 0
+        || control_metrics.unexpected != 0
+    {
+        return Err("persistent session controls did not drain cleanly".into());
+    }
     Ok(())
 }

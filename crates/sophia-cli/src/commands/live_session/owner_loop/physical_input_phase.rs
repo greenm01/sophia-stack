@@ -97,7 +97,7 @@ macro_rules! drain_physical_input {
                 let proposal =
                     wm.request_action(action, focus.focused_surface(seat), &layout, output)?;
                 if let Some(mut result) =
-                    layout.stage(proposal, control_sender, control_ack_receiver)?
+                    layout.stage(proposal, &mut session_controls)?
                 {
                     let committed =
                         result.update.commit.outcome == TransactionOutcome::Committed;
@@ -130,25 +130,15 @@ macro_rules! drain_physical_input {
                                 .client_routes
                                 .client_for_surface(surface)
                                 .ok_or("hidden WM focus has no X11 client route")?;
-                            control_sender.try_send(XAuthorityClientControlCommand {
+                            session_controls.enqueue(XAuthorityClientControlCommand {
                                 client,
                                 command: XAuthorityControlCommand::ClearFocus {
                                     transaction,
                                     surface,
                                 },
+                            }, Instant::now()).map_err(|error| {
+                                format!("failed to queue hidden-focus clearing: {error:?}")
                             })?;
-                            let acknowledgement =
-                                control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-                            if acknowledgement.client != client
-                                || acknowledgement.acknowledgement.transaction != transaction
-                                || acknowledgement.acknowledgement.surface != surface
-                                || acknowledgement.acknowledgement.outcome
-                                    != XAuthorityControlOutcome::Delivered
-                            {
-                                return Err(
-                                    "X Authority rejected hidden-focus clearing".into()
-                                );
-                            }
                             focus.clear_focus(seat);
                             applied_client_focus = None;
                             layout.focus_to_apply = None;
@@ -276,9 +266,11 @@ macro_rules! drain_physical_input {
 }
 
 loop {
+    service_session_controls!();
     let input_baseline_presented_before_wait = include!("lifecycle.rs");
     include!("authority.rs");
     include!("input_proof.rs");
+    service_session_controls!();
 }
 
 include!("completion.rs")

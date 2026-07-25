@@ -15,6 +15,7 @@ use sophia_cli::resize_transaction::{
 use sophia_cli::session_actions::{
     SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome,
 };
+use sophia_cli::session_control::{SESSION_CONTROL_CAPACITY, SessionControlQueue};
 use sophia_cli::session_keyboard::{VirtualTerminalChordAction, VirtualTerminalChordState};
 use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
@@ -31,7 +32,7 @@ use sophia_protocol::{
 use sophia_runtime::NamespaceRegistry;
 use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
-    XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlOutcome,
+    XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlKind,
     XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
     XCoreKeyboardMapper, XPresentCompletionMode, XServerFrontendAdmissionError,
     XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendConfig,
@@ -46,7 +47,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -74,7 +75,6 @@ include!("live_session/wm.rs");
 
 const SESSION_AUTHORITY_CAPACITY: usize = 256;
 const SESSION_KEY_CAPACITY: usize = 64;
-const SESSION_CONTROL_CAPACITY: usize = 32;
 const SESSION_INPUT_QUIET_MSEC: u64 = 500;
 const SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC: u64 = 15_000;
 const SESSION_PHYSICAL_PIXEL_TIMEOUT_MSEC: u64 = 5_000;
@@ -533,6 +533,17 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout.presentation_outputs,
             native_scanout.heads.len(),
         );
+        for head in native_scanout
+            .heads
+            .iter()
+            .filter(|head| head.initial_modeset_presented)
+        {
+            println!(
+                "sophia_live_native_startup_output schema=1 status=presented output={} proof=synchronous_modeset submission={}",
+                head.output.id.raw(),
+                head.submissions,
+            );
+        }
     }
 
     let (primary_child, secondary_children) = process.children_mut();

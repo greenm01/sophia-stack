@@ -453,6 +453,11 @@
             input_routing_mode = PhysicalInputRoutingMode::CursorOnly;
         }
         if input_routing_mode != PhysicalInputRoutingMode::Suppressed
+            && focus.focused_surface(seat) != applied_client_focus
+        {
+            input_routing_mode = PhysicalInputRoutingMode::ControlPlaneOnly;
+        }
+        if input_routing_mode != PhysicalInputRoutingMode::Suppressed
             && drain_physical_input!(input_routing_mode)
         {
             break;
@@ -511,9 +516,8 @@
                 seat,
                 wm_session_present: wm_session.is_some(),
                 layout: &layout,
-                control_sender,
+                session_controls: &mut session_controls,
                 next_focus_control_transaction: &mut next_focus_control_transaction,
-                focused_client_control: &mut focused_client_control,
             })?;
         }
         if cursor_updates.dirty

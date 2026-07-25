@@ -605,11 +605,6 @@ mod persistent_native_scanout {
             head.presented_submissions = head.submissions;
             head.presented_content = head.pending_content.take();
             head.initial_modeset_presented = true;
-            println!(
-                "sophia_live_native_startup_output schema=1 status=presented output={} proof=synchronous_modeset submission={}",
-                head.output.id.raw(),
-                head.submissions,
-            );
             Ok(())
         }
 

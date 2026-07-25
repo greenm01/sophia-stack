@@ -187,8 +187,7 @@
                 layout: &layout,
                 focus: &focus,
                 seat,
-                control_sender,
-                control_ack_receiver,
+                session_controls: &mut session_controls,
             },
             &mut committed_session_actions,
         )? {
@@ -205,7 +204,10 @@
                 std::io::stdout().flush()?;
             }
         }
-        if logout_requested && input_delivery.pending.is_empty() {
+        if logout_requested
+            && input_delivery.pending.is_empty()
+            && session_controls.pending_len() == 0
+        {
             break;
         }
         if input_presented_latency.is_none()

@@ -11,6 +11,7 @@ enum PhysicalInputRoutingMode {
     Suppressed,
     CursorOnly,
     ShortcutsOnly,
+    ControlPlaneOnly,
     Full,
 }
 
@@ -45,9 +46,8 @@ struct InitialSessionFocusContext<'a> {
     seat: SeatId,
     wm_session_present: bool,
     layout: &'a PersistentLiveLayout,
-    control_sender: &'a SyncSender<XAuthorityClientControlCommand>,
+    session_controls: &'a mut SessionControlQueue,
     next_focus_control_transaction: &'a mut u64,
-    focused_client_control: &'a mut Option<(TransactionId, SurfaceId)>,
 }
 
 fn reconcile_initial_session_focus(
@@ -59,9 +59,8 @@ fn reconcile_initial_session_focus(
         seat,
         wm_session_present,
         layout,
-        control_sender,
+        session_controls,
         next_focus_control_transaction,
-        focused_client_control,
     } = context;
     if focus.focused_surface(seat).is_some() {
         return Ok(());
@@ -83,19 +82,15 @@ fn reconcile_initial_session_focus(
     *next_focus_control_transaction = next_focus_control_transaction
         .checked_add(1)
         .ok_or("initial X11 focus transaction exhausted")?;
-    control_sender
-        .try_send(XAuthorityClientControlCommand {
+    session_controls
+        .enqueue(XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction,
                 surface: surface.surface,
             },
-        })
-        .map_err(|error| match error {
-            TrySendError::Full(_) => "initial X11 focus control queue is full",
-            TrySendError::Disconnected(_) => "initial X11 focus control queue is disconnected",
-        })?;
-    *focused_client_control = Some((transaction, surface.surface));
+        }, Instant::now())
+        .map_err(|error| format!("failed to queue initial X11 focus: {error:?}"))?;
     Ok(())
 }
 
@@ -167,8 +162,7 @@ struct SessionActionExecutionContext<'a> {
     layout: &'a PersistentLiveLayout,
     focus: &'a InputFocusState,
     seat: SeatId,
-    control_sender: &'a SyncSender<XAuthorityClientControlCommand>,
-    control_ack_receiver: &'a Receiver<XAuthorityClientControlAck>,
+    session_controls: &'a mut SessionControlQueue,
 }
 
 fn execute_committed_session_actions(
@@ -187,8 +181,7 @@ fn execute_committed_session_actions(
         layout,
         focus,
         seat,
-        control_sender,
-        control_ack_receiver,
+        session_controls,
     } = context;
     if let Some(admission) =
         launches.complete_if_presented(admission_pipeline_idle, presented_admission_surface)
@@ -253,27 +246,15 @@ fn execute_committed_session_actions(
                     "sophia_live_wm schema=1 status=close_routed transaction={} target=surface surface={surface:?} client={client:?}",
                     transaction.raw()
                 );
-                control_sender.try_send(XAuthorityClientControlCommand {
+                session_controls.enqueue(XAuthorityClientControlCommand {
                     client,
                     command: XAuthorityControlCommand::CloseSurface {
                         transaction,
                         surface,
                     },
+                }, Instant::now()).map_err(|error| {
+                    format!("failed to queue polite close control: {error:?}")
                 })?;
-                let acknowledgement =
-                    control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-                if acknowledgement.client != client
-                    || acknowledgement.acknowledgement.transaction != transaction
-                    || acknowledgement.acknowledgement.surface != surface
-                    || acknowledgement.acknowledgement.outcome
-                        != XAuthorityControlOutcome::Delivered
-                {
-                    return Err(format!(
-                        "X Authority rejected polite close: {:?}",
-                        acknowledgement.acknowledgement.outcome
-                    )
-                    .into());
-                }
             }
             WmSessionAction::Logout => {
                 logout = true;

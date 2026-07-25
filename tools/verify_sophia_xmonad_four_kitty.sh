@@ -97,6 +97,25 @@ grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" ||
     fail "session recorded an unexpected X protocol error"
+mapfile -t session_control_records < <(
+    grep -E '^sophia_live_session_control schema=1 status=complete ' "$SESSION_LOG"
+)
+(( ${#session_control_records[@]} == 1 )) ||
+    fail "expected one session-control completion record"
+session_control="${session_control_records[0]}"
+for assignment in rejected=0 timed_out=0 unexpected=0 pending=0; do
+    [[ " $session_control " == *" $assignment "* ]] ||
+        fail "session-control ledger was not clean: $assignment"
+done
+control_enqueued="$(field "$session_control" enqueued)"
+control_dispatched="$(field "$session_control" dispatched)"
+control_delivered="$(field "$session_control" delivered)"
+control_queue_dwell="$(field "$session_control" max_queue_dwell_msec)"
+control_ack_latency="$(field "$session_control" max_ack_msec)"
+(( control_enqueued == control_dispatched && control_dispatched == control_delivered )) ||
+    fail "session-control enqueue, dispatch, and delivery counts diverged"
+(( control_queue_dwell <= 100 && control_ack_latency <= 100 )) ||
+    fail "session-control latency exceeded 100ms"
 mapfile -t completions < <(
     grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"
 )

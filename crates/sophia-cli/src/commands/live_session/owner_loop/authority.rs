@@ -4,7 +4,9 @@
             .or_else(|| pending_authority_batches.pop_front())
             .map_or_else(
                 || {
-                    authority_receiver.recv_timeout(if cursor_updates.dirty {
+                    authority_receiver.recv_timeout(if cursor_updates.dirty
+                        || session_controls.pending_len() != 0
+                    {
                         Duration::from_millis(1)
                     } else {
                         Duration::from_millis(25)
@@ -138,7 +140,7 @@
                     resize_proof_complete = true;
                 }
                 if wm_update.is_none() {
-                    wm_update = layout.expire_pending(control_sender, control_ack_receiver)?;
+                    wm_update = layout.expire_pending(&mut session_controls)?;
                 }
                 if wm_update.is_none()
                     && !removed_surfaces.is_empty()
@@ -146,12 +148,12 @@
                     && let Some(wm_session) = wm_session.as_mut()
                 {
                     let proposal = wm_session.request_relayout(&layout, output)?;
-                    wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                    wm_update = layout.stage(proposal, &mut session_controls)?;
                 }
                 if layout.pending.is_none()
                     && let Some(wm_session) = wm_session.as_mut()
                     && let Some(proposal) = wm_session.poll_restart(&layout, output)? {
-                        wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                        wm_update = layout.stage(proposal, &mut session_controls)?;
                     }
                 if wm_update.is_none()
                     && layout.pending.is_none()
@@ -159,7 +161,7 @@
                     && let Some(wm_session) = wm_session.as_mut()
                 {
                     let proposal = wm_session.request_manage(surface, &layout, output)?;
-                    wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                    wm_update = layout.stage(proposal, &mut session_controls)?;
                 }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
@@ -199,7 +201,7 @@
                         moved_surfaces: 0,
                         effects: None,
                     };
-                    wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                    wm_update = layout.stage(proposal, &mut session_controls)?;
                     resize_proof = Some((transaction, surface, size));
                     println!(
                         "sophia_live_resize schema=1 status=requested transaction={} surface={} width={} height={}",
@@ -391,9 +393,8 @@
                     seat,
                     wm_session_present: wm_session.is_some(),
                     layout: &layout,
-                    control_sender,
+                    session_controls: &mut session_controls,
                     next_focus_control_transaction: &mut next_focus_control_transaction,
-                    focused_client_control: &mut focused_client_control,
                 })?;
                 if let Some((transaction, surface)) = layout.focus_to_apply {
                     let decision = focus.focus_surface(seat, surface, runtime.committed_surfaces());
@@ -408,34 +409,19 @@
                                     .client_routes
                                     .client_for_surface(surface)
                                     .ok_or("WM focus has no X11 client route")?;
-                                control_sender.try_send(XAuthorityClientControlCommand {
+                                session_controls.enqueue(XAuthorityClientControlCommand {
                                     client,
                                     command: XAuthorityControlCommand::FocusSurface {
                                         transaction,
                                         surface,
                                     },
+                                }, Instant::now()).map_err(|error| {
+                                    format!("failed to queue WM focus reconciliation: {error:?}")
                                 })?;
-                                let acknowledgement =
-                                    control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-                                if acknowledgement.client != client
-                                    || acknowledgement.acknowledgement.transaction != transaction
-                                    || acknowledgement.acknowledgement.surface != surface
-                                    || acknowledgement.acknowledgement.outcome
-                                        != XAuthorityControlOutcome::Delivered
-                                {
-                                    return Err(
-                                        "X Authority rejected WM focus reconciliation".into()
-                                    );
-                                }
-                                applied_client_focus = Some(surface);
                             }
                             let _ = reduce_session_startup(
                                 &mut startup_readiness,
                                 SessionStartupEvent::PinSurface(surface),
-                            );
-                            let _ = reduce_session_startup(
-                                &mut startup_readiness,
-                                SessionStartupEvent::ClientFocusApplied(surface),
                             );
                             println!(
                                 "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
@@ -484,7 +470,7 @@
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let expired = layout.expire_pending(control_sender, control_ack_receiver)?;
+                let expired = layout.expire_pending(&mut session_controls)?;
                 if expired.as_ref().is_some_and(|update| {
                     update.update.commit.outcome == TransactionOutcome::TimedOut
                 }) && let Some(runtime) = runtime.as_mut()
@@ -498,7 +484,7 @@
                     && let Some(wm_session) = wm_session.as_mut()
                     && let Some(proposal) = wm_session.poll_restart(&layout, output)?
                 {
-                    let _ = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                    let _ = layout.stage(proposal, &mut session_controls)?;
                 }
                 if layout.pending.is_none()
                     && let Some(surface) = layout.next_unmanaged_surface()
@@ -506,7 +492,7 @@
                 {
                     let proposal = wm_session.request_manage(surface, &layout, output)?;
                     if layout
-                        .stage(proposal, control_sender, control_ack_receiver)?
+                        .stage(proposal, &mut session_controls)?
                         .is_some()
                     {
                         wm_session.mark_committed();
@@ -572,9 +558,8 @@
                         seat,
                         wm_session_present: wm_session.is_some(),
                         layout: &layout,
-                        control_sender,
+                        session_controls: &mut session_controls,
                         next_focus_control_transaction: &mut next_focus_control_transaction,
-                        focused_client_control: &mut focused_client_control,
                     })?;
                 }
             }
@@ -602,37 +587,4 @@
             physical_input_completion_reported = true;
         }
 
-        if wm_session.is_none() {
-            while let Ok(acknowledgement) = control_ack_receiver.try_recv() {
-                let Some((transaction, surface)) = focused_client_control else {
-                    continue;
-                };
-                if acknowledgement.acknowledgement.transaction != transaction
-                    || acknowledgement.acknowledgement.surface != surface
-                {
-                    continue;
-                }
-                if acknowledgement.acknowledgement.outcome != XAuthorityControlOutcome::Delivered {
-                    return Err(format!(
-                        "initial X11 focus control was rejected: {:?}",
-                        acknowledgement.acknowledgement.outcome
-                    )
-                    .into());
-                }
-                focused_client_control = None;
-                applied_client_focus = Some(surface);
-                let _ = reduce_session_startup(
-                    &mut startup_readiness,
-                    SessionStartupEvent::PinSurface(surface),
-                );
-                let _ = reduce_session_startup(
-                    &mut startup_readiness,
-                    SessionStartupEvent::ClientFocusApplied(surface),
-                );
-                println!(
-                    "sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control"
-                );
-                std::io::stdout().flush()?;
-            }
-        }
 }

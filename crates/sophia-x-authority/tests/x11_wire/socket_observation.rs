@@ -610,6 +610,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         assert!(acknowledgements.contains(&XAuthorityClientControlAck {
             client,
             acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::ConfigureSurface,
                 transaction: TransactionId::from_raw(88 + index as u64),
                 surface,
                 outcome: XAuthorityControlOutcome::Delivered,

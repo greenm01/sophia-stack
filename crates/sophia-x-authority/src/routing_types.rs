@@ -112,7 +112,24 @@ pub enum XAuthorityControlCommand {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum XAuthorityControlKind {
+    ConfigureSurface,
+    FocusSurface,
+    ClearFocus,
+    CloseSurface,
+}
+
 impl XAuthorityControlCommand {
+    pub const fn kind(self) -> XAuthorityControlKind {
+        match self {
+            Self::ConfigureSurface { .. } => XAuthorityControlKind::ConfigureSurface,
+            Self::FocusSurface { .. } => XAuthorityControlKind::FocusSurface,
+            Self::ClearFocus { .. } => XAuthorityControlKind::ClearFocus,
+            Self::CloseSurface { .. } => XAuthorityControlKind::CloseSurface,
+        }
+    }
+
     pub const fn transaction(self) -> TransactionId {
         match self {
             Self::ConfigureSurface { transaction, .. }
@@ -149,6 +166,7 @@ pub enum XAuthorityControlOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XAuthorityControlAck {
+    pub kind: XAuthorityControlKind,
     pub transaction: TransactionId,
     pub surface: SurfaceId,
     pub outcome: XAuthorityControlOutcome,

@@ -114,6 +114,7 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
     assert_eq!(channels.recv_timeout(first), Err(RecvTimeoutError::Timeout));
     assert_eq!(channels.recv_timeout(first).unwrap(), command);
     let acknowledgement = XAuthorityControlAck {
+        kind: command.kind(),
         transaction: command.transaction(),
         surface: command.surface(),
         outcome: XAuthorityControlOutcome::Delivered,
@@ -175,6 +176,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
     );
     assert_eq!(channels.control.recv().unwrap(), command);
     let acknowledgement = XAuthorityControlAck {
+        kind: command.kind(),
         transaction: command.transaction(),
         surface: command.surface(),
         outcome: XAuthorityControlOutcome::Delivered,

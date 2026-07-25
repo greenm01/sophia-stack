@@ -24,6 +24,7 @@ sophia_live_session_present schema=2 status=retired transaction=13 surface=4 sou
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
+sophia_live_session_control schema=1 status=complete enqueued=10 dispatched=10 delivered=10 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=3 max_queue_dwell_msec=4 max_ack_msec=8
 sophia_session_launches schema=1 status=complete peak_depth=3 rejected=0 admission_timeouts=0
 sophia_live_native_resources schema=1 status=complete target_creations=64 pipeline_creations=64 cpu_target_creations=0 dmabuf_target_creations=0 composition_target_creations=64 epoch_replacements=0 recovery_replacements=0
 sophia_live_session schema=14 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 native_mixed_exports=64 native_target_recreations=64 native_max_submit_to_page_flip_msec=20 native_max_upload_msec=8 input_queue_dwell_max_msec=12
@@ -76,5 +77,11 @@ expect_rejected excessive_input_dwell \
 expect_rejected admission_timeout \
     'admission_timeouts=0' \
     'admission_timeouts=1'
+expect_rejected control_rejection \
+    'delivered=10 rejected=0' \
+    'delivered=9 rejected=1'
+expect_rejected control_latency \
+    'max_ack_msec=8' \
+    'max_ack_msec=101'
 
 echo "four-Kitty verifier mutation checks passed"

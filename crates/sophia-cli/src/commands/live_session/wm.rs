@@ -582,8 +582,7 @@ impl PersistentLiveLayout {
     fn stage(
         &mut self,
         mut proposal: LiveWmProposal,
-        control_sender: &SyncSender<XAuthorityClientControlCommand>,
-        control_ack_receiver: &Receiver<XAuthorityClientControlAck>,
+        session_controls: &mut SessionControlQueue,
     ) -> Result<Option<LiveWmCommitResult>, Box<dyn std::error::Error>> {
         if self.pending.is_some() {
             println!(
@@ -613,32 +612,16 @@ impl PersistentLiveLayout {
                 .client_routes
                 .client_for_surface(*surface)
                 .ok_or("live WM configure has no X11 client route for its surface")?;
-            control_sender.try_send(XAuthorityClientControlCommand {
+            session_controls.enqueue(XAuthorityClientControlCommand {
                 client,
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: proposal.transaction,
                     surface: *surface,
                     size: *size,
                 },
+            }, Instant::now()).map_err(|error| {
+                format!("failed to queue WM configure control: {error:?}")
             })?;
-        }
-        for _ in 0..proposal.requested_sizes.len() {
-            let acknowledgement = control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-            let expected_client = self
-                .client_routes
-                .client_for_surface(acknowledgement.acknowledgement.surface);
-            if acknowledgement.acknowledgement.transaction != proposal.transaction
-                || acknowledgement.acknowledgement.outcome != XAuthorityControlOutcome::Delivered
-                || expected_client != Some(acknowledgement.client)
-            {
-                return Err(format!(
-                    "X Authority rejected WM configure transaction {} for surface {:?}: {:?}",
-                    acknowledgement.acknowledgement.transaction.raw(),
-                    acknowledgement.acknowledgement.surface,
-                    acknowledgement.acknowledgement.outcome
-                )
-                .into());
-            }
         }
         let ready = proposal
             .requested_sizes
@@ -698,8 +681,7 @@ impl PersistentLiveLayout {
 
     fn expire_pending(
         &mut self,
-        control_sender: &SyncSender<XAuthorityClientControlCommand>,
-        control_ack_receiver: &Receiver<XAuthorityClientControlAck>,
+        session_controls: &mut SessionControlQueue,
     ) -> Result<Option<LiveWmCommitResult>, Box<dyn std::error::Error>> {
         if !self
             .pending
@@ -732,26 +714,16 @@ impl PersistentLiveLayout {
                 .client_routes
                 .client_for_surface(surface)
                 .ok_or("live WM rollback has no X11 client route")?;
-            control_sender.try_send(XAuthorityClientControlCommand {
+            session_controls.enqueue(XAuthorityClientControlCommand {
                 client,
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: rollback_transaction,
                     surface,
                     size,
                 },
+            }, Instant::now()).map_err(|error| {
+                format!("failed to queue WM rollback control: {error:?}")
             })?;
-        }
-        for _ in 0..pending.requested_sizes.len() {
-            let acknowledgement = control_ack_receiver.recv_timeout(Duration::from_millis(500))?;
-            if acknowledgement.acknowledgement.transaction != rollback_transaction
-                || acknowledgement.acknowledgement.outcome != XAuthorityControlOutcome::Delivered
-                || self
-                    .client_routes
-                    .client_for_surface(acknowledgement.acknowledgement.surface)
-                    != Some(acknowledgement.client)
-            {
-                return Err("X Authority rejected live WM rollback configure".into());
-            }
         }
         let resize_state = pending
             .requested_sizes

@@ -75,6 +75,9 @@ Promotion now follows the gates below in order.
   incompatible target change, or explicit bounded recovery.
 - [x] Emit reduced recreation-reason and lifetime evidence without native
   handles or application metadata.
+- [x] Remove blocking X11 configure/focus/close acknowledgements from the
+  render/input owner; correlate them through a bounded typed control ledger
+  while preserving global shortcuts and cursor motion during focus handoff.
 - [ ] Prove a stable physical workload has zero per-frame target or pipeline
   recreation, zero launch-admission timeouts, and bounded input-to-submit and
   presentation latency.
@@ -99,6 +102,9 @@ Promotion now follows the gates below in order.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
 - [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
   capacity-overflow proof with bounded rejection and no session failure.
+- [ ] Require the session-control ledger to drain with balanced
+  enqueue/dispatch/delivery counts, zero rejection/timeout/unexpected
+  acknowledgements, and queue/ack latency at or below 100 ms.
 - [ ] Prove three tiled Kitty windows remain usable before and after a
   TTY2/TTY3 round-trip, with keyboard and pointer restored.
 - [ ] Validate full pc105 US shifted punctuation and libseat-backed

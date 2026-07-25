@@ -384,7 +384,11 @@ fn route_input_events(
                         report.pointer_axes_observed.saturating_add(1);
                 }
                 report.pointer_events = report.pointer_events.saturating_add(1);
-                if routing_mode == PhysicalInputRoutingMode::CursorOnly {
+                if matches!(
+                    routing_mode,
+                    PhysicalInputRoutingMode::CursorOnly
+                        | PhysicalInputRoutingMode::ControlPlaneOnly
+                ) {
                     if !is_button {
                         let focused_surface = focus.focused_surface(event.seat);
                         let _ = place_pointer_event_for_routing(

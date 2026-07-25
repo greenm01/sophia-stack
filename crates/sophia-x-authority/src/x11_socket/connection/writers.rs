@@ -96,7 +96,7 @@ fn spawn_x11_control_writer(
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     macro_rules! terminate_client {
-        ($transaction:expr, $surface:expr) => {{
+        ($kind:expr, $transaction:expr, $surface:expr) => {{
             let stream = stream
                 .lock()
                 .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -109,6 +109,7 @@ fn spawn_x11_control_writer(
             channels.send_ack(
                 client,
                 XAuthorityControlAck {
+                    kind: $kind,
                     transaction: $transaction,
                     surface: $surface,
                     outcome: XAuthorityControlOutcome::Delivered,
@@ -126,6 +127,7 @@ fn spawn_x11_control_writer(
             };
             let transaction = command.transaction();
             let surface = command.surface();
+            let kind = command.kind();
             let window = surface_windows
                 .lock()
                 .map_err(|_| X11SetupSocketError::new("X11 surface/window map lock poisoned"))?
@@ -135,6 +137,7 @@ fn spawn_x11_control_writer(
                 channels.send_ack(
                     client,
                     XAuthorityControlAck {
+                        kind,
                         transaction,
                         surface,
                         outcome: XAuthorityControlOutcome::UnknownSurface,
@@ -154,6 +157,7 @@ fn spawn_x11_control_writer(
                         channels.send_ack(
                             client,
                             XAuthorityControlAck {
+                                kind,
                                 transaction,
                                 surface,
                                 outcome: XAuthorityControlOutcome::InvalidSize,
@@ -173,6 +177,7 @@ fn spawn_x11_control_writer(
                             channels.send_ack(
                                 client,
                                 XAuthorityControlAck {
+                                    kind,
                                     transaction,
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
@@ -245,10 +250,10 @@ fn spawn_x11_control_writer(
                         .lock()
                         .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
                     let Some(protocols) = atoms.atom(X_ATOM_NAME_WM_PROTOCOLS) else {
-                        terminate_client!(transaction, surface);
+                        terminate_client!(kind, transaction, surface);
                     };
                     let Some(delete) = atoms.atom(X_ATOM_NAME_WM_DELETE_WINDOW) else {
-                        terminate_client!(transaction, surface);
+                        terminate_client!(kind, transaction, surface);
                     };
                     drop(atoms);
                     let properties = properties.lock().map_err(|_| {
@@ -281,7 +286,7 @@ fn spawn_x11_control_writer(
                     let decision = crate::select_x_close_target(window, &ancestors, &candidates);
                     if decision.protocol_window_count == 0 {
                         drop(properties);
-                        terminate_client!(transaction, surface);
+                        terminate_client!(kind, transaction, surface);
                     }
                     tracing::debug!(
                         "sophia_x11_close_target schema=1 surface_map_hit=true exact_delete={} fallback_used={} protocol_windows={}",
@@ -316,6 +321,7 @@ fn spawn_x11_control_writer(
                             channels.send_ack(
                                 client,
                                 XAuthorityControlAck {
+                                    kind,
                                     transaction,
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
@@ -333,6 +339,7 @@ fn spawn_x11_control_writer(
                         channels.send_ack(
                             client,
                             XAuthorityControlAck {
+                                kind,
                                 transaction,
                                 surface,
                                 outcome: XAuthorityControlOutcome::Delivered,
@@ -377,6 +384,7 @@ fn spawn_x11_control_writer(
                             channels.send_ack(
                                 client,
                                 XAuthorityControlAck {
+                                    kind,
                                     transaction,
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
@@ -434,6 +442,7 @@ fn spawn_x11_control_writer(
             channels.send_ack(
                 client,
                 XAuthorityControlAck {
+                    kind,
                     transaction,
                     surface,
                     outcome: XAuthorityControlOutcome::Delivered,

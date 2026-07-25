@@ -137,7 +137,9 @@ fn run_session_loop(
     let mut focus_deadline_started_at = None;
     let mut focus_ready_reported = false;
     let mut applied_client_focus: Option<SurfaceId> = None;
-    let mut focused_client_control: Option<(TransactionId, SurfaceId)> = None;
+    let mut session_controls = SessionControlQueue::default();
+    let mut session_control_completions =
+        Vec::with_capacity(SESSION_CONTROL_CAPACITY);
     let mut next_focus_control_transaction = 1_000_000u64;
     let mut resize_proof: Option<(TransactionId, SurfaceId, Size)> = None;
     let mut resize_proof_complete = false;
@@ -183,5 +185,6 @@ fn run_session_loop(
     let mut requested_virtual_terminal = None;
     let mut seat_release_prepared = false;
 
+    include!("owner_loop/session_control.rs");
     include!("owner_loop/physical_input_phase.rs")
 }
