@@ -4,3 +4,4 @@ pub mod emergency_input;
 pub mod input_proof;
 pub mod presentation_transaction;
 pub mod resize_transaction;
+pub mod session_keyboard;

@@ -87,6 +87,9 @@ rather than borrowing the completed Kitty-only promotion.
 
 - [x] Keep the proven Kitty-only profile available as a distinct installed
   greetd baseline while labeling the unpromoted xmonad entry experimental.
+- [x] Preserve full pc105 US shifted punctuation through XKB post-event state
+  and explicitly support Ctrl-Alt-F1 through Ctrl-Alt-F12 while `K_OFF` is
+  active.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

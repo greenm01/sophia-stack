@@ -14,6 +14,7 @@ struct PhysicalInputRouteReport {
     deliveries: Vec<XAuthorityInputDeliveryId>,
     emergency_exit: bool,
     return_suppressed: bool,
+    virtual_terminal: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -117,6 +118,7 @@ struct PhysicalInputRoutingContext<'a> {
     input_sender: &'a SyncSender<XAuthorityRoutedInput>,
     modifiers: &'a mut XCoreKeyboardMapper,
     emergency_chord: &'a mut EmergencyChordState,
+    virtual_terminal_chord: &'a mut VirtualTerminalChordState,
     pointer: &'a mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
     pointer_proof_required: bool,
@@ -140,6 +142,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         input_sender,
         modifiers,
         emergency_chord,
+        virtual_terminal_chord,
         pointer,
         pointer_routing_enabled,
         pointer_proof_required,
@@ -157,6 +160,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         input_sender,
         modifiers,
         emergency_chord,
+        virtual_terminal_chord,
         shortcuts,
         pointer,
         pointer_routing_enabled,
@@ -178,6 +182,7 @@ fn route_input_events(
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
     emergency_chord: &mut EmergencyChordState,
+    virtual_terminal_chord: &mut VirtualTerminalChordState,
     mut shortcuts: Option<&mut WmShortcutRouter>,
     pointer: &mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
@@ -202,11 +207,20 @@ fn route_input_events(
         deliveries: Vec::new(),
         emergency_exit: false,
         return_suppressed: false,
+        virtual_terminal: None,
     };
     for mut event in events {
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
                 report.keys_observed = report.keys_observed.saturating_add(1);
+                match virtual_terminal_chord.observe(keycode, pressed) {
+                    VirtualTerminalChordAction::Pass => {}
+                    VirtualTerminalChordAction::Consume => continue,
+                    VirtualTerminalChordAction::Activate(terminal) => {
+                        report.virtual_terminal = Some(terminal);
+                        continue;
+                    }
+                }
                 if emergency_chord.observe(keycode, pressed) == EmergencyChordAction::Triggered {
                     report.emergency_exit = true;
                     continue;

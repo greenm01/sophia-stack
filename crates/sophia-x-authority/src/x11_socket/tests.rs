@@ -32,6 +32,7 @@ fn routed_input_discards_another_clients_event() {
                 keycode: 24,
                 pressed: true,
                 state: 0,
+                modifiers_after: 0,
                 time_msec: 1,
             }
             .into(),
@@ -48,6 +49,7 @@ fn routed_input_discards_another_clients_event() {
                 keycode: 25,
                 pressed: true,
                 state: 0,
+                modifiers_after: 0,
                 time_msec: 2,
             }
             .into(),
@@ -70,6 +72,7 @@ fn routed_input_discards_another_clients_event() {
                 keycode: 25,
                 pressed: true,
                 state: 0,
+                modifiers_after: 0,
                 time_msec: 2,
             }),
             None,
@@ -134,6 +137,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
         keycode: 38,
         pressed: true,
         state: 0,
+        modifiers_after: 0,
         time_msec: 3,
     });
     let command = XAuthorityControlCommand::FocusSurface {
@@ -365,6 +369,7 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
                     keycode: 39,
                     pressed: true,
                     state: 0,
+                    modifiers_after: 0,
                     time_msec,
                 }
                 .into(),
@@ -404,6 +409,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
                 keycode: 38,
                 pressed: true,
                 state: 0,
+                modifiers_after: 0,
                 time_msec: 1,
             }
             .into(),

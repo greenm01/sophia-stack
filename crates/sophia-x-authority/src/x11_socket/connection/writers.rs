@@ -717,8 +717,9 @@ fn spawn_x11_input_event_writer(
                     );
                 }
                 if let XAuthorityInputEvent::Key(key) = event {
-                    let previous = xkb_modifiers.swap(key.state, Ordering::AcqRel);
-                    let changed = previous ^ key.state;
+                    let previous = xkb_modifiers
+                        .swap(u16::from(key.modifiers_after), Ordering::AcqRel);
+                    let changed = previous ^ u16::from(key.modifiers_after);
                     let selected = xkb_state_details.load(Ordering::Acquire);
                     if changed != 0 && selected & 1 != 0 {
                         let state_notify = encode_x_client_event(
@@ -726,7 +727,7 @@ fn spawn_x11_input_event_writer(
                             XClientEvent::XkbStateNotify {
                                 sequence,
                                 time: key.time_msec,
-                                modifiers: key.state as u8,
+                                modifiers: key.modifiers_after,
                                 changed: 1,
                                 keycode: key.keycode,
                                 event_type: if key.pressed { 2 } else { 3 },

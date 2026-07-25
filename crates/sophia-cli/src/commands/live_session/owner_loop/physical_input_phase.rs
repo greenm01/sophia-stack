@@ -24,6 +24,7 @@ macro_rules! drain_physical_input {
                     input_sender,
                     modifiers: &mut modifiers,
                     emergency_chord: &mut emergency_chord,
+                    virtual_terminal_chord: &mut virtual_terminal_chord,
                     pointer: &mut pointer,
                     pointer_routing_enabled: !config.expect_physical_pointer
                         || pointer_checksum.is_some(),
@@ -146,6 +147,24 @@ macro_rules! drain_physical_input {
                     }
                     wm.mark_committed();
                 }
+            }
+            if let Some(terminal) = report.virtual_terminal {
+                let helper = std::env::var("SOPHIA_TTY_MODE_HELPER")
+                    .unwrap_or_else(|_| "tools/sophia_tty_mode.py".to_owned());
+                let status = Command::new("python3")
+                    .arg(helper)
+                    .arg(format!("activate-vt-{terminal}"))
+                    .status()?;
+                if !status.success() {
+                    return Err(format!(
+                        "virtual terminal activation failed for VT{terminal}: {status}"
+                    )
+                    .into());
+                }
+                println!(
+                    "sophia_live_session_vt schema=1 status=activated target={terminal}"
+                );
+                std::io::stdout().flush()?;
             }
             if report.return_suppressed && !input_observations.return_suppressed {
                 println!("sophia_live_session_input_pipeline schema=1 status=return_suppressed");

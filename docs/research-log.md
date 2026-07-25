@@ -2720,3 +2720,25 @@ identity, VT guard, KMS renderer, X frontend, and cleanup path; only the opaque
 session profile differs. Re-proving the known-good Kitty profile isolates the
 shared installed/greetd boundary before changing xmonad layout behavior. It
 does not promote or conceal the failed xmonad capture.
+
+## 2026-07-24: XKB StateNotify Uses Post-Event Modifiers
+
+The installed Kitty baseline exposed two keyboard gaps. First, Helix did not
+recognize `:`. A strengthened real-Kitty smoke reproduced it: Kitty's keyboard
+trace saw Shift press with no effective modifier, semicolon press as `;`, then
+Shift only on semicolon release. Core key events correctly carry pre-event
+modifier state, but Sophia incorrectly reused that state in XKB `StateNotify`,
+whose effective modifiers describe the post-event state.
+
+Routed key records now carry both values explicitly. Core and XI events retain
+pre-event state while XKB notifications use the post-event state produced by
+the per-seat xkbcommon machine. The real Kitty gate now types exact `:ll` and
+requires shell receipt plus later Presents. A complete pc105 US symbol-table
+regression covers printable base/shift pairs and F1 through F12.
+
+Second, kernel VT shortcuts cannot operate while the graphical owner has set
+the console keyboard to `K_OFF`; leaving translated console input enabled would
+reintroduce typed bytes on the hidden TTY. The protocol-neutral session input
+owner now recognizes Ctrl-Alt-F1 through Ctrl-Alt-F12, consumes the function-key
+edges, and asks the controlling VT to activate the selected terminal. This is a
+session-control action, not an application or X11 shortcut.

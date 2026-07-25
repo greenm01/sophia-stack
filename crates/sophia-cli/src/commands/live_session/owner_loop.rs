@@ -124,6 +124,7 @@ fn run_session_loop(
     let mut focus = InputFocusState::new();
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency_chord = EmergencyChordState::armed();
+    let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     if native_scanout.is_some() {
         pointer.center_on_primary_output(output.size);

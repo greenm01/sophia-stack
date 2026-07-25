@@ -18,6 +18,7 @@ pub struct XAuthorityKeyEvent {
     pub keycode: u8,
     pub pressed: bool,
     pub state: u16,
+    pub modifiers_after: u8,
     pub time_msec: u32,
 }
 

@@ -100,7 +100,7 @@ enum XkbWorkerCommand {
 }
 
 #[cfg(unix)]
-type XkbKeyboardReply = Option<(u8, u16)>;
+type XkbKeyboardReply = Option<(u8, u16, u16)>;
 
 #[cfg(unix)]
 type SharedXkbKeyboardReplies = Arc<Mutex<Receiver<XkbKeyboardReply>>>;
@@ -133,8 +133,13 @@ impl XkbKeyboardWorker {
                     let reply = match command {
                         XkbWorkerCommand::Key {
                             keycode, pressed, ..
-                        } => state.map_evdev_key(keycode, pressed),
-                        XkbWorkerCommand::Modifiers { .. } => Some((0, state.modifier_mask())),
+                        } => state.map_evdev_key(keycode, pressed).map(|(keycode, before)| {
+                            (keycode, before, state.modifier_mask())
+                        }),
+                        XkbWorkerCommand::Modifiers { .. } => {
+                            let modifiers = state.modifier_mask();
+                            Some((0, modifiers, modifiers))
+                        }
                     };
                     if reply_sender.send(reply).is_err() {
                         break;
@@ -151,7 +156,7 @@ impl XkbKeyboardWorker {
     fn request(
         &self,
         command: XkbWorkerCommand,
-    ) -> Result<Option<(u8, u16)>, XServerFrontendRouteError> {
+    ) -> Result<Option<(u8, u16, u16)>, XServerFrontendRouteError> {
         self.commands
             .try_send(command)
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
@@ -630,7 +635,8 @@ impl XServerFrontendRouteRegistry {
                         grab.window
                     });
                 }
-                let Some((keycode, state)) = self.xkb_worker.request(XkbWorkerCommand::Key {
+                let Some((keycode, state, modifiers_after)) =
+                    self.xkb_worker.request(XkbWorkerCommand::Key {
                     seat: route.request.seat,
                     keycode,
                     pressed,
@@ -668,6 +674,7 @@ impl XServerFrontendRouteRegistry {
                     keycode,
                     pressed,
                     state: state | pointer.state(),
+                    modifiers_after: modifiers_after as u8,
                     time_msec,
                 })
             }
@@ -697,7 +704,7 @@ impl XServerFrontendRouteRegistry {
                         .request(XkbWorkerCommand::Modifiers {
                             seat: route.request.seat,
                         })?
-                        .map_or(0, |(_, state)| state)
+                        .map_or(0, |(_, state, _)| state)
                         | pointer.state(),
                     time_msec,
                 })
@@ -765,7 +772,7 @@ impl XServerFrontendRouteRegistry {
                         .request(XkbWorkerCommand::Modifiers {
                             seat: route.request.seat,
                         })?
-                        .map_or(0, |(_, state)| state)
+                        .map_or(0, |(_, state, _)| state)
                         | state,
                     time_msec,
                 })
@@ -801,7 +808,7 @@ impl XServerFrontendRouteRegistry {
                     .request(XkbWorkerCommand::Modifiers {
                         seat: route.request.seat,
                     })?
-                    .map_or(0, |(_, state)| state)
+                    .map_or(0, |(_, state, _)| state)
                     | pointer.state();
                 let pointer_event = |pressed| {
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {

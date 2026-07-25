@@ -30,6 +30,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     pointer.center_on_primary_output(Size {
         width: 2560,
@@ -47,6 +48,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         &input_sender,
         &mut modifiers,
         &mut emergency,
+        &mut virtual_terminal,
         None,
         &mut pointer,
         false,
@@ -82,6 +84,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -94,6 +97,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
         &input_sender,
         &mut modifiers,
         &mut emergency,
+        &mut virtual_terminal,
         None,
         &mut pointer,
         false,

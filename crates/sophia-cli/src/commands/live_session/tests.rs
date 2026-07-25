@@ -150,6 +150,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
     let (input_sender, input_receiver) = sync_channel(4);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -162,6 +163,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         &input_sender,
         &mut modifiers,
         &mut emergency,
+        &mut virtual_terminal,
         Some(&mut shortcuts),
         &mut pointer,
         false,
@@ -209,6 +211,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
     let (input_sender, input_receiver) = sync_channel(2);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     pointer.center_on_primary_output(Size {
         width: 2560,
@@ -226,6 +229,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         &input_sender,
         &mut modifiers,
         &mut emergency,
+        &mut virtual_terminal,
         None,
         &mut pointer,
         true,
@@ -331,6 +335,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut next_delivery = 1;
     let report = route_input_events(
         events,
@@ -341,6 +346,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         &input_sender,
         &mut modifiers,
         &mut emergency,
+        &mut virtual_terminal,
         None,
         &mut pointer,
         true,

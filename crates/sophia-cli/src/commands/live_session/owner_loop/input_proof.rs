@@ -72,6 +72,7 @@
                     input_sender,
                     &mut modifiers,
                     &mut emergency_chord,
+                    &mut virtual_terminal_chord,
                     None,
                     &mut pointer,
                     false,

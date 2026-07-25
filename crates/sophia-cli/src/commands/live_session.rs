@@ -11,6 +11,7 @@ use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
     ResizeRollbackCoordinator, project_authority_batch_onto_layout,
 };
+use sophia_cli::session_keyboard::{VirtualTerminalChordAction, VirtualTerminalChordState};
 use sophia_engine::{
     FocusedInputRoute, InputFocusDecision, InputFocusState, NonBlockingInputPoller, WmPolicyError,
     WmShortcutRouter, WmWorkspaceState,
@@ -36,7 +37,7 @@ use std::io::{Read, Write};
 use std::num::NonZeroUsize;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
-use std::process::{Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};

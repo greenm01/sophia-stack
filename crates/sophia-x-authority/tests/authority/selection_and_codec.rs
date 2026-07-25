@@ -19,12 +19,104 @@ fn evdev_keyboard_mapping_preserves_x_modifier_event_order() {
 }
 
 #[test]
+fn xkb_us_shift_semicolon_delivers_colon_state() {
+    let mut keyboard = XkbKeyboardState::new(&XkbRmlvoConfig::default())
+        .expect("the default US keymap must compile");
+    assert_eq!(keyboard.map_evdev_key(42, true), Some((50, 0)));
+    assert_eq!(keyboard.map_evdev_key(39, true), Some((47, 1)));
+    assert_eq!(keyboard.map_evdev_key(39, false), Some((47, 1)));
+    assert_eq!(keyboard.map_evdev_key(42, false), Some((50, 1)));
+    assert_eq!(keyboard.modifier_mask(), 0);
+}
+
+#[test]
 fn repeated_modifier_edges_do_not_leave_core_state_stuck() {
     let mut keyboard = XCoreKeyboardMapper::new();
     assert_eq!(keyboard.map_evdev_key(42, true), Some((50, 0)));
     assert_eq!(keyboard.map_evdev_key(42, true), Some((50, 1)));
     assert_eq!(keyboard.map_evdev_key(42, false), Some((50, 1)));
     assert_eq!(keyboard.modifier_mask(), 0);
+}
+
+#[test]
+fn default_pc105_us_map_covers_printable_and_function_keys() {
+    let keymap = XkbKeymapSnapshot::new(&XkbRmlvoConfig::default())
+        .expect("the default US keymap must compile");
+    let printable = [
+        (10, '1', '!'),
+        (11, '2', '@'),
+        (12, '3', '#'),
+        (13, '4', '$'),
+        (14, '5', '%'),
+        (15, '6', '^'),
+        (16, '7', '&'),
+        (17, '8', '*'),
+        (18, '9', '('),
+        (19, '0', ')'),
+        (20, '-', '_'),
+        (21, '=', '+'),
+        (24, 'q', 'Q'),
+        (25, 'w', 'W'),
+        (26, 'e', 'E'),
+        (27, 'r', 'R'),
+        (28, 't', 'T'),
+        (29, 'y', 'Y'),
+        (30, 'u', 'U'),
+        (31, 'i', 'I'),
+        (32, 'o', 'O'),
+        (33, 'p', 'P'),
+        (34, '[', '{'),
+        (35, ']', '}'),
+        (38, 'a', 'A'),
+        (39, 's', 'S'),
+        (40, 'd', 'D'),
+        (41, 'f', 'F'),
+        (42, 'g', 'G'),
+        (43, 'h', 'H'),
+        (44, 'j', 'J'),
+        (45, 'k', 'K'),
+        (46, 'l', 'L'),
+        (47, ';', ':'),
+        (48, '\'', '"'),
+        (49, '`', '~'),
+        (51, '\\', '|'),
+        (52, 'z', 'Z'),
+        (53, 'x', 'X'),
+        (54, 'c', 'C'),
+        (55, 'v', 'V'),
+        (56, 'b', 'B'),
+        (57, 'n', 'N'),
+        (58, 'm', 'M'),
+        (59, ',', '<'),
+        (60, '.', '>'),
+        (61, '/', '?'),
+        (65, ' ', ' '),
+    ];
+    for (keycode, base, shifted) in printable {
+        assert_eq!(
+            keymap.core_mapping(keycode, 1),
+            [base as u32, shifted as u32],
+            "wrong US symbols for X keycode {keycode}",
+        );
+    }
+
+    let function_keysyms = [
+        (67, 0xffbe),
+        (68, 0xffbf),
+        (69, 0xffc0),
+        (70, 0xffc1),
+        (71, 0xffc2),
+        (72, 0xffc3),
+        (73, 0xffc4),
+        (74, 0xffc5),
+        (75, 0xffc6),
+        (76, 0xffc7),
+        (95, 0xffc8),
+        (96, 0xffc9),
+    ];
+    for (keycode, keysym) in function_keysyms {
+        assert_eq!(keymap.core_mapping(keycode, 1)[0], keysym);
+    }
 }
 
 #[test]

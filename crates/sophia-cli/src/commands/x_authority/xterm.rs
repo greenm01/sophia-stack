@@ -67,6 +67,7 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
                     keycode,
                     pressed,
                     state: 0,
+                    modifiers_after: 0,
                     time_msec,
                 }
                 .into(),
@@ -392,14 +393,22 @@ fn send_xterm_text_to_client(
     next_delivery: &mut u64,
 ) -> Result<Vec<XAuthorityInputDeliveryId>, Box<dyn std::error::Error>> {
     let mut deliveries = Vec::new();
-    for keycode in text
-        .iter()
-        .copied()
-        .map(x11_keycode_for_ascii)
-        .chain(std::iter::once(Some(36)))
-    {
-        let keycode = keycode.ok_or("two-client input smoke character has no X keycode")?;
-        for pressed in [true, false] {
+    for byte in text.iter().copied().chain(std::iter::once(b'\n')) {
+        let events = match byte {
+            b':' => vec![
+                (50, true, 0, 1),
+                (47, true, 1, 1),
+                (47, false, 1, 1),
+                (50, false, 1, 0),
+            ],
+            b'\n' => vec![(36, true, 0, 0), (36, false, 0, 0)],
+            _ => {
+                let keycode = x11_keycode_for_ascii(byte)
+                    .ok_or("two-client input smoke character has no X keycode")?;
+                vec![(keycode, true, 0, 0), (keycode, false, 0, 0)]
+            }
+        };
+        for (keycode, pressed, state, modifiers_after) in events {
             let delivery = XAuthorityInputDeliveryId::from_raw(*next_delivery);
             *next_delivery = next_delivery
                 .checked_add(1)
@@ -409,7 +418,8 @@ fn send_xterm_text_to_client(
                 event: XAuthorityKeyEvent {
                     keycode,
                     pressed,
-                    state: 0,
+                    state,
+                    modifiers_after,
                     time_msec: *time_msec,
                 }
                 .into(),
@@ -538,4 +548,3 @@ pub(crate) fn x11_keycode_for_ascii(byte: u8) -> Option<u8> {
                 .map(|index| 52 + index as u8)
         })
 }
-

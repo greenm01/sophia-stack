@@ -412,6 +412,10 @@ sudo sophia-rollback
 
 `sophia-stop` requests bounded cleanup from an independently logged-in control
 TTY; Ctrl-Alt-Backspace remains the independent local emergency chord.
+Because the graphical owner deliberately places the kernel keyboard in
+off-mode, Sophia recognizes Ctrl-Alt-F1 through Ctrl-Alt-F12 and explicitly
+activates the requested Linux VT. Shifted US punctuation is covered by the
+same `evdev`/`pc105`/`us` XKB state used for client-visible core and XKB events.
 
 The artifact also installs repository-independent evidence commands:
 

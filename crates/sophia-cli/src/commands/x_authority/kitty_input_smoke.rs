@@ -60,7 +60,7 @@ fn run_x_authority_kitty_input_smoke()
             "Sophia Kitty input proof",
             "sh",
             "-c",
-            "printf 'type ll then Return: '; IFS= read -r line; umask 077; printf '%s' \"$line\" > \"$1\"; sleep 2",
+            "printf 'type :ll then Return: '; IFS= read -r line; umask 077; printf '%s' \"$line\" > \"$1\"; sleep 2",
             "sophia-kitty-input",
         ])
         .arg(&result_file.path)
@@ -247,7 +247,7 @@ fn run_x_authority_kitty_input_smoke()
         let deliveries = send_xterm_text_to_client(
             &input_sender,
             client,
-            b"ll",
+            b":ll",
             &mut time_msec,
             &mut next_delivery,
         )?;
@@ -278,7 +278,7 @@ fn run_x_authority_kitty_input_smoke()
                     )?;
                 }
             }
-            if std::fs::read(&result_file.path)? == b"ll" && present_after_input != 0 {
+            if std::fs::read(&result_file.path)? == b":ll" && present_after_input != 0 {
                 eprintln!(
                     "sophia_kitty_input_smoke schema=1 stage=proof_complete presents={present_after_input}"
                 );
