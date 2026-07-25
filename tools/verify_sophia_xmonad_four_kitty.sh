@@ -10,6 +10,16 @@ fail() {
     echo "four-Kitty xmonad verification failed: $*" >&2
     exit 1
 }
+field() {
+    local line="$1" key="$2" token
+    for token in $line; do
+        if [[ "$token" == "$key="* ]]; then
+            printf '%s\n' "${token#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
 
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
 
@@ -94,6 +104,59 @@ for assignment in \
     [[ " $completion " == *" $assignment "* ]] ||
         fail "completion does not contain $assignment"
 done
+for key in native_mixed_exports native_target_recreations \
+    native_max_submit_to_page_flip_msec native_max_upload_msec \
+    input_queue_dwell_max_msec; do
+    value="$(field "$completion" "$key")" ||
+        fail "completion is missing $key"
+    [[ "$value" =~ ^[0-9]+$ ]] ||
+        fail "completion has nonnumeric $key=$value"
+    if [[ "$key" == native_mixed_exports ]]; then
+        (( value >= 32 )) ||
+            fail "sustained mixed presentation produced only $value exports"
+    elif [[ "$key" == native_target_recreations ]]; then
+        (( value == 0 )) ||
+            fail "stable workload recreated $value native targets"
+    else
+        (( value <= 100 )) ||
+            fail "$key exceeded the 100ms promotion budget: $value"
+    fi
+done
+
+mapfile -t resource_lines < <(
+    grep -E '^sophia_live_native_resources schema=1 status=complete ' "$SESSION_LOG"
+)
+(( ${#resource_lines[@]} == 1 )) ||
+    fail "expected one native resource-lifetime record"
+resources="${resource_lines[0]}"
+for key in target_creations pipeline_creations cpu_target_creations \
+    dmabuf_target_creations composition_target_creations epoch_replacements \
+    recovery_replacements; do
+    value="$(field "$resources" "$key")" ||
+        fail "resource-lifetime record is missing $key"
+    [[ "$value" =~ ^[0-9]+$ ]] ||
+        fail "resource-lifetime record has nonnumeric $key=$value"
+done
+target_creations="$(field "$resources" target_creations)"
+pipeline_creations="$(field "$resources" pipeline_creations)"
+cpu_targets="$(field "$resources" cpu_target_creations)"
+dmabuf_targets="$(field "$resources" dmabuf_target_creations)"
+composition_targets="$(field "$resources" composition_target_creations)"
+epoch_replacements="$(field "$resources" epoch_replacements)"
+recovery_replacements="$(field "$resources" recovery_replacements)"
+(( target_creations == pipeline_creations )) ||
+    fail "target and pipeline creation counts diverged"
+(( target_creations == cpu_targets + dmabuf_targets + composition_targets )) ||
+    fail "resource-class creation counts do not sum to the total"
+(( composition_targets > 0 && composition_targets <= 2 )) ||
+    fail "composition target count is $composition_targets, expected one per composed output"
+(( epoch_replacements == 0 && recovery_replacements == 0 )) ||
+    fail "stable workload replaced native resources"
+
+grep -Eq \
+    '^sophia_session_launches schema=1 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0$' \
+    "$SESSION_LOG" ||
+    fail "application admission did not complete without timeout"
 
 mapfile -t output_completions < <(
     grep -E '^sophia_live_output schema=1 status=complete ' "$SESSION_LOG"

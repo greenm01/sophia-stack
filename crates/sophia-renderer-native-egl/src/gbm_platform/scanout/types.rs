@@ -115,6 +115,11 @@ pub struct NativeGbmPersistentRenderStats {
     pub target_creations: usize,
     pub target_recreations: usize,
     pub gl_pipeline_creations: usize,
+    pub cpu_target_creations: usize,
+    pub dmabuf_target_creations: usize,
+    pub composition_target_creations: usize,
+    pub epoch_replacements: usize,
+    pub recovery_replacements: usize,
     pub frame_uploads: usize,
     pub max_upload: Duration,
 }

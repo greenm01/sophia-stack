@@ -228,6 +228,11 @@ pub struct LiveNativePersistentRenderStats {
     pub target_creations: usize,
     pub target_recreations: usize,
     pub gl_pipeline_creations: usize,
+    pub cpu_target_creations: usize,
+    pub dmabuf_target_creations: usize,
+    pub composition_target_creations: usize,
+    pub epoch_replacements: usize,
+    pub recovery_replacements: usize,
     pub frame_uploads: usize,
     pub max_upload: std::time::Duration,
 }
@@ -242,6 +247,11 @@ where
             target_creations: stats.target_creations,
             target_recreations: stats.target_recreations,
             gl_pipeline_creations: stats.gl_pipeline_creations,
+            cpu_target_creations: stats.cpu_target_creations,
+            dmabuf_target_creations: stats.dmabuf_target_creations,
+            composition_target_creations: stats.composition_target_creations,
+            epoch_replacements: stats.epoch_replacements,
+            recovery_replacements: stats.recovery_replacements,
             frame_uploads: stats.frame_uploads,
             max_upload: stats.max_upload,
         }

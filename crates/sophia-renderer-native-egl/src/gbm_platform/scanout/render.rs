@@ -144,6 +144,10 @@ fn create_persistent_target<T: std::os::fd::AsFd>(
     let native_window = gbm_surface.as_raw() as khronos_egl::NativeWindowType;
     let egl_surface = unsafe { egl.create_window_surface(display, config, native_window, None) }
         .map_err(|_| NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable)?;
+    let Some(destroy_surface) = egl.get_proc_address("eglDestroySurface") else {
+        let _ = egl.destroy_surface(display, egl_surface);
+        return Err(NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable);
+    };
     let egl_context = match egl.create_context(display, config, None, &context_attributes()) {
         Ok(context) => context,
         Err(_) => {
@@ -180,15 +184,25 @@ fn create_persistent_target<T: std::os::fd::AsFd>(
     };
     let _ = egl.make_current(display, None, None, None);
     trace_native_lifecycle("persistent_context_created");
+    let surface = std::sync::Arc::new(PersistentNativeSurface {
+        egl_surface: NativeEglSurfaceOwner {
+            destroy_surface: unsafe {
+                std::mem::transmute::<
+                    extern "system" fn(),
+                    unsafe extern "system" fn(*mut c_void, *mut c_void) -> u32,
+                >(destroy_surface)
+            },
+            display,
+            surface: egl_surface,
+        },
+        gbm_surface,
+    });
     Ok(PersistentNativeFrameTarget {
         width,
         height,
         preferred_modifiers,
-        config,
-        candidate,
         egl_context,
-        egl_surface,
-        gbm_surface,
+        surface,
         pipeline,
     })
 }
@@ -200,7 +214,7 @@ fn render_persistent_target_frame<T: std::os::fd::AsFd>(
     target: &mut PersistentNativeFrameTarget,
     pixels: &[u8],
 ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-    let egl_surface = target.egl_surface;
+    let egl_surface = target.surface.egl_surface();
     if egl
         .make_current(
             display,
@@ -225,44 +239,16 @@ fn render_persistent_target_frame<T: std::os::fd::AsFd>(
         })
         .and_then(|()| {
             trace_native_lifecycle("egl_surface_swapped");
-            let buffer = unsafe { target.gbm_surface.lock_front_buffer() }
+            let buffer = unsafe { target.surface.gbm_surface().lock_front_buffer() }
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed)?;
             trace_native_lifecycle("scanout_front_buffer_locked");
-            native_owned_scanout_buffer_from_bo(target.width, target.height, buffer, None)
+            let mut buffer =
+                native_owned_scanout_buffer_from_bo(target.width, target.height, buffer, None)?;
+            buffer._persistent_surface = Some(target.surface.clone());
+            Ok(buffer)
         });
     let _ = egl.make_current(display, None, None, None);
     result
-}
-
-fn retain_egl_surface_until_scanout_release(
-    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
-    display: khronos_egl::Display,
-    surface: khronos_egl::Surface,
-    result: Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail>,
-) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-    match result {
-        Ok(mut buffer) => {
-            let Some(destroy_surface) = egl.get_proc_address("eglDestroySurface") else {
-                let _ = egl.destroy_surface(display, surface);
-                return Err(NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable);
-            };
-            buffer._egl_surface = Some(NativeEglSurfaceOwner {
-                destroy_surface: unsafe {
-                    std::mem::transmute::<
-                        extern "system" fn(),
-                        unsafe extern "system" fn(*mut c_void, *mut c_void) -> u32,
-                    >(destroy_surface)
-                },
-                display,
-                surface,
-            });
-            Ok(buffer)
-        }
-        Err(detail) => {
-            let _ = egl.destroy_surface(display, surface);
-            Err(detail)
-        }
-    }
 }
 
 fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
@@ -272,8 +258,6 @@ fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
     target: &mut PersistentNativeFrameTarget,
     frame: NativeDmaBufFrame<'_>,
 ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-    use gbm::AsRaw as _;
-
     const EGL_LINUX_DMA_BUF_EXT: khronos_egl::Enum = 0x3270;
     const EGL_WIDTH: khronos_egl::Attrib = 0x3057;
     const EGL_HEIGHT: khronos_egl::Attrib = 0x3056;
@@ -284,18 +268,8 @@ fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
     const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: khronos_egl::Attrib = 0x3443;
     const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: khronos_egl::Attrib = 0x3444;
 
-    let gbm_surface = create_rendered_scanout_surface(
-        gbm_device,
-        target.width,
-        target.height,
-        target.candidate.format,
-        &target.candidate.modifiers,
-        target.candidate.usage,
-    )?;
-    let native_window = gbm_surface.as_raw() as khronos_egl::NativeWindowType;
-    let egl_surface =
-        unsafe { egl.create_window_surface(display, target.config, native_window, None) }
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable)?;
+    let _ = gbm_device;
+    let egl_surface = target.surface.egl_surface();
     if egl
         .make_current(
             display,
@@ -305,7 +279,6 @@ fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
         )
         .is_err()
     {
-        let _ = egl.destroy_surface(display, egl_surface);
         return Err(NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed);
     }
     trace_dmabuf_lifecycle("egl_surface_current");
@@ -368,15 +341,17 @@ fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
                 })
                 .and_then(|()| {
                     trace_dmabuf_lifecycle("egl_surface_swapped");
-                    let buffer = unsafe { gbm_surface.lock_front_buffer() }
+                    let buffer = unsafe { target.surface.gbm_surface().lock_front_buffer() }
                         .map_err(|_| NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed)?;
                     trace_dmabuf_lifecycle("scanout_front_buffer_locked");
-                    native_owned_scanout_buffer_from_bo(
+                    let mut buffer = native_owned_scanout_buffer_from_bo(
                         target.width,
                         target.height,
                         buffer,
-                        Some(gbm_surface),
-                    )
+                        None,
+                    )?;
+                    buffer._persistent_surface = Some(target.surface.clone());
+                    Ok(buffer)
                 });
             let image_destroyed = egl.destroy_image(display, image).is_ok();
             if image_destroyed {
@@ -394,7 +369,7 @@ fn render_persistent_target_dmabuf<T: std::os::fd::AsFd>(
         Err(detail) => Err(detail),
     };
     let _ = egl.make_current(display, None, None, None);
-    retain_egl_surface_until_scanout_release(egl, display, egl_surface, result)
+    result
 }
 
 fn render_persistent_target_composition<T: std::os::fd::AsFd>(
@@ -411,20 +386,8 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
     ),
     NativeGbmScanoutBufferExportDetail,
 > {
-    use gbm::AsRaw as _;
-
-    let gbm_surface = create_rendered_scanout_surface(
-        gbm_device,
-        target.width,
-        target.height,
-        target.candidate.format,
-        &target.candidate.modifiers,
-        target.candidate.usage,
-    )?;
-    let native_window = gbm_surface.as_raw() as khronos_egl::NativeWindowType;
-    let egl_surface =
-        unsafe { egl.create_window_surface(display, target.config, native_window, None) }
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable)?;
+    let _ = gbm_device;
+    let egl_surface = target.surface.egl_surface();
     if egl
         .make_current(
             display,
@@ -434,7 +397,6 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
         )
         .is_err()
     {
-        let _ = egl.destroy_surface(display, egl_surface);
         return Err(NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed);
     }
 
@@ -530,7 +492,7 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
         })
         .and_then(|()| {
             trace_native_lifecycle("composition_surface_swapped");
-            let buffer = unsafe { gbm_surface.lock_front_buffer() }
+            let buffer = unsafe { target.surface.gbm_surface().lock_front_buffer() }
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed)?;
             trace_native_lifecycle("composition_front_buffer_locked");
             let pixel_metrics = if capture_pixels {
@@ -568,25 +530,17 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
             } else {
                 None
             };
-            native_owned_scanout_buffer_from_bo(
+            let mut buffer = native_owned_scanout_buffer_from_bo(
                 target.width,
                 target.height,
                 buffer,
-                Some(gbm_surface),
-            )
-            .map(|buffer| (buffer, pixel_metrics))
+                None,
+            )?;
+            buffer._persistent_surface = Some(target.surface.clone());
+            Ok((buffer, pixel_metrics))
         });
     let _ = egl.make_current(display, None, None, None);
-    match result {
-        Ok((buffer, pixel_metrics)) => {
-            retain_egl_surface_until_scanout_release(egl, display, egl_surface, Ok(buffer))
-                .map(|buffer| (buffer, pixel_metrics))
-        }
-        Err(detail) => {
-            retain_egl_surface_until_scanout_release(egl, display, egl_surface, Err(detail))
-                .map(|buffer| (buffer, None))
-        }
-    }
+    result
 }
 
 fn post_swap_front_buffer_pixel_metrics(

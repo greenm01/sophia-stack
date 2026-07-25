@@ -3,6 +3,37 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-25: Persistent Native Targets Are Isolated By Render Class
+
+The latest physical four-Kitty evidence showed that a stable output epoch
+created a GBM/EGL target and GL pipeline for every mixed frame. That avoided an
+older AMDGPU command-stream rejection by destroying mixed DMA-BUF state before
+the next CPU upload, but replaced the hazard with frame-rate resource churn,
+185 ms page-flip latency, and 291 ms input queue dwell.
+
+Native scanout now keeps separate persistent CPU, DMA-BUF, and composition
+targets for each output context. Render classes cannot leak EGL/GL state into
+one another, while each class reuses its target across a stable
+size/format/modifier epoch. An exported scanout buffer retains a reference to
+the persistent native surface, so buffer release still precedes surface
+destruction without forcing the context or pipeline to be rebuilt per frame.
+An epoch change retires the affected target; a bounded retry may replace a
+target after an explicitly classified EGL, GL, upload, or composition failure.
+
+Reduced completion evidence reports total and per-class target creation plus
+epoch- and recovery-driven replacement counts. The four-Kitty verifier now
+requires sustained mixed composition, class-consistent creation counts, zero
+replacement in the stable workload, zero launch-admission timeout, and bounded
+input, upload, and page-flip latency. Local compilation and verifier mutation
+coverage establish the ownership model; the physical workload and recovery
+retirement proof remain open.
+
+The same milestone now names click-to-focus separately from pointer motion and
+client click-drag delivery. A primary click on an unfocused visible surface
+must first select that surface through the blind WM interface, then deliver
+ordered client input to the newly focused target. This is pending work; no
+xmonad- or application-specific policy belongs in Engine.
+
 ## 2026-07-25: Native Service Must Preserve The Resize Epoch Barrier
 
 The first physical four-Kitty run isolated the remaining corruption. Xmonad

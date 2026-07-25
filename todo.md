@@ -68,12 +68,12 @@ Promotion now follows the gates below in order.
 
 ### 9.1 Native presentation lifetime and latency
 
-- [ ] Decouple exported scanout-buffer ownership from the persistent EGL
+- [x] Decouple exported scanout-buffer ownership from the persistent EGL
   context, GL pipeline, and GBM target lifetime.
-- [ ] Retain per-output rendering resources across a stable
+- [x] Retain per-output rendering resources across a stable
   size/format/modifier epoch; recreate them only for topology change,
   incompatible target change, or explicit bounded recovery.
-- [ ] Emit reduced recreation-reason and lifetime evidence without native
+- [x] Emit reduced recreation-reason and lifetime evidence without native
   handles or application metadata.
 - [ ] Prove a stable physical workload has zero per-frame target or pipeline
   recreation, zero launch-admission timeouts, and bounded input-to-submit and
@@ -90,6 +90,10 @@ Promotion now follows the gates below in order.
 - [ ] Prove typing, pointer motion, click-drag selection, focus changes,
   Super-Enter, tiling resize, workspace switching, and no input delivery to
   hidden or unfocused windows.
+- [ ] Prove an unmodified primary-button press on an unfocused visible window
+  commits WM-selected focus before client delivery; require the following
+  keyboard input and ordered button release to reach that target, while hidden
+  surfaces remain unselectable.
 - [ ] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.

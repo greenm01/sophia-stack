@@ -65,6 +65,20 @@ mod persistent_native_scanout {
         pub last_submit_report: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
     }
 
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+    pub struct LivePersistentRenderMetrics {
+        pub target_creations: usize,
+        pub target_recreations: usize,
+        pub pipeline_creations: usize,
+        pub cpu_target_creations: usize,
+        pub dmabuf_target_creations: usize,
+        pub composition_target_creations: usize,
+        pub epoch_replacements: usize,
+        pub recovery_replacements: usize,
+        pub uploads: usize,
+        pub max_upload: Duration,
+    }
+
     impl LiveProductionNativeScanout {
         pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
             Self::new_with_selection(crate::select_real_atomic_scanout_cards())
@@ -711,18 +725,38 @@ mod persistent_native_scanout {
                 .sum()
         }
 
-        pub fn persistent_render_metrics(&self) -> (usize, usize, usize, usize, Duration) {
+        pub fn persistent_render_metrics(&self) -> LivePersistentRenderMetrics {
             self.heads.iter().fold(
-                (0, 0, 0, 0, Duration::ZERO),
-                |(targets, recreations, pipelines, uploads, max_upload), head| {
+                LivePersistentRenderMetrics::default(),
+                |mut metrics, head| {
                     let stats = head.exporter.persistent_render_stats();
-                    (
-                        targets.saturating_add(stats.target_creations),
-                        recreations.saturating_add(stats.target_recreations),
-                        pipelines.saturating_add(stats.gl_pipeline_creations),
-                        uploads.saturating_add(stats.frame_uploads),
-                        max_upload.max(stats.max_upload),
-                    )
+                    metrics.target_creations = metrics
+                        .target_creations
+                        .saturating_add(stats.target_creations);
+                    metrics.target_recreations = metrics
+                        .target_recreations
+                        .saturating_add(stats.target_recreations);
+                    metrics.pipeline_creations = metrics
+                        .pipeline_creations
+                        .saturating_add(stats.gl_pipeline_creations);
+                    metrics.cpu_target_creations = metrics
+                        .cpu_target_creations
+                        .saturating_add(stats.cpu_target_creations);
+                    metrics.dmabuf_target_creations = metrics
+                        .dmabuf_target_creations
+                        .saturating_add(stats.dmabuf_target_creations);
+                    metrics.composition_target_creations = metrics
+                        .composition_target_creations
+                        .saturating_add(stats.composition_target_creations);
+                    metrics.epoch_replacements = metrics
+                        .epoch_replacements
+                        .saturating_add(stats.epoch_replacements);
+                    metrics.recovery_replacements = metrics
+                        .recovery_replacements
+                        .saturating_add(stats.recovery_replacements);
+                    metrics.uploads = metrics.uploads.saturating_add(stats.frame_uploads);
+                    metrics.max_upload = metrics.max_upload.max(stats.max_upload);
+                    metrics
                 },
             )
         }
@@ -778,9 +812,9 @@ mod persistent_native_scanout {
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
-    LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead, LiveProductionNativeScanout,
-    LiveProductionScanoutContent, live_production_scanout_is_stable_present,
-    reduce_live_production_cpu_frame_queue,
+    LivePersistentRenderMetrics, LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead,
+    LiveProductionNativeScanout, LiveProductionScanoutContent,
+    live_production_scanout_is_stable_present, reduce_live_production_cpu_frame_queue,
 };
 
 #[derive(Debug)]

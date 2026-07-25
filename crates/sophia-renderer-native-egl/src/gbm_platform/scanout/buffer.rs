@@ -15,6 +15,7 @@ pub struct NativeGbmOwnedScanoutBuffer {
     _buffer: Option<gbm::BufferObject<()>>,
     _egl_surface: Option<NativeEglSurfaceOwner>,
     _surface: Option<gbm::Surface<()>>,
+    _persistent_surface: Option<std::sync::Arc<PersistentNativeSurface>>,
 }
 
 #[derive(Debug)]
@@ -24,11 +25,28 @@ struct NativeEglSurfaceOwner {
     surface: khronos_egl::Surface,
 }
 
+#[derive(Debug)]
+struct PersistentNativeSurface {
+    egl_surface: NativeEglSurfaceOwner,
+    gbm_surface: gbm::Surface<()>,
+}
+
+impl PersistentNativeSurface {
+    const fn egl_surface(&self) -> khronos_egl::Surface {
+        self.egl_surface.surface
+    }
+
+    fn gbm_surface(&self) -> &gbm::Surface<()> {
+        &self.gbm_surface
+    }
+}
+
 impl Drop for NativeEglSurfaceOwner {
     fn drop(&mut self) {
         unsafe {
             (self.destroy_surface)(self.display.as_ptr(), self.surface.as_ptr());
         }
+        trace_native_lifecycle("egl_surface_destroyed");
     }
 }
 
@@ -38,9 +56,10 @@ impl Drop for NativeGbmOwnedScanoutBuffer {
         drop(self._buffer.take());
         trace_native_lifecycle("front_buffer_released");
         drop(self._egl_surface.take());
-        trace_native_lifecycle("egl_surface_destroyed");
         drop(self._surface.take());
         trace_native_lifecycle("originating_surface_released");
+        drop(self._persistent_surface.take());
+        trace_native_lifecycle("persistent_surface_lease_released");
     }
 }
 

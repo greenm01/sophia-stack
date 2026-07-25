@@ -227,15 +227,24 @@
             policy.touch_devices,
         );
     }
-    let (
-        native_target_creations,
-        native_target_recreations,
-        native_pipeline_creations,
-        native_uploads,
-        native_max_upload,
-    ) = native_scanout.as_ref().map_or(
-        (0, 0, 0, 0, Duration::ZERO),
+    let native_resources = native_scanout.as_ref().map_or_else(
+        sophia_backend_live::LivePersistentRenderMetrics::default,
         LiveProductionNativeScanout::persistent_render_metrics,
+    );
+    let native_target_creations = native_resources.target_creations;
+    let native_target_recreations = native_resources.target_recreations;
+    let native_pipeline_creations = native_resources.pipeline_creations;
+    let native_uploads = native_resources.uploads;
+    let native_max_upload = native_resources.max_upload;
+    println!(
+        "sophia_live_native_resources schema=1 status=complete target_creations={} pipeline_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} epoch_replacements={} recovery_replacements={}",
+        native_resources.target_creations,
+        native_resources.pipeline_creations,
+        native_resources.cpu_target_creations,
+        native_resources.dmabuf_target_creations,
+        native_resources.composition_target_creations,
+        native_resources.epoch_replacements,
+        native_resources.recovery_replacements,
     );
     println!(
         "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches}"

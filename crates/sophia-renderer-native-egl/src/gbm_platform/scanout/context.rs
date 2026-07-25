@@ -9,7 +9,9 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     egl: khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
     gbm_device: gbm::Device<T>,
-    target: Option<PersistentNativeFrameTarget>,
+    cpu_target: Option<PersistentNativeFrameTarget>,
+    dmabuf_target: Option<PersistentNativeFrameTarget>,
+    composition_target: Option<PersistentNativeFrameTarget>,
     stats: NativeGbmPersistentRenderStats,
     last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
     composition_pixel_proof_attempts: usize,
@@ -19,11 +21,8 @@ struct PersistentNativeFrameTarget {
     width: u32,
     height: u32,
     preferred_modifiers: Vec<u64>,
-    config: khronos_egl::Config,
-    candidate: RenderedScanoutCandidate,
     egl_context: khronos_egl::Context,
-    egl_surface: khronos_egl::Surface,
-    gbm_surface: gbm::Surface<()>,
+    surface: std::sync::Arc<PersistentNativeSurface>,
     pipeline: PersistentXrgb8888GlPipeline,
 }
 
@@ -76,7 +75,9 @@ where
             egl,
             display,
             gbm_device,
-            target: None,
+            cpu_target: None,
+            dmabuf_target: None,
+            composition_target: None,
             stats: NativeGbmPersistentRenderStats::default(),
             last_composition_pixel_metrics: None,
             composition_pixel_proof_attempts: 0,
@@ -158,7 +159,12 @@ where
         let result = self
             .write_cpu_xrgb8888_scanout_buffer(width, height, pixels)
             .or_else(|_| {
-                self.render_persistent_xrgb8888(width, height, pixels, preferred_modifiers)
+                self.render_persistent_xrgb8888_with_recovery(
+                    width,
+                    height,
+                    pixels,
+                    preferred_modifiers,
+                )
             });
         self.stats.max_upload = self.stats.max_upload.max(started.elapsed());
         match result {
@@ -179,7 +185,7 @@ where
                 buffer: None,
             };
         }
-        let result = self.render_persistent_dmabuf(frame, preferred_modifiers);
+        let result = self.render_persistent_dmabuf_with_recovery(frame, preferred_modifiers);
         match result {
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
@@ -216,9 +222,28 @@ where
                 buffer: None,
             };
         }
-        match self.render_persistent_composition(frame, preferred_modifiers) {
+        match self.render_persistent_composition_with_recovery(frame, preferred_modifiers) {
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
+        }
+    }
+
+    fn render_persistent_composition_with_recovery(
+        &mut self,
+        frame: NativeCompositionFrame<'_>,
+        preferred_modifiers: &[u64],
+    ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+        let result = self.render_persistent_composition(frame, preferred_modifiers);
+        if result
+            .as_ref()
+            .is_err_and(|detail| invalidates_persistent_target(*detail))
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.recovery_replacements =
+                self.stats.recovery_replacements.saturating_add(1);
+            self.render_persistent_composition(frame, preferred_modifiers)
+        } else {
+            result
         }
     }
 
@@ -232,16 +257,17 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.target.as_ref().is_some_and(|target| {
+        let reusable = self.composition_target.as_ref().is_some_and(|target| {
             target.width == frame.width
                 && target.height == frame.height
                 && target.preferred_modifiers == preferred_modifiers
         });
-        if !reusable && let Some(target) = self.target.take() {
+        if !reusable && let Some(target) = self.composition_target.take() {
             self.destroy_persistent_target(target);
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
         }
-        if let Some(mut target) = self.target.take() {
+        if let Some(mut target) = self.composition_target.take() {
             let capture_pixels = self.composition_pixel_proof_attempts < 3;
             let result = render_persistent_target_composition(
                 &self.egl,
@@ -257,13 +283,16 @@ where
             }
             self.last_composition_pixel_metrics =
                 result.as_ref().ok().and_then(|(_, metrics)| *metrics);
-            // The exported GBM owner keeps the scanout surface alive. Retire
-            // the context here so Radeon cannot carry imported-image command
-            // stream state into the next CPU upload.
             if result.is_ok() {
-                self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+                self.composition_target = Some(target);
+            } else if result
+                .as_ref()
+                .is_err_and(|detail| invalidates_persistent_target(*detail))
+            {
+                self.destroy_persistent_target(target);
+            } else {
+                self.composition_target = Some(target);
             }
-            self.destroy_persistent_target(target);
             return result.map(|(buffer, _)| buffer);
         }
 
@@ -322,8 +351,9 @@ where
                     self.stats.target_creations = self.stats.target_creations.saturating_add(1);
                     self.stats.gl_pipeline_creations =
                         self.stats.gl_pipeline_creations.saturating_add(1);
-                    self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-                    self.destroy_persistent_target(target);
+                    self.stats.composition_target_creations =
+                        self.stats.composition_target_creations.saturating_add(1);
+                    self.composition_target = Some(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
@@ -339,6 +369,25 @@ where
         Err(last_detail)
     }
 
+    fn render_persistent_dmabuf_with_recovery(
+        &mut self,
+        frame: NativeDmaBufFrame<'_>,
+        preferred_modifiers: &[u64],
+    ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+        let result = self.render_persistent_dmabuf(frame, preferred_modifiers);
+        if result
+            .as_ref()
+            .is_err_and(|detail| invalidates_persistent_target(*detail))
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.recovery_replacements =
+                self.stats.recovery_replacements.saturating_add(1);
+            self.render_persistent_dmabuf(frame, preferred_modifiers)
+        } else {
+            result
+        }
+    }
+
     fn render_persistent_dmabuf(
         &mut self,
         frame: NativeDmaBufFrame<'_>,
@@ -349,16 +398,17 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.target.as_ref().is_some_and(|target| {
+        let reusable = self.dmabuf_target.as_ref().is_some_and(|target| {
             target.width == frame.width
                 && target.height == frame.height
                 && target.preferred_modifiers == preferred_modifiers
         });
-        if !reusable && let Some(target) = self.target.take() {
+        if !reusable && let Some(target) = self.dmabuf_target.take() {
             self.destroy_persistent_target(target);
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
         }
-        if let Some(mut target) = self.target.take() {
+        if let Some(mut target) = self.dmabuf_target.take() {
             let result = render_persistent_target_dmabuf(
                 &self.egl,
                 self.display,
@@ -367,9 +417,14 @@ where
                 frame,
             );
             if result.is_ok() {
-                self.target = Some(target);
-            } else {
+                self.dmabuf_target = Some(target);
+            } else if result
+                .as_ref()
+                .is_err_and(|detail| invalidates_persistent_target(*detail))
+            {
                 self.destroy_persistent_target(target);
+            } else {
+                self.dmabuf_target = Some(target);
             }
             return result;
         }
@@ -420,7 +475,9 @@ where
                     self.stats.target_creations = self.stats.target_creations.saturating_add(1);
                     self.stats.gl_pipeline_creations =
                         self.stats.gl_pipeline_creations.saturating_add(1);
-                    self.target = Some(target);
+                    self.stats.dmabuf_target_creations =
+                        self.stats.dmabuf_target_creations.saturating_add(1);
+                    self.dmabuf_target = Some(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
@@ -487,6 +544,28 @@ where
         native_owned_scanout_buffer_from_bo(width, height, buffer, None)
     }
 
+    fn render_persistent_xrgb8888_with_recovery(
+        &mut self,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+        preferred_modifiers: &[u64],
+    ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+        let result =
+            self.render_persistent_xrgb8888(width, height, pixels, preferred_modifiers);
+        if result
+            .as_ref()
+            .is_err_and(|detail| invalidates_persistent_target(*detail))
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.recovery_replacements =
+                self.stats.recovery_replacements.saturating_add(1);
+            self.render_persistent_xrgb8888(width, height, pixels, preferred_modifiers)
+        } else {
+            result
+        }
+    }
+
     fn render_persistent_xrgb8888(
         &mut self,
         width: u32,
@@ -499,16 +578,17 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.target.as_ref().is_some_and(|target| {
+        let reusable = self.cpu_target.as_ref().is_some_and(|target| {
             target.width == width
                 && target.height == height
                 && target.preferred_modifiers == preferred_modifiers
         });
-        if !reusable && let Some(target) = self.target.take() {
+        if !reusable && let Some(target) = self.cpu_target.take() {
             self.destroy_persistent_target(target);
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
         }
-        if let Some(mut target) = self.target.take() {
+        if let Some(mut target) = self.cpu_target.take() {
             let result = render_persistent_target_frame(
                 &self.egl,
                 self.display,
@@ -518,9 +598,14 @@ where
             );
             if result.is_ok() {
                 self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-                self.target = Some(target);
-            } else {
+                self.cpu_target = Some(target);
+            } else if result
+                .as_ref()
+                .is_err_and(|detail| invalidates_persistent_target(*detail))
+            {
                 self.destroy_persistent_target(target);
+            } else {
+                self.cpu_target = Some(target);
             }
             return result;
         }
@@ -572,7 +657,9 @@ where
                     self.stats.gl_pipeline_creations =
                         self.stats.gl_pipeline_creations.saturating_add(1);
                     self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-                    self.target = Some(target);
+                    self.stats.cpu_target_creations =
+                        self.stats.cpu_target_creations.saturating_add(1);
+                    self.cpu_target = Some(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
@@ -592,10 +679,9 @@ where
         trace_native_lifecycle("persistent_target_destroy_started");
         let _ = self.egl.make_current(self.display, None, None, None);
         drop(target.pipeline);
-        let _ = self.egl.destroy_surface(self.display, target.egl_surface);
-        trace_native_lifecycle("egl_surface_destroyed");
         let _ = self.egl.destroy_context(self.display, target.egl_context);
         trace_native_lifecycle("egl_context_destroyed");
+        drop(target.surface);
     }
 }
 
@@ -604,10 +690,29 @@ where
     T: std::os::fd::AsFd,
 {
     fn drop(&mut self) {
-        if let Some(target) = self.target.take() {
+        if let Some(target) = self.cpu_target.take() {
+            self.destroy_persistent_target(target);
+        }
+        if let Some(target) = self.dmabuf_target.take() {
+            self.destroy_persistent_target(target);
+        }
+        if let Some(target) = self.composition_target.take() {
             self.destroy_persistent_target(target);
         }
         let _ = self.egl.terminate(self.display);
         trace_native_lifecycle("egl_display_terminated");
     }
+}
+
+fn invalidates_persistent_target(detail: NativeGbmScanoutBufferExportDetail) -> bool {
+    matches!(
+        detail,
+        NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed
+            | NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed
+            | NativeGbmScanoutBufferExportDetail::GlSmokeFailed
+            | NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed
+            | NativeGbmScanoutBufferExportDetail::CompositionDrawFailed
+            | NativeGbmScanoutBufferExportDetail::CompositionFinishFailed
+            | NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed
+    )
 }

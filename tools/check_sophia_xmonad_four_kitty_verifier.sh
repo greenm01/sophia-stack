@@ -21,7 +21,9 @@ sophia_live_session_present schema=2 status=retired transaction=13 surface=4 sou
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
-sophia_live_session schema=14 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0
+sophia_session_launches schema=1 status=complete peak_depth=3 rejected=0 admission_timeouts=0
+sophia_live_native_resources schema=1 status=complete target_creations=1 pipeline_creations=1 cpu_target_creations=0 dmabuf_target_creations=0 composition_target_creations=1 epoch_replacements=0 recovery_replacements=0
+sophia_live_session schema=14 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 native_mixed_exports=64 native_target_recreations=0 native_max_submit_to_page_flip_msec=20 native_max_upload_msec=8 input_queue_dwell_max_msec=12
 sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=10 retirements=9 callbacks=9 nonzero_exports=1
 sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=7 retirements=6 callbacks=6 nonzero_exports=1
 sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
@@ -56,5 +58,17 @@ expect_rejected callback_imbalance \
 expect_rejected incomplete \
     'sophia_live_session_cleanup schema=1 status=clean' \
     'sophia_live_session_cleanup schema=1 status=stalled'
+expect_rejected per_frame_recreation \
+    'native_target_recreations=0' \
+    'native_target_recreations=64'
+expect_rejected recovery_replacement \
+    'recovery_replacements=0' \
+    'recovery_replacements=1'
+expect_rejected excessive_input_dwell \
+    'input_queue_dwell_max_msec=12' \
+    'input_queue_dwell_max_msec=101'
+expect_rejected admission_timeout \
+    'admission_timeouts=0' \
+    'admission_timeouts=1'
 
 echo "four-Kitty verifier mutation checks passed"
