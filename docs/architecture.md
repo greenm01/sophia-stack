@@ -135,6 +135,20 @@ or layout policy.
 
 ### Production Session Loop
 
+The physical owner services native page-flip retirement before routing new
+shortcut actions. External WM packets cross a bounded typed queue with at most
+one request in flight; a dedicated transport worker owns the blocking socket
+round trip. The owner retains policy authority: it correlates the response,
+rejects proposals whose layout fingerprint became stale, validates the opaque
+layout transaction, and applies workspace and session effects only after the
+atomic layout commit. The worker owns no scene, focus, workspace, application,
+or protocol state.
+
+Owner completion evidence separates child-reap and physical-input phase maxima
+from WM transport round-trip and queue-dwell measurements. A slow policy
+process may delay a policy result up to its bounded timeout, but it cannot hold
+page-flip retirement or physical input on the owner thread.
+
 The live X11 path has completed the Milestone 4 presentation work: standard
 DRI3/Present registrations, acquire-fence gating, mixed CPU/GPU composition,
 KMS submission, page-flip-driven Complete/Idle feedback, controlled rejection

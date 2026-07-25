@@ -263,7 +263,7 @@ where
         let result = self.render_one_shot_composition(frame, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| should_retry_render_target(*detail))
+            .is_err_and(|detail| detail.render_target_retryable())
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
@@ -358,7 +358,7 @@ where
         let result = self.render_one_shot_dmabuf(frame, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| should_retry_render_target(*detail))
+            .is_err_and(|detail| detail.render_target_retryable())
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
@@ -499,7 +499,7 @@ where
             self.render_one_shot_xrgb8888(width, height, pixels, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| should_retry_render_target(*detail))
+            .is_err_and(|detail| detail.render_target_retryable())
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
@@ -597,49 +597,5 @@ where
     fn drop(&mut self) {
         let _ = self.egl.terminate(self.display);
         trace_native_lifecycle("egl_display_terminated");
-    }
-}
-
-fn should_retry_render_target(detail: NativeGbmScanoutBufferExportDetail) -> bool {
-    matches!(
-        detail,
-        NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed
-            | NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed
-            | NativeGbmScanoutBufferExportDetail::GlSmokeFailed
-            | NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed
-            | NativeGbmScanoutBufferExportDetail::CompositionDrawFailed
-            | NativeGbmScanoutBufferExportDetail::CompositionFinishFailed
-            | NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed
-    )
-}
-
-#[cfg(test)]
-mod render_target_tests {
-    use super::*;
-
-    #[test]
-    fn context_and_pipeline_failures_receive_a_bounded_retry() {
-        for detail in [
-            NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed,
-            NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed,
-            NativeGbmScanoutBufferExportDetail::GlSmokeFailed,
-            NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed,
-            NativeGbmScanoutBufferExportDetail::CompositionDrawFailed,
-            NativeGbmScanoutBufferExportDetail::CompositionFinishFailed,
-            NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed,
-        ] {
-            assert!(should_retry_render_target(detail));
-        }
-    }
-
-    #[test]
-    fn export_surface_failures_do_not_retry_the_one_shot_target() {
-        for detail in [
-            NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable,
-            NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable,
-            NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed,
-        ] {
-            assert!(!should_retry_render_target(detail));
-        }
     }
 }

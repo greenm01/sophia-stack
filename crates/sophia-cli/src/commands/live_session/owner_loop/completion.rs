@@ -18,6 +18,8 @@
         physical_pointer_buttons_routed,
         session_ticks,
         max_compose,
+        max_child_reap,
+        max_input_phase,
         protocol_error_count,
         expected_protocol_error_count,
         cursor_moves_coalesced,
@@ -188,6 +190,10 @@
     }
     if config.normal_session
         && (layout.pending.is_some()
+            || pending_wm_update.is_some()
+            || wm_session
+                .as_ref()
+                .is_some_and(|wm| wm.pending_request_count() != 0)
             || !committed_session_actions.is_empty()
             || session_launches.pending_len() != 0
             || session_launches.admission().is_some()
@@ -195,8 +201,12 @@
             || wm_session.as_ref().is_some_and(|wm| wm.degraded))
     {
         return Err(format!(
-            "normal session ended with pending work: wm={} actions={} launches={} admission={} input={} degraded={}",
+            "normal session ended with pending work: wm_layout={} wm_update={} wm_requests={} actions={} launches={} admission={} input={} degraded={}",
             usize::from(layout.pending.is_some()),
+            usize::from(pending_wm_update.is_some()),
+            wm_session
+                .as_ref()
+                .map_or(0, LiveWmSession::pending_request_count),
             committed_session_actions.len(),
             session_launches.pending_len(),
             usize::from(session_launches.admission().is_some()),
@@ -255,6 +265,22 @@
         "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches}"
     );
     println!(
+        "sophia_live_owner_timing schema=2 status=complete max_child_reap_msec={} max_input_phase_msec={}",
+        max_child_reap.as_millis(),
+        max_input_phase.as_millis(),
+    );
+    if let Some(wm) = wm_session.as_ref() {
+        println!(
+            "sophia_live_wm_transport schema=1 status=complete peak_depth={} pending={} rejected={} stale_responses={} max_queue_dwell_msec={} max_round_trip_msec={}",
+            wm.request_peak_depth,
+            wm.pending_request_count(),
+            wm.request_rejections,
+            wm.stale_responses,
+            wm.max_queue_dwell.as_millis(),
+            wm.max_request().as_millis(),
+        );
+    }
+    println!(
         "sophia_live_session_cursor schema=2 moves_coalesced={} max_motion_to_submit_msec={} buttons_routed={} hardware_updates={} hardware_failures={}",
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.as_millis(),
@@ -269,7 +295,13 @@
     println!(
         "sophia_live_session_health schema=1 status=clean protocol_errors={} pending_wm={} pending_actions={} pending_input={} wm_degraded={}",
         protocol_error_count,
-        usize::from(layout.pending.is_some()),
+        usize::from(layout.pending.is_some())
+            .saturating_add(usize::from(pending_wm_update.is_some()))
+            .saturating_add(
+                wm_session
+                    .as_ref()
+                    .map_or(0, LiveWmSession::pending_request_count),
+            ),
         committed_session_actions.len(),
         input_delivery.pending.len(),
         wm_session.as_ref().is_some_and(|wm| wm.degraded),

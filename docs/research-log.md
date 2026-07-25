@@ -3341,3 +3341,64 @@ exited. Target creation peaked at 4 ms and rendering at 47 ms, while input
 queue dwell reached 191 ms. The next fix must prioritize native callback and
 input draining across child-exit and layout-transition work. The latency budget
 must not be relaxed to hide these isolated starvation events.
+
+## 2026-07-25: Native Retirement Precedes Shortcut RPC
+
+The physical owner previously routed input before servicing native retirement.
+A global shortcut could therefore enter the external WM transport's synchronous
+request path, whose configured response timeout is 500 ms, while an accepted
+KMS callback waited in the native event queue. The same wait could accumulate
+physical input in the acquisition queue.
+
+Native service now precedes shortcut routing. Completion evidence separately
+records maximum child-reap, input-routing, and WM-request durations, and the
+four-Kitty verifier caps each at 100 ms. This is an ordering correction, not a
+claim that synchronous WM transport is suitable long term. If the next
+physical evidence attributes the remaining input dwell to WM request time, WM
+actions move to a bounded typed worker with explicit response correlation and
+stale-response rejection.
+
+## 2026-07-25: WM Socket Wait Leaves The Physical Owner
+
+The next two-output, four-Kitty hardware cycle completed without a crash,
+AMDGPU rejection, resource replacement, or cleanup debt. It recorded a 180 ms
+maximum external-WM request, a 100 ms physical-input phase, 246 ms input queue
+dwell, and a 210 ms submit-to-page-flip observation. Child reaping peaked at
+25 ms. The correlated peaks identify synchronous WM socket waiting as the owner
+starvation source; renderer and target lifetimes remained stable.
+
+WM transport now uses a capacity-one worker channel behind a sixteen-entry
+owner request bound. Exactly one packet is in flight. Passive request and
+completion records carry the transaction ID; the owner correlates them and
+rejects a response when the current layout topology or geometry no longer
+matches the request fingerprint. Surface removal remains serialized before its
+relayout so the latter is planned from post-removal workspace state. The owner
+alone validates and commits proposals and applies focus, workspace, launcher,
+close, and logout effects. A neutral empty coordinator batch lets a WM-only
+transaction reach Engine without waiting for unrelated X11 traffic; it is not
+counted as an X authority batch.
+
+Completion now reports owner timing separately from WM transport depth,
+rejections, stale responses, queue dwell, and round-trip latency. The external
+round trip retains its 500 ms fail-closed bound; it is no longer misclassified
+as owner-thread execution time.
+
+## 2026-07-25: Asynchronous WM Physical Gate Passes
+
+The first two-output four-Kitty cycle after moving WM socket waits off the
+owner thread completed normally. Maximum physical-input phase time fell from
+100 ms to below the millisecond evidence resolution, input queue dwell fell
+from 246 ms to 12 ms, and submit-to-page-flip observation fell from 210 ms to
+23 ms. The WM transport reached a 101 ms round trip without holding the owner;
+its peak depth was one and it drained with zero rejection, stale response, or
+pending request.
+
+The session produced 220 mixed exports with exactly 220 complete targets,
+pipelines, and frame surfaces, zero recovery or generation replacement, clean
+callback retirement, and clean input, control, protocol, and process teardown.
+The fourth-window transition atomically held and committed four surfaces
+because xmonad promoted the newly focused window to master. The verifier had
+assumed the old master remained fixed and required exactly three changed
+surfaces. It now correlates the held transaction with its matching commit and
+accepts either three or four changed surfaces while retaining the exact
+pixel-matched four-pane geometry checks.

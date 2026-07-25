@@ -63,12 +63,19 @@ four_window_log="$(mktemp)"
 trap 'rm -f "$four_window_log"' EXIT
 tail -n "+$fourth_line" "$SESSION_LOG" >"$four_window_log"
 
-grep -Eq '^sophia_live_resize_epoch schema=1 status=held transaction=[0-9]+ surfaces=3$' \
+four_window_epoch="$(
+    grep -Em1 \
+        '^sophia_live_resize_epoch schema=1 status=held transaction=[0-9]+ surfaces=[34]$' \
+        "$four_window_log" || true
+)"
+[[ -n "$four_window_epoch" ]] ||
+    fail "four-window resize epoch did not hold three or four surfaces"
+four_window_transaction="$(field "$four_window_epoch" transaction)"
+four_window_surfaces="$(field "$four_window_epoch" surfaces)"
+grep -Eq \
+    "^sophia_live_resize_epoch schema=1 status=committed transaction=${four_window_transaction} matched_surfaces=${four_window_surfaces}$" \
     "$four_window_log" ||
-    fail "four-window resize epoch was not held"
-grep -Eq '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=3$' \
-    "$four_window_log" ||
-    fail "three resized surfaces did not commit together"
+    fail "four-window resize epoch did not commit all $four_window_surfaces held surfaces together"
 
 if grep -Eq 'status=(layout_timeout|aborted)|rejected Present whose pixels do not match' \
     "$four_window_log"; then
@@ -199,6 +206,52 @@ completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)
     fail "composition target retirement did not match safe exports"
 (( generation_replacements == 0 && recovery_replacements == 0 )) ||
     fail "stable CPU or direct DMA-BUF resources were replaced"
+
+mapfile -t owner_timing_lines < <(
+    grep -E '^sophia_live_owner_timing schema=2 status=complete ' "$SESSION_LOG"
+)
+(( ${#owner_timing_lines[@]} == 1 )) ||
+    fail "expected one owner phase-timing record"
+owner_timing="${owner_timing_lines[0]}"
+for key in max_child_reap_msec max_input_phase_msec; do
+    value="$(field "$owner_timing" "$key")" ||
+        fail "owner phase-timing record is missing $key"
+    [[ "$value" =~ ^[0-9]+$ ]] ||
+        fail "owner phase-timing record has nonnumeric $key=$value"
+    (( value <= 100 )) ||
+        fail "$key exceeded the 100ms promotion budget: $value"
+done
+
+mapfile -t wm_transport_lines < <(
+    grep -E '^sophia_live_wm_transport schema=1 status=complete ' "$SESSION_LOG"
+)
+(( ${#wm_transport_lines[@]} == 1 )) ||
+    fail "expected one WM transport completion record"
+wm_transport="${wm_transport_lines[0]}"
+for assignment in pending=0 rejected=0; do
+    [[ " $wm_transport " == *" $assignment "* ]] ||
+        fail "WM transport ledger was not clean: $assignment"
+done
+for key in peak_depth stale_responses max_queue_dwell_msec max_round_trip_msec; do
+    value="$(field "$wm_transport" "$key")" ||
+        fail "WM transport record is missing $key"
+    [[ "$value" =~ ^[0-9]+$ ]] ||
+        fail "WM transport record has nonnumeric $key=$value"
+    case "$key" in
+        peak_depth)
+            (( value >= 1 && value <= 16 )) ||
+                fail "WM transport peak depth exceeded its bound: $value"
+            ;;
+        stale_responses)
+            (( value <= 16 )) ||
+                fail "WM transport rejected too many stale responses: $value"
+            ;;
+        *)
+            (( value <= 500 )) ||
+                fail "$key exceeded the 500ms WM transport budget: $value"
+            ;;
+    esac
+done
 
 grep -Eq \
     '^sophia_session_launches schema=1 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0$' \

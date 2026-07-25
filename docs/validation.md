@@ -331,13 +331,15 @@ tools/verify_sophia_xmonad_four_kitty.sh
 ```
 
 Follow the sequence printed by the launcher and use normal xmonad logout.
-The verifier waits briefly for completion, requires one pixel-matched
-full-height pane plus three stack panes, and rejects empty per-output
+The verifier waits briefly for completion, correlates the four-window held
+resize epoch with a matching atomic commit of all three or four changed
+surfaces, requires one pixel-matched full-height pane plus three stack panes,
+and rejects empty per-output
 submissions, forced native detach, abandoned scanouts, callback imbalance, or
 cleanup debt. It also requires at least 32 mixed exports, one complete
 composition target and frame surface per safe export, zero recovery
-replacement, zero
-launch-admission timeout, and at most 100 ms for input queue dwell, CPU upload,
+replacement, zero launch-admission timeout, and at most 100 ms for input queue
+dwell, CPU upload,
 and submit-to-page-flip latency. Each
 output must also retain one
 `sophia_live_native_startup_output ... proof=synchronous_modeset` record; later
@@ -346,7 +348,23 @@ asynchronous submissions still require matching callbacks. The separate
 reduced creation and replacement counts; it does not expose native handles or
 application metadata. While physical input is active, the session owner polls
 its X authority channel on the one-millisecond budget so idle X traffic cannot
-consume the input dwell allowance. Validate verifier changes with:
+consume the input dwell allowance.
+
+The focused gate also requires one
+`sophia_live_owner_timing schema=2 status=complete` record. Child reaping and
+physical-input routing must each remain within 100 ms. Native retirement runs
+before shortcut routing.
+
+It also requires one
+`sophia_live_wm_transport schema=1 status=complete` record. The bounded
+transport must drain with zero pending or capacity-rejected requests, peak at
+no more than sixteen owner entries, reject no more than sixteen stale
+responses, and keep queue dwell and socket round trip within the external
+policy timeout of 500 ms. The socket round trip is intentionally not charged
+to the owner-thread 100 ms budget: the typed worker waits while the owner
+continues input, rendering, and page-flip service.
+
+Validate verifier changes with:
 
 ```sh
 tools/check_sophia_xmonad_four_kitty_verifier.sh

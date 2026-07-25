@@ -87,6 +87,7 @@ fn run_session_loop(
         wm_session.is_some(),
         require_startup_focus.then_some(output.size),
     );
+    let mut pending_wm_update = None;
     let mut committed_session_actions = VecDeque::new();
     let mut session_launches = SessionLaunchQueue::default();
     let mut launch_admission_started_at: Option<Instant> = None;

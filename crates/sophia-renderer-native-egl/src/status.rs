@@ -109,6 +109,19 @@ impl NativeGbmScanoutBufferExportDetail {
             | Self::InvalidBufferDescriptor => NativeGbmScanoutBufferExportStatus::Degraded,
         }
     }
+
+    pub const fn render_target_retryable(self) -> bool {
+        matches!(
+            self,
+            Self::EglMakeCurrentFailed
+                | Self::EglSwapBuffersFailed
+                | Self::GlSmokeFailed
+                | Self::CpuLayerUploadFailed
+                | Self::CompositionDrawFailed
+                | Self::CompositionFinishFailed
+                | Self::EglImageDestroyFailed
+        )
+    }
 }
 
 #[cfg(feature = "gbm-platform")]

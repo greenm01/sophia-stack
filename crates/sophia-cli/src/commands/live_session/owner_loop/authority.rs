@@ -1,7 +1,15 @@
 {
+        let wm_only_cycle = initial_authority_batch.is_none()
+            && pending_authority_batches.is_empty()
+            && pending_wm_update.is_some();
         let authority_batch = initial_authority_batch
             .take()
             .or_else(|| pending_authority_batches.pop_front())
+            .or_else(|| {
+                pending_wm_update.as_ref().map(|update| {
+                    wm_update_coordinator_batch(update.commit.transaction)
+                })
+            })
             .map_or_else(
                 || {
                     authority_receiver.recv_timeout(authority_wait_timeout(
@@ -82,29 +90,35 @@
                     || !batch.present_submissions.is_empty()
                     || !batch.released_dma_bufs.is_empty()
                     || !batch.released_fences.is_empty();
-                if !has_engine_work {
+                if !has_engine_work && pending_wm_update.is_none() {
                     continue;
                 }
-                last_authority_update = Instant::now();
-                metrics.batches = metrics.batches.saturating_add(1);
-                metrics.transactions =
-                    metrics
-                        .transactions
-                        .saturating_add(authority_transaction_count(&batch.transactions));
-                metrics.cpu_buffer_updates =
-                    metrics
+                if !wm_only_cycle {
+                    last_authority_update = Instant::now();
+                    metrics.batches = metrics.batches.saturating_add(1);
+                    metrics.transactions = metrics.transactions.saturating_add(
+                        authority_transaction_count(&batch.transactions),
+                    );
+                    metrics.cpu_buffer_updates = metrics
                         .cpu_buffer_updates
                         .saturating_add(batch.cpu_buffer_updates.len());
-                metrics.dma_buf_registrations_observed = metrics.dma_buf_registrations_observed
-                    .saturating_add(batch.dma_buf_registrations.len());
-                metrics.fence_registrations_observed =
-                    metrics.fence_registrations_observed.saturating_add(batch.fence_registrations.len());
-                metrics.present_submissions_observed =
-                    metrics.present_submissions_observed.saturating_add(batch.present_submissions.len());
+                    metrics.dma_buf_registrations_observed = metrics
+                        .dma_buf_registrations_observed
+                        .saturating_add(batch.dma_buf_registrations.len());
+                    metrics.fence_registrations_observed = metrics
+                        .fence_registrations_observed
+                        .saturating_add(batch.fence_registrations.len());
+                    metrics.present_submissions_observed = metrics
+                        .present_submissions_observed
+                        .saturating_add(batch.present_submissions.len());
+                }
                 let removed_surfaces = batch.removed_surfaces.clone();
                 if let Some(wm_session) = wm_session.as_mut() {
                     for surface in &removed_surfaces {
-                        wm_session.notify_surface_removed(*surface)?;
+                        require_wm_request_admission(
+                            wm_session.enqueue_surface_removed(*surface)?,
+                            "surface_removed",
+                        )?;
                     }
                 }
                 let new_surfaces = layout.observe_authority_batch(&batch);
@@ -122,7 +136,15 @@
                         );
                     }
                 }
-                let mut wm_update = layout.resolve_pending();
+                let previous_focus = focus.focused_surface(seat);
+                let mut wm_update = None;
+                if let Some(result) = layout.resolve_pending() {
+                    wm_update =
+                        Some(apply_wm_commit_result!(result, previous_focus));
+                }
+                if wm_update.is_none() {
+                    wm_update = pending_wm_update.take();
+                }
                 if !resize_proof_complete
                     && let Some((transaction, surface, size)) = resize_proof
                     && layout.pending.is_none()
@@ -138,28 +160,24 @@
                     resize_proof_complete = true;
                 }
                 if wm_update.is_none() {
-                    wm_update = layout.expire_pending(&mut session_controls)?;
-                }
-                if wm_update.is_none()
-                    && !removed_surfaces.is_empty()
-                    && layout.pending.is_none()
-                    && let Some(wm_session) = wm_session.as_mut()
-                {
-                    let proposal = wm_session.request_relayout(&layout, output)?;
-                    wm_update = layout.stage(proposal, &mut session_controls)?;
-                }
-                if layout.pending.is_none()
-                    && let Some(wm_session) = wm_session.as_mut()
-                    && let Some(proposal) = wm_session.poll_restart(&layout, output)? {
-                        wm_update = layout.stage(proposal, &mut session_controls)?;
+                    if let Some(result) =
+                        layout.expire_pending(&mut session_controls)?
+                    {
+                        wm_update = Some(apply_wm_commit_result!(
+                            result,
+                            focus.focused_surface(seat)
+                        ));
                     }
+                }
                 if wm_update.is_none()
                     && layout.pending.is_none()
                     && let Some(surface) = layout.next_unmanaged_surface()
                     && let Some(wm_session) = wm_session.as_mut()
                 {
-                    let proposal = wm_session.request_manage(surface, &layout, output)?;
-                    wm_update = layout.stage(proposal, &mut session_controls)?;
+                    require_wm_request_admission(
+                        wm_session.enqueue_manage(surface, &layout, output)?,
+                        "manage",
+                    )?;
                 }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
@@ -197,9 +215,17 @@
                             ipc_error: None,
                         },
                         moved_surfaces: 0,
+                        source: None,
                         effects: None,
                     };
-                    wm_update = layout.stage(proposal, &mut session_controls)?;
+                    if let Some(result) =
+                        layout.stage(proposal, &mut session_controls)?
+                    {
+                        wm_update = Some(apply_wm_commit_result!(
+                            result,
+                            focus.focused_surface(seat)
+                        ));
+                    }
                     resize_proof = Some((transaction, surface, size));
                     println!(
                         "sophia_live_resize schema=1 status=requested transaction={} surface={} width={} height={}",
@@ -209,23 +235,6 @@
                         size.height,
                     );
                 }
-                let wm_update = wm_update.map(|mut result| {
-                    if result.update.commit.outcome == TransactionOutcome::Committed
-                        && let Some(effects) = result.effects.take()
-                        && let Some(wm_session) = wm_session.as_mut()
-                    {
-                        wm_session.workspace_state = effects.workspace_state;
-                        wm_session.mark_committed();
-                        if let Some(action) = effects.session_action {
-                            committed_session_actions.push_back((
-                                effects.transaction,
-                                action.0,
-                                action.1,
-                            ));
-                        }
-                    }
-                    result.update
-                });
                 let resize_epoch_aborted = wm_update.as_ref().is_some_and(|update| {
                     update.commit.outcome == TransactionOutcome::TimedOut
                 });
@@ -498,23 +507,20 @@
                         "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
                     );
                 }
-                if layout.pending.is_none()
-                    && let Some(wm_session) = wm_session.as_mut()
-                    && let Some(proposal) = wm_session.poll_restart(&layout, output)?
-                {
-                    let _ = layout.stage(proposal, &mut session_controls)?;
+                if let Some(result) = expired {
+                    pending_wm_update = Some(apply_wm_commit_result!(
+                        result,
+                        focus.focused_surface(seat)
+                    ));
                 }
                 if layout.pending.is_none()
                     && let Some(surface) = layout.next_unmanaged_surface()
                     && let Some(wm_session) = wm_session.as_mut()
                 {
-                    let proposal = wm_session.request_manage(surface, &layout, output)?;
-                    if layout
-                        .stage(proposal, &mut session_controls)?
-                        .is_some()
-                    {
-                        wm_session.mark_committed();
-                    }
+                    require_wm_request_admission(
+                        wm_session.enqueue_manage(surface, &layout, output)?,
+                        "manage",
+                    )?;
                 }
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())

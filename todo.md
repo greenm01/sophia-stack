@@ -80,11 +80,22 @@ Promotion now follows the gates below in order.
   matching target/pipeline/surface creation and retirement, zero recovery,
   zero AMDGPU rejection, and a normal exit.
 - [ ] Pass three physical four-Kitty cycles with complete-target creation and
-  retirement equal to the mixed-export count.
-- [ ] Prevent child-exit and resize-epoch work from starving input and native
-  callback service. The first clean lifetime cycle had 248/254 callbacks at or
-  below 20 ms, but three transition callbacks exceeded 100 ms; input dwell
-  peaked at 191 ms and submit-to-page-flip observation at 214 ms.
+  retirement equal to the mixed-export count. One post-worker cycle passes.
+- [x] Prevent child-exit and resize-epoch work from starving input and native
+  callback service. The first post-worker cycle reduced input dwell to 12 ms
+  and submit-to-page-flip observation to 23 ms.
+- [x] Poll native retirement before routing shortcuts that can synchronously
+  enter the external WM transport.
+- [x] Emit bounded owner-phase evidence for child reaping, physical-input
+  routing, and external-WM request latency.
+- [x] Attribute the remaining stall: the physical cycle recorded 180 ms in the
+  synchronous WM request, 246 ms input dwell, and 210 ms submit-to-page-flip
+  observation while child reaping remained at 25 ms.
+- [x] Move the blocking WM socket round trip to one bounded typed worker while
+  retaining validation, stale-response rejection, policy state, and atomic
+  commit effects on the physical owner.
+- [x] Re-run the two-output four-Kitty gate and require owner input below
+  100 ms, a drained WM transport ledger, and clean page-flip/resource teardown.
 - [ ] Introduce a three-slot per-output generational pool of complete render
   targets; recycle a slot only through explicit page-flip retirement and defer
   instead of exceeding the bound.

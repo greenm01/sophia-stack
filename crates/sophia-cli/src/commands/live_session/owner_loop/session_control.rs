@@ -71,5 +71,52 @@ macro_rules! flush_client_keys {
     }};
 }
 
+macro_rules! apply_wm_commit_result {
+    ($result:expr, $previous_focus:expr) => {{
+        let owner_commit = wm_session
+            .as_mut()
+            .ok_or("WM commit completed without a live WM session")?
+            .apply_commit_result($result, $previous_focus, output.id)?;
+        if let Some(action) = owner_commit.physical_action {
+            println!(
+                "sophia_live_wm schema=1 status=physical_action_committed action={}",
+                action.raw(),
+            );
+        }
+        if let Some(action) = owner_commit.session_action {
+            committed_session_actions.push_back(action);
+        }
+        if let Some((transaction, surface)) = owner_commit.clear_focus {
+            let client = layout
+                .client_routes
+                .client_for_surface(surface)
+                .ok_or("hidden WM focus has no X11 client route")?;
+            flush_client_keys!(surface, "clear_focus");
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand {
+                        client,
+                        command: XAuthorityControlCommand::ClearFocus {
+                            transaction,
+                            surface,
+                        },
+                    },
+                    Instant::now(),
+                )
+                .map_err(|error| {
+                    format!("failed to queue hidden-focus clearing: {error:?}")
+                })?;
+            focus.clear_focus(seat);
+            applied_client_focus = None;
+            layout.focus_to_apply = None;
+            println!(
+                "sophia_live_wm schema=1 status=hidden_focus_cleared transaction={}",
+                transaction.raw(),
+            );
+        }
+        owner_commit.update
+    }};
+}
+
 include!("physical_input_phase.rs")
 }

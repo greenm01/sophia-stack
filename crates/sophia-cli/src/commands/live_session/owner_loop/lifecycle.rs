@@ -246,6 +246,7 @@
                 return Err("invalid libseat lifecycle transition".into());
             }
         }
+        let child_reap_started = Instant::now();
         if !primary_child_exited
             && let Some(primary_child) = child.as_deref_mut()
             && let Some(status) = primary_child.try_wait()?
@@ -356,6 +357,7 @@
                 secondary_index += 1;
             }
         }
+        metrics.max_child_reap = metrics.max_child_reap.max(child_reap_started.elapsed());
         InputDeliveryPhase {
             receiver: input_delivery_receiver,
             state: &mut input_delivery,
@@ -446,25 +448,6 @@
                 break;
             }
         }
-        let mut input_routing_mode = physical_input_routing_mode(
-            primary_child_exited,
-            focus.focused_surface(seat),
-            input_surface,
-            wm_session.as_ref().is_some_and(|wm| wm.shortcuts.is_some()),
-        );
-        if config.expect_physical_text.is_some() && physical_input_ready_at.is_none() {
-            input_routing_mode = PhysicalInputRoutingMode::CursorOnly;
-        }
-        if input_routing_mode != PhysicalInputRoutingMode::Suppressed
-            && focus.focused_surface(seat) != applied_client_focus
-        {
-            input_routing_mode = PhysicalInputRoutingMode::ControlPlaneOnly;
-        }
-        if input_routing_mode != PhysicalInputRoutingMode::Suppressed
-            && drain_physical_input!(input_routing_mode)
-        {
-            break;
-        }
         if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
             runtime.set_present_scheduling_blocked(layout.pending.is_some());
             let service = runtime.service_native(native_scanout)?;
@@ -522,6 +505,27 @@
                 session_controls: &mut session_controls,
                 next_focus_control_transaction: &mut next_focus_control_transaction,
             })?;
+        }
+        let mut input_routing_mode = physical_input_routing_mode(
+            primary_child_exited,
+            focus.focused_surface(seat),
+            input_surface,
+            wm_session.as_ref().is_some_and(|wm| wm.shortcuts.is_some()),
+        );
+        if config.expect_physical_text.is_some() && physical_input_ready_at.is_none() {
+            input_routing_mode = PhysicalInputRoutingMode::CursorOnly;
+        }
+        if input_routing_mode != PhysicalInputRoutingMode::Suppressed
+            && focus.focused_surface(seat) != applied_client_focus
+        {
+            input_routing_mode = PhysicalInputRoutingMode::ControlPlaneOnly;
+        }
+        let input_phase_started = Instant::now();
+        let input_requested_exit = input_routing_mode != PhysicalInputRoutingMode::Suppressed
+            && drain_physical_input!(input_routing_mode);
+        metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
+        if input_requested_exit {
+            break;
         }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(position)) =

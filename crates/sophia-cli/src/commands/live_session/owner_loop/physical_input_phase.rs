@@ -91,66 +91,25 @@ macro_rules! drain_physical_input {
                 cursor_updates.dirty = true;
             }
             for action in report.wm_actions.iter().copied() {
-                let previous_focus = focus.focused_surface(seat);
                 let wm = wm_session
                     .as_mut()
                     .ok_or("WM shortcut activated without a live WM session")?;
-                let proposal =
-                    wm.request_action(action, focus.focused_surface(seat), &layout, output)?;
-                if let Some(mut result) =
-                    layout.stage(proposal, &mut session_controls)?
-                {
-                    let committed =
-                        result.update.commit.outcome == TransactionOutcome::Committed;
-                    if committed {
-                        println!(
-                            "sophia_live_wm schema=1 status=physical_action_committed action={}",
+                match wm.enqueue_action(
+                    action,
+                    focus.focused_surface(seat),
+                    &layout,
+                    output,
+                )? {
+                    LiveWmRequestAdmission::Admitted => {}
+                    LiveWmRequestAdmission::RejectedCapacity => {
+                        eprintln!(
+                            "sophia_live_wm schema=2 status=request_rejected source=action reason=capacity action={}",
                             action.raw(),
                         );
                     }
-                    if result.update.commit.outcome == TransactionOutcome::Committed
-                        && let Some(effects) = result.effects.take()
-                    {
-                        let transaction = effects.transaction;
-                        let policy_focus = effects
-                            .workspace_state
-                            .output(output.id)
-                            .and_then(|state| state.focus);
-                        wm.workspace_state = effects.workspace_state;
-                        if let Some(action) = effects.session_action {
-                            committed_session_actions.push_back((
-                                effects.transaction,
-                                action.0,
-                                action.1,
-                            ));
-                        }
-                        if policy_focus.is_none()
-                            && let Some(surface) = previous_focus
-                        {
-                            let client = layout
-                                .client_routes
-                                .client_for_surface(surface)
-                                .ok_or("hidden WM focus has no X11 client route")?;
-                            flush_client_keys!(surface, "clear_focus");
-                            session_controls.enqueue(XAuthorityClientControlCommand {
-                                client,
-                                command: XAuthorityControlCommand::ClearFocus {
-                                    transaction,
-                                    surface,
-                                },
-                            }, Instant::now()).map_err(|error| {
-                                format!("failed to queue hidden-focus clearing: {error:?}")
-                            })?;
-                            focus.clear_focus(seat);
-                            applied_client_focus = None;
-                            layout.focus_to_apply = None;
-                            println!(
-                                "sophia_live_wm schema=1 status=hidden_focus_cleared transaction={}",
-                                transaction.raw(),
-                            );
-                        }
+                    LiveWmRequestAdmission::Duplicate => {
+                        return Err("WM action request was unexpectedly deduplicated".into());
                     }
-                    wm.mark_committed();
                 }
             }
             if let Some(terminal) = report.virtual_terminal {
@@ -273,6 +232,7 @@ macro_rules! drain_physical_input {
 loop {
     service_session_controls!();
     let input_baseline_presented_before_wait = include!("lifecycle.rs");
+    include!("wm_phase.rs");
     include!("authority.rs");
     include!("input_proof.rs");
     service_session_controls!();

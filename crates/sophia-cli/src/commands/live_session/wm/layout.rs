@@ -1,0 +1,613 @@
+struct PendingLiveWmLayout {
+    transaction: TransactionId,
+    layers: Vec<LayerSnapshot>,
+    requested_sizes: BTreeMap<SurfaceId, Size>,
+    focus: Option<SurfaceId>,
+    deadline: Instant,
+    update: WmTransactionUpdate,
+    moved_surfaces: usize,
+    staged_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
+    source: Option<LiveWmProposalSource>,
+    effects: Option<LiveWmCommitEffects>,
+}
+
+#[derive(Default)]
+struct PersistentLiveLayout {
+    layers: BTreeMap<SurfaceId, LayerSnapshot>,
+    dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: BTreeMap<u64, Size>,
+    resize: ResizeRollbackCoordinator,
+    client_routes: XAuthorityClientSurfaceRoutes,
+    unmanaged_surfaces: BTreeSet<SurfaceId>,
+    admission_retries: BTreeMap<SurfaceId, u8>,
+    pending: Option<PendingLiveWmLayout>,
+    focus_to_apply: Option<(TransactionId, SurfaceId)>,
+    stage_new_surfaces_offset: bool,
+    center_first_surface_in: Option<Size>,
+}
+
+impl PersistentLiveLayout {
+    fn new(stage_new_surfaces_offset: bool, center_first_surface_in: Option<Size>) -> Self {
+        Self {
+            stage_new_surfaces_offset,
+            center_first_surface_in,
+            ..Self::default()
+        }
+    }
+
+    fn observe_authority_batch(
+        &mut self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> Vec<SurfaceId> {
+        self.client_routes.observe(batch);
+        for registration in &batch.dma_buf_registrations {
+            self.dma_buf_sizes
+                .insert(registration.descriptor.handle, registration.descriptor.size);
+        }
+        for update in &batch.cpu_buffer_updates {
+            match update {
+                sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(buffer) => {
+                    self.cpu_buffer_sizes.insert(buffer.handle, buffer.size);
+                }
+                sophia_x_authority::XAuthorityCpuBufferUpdate::Patch(patch) => {
+                    self.cpu_buffer_sizes.insert(patch.handle, patch.size);
+                }
+            }
+        }
+        for handle in &batch.released_dma_bufs {
+            self.dma_buf_sizes.remove(handle);
+        }
+        self.remove_surfaces(&batch.removed_surfaces);
+        let mut new_surfaces = Vec::new();
+        for (index, transaction) in batch.transactions.iter().enumerate() {
+            let geometry_size = Size {
+                width: transaction.target_geometry.width,
+                height: transaction.target_geometry.height,
+            };
+            let pixel_size = live_transaction_pixel_size(
+                transaction.target_buffer,
+                &self.dma_buf_sizes,
+                &self.cpu_buffer_sizes,
+            );
+            let observed_size = pixel_size.unwrap_or(geometry_size);
+            if !self
+                .resize
+                .accept_observation(transaction.surface, observed_size)
+            {
+                continue;
+            }
+            let staged_for_resize = self.pending.as_ref().is_some_and(|pending| {
+                pending.requested_sizes.get(&transaction.surface) == pixel_size.as_ref()
+            });
+            if staged_for_resize {
+                let pending = self.pending.as_mut().expect("checked above");
+                pending
+                    .staged_transactions
+                    .insert(transaction.surface, transaction.clone());
+                if let Some(layer) = pending
+                    .layers
+                    .iter_mut()
+                    .find(|layer| layer.surface == transaction.surface)
+                {
+                    layer.source = transaction.target_buffer;
+                    layer.damage = transaction.damage.clone();
+                    layer.generation = transaction.previous_committed_generation.saturating_add(1);
+                }
+                continue;
+            }
+            self.resize
+                .record_committed(transaction.surface, observed_size);
+            let observed_layer = match self.layers.get_mut(&transaction.surface) {
+                Some(layer) => {
+                    layer.source = transaction.target_buffer;
+                    layer.damage = transaction.damage.clone();
+                    layer.generation = transaction.previous_committed_generation.saturating_add(1);
+                    layer.clone()
+                }
+                None => {
+                    new_surfaces.push(transaction.surface);
+                    self.unmanaged_surfaces.insert(transaction.surface);
+                    let mut geometry = transaction.target_geometry;
+                    if self.stage_new_surfaces_offset {
+                        geometry.x = geometry.x.saturating_add(80);
+                        geometry.y = geometry.y.saturating_add(60);
+                    } else if let Some(output) = self.center_first_surface_in.take() {
+                        geometry = center_geometry_without_scaling(geometry, output);
+                    }
+                    let layer = LayerSnapshot {
+                        surface: transaction.surface,
+                        authority_local_id: None,
+                        namespace: None,
+                        stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
+                        geometry,
+                        source: transaction.target_buffer,
+                        damage: transaction.damage.clone(),
+                        opacity: 1.0,
+                        crop: None,
+                        transform: Transform::IDENTITY,
+                        generation: transaction.previous_committed_generation.saturating_add(1),
+                        resize_sync: ResizeSyncCapability::ImplicitOnly,
+                    };
+                    self.layers.insert(transaction.surface, layer.clone());
+                    layer
+                }
+            };
+            self.merge_unrequested_observation_into_pending(observed_layer);
+        }
+        new_surfaces
+    }
+
+    fn merge_unrequested_observation_into_pending(&mut self, observed: LayerSnapshot) {
+        let Some(pending) = self.pending.as_mut() else {
+            return;
+        };
+        let _ = merge_unrequested_layout_observation(
+            &mut pending.layers,
+            &pending.requested_sizes,
+            observed,
+        );
+    }
+
+    fn remove_surfaces(&mut self, removed_surfaces: &[SurfaceId]) {
+        if removed_surfaces.is_empty() {
+            return;
+        }
+        self.layers
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        for surface in removed_surfaces {
+            self.resize.remove(*surface);
+            self.admission_retries.remove(surface);
+        }
+        self.unmanaged_surfaces
+            .retain(|surface| !removed_surfaces.contains(surface));
+        if self
+            .focus_to_apply
+            .is_some_and(|(_, surface)| removed_surfaces.contains(&surface))
+        {
+            self.focus_to_apply = None;
+        }
+        if let Some(pending) = self.pending.as_mut() {
+            pending
+                .layers
+                .retain(|layer| !removed_surfaces.contains(&layer.surface));
+            pending
+                .requested_sizes
+                .retain(|surface, _| !removed_surfaces.contains(surface));
+            if pending
+                .focus
+                .is_some_and(|surface| removed_surfaces.contains(&surface))
+            {
+                pending.focus = None;
+            }
+        }
+    }
+
+    fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
+        if self.resize.rollback_surfaces().next().is_some() {
+            return None;
+        }
+        self.unmanaged_surfaces
+            .iter()
+            .find(|surface| {
+                self.layers.contains_key(surface)
+                    && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
+            })
+            .copied()
+    }
+
+    fn stage(
+        &mut self,
+        mut proposal: LiveWmProposal,
+        session_controls: &mut SessionControlQueue,
+    ) -> Result<Option<LiveWmCommitResult>, Box<dyn std::error::Error>> {
+        if self.pending.is_some() {
+            println!(
+                "sophia_live_wm schema=1 status=proposal_busy transaction={} preserved_layout=true",
+                proposal.transaction.raw()
+            );
+            return Ok(None);
+        }
+        for (surface, size) in &proposal.requested_sizes {
+            if !self.resize.request_allowed(*surface, *size)
+                && let Some(committed) = self.resize.committed_size(*surface)
+                && let Some(layer) = proposal
+                    .layers
+                    .iter_mut()
+                    .find(|layer| layer.surface == *surface)
+            {
+                layer.geometry.width = committed.width;
+                layer.geometry.height = committed.height;
+            }
+        }
+        proposal.requested_sizes.retain(|surface, size| {
+            self.resize.committed_size(*surface) != Some(*size)
+                && self.resize.request_allowed(*surface, *size)
+        });
+        for (surface, size) in &proposal.requested_sizes {
+            let client = self
+                .client_routes
+                .client_for_surface(*surface)
+                .ok_or("live WM configure has no X11 client route for its surface")?;
+            session_controls.enqueue(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::ConfigureSurface {
+                    transaction: proposal.transaction,
+                    surface: *surface,
+                    size: *size,
+                },
+            }, Instant::now()).map_err(|error| {
+                format!("failed to queue WM configure control: {error:?}")
+            })?;
+        }
+        let ready = proposal
+            .requested_sizes
+            .iter()
+            .all(|(surface, size)| self.resize.committed_size(*surface) == Some(*size));
+        if ready {
+            return Ok(Some(self.commit_proposal(proposal)));
+        }
+        self.pending = Some(PendingLiveWmLayout {
+            transaction: proposal.transaction,
+            layers: proposal.layers,
+            requested_sizes: proposal.requested_sizes,
+            focus: proposal.focus,
+            deadline: Instant::now() + proposal.timeout,
+            update: proposal.update,
+            moved_surfaces: proposal.moved_surfaces,
+            staged_transactions: BTreeMap::new(),
+            source: proposal.source,
+            effects: proposal.effects,
+        });
+        println!(
+            "sophia_live_resize_epoch schema=1 status=held transaction={} surfaces={}",
+            self.pending
+                .as_ref()
+                .expect("pending layout was just installed")
+                .transaction
+                .raw(),
+            self.pending
+                .as_ref()
+                .expect("pending layout was just installed")
+                .requested_sizes
+                .len(),
+        );
+        Ok(None)
+    }
+
+    fn resolve_pending(&mut self) -> Option<LiveWmCommitResult> {
+        let pending = self.pending.as_ref()?;
+        let ready = pending.requested_sizes.iter().all(|(surface, size)| {
+            pending
+                .staged_transactions
+                .get(surface)
+                .and_then(|transaction| {
+                    live_transaction_pixel_size(
+                        transaction.target_buffer,
+                        &self.dma_buf_sizes,
+                        &self.cpu_buffer_sizes,
+                    )
+                })
+                == Some(*size)
+        });
+        if !ready {
+            return None;
+        }
+        let pending = self.pending.take().expect("checked above");
+        Some(self.commit_pending(pending))
+    }
+
+    fn expire_pending(
+        &mut self,
+        session_controls: &mut SessionControlQueue,
+    ) -> Result<Option<LiveWmCommitResult>, Box<dyn std::error::Error>> {
+        if !self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| Instant::now() >= pending.deadline)
+        {
+            return Ok(None);
+        }
+        let pending = self.pending.take().expect("checked above");
+        let admission_surfaces = pending
+            .layers
+            .iter()
+            .map(|layer| layer.surface)
+            .filter(|surface| self.unmanaged_surfaces.contains(surface))
+            .collect::<Vec<_>>();
+        let rollback = self.resize.begin_rollback(
+            pending
+                .requested_sizes
+                .iter()
+                .map(|(surface, size)| (*surface, *size)),
+        )?;
+        let rollback_transaction = rollback
+            .first()
+            .map(|request| request.transaction)
+            .unwrap_or(pending.transaction);
+        for request in rollback {
+            let surface = request.surface;
+            let size = request.size;
+            let client = self
+                .client_routes
+                .client_for_surface(surface)
+                .ok_or("live WM rollback has no X11 client route")?;
+            session_controls.enqueue(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::ConfigureSurface {
+                    transaction: rollback_transaction,
+                    surface,
+                    size,
+                },
+            }, Instant::now()).map_err(|error| {
+                format!("failed to queue WM rollback control: {error:?}")
+            })?;
+        }
+        let resize_state = pending
+            .requested_sizes
+            .iter()
+            .map(|(surface, expected)| {
+                let observed = self.resize.committed_size(*surface).unwrap_or(Size {
+                    width: 0,
+                    height: 0,
+                });
+                format!(
+                    "{}x{}:{}x{}",
+                    expected.width, expected.height, observed.width, observed.height
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "sophia_live_wm schema=1 status=layout_timeout transaction={} preserved_layout=true rollback_transaction={} rollback_configures={} resize_state={}",
+            pending.transaction.raw(),
+            rollback_transaction.raw(),
+            pending.requested_sizes.len(),
+            resize_state,
+        );
+        for surface in admission_surfaces {
+            let attempts = self.admission_retries.entry(surface).or_default();
+            *attempts = attempts.saturating_add(1);
+        }
+        println!(
+            "sophia_live_resize_epoch schema=1 status=aborted transaction={} rejected_surfaces={}",
+            pending.transaction.raw(),
+            pending.requested_sizes.len(),
+        );
+        Ok(Some(LiveWmCommitResult {
+            update: WmTransactionUpdate {
+                commit: TransactionCommit {
+                    transaction: pending.transaction,
+                    outcome: TransactionOutcome::TimedOut,
+                    applied_surfaces: Vec::new(),
+                },
+                ipc_error: None,
+            },
+            source: None,
+            effects: None,
+        }))
+    }
+
+    fn commit_proposal(&mut self, proposal: LiveWmProposal) -> LiveWmCommitResult {
+        let pending = PendingLiveWmLayout {
+            transaction: proposal.transaction,
+            layers: proposal.layers,
+            requested_sizes: proposal.requested_sizes,
+            focus: proposal.focus,
+            deadline: Instant::now(),
+            update: proposal.update,
+            moved_surfaces: proposal.moved_surfaces,
+            staged_transactions: BTreeMap::new(),
+            source: proposal.source,
+            effects: proposal.effects,
+        };
+        self.commit_pending(pending)
+    }
+
+    fn commit_pending(&mut self, pending: PendingLiveWmLayout) -> LiveWmCommitResult {
+        let matched_surfaces = pending.staged_transactions.len();
+        if !pending.staged_transactions.is_empty() {
+            for transaction in pending.staged_transactions.values() {
+                if let Some(size) = live_transaction_pixel_size(
+                    transaction.target_buffer,
+                    &self.dma_buf_sizes,
+                    &self.cpu_buffer_sizes,
+                ) {
+                    self.resize.record_committed(transaction.surface, size);
+                }
+            }
+        }
+        self.layers = pending
+            .layers
+            .into_iter()
+            .map(|layer| (layer.surface, layer))
+            .collect();
+        self.unmanaged_surfaces.retain(|surface| {
+            self.layers.contains_key(surface)
+                && pending.effects.as_ref().is_none_or(|effects| {
+                    effects.workspace_state.surface_workspace(*surface).is_none()
+                })
+        });
+        self.admission_retries
+            .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
+        if let Some(surface) = pending.focus {
+            self.focus_to_apply = Some((pending.transaction, surface));
+        }
+        println!(
+            "sophia_live_wm schema=1 status=layout_committed transaction={} surfaces={} moved_surfaces={} configure_deliveries={} outcome={:?}",
+            pending.transaction.raw(),
+            self.layers.len(),
+            pending.moved_surfaces,
+            pending.requested_sizes.len(),
+            pending.update.commit.outcome
+        );
+        println!(
+            "sophia_live_resize_epoch schema=1 status=committed transaction={} matched_surfaces={}",
+            pending.transaction.raw(),
+            matched_surfaces,
+        );
+        LiveWmCommitResult {
+            update: pending.update,
+            source: pending.source,
+            effects: pending.effects,
+        }
+    }
+
+    fn projected_batch(
+        &mut self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> XAuthorityObservedTransactionBatch {
+        // Resize quarantine controls geometry and presentation, not authority
+        // intake. Dropping a drawing transaction here would break the X
+        // authority's per-surface generation chain permanently. Preserve each
+        // transaction and buffer update in order, but pin its geometry to the
+        // last layout decision until a coherent proposal commits.
+        project_authority_batch_onto_layout(batch.clone(), &self.layers)
+    }
+
+    fn present_pixels_conflict_with_pending_layout(
+        &self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> bool {
+        let Some(pending) = self.pending.as_ref() else {
+            return false;
+        };
+        present_pixels_conflict_with_requested_sizes(
+            &pending.requested_sizes,
+            &self.dma_buf_sizes,
+            batch,
+        )
+    }
+}
+
+fn live_transaction_pixel_size(
+    source: sophia_protocol::BufferSource,
+    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: &BTreeMap<u64, Size>,
+) -> Option<Size> {
+    match source {
+        sophia_protocol::BufferSource::DmaBuf { handle } => {
+            dma_buf_sizes.get(&sophia_protocol::BufferHandle::from_raw(handle)).copied()
+        }
+        sophia_protocol::BufferSource::CpuBuffer { handle } => {
+            cpu_buffer_sizes.get(&handle).copied()
+        }
+        sophia_protocol::BufferSource::None
+        | sophia_protocol::BufferSource::XPixmap { .. } => None,
+    }
+}
+
+fn wm_update_coordinator_batch(
+    transaction: TransactionId,
+) -> XAuthorityObservedTransactionBatch {
+    XAuthorityObservedTransactionBatch {
+        client: None,
+        transaction,
+        transactions: Vec::new(),
+        removed_surfaces: Vec::new(),
+        cpu_buffer_updates: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        present_submissions: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+        protocol_errors: Vec::new(),
+        expected_protocol_errors: Vec::new(),
+        metadata: Vec::new(),
+        selection_owner_change: false,
+        selection_conversion: false,
+    }
+}
+
+fn center_geometry_without_scaling(mut geometry: Rect, output: Size) -> Rect {
+    geometry.x = output.width.saturating_sub(geometry.width).max(0) / 2;
+    geometry.y = output.height.saturating_sub(geometry.height).max(0) / 2;
+    geometry
+}
+
+fn output_bounds(output: sophia_engine::HeadlessOutput) -> Rect {
+    Rect {
+        x: 0,
+        y: 0,
+        width: output.size.width,
+        height: output.size.height,
+    }
+}
+
+fn live_layout_node(layer: &LayerSnapshot, workspace: WorkspaceId) -> LayoutNodeSnapshot {
+    LayoutNodeSnapshot {
+        surface: layer.surface,
+        workspace,
+        kind: LayoutNodeKind::Toplevel,
+        capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+        state: LayoutNodeState::NORMAL,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        geometry: layer.geometry,
+        generation: layer.generation,
+    }
+}
+
+fn validate_live_wm_transaction(
+    transaction: &sophia_protocol::LayoutTransaction,
+    layout: &PersistentLiveLayout,
+    bounds: Rect,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for placement in &transaction.render_positions {
+        let known = layout.layers.contains_key(&placement.surface);
+        let empty = placement.geometry.is_empty();
+        let within = rect_is_within(bounds, placement.geometry);
+        if !known || empty || !within {
+            return Err(format!(
+                "live WM returned invalid placement: known={known} empty={empty} within={within} geometry={:?} bounds={bounds:?}",
+                placement.geometry
+            )
+            .into());
+        }
+    }
+    for request in &transaction.requested_sizes {
+        if !layout.layers.contains_key(&request.surface)
+            || request.size.width <= 0
+            || request.size.height <= 0
+            || request.size.width > i32::from(u16::MAX)
+            || request.size.height > i32::from(u16::MAX)
+        {
+            return Err("live WM returned an invalid surface size request".into());
+        }
+    }
+    if transaction
+        .focus
+        .is_some_and(|surface| !layout.layers.contains_key(&surface))
+    {
+        return Err("live WM returned an unknown focus surface".into());
+    }
+    Ok(())
+}
+
+fn rect_is_within(bounds: Rect, geometry: Rect) -> bool {
+    let Some(bounds_right) = bounds.x.checked_add(bounds.width) else {
+        return false;
+    };
+    let Some(bounds_bottom) = bounds.y.checked_add(bounds.height) else {
+        return false;
+    };
+    let Some(right) = geometry.x.checked_add(geometry.width) else {
+        return false;
+    };
+    let Some(bottom) = geometry.y.checked_add(geometry.height) else {
+        return false;
+    };
+    geometry.x >= bounds.x
+        && geometry.y >= bounds.y
+        && right <= bounds_right
+        && bottom <= bounds_bottom
+}
+
+fn successful_primary_exit_ends_session(input_proof_requested: bool) -> bool {
+    !input_proof_requested
+}
+
+fn global_runtime_deadline_ends_session(input_proof_requested: bool) -> bool {
+    !input_proof_requested
+}

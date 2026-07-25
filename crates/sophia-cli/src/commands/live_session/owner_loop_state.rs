@@ -18,6 +18,8 @@ struct SessionLoopMetrics {
     physical_pointer_buttons_routed: usize,
     session_ticks: usize,
     max_compose: Duration,
+    max_child_reap: Duration,
+    max_input_phase: Duration,
     protocol_error_count: usize,
     expected_protocol_error_count: usize,
     cursor_moves_coalesced: u64,
