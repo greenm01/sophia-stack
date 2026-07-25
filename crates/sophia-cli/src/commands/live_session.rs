@@ -66,6 +66,7 @@ use process_supervision::{ManagedSessionChild, SessionProcessGuard, terminate_se
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use startup_readiness::{
     all_startup_outputs_presented, independent_native_output_presented, startup_output_evidence,
+    synchronous_modeset_record,
 };
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 
@@ -536,17 +537,6 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout.presentation_outputs,
             native_scanout.heads.len(),
         );
-        for head in native_scanout
-            .heads
-            .iter()
-            .filter(|head| head.initial_modeset_presented)
-        {
-            println!(
-                "sophia_live_native_startup_output schema=1 status=presented output={} proof=synchronous_modeset submission={}",
-                head.output.id.raw(),
-                head.submissions,
-            );
-        }
     }
 
     let (primary_child, secondary_children) = process.children_mut();

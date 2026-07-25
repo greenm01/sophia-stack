@@ -662,7 +662,9 @@
             native
                 .heads
                 .iter()
-                .any(|head| head.callback_accepted == 0 && !head.initial_modeset_presented)
+                .any(|head| {
+                    head.callback_accepted == 0 && head.initial_modeset_submission.is_none()
+                })
         });
         if !startup_outputs_ready_reported
             && let Some(native) = native_scanout.as_ref()
@@ -670,6 +672,14 @@
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs))
         {
             startup_outputs_ready_reported = true;
+            for head in &native.heads {
+                if let Some(record) = synchronous_modeset_record(
+                    head.output.id.raw(),
+                    head.initial_modeset_submission,
+                ) {
+                    println!("{record}");
+                }
+            }
             let _ = reduce_session_startup(
                 &mut startup_readiness,
                 SessionStartupEvent::OutputsPresented,
@@ -806,7 +816,8 @@
                         .heads
                         .iter()
                         .filter(|head| {
-                            head.callback_accepted > 0 || head.initial_modeset_presented
+                            head.callback_accepted > 0
+                                || head.initial_modeset_submission.is_some()
                         })
                         .count()
                 }),

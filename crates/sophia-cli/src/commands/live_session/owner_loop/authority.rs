@@ -4,13 +4,11 @@
             .or_else(|| pending_authority_batches.pop_front())
             .map_or_else(
                 || {
-                    authority_receiver.recv_timeout(if cursor_updates.dirty
-                        || session_controls.pending_len() != 0
-                    {
-                        Duration::from_millis(1)
-                    } else {
-                        Duration::from_millis(25)
-                    })
+                    authority_receiver.recv_timeout(authority_wait_timeout(
+                        physical_input.is_some(),
+                        cursor_updates.dirty,
+                        session_controls.pending_len() != 0,
+                    ))
                 },
                 Ok,
             );

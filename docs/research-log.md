@@ -3278,3 +3278,25 @@ scanout retirement. Future reuse must use a bounded lease-aware pool and only
 select a target whose surface has no exported buffer owners. Verbose tracing
 still captures one representative composition frame instead of synchronously
 reading every frame.
+
+## 2026-07-25: Startup Evidence And Input Waits Follow Their Owners
+
+The first clean run after restoring fail-safe composition lifetime survived
+201 mixed frames and completed with balanced callbacks and cleanup. Its strict
+verifier still found two evidence and latency defects.
+
+Per-output synchronous-modeset records were printed before
+`LiveProductionVisualRuntime` initialized native scanout, while every head
+still carried an empty initial-modeset state. The later aggregate
+`output_baseline_ready` record observed the correct state, but the detailed
+records had already been skipped. Native heads now retain the exact initial
+submission identity, and the CLI emits each detailed record at the same
+readiness transition as the aggregate record.
+
+The physical input worker dispatch gap remained one millisecond, but an event
+could enter its queue immediately after the owner drained input. The owner then
+waited as long as 25 ms for X authority work before a composition taking as
+long as 75 ms, producing 120 ms of measured queue dwell. Physical-input
+presence now selects the existing one-millisecond owner wait budget. Cursor
+and control work retain that same budget, while sessions without those
+latency-sensitive sources keep the 25 ms idle wait.

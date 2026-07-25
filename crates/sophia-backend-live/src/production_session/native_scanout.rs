@@ -61,7 +61,7 @@ mod persistent_native_scanout {
         pub submissions: usize,
         pub retirements: usize,
         pub callback_accepted: usize,
-        pub initial_modeset_presented: bool,
+        pub initial_modeset_submission: Option<usize>,
         pub nonzero_exports: usize,
         pub last_submit_report: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
     }
@@ -201,7 +201,7 @@ mod persistent_native_scanout {
                         submissions: 0,
                         retirements: 0,
                         callback_accepted: 0,
-                        initial_modeset_presented: false,
+                        initial_modeset_submission: None,
                         nonzero_exports: 0,
                         last_submit_report: None,
                     });
@@ -604,7 +604,7 @@ mod persistent_native_scanout {
             head.presented_checksum = head.last_checksum;
             head.presented_submissions = head.submissions;
             head.presented_content = head.pending_content.take();
-            head.initial_modeset_presented = true;
+            head.initial_modeset_submission = Some(head.submissions);
             Ok(())
         }
 
@@ -618,7 +618,7 @@ mod persistent_native_scanout {
                 head.pending_content,
                 head.submitted_content,
                 head.presented_content,
-                head.callback_accepted != 0 || head.initial_modeset_presented,
+                head.callback_accepted != 0 || head.initial_modeset_submission.is_some(),
                 frame.checksum,
             );
             if !matches!(

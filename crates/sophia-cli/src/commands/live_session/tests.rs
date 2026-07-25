@@ -6,13 +6,13 @@ use super::{
     PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
-    center_geometry_without_scaling, global_runtime_deadline_ends_session,
+    authority_wait_timeout, center_geometry_without_scaling, global_runtime_deadline_ends_session,
     independent_native_output_presented, input_baseline_is_presented,
     pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
     physical_input_routing_mode, place_pointer_event_for_routing, pointer_offset_for_geometry,
     record_runtime_commits, route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, successful_primary_exit_ends_session,
-    take_settled_input_delivery_wait,
+    synchronous_modeset_record, take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::SessionClientKeyState;
 use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
@@ -30,6 +30,37 @@ use std::time::{Duration, Instant};
 
 mod input_policy_tests;
 mod presentation_tests;
+
+#[test]
+fn physical_input_selects_the_low_latency_owner_wait_budget() {
+    assert_eq!(
+        authority_wait_timeout(true, false, false),
+        Duration::from_millis(1)
+    );
+    assert_eq!(
+        authority_wait_timeout(false, true, false),
+        Duration::from_millis(1)
+    );
+    assert_eq!(
+        authority_wait_timeout(false, false, true),
+        Duration::from_millis(1)
+    );
+    assert_eq!(
+        authority_wait_timeout(false, false, false),
+        Duration::from_millis(25)
+    );
+}
+
+#[test]
+fn synchronous_modeset_record_requires_the_initialized_submission() {
+    assert_eq!(
+        synchronous_modeset_record(2, Some(1)).as_deref(),
+        Some(
+            "sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1"
+        )
+    );
+    assert_eq!(synchronous_modeset_record(2, None), None);
+}
 
 #[test]
 fn startup_readiness_requires_every_output_callback_and_submission() {

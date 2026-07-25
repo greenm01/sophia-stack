@@ -25,6 +25,20 @@ struct SessionLoopStartup<'a> {
     output_notifications: usize,
 }
 
+fn authority_wait_timeout(
+    physical_input_active: bool,
+    cursor_update_pending: bool,
+    control_pending: bool,
+) -> Duration {
+    Duration::from_millis(
+        if physical_input_active || cursor_update_pending || control_pending {
+            1
+        } else {
+            25
+        },
+    )
+}
+
 fn run_session_loop(
     config: &PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,

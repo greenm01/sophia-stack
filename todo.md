@@ -84,6 +84,10 @@ Promotion now follows the gates below in order.
 - [x] Apply state-only XKB releases when a client destroys its surface before
   the physical key release, without delivering an orphan event to the next
   focused application.
+- [x] Emit immutable per-output synchronous-modeset evidence at the aggregate
+  startup-readiness transition rather than before native initialization.
+- [x] Use the low-latency owner wait budget whenever physical input is active,
+  so an idle X channel cannot add 25 ms to queued input before composition.
 - [ ] Prove a stable physical workload has zero per-frame target or pipeline
   recreation, zero launch-admission timeouts, and bounded input-to-submit and
   presentation latency.

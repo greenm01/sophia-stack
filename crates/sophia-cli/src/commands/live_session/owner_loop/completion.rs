@@ -479,7 +479,7 @@
                 head.submissions,
                 head.retirements,
                 head.callback_accepted,
-                head.initial_modeset_presented,
+                head.initial_modeset_submission.is_some(),
                 head.nonzero_exports,
             )
         }) {

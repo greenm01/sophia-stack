@@ -343,7 +343,9 @@ output must also retain one
 asynchronous submissions still require matching callbacks. The separate
 `sophia_live_native_resources schema=1` completion record contains only
 reduced creation and replacement counts; it does not expose native handles or
-application metadata. Validate verifier changes with:
+application metadata. While physical input is active, the session owner polls
+its X authority channel on the one-millisecond budget so idle X traffic cannot
+consume the input dwell allowance. Validate verifier changes with:
 
 ```sh
 tools/check_sophia_xmonad_four_kitty_verifier.sh
