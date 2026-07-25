@@ -25,6 +25,29 @@ pub struct LivePresentationSubmission {
     pub idle_fence: Option<FenceHandle>,
 }
 
+#[derive(Debug)]
+pub struct LiveRetainedDmaBufLayer {
+    pub frame: LiveOwnedMultiPlaneDmaBufFrame,
+    pub placement: LiveCompositionPlacement,
+}
+
+pub fn compose_full_state_mixed_frame(
+    mut current: LiveOwnedMixedCompositionFrame,
+    retained: Vec<LiveRetainedDmaBufLayer>,
+) -> LiveOwnedMixedCompositionFrame {
+    let current_layer = current.layers.pop();
+    current.layers.extend(retained.into_iter().map(
+        |LiveRetainedDmaBufLayer { frame, placement }| LiveOwnedMixedCompositionLayer::DmaBuf {
+            frame,
+            placement,
+        },
+    ));
+    if let Some(current_layer) = current_layer {
+        current.layers.push(current_layer);
+    }
+    current
+}
+
 #[derive(Debug, Default)]
 pub struct LivePresentationResourceSession {
     registry: LiveDmaBufPresentationRegistry,

@@ -10,7 +10,7 @@ use sophia_protocol::{OutputId, Size, TransactionId};
 fn feedback(transaction: u64) -> LivePresentFeedbackOutcome {
     let transaction = TransactionId::from_raw(transaction);
     LivePresentFeedbackOutcome {
-        feedback: [
+        feedback: vec![
             LivePresentProtocolFeedback::Complete {
                 transaction,
                 ust: transaction.raw(),

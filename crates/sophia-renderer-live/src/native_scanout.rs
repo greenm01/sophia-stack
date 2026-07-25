@@ -119,6 +119,29 @@ pub struct LiveOwnedMultiPlaneDmaBufFrame {
     pub planes: [Option<LiveOwnedDmaBufPlane>; 4],
 }
 
+impl LiveOwnedMultiPlaneDmaBufFrame {
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        let mut planes = std::array::from_fn(|_| None);
+        for (target, source) in planes.iter_mut().zip(&self.planes) {
+            if let Some(source) = source {
+                *target = Some(LiveOwnedDmaBufPlane {
+                    fd: source.fd.try_clone()?,
+                    offset: source.offset,
+                    stride: source.stride,
+                });
+            }
+        }
+        Ok(Self {
+            width: self.width,
+            height: self.height,
+            format: self.format,
+            modifier: self.modifier,
+            plane_count: self.plane_count,
+            planes,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct LiveCompositionPlacement {
     pub target: Rect,

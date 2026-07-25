@@ -210,18 +210,18 @@ impl LiveProductionVisualRuntime {
         };
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
-        let completion = production
-            .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
-                TransactionOutcome::Committed => {
-                    presentation_feedback.complete_flip(submitted.transaction, ust, msc)
-                }
-                TransactionOutcome::RejectedStaleSurface
-                | TransactionOutcome::RejectedInvalidSurface
-                | TransactionOutcome::TimedOut => {
-                    presentation_feedback.reject_skip(submitted.transaction, ust, msc)
-                }
-            })
-            .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
+        let completion =
+            production
+                .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
+                    TransactionOutcome::Committed => presentation_feedback
+                        .complete_flip_without_idle(submitted.transaction, ust, msc),
+                    TransactionOutcome::RejectedStaleSurface
+                    | TransactionOutcome::RejectedInvalidSurface
+                    | TransactionOutcome::TimedOut => {
+                        presentation_feedback.reject_skip(submitted.transaction, ust, msc)
+                    }
+                })
+                .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
         self.outputs
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);
@@ -232,6 +232,15 @@ impl LiveProductionVisualRuntime {
                 "settled retired Present without applying its stale Engine candidate"
             );
             return Ok(None);
+        }
+        self.presented_surface_frames
+            .insert(submitted.surface, submitted.displayed_frame);
+        if let Some(previous) = self
+            .displayed_presentations
+            .insert(submitted.surface, submitted.transaction)
+            && let Ok(outcome) = self.presentation_feedback.idle_displayed(previous)
+        {
+            self.route_present_feedback(outcome);
         }
         Ok(Some(LiveProductionRetiredPresent {
             transaction: submitted.transaction,

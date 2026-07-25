@@ -10,12 +10,16 @@ use sophia_backend_live::{
     LivePresentationSubmission, LiveProductionAuthorityBatch,
     LiveProductionPresentFeedbackCoordinator, LiveProductionPresentGate,
     LiveProductionPresentScheduler, LiveProductionPresentSubmission, LiveResourceReleaseStatus,
+    LiveRetainedDmaBufLayer, compose_full_state_mixed_frame,
 };
 use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
     DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
+};
+use sophia_renderer_live::{
+    LiveCompositionPlacement, LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
 };
 
 fn fd() -> OwnedFd {
@@ -99,6 +103,99 @@ fn backend_session_builds_mixed_cpu_gpu_frame_and_retires_exactly_once() {
 }
 
 #[test]
+fn full_state_composition_keeps_retained_surface_before_current_damage() {
+    let placement = |x| LiveCompositionPlacement {
+        target: Rect {
+            x,
+            y: 0,
+            width: 64,
+            height: 48,
+        },
+        clip: None,
+        transform: sophia_protocol::Transform::IDENTITY,
+        alpha: 1.0,
+    };
+    let frame = || LiveOwnedMultiPlaneDmaBufFrame {
+        width: 64,
+        height: 48,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        modifier: DRM_FORMAT_MOD_INVALID,
+        plane_count: 1,
+        planes: [
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd: fd(),
+                offset: 0,
+                stride: 256,
+            }),
+            None,
+            None,
+            None,
+        ],
+    };
+    let current = sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        layers: vec![LiveOwnedMixedCompositionLayer::DmaBuf {
+            frame: frame(),
+            placement: placement(64),
+        }],
+    };
+
+    let composed = compose_full_state_mixed_frame(
+        current,
+        vec![LiveRetainedDmaBufLayer {
+            frame: frame(),
+            placement: placement(0),
+        }],
+    );
+
+    assert_eq!(composed.layers.len(), 2);
+    let targets = composed
+        .layers
+        .iter()
+        .map(|layer| match layer {
+            LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
+            | LiveOwnedMixedCompositionLayer::Cpu { placement, .. } => placement.target.x,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(targets, [0, 64]);
+}
+
+#[test]
+fn retained_multi_plane_frame_clone_preserves_metadata_planes() {
+    let original = LiveOwnedMultiPlaneDmaBufFrame {
+        width: 64,
+        height: 48,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        modifier: 7,
+        plane_count: 3,
+        planes: [
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd: fd(),
+                offset: 0,
+                stride: 256,
+            }),
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd: fd(),
+                offset: 12_288,
+                stride: 64,
+            }),
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd: fd(),
+                offset: 15_360,
+                stride: 64,
+            }),
+            None,
+        ],
+    };
+
+    let cloned = original.try_clone().unwrap();
+
+    assert_eq!(cloned.plane_count, 3);
+    assert_eq!(cloned.modifier, 7);
+    assert_eq!(cloned.planes[1].as_ref().unwrap().offset, 12_288);
+    assert_eq!(cloned.planes[2].as_ref().unwrap().stride, 64);
+}
+
+#[test]
 fn production_feedback_retires_resources_before_complete_and_idle() {
     let handle = BufferHandle::from_raw(17);
     let transaction = TransactionId::from_raw(18);
@@ -145,6 +242,51 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
         coordinator.complete_flip(transaction, 44, 55),
         Err(LivePresentFeedbackError::UnknownPresentation { transaction })
     );
+}
+
+#[test]
+fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
+    let handle = BufferHandle::from_raw(19);
+    let transaction = TransactionId::from_raw(20);
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    coordinator
+        .resources_mut()
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction,
+            buffer: handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .mark_submitted(transaction)
+        .unwrap();
+
+    let completed = coordinator
+        .complete_flip_without_idle(transaction, 22, 23)
+        .unwrap();
+    assert_eq!(
+        completed.feedback,
+        [LivePresentProtocolFeedback::Complete {
+            transaction,
+            ust: 22,
+            msc: 23,
+            mode: LivePresentCompletionMode::Flip,
+        }]
+    );
+    assert_eq!(coordinator.resources().presentation_count(), 1);
+
+    let idle = coordinator.idle_displayed(transaction).unwrap();
+    assert_eq!(
+        idle.feedback,
+        [LivePresentProtocolFeedback::Idle { transaction }]
+    );
+    assert_eq!(coordinator.resources().presentation_count(), 0);
 }
 
 #[test]

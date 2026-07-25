@@ -16,6 +16,8 @@ pub struct LiveProductionVisualRuntime {
     input_layers: Vec<LayerSnapshot>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
+    presented_surface_frames: BTreeMap<SurfaceId, LiveOwnedMultiPlaneDmaBufFrame>,
+    displayed_presentations: BTreeMap<SurfaceId, TransactionId>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
 }
@@ -66,6 +68,8 @@ impl LiveProductionVisualRuntime {
             input_layers: Vec::new(),
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
+            presented_surface_frames: BTreeMap::new(),
+            displayed_presentations: BTreeMap::new(),
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
         })
@@ -127,11 +131,14 @@ impl LiveProductionVisualRuntime {
         } = request;
         self.presentation_feedback
             .observe_authority_resources(batch)?;
+        self.release_removed_presentations(&batch.removed_surfaces);
         let rebased_transactions = sophia_engine::rebase_full_state_present_transactions(
             &batch.transactions,
             self.production.committed_surfaces(),
         );
         self.layers
+            .retain(|surface, _| !batch.removed_surfaces.contains(surface));
+        self.presented_surface_frames
             .retain(|surface, _| !batch.removed_surfaces.contains(surface));
         for transaction in &rebased_transactions {
             self.layers.insert(transaction.surface, transaction.clone());
@@ -293,6 +300,9 @@ impl LiveProductionVisualRuntime {
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         self.presentation_feedback
             .observe_authority_resources(batch)?;
+        self.release_removed_presentations(&batch.removed_surfaces);
+        self.presented_surface_frames
+            .retain(|surface, _| !batch.removed_surfaces.contains(surface));
         if !batch.present_submissions.is_empty() {
             let cpu_background = native_frames
                 .as_ref()
@@ -378,13 +388,40 @@ impl LiveProductionVisualRuntime {
         {
             return self.run_observation_tick();
         }
-        let mixed = self.presentation_feedback.resources().build_mixed_frame(
+        let mut mixed = self.presentation_feedback.resources().build_mixed_frame(
             transaction,
             queued.cpu_background.clone(),
             queued.target,
             None,
             1.0,
         )?;
+        let current_frame = mixed
+            .layers
+            .iter()
+            .find_map(|layer| match layer {
+                LiveOwnedMixedCompositionLayer::DmaBuf { frame, .. } => frame.try_clone().ok(),
+                LiveOwnedMixedCompositionLayer::Cpu { .. } => None,
+            })
+            .ok_or("ready Present frame did not retain its DMA-BUF")?;
+        let mut retained_layers = Vec::new();
+        for (surface, transaction) in &self.layers {
+            if *surface == queued_surface {
+                continue;
+            }
+            let Some(frame) = self.presented_surface_frames.get(surface) else {
+                continue;
+            };
+            retained_layers.push(LiveRetainedDmaBufLayer {
+                frame: frame.try_clone()?,
+                placement: LiveCompositionPlacement {
+                    target: transaction.target_geometry,
+                    clip: None,
+                    transform: Transform::IDENTITY,
+                    alpha: 1.0,
+                },
+            });
+        }
+        mixed = compose_full_state_mixed_frame(mixed, retained_layers);
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 mixed
@@ -461,6 +498,7 @@ impl LiveProductionVisualRuntime {
                         transaction,
                         surface: queued_surface,
                         prepared,
+                        displayed_frame: current_frame,
                     });
             }
             Some(Status::AlreadyInFlight | Status::CleanupPending) | None => {}
@@ -552,6 +590,17 @@ impl LiveProductionVisualRuntime {
         self.present_feedback.push_back(outcome);
     }
 
+    fn release_removed_presentations(&mut self, removed_surfaces: &[SurfaceId]) {
+        for surface in removed_surfaces {
+            self.presented_surface_frames.remove(surface);
+            if let Some(transaction) = self.displayed_presentations.remove(surface)
+                && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
+            {
+                self.route_present_feedback(outcome);
+            }
+        }
+    }
+
     pub fn drain_present_feedback_into(
         &mut self,
         outcomes: &mut Vec<crate::LivePresentFeedbackOutcome>,
@@ -570,6 +619,13 @@ impl LiveProductionVisualRuntime {
         }
         if let Some(submitted) = self.present_scheduler.take_submitted() {
             self.reject_gpu_presentation(submitted.transaction, 0, 0);
+        }
+        let displayed = std::mem::take(&mut self.displayed_presentations);
+        self.presented_surface_frames.clear();
+        for transaction in displayed.into_values() {
+            if let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction) {
+                self.route_present_feedback(outcome);
+            }
         }
 
         self.presentation_feedback.disconnect()

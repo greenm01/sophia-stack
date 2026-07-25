@@ -240,9 +240,9 @@ pub enum LivePresentProtocolFeedback {
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LivePresentFeedbackOutcome {
-    pub feedback: [LivePresentProtocolFeedback; 2],
+    pub feedback: Vec<LivePresentProtocolFeedback>,
     pub idle_fence_triggered: bool,
 }
 
@@ -316,6 +316,41 @@ impl LiveProductionPresentFeedbackCoordinator {
         ))
     }
 
+    pub fn complete_flip_without_idle(
+        &self,
+        transaction: TransactionId,
+        ust: u64,
+        msc: u64,
+    ) -> Result<LivePresentFeedbackOutcome, LivePresentFeedbackError> {
+        (self.resources.state(transaction)
+            == Some(sophia_renderer_live::LiveBufferState::Submitted))
+        .then(|| LivePresentFeedbackOutcome {
+            feedback: vec![LivePresentProtocolFeedback::Complete {
+                transaction,
+                ust,
+                msc,
+                mode: LivePresentCompletionMode::Flip,
+            }],
+            idle_fence_triggered: false,
+        })
+        .ok_or(LivePresentFeedbackError::UnknownPresentation { transaction })
+    }
+
+    pub fn idle_displayed(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<LivePresentFeedbackOutcome, LivePresentFeedbackError> {
+        let retirement = self
+            .resources
+            .retire_page_flip(transaction)
+            .ok_or(LivePresentFeedbackError::UnknownPresentation { transaction })?;
+        Ok(LivePresentFeedbackOutcome {
+            feedback: vec![LivePresentProtocolFeedback::Idle { transaction }],
+            idle_fence_triggered: retirement.idle_fence
+                == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
+        })
+    }
+
     pub fn reject_skip(
         &mut self,
         transaction: TransactionId,
@@ -347,7 +382,7 @@ impl LiveProductionPresentFeedbackCoordinator {
         idle_fence_triggered: bool,
     ) -> LivePresentFeedbackOutcome {
         LivePresentFeedbackOutcome {
-            feedback: [
+            feedback: vec![
                 LivePresentProtocolFeedback::Complete {
                     transaction,
                     ust,

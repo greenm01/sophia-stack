@@ -19,11 +19,12 @@ pub struct LiveProductionQueuedPresent {
     not_before: Instant,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
+    pub displayed_frame: sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

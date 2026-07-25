@@ -126,6 +126,14 @@
                 if wm_update.is_none() {
                     wm_update = layout.expire_pending(control_sender, control_ack_receiver)?;
                 }
+                if wm_update.is_none()
+                    && !removed_surfaces.is_empty()
+                    && layout.pending.is_none()
+                    && let Some(wm_session) = wm_session.as_mut()
+                {
+                    let proposal = wm_session.request_relayout(&layout, output)?;
+                    wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
+                }
                 if layout.pending.is_none()
                     && let Some(wm_session) = wm_session.as_mut()
                     && let Some(proposal) = wm_session.poll_restart(&layout, output)? {
