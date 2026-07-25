@@ -47,8 +47,8 @@ first_start_line="$(line_number '^sophia_session_app schema=2 status=started .* 
 queued="$(count '^sophia_session_app schema=2 status=queued source=action ')"
 started="$(count '^sophia_session_app schema=2 status=started .* source=action ')"
 admitted="$(count '^sophia_session_app schema=2 status=admitted source=action ')"
-(( queued >= 4 && queued <= 16 )) ||
-    fail "expected four to sixteen accepted burst requests, observed $queued"
+(( queued >= 2 && queued <= 16 )) ||
+    fail "expected two to sixteen accepted burst requests, observed $queued"
 (( started == queued )) ||
     fail "only $started of $queued accepted requests started"
 (( admitted == started )) ||

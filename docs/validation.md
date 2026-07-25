@@ -352,7 +352,7 @@ prompt if possible; use twenty presses to exercise overflow. Session policy
 admits one opaque application surface at a time, retains at most sixteen
 active-plus-queued action launches, and rejects excess requests without
 terminating Sophia. The verifier requires every output's callback-bearing
-startup baseline before the first action application starts, four to sixteen
+startup baseline before the first action application starts, two to sixteen
 complete sequential admissions without timeout, post-burst keyboard routing,
 normal logout, and clean presentation teardown.
 Validate verifier mutations with:
