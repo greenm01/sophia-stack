@@ -150,9 +150,10 @@ macro_rules! drain_physical_input {
             }
             if let Some(terminal) = report.virtual_terminal {
                 if pending_virtual_terminal.is_none() && requested_virtual_terminal.is_none() {
-                    pending_virtual_terminal = Some(terminal);
+                    pending_virtual_terminal = Some((terminal, Instant::now()));
                     println!(
-                        "sophia_live_session_vt schema=3 status=queued target={terminal}"
+                        "sophia_live_session_vt schema=4 status=queued target={terminal} modifier_releases={}",
+                        report.virtual_terminal_modifier_releases,
                     );
                 }
                 std::io::stdout().flush()?;

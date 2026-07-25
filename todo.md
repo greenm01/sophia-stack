@@ -96,6 +96,8 @@ rather than borrowing the completed Kitty-only promotion.
 - [x] Quiesce native presentation before an owner-requested VT switch and make
   unsolicited seat revocation a nonfatal forced-detach path; physically prove
   the continuously presenting xmonad profile before promoting that profile.
+- [x] Release client-visible Ctrl/Alt state and clear WM shortcut modifiers
+  before VT suspension; require delivery acknowledgement before switching.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

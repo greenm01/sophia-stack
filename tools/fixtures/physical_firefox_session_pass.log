@@ -22,10 +22,10 @@ sophia_live_wm schema=1 status=hidden_focus_cleared transaction=12
 sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus
 sophia_live_wm schema=1 status=physical_action_committed action=257
 sophia_live_wm schema=1 status=physical_action_committed action=769
-sophia_live_session_vt schema=3 status=queued target=3
-sophia_live_session_vt schema=3 status=preparing target=3
-sophia_live_session_vt schema=3 status=quiesced target=3
-sophia_live_session_vt schema=3 status=requested target=3
+sophia_live_session_vt schema=4 status=queued target=3 modifier_releases=2
+sophia_live_session_vt schema=4 status=preparing target=3
+sophia_live_session_vt schema=4 status=quiesced target=3
+sophia_live_session_vt schema=4 status=requested target=3
 sophia_live_seat schema=1 status=release_pending
 sophia_live_seat schema=1 status=suspended
 sophia_live_seat schema=1 status=acquire_pending

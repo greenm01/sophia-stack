@@ -371,6 +371,107 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
 }
 
 #[test]
+fn vt_chord_releases_application_modifiers_before_suspension() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(1, 1);
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        },
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        }),
+    }];
+    let mut focus = InputFocusState::new();
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        sophia_engine::InputFocusDecision::Focused
+    );
+    let events = [29, 56, 60]
+        .into_iter()
+        .enumerate()
+        .map(|(index, keycode)| InputEventPacket {
+            serial: u64::try_from(index + 1).unwrap(),
+            seat,
+            device: DeviceId::from_raw(1),
+            time_msec: u64::try_from(index + 1).unwrap(),
+            kind: InputEventKind::Key {
+                keycode,
+                pressed: true,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        })
+        .collect();
+    let (input_sender, input_receiver) = sync_channel(8);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut pointer = SessionPointerPlacement::default();
+    let mut next_delivery = 1;
+
+    let report = route_input_events(
+        events,
+        &focus,
+        &committed,
+        &[],
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut emergency,
+        &mut virtual_terminal,
+        None,
+        &mut pointer,
+        false,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        None,
+    )
+    .unwrap();
+    let routed = input_receiver
+        .try_iter()
+        .map(|input| input.request.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(report.virtual_terminal, Some(2));
+    assert_eq!(report.virtual_terminal_modifier_releases, 2);
+    assert_eq!(
+        routed,
+        [
+            InputEventKind::Key {
+                keycode: 29,
+                pressed: true,
+            },
+            InputEventKind::Key {
+                keycode: 56,
+                pressed: true,
+            },
+            InputEventKind::Key {
+                keycode: 29,
+                pressed: false,
+            },
+            InputEventKind::Key {
+                keycode: 56,
+                pressed: false,
+            },
+        ]
+    );
+    assert_eq!(modifiers.modifier_mask(), 0);
+}
+
+#[test]
 fn interactive_pointer_proof_routes_motion_after_placement() {
     let mut pointer = SessionPointerPlacement {
         raw_position: None,

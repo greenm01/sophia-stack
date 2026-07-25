@@ -4,10 +4,37 @@
                 seat_state = seat_state.observe(event);
             }
             if seat_state == sophia_backend_live::LiveSeatState::Active
-                && let Some(terminal) = pending_virtual_terminal.take()
+                && let Some((terminal, queued_at)) = pending_virtual_terminal
             {
+                InputDeliveryPhase {
+                    receiver: input_delivery_receiver,
+                    state: &mut input_delivery,
+                    proof_started_at: &mut input_proof_started_at,
+                    post_input_deadline: &mut post_input_deadline,
+                }
+                .drain()?;
+                if !input_delivery.pending.is_empty() {
+                    if queued_at.elapsed() >= Duration::from_millis(500) {
+                        pending_virtual_terminal = None;
+                        modifiers = XCoreKeyboardMapper::new();
+                        virtual_terminal_chord = VirtualTerminalChordState::default();
+                        if let Some(wm) = wm_session.as_mut()
+                            && let Some(shortcuts) = wm.shortcuts.as_mut()
+                        {
+                            let _ = shortcuts.clear_seat(seat);
+                        }
+                        eprintln!(
+                            "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=modifier_release_timeout pending_deliveries={}",
+                            input_delivery.pending.len(),
+                        );
+                    } else {
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    continue;
+                }
+                pending_virtual_terminal = None;
                 println!(
-                    "sophia_live_session_vt schema=3 status=preparing target={terminal}"
+                    "sophia_live_session_vt schema=4 status=preparing target={terminal}"
                 );
                 std::io::stdout().flush()?;
                 physical_input.take();
@@ -25,14 +52,14 @@
                         native_scanout.take();
                         seat_release_prepared = true;
                         println!(
-                            "sophia_live_session_vt schema=3 status=quiesced target={terminal}"
+                            "sophia_live_session_vt schema=4 status=quiesced target={terminal}"
                         );
                         match controller.switch_session(terminal) {
                             Ok(()) => {
                                 requested_virtual_terminal =
                                     Some((terminal, Instant::now()));
                                 println!(
-                                    "sophia_live_session_vt schema=3 status=requested target={terminal}"
+                                    "sophia_live_session_vt schema=4 status=requested target={terminal}"
                                 );
                                 std::io::stdout().flush()?;
                                 continue;
@@ -78,7 +105,7 @@
                                 cursor_updates =
                                     CursorUpdateState::new(pointer.position.is_some());
                                 eprintln!(
-                                    "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=request error={error}"
+                                    "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=request error={error}"
                                 );
                             }
                         }
@@ -98,7 +125,7 @@
                         virtual_terminal_chord = VirtualTerminalChordState::default();
                         emergency_chord = EmergencyChordState::armed();
                         eprintln!(
-                            "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=quiesce error={error}"
+                            "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=quiesce error={error}"
                         );
                     }
                 }
@@ -133,9 +160,14 @@
                 modifiers = XCoreKeyboardMapper::new();
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
+                if let Some(wm) = wm_session.as_mut()
+                    && let Some(shortcuts) = wm.shortcuts.as_mut()
+                {
+                    let _ = shortcuts.clear_seat(seat);
+                }
                 cursor_updates = CursorUpdateState::new(pointer.position.is_some());
                 eprintln!(
-                    "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=disable_timeout"
+                    "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=disable_timeout"
                 );
                 std::io::stdout().flush()?;
             }

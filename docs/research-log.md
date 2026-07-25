@@ -2813,3 +2813,18 @@ disable event rebuilds hardware and repaints instead of ending the session.
 An unsolicited disable cannot be drained after authority is gone; that path
 immediately detaches native state, reports any abandoned scanout, completes an
 already-submitted Present as `Skip`, and preserves queued work for acquisition.
+
+Physical xmonad switching then proved KMS survival but exposed a separate input
+state boundary. Ctrl and Alt presses had already reached the focused X client
+before the function-key press identified the sequence as a VT chord. Their
+physical releases occurred on the text VT, outside Sophia's libinput ownership,
+so XKB and the WM shortcut router retained both modifiers after acquisition.
+The reopened libinput poller was healthy; application input was interpreted
+with stale Ctrl-Alt state.
+
+VT activation now emits synthetic releases for every pressed chord modifier,
+clears the WM seat state, and waits up to 500 milliseconds for X Authority to
+acknowledge those deliveries before KMS quiesce and `switch_session`. Failure
+to flush rejects the switch without ending the graphical session. Suspension
+still clears local keyboard state as a second boundary, but no longer relies
+on that local reset to repair client-visible XKB state.

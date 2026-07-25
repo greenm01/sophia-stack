@@ -75,7 +75,8 @@ if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
 fi
 bash -n tools/stop_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
-bash -n tools/package_live_session.sh tools/install_live_session.sh
+bash -n tools/package_live_session.sh tools/install_live_session.sh \
+    tools/install_current_live_session.sh
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh

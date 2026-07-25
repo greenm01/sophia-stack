@@ -35,3 +35,14 @@ fn either_control_and_alt_side_is_accepted_but_plain_function_keys_pass() {
         VirtualTerminalChordAction::Activate(12)
     );
 }
+
+#[test]
+fn active_vt_chord_exposes_modifier_keys_that_need_synthetic_release() {
+    let mut chord = VirtualTerminalChordState::default();
+    let _ = chord.observe(29, true);
+    let _ = chord.observe(100, true);
+    assert_eq!(
+        chord.pressed_modifier_keycodes(),
+        [Some(29), None, None, Some(100)]
+    );
+}

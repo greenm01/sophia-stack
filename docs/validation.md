@@ -380,8 +380,7 @@ WM, input, renderer, and teardown evidence.
 An installed release is built and frozen separately from login:
 
 ```sh
-tools/package_live_session.sh
-sudo tools/install_live_session.sh .artifacts/sophia-VERSION-COMMIT
+tools/install_current_live_session.sh
 ```
 
 Packaging refuses a dirty worktree, builds optimized Sophia and the generic WM

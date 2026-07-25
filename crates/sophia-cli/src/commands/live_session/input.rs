@@ -15,6 +15,7 @@ struct PhysicalInputRouteReport {
     emergency_exit: bool,
     return_suppressed: bool,
     virtual_terminal: Option<u8>,
+    virtual_terminal_modifier_releases: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -208,6 +209,7 @@ fn route_input_events(
         emergency_exit: false,
         return_suppressed: false,
         virtual_terminal: None,
+        virtual_terminal_modifier_releases: 0,
     };
     for mut event in events {
         match event.kind {
@@ -217,6 +219,59 @@ fn route_input_events(
                     VirtualTerminalChordAction::Pass => {}
                     VirtualTerminalChordAction::Consume => continue,
                     VirtualTerminalChordAction::Activate(terminal) => {
+                        for modifier_keycode in virtual_terminal_chord
+                            .pressed_modifier_keycodes()
+                            .into_iter()
+                            .flatten()
+                        {
+                            if let Some(shortcuts) = shortcuts.as_deref_mut() {
+                                let _ = shortcuts.route_key(event.seat, modifier_keycode, false);
+                            }
+                            let _ = modifiers.map_evdev_key(modifier_keycode, false);
+                            if routing_mode != PhysicalInputRoutingMode::Full {
+                                continue;
+                            }
+                            let mut release = event.clone();
+                            release.kind = sophia_protocol::InputEventKind::Key {
+                                keycode: modifier_keycode,
+                                pressed: false,
+                            };
+                            let release = match focus
+                                .route_keyboard_event(release, committed_surfaces)
+                            {
+                                FocusedInputRoute::Routed(release) => release,
+                                FocusedInputRoute::NoFocus(_)
+                                | FocusedInputRoute::StaleFocus(_)
+                                | FocusedInputRoute::UnsupportedEvent(_) => continue,
+                            };
+                            let Some(target_surface) = release.target_surface else {
+                                continue;
+                            };
+                            let delivery =
+                                XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
+                            *next_input_delivery =
+                                next_input_delivery.checked_add(1).ok_or(
+                                    "live-session input delivery ID exhausted",
+                                )?;
+                            input_sender.try_send(XAuthorityRoutedInput {
+                                request: sophia_protocol::RoutedInputRequest {
+                                    serial: release.serial,
+                                    seat: release.seat,
+                                    device: release.device,
+                                    time_msec: release.time_msec,
+                                    target_surface,
+                                    global_position: Point::default(),
+                                    local_position: Point::default(),
+                                    kind: release.kind,
+                                },
+                                delivery: Some(delivery),
+                            })?;
+                            report.keys_routed = report.keys_routed.saturating_add(1);
+                            report.virtual_terminal_modifier_releases = report
+                                .virtual_terminal_modifier_releases
+                                .saturating_add(1);
+                            report.deliveries.push(delivery);
+                        }
                         report.virtual_terminal = Some(terminal);
                         continue;
                     }

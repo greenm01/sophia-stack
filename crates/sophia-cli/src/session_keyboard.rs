@@ -60,6 +60,31 @@ impl VirtualTerminalChordState {
         VirtualTerminalChordAction::Pass
     }
 
+    pub const fn pressed_modifier_keycodes(self) -> [Option<u32>; 4] {
+        [
+            if self.left_control {
+                Some(EVDEV_KEY_LEFTCTRL)
+            } else {
+                None
+            },
+            if self.right_control {
+                Some(EVDEV_KEY_RIGHTCTRL)
+            } else {
+                None
+            },
+            if self.left_alt {
+                Some(EVDEV_KEY_LEFTALT)
+            } else {
+                None
+            },
+            if self.right_alt {
+                Some(EVDEV_KEY_RIGHTALT)
+            } else {
+                None
+            },
+        ]
+    }
+
     const fn control(self) -> bool {
         self.left_control || self.right_control
     }

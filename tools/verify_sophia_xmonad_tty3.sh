@@ -109,20 +109,20 @@ for output in 1 2; do
         "$SESSION_LOG" "physical output $output did not retire a page flip"
 done
 for record in \
-    'sophia_live_session_vt schema=3 status=queued target=[0-9]+' \
-    'sophia_live_session_vt schema=3 status=preparing target=[0-9]+' \
-    'sophia_live_session_vt schema=3 status=quiesced target=[0-9]+' \
-    'sophia_live_session_vt schema=3 status=requested target=[0-9]+' \
+    'sophia_live_session_vt schema=4 status=queued target=[0-9]+ modifier_releases=[2-4]' \
+    'sophia_live_session_vt schema=4 status=preparing target=[0-9]+' \
+    'sophia_live_session_vt schema=4 status=quiesced target=[0-9]+' \
+    'sophia_live_session_vt schema=4 status=requested target=[0-9]+' \
     'sophia_live_seat schema=1 status=release_pending' \
     'sophia_live_seat schema=1 status=suspended' \
     'sophia_live_seat schema=1 status=acquire_pending' \
     'sophia_live_seat schema=1 status=active source=resume'; do
     require_line "^${record}$" "$SESSION_LOG" "VT lifecycle record is missing: $record"
 done
-queued_vt_line="$(line_number 'schema=3 status=queued target=' "$SESSION_LOG")"
-preparing_vt_line="$(line_number 'schema=3 status=preparing target=' "$SESSION_LOG")"
-quiesced_vt_line="$(line_number 'schema=3 status=quiesced target=' "$SESSION_LOG")"
-requested_vt_line="$(line_number 'schema=3 status=requested target=' "$SESSION_LOG")"
+queued_vt_line="$(line_number 'schema=4 status=queued target=' "$SESSION_LOG")"
+preparing_vt_line="$(line_number 'schema=4 status=preparing target=' "$SESSION_LOG")"
+quiesced_vt_line="$(line_number 'schema=4 status=quiesced target=' "$SESSION_LOG")"
+requested_vt_line="$(line_number 'schema=4 status=requested target=' "$SESSION_LOG")"
 release_vt_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
 suspended_vt_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"
 acquire_vt_line="$(line_number 'sophia_live_seat schema=1 status=acquire_pending$' "$SESSION_LOG")"
