@@ -23,6 +23,7 @@ macro_rules! drain_physical_input {
                         .and_then(|wm_session| wm_session.shortcuts.as_mut()),
                     input_sender,
                     modifiers: &mut modifiers,
+                    client_keys: &mut client_keys,
                     emergency_chord: &mut emergency_chord,
                     virtual_terminal_chord: &mut virtual_terminal_chord,
                     pointer: &mut pointer,
@@ -130,6 +131,7 @@ macro_rules! drain_physical_input {
                                 .client_routes
                                 .client_for_surface(surface)
                                 .ok_or("hidden WM focus has no X11 client route")?;
+                            flush_client_keys!(surface, "clear_focus");
                             session_controls.enqueue(XAuthorityClientControlCommand {
                                 client,
                                 command: XAuthorityControlCommand::ClearFocus {
@@ -153,6 +155,9 @@ macro_rules! drain_physical_input {
             }
             if let Some(terminal) = report.virtual_terminal {
                 if pending_virtual_terminal.is_none() && requested_virtual_terminal.is_none() {
+                    if let Some(surface) = applied_client_focus {
+                        flush_client_keys!(surface, "virtual_terminal");
+                    }
                     pending_virtual_terminal = Some((terminal, Instant::now()));
                     println!(
                         "sophia_live_session_vt schema=4 status=queued target={terminal} modifier_releases={}",

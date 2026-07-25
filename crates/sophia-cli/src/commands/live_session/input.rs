@@ -118,6 +118,7 @@ struct PhysicalInputRoutingContext<'a> {
     shortcuts: Option<&'a mut WmShortcutRouter>,
     input_sender: &'a SyncSender<XAuthorityRoutedInput>,
     modifiers: &'a mut XCoreKeyboardMapper,
+    client_keys: &'a mut SessionClientKeyState,
     emergency_chord: &'a mut EmergencyChordState,
     virtual_terminal_chord: &'a mut VirtualTerminalChordState,
     pointer: &'a mut SessionPointerPlacement,
@@ -142,6 +143,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         shortcuts,
         input_sender,
         modifiers,
+        client_keys,
         emergency_chord,
         virtual_terminal_chord,
         pointer,
@@ -160,6 +162,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         client_routes,
         input_sender,
         modifiers,
+        client_keys,
         emergency_chord,
         virtual_terminal_chord,
         shortcuts,
@@ -182,6 +185,7 @@ fn route_input_events(
     _client_routes: &XAuthorityClientSurfaceRoutes,
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
+    client_keys: &mut SessionClientKeyState,
     emergency_chord: &mut EmergencyChordState,
     virtual_terminal_chord: &mut VirtualTerminalChordState,
     mut shortcuts: Option<&mut WmShortcutRouter>,
@@ -266,6 +270,15 @@ fn route_input_events(
                                 },
                                 delivery: Some(delivery),
                             })?;
+                            client_keys.record_routed(
+                                SessionClientPressedKey {
+                                    surface: target_surface,
+                                    seat: release.seat,
+                                    device: release.device,
+                                    keycode: modifier_keycode,
+                                },
+                                false,
+                            )?;
                             report.keys_routed = report.keys_routed.saturating_add(1);
                             report.virtual_terminal_modifier_releases = report
                                 .virtual_terminal_modifier_releases
@@ -315,6 +328,16 @@ fn route_input_events(
                 let Some(target_surface) = event.target_surface else {
                     continue;
                 };
+                let key = SessionClientPressedKey {
+                    surface: target_surface,
+                    seat: event.seat,
+                    device: event.device,
+                    keycode,
+                };
+                if !pressed && !client_keys.release_is_routable(key) {
+                    client_keys.record_routed(key, false)?;
+                    continue;
+                }
                 let Some((keycode, state)) = modifiers.map_evdev_key(keycode, pressed) else {
                     continue;
                 };
@@ -356,6 +379,7 @@ fn route_input_events(
                     },
                     delivery: Some(delivery),
                 })?;
+                client_keys.record_routed(key, pressed)?;
                 report.keys_routed = report.keys_routed.saturating_add(1);
                 report.deliveries.push(delivery);
             }
@@ -451,4 +475,59 @@ fn route_input_events(
         }
     }
     Ok(report)
+}
+
+fn flush_client_pressed_keys(
+    surface: SurfaceId,
+    client_keys: &mut SessionClientKeyState,
+    scratch: &mut Vec<SessionClientPressedKey>,
+    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    modifiers: &mut XCoreKeyboardMapper,
+    next_input_delivery: &mut u64,
+    time_msec: u64,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    client_keys.copy_surface_keys(surface, scratch);
+    deliveries.clear();
+    for key in scratch.iter().copied() {
+        let Some((_x_keycode, _state)) = modifiers.map_evdev_key(key.keycode, false) else {
+            return Err("pressed-key ledger contains an unmappable key".into());
+        };
+        let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
+        *next_input_delivery = next_input_delivery
+            .checked_add(1)
+            .ok_or("live-session input delivery ID exhausted")?;
+        input_sender.try_send(XAuthorityRoutedInput {
+            request: sophia_protocol::RoutedInputRequest {
+                serial: delivery.raw(),
+                seat: key.seat,
+                device: key.device,
+                time_msec,
+                target_surface: key.surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: sophia_protocol::InputEventKind::Key {
+                    keycode: key.keycode,
+                    pressed: false,
+                },
+            },
+            delivery: Some(delivery),
+        })?;
+        deliveries.push(delivery);
+        client_keys.record_synthetic_release(key);
+    }
+    Ok(scratch.len())
+}
+
+fn clear_removed_surface_keys(
+    surface: SurfaceId,
+    client_keys: &mut SessionClientKeyState,
+    scratch: &mut Vec<SessionClientPressedKey>,
+    modifiers: &mut XCoreKeyboardMapper,
+) -> usize {
+    client_keys.copy_surface_keys(surface, scratch);
+    for key in scratch.iter().copied() {
+        let _ = modifiers.map_evdev_key(key.keycode, false);
+    }
+    client_keys.clear_surface(surface)
 }

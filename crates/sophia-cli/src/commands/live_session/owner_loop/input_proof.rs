@@ -71,6 +71,7 @@
                     &layout.client_routes,
                     input_sender,
                     &mut modifiers,
+                    &mut client_keys,
                     &mut emergency_chord,
                     &mut virtual_terminal_chord,
                     None,
@@ -174,6 +175,13 @@
             .admission()
             .and_then(|admission| admission.observed_surface)
             .filter(|surface| retired_present_surfaces.contains_key(surface));
+        for (_, action, _) in &committed_session_actions {
+            if *action == WmSessionAction::Logout
+                && let Some(surface) = applied_client_focus
+            {
+                flush_client_keys!(surface, "logout");
+            }
+        }
         if execute_committed_session_actions(
             SessionActionExecutionContext {
                 config,

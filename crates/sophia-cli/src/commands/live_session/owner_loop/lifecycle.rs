@@ -184,6 +184,9 @@
             }
             if seat_state == sophia_backend_live::LiveSeatState::ReleasePending {
                 println!("sophia_live_seat schema=1 status=release_pending");
+                if let Some(surface) = applied_client_focus {
+                    flush_client_keys!(surface, "seat_release");
+                }
                 physical_input.take();
                 if !seat_release_prepared
                     && let Some(runtime) = runtime.as_mut()

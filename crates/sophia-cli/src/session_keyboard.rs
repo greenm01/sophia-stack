@@ -1,7 +1,99 @@
+use sophia_protocol::{DeviceId, SeatId, SurfaceId};
+
 const EVDEV_KEY_LEFTCTRL: u32 = 29;
 const EVDEV_KEY_LEFTALT: u32 = 56;
 const EVDEV_KEY_RIGHTCTRL: u32 = 97;
 const EVDEV_KEY_RIGHTALT: u32 = 100;
+pub const SESSION_CLIENT_PRESSED_KEY_CAPACITY: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionClientPressedKey {
+    pub surface: SurfaceId,
+    pub seat: SeatId,
+    pub device: DeviceId,
+    pub keycode: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SessionClientKeyMetrics {
+    pub peak_pressed: usize,
+    pub synthetic_releases: usize,
+    pub orphan_releases_suppressed: usize,
+    pub removed_surface_keys: usize,
+}
+
+#[derive(Debug, Default)]
+pub struct SessionClientKeyState {
+    pressed: Vec<SessionClientPressedKey>,
+    metrics: SessionClientKeyMetrics,
+}
+
+impl SessionClientKeyState {
+    pub fn release_is_routable(&self, key: SessionClientPressedKey) -> bool {
+        self.pressed.contains(&key)
+    }
+
+    pub fn record_routed(
+        &mut self,
+        key: SessionClientPressedKey,
+        pressed: bool,
+    ) -> Result<(), &'static str> {
+        if pressed {
+            if self.pressed.contains(&key) {
+                return Ok(());
+            }
+            if self.pressed.len() >= SESSION_CLIENT_PRESSED_KEY_CAPACITY {
+                return Err("client pressed-key ledger is full");
+            }
+            self.pressed.push(key);
+            self.metrics.peak_pressed = self.metrics.peak_pressed.max(self.pressed.len());
+        } else if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
+            self.pressed.swap_remove(index);
+        } else {
+            self.metrics.orphan_releases_suppressed =
+                self.metrics.orphan_releases_suppressed.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub fn copy_surface_keys(
+        &self,
+        surface: SurfaceId,
+        destination: &mut Vec<SessionClientPressedKey>,
+    ) {
+        destination.clear();
+        destination.extend(
+            self.pressed
+                .iter()
+                .copied()
+                .filter(|pressed| pressed.surface == surface),
+        );
+    }
+
+    pub fn record_synthetic_release(&mut self, key: SessionClientPressedKey) {
+        if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
+            self.pressed.swap_remove(index);
+            self.metrics.synthetic_releases = self.metrics.synthetic_releases.saturating_add(1);
+        }
+    }
+
+    pub fn clear_surface(&mut self, surface: SurfaceId) -> usize {
+        let before = self.pressed.len();
+        self.pressed.retain(|pressed| pressed.surface != surface);
+        let removed = before.saturating_sub(self.pressed.len());
+        self.metrics.removed_surface_keys =
+            self.metrics.removed_surface_keys.saturating_add(removed);
+        removed
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.pressed.len()
+    }
+
+    pub fn metrics(&self) -> SessionClientKeyMetrics {
+        self.metrics
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct VirtualTerminalChordState {

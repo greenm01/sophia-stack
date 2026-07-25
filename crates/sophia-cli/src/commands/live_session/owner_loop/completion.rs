@@ -550,5 +550,17 @@
     {
         return Err("persistent session controls did not drain cleanly".into());
     }
+    let key_metrics = client_keys.metrics();
+    println!(
+        "sophia_live_session_keys schema=1 status=complete pending={} peak_pressed={} synthetic_releases={} orphan_releases_suppressed={} removed_surface_keys={}",
+        client_keys.pending_len(),
+        key_metrics.peak_pressed,
+        key_metrics.synthetic_releases,
+        key_metrics.orphan_releases_suppressed,
+        key_metrics.removed_surface_keys,
+    );
+    if client_keys.pending_len() != 0 {
+        return Err("persistent client key state did not drain cleanly".into());
+    }
     Ok(())
 }

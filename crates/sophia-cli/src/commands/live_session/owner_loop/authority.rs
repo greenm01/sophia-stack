@@ -371,6 +371,18 @@
                         application_surface_gone_at.get_or_insert_with(Instant::now);
                     }
                     focus.clear_surface(surface);
+                    let abandoned = clear_removed_surface_keys(
+                        surface,
+                        &mut client_keys,
+                        &mut client_key_scratch,
+                        &mut modifiers,
+                    );
+                    if abandoned != 0 {
+                        eprintln!(
+                            "sophia_live_session_keys schema=1 status=abandoned reason=surface_removed surface={} count={abandoned}",
+                            surface.index(),
+                        );
+                    }
                     if applied_client_focus == Some(surface) {
                         applied_client_focus = None;
                     }
@@ -405,6 +417,11 @@
                     match decision {
                         InputFocusDecision::Focused => {
                             if wm_session.is_some() {
+                                if let Some(previous) = applied_client_focus
+                                    && previous != surface
+                                {
+                                    flush_client_keys!(previous, "focus_handoff");
+                                }
                                 let client = layout
                                     .client_routes
                                     .client_for_surface(surface)

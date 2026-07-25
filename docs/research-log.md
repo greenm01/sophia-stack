@@ -3208,3 +3208,26 @@ lifecycle counts, peak depth, queue dwell, and acknowledgement latency. The
 four-Kitty verifier requires a drained failure-free ledger and bounds both
 latencies to 100 ms. Synchronous initial-modeset evidence also moved from the
 backend library to the CLI evidence boundary, removing direct library output.
+
+## 2026-07-25: Focus Suppression Must Preserve Key Symmetry
+
+The first physical run with asynchronous focus controls completed cleanly, and
+all 28 controls were delivered without rejection or timeout. Keyboard hardware
+also remained active. The remaining apparent keyboard loss was an input-state
+ordering defect: a key press could reach the old X client immediately before a
+focus handoff, while its physical release arrived during the deliberately
+suppressed Engine/frontend focus mismatch. The WM observed that release, but
+the X client did not, leaving keys such as Super logically pressed.
+
+The live input boundary now retains a fixed-capacity data record of key presses
+actually delivered to each surface, seat, and device. Before a focus,
+clear-focus, VT, seat-release, or logout handoff, it sends a release for every
+record owned by the old client and includes those releases in normal delivery
+accounting. A later physical release without a matching delivered press is
+suppressed instead of being sent to the new client. Surface removal clears any
+remaining record and updates the local modifier reducer, preventing stale
+state from crossing a client exit.
+
+Completion evidence reports peak pressed-key depth, synthetic releases,
+suppressed orphan releases, surface-removal cleanup, and final debt. The
+four-Kitty verifier requires final pressed-key debt to be zero.

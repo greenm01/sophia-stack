@@ -38,5 +38,34 @@ macro_rules! service_session_controls {
     }};
 }
 
+macro_rules! flush_client_keys {
+    ($surface:expr, $reason:expr) => {{
+        let surface = $surface;
+        let released = flush_client_pressed_keys(
+            surface,
+            &mut client_keys,
+            &mut client_key_scratch,
+            &mut client_key_deliveries,
+            input_sender,
+            &mut modifiers,
+            &mut input_delivery.next,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        )?;
+        input_delivery.events_expected = input_delivery
+            .events_expected
+            .saturating_add(client_key_deliveries.len());
+        input_delivery
+            .pending
+            .extend(client_key_deliveries.iter().copied());
+        if released != 0 {
+            println!(
+                "sophia_live_session_keys schema=1 status=released reason={} surface={} count={released}",
+                $reason,
+                surface.index(),
+            );
+        }
+    }};
+}
+
 include!("physical_input_phase.rs")
 }

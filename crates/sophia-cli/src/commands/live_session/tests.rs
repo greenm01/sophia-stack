@@ -14,6 +14,7 @@ use super::{
     stable_gpu_frame_proves_post_input_pixels, successful_primary_exit_ends_session,
     take_settled_input_delivery_wait,
 };
+use sophia_cli::session_keyboard::SessionClientKeyState;
 use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
@@ -186,6 +187,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         .collect();
     let (input_sender, input_receiver) = sync_channel(4);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
@@ -199,6 +201,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
         Some(&mut shortcuts),
@@ -247,6 +250,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
     ];
     let (input_sender, input_receiver) = sync_channel(2);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
@@ -265,6 +269,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
         None,
@@ -371,6 +376,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
     }];
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut next_delivery = 1;
@@ -382,6 +388,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
         None,
@@ -452,6 +459,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         .collect();
     let (input_sender, input_receiver) = sync_channel(8);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
@@ -465,6 +473,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
         None,

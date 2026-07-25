@@ -16,7 +16,10 @@ use sophia_cli::session_actions::{
     SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome,
 };
 use sophia_cli::session_control::{SESSION_CONTROL_CAPACITY, SessionControlQueue};
-use sophia_cli::session_keyboard::{VirtualTerminalChordAction, VirtualTerminalChordState};
+use sophia_cli::session_keyboard::{
+    SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
+    VirtualTerminalChordAction, VirtualTerminalChordState,
+};
 use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
