@@ -17,16 +17,58 @@ fn unknown_surface_keeps_wm_focus_request_pending() {
 
 #[test]
 fn held_application_pointer_delivery_does_not_freeze_cursor() {
-    let events = vec![InputEventPacket {
-        serial: 1,
-        seat: SeatId::from_raw(1),
-        device: DeviceId::from_raw(2),
-        time_msec: 1,
-        kind: InputEventKind::PointerMotion,
-        global_position: Some(Point { x: 18.0, y: -5.0 }),
-        target_surface: None,
-        local_position: None,
-    }];
+    let action = WmActionId::from_raw(7);
+    let registry = WmShortcutRegistry::from_hello(&WmHello {
+        api_version: WM_API_VERSION,
+        capabilities: WmCapabilities::all_supported(),
+        bindings: vec![WmBindingRegistration {
+            action,
+            keycode: 28,
+            modifiers: WmModifierMask {
+                bits: WmModifierMask::SUPER,
+            },
+        }],
+    })
+    .unwrap();
+    let mut shortcuts = WmShortcutRouter::new(registry);
+    let events = vec![
+        InputEventPacket {
+            serial: 1,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: 1,
+            kind: InputEventKind::PointerMotion,
+            global_position: Some(Point { x: 18.0, y: -5.0 }),
+            target_surface: None,
+            local_position: None,
+        },
+        InputEventPacket {
+            serial: 2,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(1),
+            time_msec: 2,
+            kind: InputEventKind::Key {
+                keycode: 125,
+                pressed: true,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        },
+        InputEventPacket {
+            serial: 3,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(1),
+            time_msec: 3,
+            kind: InputEventKind::Key {
+                keycode: 28,
+                pressed: true,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        },
+    ];
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
@@ -49,7 +91,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         &mut modifiers,
         &mut emergency,
         &mut virtual_terminal,
-        None,
+        Some(&mut shortcuts),
         &mut pointer,
         false,
         false,
@@ -62,6 +104,8 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
 
     assert_eq!(report.pointer_events, 1);
     assert_eq!(report.pointer_routed, 0);
+    assert_eq!(report.wm_actions, [action]);
+    assert_eq!(report.keys_routed, 0);
     assert_ne!(pointer.position, initial_position);
     assert!(input_receiver.try_recv().is_err());
 }

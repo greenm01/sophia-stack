@@ -12,6 +12,8 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
     "$SESSION" "$GUARD" "$RECOVERY"
 
 for mutation in \
+    'status=exited id=terminal source=startup ' \
+    'status=desktop_pointer_active source=post_startup_exit' \
     'status=physical_action_committed action=258' \
     'status=hidden_focus_cleared ' \
     'status=key_suppressed reason=no_focus' \

@@ -7,6 +7,7 @@ pub const X_ATOM_LAST_PREDEFINED: XAtom = 68;
 
 pub const X_ATOM_PRIMARY: XAtom = 1;
 pub const X_ATOM_ATOM: XAtom = 4;
+pub const X_ATOM_CARDINAL: XAtom = 6;
 pub const X_ATOM_RESOURCE_MANAGER: XAtom = 23;
 pub const X_ATOM_STRING: XAtom = 31;
 pub const X_ATOM_WM_NAME: XAtom = 39;
@@ -22,6 +23,24 @@ pub const X_ATOM_NAME_NET_WM_NAME: &str = "_NET_WM_NAME";
 pub const X_ATOM_NAME_WM_PROTOCOLS: &str = "WM_PROTOCOLS";
 pub const X_ATOM_NAME_UTF8_STRING: &str = "UTF8_STRING";
 pub const X_ATOM_NAME_WM_DELETE_WINDOW: &str = "WM_DELETE_WINDOW";
+pub const X_ATOM_NAME_RANDR_EDID: &str = "EDID";
+pub const X_ATOM_NAME_RANDR_NON_DESKTOP: &str = "non-desktop";
+
+const X_RANDR_CONVENTIONAL_OUTPUT_PROPERTY_NAMES: &[&str] = &[
+    "Backlight",
+    X_ATOM_NAME_RANDR_EDID,
+    "SignalFormat",
+    "SignalProperties",
+    "ConnectorType",
+    "ConnectorNumber",
+    "CompatibilityList",
+    "CloneList",
+    "Border",
+    "BorderDimensions",
+    "GUID",
+    "TILE",
+    X_ATOM_NAME_RANDR_NON_DESKTOP,
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XAtomError {
@@ -61,6 +80,12 @@ impl XAtomTable {
         };
         for (atom, name) in X_PREDEFINED_ATOMS {
             table.insert_predefined(*atom, name);
+        }
+        for name in X_RANDR_CONVENTIONAL_OUTPUT_PROPERTY_NAMES {
+            table
+                .intern(name, false)
+                .expect("fixed RandR output property atom is valid")
+                .expect("interning a fixed RandR output property returns an atom");
         }
         table
     }

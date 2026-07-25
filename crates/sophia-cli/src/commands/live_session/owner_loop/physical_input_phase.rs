@@ -66,6 +66,19 @@ macro_rules! drain_physical_input {
                 .pointer_events
                 .saturating_sub(report.pointer_buttons_observed)
                 .saturating_sub(report.pointer_axes_observed);
+            if !post_startup_exit_pointer_reported
+                && config.normal_session
+                && primary_child_exited
+                && focus.focused_surface(seat).is_none()
+                && wm_session.is_some()
+                && pointer_motions_observed > 0
+            {
+                println!(
+                    "sophia_live_session_input_pipeline schema=1 status=desktop_pointer_active source=post_startup_exit"
+                );
+                std::io::stdout().flush()?;
+                post_startup_exit_pointer_reported = true;
+            }
             if pointer_motions_observed > 0 && pointer.position.is_some() {
                 if cursor_updates.dirty {
                     metrics.cursor_moves_coalesced = metrics

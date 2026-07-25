@@ -150,6 +150,7 @@ fn run_session_loop(
     let mut input_text_match = false;
     let mut primary_child_exited = child.is_none();
     let mut primary_exit_status = None;
+    let mut post_startup_exit_pointer_reported = false;
     let mut application_surface_missing_since: Option<Instant> = None;
     let mut client_stdout = Vec::new();
     let mut firefox_m8_proof = FirefoxM8StageProof::default();

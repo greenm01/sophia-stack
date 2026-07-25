@@ -67,6 +67,10 @@ fn run_x_authority_external_probe_smoke(
     // update cannot be dropped while a later patch is retained.
     let (sender, receiver) = sync_channel(4_096);
     let mut server_config = XServerFrontendConfig::new(&server_path, namespace)?;
+    if label == "kitty" {
+        server_config =
+            server_config.with_output_topology(two_output_external_probe_topology())?;
+    }
     if let Some(provider) = render_device_provider {
         server_config = server_config.with_render_device_provider(provider);
     }
@@ -376,6 +380,45 @@ fn run_x_authority_external_probe_smoke(
         observed_transactions: transactions,
         observed_cpu_buffers: cpu_buffers.into_values().collect(),
     })
+}
+
+fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapshot {
+    sophia_protocol::OutputTopologySnapshot {
+        generation: 1,
+        primary: sophia_protocol::OutputId::from_raw(1),
+        outputs: vec![
+            sophia_protocol::OutputTopologyEntry {
+                output: sophia_protocol::OutputId::from_raw(1),
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1280,
+                    height: 720,
+                },
+                pixel_size: Size {
+                    width: 1280,
+                    height: 720,
+                },
+                scale: 1,
+                refresh_millihz: 60_000,
+            },
+            sophia_protocol::OutputTopologyEntry {
+                output: sophia_protocol::OutputId::from_raw(2),
+                logical: Rect {
+                    x: 1280,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                pixel_size: Size {
+                    width: 1920,
+                    height: 1080,
+                },
+                scale: 1,
+                refresh_millihz: 60_000,
+            },
+        ],
+    }
 }
 
 fn cpu_buffers_contain_fixed_text(

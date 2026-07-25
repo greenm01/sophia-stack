@@ -67,6 +67,12 @@ require_line '^sophia_live_wm schema=1 status=ready adapter=external socket=priv
     "$SESSION_LOG" "external xmonad policy never became ready"
 require_line '^sophia_session_app schema=1 status=started id=terminal source=startup$' \
     "$SESSION_LOG" "startup Kitty was not launched"
+require_line \
+    '^sophia_session_app schema=1 status=exited id=terminal source=startup exit_status=exit status: 0$' \
+    "$SESSION_LOG" "startup Kitty did not exit cleanly"
+require_line \
+    '^sophia_live_session_input_pipeline schema=1 status=desktop_pointer_active source=post_startup_exit$' \
+    "$SESSION_LOG" "pointer input did not remain active after the last window closed"
 require_line '^sophia_session_app schema=1 status=started id=terminal source=action$' \
     "$SESSION_LOG" "Super-Enter did not launch a second Kitty"
 require_count_at_least \
@@ -88,6 +94,20 @@ for action in \
         "^sophia_live_wm schema=1 status=physical_action_committed action=${action}$" \
         "$SESSION_LOG" "required physical WM action $action was not committed"
 done
+startup_exit_line="$(
+    line_number 'status=exited id=terminal source=startup exit_status=exit status: 0$' "$SESSION_LOG"
+)"
+desktop_pointer_line="$(
+    line_number 'status=desktop_pointer_active source=post_startup_exit$' "$SESSION_LOG"
+)"
+super_enter_line="$(line_number 'status=physical_action_committed action=1$' "$SESSION_LOG")"
+action_terminal_line="$(
+    line_number 'status=started id=terminal source=action$' "$SESSION_LOG"
+)"
+(( startup_exit_line < desktop_pointer_line
+    && desktop_pointer_line < super_enter_line
+    && super_enter_line < action_terminal_line )) ||
+    fail "last-window exit, pointer recovery, and Super-Enter launch are out of order"
 require_line '^sophia_live_wm schema=1 status=hidden_focus_cleared transaction=[0-9]+$' \
     "$SESSION_LOG" "workspace-away did not clear Engine and X11 focus"
 require_line '^sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus$' \
@@ -145,6 +165,8 @@ cursor="$(
 require_value_at_least "$cursor" buttons_routed 2
 require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false$' \
     "$SESSION_LOG" "final session health was not clean"
+require_line '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
+    "$SESSION_LOG" "normal session emitted an unexpected X protocol error"
 
 mapfile -t completions < <(
     grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"

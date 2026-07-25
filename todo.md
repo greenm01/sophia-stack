@@ -102,6 +102,12 @@ rather than borrowing the completed Kitty-only promotion.
   flip retirement as a controlled Skip/Idle settlement; preserve newer Engine
   state, retire resources exactly once, and queue a correction frame when the
   last active GPU surface disappears.
+- [x] Keep physical cursor motion and global shortcuts active on an empty
+  xmonad desktop after the startup application exits; suppress ordinary keys
+  through the existing no-focus route and retain ordered verifier evidence.
+- [x] Seed conventional RandR output-property atoms and return bounded,
+  hardware-neutral property values; require the real-Kitty two-output smoke to
+  complete without unexpected X errors.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

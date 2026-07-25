@@ -201,6 +201,165 @@ fn randr_output_property_returns_bounded_empty_edid_fallback() {
 }
 
 #[test]
+fn randr_conventional_output_properties_are_valid_across_two_outputs() {
+    let namespace = NamespaceId::from_raw(45);
+    let topology = OutputTopologySnapshot {
+        generation: 1,
+        primary: OutputId::from_raw(1),
+        outputs: vec![
+            OutputTopologyEntry {
+                output: OutputId::from_raw(1),
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1280,
+                    height: 720,
+                },
+                pixel_size: Size {
+                    width: 1280,
+                    height: 720,
+                },
+                scale: 1,
+                refresh_millihz: 60_000,
+            },
+            OutputTopologyEntry {
+                output: OutputId::from_raw(2),
+                logical: Rect {
+                    x: 1280,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                pixel_size: Size {
+                    width: 1920,
+                    height: 1080,
+                },
+                scale: 1,
+                refresh_millihz: 60_000,
+            },
+        ],
+    };
+    let mut runtime = XAuthorityRuntime::with_output_topology(topology).unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let edid = atoms.atom(X_ATOM_NAME_RANDR_EDID).unwrap();
+    let non_desktop = atoms.atom(X_ATOM_NAME_RANDR_NON_DESKTOP).unwrap();
+
+    for (sequence, output) in [0x2000_0001, 0x2000_0002].into_iter().enumerate() {
+        let edid_request = decode_x11_core_request(
+            context(namespace, 600 + u64::try_from(sequence).unwrap(), XByteOrder::LittleEndian),
+            &randr_get_output_property_request(
+                XByteOrder::LittleEndian,
+                output,
+                edid,
+                128,
+            ),
+        )
+        .unwrap();
+        let edid_result = dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                u16::try_from(sequence + 1).unwrap(),
+                XByteOrder::LittleEndian,
+                X_RANDR_MAJOR_OPCODE,
+            ),
+            edid_request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let encoded = edid_result.encoded_outputs(XByteOrder::LittleEndian);
+        assert_eq!(encoded[0][0], 1);
+        assert_eq!(encoded[0][1], 0);
+        assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 0);
+
+        let non_desktop_request = decode_x11_core_request(
+            context(namespace, 610 + u64::try_from(sequence).unwrap(), XByteOrder::LittleEndian),
+            &randr_get_output_property_request(
+                XByteOrder::LittleEndian,
+                output,
+                non_desktop,
+                1,
+            ),
+        )
+        .unwrap();
+        let non_desktop_result = dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                u16::try_from(sequence + 3).unwrap(),
+                XByteOrder::LittleEndian,
+                X_RANDR_MAJOR_OPCODE,
+            ),
+            non_desktop_request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let encoded = non_desktop_result.encoded_outputs(XByteOrder::LittleEndian);
+        assert_eq!(encoded[0][0], 1);
+        assert_eq!(encoded[0][1], 32);
+        assert_eq!(
+            read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]),
+            X_ATOM_CARDINAL
+        );
+        assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][16..20]), 1);
+        assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][32..36]), 0);
+    }
+
+    let invalid_atom = decode_x11_core_request(
+        context(namespace, 620, XByteOrder::LittleEndian),
+        &randr_get_output_property_request(
+            XByteOrder::LittleEndian,
+            0x2000_0001,
+            0xffff_fffe,
+            1,
+        ),
+    )
+    .unwrap();
+    let invalid_atom = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            5,
+            XByteOrder::LittleEndian,
+            X_RANDR_MAJOR_OPCODE,
+        ),
+        invalid_atom,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(invalid_atom[0][0], 0);
+    assert_eq!(invalid_atom[0][1], 5, "invalid property atom is BadAtom");
+
+    let invalid_output = decode_x11_core_request(
+        context(namespace, 621, XByteOrder::LittleEndian),
+        &randr_get_output_property_request(
+            XByteOrder::LittleEndian,
+            0x2fff_ffff,
+            edid,
+            1,
+        ),
+    )
+    .unwrap();
+    let invalid_output = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            6,
+            XByteOrder::LittleEndian,
+            X_RANDR_MAJOR_OPCODE,
+        ),
+        invalid_output,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(invalid_output[0][0], 0);
+    assert_eq!(invalid_output[0][1], 2, "invalid output is BadValue");
+}
+
+#[test]
 fn xfixes_regions_support_create_set_and_destroy_lifecycle() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

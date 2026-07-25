@@ -106,7 +106,7 @@ fn physical_input_preserves_shortcuts_without_an_application_surface() {
     );
     assert_eq!(
         physical_input_routing_mode(true, None, None, true),
-        PhysicalInputRoutingMode::ShortcutsOnly
+        PhysicalInputRoutingMode::Full
     );
     assert_eq!(
         physical_input_routing_mode(true, Some(proof), Some(proof), true),

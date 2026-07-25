@@ -753,6 +753,29 @@ fn x_client_output_from_property_read(
     }
 }
 
+fn randr_output_property_from_read(
+    context: &XDispatchContext,
+    output: u32,
+    result: Result<crate::XPropertyReadReply, XPropertyError>,
+) -> XClientOutput {
+    match result {
+        Ok(reply) => XClientOutput::Reply(XClientReply::RandrGetOutputProperty {
+            sequence: context.sequence,
+            property_type: reply.property_type,
+            bytes_after: reply.bytes_after,
+            format: reply.format,
+            data: reply.bytes,
+        }),
+        Err(error) => XClientOutput::Error(crate::XClientError {
+            code: x_error_from_property_read(error),
+            sequence: context.sequence,
+            resource_id: output,
+            minor_code: crate::X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
+            major_code: context.major_opcode,
+        }),
+    }
+}
+
 fn x_error_from_property_read(error: XPropertyError) -> XErrorCode {
     match error {
         XPropertyError::InvalidNamespace | XPropertyError::InvalidWindow => XErrorCode::BadWindow,

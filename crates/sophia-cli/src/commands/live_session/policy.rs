@@ -20,7 +20,10 @@ fn physical_input_routing_mode(
     proof_surface: Option<SurfaceId>,
     global_shortcuts_available: bool,
 ) -> PhysicalInputRoutingMode {
-    if !primary_child_exited || focused_surface != proof_surface {
+    if focused_surface.is_none()
+        || !primary_child_exited
+        || focused_surface != proof_surface
+    {
         PhysicalInputRoutingMode::Full
     } else if global_shortcuts_available {
         PhysicalInputRoutingMode::ShortcutsOnly
