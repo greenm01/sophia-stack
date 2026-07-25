@@ -597,7 +597,7 @@ fn post_swap_front_buffer_pixel_metrics(
     buffer
         .map(0, 0, width, height, |mapped| {
             native_composition_pixel_metrics_from_rows(
-                mapped,
+                mapped.buffer(),
                 width,
                 height,
                 mapped.stride(),

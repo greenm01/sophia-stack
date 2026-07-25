@@ -126,8 +126,10 @@ fn is_supported_rendered_scanout_candidate_buffer(buffer: &NativeGbmOwnedScanout
 }
 
 const fn is_supported_rendered_scanout_candidate_shape(plane_count: u8) -> bool {
-    plane_count == 1
+    plane_count > 0 && plane_count <= MAX_RENDERED_SCANOUT_PLANES
 }
+
+const MAX_RENDERED_SCANOUT_PLANES: u8 = 4;
 
 fn rendered_scanout_usage() -> gbm::BufferObjectFlags {
     gbm::BufferObjectFlags::SCANOUT | gbm::BufferObjectFlags::RENDERING

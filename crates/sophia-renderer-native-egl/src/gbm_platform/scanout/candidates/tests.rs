@@ -28,9 +28,11 @@ fn validates_bounded_linear_xrgb_descriptor() {
 }
 
 #[test]
-fn rendered_scanout_candidate_shape_requires_single_plane() {
+fn rendered_scanout_candidate_shape_accepts_bounded_metadata_planes() {
     assert!(is_supported_rendered_scanout_candidate_shape(1));
+    assert!(is_supported_rendered_scanout_candidate_shape(2));
+    assert!(is_supported_rendered_scanout_candidate_shape(3));
+    assert!(is_supported_rendered_scanout_candidate_shape(4));
     assert!(!is_supported_rendered_scanout_candidate_shape(0));
-    assert!(!is_supported_rendered_scanout_candidate_shape(2));
-    assert!(!is_supported_rendered_scanout_candidate_shape(4));
+    assert!(!is_supported_rendered_scanout_candidate_shape(5));
 }
