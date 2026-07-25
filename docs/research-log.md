@@ -2910,3 +2910,23 @@ Kitty/GLFW stderr and uses xmonad's actual action identity `768` for
 Super-Enter; action `1` remains focus-next. Mutation fixtures preserve each
 distinction so the acceptance gate cannot silently regress to broad error
 whitelisting or the former action-ID alias.
+
+The next physical start exposed a false-positive readiness gate rather than an
+application-launch failure. Kitty mapped, xmonad committed layout and focus,
+and output 1 repeatedly retired mixed Present transactions. Output 2 submitted
+its startup frame but never delivered a callback. Despite that partial KMS
+state, the owner reported `status=ready`: the CPU fallback examined only the
+first output, while the DMA-BUF path treated transaction retirement as visual
+proof without inspecting the composed pixels. Completion later reported zero
+CPU detail, no output-1 nonzero export, and no output-2 retirement.
+
+Startup readiness now reduces flat evidence for every owned output and requires
+at least one callback from each. Mixed composition captures a bounded one-time
+GPU readback, carries its nonzero RGB count with the exact submitted
+transaction, and becomes stable only after that content retires. A missing
+output callback after 750 milliseconds, or retired mixed frames without visible
+pixels after 1500 milliseconds, triggers one shared native detach/reopen and
+repaint through the existing libseat authority. The eight-second deadline
+remains authoritative; a second failure exits through guarded cleanup instead
+of accepting a cursor-only desktop. Engine remains protocol- and
+application-neutral.

@@ -1,4 +1,5 @@
 #![cfg(test)]
+use super::startup_readiness::{StartupOutputEvidence, all_startup_outputs_presented};
 use super::{
     BufferSource, CommittedSurfaceState, LayerSnapshot, LiveClientStdoutCapture,
     LiveProductionCpuScene, LiveProductionVisualRuntime, LiveXAuthorityFile,
@@ -28,6 +29,24 @@ use std::time::{Duration, Instant};
 
 mod input_policy_tests;
 mod presentation_tests;
+
+#[test]
+fn startup_readiness_requires_every_output_callback_and_submission() {
+    let healthy = StartupOutputEvidence {
+        required_submission: 2,
+        presented_submissions: 2,
+        callbacks: 1,
+    };
+    assert!(all_startup_outputs_presented(&[healthy]));
+    assert!(!all_startup_outputs_presented(&[
+        healthy,
+        StartupOutputEvidence {
+            required_submission: 2,
+            presented_submissions: 1,
+            callbacks: 0,
+        },
+    ]));
+}
 
 #[test]
 fn blank_normal_session_process_guard_has_no_primary_child() {

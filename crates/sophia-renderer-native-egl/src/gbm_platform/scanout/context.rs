@@ -11,6 +11,8 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     gbm_device: gbm::Device<T>,
     target: Option<PersistentNativeFrameTarget>,
     stats: NativeGbmPersistentRenderStats,
+    composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
+    composition_pixel_proof_attempts: usize,
 }
 
 struct PersistentNativeFrameTarget {
@@ -76,11 +78,17 @@ where
             gbm_device,
             target: None,
             stats: NativeGbmPersistentRenderStats::default(),
+            composition_pixel_metrics: None,
+            composition_pixel_proof_attempts: 0,
         })
     }
 
     pub const fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
         self.stats
+    }
+
+    pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
+        self.composition_pixel_metrics
     }
 
     pub fn export_rendered_owned_scanout_buffer(
@@ -234,13 +242,25 @@ where
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
         }
         if let Some(mut target) = self.target.take() {
+            let capture_pixels = self.composition_pixel_metrics.is_none()
+                && self.composition_pixel_proof_attempts < 3;
             let result = render_persistent_target_composition(
                 &self.egl,
                 self.display,
                 &self.gbm_device,
                 &mut target,
                 frame,
+                capture_pixels,
             );
+            if capture_pixels {
+                self.composition_pixel_proof_attempts =
+                    self.composition_pixel_proof_attempts.saturating_add(1);
+            }
+            if let Ok((_, Some(metrics))) = &result
+                && metrics.nonzero_rgb_pixels > 0
+            {
+                self.composition_pixel_metrics = Some(*metrics);
+            }
             // The exported GBM owner keeps the scanout surface alive. Retire
             // the context here so Radeon cannot carry imported-image command
             // stream state into the next CPU upload.
@@ -248,7 +268,7 @@ where
                 self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             }
             self.destroy_persistent_target(target);
-            return result;
+            return result.map(|(buffer, _)| buffer);
         }
 
         self.egl
@@ -286,14 +306,27 @@ where
                     continue;
                 }
             };
-            match render_persistent_target_composition(
+            let capture_pixels = self.composition_pixel_metrics.is_none()
+                && self.composition_pixel_proof_attempts < 3;
+            let rendered = render_persistent_target_composition(
                 &self.egl,
                 self.display,
                 &self.gbm_device,
                 &mut target,
                 frame,
-            ) {
-                Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
+                capture_pixels,
+            );
+            if capture_pixels {
+                self.composition_pixel_proof_attempts =
+                    self.composition_pixel_proof_attempts.saturating_add(1);
+            }
+            if let Ok((_, Some(metrics))) = &rendered
+                && metrics.nonzero_rgb_pixels > 0
+            {
+                self.composition_pixel_metrics = Some(*metrics);
+            }
+            match rendered {
+                Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.target_creations = self.stats.target_creations.saturating_add(1);
                     self.stats.gl_pipeline_creations =
                         self.stats.gl_pipeline_creations.saturating_add(1);

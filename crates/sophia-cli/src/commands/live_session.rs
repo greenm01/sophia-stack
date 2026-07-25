@@ -47,11 +47,13 @@ mod authority_file;
 pub(super) mod input_guard;
 mod process_supervision;
 mod proof_artifacts;
+mod startup_readiness;
 mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
 use process_supervision::{ManagedSessionChild, SessionProcessGuard, terminate_session_child};
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
+use startup_readiness::{all_startup_outputs_presented, startup_output_evidence};
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 
 include!("live_session/config.rs");

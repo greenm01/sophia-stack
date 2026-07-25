@@ -8,8 +8,13 @@ mod persistent_native_scanout {
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum LiveProductionScanoutContent {
-        Cpu { checksum: u64 },
-        Mixed { transaction: TransactionId },
+        Cpu {
+            checksum: u64,
+        },
+        Mixed {
+            transaction: TransactionId,
+            nonzero_rgb_pixels: usize,
+        },
     }
 
     pub fn live_production_scanout_is_stable_present(
@@ -18,8 +23,13 @@ mod persistent_native_scanout {
         pending: bool,
         transaction: TransactionId,
     ) -> bool {
-        presented == Some(LiveProductionScanoutContent::Mixed { transaction })
-            && submitted.is_none()
+        matches!(
+            presented,
+            Some(LiveProductionScanoutContent::Mixed {
+                transaction: presented_transaction,
+                nonzero_rgb_pixels,
+            }) if presented_transaction == transaction && nonzero_rgb_pixels > 0
+        ) && submitted.is_none()
             && !pending
     }
 
@@ -346,6 +356,15 @@ mod persistent_native_scanout {
                 if !head.exporter.pending_frame() {
                     head.pending_content = None;
                 }
+                let queued_content = queued_content.map(|content| match content {
+                    LiveProductionScanoutContent::Mixed { transaction, .. } => {
+                        LiveProductionScanoutContent::Mixed {
+                            transaction,
+                            nonzero_rgb_pixels: head.exporter.composition_nonzero_rgb_pixels(),
+                        }
+                    }
+                    content => content,
+                });
                 (report, exported_nonzero, queued_content)
             };
             if exported_nonzero {
@@ -596,7 +615,10 @@ mod persistent_native_scanout {
                     transaction.raw(),
                 );
             }
-            head.pending_content = Some(LiveProductionScanoutContent::Mixed { transaction });
+            head.pending_content = Some(LiveProductionScanoutContent::Mixed {
+                transaction,
+                nonzero_rgb_pixels: 0,
+            });
             head.exporter.set_pending_mixed_frame(frame);
         }
 
@@ -645,6 +667,19 @@ mod persistent_native_scanout {
                 head.exporter.pending_frame(),
                 transaction,
             )
+        }
+
+        pub fn presented_mixed_nonzero_rgb_pixels(&self, transaction: TransactionId) -> usize {
+            self.heads
+                .iter()
+                .find_map(|head| match head.presented_content {
+                    Some(LiveProductionScanoutContent::Mixed {
+                        transaction: presented,
+                        nonzero_rgb_pixels,
+                    }) if presented == transaction => Some(nonzero_rgb_pixels),
+                    _ => None,
+                })
+                .unwrap_or(0)
         }
 
         pub fn export_attempts(&self) -> usize {

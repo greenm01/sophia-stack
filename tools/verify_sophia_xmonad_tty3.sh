@@ -83,6 +83,25 @@ require_line '^sophia_live_wm schema=1 status=layout_committed .* outcome=Commit
     "$SESSION_LOG" "xmonad did not commit a layout"
 require_line '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' \
     "$SESSION_LOG" "xmonad did not commit focus"
+startup_content="$(
+    grep -E '^sophia_live_session_startup schema=2 status=content_ready source=stable_present_scanout nonzero_rgb_pixels=[1-9][0-9]*$' \
+        "$SESSION_LOG" | head -n 1
+)"
+[[ -n "$startup_content" ]] ||
+    fail "startup never proved nonzero mixed-composition pixels"
+require_line \
+    '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' \
+    "$SESSION_LOG" "both native outputs did not establish a retired startup baseline"
+startup_ready="$(
+    grep -E '^sophia_live_session_startup schema=2 status=ready ' "$SESSION_LOG" |
+        head -n 1
+)"
+[[ -n "$startup_ready" ]] || fail "startup readiness evidence is missing"
+require_eq "$startup_ready" outputs_ready 2/2
+recovery_attempts="$(field "$startup_ready" recovery_attempts)" ||
+    fail "startup readiness is missing recovery_attempts"
+[[ "$recovery_attempts" == 0 || "$recovery_attempts" == 1 ]] ||
+    fail "startup recovery attempts is $recovery_attempts, expected 0 or 1"
 require_line '^sophia_live_wm schema=1 status=session_action_committed .* action=Logout$' \
     "$SESSION_LOG" "normal Super-Shift-Q logout was not committed"
 for action in \

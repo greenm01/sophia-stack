@@ -565,6 +565,14 @@
                                 .as_ref()
                                 .is_some_and(|native| runtime.stable_present(native, *transaction))
                     });
+            let retired_gpu_pixels = retired_present_surfaces
+                .get(&surface)
+                .and_then(|transaction| {
+                    native_scanout.as_ref().map(|native| {
+                        native.presented_mixed_nonzero_rgb_pixels(*transaction)
+                    })
+                })
+                .unwrap_or(0);
             if input_content_surface != Some(surface)
                 && (cpu_visual_detail || retired_gpu_detail)
             {
@@ -582,7 +590,7 @@
             if !startup_content_ready && (cpu_visual_detail || retired_gpu_detail) {
                 startup_content_ready = true;
                 println!(
-                    "sophia_live_session_startup schema=1 status=content_ready source={}",
+                    "sophia_live_session_startup schema=2 status=content_ready source={} nonzero_rgb_pixels={retired_gpu_pixels}",
                     if retired_gpu_detail {
                         "stable_present_scanout"
                     } else {
@@ -595,8 +603,79 @@
         let focused_surface = focus.focused_surface(seat);
         let focused_client_ready =
             focused_surface.is_some() && applied_client_focus == focused_surface;
+        let missing_output_callback = native_scanout.as_ref().is_some_and(|native| {
+            native.heads.iter().any(|head| head.callback_accepted == 0)
+        });
+        if !startup_outputs_ready_reported
+            && let Some(native) = native_scanout.as_ref()
+            && startup_output_evidence(native, None)
+                .is_some_and(|outputs| all_startup_outputs_presented(&outputs))
+        {
+            startup_outputs_ready_reported = true;
+            println!(
+                "sophia_live_session_startup schema=2 status=output_baseline_ready outputs={}/{}",
+                native.heads.len(),
+                native.heads.len(),
+            );
+            std::io::stdout().flush()?;
+        }
+        let mixed_without_visible_pixels = !startup_content_ready
+            && !retired_present_surfaces.is_empty()
+            && focused_surface.is_some();
+        let recovery_due = (missing_output_callback
+            && started.elapsed() >= Duration::from_millis(750))
+            || (mixed_without_visible_pixels
+                && started.elapsed() >= Duration::from_millis(1_500));
+        if !startup_ready_reported
+            && !startup_native_recovery_attempted
+            && recovery_due
+            && let (Some(runtime), Some(current), Some(controller)) = (
+                runtime.as_mut(),
+                native_scanout.as_mut(),
+                seat_controller.as_ref(),
+            )
+        {
+            startup_native_recovery_attempted = true;
+            let suspended =
+                runtime.suspend_native_scanout(current, &outputs, Duration::from_millis(100))?;
+            let mut replacement =
+                LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
+            if replacement.outputs() != outputs {
+                return Err("startup native recovery changed the owned output topology".into());
+            }
+            let frames = scene.frames_for_outputs(&outputs)?;
+            runtime.resume_native_scanout(&mut replacement, &outputs, frames)?;
+            let _ = runtime.run_cpu_repaint(
+                &mut scene,
+                focused_surface,
+                None,
+                &outputs,
+                &mut replacement,
+            )?;
+            *current = replacement;
+            retired_present_surfaces.clear();
+            startup_content_ready = false;
+            startup_required_submissions = None;
+            input_content_surface = None;
+            startup_outputs_ready_reported = false;
+            println!(
+                "sophia_live_session_startup schema=2 status=recovered attempt=1 reason={} drained={} abandoned_scanouts={}",
+                if missing_output_callback {
+                    "missing_output_callback"
+                } else {
+                    "no_visible_mixed_pixels"
+                },
+                suspended.drained,
+                suspended.abandoned_scanouts,
+            );
+            std::io::stdout().flush()?;
+        }
         let startup_frame_presented = native_scanout.as_ref().is_none_or(|native| {
-            focused_surface.is_some_and(|surface| {
+            let all_outputs_presented = startup_required_submissions
+                .as_ref()
+                .and_then(|required| startup_output_evidence(native, Some(required)))
+                .is_some_and(|outputs| all_startup_outputs_presented(&outputs));
+            let focused_mixed_presented = focused_surface.is_some_and(|surface| {
                 retired_present_surfaces
                     .get(&surface)
                     .is_some_and(|transaction| {
@@ -604,16 +683,10 @@
                             .as_ref()
                             .is_some_and(|runtime| runtime.stable_present(native, *transaction))
                     })
-            }) || startup_required_submissions
-                .as_ref()
-                .is_some_and(|required| {
-                    native
-                        .heads
-                        .iter()
-                        .zip(required)
-                        .next()
-                        .is_some_and(|(head, required)| head.presented_submissions >= *required)
-                })
+            });
+            let every_output_has_retired = startup_output_evidence(native, None)
+                .is_some_and(|outputs| all_startup_outputs_presented(&outputs));
+            (focused_mixed_presented && every_output_has_retired) || all_outputs_presented
         });
         if !startup_ready_reported
             && config.startup_ready_timeout.is_some()
@@ -625,8 +698,17 @@
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
             println!(
-                "sophia_live_session_startup schema=1 status=ready elapsed_msec={} surface=true visual_detail=true presented=true",
-                started.elapsed().as_millis()
+                "sophia_live_session_startup schema=2 status=ready elapsed_msec={} surface=true visual_detail=true presented=true outputs_ready={}/{} recovery_attempts={}",
+                started.elapsed().as_millis(),
+                native_scanout.as_ref().map_or(1, |native| {
+                    native
+                        .heads
+                        .iter()
+                        .filter(|head| head.callback_accepted > 0)
+                        .count()
+                }),
+                native_scanout.as_ref().map_or(1, |native| native.heads.len()),
+                usize::from(startup_native_recovery_attempted),
             );
             std::io::stdout().flush()?;
         }

@@ -11,6 +11,9 @@ sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_own
 sophia_live_native_page_flip schema=1 status=retired output=1 submission=2
 sophia_live_native_page_flip schema=1 status=retired output=2 submission=2
 sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_present_scanout
+sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
+sophia_live_session_startup schema=2 status=content_ready source=stable_present_scanout nonzero_rgb_pixels=144
+sophia_live_session_startup schema=2 status=ready elapsed_msec=700 surface=true visual_detail=true presented=true outputs_ready=2/2 recovery_attempts=0
 sophia_live_session_input_pipeline schema=1 status=key_observed
 sophia_live_session_input_pipeline schema=1 status=key_routed
 sophia_live_session_input schema=1 status=ready source=physical text=sophia

@@ -403,7 +403,14 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
     gbm_device: &gbm::Device<T>,
     target: &mut PersistentNativeFrameTarget,
     frame: NativeCompositionFrame<'_>,
-) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+    capture_pixels: bool,
+) -> Result<
+    (
+        NativeGbmOwnedScanoutBuffer,
+        Option<NativeCompositionPixelMetrics>,
+    ),
+    NativeGbmScanoutBufferExportDetail,
+> {
     use gbm::AsRaw as _;
 
     let gbm_surface = create_rendered_scanout_surface(
@@ -509,6 +516,16 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
             }
         };
     }
+    let pixel_metrics = if capture_pixels && draw_result.is_ok() {
+        Some(
+            target
+                .pipeline
+                .read_composition_pixels()
+                .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)?,
+        )
+    } else {
+        None
+    };
     let result = draw_result
         .and_then(|()| {
             target
@@ -535,6 +552,7 @@ fn render_persistent_target_composition<T: std::os::fd::AsFd>(
         });
     let _ = egl.make_current(display, None, None, None);
     retain_egl_surface_until_scanout_release(egl, display, egl_surface, result)
+        .map(|buffer| (buffer, pixel_metrics))
 }
 
 fn trace_composition_pixels(

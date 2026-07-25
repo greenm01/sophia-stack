@@ -224,6 +224,12 @@ where
         }
     }
 
+    pub fn composition_nonzero_rgb_pixels(&self) -> usize {
+        self.inner
+            .composition_pixel_metrics()
+            .map_or(0, |metrics| metrics.nonzero_rgb_pixels)
+    }
+
     pub fn from_backend_device_result(
         device: std::io::Result<T>,
     ) -> NativeGbmRenderedScanoutContextReport<T> {

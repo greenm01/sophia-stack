@@ -188,6 +188,12 @@ where
     ) -> Option<LiveRendererScanoutBufferExportStatus> {
         self.last_cpu_frame_export_status
     }
+
+    pub fn composition_nonzero_rgb_pixels(&self) -> usize {
+        self.context
+            .as_ref()
+            .map_or(0, |context| context.composition_nonzero_rgb_pixels())
+    }
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

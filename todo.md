@@ -118,6 +118,9 @@ rather than borrowing the completed Kitty-only promotion.
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before
   arming physical input; keep pre-proof cursor motion responsive.
+- [x] Replace transaction-only startup readiness with bounded GPU pixel
+  evidence plus callbacks from every owned output; perform one full native
+  rebuild when an output callback or visible mixed frame stalls.
 - [x] Extend the bounded installed proof to require exact keyboard input plus
   routed pointer motion and a button.
 - [x] Give the live owner a bounded graceful emergency-cleanup window before
@@ -126,7 +129,7 @@ rather than borrowing the completed Kitty-only promotion.
 - [ ] Start from TTY3 with the independent recovery guard armed and capture the
   launcher, guard, recovery, WM, frontend, and native-session logs.
 - [ ] Automatically present a focused Kitty on the primary output within eight
-  seconds.
+  seconds, with nonzero mixed-composition evidence and `outputs_ready=2/2`.
 - [ ] Prove typing, pointer motion, click-drag selection, and Super-Enter
   launching a second independently interactive Kitty.
 - [ ] Prove keyboard and pointer focus changes, tiling resize, workspace
