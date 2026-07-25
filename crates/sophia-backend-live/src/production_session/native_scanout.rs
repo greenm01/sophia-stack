@@ -61,6 +61,7 @@ mod persistent_native_scanout {
         pub submissions: usize,
         pub retirements: usize,
         pub callback_accepted: usize,
+        pub initial_modeset_presented: bool,
         pub nonzero_exports: usize,
         pub last_submit_report: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
     }
@@ -200,6 +201,7 @@ mod persistent_native_scanout {
                         submissions: 0,
                         retirements: 0,
                         callback_accepted: 0,
+                        initial_modeset_presented: false,
                         nonzero_exports: 0,
                         last_submit_report: None,
                     });
@@ -412,7 +414,17 @@ mod persistent_native_scanout {
                     Status::AlreadyInFlight | Status::CleanupPending => {
                         self.submit_deferred = self.submit_deferred.saturating_add(1);
                     }
-                    _ => self.submit_failures = self.submit_failures.saturating_add(1),
+                    status => {
+                        self.submit_failures = self.submit_failures.saturating_add(1);
+                        tracing::warn!(
+                            "sophia_live_native_submit schema=1 status=failed output={} reason={status:?} content={queued_content:?} export={:?} scanout_buffer={:?} submit={:?} commit={:?}",
+                            self.heads[index].output.id.raw(),
+                            submit.export,
+                            submit.scanout_buffer,
+                            submit.submit,
+                            submit.commit_submit,
+                        );
+                    }
                 }
             }
             self.max_in_flight_ticks = self
@@ -592,6 +604,12 @@ mod persistent_native_scanout {
             head.presented_checksum = head.last_checksum;
             head.presented_submissions = head.submissions;
             head.presented_content = head.pending_content.take();
+            head.initial_modeset_presented = true;
+            println!(
+                "sophia_live_native_startup_output schema=1 status=presented output={} proof=synchronous_modeset submission={}",
+                head.output.id.raw(),
+                head.submissions,
+            );
             Ok(())
         }
 
@@ -605,7 +623,7 @@ mod persistent_native_scanout {
                 head.pending_content,
                 head.submitted_content,
                 head.presented_content,
-                head.callback_accepted != 0,
+                head.callback_accepted != 0 || head.initial_modeset_presented,
                 frame.checksum,
             );
             if !matches!(

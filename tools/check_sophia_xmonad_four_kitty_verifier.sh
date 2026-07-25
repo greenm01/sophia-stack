@@ -12,6 +12,9 @@ sophia_session_app schema=1 status=started id=terminal source=startup
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
+sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
+sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1
+sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_resize_epoch schema=1 status=held transaction=4 surfaces=3
 sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=3
 sophia_live_session_present schema=2 status=retired transaction=10 surface=1 source=1280x1440 target=1280x1440_0_0 clip=1280x1440_0_0 unit_scale=true
@@ -58,6 +61,9 @@ expect_rejected callback_imbalance \
 expect_rejected incomplete \
     'sophia_live_session_cleanup schema=1 status=clean' \
     'sophia_live_session_cleanup schema=1 status=stalled'
+expect_rejected missing_startup_output \
+    'sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1' \
+    'sophia_live_native_startup_output schema=1 status=missing output=2 proof=none submission=0'
 expect_rejected per_frame_recreation \
     'native_target_recreations=64' \
     'native_target_recreations=63'

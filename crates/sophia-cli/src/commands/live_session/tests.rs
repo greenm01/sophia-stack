@@ -7,10 +7,10 @@ use super::{
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
     center_geometry_without_scaling, global_runtime_deadline_ends_session,
-    input_baseline_is_presented, pending_wm_focus_after_engine_decision,
-    physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, pointer_offset_for_geometry, record_runtime_commits,
-    route_input_events, session_protocol_errors_are_fatal,
+    independent_native_output_presented, input_baseline_is_presented,
+    pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
+    physical_input_routing_mode, place_pointer_event_for_routing, pointer_offset_for_geometry,
+    record_runtime_commits, route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, successful_primary_exit_ends_session,
     take_settled_input_delivery_wait,
 };
@@ -36,6 +36,7 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
         required_submission: 2,
         presented_submissions: 2,
         callbacks: 1,
+        synchronous_modeset: false,
     };
     assert!(all_startup_outputs_presented(&[healthy]));
     assert!(!all_startup_outputs_presented(&[
@@ -44,8 +45,25 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
             required_submission: 2,
             presented_submissions: 1,
             callbacks: 0,
+            synchronous_modeset: false,
         },
     ]));
+    assert!(all_startup_outputs_presented(&[StartupOutputEvidence {
+        required_submission: 1,
+        presented_submissions: 1,
+        callbacks: 0,
+        synchronous_modeset: true,
+    }]));
+}
+
+#[test]
+fn independent_output_accepts_exact_synchronous_or_asynchronous_lifecycle() {
+    assert!(independent_native_output_presented(1, 0, 0, true, 1));
+    assert!(independent_native_output_presented(8, 7, 7, true, 1));
+    assert!(!independent_native_output_presented(1, 0, 0, false, 1));
+    assert!(!independent_native_output_presented(2, 0, 0, true, 1));
+    assert!(!independent_native_output_presented(8, 7, 6, true, 1));
+    assert!(!independent_native_output_presented(1, 0, 0, true, 0));
 }
 
 #[test]

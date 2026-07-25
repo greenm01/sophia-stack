@@ -38,6 +38,19 @@ if grep -Eq 'status=submitted .* content=None|outcome=forced_detach_|abandoned_s
     fail "session submitted empty output content or used forced native detach"
 fi
 
+grep -Eq \
+    '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' \
+    "$SESSION_LOG" ||
+    fail "both output baselines were not presented"
+mapfile -t startup_outputs < <(
+    grep -E '^sophia_live_native_startup_output schema=1 status=presented output=[0-9]+ proof=synchronous_modeset submission=1$' \
+        "$SESSION_LOG"
+)
+(( ${#startup_outputs[@]} == 2 )) ||
+    fail "expected two synchronously presented startup outputs"
+[[ "$(printf '%s\n' "${startup_outputs[@]}" | sed -n 's/.* output=\([0-9][0-9]*\) .*/\1/p' | sort -u | wc -l)" == 2 ]] ||
+    fail "startup output evidence contains duplicate output identities"
+
 mapfile -t launches < <(
     grep -nE '^sophia_session_app schema=1 status=started id=terminal source=(startup|action)$' \
         "$SESSION_LOG"

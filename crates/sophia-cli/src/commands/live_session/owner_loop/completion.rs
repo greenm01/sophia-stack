@@ -475,10 +475,13 @@
             );
         }
         if native_scanout.heads.iter().any(|head| {
-            head.submissions == 0
-                || head.retirements == 0
-                || head.callback_accepted == 0
-                || head.nonzero_exports == 0
+            !independent_native_output_presented(
+                head.submissions,
+                head.retirements,
+                head.callback_accepted,
+                head.initial_modeset_presented,
+                head.nonzero_exports,
+            )
         }) {
             return Err(
                 "one or more native outputs did not present and retire independently".into(),

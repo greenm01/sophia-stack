@@ -652,7 +652,10 @@
         let focused_client_ready =
             focused_surface.is_some() && applied_client_focus == focused_surface;
         let missing_output_callback = native_scanout.as_ref().is_some_and(|native| {
-            native.heads.iter().any(|head| head.callback_accepted == 0)
+            native
+                .heads
+                .iter()
+                .any(|head| head.callback_accepted == 0 && !head.initial_modeset_presented)
         });
         if !startup_outputs_ready_reported
             && let Some(native) = native_scanout.as_ref()
@@ -795,7 +798,9 @@
                     native
                         .heads
                         .iter()
-                        .filter(|head| head.callback_accepted > 0)
+                        .filter(|head| {
+                            head.callback_accepted > 0 || head.initial_modeset_presented
+                        })
                         .count()
                 }),
                 native_scanout.as_ref().map_or(1, |native| native.heads.len()),
