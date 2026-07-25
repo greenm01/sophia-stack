@@ -334,10 +334,10 @@ Follow the sequence printed by the launcher and use normal xmonad logout.
 The verifier waits briefly for completion, requires one pixel-matched
 full-height pane plus three stack panes, and rejects empty per-output
 submissions, forced native detach, abandoned scanouts, callback imbalance, or
-cleanup debt. It also requires at least 32 mixed exports, zero stable-epoch
-target replacement or launch-admission timeout, class-consistent persistent
-target creation, and at most 100 ms for input queue dwell, CPU upload, and
-submit-to-page-flip latency. The separate
+cleanup debt. It also requires at least 32 mixed exports, exact fail-safe
+composition-target retirement after every export, zero CPU/direct-DMA-BUF
+epoch or recovery replacement, zero launch-admission timeout, and at most 100
+ms for input queue dwell, CPU upload, and submit-to-page-flip latency. The separate
 `sophia_live_native_resources schema=1` completion record contains only
 reduced creation and replacement counts; it does not expose native handles or
 application metadata. Validate verifier changes with:

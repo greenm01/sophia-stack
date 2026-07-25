@@ -28,6 +28,24 @@ input, upload, and page-flip latency. Local compilation and verifier mutation
 coverage establish the ownership model; the physical workload and recovery
 retirement proof remain open.
 
+The first physical run of that implementation crashed on its third mixed frame
+with an AMDGPU command-stream rejection. A bounded two-target experiment then
+crashed at the same point: target A rendered frame one, target B rendered frame
+two, and the driver rejected target A's first reuse after its exported KMS
+lease had retired. This disproves both cross-class contamination and an
+in-flight front-buffer lease as the complete cause. The retained Mesa/AMDGPU
+path cannot safely reuse a composition EGL context after the current DMA-BUF
+import sequence.
+
+Mixed composition has therefore returned to the previously proven fail-safe:
+destroy its context, pipeline, and target after every exported frame. CPU and
+direct DMA-BUF targets remain class-isolated and persistent. Reduced evidence
+requires composition creation and retirement counts to match mixed exports,
+while epoch and recovery replacement of the other classes remains zero. This
+restores startup correctness without falsely closing the lifetime milestone.
+The next optimization must change the import/synchronization architecture, not
+extend an unsafe context pool.
+
 The same milestone now names click-to-focus separately from pointer motion and
 client click-drag delivery. A primary click on an unfocused visible surface
 must first select that surface through the blind WM interface, then deliver

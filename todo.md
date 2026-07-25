@@ -70,7 +70,7 @@ Promotion now follows the gates below in order.
 
 - [x] Decouple exported scanout-buffer ownership from the persistent EGL
   context, GL pipeline, and GBM target lifetime.
-- [x] Retain per-output rendering resources across a stable
+- [ ] Retain per-output rendering resources across a stable
   size/format/modifier epoch; recreate them only for topology change,
   incompatible target change, or explicit bounded recovery.
 - [x] Emit reduced recreation-reason and lifetime evidence without native

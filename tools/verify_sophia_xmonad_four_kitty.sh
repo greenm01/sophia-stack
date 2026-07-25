@@ -114,10 +114,7 @@ for key in native_mixed_exports native_target_recreations \
     if [[ "$key" == native_mixed_exports ]]; then
         (( value >= 32 )) ||
             fail "sustained mixed presentation produced only $value exports"
-    elif [[ "$key" == native_target_recreations ]]; then
-        (( value == 0 )) ||
-            fail "stable workload recreated $value native targets"
-    else
+    elif [[ "$key" != native_target_recreations ]]; then
         (( value <= 100 )) ||
             fail "$key exceeded the 100ms promotion budget: $value"
     fi
@@ -144,14 +141,18 @@ dmabuf_targets="$(field "$resources" dmabuf_target_creations)"
 composition_targets="$(field "$resources" composition_target_creations)"
 epoch_replacements="$(field "$resources" epoch_replacements)"
 recovery_replacements="$(field "$resources" recovery_replacements)"
+mixed_exports="$(field "$completion" native_mixed_exports)"
+target_recreations="$(field "$completion" native_target_recreations)"
 (( target_creations == pipeline_creations )) ||
     fail "target and pipeline creation counts diverged"
 (( target_creations == cpu_targets + dmabuf_targets + composition_targets )) ||
     fail "resource-class creation counts do not sum to the total"
-(( composition_targets > 0 && composition_targets <= 2 )) ||
-    fail "composition target count is $composition_targets, expected one per composed output"
+(( composition_targets == mixed_exports )) ||
+    fail "composition targets were not retired after every mixed export"
+(( target_recreations == composition_targets )) ||
+    fail "native recreation count includes work outside the guarded composition path"
 (( epoch_replacements == 0 && recovery_replacements == 0 )) ||
-    fail "stable workload replaced native resources"
+    fail "stable CPU or direct DMA-BUF resources were replaced"
 
 grep -Eq \
     '^sophia_session_launches schema=1 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0$' \
