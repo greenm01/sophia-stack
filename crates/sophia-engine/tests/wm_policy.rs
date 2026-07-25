@@ -92,6 +92,45 @@ fn workspace_activation_swaps_visible_workspaces_without_mutating_source() {
 }
 
 #[test]
+fn workspace_activation_restores_focus_owned_by_each_workspace() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(5, 1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    state
+        .register_surface(surface, WorkspaceId::from_raw(1))
+        .unwrap();
+    let focus = WmResponsePacket {
+        transaction: TransactionId::from_raw(10),
+        commands: vec![WmCommand::FocusSurface(surface)],
+        timeout_msec: 300,
+    };
+    state = state.plan_response(&focus, &[]).unwrap().candidate;
+    assert_eq!(state.output(output).unwrap().focus, Some(surface));
+
+    let hide = WmResponsePacket {
+        transaction: TransactionId::from_raw(11),
+        commands: vec![WmCommand::ActivateWorkspace {
+            output,
+            workspace: WorkspaceId::from_raw(2),
+        }],
+        timeout_msec: 300,
+    };
+    state = state.plan_response(&hide, &[]).unwrap().candidate;
+    assert_eq!(state.output(output).unwrap().focus, None);
+
+    let restore = WmResponsePacket {
+        transaction: TransactionId::from_raw(12),
+        commands: vec![WmCommand::ActivateWorkspace {
+            output,
+            workspace: WorkspaceId::from_raw(1),
+        }],
+        timeout_msec: 300,
+    };
+    state = state.plan_response(&restore, &[]).unwrap().candidate;
+    assert_eq!(state.output(output).unwrap().focus, Some(surface));
+}
+
+#[test]
 fn workspace_plan_moves_focus_and_validates_named_actions_atomically() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(4, 1);

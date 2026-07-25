@@ -3,7 +3,9 @@
 use sophia_backend_live::{
     LiveProductionCpuFrameQueueStatus, LiveProductionNativeSuspendOutcome,
     LiveProductionScanoutContent, LiveProductionVisualRuntime,
+    live_production_projection_requires_gpu_scanout,
     live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_frame_defer,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -155,9 +157,27 @@ fn gpu_scanout_preservation_follows_post_batch_active_transactions() {
     gpu.target_buffer = BufferSource::DmaBuf { handle: 7 };
     let cpu = initial_transaction(0);
 
-    assert!(live_production_transactions_require_gpu_scanout(&[gpu]));
+    assert!(live_production_transactions_require_gpu_scanout(
+        std::slice::from_ref(&gpu)
+    ));
     assert!(!live_production_transactions_require_gpu_scanout(&[cpu]));
     assert!(!live_production_transactions_require_gpu_scanout(&[]));
+    assert!(live_production_projection_requires_gpu_scanout(
+        std::slice::from_ref(&gpu),
+        std::slice::from_ref(&gpu.surface),
+    ));
+    assert!(!live_production_projection_requires_gpu_scanout(
+        std::slice::from_ref(&gpu),
+        &[],
+    ));
+}
+
+#[test]
+fn visibility_change_forces_a_frame_unless_a_retained_gpu_projection_is_queued() {
+    assert!(!reduce_live_production_frame_defer(true, true, false));
+    assert!(reduce_live_production_frame_defer(true, true, true));
+    assert!(reduce_live_production_frame_defer(true, false, false));
+    assert!(!reduce_live_production_frame_defer(false, false, false));
 }
 
 #[test]

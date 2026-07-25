@@ -18,6 +18,7 @@ pub struct WmWorkspaceState {
     workspaces: Vec<WorkspaceId>,
     outputs: BTreeMap<OutputId, WmOutputPolicyState>,
     surfaces: BTreeMap<SurfaceId, WorkspaceId>,
+    workspace_focus: BTreeMap<WorkspaceId, Option<SurfaceId>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,10 +95,16 @@ impl WmWorkspaceState {
         if configured.is_empty() {
             return Err(WmPolicyError::InvalidOutput);
         }
+        let workspace_focus = workspaces
+            .iter()
+            .copied()
+            .map(|workspace| (workspace, None))
+            .collect();
         Ok(Self {
             workspaces,
             outputs: configured,
             surfaces: BTreeMap::new(),
+            workspace_focus,
         })
     }
 
@@ -132,11 +139,12 @@ impl WmWorkspaceState {
 
     pub fn remove_surface(&mut self, surface: SurfaceId) -> bool {
         let removed = self.surfaces.remove(&surface).is_some();
-        for output in self.outputs.values_mut() {
-            if output.focus == Some(surface) {
-                output.focus = None;
+        for focus in self.workspace_focus.values_mut() {
+            if *focus == Some(surface) {
+                *focus = None;
             }
         }
+        self.refresh_output_focus();
         removed
     }
 
@@ -165,6 +173,19 @@ impl WmWorkspaceState {
             .iter()
             .filter_map(|(surface, assigned)| (*assigned == workspace).then_some(*surface))
             .collect())
+    }
+
+    pub fn surface_visible_on_output(
+        &self,
+        surface: SurfaceId,
+        output: OutputId,
+    ) -> Result<bool, WmPolicyError> {
+        let workspace = self
+            .outputs
+            .get(&output)
+            .ok_or(WmPolicyError::UnknownOutput)?
+            .workspace;
+        Ok(self.surfaces.get(&surface).copied() == Some(workspace))
     }
 
     pub fn plan_response(
@@ -204,7 +225,7 @@ impl WmWorkspaceState {
                     if !assigned.insert(surface) {
                         return Err(WmPolicyError::DuplicateSurfaceCommand);
                     }
-                    candidate.surfaces.insert(surface, workspace);
+                    candidate.assign_surface(surface, workspace);
                 }
                 WmCommand::ActivateWorkspace { output, workspace } => {
                     candidate.require_workspace(workspace)?;
@@ -244,6 +265,7 @@ impl WmWorkspaceState {
             let output = candidate
                 .output_for_workspace(workspace)
                 .ok_or(WmPolicyError::HiddenFocus)?;
+            candidate.workspace_focus.insert(workspace, Some(surface));
             candidate
                 .outputs
                 .get_mut(&output)
@@ -298,17 +320,35 @@ impl WmWorkspaceState {
             .get_mut(&output)
             .expect("requested output exists")
             .workspace = workspace;
+        self.refresh_output_focus();
         Ok(())
     }
 
     fn clear_hidden_focus(&mut self) {
-        let surface_workspaces = &self.surfaces;
-        for output in self.outputs.values_mut() {
-            if output.focus.is_some_and(|surface| {
-                surface_workspaces.get(&surface).copied() != Some(output.workspace)
-            }) {
-                output.focus = None;
+        for (workspace, focus) in &mut self.workspace_focus {
+            if focus.is_some_and(|surface| self.surfaces.get(&surface) != Some(workspace)) {
+                *focus = None;
             }
+        }
+        self.refresh_output_focus();
+    }
+
+    fn assign_surface(&mut self, surface: SurfaceId, workspace: WorkspaceId) {
+        if let Some(previous) = self.surfaces.insert(surface, workspace)
+            && previous != workspace
+            && self.workspace_focus.get(&previous).copied().flatten() == Some(surface)
+        {
+            self.workspace_focus.insert(previous, None);
+        }
+    }
+
+    fn refresh_output_focus(&mut self) {
+        for output in self.outputs.values_mut() {
+            output.focus = self
+                .workspace_focus
+                .get(&output.workspace)
+                .copied()
+                .flatten();
         }
     }
 

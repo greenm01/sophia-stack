@@ -274,8 +274,18 @@
                 } else {
                     LiveProductionCursorPresentation::Software(pointer.position)
                 };
-                let mut presentation_layout =
-                    layout.layers.values().cloned().collect::<Vec<_>>();
+                let mut presentation_layout = Vec::with_capacity(layout.layers.len());
+                for layer in layout.layers.values() {
+                    let visible = match wm_session.as_ref() {
+                        Some(wm) => {
+                            wm.surface_visible_on_output(layer.surface, output.id)?
+                        }
+                        None => true,
+                    };
+                    if visible {
+                        presentation_layout.push(layer.clone());
+                    }
+                }
                 presentation_layout.sort_by_key(|layer| layer.stack_rank);
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if batch.present_submissions.is_empty() {

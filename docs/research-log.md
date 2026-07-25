@@ -3402,3 +3402,83 @@ assumed the old master remained fixed and required exactly three changed
 surfaces. It now correlates the held transaction with its matching commit and
 accepts either three or four changed surfaces while retaining the exact
 pixel-matched four-pane geometry checks.
+
+## 2026-07-25: Cursor And Primary KMS Commits Must Be Serialized
+
+The next physical cycle ran the full four-Kitty workload but failed promotion
+after one early primary-plane atomic submission was rejected. The failure
+followed physical pointer motion; every later submission recovered, 182 mixed
+exports retained exact complete-target lifetime, native drain completed, and
+the final failure count remained exactly one.
+
+The owner ordering exposed a KMS transaction race. Native service could submit
+a nonblocking primary flip, then the cursor path independently issued a
+nonblocking cursor-plane commit on the same card. A successful cursor ioctl
+only admitted that asynchronous commit; it did not prove the cursor update had
+completed before the next owner tick submitted another primary request. The
+earlier cursor-side `EBUSY` handling covered only the opposite ordering, where
+a cursor update encountered an existing primary commit.
+
+Backend-live now treats primary page-flip state as the admission boundary for
+cursor work. A dirty cursor remains coalesced while any primary flip is in
+flight. Once admitted, the cursor-only atomic commit is blocking, so it cannot
+remain pending across the next primary submission. Completion evidence records
+both primary-in-flight deferrals and maximum cursor update duration, and the
+physical verifier caps the latter at 100 ms. This is the bounded daily-driver
+repair. The long-term graphics path should build primary and cursor plane state
+through one per-output atomic KMS transaction owner rather than preserve two
+independent commit builders.
+
+The required xmonad real-client preflight exposed an independent proof
+regression before the next physical run. Its headless configuration has one
+virtual output and intentionally disables native scanout, but startup readiness
+waited for the native-only `OutputsPresented` event. The owner now satisfies
+that output fact only when native scanout is absent; physical sessions still
+require every real output's callback or synchronous modeset evidence. The
+preflight verifier also correlates the injected resize transaction directly,
+instead of assuming initial placement and the later 960x640 configure collapse
+into one asynchronous WM response. The corrected preflight passes with matched
+configure delivery, later pixels, exact synthetic input, and clean teardown.
+
+## 2026-07-25: Workspace Policy Must Project Visibility Into Every Consumer
+
+The post-cursor physical cycle validated the KMS repair with zero native submit
+failures and a 12 ms maximum cursor update, then exposed an independent
+workspace defect. Super-2 committed workspace policy and cleared focus, but the
+owner continued presenting all four workspace-1 surfaces. The private xmonad
+server also kept their synthetic windows mapped. Launching Kitty on workspace 2
+therefore made xmonad tile five cross-workspace windows; all five resize
+requests timed out, rollback rejected four queued Presents, and logout later
+detached one unretired scanout. Shortcut IDs remained distinct: the log recorded
+workspace actions 257 and 258, application action 768, close action 769, and
+logout action 772.
+
+Workspace focus is now stored by workspace and projected onto the outputs that
+currently display it, so hiding a workspace clears client focus without
+destroying the focus that should return with it. The live owner filters
+presentation layers through Engine's workspace visibility before composition;
+the same order bounds hit-testing and retained mixed layers. Relayout requests
+contain only nodes assigned to the active workspace. The blind xmonad bridge
+tracks its active workspace and mapped synthetic-window set, issuing explicit
+unmap/map transitions so hidden windows cannot influence legacy layout policy.
+CPU composition consumes the same ordered visible-surface projection, including
+the empty-workspace case. A Present targeting a surface outside that projection
+settles as a skip before any native submission; it cannot append itself back
+into the mixed frame. These are protocol-neutral state projections; no terminal
+or application identity enters Engine or rendering.
+
+The first physical workspace run then proved that filtering composition is not
+enough by itself. Super-2 committed action 258, cleared the focused client's
+keys and focus, and stopped accepting its Presents, but submitted no replacement
+KMS frame. The previously scanned-out workspace therefore remained visible
+while keyboard routing was correctly disabled. The CPU-cycle preservation rule
+had examined every committed DMA-BUF surface rather than the visible projection
+and suppressed the empty-workspace repaint.
+
+GPU preservation now reduces only the ordered visible transaction set. A
+visibility-order change cannot be discarded by ordinary CPU coalescing. An
+empty projection queues a black CPU frame; a returning projection queues its
+retained mixed DMA-BUF frame when available, and otherwise paints the bounded
+CPU background until the client supplies new pixels. Thus a workspace commit
+always has a concrete scanout consequence instead of leaving the old workspace
+on screen.

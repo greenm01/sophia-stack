@@ -30,7 +30,9 @@ mod persistent_native_scanout {
         pub vsync_overlap_rejections: usize,
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
+        pub cursor_deferred_primary_in_flight: usize,
         pub cursor_update_failures: usize,
+        pub max_cursor_update: Duration,
     }
 
     pub struct LiveProductionNativeGroup {
@@ -239,7 +241,9 @@ mod persistent_native_scanout {
                 vsync_overlap_rejections: 0,
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
+                cursor_deferred_primary_in_flight: 0,
                 cursor_update_failures: 0,
+                max_cursor_update: Duration::ZERO,
             })
         }
 
@@ -250,6 +254,12 @@ mod persistent_native_scanout {
             if !position.x.is_finite() || !position.y.is_finite() {
                 return Ok(crate::ClassicHardwareCursorUpdate::Hidden);
             }
+            if self.heads.iter().any(|head| head.submitted_at.is_some()) {
+                self.cursor_deferred_primary_in_flight =
+                    self.cursor_deferred_primary_in_flight.saturating_add(1);
+                return Ok(crate::ClassicHardwareCursorUpdate::Deferred);
+            }
+            let update_started = Instant::now();
             let mut offset_x = 0_i32;
             let mut target = None;
             for head in &self.heads {
@@ -275,11 +285,14 @@ mod persistent_native_scanout {
                     Ok(crate::ClassicHardwareCursorUpdate::Deferred) => deferred = true,
                     Ok(crate::ClassicHardwareCursorUpdate::Hidden) => {}
                     Err(error) => {
+                        self.max_cursor_update =
+                            self.max_cursor_update.max(update_started.elapsed());
                         self.cursor_update_failures = self.cursor_update_failures.saturating_add(1);
                         return Err(format!("hardware cursor update failed: {error}").into());
                     }
                 }
             }
+            self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
             if visible {
                 self.cursor_updates = self.cursor_updates.saturating_add(1);
             }

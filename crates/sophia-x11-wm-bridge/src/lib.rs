@@ -3,7 +3,7 @@
 //! Synthetic XIDs are private bridge handles. They never identify client X
 //! resources and carry no namespace or metadata information.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
     LayoutNodeSnapshot, Rect, Size, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
@@ -240,6 +240,8 @@ pub struct X11WmBridgeState {
     next_xid: u32,
     surface_to_window: BTreeMap<SurfaceId, SyntheticXWindowId>,
     window_to_node: BTreeMap<SyntheticXWindowId, LayoutNodeSnapshot>,
+    mapped_windows: BTreeSet<SyntheticXWindowId>,
+    active_workspace: Option<WorkspaceId>,
     root_bounds: Option<Rect>,
 }
 
@@ -249,6 +251,8 @@ impl Default for X11WmBridgeState {
             next_xid: FIRST_SYNTHETIC_WINDOW_XID,
             surface_to_window: BTreeMap::new(),
             window_to_node: BTreeMap::new(),
+            mapped_windows: BTreeSet::new(),
+            active_workspace: None,
             root_bounds: None,
         }
     }
@@ -273,7 +277,7 @@ impl X11WmBridgeState {
         forward: bool,
     ) -> Option<SyntheticXWindowId> {
         let current = self.surface_to_window.get(&surface)?;
-        let windows = self.surface_to_window.values().copied().collect::<Vec<_>>();
+        let windows = self.mapped_windows.iter().copied().collect::<Vec<_>>();
         let index = windows.iter().position(|window| window == current)?;
         let next = if forward {
             (index + 1) % windows.len()
@@ -295,47 +299,27 @@ impl X11WmBridgeState {
         match &request.kind {
             WmRequestKind::ManageSurface(manage) => {
                 self.update_root(manage.bounds, &mut events);
-                let (window, created) = self.upsert_node(manage.node.clone())?;
-                events.push(if created {
-                    SyntheticXEvent::MapRequest { window }
-                } else {
-                    SyntheticXEvent::ConfigureNotify {
-                        window,
-                        geometry: manage.node.geometry,
-                    }
-                });
+                self.active_workspace.get_or_insert(manage.workspace);
+                self.upsert_visible_node(manage.node.clone(), &mut events)?;
             }
             WmRequestKind::RelayoutWorkspace(relayout) => {
                 self.update_root(relayout.bounds, &mut events);
+                self.activate_workspace_into(relayout.workspace, &mut events);
                 for node in &relayout.nodes {
-                    let (window, created) = self.upsert_node(node.clone())?;
-                    events.push(if created {
-                        SyntheticXEvent::MapRequest { window }
-                    } else {
-                        SyntheticXEvent::ConfigureNotify {
-                            window,
-                            geometry: node.geometry,
-                        }
-                    });
+                    self.upsert_visible_node(node.clone(), &mut events)?;
                 }
             }
             WmRequestKind::SurfaceRemoved { surface, .. } => {
                 if let Some(window) = self.surface_to_window.remove(surface) {
                     self.window_to_node.remove(&window);
+                    self.mapped_windows.remove(&window);
                     events.push(SyntheticXEvent::DestroyNotify { window });
                 }
             }
             WmRequestKind::ActionActivated(activation) => {
+                self.activate_workspace_into(activation.workspace, &mut events);
                 for node in &activation.nodes {
-                    let (window, created) = self.upsert_node(node.clone())?;
-                    events.push(if created {
-                        SyntheticXEvent::MapRequest { window }
-                    } else {
-                        SyntheticXEvent::ConfigureNotify {
-                            window,
-                            geometry: node.geometry,
-                        }
-                    });
+                    self.upsert_visible_node(node.clone(), &mut events)?;
                 }
             }
         }
@@ -343,6 +327,19 @@ impl X11WmBridgeState {
             transaction: request.transaction,
             events,
         })
+    }
+
+    pub fn activate_workspace(
+        &mut self,
+        transaction: TransactionId,
+        workspace: WorkspaceId,
+    ) -> BridgeEngineUpdate {
+        let mut events = Vec::new();
+        self.activate_workspace_into(workspace, &mut events);
+        BridgeEngineUpdate {
+            transaction,
+            events,
+        }
     }
 
     pub fn translate_legacy_requests(
@@ -450,6 +447,56 @@ impl X11WmBridgeState {
         self.surface_to_window.insert(node.surface, window);
         self.window_to_node.insert(window, node);
         Ok((window, true))
+    }
+
+    fn upsert_visible_node(
+        &mut self,
+        node: LayoutNodeSnapshot,
+        events: &mut Vec<SyntheticXEvent>,
+    ) -> Result<(), X11WmBridgeError> {
+        let geometry = node.geometry;
+        let workspace = node.workspace;
+        let (window, _) = self.upsert_node(node)?;
+        if self.active_workspace == Some(workspace) {
+            if self.mapped_windows.insert(window) {
+                events.push(SyntheticXEvent::MapRequest { window });
+            } else {
+                events.push(SyntheticXEvent::ConfigureNotify { window, geometry });
+            }
+        } else if self.mapped_windows.remove(&window) {
+            events.push(SyntheticXEvent::UnmapNotify { window });
+        }
+        Ok(())
+    }
+
+    fn activate_workspace_into(
+        &mut self,
+        workspace: WorkspaceId,
+        events: &mut Vec<SyntheticXEvent>,
+    ) {
+        self.active_workspace = Some(workspace);
+        let desired = self
+            .window_to_node
+            .iter()
+            .filter_map(|(window, node)| (node.workspace == workspace).then_some(*window))
+            .collect::<BTreeSet<_>>();
+        for window in self
+            .mapped_windows
+            .difference(&desired)
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            self.mapped_windows.remove(&window);
+            events.push(SyntheticXEvent::UnmapNotify { window });
+        }
+        for window in desired
+            .difference(&self.mapped_windows)
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            self.mapped_windows.insert(window);
+            events.push(SyntheticXEvent::MapRequest { window });
+        }
     }
 }
 

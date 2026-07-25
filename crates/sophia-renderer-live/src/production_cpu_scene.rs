@@ -64,14 +64,48 @@ impl LiveProductionCpuScene {
         raised_surface: Option<SurfaceId>,
         cursor_position: Option<Point>,
     ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
-        let mut surface_order = committed_surfaces
-            .iter()
-            .filter(|surface| Some(surface.surface) != raised_surface)
-            .collect::<Vec<_>>();
+        self.compose_ordered(committed_surfaces, None, raised_surface, cursor_position)
+    }
+
+    pub fn compose_visible(
+        &mut self,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: &[SurfaceId],
+        raised_surface: Option<SurfaceId>,
+        cursor_position: Option<Point>,
+    ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        self.compose_ordered(
+            committed_surfaces,
+            Some(presentation_order),
+            raised_surface,
+            cursor_position,
+        )
+    }
+
+    fn compose_ordered(
+        &mut self,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: Option<&[SurfaceId]>,
+        raised_surface: Option<SurfaceId>,
+        cursor_position: Option<Point>,
+    ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        let mut surface_order = match presentation_order {
+            Some(order) => order
+                .iter()
+                .filter_map(|surface| {
+                    committed_surfaces
+                        .iter()
+                        .find(|committed| committed.surface == *surface)
+                })
+                .collect::<Vec<_>>(),
+            None => committed_surfaces.iter().collect::<Vec<_>>(),
+        };
+        surface_order.retain(|surface| Some(surface.surface) != raised_surface);
         if let Some(raised) = raised_surface
             && let Some(surface) = committed_surfaces
                 .iter()
                 .find(|surface| surface.surface == raised)
+            && presentation_order.is_none_or(|order| order.contains(&raised))
         {
             surface_order.push(surface);
         }

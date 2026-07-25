@@ -799,7 +799,7 @@
                     SessionStartupEvent::StablePresented(surface),
                 );
             }
-            if startup_outputs_ready_reported {
+            if startup_outputs_ready_reported || native_scanout.is_none() {
                 let _ = reduce_session_startup(
                     &mut startup_readiness,
                     SessionStartupEvent::OutputsPresented,

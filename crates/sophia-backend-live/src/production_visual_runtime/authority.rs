@@ -181,25 +181,29 @@ impl LiveProductionVisualRuntime {
 
     pub(super) fn rebuild_input_layers(&mut self) {
         self.input_layers.clear();
-        self.input_layers.extend(
-            self.layers
-                .values()
-                .enumerate()
-                .map(|(index, transaction)| LayerSnapshot {
-                    surface: transaction.surface,
-                    authority_local_id: None,
-                    namespace: transaction.namespace,
-                    stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-                    geometry: transaction.target_geometry,
-                    source: transaction.target_buffer,
-                    damage: transaction.damage.clone(),
-                    opacity: 1.0,
-                    crop: None,
-                    transform: Transform::IDENTITY,
-                    generation: transaction.previous_committed_generation,
-                    resize_sync: ResizeSyncCapability::ImplicitOnly,
-                }),
-        );
+        self.input_layers
+            .extend(
+                self.presentation_order
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, surface)| {
+                        let transaction = self.layers.get(surface)?;
+                        Some(LayerSnapshot {
+                            surface: transaction.surface,
+                            authority_local_id: None,
+                            namespace: transaction.namespace,
+                            stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
+                            geometry: transaction.target_geometry,
+                            source: transaction.target_buffer,
+                            damage: transaction.damage.clone(),
+                            opacity: 1.0,
+                            crop: None,
+                            transform: Transform::IDENTITY,
+                            generation: transaction.previous_committed_generation,
+                            resize_sync: ResizeSyncCapability::ImplicitOnly,
+                        })
+                    }),
+            );
     }
 
     pub fn input_layers(&self) -> &[LayerSnapshot] {

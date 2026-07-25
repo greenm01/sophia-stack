@@ -1,9 +1,10 @@
-use sophia_protocol::{Point, Rect, Size};
+use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
 use sophia_renderer_live::{
     DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferSourceRef,
-    LiveCpuCompositionLayer, LiveCpuCompositionLayerRef, compose_live_cpu_frame,
-    compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
+    LiveCpuBufferUpdate, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
+    LiveProductionCpuScene, compose_live_cpu_frame, compose_live_cpu_frame_ref,
+    compose_live_cpu_frame_ref_with_cursor,
 };
 
 #[test]
@@ -209,4 +210,56 @@ fn default_cursor_asset_has_stable_dimensions_and_hotspot() {
         row.len() == DEFAULT_CURSOR_EDGE
             && row.iter().all(|pixel| matches!(pixel, b'.' | b'#' | b'W'))
     }));
+}
+
+#[test]
+fn production_scene_composes_only_the_visible_surface_order() {
+    let size = Size {
+        width: 2,
+        height: 2,
+    };
+    let surface = SurfaceId::new(1, 1);
+    let committed = CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        },
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::empty(),
+    };
+    let mut scene = LiveProductionCpuScene::new(size);
+    scene
+        .apply_updates(
+            [LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 1,
+                size,
+                stride: 8,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: vec![0x55; 16],
+            })],
+            std::slice::from_ref(&committed),
+        )
+        .unwrap();
+
+    let hidden = scene
+        .compose_visible(std::slice::from_ref(&committed), &[], None, None)
+        .unwrap();
+    assert_eq!(hidden.layers_composed, 0);
+    assert_eq!(hidden.nonzero_pixel_bytes, 0);
+
+    let visible = scene
+        .compose_visible(
+            std::slice::from_ref(&committed),
+            std::slice::from_ref(&surface),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(visible.layers_composed, 1);
+    assert_eq!(visible.nonzero_pixel_bytes, 16);
 }

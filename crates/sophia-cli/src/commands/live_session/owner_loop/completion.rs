@@ -281,9 +281,15 @@
         );
     }
     println!(
-        "sophia_live_session_cursor schema=2 moves_coalesced={} max_motion_to_submit_msec={} buttons_routed={} hardware_updates={} hardware_failures={}",
+        "sophia_live_session_cursor schema=3 moves_coalesced={} max_motion_to_submit_msec={} max_update_msec={} deferred_primary_in_flight={} buttons_routed={} hardware_updates={} hardware_failures={}",
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.as_millis(),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.max_cursor_update.as_millis()),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_deferred_primary_in_flight),
         physical_pointer_buttons_routed,
         native_scanout
             .as_ref()

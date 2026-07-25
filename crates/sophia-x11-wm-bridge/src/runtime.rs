@@ -17,8 +17,8 @@ mod wire;
 use wire::*;
 
 use sophia_protocol::{
-    Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, WM_API_VERSION, WmRequestKind,
-    WmRequestPacket, WmResponsePacket, WmSessionDescriptor, decode_wm_request_frame,
+    Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, WM_API_VERSION, WmCommand,
+    WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionDescriptor, decode_wm_request_frame,
     decode_wm_session_descriptor_frame, encode_wm_hello_frame, encode_wm_response_frame,
 };
 use sophia_x_authority::{XByteOrder, serve_x11_setup_socket_client_with_root_size};
@@ -236,6 +236,23 @@ impl LegacyX11WmBridgeRuntime {
                 .as_ref()
                 .ok_or_else(|| BridgeRuntimeError::new("WM session was not negotiated"))?;
             if let Some(response) = translate_xmonad_profile_action(request, session)? {
+                if let Some(workspace) =
+                    response.commands.iter().find_map(|command| match command {
+                        WmCommand::ActivateWorkspace { workspace, .. } => Some(*workspace),
+                        _ => None,
+                    })
+                {
+                    let update = self
+                        .bridge
+                        .activate_workspace(request.transaction, workspace);
+                    let _ = send_engine_update(
+                        &self.bridge,
+                        &update,
+                        self.commands
+                            .as_ref()
+                            .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
+                    )?;
+                }
                 return Ok(response);
             }
         }

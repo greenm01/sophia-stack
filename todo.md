@@ -96,6 +96,13 @@ Promotion now follows the gates below in order.
   commit effects on the physical owner.
 - [x] Re-run the two-output four-Kitty gate and require owner input below
   100 ms, a drained WM transport ledger, and clean page-flip/resource teardown.
+- [x] Serialize cursor-plane updates against primary page flips: defer while a
+  primary commit is in flight, complete admitted cursor-only commits before
+  returning to the owner, and report cursor update latency and deferral.
+- [x] Re-run the four-Kitty gate after cursor/primary serialization. The
+  workspace-stress cycle recorded zero native submit failures and a 12 ms
+  maximum cursor update; it then exposed an independent workspace-visibility
+  defect.
 - [ ] Introduce a three-slot per-output generational pool of complete render
   targets; recycle a slot only through explicit page-flip retirement and defer
   instead of exceeding the bound.
@@ -122,6 +129,14 @@ Promotion now follows the gates below in order.
 
 ### 9.2 Complete physical xmonad workflow
 
+- [x] Make workspace visibility authoritative at every downstream boundary:
+  preserve focus per workspace, restrict xmonad synthetic mappings and
+  relayout nodes to the active workspace, and project only visible surfaces
+  into composition and hit-testing.
+- [ ] Re-run the workspace stress sequence through Super-1, Super-2, and
+  Super-3; require hidden workspaces to produce no presentation layers or
+  input targets, restored workspaces to recover their prior focus, and no
+  cross-workspace resize epoch.
 - [ ] Capture the documented standard run from TTY3 with launcher, guard,
   recovery, WM, frontend, renderer, and lifecycle evidence.
 - [ ] Require focused Kitty within eight seconds, `outputs_ready=2/2`, nonzero

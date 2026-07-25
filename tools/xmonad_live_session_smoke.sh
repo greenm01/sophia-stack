@@ -48,12 +48,26 @@ if (( status != 0 )); then
     exit "$status"
 fi
 
-grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* moved_surfaces=1 configure_deliveries=1 outcome=Committed$' "$EVIDENCE_FILE"
-grep -Eq '^sophia_live_session_present schema=2 status=retired .* source=960x640 .* unit_scale=true$' "$EVIDENCE_FILE"
-if grep -Eq '^sophia_live_session_present schema=2 .* unit_scale=false$' "$EVIDENCE_FILE"; then
-    echo "real Kitty resize presented mismatched source pixels" >&2
-    exit 1
-fi
+resize_request="$(
+    grep -E '^sophia_live_resize schema=1 status=requested transaction=[0-9]+ surface=[0-9]+ width=960 height=640$' \
+        "$EVIDENCE_FILE" | tail -n 1
+)"
+[[ -n "$resize_request" ]]
+resize_transaction="$(
+    for token in $resize_request; do
+        if [[ "$token" == transaction=* ]]; then
+            printf '%s\n' "${token#*=}"
+            break
+        fi
+    done
+)"
+[[ "$resize_transaction" =~ ^[0-9]+$ ]]
+grep -Eq \
+    "^sophia_live_wm schema=1 status=layout_committed transaction=${resize_transaction} .* configure_deliveries=1 outcome=Committed$" \
+    "$EVIDENCE_FILE"
+grep -Eq \
+    "^sophia_live_resize schema=1 status=committed transaction=${resize_transaction} surface=[0-9]+ width=960 height=640 configure_delivered=true pixels=true$" \
+    "$EVIDENCE_FILE"
 grep -Eq '^sophia_session_app schema=1 status=started id=terminal source=startup$' "$EVIDENCE_FILE"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' "$EVIDENCE_FILE"
 completion="$(grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$EVIDENCE_FILE")"

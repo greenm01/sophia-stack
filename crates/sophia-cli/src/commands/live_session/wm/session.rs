@@ -122,6 +122,7 @@ struct LiveWmOwnerCommit {
     physical_action: Option<WmActionId>,
     session_action: Option<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
     clear_focus: Option<(TransactionId, SurfaceId)>,
+    restore_focus: Option<(TransactionId, SurfaceId)>,
 }
 
 impl LiveWmSession {
@@ -337,8 +338,11 @@ impl LiveWmSession {
                 nodes: layout
                     .layers
                     .values()
-                    .map(|layer| live_layout_node(layer, workspace))
-                .collect(),
+                    .filter_map(|layer| {
+                        (self.workspace_state.surface_workspace(layer.surface) == Some(workspace))
+                            .then(|| live_layout_node(layer, workspace))
+                    })
+                    .collect(),
             }),
         };
         self.enqueue_request(LiveWmQueuedRequest {
@@ -666,6 +670,16 @@ impl LiveWmSession {
             .saturating_add(usize::from(self.in_flight_request.is_some()))
     }
 
+    fn surface_visible_on_output(
+        &self,
+        surface: SurfaceId,
+        output: sophia_protocol::OutputId,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.workspace_state
+            .surface_visible_on_output(surface, output)
+            .map_err(Into::into)
+    }
+
     fn apply_commit_result(
         &mut self,
         mut result: LiveWmCommitResult,
@@ -682,6 +696,7 @@ impl LiveWmSession {
             });
         let mut session_action = None;
         let mut clear_focus = None;
+        let mut restore_focus = None;
         if committed && let Some(effects) = result.effects.take() {
             let transaction = effects.transaction;
             let policy_focus = effects
@@ -695,6 +710,11 @@ impl LiveWmSession {
             if policy_focus.is_none() && let Some(surface) = previous_focus {
                 clear_focus = Some((transaction, surface));
             }
+            if let Some(surface) = policy_focus
+                && policy_focus != previous_focus
+            {
+                restore_focus = Some((transaction, surface));
+            }
             self.mark_committed();
         }
         let owner_commit = LiveWmOwnerCommit {
@@ -702,6 +722,7 @@ impl LiveWmSession {
             physical_action,
             session_action,
             clear_focus,
+            restore_focus,
         };
         self.pump_transport()?;
         Ok(owner_commit)

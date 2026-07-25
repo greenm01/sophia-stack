@@ -114,6 +114,14 @@ macro_rules! apply_wm_commit_result {
                 transaction.raw(),
             );
         }
+        if let Some((transaction, surface)) = owner_commit.restore_focus {
+            layout.focus_to_apply = Some((transaction, surface));
+            println!(
+                "sophia_live_wm schema=1 status=workspace_focus_restore_queued transaction={} surface={}",
+                transaction.raw(),
+                surface.index(),
+            );
+        }
         owner_commit.update
     }};
 }

@@ -22,7 +22,7 @@ for mutation in \
     'schema=6 status=quiesced target=' \
     'schema=1 status=active source=resume' \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
-    'sophia_live_session_cursor schema=2 '; do
+    'sophia_live_session_cursor schema=3 '; do
     grep -Fv "$mutation" "$SESSION" >"$TEMP_FILE"
     if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
         "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
@@ -35,6 +35,13 @@ sed 's/buttons_routed=4/buttons_routed=1/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "xmonad verifier accepted a pointer proof without click-drag transitions" >&2
+    exit 1
+fi
+
+sed 's/max_update_msec=9/max_update_msec=101/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted a blocking cursor update above the owner budget" >&2
     exit 1
 fi
 

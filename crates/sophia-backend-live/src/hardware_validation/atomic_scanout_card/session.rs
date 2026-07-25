@@ -51,11 +51,6 @@ pub enum ClassicHardwareCursorUpdate {
     Deferred,
 }
 
-fn nonblocking_atomic_cursor_commit_is_deferred(error: &io::Error) -> bool {
-    const LINUX_EBUSY: i32 = 16;
-    error.kind() == io::ErrorKind::WouldBlock || error.raw_os_error() == Some(LINUX_EBUSY)
-}
-
 impl RealAtomicScanoutPageFlipSession {
     #[cfg(feature = "gbm-probe")]
     fn discover_atomic_cursor_planes(&self) -> io::Result<Vec<RealAtomicCursorPlane>> {
@@ -113,7 +108,6 @@ impl RealAtomicScanoutPageFlipSession {
     fn detach_atomic_cursor_planes(
         &self,
         planes: &[RealAtomicCursorPlane],
-        nonblocking: bool,
     ) -> io::Result<ClassicHardwareCursorUpdate> {
         use drm::control::Device as _;
 
@@ -130,16 +124,11 @@ impl RealAtomicScanoutPageFlipSession {
                 drm::control::property::Value::CRTC(None),
             );
         }
-        let flags = if nonblocking {
-            drm::control::AtomicCommitFlags::NONBLOCK
-        } else {
-            drm::control::AtomicCommitFlags::empty()
-        };
-        match self.card.atomic_commit(flags, request) {
+        match self
+            .card
+            .atomic_commit(drm::control::AtomicCommitFlags::empty(), request)
+        {
             Ok(()) => Ok(ClassicHardwareCursorUpdate::Hidden),
-            Err(error) if nonblocking && nonblocking_atomic_cursor_commit_is_deferred(&error) => {
-                Ok(ClassicHardwareCursorUpdate::Deferred)
-            }
             Err(error) => Err(error),
         }
     }
@@ -160,9 +149,7 @@ impl RealAtomicScanoutPageFlipSession {
                 .cursor_planes
                 .as_deref()
                 .ok_or_else(|| io::Error::other("atomic cursor planes disappeared"))?;
-            if self.detach_atomic_cursor_planes(planes, false)?
-                == ClassicHardwareCursorUpdate::Deferred
-            {
+            if self.detach_atomic_cursor_planes(planes)? == ClassicHardwareCursorUpdate::Deferred {
                 return Ok(ClassicHardwareCursorUpdate::Deferred);
             }
             self.cursor_crtcs_sanitized = true;
@@ -210,7 +197,7 @@ impl RealAtomicScanoutPageFlipSession {
                 .and_then(|planes| planes.iter().find(|cursor| cursor.plane == previous_plane))
                 .cloned()
                 .ok_or_else(|| io::Error::other("active atomic cursor plane disappeared"))?;
-            let outcome = self.detach_atomic_cursor_planes(&[cursor], true)?;
+            let outcome = self.detach_atomic_cursor_planes(&[cursor])?;
             if outcome != ClassicHardwareCursorUpdate::Deferred {
                 self.cursor_plane = None;
                 self.cursor_crtc = None;
@@ -301,15 +288,12 @@ impl RealAtomicScanoutPageFlipSession {
         );
         match self
             .card
-            .atomic_commit(drm::control::AtomicCommitFlags::NONBLOCK, request)
+            .atomic_commit(drm::control::AtomicCommitFlags::empty(), request)
         {
             Ok(()) => {
                 self.cursor_plane = Some(cursor.plane);
                 self.cursor_crtc = Some(selection.crtc);
                 Ok(ClassicHardwareCursorUpdate::Visible)
-            }
-            Err(error) if nonblocking_atomic_cursor_commit_is_deferred(&error) => {
-                Ok(ClassicHardwareCursorUpdate::Deferred)
             }
             Err(error) => Err(error),
         }
@@ -482,15 +466,13 @@ impl RealAtomicScanoutPageFlipSession {
     }
 }
 
-mod tests;
-
 impl Drop for RealAtomicScanoutPageFlipSession {
     fn drop(&mut self) {
         #[cfg(feature = "gbm-probe")]
         {
             use drm::control::Device as _;
             if let Some(planes) = self.cursor_planes.as_deref() {
-                let _ = self.detach_atomic_cursor_planes(planes, false);
+                let _ = self.detach_atomic_cursor_planes(planes);
             }
             self.cursor_plane = None;
             self.cursor_crtc = None;

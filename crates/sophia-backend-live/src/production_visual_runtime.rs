@@ -157,12 +157,31 @@ impl LiveProductionVisualRuntime {
             defer_present,
             reject_present_for_layout: _,
             output_descriptors,
-            native_scanout,
+            mut native_scanout,
             wm_update,
             presentation_layout,
         } = request;
         self.present_scheduling_blocked = defer_present;
-        self.apply_presentation_layout(presentation_layout);
+        let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
+        let retained_projection_queued = if presentation_order_changed {
+            match (native_scanout.as_deref_mut(), self.retained_mixed_frame()?) {
+                (Some(native_scanout), Some((transaction, frame))) => {
+                    let primary = self
+                        .outputs
+                        .primary_output()
+                        .ok_or("persistent backend runtime has no primary output")?;
+                    let primary_index = self
+                        .outputs
+                        .output_index(primary)
+                        .ok_or("persistent backend primary output was not registered")?;
+                    native_scanout.queue_mixed_frame(primary_index, transaction, frame);
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
         self.presentation_feedback
             .observe_authority_resources(batch)?;
         self.release_removed_presentations(&batch.removed_surfaces);
@@ -180,8 +199,17 @@ impl LiveProductionVisualRuntime {
         self.rebuild_input_layers();
         let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let preserve_gpu_scanout = native_scanout.is_some()
-            && live_production_transactions_require_gpu_scanout(&active_transactions);
-        let defer_frame = defer_frame || preserve_gpu_scanout;
+            && (retained_projection_queued
+                || (!presentation_order_changed
+                    && live_production_projection_requires_gpu_scanout(
+                        &active_transactions,
+                        &self.presentation_order,
+                    )));
+        let defer_frame = reduce_live_production_frame_defer(
+            defer_frame,
+            presentation_order_changed,
+            preserve_gpu_scanout,
+        );
         let native_scanout = if preserve_gpu_scanout {
             None
         } else {
@@ -196,6 +224,7 @@ impl LiveProductionVisualRuntime {
         let create_native_frames = native_scanout.is_some();
         let mut adapter = LiveProductionCpuCycleAdapter::new(
             scene,
+            &self.presentation_order,
             updates,
             raised_surface,
             cursor_presentation.composition_position(),
@@ -278,7 +307,7 @@ impl LiveProductionVisualRuntime {
             presentation_layout,
         } = request;
         self.present_scheduling_blocked = defer_present;
-        self.apply_presentation_layout(presentation_layout);
+        let _ = self.apply_presentation_layout(presentation_layout);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
         let compose_started = Instant::now();
@@ -289,8 +318,9 @@ impl LiveProductionVisualRuntime {
                 .ok_or("software redraw coalescing has no prior composed frame")?
         } else {
             scene
-                .compose(
+                .compose_visible(
                     &committed_surfaces,
+                    &self.presentation_order,
                     raised_surface,
                     cursor_presentation.composition_position(),
                 )?
@@ -332,7 +362,13 @@ impl LiveProductionVisualRuntime {
         ))
     }
 
-    fn apply_presentation_layout(&mut self, layout: &[LayerSnapshot]) {
+    fn apply_presentation_layout(&mut self, layout: &[LayerSnapshot]) -> bool {
+        let order_changed = self.presentation_order.len() != layout.len()
+            || self
+                .presentation_order
+                .iter()
+                .zip(layout)
+                .any(|(surface, layer)| *surface != layer.surface);
         self.presentation_order.clear();
         self.presentation_order
             .extend(layout.iter().map(|layer| layer.surface));
@@ -346,6 +382,7 @@ impl LiveProductionVisualRuntime {
                 displayed.layer.reproject(layer.geometry);
             }
         }
+        order_changed
     }
 
     fn retained_mixed_frame(
@@ -447,6 +484,11 @@ impl LiveProductionVisualRuntime {
             .front()
             .ok_or("ready Present gate has no queued presentation")?;
         let queued_surface = queued.surface;
+        if !self.presentation_order.contains(&queued_surface) {
+            self.present_scheduler.pop_front();
+            self.reject_gpu_presentation(transaction, 0, 0);
+            return self.run_observation_tick();
+        }
 
         let prepared = self
             .production
@@ -537,8 +579,8 @@ impl LiveProductionVisualRuntime {
                 });
             }
         }
-        if let Some(current_owned) = current_owned {
-            mixed.layers.push(current_owned);
+        if current_owned.is_some() {
+            return Err("visible Present surface is missing from the presentation order".into());
         }
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
@@ -635,7 +677,12 @@ impl LiveProductionVisualRuntime {
         let committed = self.production.committed_surfaces().to_vec();
         let compose_started = Instant::now();
         let composition = scene
-            .compose(&committed, raised_surface, cursor_position)?
+            .compose_visible(
+                &committed,
+                &self.presentation_order,
+                raised_surface,
+                cursor_position,
+            )?
             .clone();
         let frames = scene.frames_for_outputs(output_descriptors)?;
         self.initialize_native_scanout(native_scanout, &frames)?;
@@ -716,4 +763,22 @@ pub fn live_production_transactions_require_gpu_scanout(
     transactions
         .iter()
         .any(|transaction| matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }))
+}
+
+pub fn live_production_projection_requires_gpu_scanout(
+    transactions: &[SurfaceTransaction],
+    presentation_order: &[SurfaceId],
+) -> bool {
+    transactions.iter().any(|transaction| {
+        presentation_order.contains(&transaction.surface)
+            && matches!(transaction.target_buffer, BufferSource::DmaBuf { .. })
+    })
+}
+
+pub const fn reduce_live_production_frame_defer(
+    requested_defer: bool,
+    presentation_order_changed: bool,
+    preserved_gpu_projection: bool,
+) -> bool {
+    preserved_gpu_projection || (requested_defer && !presentation_order_changed)
 }

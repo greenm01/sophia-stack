@@ -115,6 +115,47 @@ fn translates_two_synthetic_legacy_wm_tiles_without_metadata() {
 }
 
 #[test]
+fn workspace_activation_unmaps_hidden_windows_and_remaps_only_the_target_workspace() {
+    let transaction = TransactionId::from_raw(73);
+    let mut bridge = X11WmBridgeState::new();
+    let first = WmRequestPacket {
+        transaction,
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            nodes: vec![node(20), node(21)],
+        }),
+    };
+    bridge.apply_engine_request(&first).unwrap();
+
+    let hidden = bridge.activate_workspace(TransactionId::from_raw(74), WorkspaceId::from_raw(2));
+    assert_eq!(
+        hidden
+            .events
+            .iter()
+            .filter(|event| matches!(event, SyntheticXEvent::UnmapNotify { .. }))
+            .count(),
+        2
+    );
+
+    let restored = bridge.activate_workspace(TransactionId::from_raw(75), WorkspaceId::from_raw(1));
+    assert_eq!(
+        restored
+            .events
+            .iter()
+            .filter(|event| matches!(event, SyntheticXEvent::MapRequest { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn client_size_constraints_bound_both_configure_and_render_geometry() {
     let transaction = TransactionId::from_raw(72);
     let mut constrained = node(12);

@@ -51,6 +51,12 @@ require_value_at_least() {
     [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
     (( actual >= minimum )) || fail "$key is $actual, expected at least $minimum"
 }
+require_value_at_most() {
+    local line="$1" key="$2" maximum="$3" actual
+    actual="$(field "$line" "$key")" || fail "record is missing $key"
+    [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
+    (( actual <= maximum )) || fail "$key is $actual, expected at most $maximum"
+}
 line_number() {
     grep -nEm1 "$1" "$2" | cut -d: -f1
 }
@@ -180,10 +186,11 @@ if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight duri
     fail "operator-requested VT switch used the revoked-seat fallback"
 fi
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=2 ' "$SESSION_LOG" | tail -n 1
+    grep -E '^sophia_live_session_cursor schema=3 ' "$SESSION_LOG" | tail -n 1
 )"
 [[ -n "$cursor" ]] || fail "final cursor health record is missing"
 require_value_at_least "$cursor" buttons_routed 2
+require_value_at_most "$cursor" max_update_msec 100
 require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false$' \
     "$SESSION_LOG" "final session health was not clean"
 require_line '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
