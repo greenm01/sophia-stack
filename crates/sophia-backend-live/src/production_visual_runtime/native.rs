@@ -1,6 +1,37 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
+    pub fn suspend_native_scanout(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        timeout: Duration,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.drain_native_scanout(native_scanout, timeout)?;
+        self.outputs = LiveProductionOutputRuntimeSet::new(
+            outputs,
+            self.production.committed_surfaces(),
+            None,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn resume_native_scanout(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        frames: Vec<LiveProductionComposedFrame>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.outputs = LiveProductionOutputRuntimeSet::new(
+            outputs,
+            self.production.committed_surfaces(),
+            Some(native_scanout),
+            Some(frames),
+        )?;
+        Ok(())
+    }
+
     pub fn drain_native_scanout(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,

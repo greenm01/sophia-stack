@@ -29,6 +29,8 @@ mod production_session;
 mod production_visual_runtime;
 mod runtime;
 mod scanout;
+#[cfg(feature = "seat-control")]
+mod seat;
 mod session_loop;
 mod startup;
 
@@ -44,4 +46,6 @@ pub use production_present_scheduler::*;
 pub use production_session::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_visual_runtime::*;
+#[cfg(feature = "seat-control")]
+pub use seat::*;
 pub use sophia_renderer_live::LivePresentationDisconnectReport;

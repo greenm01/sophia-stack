@@ -102,8 +102,10 @@ tools/stop_sophia_kitty_session.sh
 ```
 
 The wrapper owns the session process group and restores the text TTY and `keyd`
-during either shutdown path. Ctrl-Alt-Fn switching is not a recovery mechanism
-until Sophia implements correct VT suspend and resume.
+during either shutdown path. Normal Ctrl-Alt-Fn switching is mediated by
+libseat: Sophia releases input and KMS ownership before the switch and rebuilds
+both from retained scene state when its VT becomes active again. The independent
+Ctrl-Alt-Backspace guard remains the recovery mechanism.
 
 ## Native Session Evidence
 

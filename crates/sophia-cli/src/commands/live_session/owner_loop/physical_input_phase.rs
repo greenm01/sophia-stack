@@ -149,21 +149,18 @@ macro_rules! drain_physical_input {
                 }
             }
             if let Some(terminal) = report.virtual_terminal {
-                let helper = std::env::var("SOPHIA_TTY_MODE_HELPER")
-                    .unwrap_or_else(|_| "tools/sophia_tty_mode.py".to_owned());
-                let status = Command::new("python3")
-                    .arg(helper)
-                    .arg(format!("activate-vt-{terminal}"))
-                    .status()?;
-                if !status.success() {
-                    return Err(format!(
-                        "virtual terminal activation failed for VT{terminal}: {status}"
-                    )
-                    .into());
+                let result = seat_controller
+                    .as_mut()
+                    .ok_or("VT switching requires an active seat controller")?
+                    .switch_session(terminal);
+                match result {
+                    Ok(()) => println!(
+                        "sophia_live_session_vt schema=2 status=requested target={terminal}"
+                    ),
+                    Err(error) => eprintln!(
+                        "sophia_live_session_vt schema=2 status=rejected target={terminal} error={error}"
+                    ),
                 }
-                println!(
-                    "sophia_live_session_vt schema=1 status=activated target={terminal}"
-                );
                 std::io::stdout().flush()?;
             }
             if report.return_suppressed && !input_observations.return_suppressed {

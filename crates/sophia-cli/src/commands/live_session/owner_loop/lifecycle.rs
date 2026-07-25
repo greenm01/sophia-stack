@@ -1,4 +1,59 @@
 {
+        if let Some(controller) = seat_controller.as_mut() {
+            if let Some(event) = controller.dispatch()? {
+                seat_state = seat_state.observe(event);
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::ReleasePending {
+                println!("sophia_live_seat schema=1 status=release_pending");
+                physical_input.take();
+                if let (Some(runtime), Some(native)) =
+                    (runtime.as_mut(), native_scanout.as_mut())
+                {
+                    runtime.suspend_native_scanout(
+                        native,
+                        &outputs,
+                        Duration::from_millis(500),
+                    )?;
+                }
+                native_scanout.take();
+                controller.acknowledge_disable()?;
+                seat_state = seat_state.released();
+                modifiers = XCoreKeyboardMapper::new();
+                virtual_terminal_chord = VirtualTerminalChordState::default();
+                emergency_chord = EmergencyChordState::armed();
+                println!("sophia_live_seat schema=1 status=suspended");
+                std::io::stdout().flush()?;
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
+                println!("sophia_live_seat schema=1 status=acquire_pending");
+                let mut resumed = LiveProductionNativeScanout::new()?;
+                if resumed.outputs() != outputs {
+                    return Err("seat resume changed the physical output topology".into());
+                }
+                if let Some(runtime) = runtime.as_mut() {
+                    let frames = scene.frames_for_outputs(&outputs)?;
+                    runtime.resume_native_scanout(&mut resumed, &outputs, frames)?;
+                }
+                *native_scanout = Some(resumed);
+                let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
+                    SeatId::from_raw(SESSION_SEAT_RAW),
+                )
+                .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
+                .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
+                *physical_input = open_session_physical_input(config, device_map)?;
+                cursor_updates = CursorUpdateState::new(pointer.position.is_some());
+                seat_state = seat_state.acquired();
+                println!("sophia_live_seat schema=1 status=active source=resume");
+                std::io::stdout().flush()?;
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::Suspended {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::Failed {
+                return Err("invalid libseat lifecycle transition".into());
+            }
+        }
         if !primary_child_exited
             && let Some(primary_child) = child.as_deref_mut()
             && let Some(status) = primary_child.try_wait()?

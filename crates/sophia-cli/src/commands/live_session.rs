@@ -37,7 +37,7 @@ use std::io::{Read, Write};
 use std::num::NonZeroUsize;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -102,6 +102,33 @@ impl SessionPhysicalInput {
     }
 }
 
+fn open_session_physical_input(
+    config: &PersistentXtermSessionConfig,
+    device_map: sophia_backend_live::NativeLibinputDeviceMap,
+) -> Result<Option<SessionPhysicalInput>, Box<dyn std::error::Error>> {
+    if !config.input_devices.is_empty() {
+        return Ok(Some(SessionPhysicalInput::Threaded(
+            sophia_backend_live::open_threaded_native_libinput_path_poller(
+                &config.input_devices,
+                device_map,
+                64,
+                256,
+            )?,
+        )));
+    }
+    config
+        .input_seat
+        .as_deref()
+        .map(|seat_name| {
+            sophia_backend_live::open_threaded_native_libinput_udev_poller(
+                seat_name, device_map, 64, 256,
+            )
+            .map(SessionPhysicalInput::Threaded)
+            .map_err(|error| error.into())
+        })
+        .transpose()
+}
+
 pub(crate) fn run_persistent_xterm_session(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -117,6 +144,17 @@ pub(crate) fn run_persistent_xterm_session(
     prepare_display_socket(&config.socket_path)?;
     let display_number = parse_display_number(&config.display)?;
     let (mut xauthority, xauthority_cookie) = LiveXAuthorityFile::create(display_number)?;
+    let mut seat_controller = config
+        .native_scanout
+        .then(sophia_backend_live::LiveSeatController::open)
+        .transpose()?;
+    if let Some(controller) = seat_controller.as_mut() {
+        let _ = controller.dispatch()?;
+        println!(
+            "sophia_live_seat schema=1 status=active seat={}",
+            controller.name()
+        );
+    }
     let mut native_scanout = config
         .native_scanout
         .then(LiveProductionNativeScanout::new)
@@ -125,24 +163,7 @@ pub(crate) fn run_persistent_xterm_session(
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
             .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
-    let mut physical_input = if !config.input_devices.is_empty() {
-        Some(SessionPhysicalInput::Threaded(
-            sophia_backend_live::open_threaded_native_libinput_path_poller(
-                &config.input_devices,
-                device_map,
-                64,
-                256,
-            )?,
-        ))
-    } else if let Some(seat_name) = config.input_seat.as_deref() {
-        Some(SessionPhysicalInput::Threaded(
-            sophia_backend_live::open_threaded_native_libinput_udev_poller(
-                seat_name, device_map, 64, 256,
-            )?,
-        ))
-    } else {
-        None
-    };
+    let mut physical_input = open_session_physical_input(&config, device_map)?;
     if let Some(physical_input) = physical_input.as_ref() {
         let policy = physical_input.policy_report();
         println!(
@@ -505,6 +526,7 @@ pub(crate) fn run_persistent_xterm_session(
             secondary_children,
             physical_input: &mut physical_input,
             native_scanout: &mut native_scanout,
+            seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
         },
         SessionLoopStartup {

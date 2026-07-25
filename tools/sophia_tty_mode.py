@@ -15,26 +15,18 @@ KD_GRAPHICS = 1
 KDGKBMODE = 0x4B44
 KDSKBMODE = 0x4B45
 K_OFF = 4
-VT_ACTIVATE = 0x5606
-VT_WAITACTIVE = 0x5607
 
 
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit(
             "usage: sophia_tty_mode.py get|text|graphics|MODE|"
-            "get-keyboard|keyboard-off|keyboard-MODE|activate-vt-N"
+            "get-keyboard|keyboard-off|keyboard-MODE"
         )
     action = sys.argv[1]
-    inherited_fd = os.environ.get("SOPHIA_SESSION_TTY_FD")
-    tty = None
-    if inherited_fd is not None:
-        tty_fd = int(inherited_fd, 10)
-    else:
-        tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
-        tty = open(tty_path, "rb+", buffering=0)
+    tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
+    with open(tty_path, "rb+", buffering=0) as tty:
         tty_fd = tty.fileno()
-    try:
         if action == "get-keyboard":
             value = array.array("i", [0])
             fcntl.ioctl(tty_fd, KDGKBMODE, value, True)
@@ -45,13 +37,6 @@ def main() -> int:
             return 0
         if action.startswith("keyboard-"):
             fcntl.ioctl(tty_fd, KDSKBMODE, int(action.removeprefix("keyboard-"), 10))
-            return 0
-        if action.startswith("activate-vt-"):
-            terminal = int(action.removeprefix("activate-vt-"), 10)
-            if terminal < 1 or terminal > 12:
-                raise SystemExit("virtual terminal must be in 1..=12")
-            fcntl.ioctl(tty_fd, VT_ACTIVATE, terminal)
-            fcntl.ioctl(tty_fd, VT_WAITACTIVE, terminal)
             return 0
         if action == "get":
             value = array.array("i", [0])
@@ -65,9 +50,6 @@ def main() -> int:
         else:
             mode = int(action, 10)
         fcntl.ioctl(tty_fd, KDSETMODE, mode)
-    finally:
-        if tty is not None:
-            tty.close()
     return 0
 
 

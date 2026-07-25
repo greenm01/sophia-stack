@@ -2760,3 +2760,17 @@ before takeover and passes the descriptor number as
 that inherited descriptor; the path remains only a compatibility fallback.
 This keeps VT control in the session-control boundary without adding
 terminal- or application-specific behavior to Engine.
+
+The next physical run disproved descriptor inheritance as the final solution.
+`VT_ACTIVATE` returned `EPERM`: Linux authorizes that ioctl by controlling-TTY
+ownership, which the deliberate `setsid` boundary removes, rather than by the
+mere possession of an open descriptor. Sophia then exited with status 1, so
+the greetd screen observed after Ctrl-Alt-F3 was greetd reclaiming tty7; the
+existing tty3 login had never become active.
+
+VT switching now belongs to a libseat controller. Switch rejection is
+nonfatal. A successful switch produces an explicit release boundary that
+stops input, drains and releases native scanout, and acknowledges suspension;
+acquisition rebuilds both hardware domains and repaints the retained scene.
+Kitty, X11 clients, focus, and Engine state remain above that hardware
+lifecycle, and Engine gains no application-specific branch.

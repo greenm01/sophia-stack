@@ -11,6 +11,7 @@ struct SessionLoopResources<'a> {
     secondary_children: &'a mut Vec<ManagedSessionChild>,
     physical_input: &'a mut Option<SessionPhysicalInput>,
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
+    seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
 }
 
@@ -42,6 +43,7 @@ fn run_session_loop(
         secondary_children,
         physical_input,
         native_scanout,
+        seat_controller,
         wm_session,
     } = resources;
     let SessionLoopStartup {
@@ -164,6 +166,7 @@ fn run_session_loop(
     let mut retired_present_surfaces = BTreeMap::new();
     let mut startup_ready_reported = false;
     let mut pending_authority_batches = VecDeque::new();
+    let mut seat_state = sophia_backend_live::LiveSeatState::Active;
 
     include!("owner_loop/physical_input_phase.rs")
 }
