@@ -323,6 +323,23 @@ untriggered guard, and exact KD mode and termios restoration. Its default eviden
 `/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
 proof.
 
+For the focused four-Kitty Tall regression, use:
+
+```sh
+tools/start_sophia_xmonad_four_kitty_tty3.sh
+tools/verify_sophia_xmonad_four_kitty.sh
+```
+
+Follow the sequence printed by the launcher and use normal xmonad logout.
+The verifier waits briefly for completion, requires one pixel-matched
+full-height pane plus three stack panes, and rejects empty per-output
+submissions, forced native detach, abandoned scanouts, callback imbalance, or
+cleanup debt. Validate verifier changes with:
+
+```sh
+tools/check_sophia_xmonad_four_kitty_verifier.sh
+```
+
 Run emergency recovery as a separate capture:
 
 ```sh

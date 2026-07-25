@@ -19,7 +19,7 @@ for mutation in \
     'status=hidden_focus_cleared ' \
     'status=key_suppressed reason=no_focus' \
     'status=retired output=2 ' \
-    'schema=5 status=quiesced target=' \
+    'schema=6 status=quiesced target=' \
     'schema=1 status=active source=resume' \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
     'sophia_live_session_cursor schema=2 '; do

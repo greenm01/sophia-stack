@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERIFY="$ROOT_DIR/tools/verify_sophia_xmonad_four_kitty.sh"
+FIXTURE_DIR="$(mktemp -d)"
+trap 'rm -rf "$FIXTURE_DIR"' EXIT
+
+valid="$FIXTURE_DIR/valid.log"
+cat >"$valid" <<'EOF'
+sophia_session_app schema=1 status=started id=terminal source=startup
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_live_resize_epoch schema=1 status=held transaction=4 surfaces=3
+sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=3
+sophia_live_session_present schema=2 status=retired transaction=10 surface=1 source=1280x1440 target=1280x1440_0_0 clip=1280x1440_0_0 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=11 surface=2 source=1280x480 target=1280x480_1280_0 clip=1280x480_1280_0 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=12 surface=3 source=1280x480 target=1280x480_1280_480 clip=1280x480_1280_480 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=13 surface=4 source=1280x480 target=1280x480_1280_960 clip=1280x480_1280_960 unit_scale=true
+sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
+sophia_live_session schema=14 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0
+sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=10 retirements=9 callbacks=9 nonzero_exports=1
+sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=7 retirements=6 callbacks=6 nonzero_exports=1
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
+EOF
+
+SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$valid" >/dev/null
+
+expect_rejected() {
+    local name="$1"
+    local expression="$2"
+    local replacement="$3"
+    local mutated="$FIXTURE_DIR/$name.log"
+    sed "s|$expression|$replacement|" "$valid" >"$mutated"
+    if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$mutated" >/dev/null 2>&1; then
+        echo "four-Kitty verifier mutation was accepted: $name" >&2
+        exit 1
+    fi
+}
+
+expect_rejected undrained 'outcome=drained drained=true' \
+    'outcome=forced_detach_timeout drained=false'
+expect_rejected abandoned 'abandoned_scanouts=0' 'abandoned_scanouts=1'
+expect_rejected empty_submission \
+    'sophia_live_session_native_suspend' \
+    'sophia_live_native_page_flip schema=1 status=submitted output=2 submission=8 content=None\nsophia_live_session_native_suspend'
+expect_rejected retirement_imbalance \
+    'submissions=7 retirements=6 callbacks=6' \
+    'submissions=7 retirements=5 callbacks=5'
+expect_rejected callback_imbalance \
+    'submissions=7 retirements=6 callbacks=6' \
+    'submissions=7 retirements=6 callbacks=5'
+expect_rejected incomplete \
+    'sophia_live_session_cleanup schema=1 status=clean' \
+    'sophia_live_session_cleanup schema=1 status=stalled'
+
+echo "four-Kitty verifier mutation checks passed"

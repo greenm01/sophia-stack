@@ -51,8 +51,9 @@
                         native_scanout.take();
                         seat_release_prepared = true;
                         println!(
-                            "sophia_live_session_vt schema=5 status=quiesced target={terminal} drained={} abandoned_scanouts={} skipped_present={}",
-                            report.drained,
+                            "sophia_live_session_vt schema=6 status=quiesced target={terminal} outcome={} drained={} abandoned_scanouts={} skipped_present={}",
+                            report.outcome.reduced_name(),
+                            report.outcome.drained(),
                             report.abandoned_scanouts,
                             report
                                 .skipped_present
@@ -689,13 +690,14 @@
             input_content_surface = None;
             startup_outputs_ready_reported = false;
             println!(
-                "sophia_live_session_startup schema=2 status=recovered attempt=1 reason={} drained={} abandoned_scanouts={}",
+                "sophia_live_session_startup schema=3 status=recovered attempt=1 reason={} outcome={} drained={} abandoned_scanouts={}",
                 if missing_output_callback {
                     "missing_output_callback"
                 } else {
                     "no_visible_mixed_pixels"
                 },
-                suspended.drained,
+                suspended.outcome.reduced_name(),
+                suspended.outcome.drained(),
                 suspended.abandoned_scanouts,
             );
             std::io::stdout().flush()?;

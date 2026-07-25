@@ -6,32 +6,8 @@ mod persistent_native_scanout {
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum LiveProductionScanoutContent {
-        Cpu {
-            checksum: u64,
-        },
-        Mixed {
-            transaction: TransactionId,
-            nonzero_rgb_pixels: usize,
-        },
-    }
-
-    pub fn live_production_scanout_is_stable_present(
-        presented: Option<LiveProductionScanoutContent>,
-        submitted: Option<LiveProductionScanoutContent>,
-        pending: bool,
-        transaction: TransactionId,
-    ) -> bool {
-        matches!(
-            presented,
-            Some(LiveProductionScanoutContent::Mixed {
-                transaction: presented_transaction,
-                nonzero_rgb_pixels,
-            }) if presented_transaction == transaction && nonzero_rgb_pixels > 0
-        ) && submitted.is_none()
-            && !pending
-    }
+    mod state;
+    pub use state::*;
 
     pub struct LiveProductionNativeScanout {
         pub groups: Vec<LiveProductionNativeGroup>,
@@ -334,6 +310,10 @@ mod persistent_native_scanout {
             runtime: &mut crate::LiveBackendRuntimeAssembly,
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+            if !self.heads[index].exporter.pending_frame() {
+                self.retire_ready_and_retry_cleanup(index, runtime)?;
+                return Ok(runtime.run_tick(input)?);
+            }
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
             let (report, exported_nonzero, queued_content) = {
@@ -601,8 +581,21 @@ mod persistent_native_scanout {
             Ok(())
         }
 
-        pub fn queue_frame(&mut self, index: usize, frame: LiveProductionComposedFrame) {
+        pub fn queue_frame(
+            &mut self,
+            index: usize,
+            frame: LiveProductionComposedFrame,
+        ) -> LiveProductionCpuFrameQueueStatus {
             let head = &mut self.heads[index];
+            let status = reduce_live_production_cpu_frame_queue(
+                head.pending_content,
+                head.submitted_content,
+                head.presented_content,
+                frame.checksum,
+            );
+            if status != LiveProductionCpuFrameQueueStatus::Queued {
+                return status;
+            }
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
@@ -610,6 +603,7 @@ mod persistent_native_scanout {
             });
             head.exporter
                 .set_pending_cpu_frame_with_checksum(frame.frame, frame.checksum);
+            status
         }
 
         pub fn queue_mixed_frame(
@@ -779,8 +773,9 @@ mod persistent_native_scanout {
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
-    LiveProductionNativeHead, LiveProductionNativeScanout, LiveProductionScanoutContent,
-    live_production_scanout_is_stable_present,
+    LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionScanoutContent, live_production_scanout_is_stable_present,
+    reduce_live_production_cpu_frame_queue,
 };
 
 #[derive(Debug)]

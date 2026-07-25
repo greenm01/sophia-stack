@@ -1,7 +1,9 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LiveProductionVisualRuntime, live_production_transactions_require_gpu_scanout,
+    LiveProductionCpuFrameQueueStatus, LiveProductionNativeSuspendOutcome,
+    LiveProductionScanoutContent, LiveProductionVisualRuntime,
+    live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -92,10 +94,44 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
         .expect("duplicate revoked suspension");
 
     assert_eq!(first.abandoned_scanouts, 0);
-    assert!(!first.drained);
+    assert_eq!(
+        first.outcome,
+        LiveProductionNativeSuspendOutcome::ForcedDetachRevoked
+    );
     assert_eq!(first.skipped_present, None);
     assert_eq!(second, first);
     assert_eq!(runtime.output_count(), 1);
+}
+
+#[test]
+fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
+    let checksum = 42;
+    let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
+    let mixed = Some(LiveProductionScanoutContent::Mixed {
+        transaction: TransactionId::from_raw(9),
+        nonzero_rgb_pixels: 1,
+    });
+
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(cpu, None, None, checksum),
+        LiveProductionCpuFrameQueueStatus::UnchangedPending
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, cpu, None, checksum),
+        LiveProductionCpuFrameQueueStatus::UnchangedSubmitted
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, cpu, checksum),
+        LiveProductionCpuFrameQueueStatus::UnchangedPresented
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, mixed, checksum),
+        LiveProductionCpuFrameQueueStatus::Queued
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, cpu, checksum + 1),
+        LiveProductionCpuFrameQueueStatus::Queued
+    );
 }
 
 #[test]

@@ -235,6 +235,49 @@ fn retained_multi_plane_frame_clone_preserves_metadata_planes() {
 }
 
 #[test]
+fn retained_layer_clone_preserves_pixel_aligned_placement() {
+    let target = Rect {
+        x: 64,
+        y: 0,
+        width: 128,
+        height: 48,
+    };
+    let layer = LiveRetainedDmaBufLayer {
+        frame: LiveOwnedMultiPlaneDmaBufFrame {
+            width: 128,
+            height: 48,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            modifier: DRM_FORMAT_MOD_INVALID,
+            plane_count: 1,
+            planes: [
+                Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                    fd: fd(),
+                    offset: 0,
+                    stride: 512,
+                }),
+                None,
+                None,
+                None,
+            ],
+        },
+        placement: LiveCompositionPlacement {
+            target,
+            clip: None,
+            transform: sophia_protocol::Transform::IDENTITY,
+            alpha: 1.0,
+        },
+    };
+
+    assert!(layer.has_unit_scale());
+    let cloned = layer.try_clone().unwrap();
+    assert_eq!(cloned.frame.width, layer.frame.width);
+    assert_eq!(cloned.placement.target, layer.placement.target);
+    assert_eq!(cloned.placement.clip, layer.placement.clip);
+    assert_eq!(cloned.placement.transform, layer.placement.transform);
+    assert_eq!(cloned.placement.alpha, layer.placement.alpha);
+}
+
+#[test]
 fn production_feedback_retires_resources_before_complete_and_idle() {
     let handle = BufferHandle::from_raw(17);
     let transaction = TransactionId::from_raw(18);

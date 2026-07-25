@@ -83,6 +83,11 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
   xmonad resize deadline.
 - [ ] Physically prove the four-Kitty Tall transition commits one full-height
   pane plus three pixel-matched stack panes without exposing staging geometry.
+  - [x] Prevent primary-only mixed Presents from issuing empty native commits
+    on secondary outputs and suppress unchanged per-output CPU frames.
+  - [x] Make the focused verifier reject forced detach, abandoned scanouts,
+    empty submissions, callback imbalance, and incomplete cleanup evidence.
+  - [ ] Repeat the normal four-Kitty proof for three consecutive clean cycles.
 
 Gate command and verifier must be documented in `docs/validation.md`; the
 physical xmonad result must receive its own compatibility/session evidence

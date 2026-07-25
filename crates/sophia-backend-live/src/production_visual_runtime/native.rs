@@ -1,8 +1,30 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LiveProductionNativeSuspendOutcome {
+    #[default]
+    Drained,
+    ForcedDetachTimeout,
+    ForcedDetachRevoked,
+}
+
+impl LiveProductionNativeSuspendOutcome {
+    pub const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::Drained => "drained",
+            Self::ForcedDetachTimeout => "forced_detach_timeout",
+            Self::ForcedDetachRevoked => "forced_detach_revoked",
+        }
+    }
+
+    pub const fn drained(self) -> bool {
+        matches!(self, Self::Drained)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LiveProductionNativeSuspendReport {
-    pub drained: bool,
+    pub outcome: LiveProductionNativeSuspendOutcome,
     pub abandoned_scanouts: usize,
     pub skipped_present: Option<TransactionId>,
 }
@@ -15,9 +37,12 @@ impl LiveProductionVisualRuntime {
         timeout: Duration,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         if self.drain_native_scanout_until(native_scanout, timeout)? {
-            self.detach_native_scanout(outputs, true)
+            self.detach_native_scanout(outputs, LiveProductionNativeSuspendOutcome::Drained)
         } else {
-            self.detach_native_scanout(outputs, false)
+            self.detach_native_scanout(
+                outputs,
+                LiveProductionNativeSuspendOutcome::ForcedDetachTimeout,
+            )
         }
     }
 
@@ -25,13 +50,16 @@ impl LiveProductionVisualRuntime {
         &mut self,
         outputs: &[sophia_engine::HeadlessOutput],
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
-        self.detach_native_scanout(outputs, false)
+        self.detach_native_scanout(
+            outputs,
+            LiveProductionNativeSuspendOutcome::ForcedDetachRevoked,
+        )
     }
 
     fn detach_native_scanout(
         &mut self,
         outputs: &[sophia_engine::HeadlessOutput],
-        drained: bool,
+        outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         let abandoned_scanouts = self.outputs.native_scanout_in_flight_count();
         let skipped_present = self
@@ -48,7 +76,7 @@ impl LiveProductionVisualRuntime {
             None,
         )?;
         Ok(LiveProductionNativeSuspendReport {
-            drained,
+            outcome,
             abandoned_scanouts,
             skipped_present,
         })

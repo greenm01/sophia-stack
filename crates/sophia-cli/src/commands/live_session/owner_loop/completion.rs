@@ -28,8 +28,9 @@
         let report =
             runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2))?;
         println!(
-            "sophia_live_session_native_suspend schema=1 status=complete drained={} abandoned_scanouts={} skipped_present={}",
-            report.drained,
+            "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={}",
+            report.outcome.reduced_name(),
+            report.outcome.drained(),
             report.abandoned_scanouts,
             report
                 .skipped_present

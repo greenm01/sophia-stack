@@ -151,7 +151,7 @@ done
 for record in \
     'sophia_live_session_vt schema=4 status=queued target=[0-9]+ modifier_releases=[2-4]' \
     'sophia_live_session_vt schema=4 status=preparing target=[0-9]+' \
-    'sophia_live_session_vt schema=5 status=quiesced target=[0-9]+ drained=(true|false) abandoned_scanouts=[0-9]+ skipped_present=(none|[0-9]+)' \
+    'sophia_live_session_vt schema=6 status=quiesced target=[0-9]+ outcome=(drained|forced_detach_timeout|forced_detach_revoked) drained=(true|false) abandoned_scanouts=[0-9]+ skipped_present=(none|[0-9]+)' \
     'sophia_live_session_vt schema=4 status=requested target=[0-9]+' \
     'sophia_live_seat schema=1 status=release_pending' \
     'sophia_live_seat schema=1 status=suspended' \
@@ -161,7 +161,7 @@ for record in \
 done
 queued_vt_line="$(line_number 'schema=4 status=queued target=' "$SESSION_LOG")"
 preparing_vt_line="$(line_number 'schema=4 status=preparing target=' "$SESSION_LOG")"
-quiesced_vt_line="$(line_number 'schema=5 status=quiesced target=' "$SESSION_LOG")"
+quiesced_vt_line="$(line_number 'schema=6 status=quiesced target=' "$SESSION_LOG")"
 requested_vt_line="$(line_number 'schema=4 status=requested target=' "$SESSION_LOG")"
 release_vt_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
 suspended_vt_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"
@@ -175,7 +175,8 @@ resumed_vt_line="$(line_number 'sophia_live_seat schema=1 status=active source=r
     && suspended_vt_line < acquire_vt_line
     && acquire_vt_line < resumed_vt_line )) ||
     fail "VT prepare, release, and acquire records are out of order"
-if grep -Eq 'status=forced_detach|remained in flight during teardown' "$SESSION_LOG"; then
+if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight during teardown' \
+    "$SESSION_LOG"; then
     fail "operator-requested VT switch used the revoked-seat fallback"
 fi
 cursor="$(
