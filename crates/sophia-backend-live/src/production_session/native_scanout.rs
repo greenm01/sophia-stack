@@ -390,6 +390,17 @@ mod persistent_native_scanout {
                             Some(self.heads[index].last_checksum);
                         self.heads[index].submitted_sequence = Some(self.heads[index].submissions);
                         self.heads[index].submitted_content = queued_content;
+                        if matches!(
+                            queued_content,
+                            Some(LiveProductionScanoutContent::Mixed {
+                                nonzero_rgb_pixels: 1..,
+                                ..
+                            })
+                        ) {
+                            self.nonzero_exports = self.nonzero_exports.saturating_add(1);
+                            self.heads[index].nonzero_exports =
+                                self.heads[index].nonzero_exports.saturating_add(1);
+                        }
                         let output = self.heads[index].output.id;
                         let cycle =
                             u64::try_from(self.heads[index].submissions).unwrap_or(u64::MAX);

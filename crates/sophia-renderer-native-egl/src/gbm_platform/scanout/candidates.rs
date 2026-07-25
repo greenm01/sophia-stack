@@ -60,6 +60,12 @@ fn rendered_scanout_candidates(
     preferred_modifiers: &[gbm::Modifier],
 ) -> Vec<RenderedScanoutCandidate> {
     let mut candidates = Vec::with_capacity(6);
+    candidates.push(RenderedScanoutCandidate {
+        format: gbm::Format::Xrgb8888,
+        modifiers: Vec::from(LINEAR_SCANOUT_MODIFIERS),
+        usage: rendered_scanout_usage().union(gbm::BufferObjectFlags::LINEAR),
+        config_attributes: xrgb_window_config_attributes(),
+    });
     if !preferred_modifiers.is_empty() {
         candidates.push(RenderedScanoutCandidate {
             format: gbm::Format::Xrgb8888,
@@ -69,12 +75,6 @@ fn rendered_scanout_candidates(
         });
     }
     candidates.extend([
-        RenderedScanoutCandidate {
-            format: gbm::Format::Xrgb8888,
-            modifiers: Vec::from(LINEAR_SCANOUT_MODIFIERS),
-            usage: rendered_scanout_usage().union(gbm::BufferObjectFlags::LINEAR),
-            config_attributes: xrgb_window_config_attributes(),
-        },
         RenderedScanoutCandidate {
             format: gbm::Format::Xrgb8888,
             modifiers: Vec::new(),

@@ -11,7 +11,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     gbm_device: gbm::Device<T>,
     target: Option<PersistentNativeFrameTarget>,
     stats: NativeGbmPersistentRenderStats,
-    composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
+    last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
     composition_pixel_proof_attempts: usize,
 }
 
@@ -78,7 +78,7 @@ where
             gbm_device,
             target: None,
             stats: NativeGbmPersistentRenderStats::default(),
-            composition_pixel_metrics: None,
+            last_composition_pixel_metrics: None,
             composition_pixel_proof_attempts: 0,
         })
     }
@@ -88,7 +88,7 @@ where
     }
 
     pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
-        self.composition_pixel_metrics
+        self.last_composition_pixel_metrics
     }
 
     pub fn export_rendered_owned_scanout_buffer(
@@ -242,8 +242,7 @@ where
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
         }
         if let Some(mut target) = self.target.take() {
-            let capture_pixels = self.composition_pixel_metrics.is_none()
-                && self.composition_pixel_proof_attempts < 3;
+            let capture_pixels = self.composition_pixel_proof_attempts < 3;
             let result = render_persistent_target_composition(
                 &self.egl,
                 self.display,
@@ -256,11 +255,8 @@ where
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
             }
-            if let Ok((_, Some(metrics))) = &result
-                && metrics.nonzero_rgb_pixels > 0
-            {
-                self.composition_pixel_metrics = Some(*metrics);
-            }
+            self.last_composition_pixel_metrics =
+                result.as_ref().ok().and_then(|(_, metrics)| *metrics);
             // The exported GBM owner keeps the scanout surface alive. Retire
             // the context here so Radeon cannot carry imported-image command
             // stream state into the next CPU upload.
@@ -306,8 +302,7 @@ where
                     continue;
                 }
             };
-            let capture_pixels = self.composition_pixel_metrics.is_none()
-                && self.composition_pixel_proof_attempts < 3;
+            let capture_pixels = self.composition_pixel_proof_attempts < 3;
             let rendered = render_persistent_target_composition(
                 &self.egl,
                 self.display,
@@ -320,11 +315,8 @@ where
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
             }
-            if let Ok((_, Some(metrics))) = &rendered
-                && metrics.nonzero_rgb_pixels > 0
-            {
-                self.composition_pixel_metrics = Some(*metrics);
-            }
+            self.last_composition_pixel_metrics =
+                rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.target_creations = self.stats.target_creations.saturating_add(1);

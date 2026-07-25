@@ -30,3 +30,30 @@ pub fn native_composition_pixel_metrics(rgba: &[u8]) -> NativeCompositionPixelMe
     }
     metrics
 }
+
+pub fn native_composition_pixel_metrics_from_rows(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    stride: u32,
+) -> Option<NativeCompositionPixelMetrics> {
+    let row_bytes = usize::try_from(width).ok()?.checked_mul(4)?;
+    let row_count = usize::try_from(height).ok()?;
+    let stride = usize::try_from(stride).ok()?;
+    if row_bytes == 0 || row_count == 0 || stride < row_bytes {
+        return None;
+    }
+    let required_len = stride
+        .checked_mul(row_count.saturating_sub(1))?
+        .checked_add(row_bytes)?;
+    if bytes.len() < required_len {
+        return None;
+    }
+
+    let pixel_len = row_bytes.checked_mul(row_count)?;
+    let mut pixels = Vec::with_capacity(pixel_len);
+    for row in bytes.chunks(stride).take(row_count) {
+        pixels.extend_from_slice(row.get(..row_bytes)?);
+    }
+    (pixels.len() == pixel_len).then(|| native_composition_pixel_metrics(&pixels))
+}
