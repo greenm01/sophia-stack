@@ -185,6 +185,5 @@ fn run_session_loop(
     let mut requested_virtual_terminal = None;
     let mut seat_release_prepared = false;
 
-    include!("owner_loop/session_control.rs");
-    include!("owner_loop/physical_input_phase.rs")
+    include!("owner_loop/session_control.rs")
 }

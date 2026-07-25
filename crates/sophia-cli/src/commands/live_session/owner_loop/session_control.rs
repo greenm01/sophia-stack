@@ -1,3 +1,4 @@
+{
 macro_rules! service_session_controls {
     () => {{
         session_control_completions.clear();
@@ -35,4 +36,7 @@ macro_rules! service_session_controls {
             }
         }
     }};
+}
+
+include!("physical_input_phase.rs")
 }
