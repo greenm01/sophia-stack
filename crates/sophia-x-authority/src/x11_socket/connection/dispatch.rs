@@ -162,6 +162,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 resource_id_range,
                 namespace,
                 client,
+                protocol_routing.clone(),
                 channels,
             )
         })
@@ -345,8 +346,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         crate::XWireRequest::PresentPixmap {
                             wait_fence,
                             idle_fence,
+                            x_offset,
+                            y_offset,
                             ..
-                        } => Some((*wait_fence, *idle_fence)),
+                        } => Some((*wait_fence, *idle_fence, *x_offset, *y_offset)),
                         _ => None,
                     };
                     let xkb_selection = match &request {
@@ -587,7 +590,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let present_submission = dispatch_succeeded
                         .then_some(present_request)
                         .flatten()
-                        .and_then(|(wait_fence, idle_fence)| {
+                        .and_then(|(wait_fence, idle_fence, x_offset, y_offset)| {
                             let response = output.response.as_ref()?;
                             let transaction = response.transactions.first()?;
                             let sophia_protocol::BufferSource::DmaBuf { handle } =
@@ -599,6 +602,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 transaction: response.transaction,
                                 surface: transaction.surface,
                                 buffer: sophia_protocol::BufferHandle::from_raw(handle),
+                                x_offset,
+                                y_offset,
                                 acquire_fence: wait_fence.and_then(|fence| {
                                     runtime.dri3_fence_handle(namespace, fence).ok()
                                 }),

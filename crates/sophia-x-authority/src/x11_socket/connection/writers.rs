@@ -68,6 +68,7 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::RandrCrtcChange { sequence, .. }
         | XClientEvent::RandrOutputChange { sequence, .. }
         | XClientEvent::RandrResourceChange { sequence, .. }
+        | XClientEvent::PresentConfigureNotify { sequence, .. }
         | XClientEvent::PresentCompleteNotify { sequence, .. }
         | XClientEvent::PresentIdleNotify { sequence, .. } => *sequence = value,
         _ => unreachable!("protocol routing received a non-routable event"),
@@ -89,6 +90,7 @@ fn spawn_x11_control_writer(
     resource_id_range: crate::XWireClientResourceRange,
     namespace: NamespaceId,
     client: XServerFrontendClientId,
+    protocol_routing: Option<XServerFrontendRouteRegistry>,
     channels: X11ControlChannels,
 ) -> Result<X11ControlWriter, X11SetupSocketError> {
     let stop = Arc::new(AtomicBool::new(false));
@@ -181,8 +183,18 @@ fn spawn_x11_control_writer(
                     };
                     let width = u16::try_from(geometry.width).expect("validated above");
                     let height = u16::try_from(geometry.height).expect("validated above");
-                    vec![
-                        encode_x_client_event(
+                    let present_event_ids = protocol_routing
+                        .as_ref()
+                        .map(|routing| routing.present_configure_event_ids(client, window))
+                        .transpose()
+                        .map_err(|error| {
+                            X11SetupSocketError::new(format!(
+                                "failed to resolve Present ConfigureNotify subscriptions: {error}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    let mut records = Vec::with_capacity(present_event_ids.len() + 2);
+                    records.push(encode_x_client_event(
                             byte_order,
                             XClientEvent::ConfigureNotify {
                                 sequence: event_sequence,
@@ -196,8 +208,25 @@ fn spawn_x11_control_writer(
                                 border_width: 0,
                                 override_redirect: false,
                             },
-                        ),
+                        ));
+                    records.extend(present_event_ids.into_iter().map(|event_id| {
                         encode_x_client_event(
+                            byte_order,
+                            XClientEvent::PresentConfigureNotify {
+                                sequence: event_sequence,
+                                event_id,
+                                window,
+                                x: clamp_engine_i16(geometry.x),
+                                y: clamp_engine_i16(geometry.y),
+                                width,
+                                height,
+                                pixmap_width: width,
+                                pixmap_height: height,
+                                pixmap_flags: 0,
+                            },
+                        )
+                    }));
+                    records.push(encode_x_client_event(
                             byte_order,
                             XClientEvent::Expose {
                                 sequence: event_sequence,
@@ -208,8 +237,8 @@ fn spawn_x11_control_writer(
                                 height,
                                 count: 0,
                             },
-                        ),
-                    ]
+                        ));
+                    records
                 }
                 XAuthorityControlCommand::CloseSurface { .. } => {
                     let atoms = atoms

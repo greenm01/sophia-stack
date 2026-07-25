@@ -140,6 +140,34 @@ fn mit_shm_completion_uses_the_advertised_extension_event_layout() {
 #[test]
 fn present_complete_and_idle_notifications_use_xge_packed_layouts() {
     for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let configure = encode_x_client_event(
+            byte_order,
+            XClientEvent::PresentConfigureNotify {
+                sequence: 0x1233,
+                event_id: XResourceId::new(0x220900, 1),
+                window: XResourceId::new(0x220901, 1),
+                x: -12,
+                y: 34,
+                width: 960,
+                height: 640,
+                pixmap_width: 960,
+                pixmap_height: 640,
+                pixmap_flags: 0,
+            },
+        );
+        assert_eq!(configure.len(), 40);
+        assert_eq!(configure[0], 35);
+        assert_eq!(configure[1], X_PRESENT_MAJOR_OPCODE);
+        assert_eq!(read_u32(byte_order, &configure[4..8]), 2);
+        assert_eq!(read_u16(byte_order, &configure[8..10]), 0);
+        assert_eq!(read_u32(byte_order, &configure[12..16]), 0x220900);
+        assert_eq!(read_u32(byte_order, &configure[16..20]), 0x220901);
+        assert_eq!(read_u16(byte_order, &configure[24..26]), 960);
+        assert_eq!(read_u16(byte_order, &configure[26..28]), 640);
+        assert_eq!(read_u16(byte_order, &configure[32..34]), 960);
+        assert_eq!(read_u16(byte_order, &configure[34..36]), 640);
+        assert_eq!(read_u32(byte_order, &configure[36..40]), 0);
+
         let complete = encode_x_client_event(
             byte_order,
             XClientEvent::PresentCompleteNotify {
@@ -730,4 +758,3 @@ fn kitty_sync_and_colormap_teardown_requests_decode() {
         );
     }
 }
-

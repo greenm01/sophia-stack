@@ -149,6 +149,8 @@ fn production_authority_batch(
                 transaction: submission.transaction,
                 surface: submission.surface,
                 buffer: submission.buffer,
+                x_offset: submission.x_offset,
+                y_offset: submission.y_offset,
                 acquire_fence: submission.acquire_fence,
                 idle_fence: submission.idle_fence,
             })

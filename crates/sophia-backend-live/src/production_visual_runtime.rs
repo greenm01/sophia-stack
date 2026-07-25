@@ -21,19 +21,14 @@ fn replace_displayed_surface(
     transaction: TransactionId,
     layer: LiveRetainedDmaBufLayer,
 ) -> Option<TransactionId> {
-    let first_displayed_frame = !displayed_surfaces.contains_key(&surface);
     let previous = displayed_surfaces.insert(
         surface,
         LiveDisplayedSurface {
             layer,
-            retained_transaction: (!first_displayed_frame).then_some(transaction),
+            retained_transaction: Some(transaction),
         },
     );
-    if first_displayed_frame {
-        Some(transaction)
-    } else {
-        previous.and_then(|displayed| displayed.retained_transaction)
-    }
+    previous.and_then(|displayed| displayed.retained_transaction)
 }
 
 pub struct LiveProductionVisualRuntime {
@@ -44,6 +39,7 @@ pub struct LiveProductionVisualRuntime {
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
+    presentation_order: Vec<SurfaceId>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
 }
@@ -59,9 +55,11 @@ pub struct LiveProductionCycleRequest<'a> {
     pub raised_surface: Option<SurfaceId>,
     pub cursor_presentation: LiveProductionCursorPresentation,
     pub defer_frame: bool,
+    pub defer_present: bool,
     pub output_descriptors: &'a [sophia_engine::HeadlessOutput],
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub wm_update: Option<WmTransactionUpdate>,
+    pub presentation_layout: &'a [LayerSnapshot],
 }
 
 pub struct LiveAuthorityTransactionRun<'a> {
@@ -97,6 +95,7 @@ impl LiveProductionVisualRuntime {
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
             displayed_surfaces: BTreeMap::new(),
+            presentation_order: Vec::new(),
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
         })
@@ -152,10 +151,13 @@ impl LiveProductionVisualRuntime {
             raised_surface,
             cursor_presentation,
             defer_frame,
+            defer_present: _,
             output_descriptors,
             native_scanout,
             wm_update,
+            presentation_layout,
         } = request;
+        self.apply_presentation_layout(presentation_layout);
         self.presentation_feedback
             .observe_authority_resources(batch)?;
         self.release_removed_presentations(&batch.removed_surfaces);
@@ -263,10 +265,13 @@ impl LiveProductionVisualRuntime {
             raised_surface,
             cursor_presentation,
             defer_frame,
+            defer_present,
             output_descriptors,
             mut native_scanout,
             wm_update,
+            presentation_layout,
         } = request;
+        self.apply_presentation_layout(presentation_layout);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
         let compose_started = Instant::now();
@@ -302,6 +307,7 @@ impl LiveProductionVisualRuntime {
             if defer_frame { None } else { native_scanout },
             native_frames,
             wm_update,
+            defer_present,
         )?;
         Ok((
             LiveProductionCpuSubmission {
@@ -318,12 +324,47 @@ impl LiveProductionVisualRuntime {
         ))
     }
 
+    fn apply_presentation_layout(&mut self, layout: &[LayerSnapshot]) {
+        self.presentation_order.clear();
+        self.presentation_order
+            .extend(layout.iter().map(|layer| layer.surface));
+        for layer in layout {
+            self.present_scheduler
+                .reproject_surface(layer.surface, layer.geometry);
+            if let Some(transaction) = self.layers.get_mut(&layer.surface) {
+                transaction.target_geometry = layer.geometry;
+            }
+            if let Some(displayed) = self.displayed_surfaces.get_mut(&layer.surface) {
+                displayed.layer.reproject(layer.geometry);
+            }
+        }
+    }
+
+    fn retained_mixed_frame(
+        &self,
+    ) -> Result<Option<(TransactionId, LiveOwnedMixedCompositionFrame)>, std::io::Error> {
+        let mut transaction = None;
+        let mut layers = Vec::with_capacity(self.displayed_surfaces.len());
+        for surface in &self.presentation_order {
+            let Some(displayed) = self.displayed_surfaces.get(surface) else {
+                continue;
+            };
+            transaction = transaction.or(displayed.retained_transaction);
+            layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                frame: displayed.layer.frame.try_clone()?,
+                placement: displayed.layer.placement,
+            });
+        }
+        Ok(transaction.map(|transaction| (transaction, LiveOwnedMixedCompositionFrame { layers })))
+    }
+
     pub fn run_batch(
         &mut self,
         batch: &LiveProductionAuthorityBatch,
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         wm_update: Option<WmTransactionUpdate>,
+        defer_present: bool,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         self.presentation_feedback
             .observe_authority_resources(batch)?;
@@ -347,6 +388,9 @@ impl LiveProductionVisualRuntime {
                 self.layers.insert(transaction.surface, transaction.clone());
             }
             self.rebuild_input_layers();
+            if defer_present {
+                return self.run_observation_tick();
+            }
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
         }
         self.run_authority_transactions(LiveAuthorityTransactionRun {
@@ -419,7 +463,7 @@ impl LiveProductionVisualRuntime {
             transaction,
             queued.cpu_background.clone(),
             queued.target,
-            None,
+            Some(queued.surface_clip),
             1.0,
         )?;
         let current_layer = mixed
@@ -442,21 +486,46 @@ impl LiveProductionVisualRuntime {
                 surface = queued_surface.index(),
                 source_width = current_layer.frame.width,
                 source_height = current_layer.frame.height,
-                target_width = current_layer.placement.target.width,
-                target_height = current_layer.placement.target.height,
-                "rejected Present that would implicitly scale an X11 surface"
+                logical_width = current_layer
+                    .placement
+                    .clip
+                    .unwrap_or(current_layer.placement.target)
+                    .width,
+                logical_height = current_layer
+                    .placement
+                    .clip
+                    .unwrap_or(current_layer.placement.target)
+                    .height,
+                "rejected Present whose pixels do not match the logical X11 surface"
             );
             self.reject_gpu_presentation(transaction, 0, 0);
             return self.run_observation_tick();
         }
-        let mut retained_layers = Vec::new();
-        for (surface, displayed) in &self.displayed_surfaces {
+        let mut current_owned = Some(
+            mixed
+                .layers
+                .pop()
+                .ok_or("ready Present frame lost its current DMA-BUF layer")?,
+        );
+        for surface in &self.presentation_order {
             if *surface == queued_surface {
+                mixed.layers.push(
+                    current_owned
+                        .take()
+                        .ok_or("current Present appeared twice in the layout")?,
+                );
                 continue;
             }
-            retained_layers.push(displayed.layer.try_clone()?);
+            if let Some(displayed) = self.displayed_surfaces.get(surface) {
+                mixed.layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                    frame: displayed.layer.frame.try_clone()?,
+                    placement: displayed.layer.placement,
+                });
+            }
         }
-        mixed = compose_full_state_mixed_frame(mixed, retained_layers);
+        if let Some(current_owned) = current_owned {
+            mixed.layers.push(current_owned);
+        }
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 mixed
@@ -487,22 +556,28 @@ impl LiveProductionVisualRuntime {
                 live_transactions: self.presentation_feedback.resources().presentation_count(),
             }));
         }
+        let output_count = self.outputs.output_count();
+        for index in 0..output_count {
+            if index == primary_index {
+                continue;
+            }
+            native_scanout.queue_mixed_frame(
+                index,
+                transaction,
+                crate::try_clone_mixed_frame(&mixed)?,
+            );
+        }
         native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
 
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let production = &self.production;
         let outputs = &mut self.outputs;
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
-            1,
-            |invocation,
-             committed: &[CommittedSurfaceState]|
-             -> Result<_, Box<dyn std::error::Error>> {
-                if invocation != 0 {
-                    return Err("GPU presentation invoked more than one primary output".into());
-                }
-                outputs.run_output(primary_index, committed, |runtime| {
+            output_count,
+            |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
+                outputs.run_output(index, committed, |runtime| {
                     native_scanout.run_tick(
-                        primary_index,
+                        index,
                         runtime,
                         compositor_tick_input(&transactions, 0, Vec::new(), None),
                     )
@@ -512,7 +587,7 @@ impl LiveProductionVisualRuntime {
         let report = production
             .run_outputs(&mut adapter)?
             .into_iter()
-            .next()
+            .nth(primary_index)
             .ok_or("persistent backend runtime has no outputs")?;
         use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
         match report

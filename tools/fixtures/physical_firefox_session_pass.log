@@ -5,7 +5,7 @@ sophia_live_session_input_pipeline schema=1 status=desktop_pointer_active source
 sophia_live_wm schema=1 status=physical_action_committed action=768
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_live_wm schema=1 status=physical_action_committed action=1
-sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed
 sophia_live_wm schema=1 status=focus_committed transaction=1 target=surface
 sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal
 sophia_live_native_page_flip schema=1 status=retired output=1 submission=2
@@ -14,7 +14,7 @@ sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_p
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_session_startup schema=2 status=content_ready source=stable_present_scanout nonzero_rgb_pixels=144
 sophia_live_session_startup schema=2 status=ready elapsed_msec=700 surface=true visual_detail=true presented=true outputs_ready=2/2 recovery_attempts=0
-sophia_live_session_present schema=1 status=retired transaction=236 surface=2097168 source=2560x1440 target=2560x1440_0_0 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=236 surface=2097168 source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true
 sophia_live_session_input_pipeline schema=1 status=key_observed
 sophia_live_session_input_pipeline schema=1 status=key_routed
 sophia_live_session_input schema=1 status=ready source=physical text=sophia

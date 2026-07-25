@@ -22,6 +22,8 @@ pub struct LiveProductionPresentSubmission {
     pub transaction: TransactionId,
     pub surface: SurfaceId,
     pub buffer: BufferHandle,
+    pub x_offset: i16,
+    pub y_offset: i16,
     pub acquire_fence: Option<FenceHandle>,
     pub idle_fence: Option<FenceHandle>,
 }

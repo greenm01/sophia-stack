@@ -455,8 +455,12 @@
                 ) {
                     input_pixel_change = true;
                 }
+                let clip = retired.clip.map_or_else(
+                    || "none".to_owned(),
+                    |clip| format!("{}x{}_{}_{}", clip.width, clip.height, clip.x, clip.y),
+                );
                 println!(
-                    "sophia_live_session_present schema=1 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} unit_scale={}",
+                    "sophia_live_session_present schema=2 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} clip={} unit_scale={}",
                     retired.transaction.raw(),
                     retired.surface.index(),
                     retired.source_size.width,
@@ -465,8 +469,10 @@
                     retired.target.height,
                     retired.target.x,
                     retired.target.y,
-                    retired.source_size.width == retired.target.width
-                        && retired.source_size.height == retired.target.height,
+                    clip,
+                    retired.source_size.width == retired.clip.unwrap_or(retired.target).width
+                        && retired.source_size.height
+                            == retired.clip.unwrap_or(retired.target).height,
                 );
                 println!(
                     "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",
@@ -637,21 +643,36 @@
         if !startup_ready_reported
             && !startup_native_recovery_attempted
             && recovery_due
-            && let (Some(runtime), Some(current), Some(controller)) = (
-                runtime.as_mut(),
-                native_scanout.as_mut(),
-                seat_controller.as_ref(),
-            )
+            && runtime.is_some()
+            && native_scanout.is_some()
+            && seat_controller.is_some()
         {
             startup_native_recovery_attempted = true;
-            let suspended =
-                runtime.suspend_native_scanout(current, &outputs, Duration::from_millis(100))?;
-            let mut replacement =
-                LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
+            let mut current = native_scanout
+                .take()
+                .ok_or("startup native recovery lost the active scanout")?;
+            let suspended = runtime
+                .as_mut()
+                .ok_or("startup native recovery lost the visual runtime")?
+                .suspend_native_scanout(
+                    &mut current,
+                    &outputs,
+                    Duration::from_millis(100),
+                )?;
+            drop(current);
+            let mut replacement = LiveProductionNativeScanout::new_with_seat(
+                &seat_controller
+                    .as_ref()
+                    .ok_or("startup native recovery lost the seat controller")?
+                    .device_opener(),
+            )?;
             if replacement.outputs() != outputs {
                 return Err("startup native recovery changed the owned output topology".into());
             }
             let frames = scene.frames_for_outputs(&outputs)?;
+            let runtime = runtime
+                .as_mut()
+                .ok_or("startup native recovery lost the visual runtime")?;
             runtime.resume_native_scanout(&mut replacement, &outputs, frames)?;
             let _ = runtime.run_cpu_repaint(
                 &mut scene,
@@ -660,7 +681,7 @@
                 &outputs,
                 &mut replacement,
             )?;
-            *current = replacement;
+            *native_scanout = Some(replacement);
             retired_present_surfaces.clear();
             startup_content_ready = false;
             startup_required_submissions = None;

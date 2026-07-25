@@ -136,6 +136,13 @@ rather than borrowing the completed Kitty-only promotion.
   switching, and no input delivery to hidden or unfocused windows.
 - [ ] Prove correct retained content, cursor behavior, and independent
   page-flip retirement on both physical outputs.
+- [x] Emit mask-selected Present ConfigureNotify and require actual DMA-BUF or
+  CPU-buffer dimensions—not updated window geometry—as resize readiness.
+- [x] Queue partial resize Presents until the layout is ready, reject
+  mismatched pixels instead of treating clipping as resize completion, and
+  submit mixed/retained frames on every active output.
+- [ ] Physically prove three tiled Kitty windows remain simultaneously visible
+  without blinking before and after a TTY2/TTY3 round-trip.
 - [ ] Close both terminals and request xmonad logout; require normal return to
   the originating TTY and successful greetd restoration.
 - [ ] Run emergency recovery separately and require bounded input flush, KMS

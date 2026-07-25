@@ -2,10 +2,10 @@ sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=firefox source=action
 sophia_session_app schema=1 status=started id=firefox source=action
-sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_acks=1 outcome=Committed
-sophia_live_wm schema=1 status=layout_committed transaction=2 moved_surfaces=1 configure_acks=1 outcome=Committed
-sophia_live_wm schema=1 status=layout_committed transaction=3 moved_surfaces=1 configure_acks=1 outcome=Committed
-sophia_live_wm schema=1 status=layout_committed transaction=4 moved_surfaces=1 configure_acks=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=3 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=4 moved_surfaces=1 configure_deliveries=1 outcome=Committed
 sophia_live_wm schema=1 status=focus_committed transaction=4 target=surface
 sophia_live_wm schema=1 status=session_action_committed transaction=5 action=CloseFocused
 sophia_live_wm schema=1 status=session_action_committed transaction=6 action=CloseFocused

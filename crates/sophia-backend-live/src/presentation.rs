@@ -7,7 +7,7 @@
 use std::os::fd::OwnedFd;
 
 use sophia_protocol::{
-    BufferHandle, DmaBufDescriptor, FenceHandle, Rect, TransactionId, Transform,
+    BufferHandle, DmaBufDescriptor, FenceHandle, Rect, Size, TransactionId, Transform,
 };
 use sophia_renderer_live::{
     LiveBufferRegistryError, LiveBufferState, LiveCompositionPlacement, LiveCpuBufferSource,
@@ -40,8 +40,64 @@ impl LiveRetainedDmaBufLayer {
     }
 
     pub fn has_unit_scale(&self) -> bool {
-        self.placement.target.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
-            && self.placement.target.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
+        let logical = self.placement.clip.unwrap_or(self.placement.target);
+        logical.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
+            && logical.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
+    }
+
+    pub fn reproject(&mut self, surface: Rect) {
+        self.placement = pixel_aligned_dma_buf_placement(
+            Size {
+                width: i32::try_from(self.frame.width).unwrap_or(i32::MAX),
+                height: i32::try_from(self.frame.height).unwrap_or(i32::MAX),
+            },
+            surface,
+            None,
+            self.placement.alpha,
+        );
+    }
+}
+
+fn pixel_aligned_dma_buf_placement(
+    frame_size: Size,
+    surface: Rect,
+    clip: Option<Rect>,
+    alpha: f32,
+) -> LiveCompositionPlacement {
+    let target = Rect {
+        width: frame_size.width,
+        height: frame_size.height,
+        ..surface
+    };
+    let clip = if frame_size.width == surface.width && frame_size.height == surface.height {
+        clip
+    } else {
+        Some(intersect_rects(surface, clip.unwrap_or(surface)))
+    };
+    LiveCompositionPlacement {
+        target,
+        clip,
+        transform: Transform::IDENTITY,
+        alpha,
+    }
+}
+
+fn intersect_rects(left: Rect, right: Rect) -> Rect {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = left
+        .x
+        .saturating_add(left.width)
+        .min(right.x.saturating_add(right.width));
+    let bottom_edge = left
+        .y
+        .saturating_add(left.height)
+        .min(right.y.saturating_add(right.height));
+    Rect {
+        x,
+        y,
+        width: right_edge.saturating_sub(x).max(0),
+        height: bottom_edge.saturating_sub(y).max(0),
     }
 }
 
@@ -60,6 +116,30 @@ pub fn compose_full_state_mixed_frame(
         current.layers.push(current_layer);
     }
     current
+}
+
+pub fn try_clone_mixed_frame(
+    frame: &LiveOwnedMixedCompositionFrame,
+) -> std::io::Result<LiveOwnedMixedCompositionFrame> {
+    let layers = frame
+        .layers
+        .iter()
+        .map(|layer| match layer {
+            LiveOwnedMixedCompositionLayer::Cpu { buffer, placement } => {
+                Ok(LiveOwnedMixedCompositionLayer::Cpu {
+                    buffer: buffer.clone(),
+                    placement: *placement,
+                })
+            }
+            LiveOwnedMixedCompositionLayer::DmaBuf { frame, placement } => {
+                Ok(LiveOwnedMixedCompositionLayer::DmaBuf {
+                    frame: frame.try_clone()?,
+                    placement: *placement,
+                })
+            }
+        })
+        .collect::<std::io::Result<Vec<_>>>()?;
+    Ok(LiveOwnedMixedCompositionFrame { layers })
 }
 
 #[derive(Debug, Default)]
@@ -192,12 +272,7 @@ impl LivePresentationResourceSession {
                 plane_count: descriptor.plane_count,
                 planes,
             },
-            placement: LiveCompositionPlacement {
-                target,
-                clip,
-                transform: Transform::IDENTITY,
-                alpha,
-            },
+            placement: pixel_aligned_dma_buf_placement(descriptor.size, target, clip, alpha),
         });
         Ok(LiveOwnedMixedCompositionFrame { layers })
     }

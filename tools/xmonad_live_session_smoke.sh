@@ -48,7 +48,12 @@ if (( status != 0 )); then
     exit "$status"
 fi
 
-grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* moved_surfaces=1 configure_acks=1 outcome=Committed$' "$EVIDENCE_FILE"
+grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* moved_surfaces=1 configure_deliveries=1 outcome=Committed$' "$EVIDENCE_FILE"
+grep -Eq '^sophia_live_session_present schema=2 status=retired .* source=960x640 .* unit_scale=true$' "$EVIDENCE_FILE"
+if grep -Eq '^sophia_live_session_present schema=2 .* unit_scale=false$' "$EVIDENCE_FILE"; then
+    echo "real Kitty resize presented mismatched source pixels" >&2
+    exit 1
+fi
 grep -Eq '^sophia_session_app schema=1 status=started id=terminal source=startup$' "$EVIDENCE_FILE"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' "$EVIDENCE_FILE"
 completion="$(grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$EVIDENCE_FILE")"

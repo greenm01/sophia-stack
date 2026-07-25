@@ -3,7 +3,7 @@ use crate::{
     LiveProductionAuthorityBatch,
 };
 use sophia_engine::PreparedSurfaceCommit;
-use sophia_protocol::{Rect, SurfaceTransaction, TransactionId};
+use sophia_protocol::{Rect, SurfaceId, SurfaceTransaction, TransactionId};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::time::{Duration, Instant};
@@ -15,6 +15,9 @@ pub struct LiveProductionQueuedPresent {
     pub transactions: Vec<SurfaceTransaction>,
     pub cpu_background: Option<LiveCpuComposedFrame>,
     pub target: Rect,
+    pub surface_clip: Rect,
+    x_offset: i16,
+    y_offset: i16,
     deadline: Instant,
     not_before: Instant,
 }
@@ -70,6 +73,8 @@ impl LiveProductionPresentScheduler {
     ) -> Result<(), Box<dyn Error>> {
         for submission in &batch.present_submissions {
             let surface = submission.surface;
+            let x_offset = submission.x_offset;
+            let y_offset = submission.y_offset;
             let transaction = batch
                 .transactions
                 .iter()
@@ -95,13 +100,45 @@ impl LiveProductionPresentScheduler {
                 surface,
                 transactions: batch.transactions.clone(),
                 cpu_background: cpu_background.clone(),
-                target: transaction.target_geometry,
+                target: Rect {
+                    x: transaction
+                        .target_geometry
+                        .x
+                        .saturating_add(i32::from(x_offset)),
+                    y: transaction
+                        .target_geometry
+                        .y
+                        .saturating_add(i32::from(y_offset)),
+                    ..transaction.target_geometry
+                },
+                surface_clip: transaction.target_geometry,
+                x_offset,
+                y_offset,
                 deadline: not_before
                     + Duration::from_millis(u64::from(transaction.timeout_msec.clamp(100, 2_000))),
                 not_before,
             });
         }
         Ok(())
+    }
+
+    pub fn reproject_surface(&mut self, surface: SurfaceId, geometry: Rect) {
+        for queued in &mut self.queued {
+            if queued.surface != surface {
+                continue;
+            }
+            queued.target = Rect {
+                x: geometry.x.saturating_add(i32::from(queued.x_offset)),
+                y: geometry.y.saturating_add(i32::from(queued.y_offset)),
+                ..geometry
+            };
+            queued.surface_clip = geometry;
+            for transaction in &mut queued.transactions {
+                if transaction.surface == surface {
+                    transaction.target_geometry = geometry;
+                }
+            }
+        }
     }
 
     pub fn poll_gate(

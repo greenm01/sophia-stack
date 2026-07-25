@@ -192,6 +192,18 @@ pub enum XClientEvent {
         segment: XResourceId,
         offset: u32,
     },
+    PresentConfigureNotify {
+        sequence: u16,
+        event_id: XResourceId,
+        window: XResourceId,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        pixmap_width: u16,
+        pixmap_height: u16,
+        pixmap_flags: u32,
+    },
     PresentCompleteNotify {
         sequence: u16,
         event_id: XResourceId,

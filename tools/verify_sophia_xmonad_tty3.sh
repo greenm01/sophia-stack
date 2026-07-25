@@ -188,12 +188,10 @@ require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=f
 require_line '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" "normal session emitted an unexpected X protocol error"
 require_line \
-    '^sophia_live_session_present schema=1 status=retired transaction=[0-9]+ surface=[0-9]+ source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+ unit_scale=true$' \
-    "$SESSION_LOG" "no unit-scale DMA-BUF presentation was retired"
-if grep -Eq \
-    'sophia_live_session_present schema=1 status=retired .* unit_scale=false$|rejected Present that would implicitly scale an X11 surface' \
-    "$SESSION_LOG"; then
-    fail "session attempted to scale an X11 client buffer implicitly"
+    '^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=[0-9]+ source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+ clip=(none|[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+) unit_scale=true$' \
+    "$SESSION_LOG" "no pixel-matched DMA-BUF presentation was retired"
+if grep -Eq '^sophia_live_session_present schema=2 .* unit_scale=false$' "$SESSION_LOG"; then
+    fail "session presented a DMA-BUF whose pixels did not match its logical surface"
 fi
 
 mapfile -t completions < <(

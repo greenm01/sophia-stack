@@ -115,7 +115,7 @@
                     && layout.resize.committed_size(surface) == Some(size)
                 {
                     println!(
-                        "sophia_live_resize schema=1 status=committed transaction={} surface={} width={} height={} configure_ack=true pixels=true",
+                        "sophia_live_resize schema=1 status=committed transaction={} surface={} width={} height={} configure_delivered=true pixels=true",
                         transaction.raw(),
                         surface.index(),
                         size.width,
@@ -239,6 +239,9 @@
                 } else {
                     LiveProductionCursorPresentation::Software(pointer.position)
                 };
+                let mut presentation_layout =
+                    layout.layers.values().cloned().collect::<Vec<_>>();
+                presentation_layout.sort_by_key(|layer| layer.stack_rank);
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if batch.present_submissions.is_empty() {
                         let (submission, committed_surfaces) =
@@ -249,6 +252,7 @@
                                 raised_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
+                                defer_present: layout.pending.is_some(),
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -256,6 +260,7 @@
                                     native_scanout.as_mut()
                                 },
                                 wm_update,
+                                presentation_layout: &presentation_layout,
                             })?;
                         (
                             submission.tick,
@@ -273,6 +278,7 @@
                                 raised_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
+                                defer_present: layout.pending.is_some(),
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -280,6 +286,7 @@
                                     native_scanout.as_mut()
                                 },
                                 wm_update,
+                                presentation_layout: &presentation_layout,
                             })?;
                         (
                             submission.tick,
@@ -472,8 +479,17 @@
                         ) {
                             input_pixel_change = true;
                         }
+                        let clip = retired.clip.map_or_else(
+                            || "none".to_owned(),
+                            |clip| {
+                                format!(
+                                    "{}x{}_{}_{}",
+                                    clip.width, clip.height, clip.x, clip.y
+                                )
+                            },
+                        );
                         println!(
-                            "sophia_live_session_present schema=1 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} unit_scale={}",
+                            "sophia_live_session_present schema=2 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} clip={} unit_scale={}",
                             retired.transaction.raw(),
                             retired.surface.index(),
                             retired.source_size.width,
@@ -482,8 +498,11 @@
                             retired.target.height,
                             retired.target.x,
                             retired.target.y,
-                            retired.source_size.width == retired.target.width
-                                && retired.source_size.height == retired.target.height,
+                            clip,
+                            retired.source_size.width
+                                == retired.clip.unwrap_or(retired.target).width
+                                && retired.source_size.height
+                                    == retired.clip.unwrap_or(retired.target).height,
                         );
                         println!(
                             "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",

@@ -60,6 +60,7 @@ pub struct LiveProductionRetiredPresent {
     pub surface: SurfaceId,
     pub source_size: Size,
     pub target: Rect,
+    pub clip: Option<Rect>,
 }
 
 #[derive(Debug)]

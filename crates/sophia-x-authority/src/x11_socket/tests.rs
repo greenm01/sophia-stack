@@ -356,6 +356,44 @@ fn present_feedback_reaches_every_matching_event_selection() {
 }
 
 #[test]
+fn present_configure_selection_uses_only_masked_matching_windows() {
+    let client = XServerFrontendClientId(11);
+    let other_client = XServerFrontendClientId(12);
+    let window = XResourceId::new(0x400010, 1);
+    let other_window = XResourceId::new(0x400011, 1);
+    let configure = XResourceId::new(0x400014, 1);
+    let feedback_only = XResourceId::new(0x400015, 1);
+    let wrong_window = XResourceId::new(0x400016, 1);
+    let wrong_client = XResourceId::new(0x400017, 1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+
+    broker
+        .registry
+        .select_present_input(client, configure, window, 0b111)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(client, feedback_only, window, 0b110)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(client, wrong_window, other_window, 0b001)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(other_client, wrong_client, window, 0b001)
+        .unwrap();
+
+    assert_eq!(
+        broker
+            .registry
+            .present_configure_event_ids(client, window)
+            .unwrap(),
+        vec![configure]
+    );
+}
+
+#[test]
 fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
     let client = XServerFrontendClientId(10);
     let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(1).unwrap());

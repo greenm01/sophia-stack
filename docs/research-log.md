@@ -3,6 +3,52 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-25: Present Configure And Pixel Size Define Resize Readiness
+
+The physical three- and four-Kitty trace disproved the earlier placement-only
+resize fix. Xmonad requested 1280-by-720 and 1280-by-480 tiles, but every
+retired Kitty source remained 1280-by-1440. The frontend emitted core
+`ConfigureNotify` only, although Mesa's DRI3 loader selects Present
+`ConfigureNotify` and uses it to update drawable dimensions. The session then
+mistook the already-updated window geometry for matching pixels and committed
+the layout before the client had allocated a resized DMA-BUF.
+
+Engine-driven X11 resize now emits the standard mask-selected Present
+configuration event in addition to core configure and expose delivery. Live
+resize readiness resolves the actual DMA-BUF or CPU-buffer dimensions by
+handle; target window geometry is no longer pixel evidence. Present submissions
+for a partial multi-surface resize remain queued while the layout is pending,
+and a mismatched source is rejected rather than clipped and reported as a
+successful resize. Configure evidence is named delivery rather than
+acknowledgement because X11 clients do not acknowledge core configure events.
+
+The same trace exposed an independent output-service defect: the primary output
+continued retiring mixed frames while output 2 retained only its startup
+submission. Mixed and retained-resume frames are now queued on every active
+output so each KMS head participates in the presentation lifecycle.
+
+## 2026-07-25: Retained Frames Follow One Atomic Layout Snapshot
+
+A physical three-Kitty xmonad run kept submitting and retiring KMS frames but
+showed a blinking third tile, then only two visible tiles after a TTY
+round-trip. The trace proved that client DMA-BUF sources remained valid while
+individual Present records crossed a two-to-three-window layout transition with
+different geometry. Per-surface page-flip health was therefore not sufficient
+full-state evidence.
+
+The production runtime keeps retained frame ownership separate from
+placement. Every cycle projects queued and displayed Presents through one
+stack-ordered WM layout snapshot before composition. DMA-BUF pixels remain
+unscaled; clipping is not accepted as proof that a client completed a resize.
+Present source offsets remain frontend facts carried to the generic backend. The first displayed
+buffer stays busy until replacement instead of receiving an immediate Idle.
+Native resume also queues a complete retained mixed frame, so quiet clients do
+not have to repaint merely to recover visible contents after a VT switch.
+
+This is protocol-neutral visual state. The Engine and renderer contain no
+Kitty or xmonad policy. Physical promotion remains open until three windows
+stay visible before and after a TTY2/TTY3 round-trip.
+
 ## 2026-07-24: Empty Desktop Input Remains Engine-Owned
 
 The first physical xmonad run after controlled stale-Present retirement proved

@@ -21,7 +21,7 @@ for mutation in \
     'status=retired output=2 ' \
     'schema=5 status=quiesced target=' \
     'schema=1 status=active source=resume' \
-    'unit_scale=true' \
+    'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
     'sophia_live_session_cursor schema=2 '; do
     grep -Fv "$mutation" "$SESSION" >"$TEMP_FILE"
     if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \

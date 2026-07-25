@@ -112,7 +112,7 @@ if [[ "${observed[schema]}" =~ ^(12|13|14)$ ]]; then
         exit 1
     fi
     if [[ "${observed[surface_resize]}" == "committed" ]] \
-        && [[ "$(grep -Ec '^sophia_live_resize schema=1 status=committed transaction=[1-9][0-9]* surface=[1-9][0-9]* width=[1-9][0-9]* height=[1-9][0-9]* configure_ack=true pixels=true$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
+        && [[ "$(grep -Ec '^sophia_live_resize schema=1 status=committed transaction=[1-9][0-9]* surface=[1-9][0-9]* width=[1-9][0-9]* height=[1-9][0-9]* configure_delivered=true pixels=true$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
         echo "persistent live-session evidence is missing committed resize pixels" >&2
         exit 1
     fi

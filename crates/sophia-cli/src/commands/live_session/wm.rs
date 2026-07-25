@@ -398,6 +398,8 @@ struct PendingLiveWmLayout {
 #[derive(Default)]
 struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
+    dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: BTreeMap<u64, Size>,
     resize: ResizeRollbackCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
@@ -421,18 +423,44 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> Vec<SurfaceId> {
         self.client_routes.observe(batch);
+        for registration in &batch.dma_buf_registrations {
+            self.dma_buf_sizes
+                .insert(registration.descriptor.handle, registration.descriptor.size);
+        }
+        for update in &batch.cpu_buffer_updates {
+            match update {
+                sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(buffer) => {
+                    self.cpu_buffer_sizes.insert(buffer.handle, buffer.size);
+                }
+                sophia_x_authority::XAuthorityCpuBufferUpdate::Patch(patch) => {
+                    self.cpu_buffer_sizes.insert(patch.handle, patch.size);
+                }
+            }
+        }
+        for handle in &batch.released_dma_bufs {
+            self.dma_buf_sizes.remove(handle);
+        }
         self.remove_surfaces(&batch.removed_surfaces);
         let mut new_surfaces = Vec::new();
         for (index, transaction) in batch.transactions.iter().enumerate() {
-            let size = Size {
+            let geometry_size = Size {
                 width: transaction.target_geometry.width,
                 height: transaction.target_geometry.height,
             };
-            if !self.resize.accept_observation(transaction.surface, size) {
+            let pixel_size = live_transaction_pixel_size(
+                transaction.target_buffer,
+                &self.dma_buf_sizes,
+                &self.cpu_buffer_sizes,
+            );
+            let observed_size = pixel_size.unwrap_or(geometry_size);
+            if !self
+                .resize
+                .accept_observation(transaction.surface, observed_size)
+            {
                 continue;
             }
             let staged_for_resize = self.pending.as_ref().is_some_and(|pending| {
-                pending.requested_sizes.get(&transaction.surface) == Some(&size)
+                pending.requested_sizes.get(&transaction.surface) == pixel_size.as_ref()
             });
             if staged_for_resize {
                 let pending = self.pending.as_mut().expect("checked above");
@@ -450,7 +478,8 @@ impl PersistentLiveLayout {
                 }
                 continue;
             }
-            self.resize.record_committed(transaction.surface, size);
+            self.resize
+                .record_committed(transaction.surface, observed_size);
             match self.layers.get_mut(&transaction.surface) {
                 Some(layer) => {
                     layer.source = transaction.target_buffer;
@@ -619,10 +648,14 @@ impl PersistentLiveLayout {
             pending
                 .staged_transactions
                 .get(surface)
-                .is_some_and(|transaction| {
-                    transaction.target_geometry.width == size.width
-                        && transaction.target_geometry.height == size.height
+                .and_then(|transaction| {
+                    live_transaction_pixel_size(
+                        transaction.target_buffer,
+                        &self.dma_buf_sizes,
+                        &self.cpu_buffer_sizes,
+                    )
                 })
+                == Some(*size)
         });
         if !ready {
             return None;
@@ -738,13 +771,13 @@ impl PersistentLiveLayout {
     fn commit_pending(&mut self, pending: PendingLiveWmLayout) -> LiveWmCommitResult {
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
-                self.resize.record_committed(
-                    transaction.surface,
-                    Size {
-                        width: transaction.target_geometry.width,
-                        height: transaction.target_geometry.height,
-                    },
-                );
+                if let Some(size) = live_transaction_pixel_size(
+                    transaction.target_buffer,
+                    &self.dma_buf_sizes,
+                    &self.cpu_buffer_sizes,
+                ) {
+                    self.resize.record_committed(transaction.surface, size);
+                }
             }
         }
         self.layers = pending
@@ -756,7 +789,7 @@ impl PersistentLiveLayout {
             self.focus_to_apply = Some((pending.transaction, surface));
         }
         println!(
-            "sophia_live_wm schema=1 status=layout_committed transaction={} surfaces={} moved_surfaces={} configure_acks={} outcome={:?}",
+            "sophia_live_wm schema=1 status=layout_committed transaction={} surfaces={} moved_surfaces={} configure_deliveries={} outcome={:?}",
             pending.transaction.raw(),
             self.layers.len(),
             pending.moved_surfaces,
@@ -779,6 +812,23 @@ impl PersistentLiveLayout {
         // transaction and buffer update in order, but pin its geometry to the
         // last layout decision until a coherent proposal commits.
         project_authority_batch_onto_layout(batch.clone(), &self.layers)
+    }
+}
+
+fn live_transaction_pixel_size(
+    source: sophia_protocol::BufferSource,
+    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: &BTreeMap<u64, Size>,
+) -> Option<Size> {
+    match source {
+        sophia_protocol::BufferSource::DmaBuf { handle } => {
+            dma_buf_sizes.get(&sophia_protocol::BufferHandle::from_raw(handle)).copied()
+        }
+        sophia_protocol::BufferSource::CpuBuffer { handle } => {
+            cpu_buffer_sizes.get(&handle).copied()
+        }
+        sophia_protocol::BufferSource::None
+        | sophia_protocol::BufferSource::XPixmap { .. } => None,
     }
 }
 

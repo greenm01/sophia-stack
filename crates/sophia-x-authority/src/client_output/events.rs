@@ -287,6 +287,36 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[12..16], segment);
             put_u32(byte_order, &mut out[16..20], offset);
         }
+        XClientEvent::PresentConfigureNotify {
+            sequence,
+            event_id,
+            window,
+            x,
+            y,
+            width,
+            height,
+            pixmap_width,
+            pixmap_height,
+            pixmap_flags,
+        } => {
+            out.resize(40, 0);
+            out[0] = 35;
+            out[1] = crate::X_PRESENT_MAJOR_OPCODE;
+            put_u16(byte_order, &mut out[2..4], sequence);
+            put_u32(byte_order, &mut out[4..8], 2);
+            put_u16(byte_order, &mut out[8..10], 0);
+            put_resource(byte_order, &mut out[12..16], event_id);
+            put_resource(byte_order, &mut out[16..20], window);
+            put_i16(byte_order, &mut out[20..22], x);
+            put_i16(byte_order, &mut out[22..24], y);
+            put_u16(byte_order, &mut out[24..26], width);
+            put_u16(byte_order, &mut out[26..28], height);
+            put_i16(byte_order, &mut out[28..30], 0);
+            put_i16(byte_order, &mut out[30..32], 0);
+            put_u16(byte_order, &mut out[32..34], pixmap_width);
+            put_u16(byte_order, &mut out[34..36], pixmap_height);
+            put_u32(byte_order, &mut out[36..40], pixmap_flags);
+        }
         XClientEvent::PresentCompleteNotify {
             sequence,
             event_id,
@@ -464,4 +494,3 @@ fn write_pointer_event(
     put_u16(byte_order, &mut out[28..30], state);
     out[30] = 1;
 }
-

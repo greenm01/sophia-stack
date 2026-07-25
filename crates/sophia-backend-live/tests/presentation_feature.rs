@@ -103,6 +103,45 @@ fn backend_session_builds_mixed_cpu_gpu_frame_and_retires_exactly_once() {
 }
 
 #[test]
+fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
+    let handle = BufferHandle::from_raw(17);
+    let transaction = TransactionId::from_raw(18);
+    let mut session = LivePresentationResourceSession::default();
+    session
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    session
+        .begin(LivePresentationSubmission {
+            transaction,
+            buffer: handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+    let surface = Rect {
+        x: 64,
+        y: 12,
+        width: 32,
+        height: 48,
+    };
+
+    let frame = session
+        .build_mixed_frame(transaction, None, surface, None, 1.0)
+        .unwrap();
+    let LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. } = &frame.layers[0] else {
+        panic!("expected a DMA-BUF layer");
+    };
+    assert_eq!(
+        placement.target,
+        Rect {
+            width: 64,
+            ..surface
+        }
+    );
+    assert_eq!(placement.clip, Some(surface));
+}
+
+#[test]
 fn full_state_composition_keeps_retained_surface_before_current_damage() {
     let placement = |x| LiveCompositionPlacement {
         target: Rect {
@@ -433,6 +472,8 @@ fn scheduler_batch(
             transaction,
             surface,
             buffer: handle,
+            x_offset: 0,
+            y_offset: 0,
             acquire_fence: None,
             idle_fence: None,
         }],
@@ -482,4 +523,42 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
     );
     assert_eq!(scheduler.controlled_rejections(), 1);
     assert!(!scheduler.has_queued());
+}
+
+#[test]
+fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
+    let handle = BufferHandle::from_raw(47);
+    let transaction = TransactionId::from_raw(48);
+    let surface = SurfaceId::new(49, 1);
+    let mut batch = scheduler_batch(transaction, surface, handle);
+    batch.present_submissions[0].x_offset = 3;
+    batch.present_submissions[0].y_offset = -4;
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_batch(&batch, None, &mut resources, Instant::now())
+        .unwrap();
+    let geometry = Rect {
+        x: 1280,
+        y: 720,
+        width: 1280,
+        height: 720,
+    };
+
+    scheduler.reproject_surface(surface, geometry);
+
+    let queued = scheduler.front().unwrap();
+    assert_eq!(queued.surface_clip, geometry);
+    assert_eq!(
+        queued.target,
+        Rect {
+            x: 1283,
+            y: 716,
+            ..geometry
+        }
+    );
+    assert_eq!(queued.transactions[0].target_geometry, geometry);
 }

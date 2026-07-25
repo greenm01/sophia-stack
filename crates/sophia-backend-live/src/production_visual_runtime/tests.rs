@@ -58,12 +58,12 @@ fn displayed_surface_keeps_frame_and_placement_in_one_snapshot() {
 
     assert_eq!(
         replace_displayed_surface(&mut displayed, surface, first, layer(64, half)),
-        Some(first)
+        None
     );
     assert_eq!(displayed[&surface].layer.placement.target, half);
     assert_eq!(
         replace_displayed_surface(&mut displayed, surface, second, layer(64, half)),
-        None
+        Some(first)
     );
     assert_eq!(
         replace_displayed_surface(&mut displayed, surface, third, layer(128, full)),
@@ -75,7 +75,7 @@ fn displayed_surface_keeps_frame_and_placement_in_one_snapshot() {
 }
 
 #[test]
-fn displayed_layer_rejects_implicit_scaling_and_clones_exact_placement() {
+fn displayed_layer_reports_scaling_and_clones_exact_placement() {
     let target = Rect {
         x: 64,
         y: 0,

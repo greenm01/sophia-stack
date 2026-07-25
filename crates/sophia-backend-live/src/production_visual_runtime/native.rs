@@ -66,6 +66,20 @@ impl LiveProductionVisualRuntime {
             Some(native_scanout),
             Some(frames),
         )?;
+        if let Some((transaction, frame)) = self.retained_mixed_frame()? {
+            let output_count = self.outputs.output_count();
+            for index in 0..output_count {
+                if index + 1 == output_count {
+                    native_scanout.queue_mixed_frame(index, transaction, frame);
+                    break;
+                }
+                native_scanout.queue_mixed_frame(
+                    index,
+                    transaction,
+                    crate::try_clone_mixed_frame(&frame)?,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -238,6 +252,7 @@ impl LiveProductionVisualRuntime {
             height: i32::try_from(submitted.displayed_layer.frame.height).unwrap_or(i32::MAX),
         };
         let target = submitted.displayed_layer.placement.target;
+        let clip = submitted.displayed_layer.placement.clip;
         let transaction_to_idle = replace_displayed_surface(
             &mut self.displayed_surfaces,
             submitted.surface,
@@ -254,6 +269,7 @@ impl LiveProductionVisualRuntime {
             surface: submitted.surface,
             source_size,
             target,
+            clip,
         }))
     }
 

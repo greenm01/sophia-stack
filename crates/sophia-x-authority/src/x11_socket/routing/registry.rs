@@ -291,6 +291,25 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
+    fn present_configure_event_ids(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+    ) -> Result<Vec<XResourceId>, XServerFrontendRouteError> {
+        Ok(self
+            .present_subscriptions
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .filter_map(|((subscription_client, _), subscription)| {
+                (*subscription_client == client
+                    && subscription.window == window
+                    && subscription.mask & 1 != 0)
+                    .then_some(subscription.event_id)
+            })
+            .collect())
+    }
+
     fn queue_present(
         &self,
         transaction: TransactionId,
