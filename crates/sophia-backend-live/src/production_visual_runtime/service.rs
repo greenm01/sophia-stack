@@ -18,6 +18,7 @@ impl LiveProductionCursorPresentation {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LiveProductionVisualDiagnostics {
     pub present_queued: bool,
+    pub present_scheduling_blocked: bool,
     pub live_sources: usize,
     pub live_fences: usize,
     pub live_presentations: usize,
@@ -29,6 +30,7 @@ impl LiveProductionVisualRuntime {
     pub fn diagnostics(&self) -> LiveProductionVisualDiagnostics {
         LiveProductionVisualDiagnostics {
             present_queued: self.present_scheduler.has_queued(),
+            present_scheduling_blocked: self.present_scheduling_blocked,
             live_sources: self.presentation_feedback.resources().source_count(),
             live_fences: self.presentation_feedback.resources().fence_count(),
             live_presentations: self.presentation_feedback.resources().presentation_count(),
@@ -153,7 +155,7 @@ impl LiveProductionVisualRuntime {
             let output_states = self.native_output_service_states(native_scanout)?;
             let observation = reduce_live_production_async_service_observation(
                 &output_states,
-                self.diagnostics().present_queued,
+                self.diagnostics().present_queued && !self.diagnostics().present_scheduling_blocked,
             )?;
             let phase = coordinator.next_phase(observation);
             match phase {
@@ -169,7 +171,8 @@ impl LiveProductionVisualRuntime {
                     pending_frame_polled = true;
                     tick = Some(self.run_native_idle_with_primary_reservation(
                         native_scanout,
-                        self.diagnostics().present_queued,
+                        self.diagnostics().present_queued
+                            && !self.diagnostics().present_scheduling_blocked,
                     )?);
                 }
                 None => break,

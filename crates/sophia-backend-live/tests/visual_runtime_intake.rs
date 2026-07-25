@@ -108,3 +108,14 @@ fn gpu_scanout_preservation_follows_post_batch_active_transactions() {
     assert!(!live_production_transactions_require_gpu_scanout(&[cpu]));
     assert!(!live_production_transactions_require_gpu_scanout(&[]));
 }
+
+#[test]
+fn resize_epoch_hold_persists_across_native_service_boundaries() {
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
+
+    runtime.set_present_scheduling_blocked(true);
+    assert!(runtime.diagnostics().present_scheduling_blocked);
+
+    runtime.set_present_scheduling_blocked(false);
+    assert!(!runtime.diagnostics().present_scheduling_blocked);
+}

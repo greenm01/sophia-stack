@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use sophia_protocol::{LayerSnapshot, Size, SurfaceId, TransactionId};
+use sophia_protocol::{BufferHandle, LayerSnapshot, Size, SurfaceId, TransactionId};
 use sophia_x_authority::XAuthorityObservedTransactionBatch;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,4 +118,17 @@ pub fn project_authority_batch_onto_layout(
         }
     }
     batch
+}
+
+pub fn present_pixels_conflict_with_requested_sizes(
+    requested_sizes: &BTreeMap<SurfaceId, Size>,
+    dma_buf_sizes: &BTreeMap<BufferHandle, Size>,
+    batch: &XAuthorityObservedTransactionBatch,
+) -> bool {
+    batch.present_submissions.iter().any(|submission| {
+        requested_sizes
+            .get(&submission.surface)
+            .zip(dma_buf_sizes.get(&submission.buffer))
+            .is_some_and(|(expected, actual)| actual != expected)
+    })
 }

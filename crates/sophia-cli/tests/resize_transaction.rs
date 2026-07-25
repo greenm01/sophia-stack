@@ -1,15 +1,16 @@
 use std::collections::BTreeMap;
 
 use sophia_cli::resize_transaction::{
-    ResizeRollbackCoordinator, project_authority_batch_onto_layout,
+    ResizeRollbackCoordinator, present_pixels_conflict_with_requested_sizes,
+    project_authority_batch_onto_layout,
 };
 use sophia_protocol::{
-    AuthorityKind, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability, Size,
-    SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
+    AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
+    Size, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
 };
 use sophia_x_authority::{
     XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate, XAuthorityObservedTransactionBatch,
-    XResourceId,
+    XAuthorityPresentSubmission, XResourceId,
 };
 
 fn size(width: i32, height: i32) -> Size {
@@ -159,4 +160,47 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
         committed_geometry
     );
     assert_eq!(projected.cpu_buffer_updates, vec![update]);
+}
+
+#[test]
+fn wrong_size_present_conflicts_but_matching_pixels_can_enter_resize_quarantine() {
+    let surface = SurfaceId::new(6, 1);
+    let handle = BufferHandle::from_raw(12);
+    let requested = BTreeMap::from([(surface, size(2560, 1440))]);
+    let mut buffers = BTreeMap::from([(handle, size(1280, 1440))]);
+    let mut batch = XAuthorityObservedTransactionBatch {
+        client: None,
+        transaction: TransactionId::from_raw(119),
+        transactions: Vec::new(),
+        removed_surfaces: Vec::new(),
+        cpu_buffer_updates: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        present_submissions: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+        protocol_errors: Vec::new(),
+        expected_protocol_errors: Vec::new(),
+        metadata: Vec::new(),
+        selection_owner_change: false,
+        selection_conversion: false,
+    };
+    batch.present_submissions.push(XAuthorityPresentSubmission {
+        transaction: TransactionId::from_raw(120),
+        surface,
+        buffer: handle,
+        x_offset: 0,
+        y_offset: 0,
+        acquire_fence: None,
+        idle_fence: None,
+    });
+
+    assert!(present_pixels_conflict_with_requested_sizes(
+        &requested, &buffers, &batch
+    ));
+
+    buffers.insert(handle, size(2560, 1440));
+    assert!(!present_pixels_conflict_with_requested_sizes(
+        &requested, &buffers, &batch
+    ));
 }

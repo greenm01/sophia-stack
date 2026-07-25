@@ -403,6 +403,7 @@ struct PersistentLiveLayout {
     resize: ResizeRollbackCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
+    admission_retries: BTreeMap<SurfaceId, u8>,
     pending: Option<PendingLiveWmLayout>,
     focus_to_apply: Option<(TransactionId, SurfaceId)>,
     stage_new_surfaces_offset: bool,
@@ -527,6 +528,7 @@ impl PersistentLiveLayout {
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
             self.resize.remove(*surface);
+            self.admission_retries.remove(surface);
         }
         self.unmanaged_surfaces
             .retain(|surface| !removed_surfaces.contains(surface));
@@ -553,11 +555,13 @@ impl PersistentLiveLayout {
     }
 
     fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
-        self.unmanaged_surfaces.iter().next().copied()
-    }
-
-    fn mark_surface_managed(&mut self, surface: SurfaceId) {
-        self.unmanaged_surfaces.remove(&surface);
+        if self.resize.rollback_surfaces().next().is_some() {
+            return None;
+        }
+        self.unmanaged_surfaces
+            .iter()
+            .find(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) <= 1)
+            .copied()
     }
 
     fn stage(
@@ -639,6 +643,19 @@ impl PersistentLiveLayout {
             staged_transactions: BTreeMap::new(),
             effects: proposal.effects,
         });
+        println!(
+            "sophia_live_resize_epoch schema=1 status=held transaction={} surfaces={}",
+            self.pending
+                .as_ref()
+                .expect("pending layout was just installed")
+                .transaction
+                .raw(),
+            self.pending
+                .as_ref()
+                .expect("pending layout was just installed")
+                .requested_sizes
+                .len(),
+        );
         Ok(None)
     }
 
@@ -677,6 +694,12 @@ impl PersistentLiveLayout {
             return Ok(None);
         }
         let pending = self.pending.take().expect("checked above");
+        let admission_surfaces = pending
+            .layers
+            .iter()
+            .map(|layer| layer.surface)
+            .filter(|surface| self.unmanaged_surfaces.contains(surface))
+            .collect::<Vec<_>>();
         let rollback = self.resize.begin_rollback(
             pending
                 .requested_sizes
@@ -737,9 +760,15 @@ impl PersistentLiveLayout {
             pending.requested_sizes.len(),
             resize_state,
         );
-        if let Some(surface) = pending.focus {
-            self.focus_to_apply = Some((pending.transaction, surface));
+        for surface in admission_surfaces {
+            let attempts = self.admission_retries.entry(surface).or_default();
+            *attempts = attempts.saturating_add(1);
         }
+        println!(
+            "sophia_live_resize_epoch schema=1 status=aborted transaction={} rejected_surfaces={}",
+            pending.transaction.raw(),
+            pending.requested_sizes.len(),
+        );
         Ok(Some(LiveWmCommitResult {
             update: WmTransactionUpdate {
                 commit: TransactionCommit {
@@ -769,6 +798,7 @@ impl PersistentLiveLayout {
     }
 
     fn commit_pending(&mut self, pending: PendingLiveWmLayout) -> LiveWmCommitResult {
+        let matched_surfaces = pending.staged_transactions.len();
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
                 if let Some(size) = live_transaction_pixel_size(
@@ -785,6 +815,13 @@ impl PersistentLiveLayout {
             .into_iter()
             .map(|layer| (layer.surface, layer))
             .collect();
+        if let Some(effects) = pending.effects.as_ref() {
+            self.unmanaged_surfaces.retain(|surface| {
+                effects.workspace_state.surface_workspace(*surface).is_none()
+            });
+        }
+        self.admission_retries
+            .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
         if let Some(surface) = pending.focus {
             self.focus_to_apply = Some((pending.transaction, surface));
         }
@@ -795,6 +832,11 @@ impl PersistentLiveLayout {
             pending.moved_surfaces,
             pending.requested_sizes.len(),
             pending.update.commit.outcome
+        );
+        println!(
+            "sophia_live_resize_epoch schema=1 status=committed transaction={} matched_surfaces={}",
+            pending.transaction.raw(),
+            matched_surfaces,
         );
         LiveWmCommitResult {
             update: pending.update,
@@ -812,6 +854,20 @@ impl PersistentLiveLayout {
         // transaction and buffer update in order, but pin its geometry to the
         // last layout decision until a coherent proposal commits.
         project_authority_batch_onto_layout(batch.clone(), &self.layers)
+    }
+
+    fn present_pixels_conflict_with_pending_layout(
+        &self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> bool {
+        let Some(pending) = self.pending.as_ref() else {
+            return false;
+        };
+        present_pixels_conflict_with_requested_sizes(
+            &pending.requested_sizes,
+            &self.dma_buf_sizes,
+            batch,
+        )
     }
 }
 

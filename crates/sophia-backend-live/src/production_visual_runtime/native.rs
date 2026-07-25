@@ -67,18 +67,15 @@ impl LiveProductionVisualRuntime {
             Some(frames),
         )?;
         if let Some((transaction, frame)) = self.retained_mixed_frame()? {
-            let output_count = self.outputs.output_count();
-            for index in 0..output_count {
-                if index + 1 == output_count {
-                    native_scanout.queue_mixed_frame(index, transaction, frame);
-                    break;
-                }
-                native_scanout.queue_mixed_frame(
-                    index,
-                    transaction,
-                    crate::try_clone_mixed_frame(&frame)?,
-                );
-            }
+            let primary = self
+                .outputs
+                .primary_output()
+                .ok_or("persistent backend runtime has no primary output")?;
+            let primary_index = self
+                .outputs
+                .output_index(primary)
+                .ok_or("persistent backend primary output was not registered")?;
+            native_scanout.queue_mixed_frame(primary_index, transaction, frame);
         }
         Ok(())
     }

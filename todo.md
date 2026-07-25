@@ -78,6 +78,11 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
   fences, transactions, pending WM work, pending input, or native cleanup.
 - [x] Retain a focused regression for every protocol correction; do not add
   Kitty or xmonad branches to Engine.
+- [x] Keep resize Presents quarantined across asynchronous native-service
+  ticks, abort the complete queue on rollback, and use the bounded two-second
+  xmonad resize deadline.
+- [ ] Physically prove the four-Kitty Tall transition commits one full-height
+  pane plus three pixel-matched stack panes without exposing staging geometry.
 
 Gate command and verifier must be documented in `docs/validation.md`; the
 physical xmonad result must receive its own compatibility/session evidence

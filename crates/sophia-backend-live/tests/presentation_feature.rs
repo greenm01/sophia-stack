@@ -501,6 +501,8 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
         .enqueue_batch(
             &scheduler_batch(transaction, surface, handle),
             None,
+            false,
+            false,
             &mut resources,
             now,
         )
@@ -539,7 +541,7 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_batch(&batch, None, &mut resources, Instant::now())
+        .enqueue_batch(&batch, None, false, false, &mut resources, Instant::now())
         .unwrap();
     let geometry = Rect {
         x: 1280,
@@ -561,4 +563,148 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
         }
     );
     assert_eq!(queued.transactions[0].target_geometry, geometry);
+}
+
+#[test]
+fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
+    let retained_handle = BufferHandle::from_raw(57);
+    let deferred_handle = BufferHandle::from_raw(58);
+    let retained_transaction = TransactionId::from_raw(59);
+    let deferred_transaction = TransactionId::from_raw(60);
+    let surface = SurfaceId::new(61, 1);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(retained_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(deferred_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_batch(
+            &scheduler_batch(retained_transaction, surface, retained_handle),
+            None,
+            false,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    scheduler
+        .enqueue_batch(
+            &scheduler_batch(deferred_transaction, surface, deferred_handle),
+            None,
+            true,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        scheduler.drain_layout_deferred_transactions(),
+        [deferred_transaction]
+    );
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(retained_transaction)
+    );
+}
+
+#[test]
+fn layout_epoch_keeps_only_the_newest_present_per_surface() {
+    let first_handle = BufferHandle::from_raw(67);
+    let second_handle = BufferHandle::from_raw(68);
+    let first_transaction = TransactionId::from_raw(69);
+    let second_transaction = TransactionId::from_raw(70);
+    let surface = SurfaceId::new(71, 1);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(first_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(second_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    let first_superseded = scheduler
+        .enqueue_batch(
+            &scheduler_batch(first_transaction, surface, first_handle),
+            None,
+            true,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    let second_superseded = scheduler
+        .enqueue_batch(
+            &scheduler_batch(second_transaction, surface, second_handle),
+            None,
+            true,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert!(first_superseded.is_empty());
+    assert_eq!(second_superseded, [first_transaction]);
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(second_transaction)
+    );
+    assert_eq!(
+        scheduler.drain_layout_deferred_transactions(),
+        [second_transaction]
+    );
+}
+
+#[test]
+fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
+    let matching_handle = BufferHandle::from_raw(77);
+    let rejected_handle = BufferHandle::from_raw(78);
+    let matching_transaction = TransactionId::from_raw(79);
+    let rejected_transaction = TransactionId::from_raw(80);
+    let surface = SurfaceId::new(81, 1);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(matching_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(rejected_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_batch(
+            &scheduler_batch(matching_transaction, surface, matching_handle),
+            None,
+            true,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    let rejected = scheduler
+        .enqueue_batch(
+            &scheduler_batch(rejected_transaction, surface, rejected_handle),
+            None,
+            true,
+            true,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert_eq!(rejected, [rejected_transaction]);
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(matching_transaction)
+    );
 }

@@ -16,6 +16,7 @@ pub struct LiveProductionQueuedPresent {
     pub cpu_background: Option<LiveCpuComposedFrame>,
     pub target: Rect,
     pub surface_clip: Rect,
+    deferred_by_layout: bool,
     x_offset: i16,
     y_offset: i16,
     deadline: Instant,
@@ -68,9 +69,12 @@ impl LiveProductionPresentScheduler {
         &mut self,
         batch: &LiveProductionAuthorityBatch,
         cpu_background: Option<LiveCpuComposedFrame>,
+        deferred_by_layout: bool,
+        reject_for_layout: bool,
         resources: &mut LivePresentationResourceSession,
         now: Instant,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<Vec<TransactionId>, Box<dyn Error>> {
+        let mut superseded = Vec::new();
         for submission in &batch.present_submissions {
             let surface = submission.surface;
             let x_offset = submission.x_offset;
@@ -87,6 +91,10 @@ impl LiveProductionPresentScheduler {
                 idle_fence: submission.idle_fence,
             };
             resources.begin(submission)?;
+            if reject_for_layout {
+                superseded.push(submission.transaction);
+                continue;
+            }
             let acquire_delay =
                 if !self.first_acquire_delay_applied && self.first_acquire_delay.is_some() {
                     self.first_acquire_delay_applied = true;
@@ -95,6 +103,17 @@ impl LiveProductionPresentScheduler {
                     Duration::ZERO
                 };
             let not_before = now + acquire_delay;
+            if deferred_by_layout {
+                let mut retained = VecDeque::with_capacity(self.queued.len());
+                while let Some(queued) = self.queued.pop_front() {
+                    if queued.deferred_by_layout && queued.surface == surface {
+                        superseded.push(queued.submission.transaction);
+                    } else {
+                        retained.push_back(queued);
+                    }
+                }
+                self.queued = retained;
+            }
             self.queued.push_back(LiveProductionQueuedPresent {
                 submission,
                 surface,
@@ -112,6 +131,7 @@ impl LiveProductionPresentScheduler {
                     ..transaction.target_geometry
                 },
                 surface_clip: transaction.target_geometry,
+                deferred_by_layout,
                 x_offset,
                 y_offset,
                 deadline: not_before
@@ -119,7 +139,7 @@ impl LiveProductionPresentScheduler {
                 not_before,
             });
         }
-        Ok(())
+        Ok(superseded)
     }
 
     pub fn reproject_surface(&mut self, surface: SurfaceId, geometry: Rect) {
@@ -203,6 +223,20 @@ impl LiveProductionPresentScheduler {
             .drain(..)
             .map(|queued| queued.submission.transaction)
             .collect()
+    }
+
+    pub fn drain_layout_deferred_transactions(&mut self) -> Vec<TransactionId> {
+        let mut retained = VecDeque::with_capacity(self.queued.len());
+        let mut drained = Vec::new();
+        while let Some(queued) = self.queued.pop_front() {
+            if queued.deferred_by_layout {
+                drained.push(queued.submission.transaction);
+            } else {
+                retained.push_back(queued);
+            }
+        }
+        self.queued = retained;
+        drained
     }
 
     pub const fn acquire_waits(&self) -> usize {

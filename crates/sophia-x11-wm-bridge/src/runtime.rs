@@ -33,6 +33,7 @@ const FIRST_DYNAMIC_ATOM: u32 = 256;
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(3);
 const QUIET_PERIOD: Duration = Duration::from_millis(80);
 const IO_POLL: Duration = Duration::from_millis(20);
+const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
 
 #[derive(Debug)]
 pub struct BridgeRuntimeError(String);
@@ -372,7 +373,7 @@ impl LegacyX11WmBridgeRuntime {
             }
         }
         self.bridge
-            .translate_legacy_requests(request.transaction, &requests, 300)
+            .translate_legacy_requests(request.transaction, &requests, XMONAD_RESIZE_TIMEOUT_MSEC)
             .map_err(Into::into)
     }
 

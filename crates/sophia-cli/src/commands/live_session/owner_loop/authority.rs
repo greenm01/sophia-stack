@@ -146,7 +146,6 @@
                 {
                     let proposal = wm_session.request_manage(surface, &layout, output)?;
                     wm_update = layout.stage(proposal, control_sender, control_ack_receiver)?;
-                    layout.mark_surface_managed(surface);
                 }
                 if resize_proof.is_none()
                     && let Some(size) = config.inject_surface_resize
@@ -213,6 +212,19 @@
                     }
                     result.update
                 });
+                let resize_epoch_aborted = wm_update.as_ref().is_some_and(|update| {
+                    update.commit.outcome == TransactionOutcome::TimedOut
+                });
+                if resize_epoch_aborted
+                    && let Some(runtime) = runtime.as_mut()
+                {
+                    let rejected = runtime.abort_queued_presentations();
+                    println!(
+                        "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
+                    );
+                }
+                let reject_present_for_layout =
+                    layout.present_pixels_conflict_with_pending_layout(&batch);
                 let batch = layout.projected_batch(&batch);
                 let production_batch = production_authority_batch(&batch);
                 if runtime.is_none() {
@@ -253,6 +265,7 @@
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 defer_present: layout.pending.is_some(),
+                                reject_present_for_layout,
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -279,6 +292,7 @@
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 defer_present: layout.pending.is_some(),
+                                reject_present_for_layout,
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -444,7 +458,16 @@
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let _ = layout.expire_pending(control_sender, control_ack_receiver)?;
+                let expired = layout.expire_pending(control_sender, control_ack_receiver)?;
+                if expired.as_ref().is_some_and(|update| {
+                    update.update.commit.outcome == TransactionOutcome::TimedOut
+                }) && let Some(runtime) = runtime.as_mut()
+                {
+                    let rejected = runtime.abort_queued_presentations();
+                    println!(
+                        "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
+                    );
+                }
                 if layout.pending.is_none()
                     && let Some(wm_session) = wm_session.as_mut()
                     && let Some(proposal) = wm_session.poll_restart(&layout, output)?
@@ -462,11 +485,11 @@
                     {
                         wm_session.mark_committed();
                     }
-                    layout.mark_surface_managed(surface);
                 }
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())
                 {
+                    runtime.set_present_scheduling_blocked(layout.pending.is_some());
                     let service = runtime.service_native(native_scanout)?;
                     if let Some(retired) = service.retired_present {
                         let stable = runtime.stable_present(native_scanout, retired.transaction);

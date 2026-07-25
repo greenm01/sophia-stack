@@ -9,7 +9,8 @@ use sophia_backend_live::{
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
-    ResizeRollbackCoordinator, project_authority_batch_onto_layout,
+    ResizeRollbackCoordinator, present_pixels_conflict_with_requested_sizes,
+    project_authority_batch_onto_layout,
 };
 use sophia_cli::session_keyboard::{VirtualTerminalChordAction, VirtualTerminalChordState};
 use sophia_engine::{

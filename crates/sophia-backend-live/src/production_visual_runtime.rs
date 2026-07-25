@@ -42,6 +42,7 @@ pub struct LiveProductionVisualRuntime {
     presentation_order: Vec<SurfaceId>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
+    present_scheduling_blocked: bool,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -56,6 +57,7 @@ pub struct LiveProductionCycleRequest<'a> {
     pub cursor_presentation: LiveProductionCursorPresentation,
     pub defer_frame: bool,
     pub defer_present: bool,
+    pub reject_present_for_layout: bool,
     pub output_descriptors: &'a [sophia_engine::HeadlessOutput],
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub wm_update: Option<WmTransactionUpdate>,
@@ -98,6 +100,7 @@ impl LiveProductionVisualRuntime {
             presentation_order: Vec::new(),
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
+            present_scheduling_blocked: false,
         })
     }
 
@@ -151,12 +154,14 @@ impl LiveProductionVisualRuntime {
             raised_surface,
             cursor_presentation,
             defer_frame,
-            defer_present: _,
+            defer_present,
+            reject_present_for_layout: _,
             output_descriptors,
             native_scanout,
             wm_update,
             presentation_layout,
         } = request;
+        self.present_scheduling_blocked = defer_present;
         self.apply_presentation_layout(presentation_layout);
         self.presentation_feedback
             .observe_authority_resources(batch)?;
@@ -266,11 +271,13 @@ impl LiveProductionVisualRuntime {
             cursor_presentation,
             defer_frame,
             defer_present,
+            reject_present_for_layout,
             output_descriptors,
             mut native_scanout,
             wm_update,
             presentation_layout,
         } = request;
+        self.present_scheduling_blocked = defer_present;
         self.apply_presentation_layout(presentation_layout);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
@@ -308,6 +315,7 @@ impl LiveProductionVisualRuntime {
             native_frames,
             wm_update,
             defer_present,
+            reject_present_for_layout,
         )?;
         Ok((
             LiveProductionCpuSubmission {
@@ -365,6 +373,7 @@ impl LiveProductionVisualRuntime {
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         wm_update: Option<WmTransactionUpdate>,
         defer_present: bool,
+        reject_present_for_layout: bool,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         self.presentation_feedback
             .observe_authority_resources(batch)?;
@@ -376,12 +385,17 @@ impl LiveProductionVisualRuntime {
                 .as_ref()
                 .and_then(|frames| frames.first())
                 .map(|frame| frame.frame.clone());
-            self.present_scheduler.enqueue_batch(
+            let superseded = self.present_scheduler.enqueue_batch(
                 batch,
                 cpu_background,
+                defer_present,
+                reject_present_for_layout,
                 self.presentation_feedback.resources_mut(),
                 Instant::now(),
             )?;
+            for transaction in superseded {
+                self.reject_gpu_presentation(transaction, 0, 0);
+            }
             self.layers
                 .retain(|surface, _| !batch.removed_surfaces.contains(surface));
             for transaction in &batch.transactions {
@@ -557,16 +571,6 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
-        for index in 0..output_count {
-            if index == primary_index {
-                continue;
-            }
-            native_scanout.queue_mixed_frame(
-                index,
-                transaction,
-                crate::try_clone_mixed_frame(&mixed)?,
-            );
-        }
         native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
 
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();
@@ -690,6 +694,19 @@ impl LiveProductionVisualRuntime {
         {
             self.route_present_feedback(outcome);
         }
+    }
+
+    pub fn set_present_scheduling_blocked(&mut self, blocked: bool) {
+        self.present_scheduling_blocked = blocked;
+    }
+
+    pub fn abort_queued_presentations(&mut self) -> usize {
+        let transactions = self.present_scheduler.drain_layout_deferred_transactions();
+        let rejected = transactions.len();
+        for transaction in transactions {
+            self.reject_gpu_presentation(transaction, 0, 0);
+        }
+        rejected
     }
 
     pub fn route_present_feedback(&mut self, outcome: crate::LivePresentFeedbackOutcome) {
