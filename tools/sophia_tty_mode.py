@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import array
 import fcntl
+import os
 import sys
 
 KDSETMODE = 0x4B3A
@@ -25,7 +26,8 @@ def main() -> int:
             "get-keyboard|keyboard-off|keyboard-MODE|activate-vt-N"
         )
     action = sys.argv[1]
-    with open("/dev/tty", "rb+", buffering=0) as tty:
+    tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
+    with open(tty_path, "rb+", buffering=0) as tty:
         if action == "get-keyboard":
             value = array.array("i", [0])
             fcntl.ioctl(tty.fileno(), KDGKBMODE, value, True)

@@ -2,6 +2,7 @@ const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_se
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
+const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
 
 fn offset(needle: &str) -> usize {
     SESSION_LAUNCHER
@@ -36,6 +37,14 @@ fn graphical_takeover_saves_and_restores_exact_tty_state() {
     assert!(SESSION_LAUNCHER.contains("python3 \"$TTY_MODE_HELPER\" \"$kd_mode\""));
     assert!(SESSION_LAUNCHER.contains("stty \"$tty_state\""));
     assert!(SESSION_LAUNCHER.contains("python3 \"$TTY_MODE_HELPER\" \"keyboard-$keyboard_mode\""));
+}
+
+#[test]
+fn detached_graphical_owner_retains_its_originating_vt_device() {
+    let export = offset("\"SOPHIA_SESSION_TTY=$tty_name\"");
+    let session = offset("setsid \"${session_command[@]}\"");
+    assert!(export < session);
+    assert!(TTY_MODE_HELPER.contains("os.environ.get(\"SOPHIA_SESSION_TTY\", \"/dev/tty\")"));
 }
 
 #[test]

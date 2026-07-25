@@ -318,6 +318,7 @@ session_args+=("$@")
 session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
+    "SOPHIA_SESSION_TTY=$tty_name"
 )
 if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then
     session_environment+=(

@@ -2742,3 +2742,11 @@ reintroduce typed bytes on the hidden TTY. The protocol-neutral session input
 owner now recognizes Ctrl-Alt-F1 through Ctrl-Alt-F12, consumes the function-key
 edges, and asks the controlling VT to activate the selected terminal. This is a
 session-control action, not an application or X11 shortcut.
+
+The first physical switch attempt exposed a launcher boundary: the graphical
+owner is deliberately started with `setsid`, so `/dev/tty` is unavailable
+inside it. The helper failed with `ENXIO`; treating that failed control action
+as fatal correctly returned to greetd. The wrapper now passes the exact
+originating `/dev/ttyN` as `SOPHIA_SESSION_TTY`, and the detached owner opens
+that explicit device for VT activation. A launcher regression requires the
+device handoff to precede `setsid`.
