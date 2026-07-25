@@ -30,10 +30,15 @@ pub struct XAuthorityMetadataObservation {
 }
 
 fn is_expected_client_probe_error(error: &crate::XClientError) -> bool {
-    error.code == crate::XErrorCode::BadWindow
+    let window_geometry_probe = error.code == crate::XErrorCode::BadWindow
         && error.resource_id == 0
         && error.minor_code == 0
-        && matches!(error.major_code, 3 | 14)
+        && matches!(error.major_code, 3 | 14);
+    let missing_randr_property_probe = error.code == crate::XErrorCode::BadAtom
+        && error.resource_id == crate::X_ATOM_NONE
+        && error.minor_code == crate::X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into()
+        && error.major_code == crate::X_RANDR_MAJOR_OPCODE;
+    window_geometry_probe || missing_randr_property_probe
 }
 
 fn reduce_protocol_errors(

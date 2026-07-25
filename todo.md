@@ -111,6 +111,9 @@ rather than borrowing the completed Kitty-only promotion.
 - [x] Seed conventional RandR output-property atoms and return bounded,
   hardware-neutral property values; require the real-Kitty two-output smoke to
   complete without unexpected X errors.
+- [x] Classify only RANDR `GetOutputProperty` probes using atom `None` as
+  expected client errors, retain strict nonzero `BadAtom` evidence, and verify
+  Super-Enter with its actual WM action identity.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

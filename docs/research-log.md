@@ -2894,3 +2894,19 @@ then drops the native leases before requesting the VT switch. Final teardown
 uses this operation as well. This keeps the missing kernel callback observable
 without allowing it to wedge VT control or emergency recovery, and avoids
 duplicating detach/Present-settlement policy across lifecycle callers.
+
+The following physical run proved that boundary: an owner-requested VT switch
+timed out with one abandoned scanout, detached before release, resumed both
+hardware domains, preserved the action-launched Kitty, and completed final
+logout with a fully drained scanout. The remaining status-1 exit was unrelated:
+two RANDR `GetOutputProperty` requests used atom `None` and correctly received
+`BadAtom`, but the session counted those optional client probes as unexpected.
+
+Protocol reduction now recognizes only the complete probe tuple (`BadAtom`,
+RANDR `GetOutputProperty`, atom `None`) as expected. The client-visible reply
+does not change, and an unknown nonzero atom remains unexpected. The physical
+verifier also now distinguishes Sophia's structured failures from harmless
+Kitty/GLFW stderr and uses xmonad's actual action identity `768` for
+Super-Enter; action `1` remains focus-next. Mutation fixtures preserve each
+distinction so the acceptance gate cannot silently regress to broad error
+whitelisting or the former action-ID alias.

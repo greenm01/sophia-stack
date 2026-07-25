@@ -59,8 +59,9 @@ require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
 require_file "$RECOVERY_LOG"
 
-if grep -Eqi '(^|[[:space:]])(panic|error:|status=(failed|degraded))' "$SESSION_LOG"; then
-    fail "session log contains an error, panic, or degraded status"
+if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degraded)([[:space:]]|$))' \
+    "$SESSION_LOG"; then
+    fail "session log contains a Sophia error, panic, or degraded status"
 fi
 
 require_line '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
@@ -100,7 +101,7 @@ startup_exit_line="$(
 desktop_pointer_line="$(
     line_number 'status=desktop_pointer_active source=post_startup_exit$' "$SESSION_LOG"
 )"
-super_enter_line="$(line_number 'status=physical_action_committed action=1$' "$SESSION_LOG")"
+super_enter_line="$(line_number 'status=physical_action_committed action=768$' "$SESSION_LOG")"
 action_terminal_line="$(
     line_number 'status=started id=terminal source=action$' "$SESSION_LOG"
 )"

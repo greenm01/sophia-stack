@@ -1,4 +1,5 @@
 use sophia_x_authority::{
+    X_ATOM_NONE, X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE, X_RANDR_MAJOR_OPCODE,
     X11DispatchObservation, X11ObservedRequestStage, XAuthorityObservedTransactionBatch,
     XClientError, XClientOutput, XDispatchResult, XErrorCode, XServerFrontendClientId,
     XWireClientResourceRange,
@@ -33,11 +34,21 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
 }
 
 fn error(sequence: u16, major_code: u8, resource_id: u32) -> XClientOutput {
+    protocol_error(XErrorCode::BadWindow, sequence, major_code, 0, resource_id)
+}
+
+fn protocol_error(
+    code: XErrorCode,
+    sequence: u16,
+    major_code: u8,
+    minor_code: u16,
+    resource_id: u32,
+) -> XClientOutput {
     XClientOutput::Error(XClientError {
-        code: XErrorCode::BadWindow,
+        code,
         sequence,
         resource_id,
-        minor_code: 0,
+        minor_code,
         major_code,
     })
 }
@@ -75,4 +86,45 @@ fn only_exact_window_zero_geometry_probes_are_expected() {
 
     assert_eq!(batch.expected_protocol_errors.len(), 2);
     assert_eq!(batch.protocol_errors.len(), 2);
+}
+
+#[test]
+fn only_atom_none_randr_output_property_errors_are_expected() {
+    let outputs = vec![
+        protocol_error(
+            XErrorCode::BadAtom,
+            1,
+            X_RANDR_MAJOR_OPCODE,
+            X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
+            X_ATOM_NONE,
+        ),
+        protocol_error(
+            XErrorCode::BadAtom,
+            2,
+            X_RANDR_MAJOR_OPCODE,
+            X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
+            0xffff_fffe,
+        ),
+        protocol_error(
+            XErrorCode::BadAtom,
+            3,
+            X_RANDR_MAJOR_OPCODE,
+            14,
+            X_ATOM_NONE,
+        ),
+        protocol_error(
+            XErrorCode::BadValue,
+            4,
+            X_RANDR_MAJOR_OPCODE,
+            X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE.into(),
+            X_ATOM_NONE,
+        ),
+    ];
+    let batch =
+        XAuthorityObservedTransactionBatch::from_dispatch_observation(&observation(outputs))
+            .expect("RANDR protocol errors produce an observation batch");
+
+    assert_eq!(batch.expected_protocol_errors.len(), 1);
+    assert_eq!(batch.expected_protocol_errors[0].sequence, 1);
+    assert_eq!(batch.protocol_errors.len(), 3);
 }

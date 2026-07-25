@@ -2,8 +2,9 @@ sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0
 sophia_session_app schema=1 status=started id=terminal source=startup
 sophia_session_app schema=1 status=exited id=terminal source=startup exit_status=exit status: 0
 sophia_live_session_input_pipeline schema=1 status=desktop_pointer_active source=post_startup_exit
-sophia_live_wm schema=1 status=physical_action_committed action=1
+sophia_live_wm schema=1 status=physical_action_committed action=768
 sophia_session_app schema=1 status=started id=terminal source=action
+sophia_live_wm schema=1 status=physical_action_committed action=1
 sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_acks=1 outcome=Committed
 sophia_live_wm schema=1 status=focus_committed transaction=1 target=surface
 sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal

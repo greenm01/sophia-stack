@@ -14,6 +14,7 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
 for mutation in \
     'status=exited id=terminal source=startup ' \
     'status=desktop_pointer_active source=post_startup_exit' \
+    'status=physical_action_committed action=768' \
     'status=physical_action_committed action=258' \
     'status=hidden_focus_cleared ' \
     'status=key_suppressed reason=no_focus' \
@@ -33,6 +34,26 @@ sed 's/buttons_routed=4/buttons_routed=1/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "xmonad verifier accepted a pointer proof without click-drag transitions" >&2
+    exit 1
+fi
+
+sed '1i[0.123] [glfw error 65544]: optional DBus service unavailable' \
+    "$SESSION" >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"
+
+sed '$aError: "structured Sophia failure"' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted a structured Sophia failure" >&2
+    exit 1
+fi
+
+sed 's/expected=2 unexpected=0/expected=2 unexpected=1/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted an unexpected X protocol error" >&2
     exit 1
 fi
 
