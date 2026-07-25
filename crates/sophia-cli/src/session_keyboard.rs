@@ -18,6 +18,7 @@ pub struct SessionClientPressedKey {
 pub struct SessionClientKeyMetrics {
     pub peak_pressed: usize,
     pub synthetic_releases: usize,
+    pub state_only_releases: usize,
     pub orphan_releases_suppressed: usize,
     pub removed_surface_keys: usize,
 }
@@ -74,6 +75,13 @@ impl SessionClientKeyState {
         if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
             self.pressed.swap_remove(index);
             self.metrics.synthetic_releases = self.metrics.synthetic_releases.saturating_add(1);
+        }
+    }
+
+    pub fn record_state_only_release(&mut self, key: SessionClientPressedKey) {
+        if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
+            self.pressed.swap_remove(index);
+            self.metrics.state_only_releases = self.metrics.state_only_releases.saturating_add(1);
         }
     }
 

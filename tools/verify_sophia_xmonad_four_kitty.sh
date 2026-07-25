@@ -117,7 +117,7 @@ control_ack_latency="$(field "$session_control" max_ack_msec)"
 (( control_queue_dwell <= 100 && control_ack_latency <= 100 )) ||
     fail "session-control latency exceeded 100ms"
 grep -Eq \
-    '^sophia_live_session_keys schema=1 status=complete pending=0 release_barrier_pending=0 peak_pressed=[0-9]+ synthetic_releases=[0-9]+ orphan_releases_suppressed=[0-9]+ removed_surface_keys=0$' \
+    '^sophia_live_session_keys schema=1 status=complete pending=0 release_barrier_pending=0 peak_pressed=[0-9]+ synthetic_releases=[0-9]+ state_only_releases=[0-9]+ orphan_releases_suppressed=[0-9]+ removed_surface_keys=0$' \
     "$SESSION_LOG" ||
     fail "client pressed-key state did not drain"
 mapfile -t completions < <(
@@ -150,7 +150,10 @@ for key in native_mixed_exports native_target_recreations \
     if [[ "$key" == native_mixed_exports ]]; then
         (( value >= 32 )) ||
             fail "sustained mixed presentation produced only $value exports"
-    elif [[ "$key" != native_target_recreations ]]; then
+    elif [[ "$key" == native_target_recreations ]]; then
+        (( value == 0 )) ||
+            fail "stable workload recreated native targets: $value"
+    else
         (( value <= 100 )) ||
             fail "$key exceeded the 100ms promotion budget: $value"
     fi
@@ -183,10 +186,10 @@ target_recreations="$(field "$completion" native_target_recreations)"
     fail "target and pipeline creation counts diverged"
 (( target_creations == cpu_targets + dmabuf_targets + composition_targets )) ||
     fail "resource-class creation counts do not sum to the total"
-(( composition_targets == mixed_exports )) ||
-    fail "composition targets were not retired after every mixed export"
-(( target_recreations == composition_targets )) ||
-    fail "native recreation count includes work outside the guarded composition path"
+(( composition_targets > 0 && composition_targets <= 2 )) ||
+    fail "stable two-output workload did not retain composition targets"
+(( target_recreations == 0 )) ||
+    fail "stable workload recreated a native target"
 (( epoch_replacements == 0 && recovery_replacements == 0 )) ||
     fail "stable CPU or direct DMA-BUF resources were replaced"
 

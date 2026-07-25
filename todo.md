@@ -70,7 +70,7 @@ Promotion now follows the gates below in order.
 
 - [x] Decouple exported scanout-buffer ownership from the persistent EGL
   context, GL pipeline, and GBM target lifetime.
-- [ ] Retain per-output rendering resources across a stable
+- [x] Retain per-output rendering resources across a stable
   size/format/modifier epoch; recreate them only for topology change,
   incompatible target change, or explicit bounded recovery.
 - [x] Emit reduced recreation-reason and lifetime evidence without native
@@ -81,6 +81,9 @@ Promotion now follows the gates below in order.
 - [x] Track client-delivered key presses and require acknowledged synthetic
   releases before focus, close, VT, seat-release, and logout handoffs so
   suppressed physical releases cannot leave the seat XKB state stuck.
+- [x] Apply state-only XKB releases when a client destroys its surface before
+  the physical key release, without delivering an orphan event to the next
+  focused application.
 - [ ] Prove a stable physical workload has zero per-frame target or pipeline
   recreation, zero launch-admission timeouts, and bounded input-to-submit and
   presentation latency.

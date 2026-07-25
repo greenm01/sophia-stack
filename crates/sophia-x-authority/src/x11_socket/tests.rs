@@ -529,6 +529,7 @@ fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
                 },
             },
             delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -587,6 +588,7 @@ fn synchronous_keyboard_grab_queues_until_allow_events() {
                 },
             },
             delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));

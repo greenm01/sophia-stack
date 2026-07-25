@@ -62,6 +62,13 @@ pub struct XAuthorityClientInputEvent {
 pub struct XAuthorityRoutedInput {
     pub request: RoutedInputRequest,
     pub delivery: Option<XAuthorityInputDeliveryId>,
+    pub mode: XAuthorityRoutedInputMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityRoutedInputMode {
+    Deliver,
+    StateOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

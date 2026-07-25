@@ -3241,3 +3241,29 @@ or focus request cannot reach its X control writer until every preceding
 release has been acknowledged by X authority. Completion and the physical
 verifier require both the pressed-key ledger and this release barrier to be
 empty, with no keys abandoned during surface removal.
+
+Client-initiated exits add a different boundary: a terminal may destroy its
+surface in response to Return before the physical Return release arrives.
+There is then no live target for an X event, but the seat-wide XKB reducer must
+still observe the release. Routed input now distinguishes ordinary
+Engine-selected delivery from a state-only seat update. Surface removal emits
+state-only releases for its residual key records; X authority updates XKB
+without resolving a surface or emitting an event to the newly focused client.
+This preserves global keyboard state without inventing an application target.
+
+## 2026-07-25: Composition Targets Follow Epoch Lifetime
+
+The successful keyboard proof still reported 201 composition-target and GL
+pipeline creations for 201 mixed exports. CPU and direct DMA-BUF paths already
+returned their persistent target to the renderer after exporting a locked
+front buffer. The mixed-composition path instead destroyed its target on every
+successful export even though the exported buffer retained an `Arc` lease on
+the GBM/EGL surface until scanout retirement.
+
+Mixed composition now follows the same lifetime rule as the other native
+paths: a successful export returns the context, surface, and GL pipeline to
+the per-output target slot. The exported front buffer independently retains
+the originating surface. Target destruction remains limited to an incompatible
+size/modifier epoch or explicit recovery. The four-Kitty verifier now requires
+zero target recreations and at most one retained composition target per output,
+rather than encoding per-frame destruction as the expected result.

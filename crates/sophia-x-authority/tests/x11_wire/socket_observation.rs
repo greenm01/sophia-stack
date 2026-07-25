@@ -564,6 +564,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
                     },
                 },
                 delivery: None,
+                mode: XAuthorityRoutedInputMode::Deliver,
             })
             .unwrap();
     }

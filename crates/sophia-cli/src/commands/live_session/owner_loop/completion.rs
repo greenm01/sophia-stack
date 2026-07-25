@@ -552,11 +552,12 @@
     }
     let key_metrics = client_keys.metrics();
     println!(
-        "sophia_live_session_keys schema=1 status=complete pending={} release_barrier_pending={} peak_pressed={} synthetic_releases={} orphan_releases_suppressed={} removed_surface_keys={}",
+        "sophia_live_session_keys schema=1 status=complete pending={} release_barrier_pending={} peak_pressed={} synthetic_releases={} state_only_releases={} orphan_releases_suppressed={} removed_surface_keys={}",
         client_keys.pending_len(),
         client_key_release_barrier.len(),
         key_metrics.peak_pressed,
         key_metrics.synthetic_releases,
+        key_metrics.state_only_releases,
         key_metrics.orphan_releases_suppressed,
         key_metrics.removed_surface_keys,
     );

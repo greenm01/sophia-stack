@@ -269,6 +269,7 @@ fn route_input_events(
                                     kind: release.kind,
                                 },
                                 delivery: Some(delivery),
+                                mode: XAuthorityRoutedInputMode::Deliver,
                             })?;
                             client_keys.record_routed(
                                 SessionClientPressedKey {
@@ -378,6 +379,7 @@ fn route_input_events(
                         kind: event.kind,
                     },
                     delivery: Some(delivery),
+                    mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
                 client_keys.record_routed(key, pressed)?;
                 report.keys_routed = report.keys_routed.saturating_add(1);
@@ -462,6 +464,7 @@ fn route_input_events(
                         kind,
                     },
                     delivery: Some(delivery),
+                    mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
                 report.pointer_routed = report.pointer_routed.saturating_add(1);
                 if is_button {
@@ -512,6 +515,7 @@ fn flush_client_pressed_keys(
                 },
             },
             delivery: Some(delivery),
+            mode: XAuthorityRoutedInputMode::Deliver,
         })?;
         deliveries.push(delivery);
         client_keys.record_synthetic_release(key);
@@ -524,10 +528,35 @@ fn clear_removed_surface_keys(
     client_keys: &mut SessionClientKeyState,
     scratch: &mut Vec<SessionClientPressedKey>,
     modifiers: &mut XCoreKeyboardMapper,
-) -> usize {
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    next_input_delivery: &mut u64,
+    time_msec: u64,
+) -> Result<usize, Box<dyn std::error::Error>> {
     client_keys.copy_surface_keys(surface, scratch);
     for key in scratch.iter().copied() {
         let _ = modifiers.map_evdev_key(key.keycode, false);
+        let serial = *next_input_delivery;
+        *next_input_delivery = next_input_delivery
+            .checked_add(1)
+            .ok_or("live-session input delivery ID exhausted")?;
+        input_sender.try_send(XAuthorityRoutedInput {
+            request: sophia_protocol::RoutedInputRequest {
+                serial,
+                seat: key.seat,
+                device: key.device,
+                time_msec,
+                target_surface: key.surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: sophia_protocol::InputEventKind::Key {
+                    keycode: key.keycode,
+                    pressed: false,
+                },
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::StateOnly,
+        })?;
+        client_keys.record_state_only_release(key);
     }
-    client_keys.clear_surface(surface)
+    Ok(client_keys.clear_surface(surface))
 }

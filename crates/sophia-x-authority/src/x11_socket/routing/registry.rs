@@ -595,6 +595,16 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityRoutedInput,
     ) -> Result<(), XServerFrontendRouteError> {
+        if route.mode == XAuthorityRoutedInputMode::StateOnly {
+            if let InputEventKind::Key { keycode, pressed } = route.request.kind {
+                let _ = self.xkb_worker.request(XkbWorkerCommand::Key {
+                    seat: route.request.seat,
+                    keycode,
+                    pressed,
+                })?;
+            }
+            return Ok(());
+        }
         let surface_route = self
             .surfaces
             .lock()

@@ -284,8 +284,7 @@ where
             self.last_composition_pixel_metrics =
                 result.as_ref().ok().and_then(|(_, metrics)| *metrics);
             if result.is_ok() {
-                self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-                self.destroy_persistent_target(target);
+                self.composition_target = Some(target);
             } else if result
                 .as_ref()
                 .is_err_and(|detail| invalidates_persistent_target(*detail))
@@ -354,9 +353,7 @@ where
                         self.stats.gl_pipeline_creations.saturating_add(1);
                     self.stats.composition_target_creations =
                         self.stats.composition_target_creations.saturating_add(1);
-                    self.stats.target_recreations =
-                        self.stats.target_recreations.saturating_add(1);
-                    self.destroy_persistent_target(target);
+                    self.composition_target = Some(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {

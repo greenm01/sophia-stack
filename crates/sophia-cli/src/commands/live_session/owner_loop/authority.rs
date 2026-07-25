@@ -376,7 +376,10 @@
                         &mut client_keys,
                         &mut client_key_scratch,
                         &mut modifiers,
-                    );
+                        input_sender,
+                        &mut input_delivery.next,
+                        u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    )?;
                     if abandoned != 0 {
                         eprintln!(
                             "sophia_live_session_keys schema=1 status=abandoned reason=surface_removed surface={} count={abandoned}",

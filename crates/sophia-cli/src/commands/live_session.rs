@@ -37,9 +37,9 @@ use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlKind,
     XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
-    XCoreKeyboardMapper, XPresentCompletionMode, XServerFrontendAdmissionError,
-    XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendConfig,
-    XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
+    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XPresentCompletionMode,
+    XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
+    XServerFrontendConfig, XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
     XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker, XServerFrontendServiceCommand,
     XServerFrontendSetupAuthorization, run_x_server_frontend_routed_until_stopped,
 };

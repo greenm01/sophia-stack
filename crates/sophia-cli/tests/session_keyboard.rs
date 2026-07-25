@@ -97,3 +97,14 @@ fn client_key_state_suppresses_orphan_release_and_is_bounded() {
     }
     assert!(state.record_routed(pressed_key(2, 999), true).is_err());
 }
+
+#[test]
+fn state_only_release_retires_key_from_a_removed_surface() {
+    let mut state = SessionClientKeyState::default();
+    let key = pressed_key(4, 28);
+    state.record_routed(key, true).unwrap();
+    state.record_state_only_release(key);
+    assert_eq!(state.pending_len(), 0);
+    assert_eq!(state.metrics().state_only_releases, 1);
+    assert_eq!(state.metrics().removed_surface_keys, 0);
+}
