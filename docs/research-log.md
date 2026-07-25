@@ -2788,3 +2788,12 @@ the lease token. Suspension drops input and KMS resources before acknowledging
 disable, and acquisition obtains fresh leases before rebuilding them. Direct
 device opens remain available only to standalone validation paths that do not
 participate in the managed live-session lifecycle.
+
+Physical validation of the installed Kitty baseline then completed the missing
+proof. Ctrl-Alt-F3 released the graphical seat and exposed the already-active
+text login; the Sophia session remained alive. Repeated Ctrl-Alt-F7 returns
+reacquired KMS and input, repainted Kitty, and preserved interactive keyboard
+and pointer operation. Switching away again continued to work. This promotes
+the libseat-backed Kitty session to the known-good installed baseline while
+leaving the full F1-through-F12 matrix and xmonad workflow as separate open
+proofs.

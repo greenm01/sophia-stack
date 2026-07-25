@@ -90,6 +90,9 @@ rather than borrowing the completed Kitty-only promotion.
 - [ ] Preserve full pc105 US shifted punctuation through XKB post-event state
   and physically prove libseat-backed Ctrl-Alt-F1 through Ctrl-Alt-F12
   suspend/resume while `K_OFF` is active.
+- [x] Physically prove the Kitty baseline survives repeated Ctrl-Alt-F3/F7
+  release/acquire cycles with its terminal, keyboard, pointer, and rendered
+  contents retained; keep the broader F1-through-F12 matrix above open.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before
@@ -161,9 +164,9 @@ consecutive passing runs.
   session, and display-manager-handoff phases for normal and emergency exits.
 - [x] Archive lifecycle and immutable runtime identity evidence with every
   normal, Firefox, and emergency promotion capture.
-- [ ] Install versioned release binaries and a real greetd session entry; do not
+- [x] Install versioned release binaries and a real greetd session entry; do not
   compile from source during login.
-- [ ] Replace development takeover behavior with explicit seat/VT lifecycle
+- [x] Replace development takeover behavior with explicit seat/VT lifecycle
   ownership and bounded display-manager handoff.
 - [ ] Remove ordinary-login dependence on manual `sudo`, manual process kills,
   temporary paths, and repository-relative binaries.
