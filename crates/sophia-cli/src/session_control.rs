@@ -122,9 +122,22 @@ impl SessionControlQueue {
         now: Instant,
         completions: &mut Vec<SessionControlCompletion>,
     ) -> Result<(), SessionControlFailure> {
+        self.service_when(sender, receiver, now, completions, true)
+    }
+
+    pub fn service_when(
+        &mut self,
+        sender: &SyncSender<XAuthorityClientControlCommand>,
+        receiver: &Receiver<XAuthorityClientControlAck>,
+        now: Instant,
+        completions: &mut Vec<SessionControlCompletion>,
+        dispatch_ready: bool,
+    ) -> Result<(), SessionControlFailure> {
         self.receive_acknowledgements(receiver, now, completions)?;
         self.expire(now, completions);
-        self.dispatch(sender, now)?;
+        if dispatch_ready {
+            self.dispatch(sender, now)?;
+        }
         Ok(())
     }
 

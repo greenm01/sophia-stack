@@ -175,8 +175,12 @@
             .admission()
             .and_then(|admission| admission.observed_surface)
             .filter(|surface| retired_present_surfaces.contains_key(surface));
-        for (_, action, _) in &committed_session_actions {
-            if *action == WmSessionAction::Logout
+        for (_, action, target) in &committed_session_actions {
+            if *action == WmSessionAction::CloseFocused
+                && let Some(surface) = target.or(applied_client_focus)
+            {
+                flush_client_keys!(surface, "close_surface");
+            } else if *action == WmSessionAction::Logout
                 && let Some(surface) = applied_client_focus
             {
                 flush_client_keys!(surface, "logout");
@@ -212,8 +216,11 @@
                 std::io::stdout().flush()?;
             }
         }
+        client_key_release_barrier
+            .retain(|delivery| input_delivery.pending.contains(delivery));
         if logout_requested
             && input_delivery.pending.is_empty()
+            && client_key_release_barrier.is_empty()
             && session_controls.pending_len() == 0
         {
             break;

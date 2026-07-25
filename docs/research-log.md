@@ -3231,3 +3231,13 @@ state from crossing a client exit.
 Completion evidence reports peak pressed-key depth, synthetic releases,
 suppressed orphan releases, surface-removal cleanup, and final debt. The
 four-Kitty verifier requires final pressed-key debt to be zero.
+
+The close-window physical proof refined the ordering requirement. X authority
+owns one XKB reducer per seat, not one per surface. Clearing two local records
+when Meta-Shift-C removed its surface left Meta and Shift pressed in that
+seat-wide reducer, so the replacement Kitty inherited modified input. Control
+dispatch is now held behind the exact synthetic-release delivery IDs. A close
+or focus request cannot reach its X control writer until every preceding
+release has been acknowledged by X authority. Completion and the physical
+verifier require both the pressed-key ledger and this release barrier to be
+empty, with no keys abandoned during surface removal.

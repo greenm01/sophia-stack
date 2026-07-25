@@ -2,12 +2,15 @@
 macro_rules! service_session_controls {
     () => {{
         session_control_completions.clear();
+        client_key_release_barrier
+            .retain(|delivery| input_delivery.pending.contains(delivery));
         session_controls
-            .service(
+            .service_when(
                 control_sender,
                 control_ack_receiver,
                 Instant::now(),
                 &mut session_control_completions,
+                client_key_release_barrier.is_empty(),
             )
             .map_err(|error| format!("session control service failed: {error:?}"))?;
         for completion in session_control_completions.drain(..) {
@@ -57,6 +60,7 @@ macro_rules! flush_client_keys {
         input_delivery
             .pending
             .extend(client_key_deliveries.iter().copied());
+        client_key_release_barrier.extend(client_key_deliveries.iter().copied());
         if released != 0 {
             println!(
                 "sophia_live_session_keys schema=1 status=released reason={} surface={} count={released}",

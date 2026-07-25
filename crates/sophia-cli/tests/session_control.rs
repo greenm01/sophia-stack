@@ -250,3 +250,31 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
     );
     assert_eq!(queue.metrics().rejected, 1);
 }
+
+#[test]
+fn dispatch_barrier_holds_control_until_input_release_is_acknowledged() {
+    let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let (_acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let now = Instant::now();
+    let command = control(1, 1, surface(1), XAuthorityControlKind::CloseSurface);
+    let mut queue = SessionControlQueue::default();
+    queue.enqueue(command, now).unwrap();
+    let mut completions = Vec::new();
+
+    queue
+        .service_when(&sender, &receiver, now, &mut completions, false)
+        .unwrap();
+    assert!(commands.try_recv().is_err());
+    assert_eq!(queue.metrics().dispatched, 0);
+
+    queue
+        .service_when(
+            &sender,
+            &receiver,
+            now + Duration::from_millis(1),
+            &mut completions,
+            true,
+        )
+        .unwrap();
+    assert_eq!(commands.try_recv().unwrap(), command);
+}

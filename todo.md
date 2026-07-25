@@ -78,9 +78,9 @@ Promotion now follows the gates below in order.
 - [x] Remove blocking X11 configure/focus/close acknowledgements from the
   render/input owner; correlate them through a bounded typed control ledger
   while preserving global shortcuts and cursor motion during focus handoff.
-- [x] Track client-delivered key presses and synthesize releases before focus,
-  VT, seat-release, and logout handoffs so suppressed physical releases cannot
-  leave an X client with stuck modifiers.
+- [x] Track client-delivered key presses and require acknowledged synthetic
+  releases before focus, close, VT, seat-release, and logout handoffs so
+  suppressed physical releases cannot leave the seat XKB state stuck.
 - [ ] Prove a stable physical workload has zero per-frame target or pipeline
   recreation, zero launch-admission timeouts, and bounded input-to-submit and
   presentation latency.

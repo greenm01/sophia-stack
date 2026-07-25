@@ -130,6 +130,7 @@ fn run_session_loop(
     let mut client_keys = SessionClientKeyState::default();
     let mut client_key_scratch = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
     let mut client_key_deliveries = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
+    let mut client_key_release_barrier = BTreeSet::new();
     let mut emergency_chord = EmergencyChordState::armed();
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
