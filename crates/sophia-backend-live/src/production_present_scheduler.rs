@@ -24,7 +24,7 @@ pub struct LiveProductionSubmittedPresent {
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
-    pub displayed_frame: sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame,
+    pub displayed_layer: crate::LiveRetainedDmaBufLayer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

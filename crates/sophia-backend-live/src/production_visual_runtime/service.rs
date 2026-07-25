@@ -58,6 +58,8 @@ impl LiveProductionVisualRuntime {
 pub struct LiveProductionRetiredPresent {
     pub transaction: TransactionId,
     pub surface: SurfaceId,
+    pub source_size: Size,
+    pub target: Rect,
 }
 
 #[derive(Debug)]

@@ -233,18 +233,27 @@ impl LiveProductionVisualRuntime {
             );
             return Ok(None);
         }
-        self.presented_surface_frames
-            .insert(submitted.surface, submitted.displayed_frame);
-        if let Some(previous) = self
-            .displayed_presentations
-            .insert(submitted.surface, submitted.transaction)
-            && let Ok(outcome) = self.presentation_feedback.idle_displayed(previous)
+        let source_size = Size {
+            width: i32::try_from(submitted.displayed_layer.frame.width).unwrap_or(i32::MAX),
+            height: i32::try_from(submitted.displayed_layer.frame.height).unwrap_or(i32::MAX),
+        };
+        let target = submitted.displayed_layer.placement.target;
+        let transaction_to_idle = replace_displayed_surface(
+            &mut self.displayed_surfaces,
+            submitted.surface,
+            submitted.transaction,
+            submitted.displayed_layer,
+        );
+        if let Some(transaction) = transaction_to_idle
+            && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
         {
             self.route_present_feedback(outcome);
         }
         Ok(Some(LiveProductionRetiredPresent {
             transaction: submitted.transaction,
             surface: submitted.surface,
+            source_size,
+            target,
         }))
     }
 

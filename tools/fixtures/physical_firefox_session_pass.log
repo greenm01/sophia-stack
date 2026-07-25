@@ -14,6 +14,7 @@ sophia_live_session_input_pipeline schema=2 status=content_ready source=stable_p
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_session_startup schema=2 status=content_ready source=stable_present_scanout nonzero_rgb_pixels=144
 sophia_live_session_startup schema=2 status=ready elapsed_msec=700 surface=true visual_detail=true presented=true outputs_ready=2/2 recovery_attempts=0
+sophia_live_session_present schema=1 status=retired transaction=236 surface=2097168 source=2560x1440 target=2560x1440_0_0 unit_scale=true
 sophia_live_session_input_pipeline schema=1 status=key_observed
 sophia_live_session_input_pipeline schema=1 status=key_routed
 sophia_live_session_input schema=1 status=ready source=physical text=sophia

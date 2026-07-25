@@ -456,9 +456,17 @@
                     input_pixel_change = true;
                 }
                 println!(
-                    "sophia_live_session_present schema=1 status=retired transaction={} surface={}",
+                    "sophia_live_session_present schema=1 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} unit_scale={}",
                     retired.transaction.raw(),
                     retired.surface.index(),
+                    retired.source_size.width,
+                    retired.source_size.height,
+                    retired.target.width,
+                    retired.target.height,
+                    retired.target.x,
+                    retired.target.y,
+                    retired.source_size.width == retired.target.width
+                        && retired.source_size.height == retired.target.height,
                 );
                 println!(
                     "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",

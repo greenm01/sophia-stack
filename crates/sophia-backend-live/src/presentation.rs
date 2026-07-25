@@ -31,6 +31,20 @@ pub struct LiveRetainedDmaBufLayer {
     pub placement: LiveCompositionPlacement,
 }
 
+impl LiveRetainedDmaBufLayer {
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        Ok(Self {
+            frame: self.frame.try_clone()?,
+            placement: self.placement,
+        })
+    }
+
+    pub fn has_unit_scale(&self) -> bool {
+        self.placement.target.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
+            && self.placement.target.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
+    }
+}
+
 pub fn compose_full_state_mixed_frame(
     mut current: LiveOwnedMixedCompositionFrame,
     retained: Vec<LiveRetainedDmaBufLayer>,

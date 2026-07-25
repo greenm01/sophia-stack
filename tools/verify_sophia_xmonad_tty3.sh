@@ -187,6 +187,14 @@ require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=f
     "$SESSION_LOG" "final session health was not clean"
 require_line '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" "normal session emitted an unexpected X protocol error"
+require_line \
+    '^sophia_live_session_present schema=1 status=retired transaction=[0-9]+ surface=[0-9]+ source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+ unit_scale=true$' \
+    "$SESSION_LOG" "no unit-scale DMA-BUF presentation was retired"
+if grep -Eq \
+    'sophia_live_session_present schema=1 status=retired .* unit_scale=false$|rejected Present that would implicitly scale an X11 surface' \
+    "$SESSION_LOG"; then
+    fail "session attempted to scale an X11 client buffer implicitly"
+fi
 
 mapfile -t completions < <(
     grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"
