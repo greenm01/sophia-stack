@@ -414,6 +414,16 @@ of five states: created, retained, resized, invalidated, or retired. A retained
 target may keep the previous reduced allocation report; resize, invalidation,
 and retirement clear it. Runtime ticks may report the current reduced lifecycle
 state, but they must not allocate native frame targets implicitly.
+
+Production native composition treats a complete render target as the private
+lease unit. The target owns its EGL context, selected configuration, GL
+pipeline, GBM surface, and matching EGL window surface. Its exported buffer
+retains the scanout surface until page-flip retirement; the one-shot context
+and pipeline are destroyed rather than rebound to a different surface. Physical
+AMDGPU evidence rejected both same-surface reuse and retained-context use
+across fresh surfaces. Reduced evidence reports target and surface creation
+counts separately without exposing native objects.
+
 The first native skeleton is `NativeGbmBackedEglFrameTargetAllocator`, gated
 behind the existing GBM/EGL probe features. It accepts a backend-owned render
 device result and a reduced allocation request, performs any native work inside

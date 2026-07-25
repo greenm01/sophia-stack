@@ -52,7 +52,7 @@ expected_keys=(
 if [[ "${observed[schema]:-}" == "8" ]]; then
     expected_keys+=(input_presented_latency_msec)
 fi
-if [[ "${observed[schema]:-}" =~ ^(9|10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]:-}" =~ ^(9|10|11|12|13|14|15)$ ]]; then
     expected_keys+=(
         cpu_max_compose_msec input_presented_latency_msec input_dispatch_max_gap_msec
         input_queue_max_depth input_queue_dwell_max_msec native_max_upload_msec
@@ -60,22 +60,28 @@ if [[ "${observed[schema]:-}" =~ ^(9|10|11|12|13|14)$ ]]; then
         native_frame_uploads
     )
 fi
-if [[ "${observed[schema]:-}" =~ ^(10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]:-}" == "15" ]]; then
+    expected_keys+=(
+        native_frame_surface_creations native_max_target_create_msec
+        native_max_frame_surface_create_msec native_max_render_msec
+    )
+fi
+if [[ "${observed[schema]:-}" =~ ^(10|11|12|13|14|15)$ ]]; then
     expected_keys+=(input_events_expected input_events_flushed input_flush_latency_msec)
 fi
-if [[ "${observed[schema]:-}" =~ ^(11|12|13|14)$ ]]; then
+if [[ "${observed[schema]:-}" =~ ^(11|12|13|14|15)$ ]]; then
     expected_keys+=(input_text_match)
 fi
-if [[ "${observed[schema]:-}" =~ ^(7|8|9|10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]:-}" =~ ^(7|8|9|10|11|12|13|14|15)$ ]]; then
     expected_keys+=(wm_policy wm_requests wm_committed wm_restarts wm_degraded)
 fi
-if [[ "${observed[schema]:-}" =~ ^(12|13|14)$ ]]; then
+if [[ "${observed[schema]:-}" =~ ^(12|13|14|15)$ ]]; then
     expected_keys+=(namespace_profile output_update output_notifications surface_resize)
 fi
-if [[ "${observed[schema]:-}" =~ ^(13|14)$ ]]; then
+if [[ "${observed[schema]:-}" =~ ^(13|14|15)$ ]]; then
     expected_keys+=(startup_ready_msec)
 fi
-if [[ "${observed[schema]:-}" == "14" ]]; then
+if [[ "${observed[schema]:-}" =~ ^(14|15)$ ]]; then
     expected_keys+=(
         present_complete_flip present_complete_skip present_idle
         present_idle_fence_triggers present_disconnect_sources
@@ -95,14 +101,14 @@ for key in "${expected_keys[@]}"; do
     fi
 done
 
-[[ "${observed[schema]}" =~ ^(6|7|8|9|10|11|12|13|14)$ ]]
+[[ "${observed[schema]}" =~ ^(6|7|8|9|10|11|12|13|14|15)$ ]]
 [[ "${observed[status]}" == "bounded_complete" ]]
 [[ "${observed[injected_input]}" == "true" || "${observed[injected_input]}" == "false" ]]
 [[ "${observed[input_pixel_change]}" == "true" ]]
-if [[ "${observed[schema]}" =~ ^(11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(11|12|13|14|15)$ ]]; then
     [[ "${observed[input_text_match]}" == "true" ]]
 fi
-if [[ "${observed[schema]}" =~ ^(12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(12|13|14|15)$ ]]; then
     [[ "${observed[namespace_profile]}" == "classic_shared" || "${observed[namespace_profile]}" == "confined" ]]
     [[ "${observed[output_update]}" == "applied" || "${observed[output_update]}" == "disabled" ]]
     [[ "${observed[surface_resize]}" == "committed" || "${observed[surface_resize]}" == "disabled" ]]
@@ -112,7 +118,7 @@ if [[ "${observed[schema]}" =~ ^(12|13|14)$ ]]; then
         exit 1
     fi
     if [[ "${observed[surface_resize]}" == "committed" ]] \
-        && [[ "$(grep -Ec '^sophia_live_resize schema=1 status=committed transaction=[1-9][0-9]* surface=[1-9][0-9]* width=[1-9][0-9]* height=[1-9][0-9]* configure_delivered=true pixels=true$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
+        && [[ "$(grep -Ec '^sophia_live_resize schema=1 status=committed transaction=[1-9][0-9]* surface=[1-9][0-9]* width=[1-9][0-9]* height=[1-9][0-9]* configure_(ack|delivered)=true pixels=true$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
         echo "persistent live-session evidence is missing committed resize pixels" >&2
         exit 1
     fi
@@ -135,13 +141,13 @@ numeric_keys=(
     native_callback_rejected native_callback_queue_saturated
     native_nonzero_exports native_export_attempts
 )
-if [[ "${observed[schema]}" =~ ^(12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(12|13|14|15)$ ]]; then
     numeric_keys+=(output_notifications)
 fi
-if [[ "${observed[schema]}" =~ ^(13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(13|14|15)$ ]]; then
     numeric_keys+=(startup_ready_msec)
 fi
-if [[ "${observed[schema]}" == "14" ]]; then
+if [[ "${observed[schema]}" =~ ^(14|15)$ ]]; then
     numeric_keys+=(
         present_complete_flip present_complete_skip present_idle
         present_idle_fence_triggers present_disconnect_sources
@@ -153,7 +159,7 @@ fi
 if [[ "${observed[schema]}" == "8" ]]; then
     numeric_keys+=(input_presented_latency_msec)
 fi
-if [[ "${observed[schema]}" =~ ^(9|10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(9|10|11|12|13|14|15)$ ]]; then
     numeric_keys+=(
         cpu_max_compose_msec input_presented_latency_msec input_dispatch_max_gap_msec
         input_queue_max_depth input_queue_dwell_max_msec native_max_upload_msec
@@ -161,10 +167,16 @@ if [[ "${observed[schema]}" =~ ^(9|10|11|12|13|14)$ ]]; then
         native_frame_uploads
     )
 fi
-if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" == "15" ]]; then
+    numeric_keys+=(
+        native_frame_surface_creations native_max_target_create_msec
+        native_max_frame_surface_create_msec native_max_render_msec
+    )
+fi
+if [[ "${observed[schema]}" =~ ^(10|11|12|13|14|15)$ ]]; then
     numeric_keys+=(input_events_expected input_events_flushed input_flush_latency_msec)
 fi
-if [[ "${observed[schema]}" =~ ^(7|8|9|10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(7|8|9|10|11|12|13|14|15)$ ]]; then
     numeric_keys+=(wm_requests wm_committed wm_restarts)
     [[ "${observed[wm_policy]}" == "disabled" || "${observed[wm_policy]}" == "external" ]]
     [[ "${observed[wm_degraded]}" == "true" || "${observed[wm_degraded]}" == "false" ]]
@@ -174,7 +186,7 @@ if [[ "${observed[schema]}" =~ ^(7|8|9|10|11|12|13|14)$ ]]; then
     fi
 fi
 
-if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(10|11|12|13|14|15)$ ]]; then
     if (( observed[input_events_flushed] != observed[input_events_expected] )) \
         || { [[ "${observed[injected_input]}" == "true" ]] \
             && (( observed[input_events_expected] == 0 )); }; then
@@ -182,7 +194,7 @@ if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]]; then
         exit 1
     fi
 fi
-if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]] && [[ "${observed[input_events_expected]}" != "0" ]]; then
+if [[ "${observed[schema]}" =~ ^(10|11|12|13|14|15)$ ]] && [[ "${observed[input_events_expected]}" != "0" ]]; then
     if [[ "$(grep -Ec '^sophia_live_session_input_pipeline schema=(1 status=terminal_content_ready|2 status=content_ready source=(cpu_visual_detail|stable_present_scanout))$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
         echo "persistent live-session evidence is missing terminal-content readiness" >&2
         exit 1
@@ -200,7 +212,7 @@ if [[ "${observed[schema]}" =~ ^(10|11|12|13|14)$ ]] && [[ "${observed[input_eve
         exit 1
     fi
 fi
-if [[ "${observed[schema]}" =~ ^(11|12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(11|12|13|14|15)$ ]]; then
     mapfile -t semantic_lines < <(grep -E '^sophia_live_session_input schema=3 status=semantic_complete source=(synthetic|physical) text_match=true bytes=[0-9]+$' "$EVIDENCE_FILE" || true)
     if [[ "${#semantic_lines[@]}" -ne 1 ]]; then
         echo "persistent live-session evidence is missing exact terminal text confirmation" >&2
@@ -213,7 +225,7 @@ for key in "${numeric_keys[@]}"; do
         exit 1
     fi
 done
-if [[ "${observed[schema]}" =~ ^(12|13|14)$ ]]; then
+if [[ "${observed[schema]}" =~ ^(12|13|14|15)$ ]]; then
     if [[ "${observed[output_update]}" == "applied" ]] && (( observed[output_notifications] == 0 )); then
         echo "persistent live-session output update reached no subscribed X11 client" >&2
         exit 1

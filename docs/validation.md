@@ -334,14 +334,15 @@ Follow the sequence printed by the launcher and use normal xmonad logout.
 The verifier waits briefly for completion, requires one pixel-matched
 full-height pane plus three stack panes, and rejects empty per-output
 submissions, forced native detach, abandoned scanouts, callback imbalance, or
-cleanup debt. It also requires at least 32 mixed exports, exact fail-safe
-composition-target retirement after every export, zero CPU/direct-DMA-BUF
-epoch or recovery replacement, zero launch-admission timeout, and at most 100
-ms for input queue dwell, CPU upload, and submit-to-page-flip latency. Each
+cleanup debt. It also requires at least 32 mixed exports, one complete
+composition target and frame surface per safe export, zero recovery
+replacement, zero
+launch-admission timeout, and at most 100 ms for input queue dwell, CPU upload,
+and submit-to-page-flip latency. Each
 output must also retain one
 `sophia_live_native_startup_output ... proof=synchronous_modeset` record; later
 asynchronous submissions still require matching callbacks. The separate
-`sophia_live_native_resources schema=1` completion record contains only
+`sophia_live_native_resources schema=2` completion record contains only
 reduced creation and replacement counts; it does not expose native handles or
 application metadata. While physical input is active, the session owner polls
 its X authority channel on the one-millisecond budget so idle X traffic cannot

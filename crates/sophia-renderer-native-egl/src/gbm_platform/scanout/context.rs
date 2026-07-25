@@ -9,20 +9,15 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     egl: khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
     gbm_device: gbm::Device<T>,
-    cpu_target: Option<PersistentNativeFrameTarget>,
-    dmabuf_target: Option<PersistentNativeFrameTarget>,
-    composition_target: Option<PersistentNativeFrameTarget>,
     stats: NativeGbmPersistentRenderStats,
     last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
     composition_pixel_proof_attempts: usize,
 }
 
-struct PersistentNativeFrameTarget {
+struct NativeRenderTarget {
     width: u32,
     height: u32,
-    preferred_modifiers: Vec<u64>,
     egl_context: khronos_egl::Context,
-    surface: std::sync::Arc<PersistentNativeSurface>,
     pipeline: PersistentXrgb8888GlPipeline,
 }
 
@@ -75,9 +70,6 @@ where
             egl,
             display,
             gbm_device,
-            cpu_target: None,
-            dmabuf_target: None,
-            composition_target: None,
             stats: NativeGbmPersistentRenderStats::default(),
             last_composition_pixel_metrics: None,
             composition_pixel_proof_attempts: 0,
@@ -159,7 +151,7 @@ where
         let result = self
             .write_cpu_xrgb8888_scanout_buffer(width, height, pixels)
             .or_else(|_| {
-                self.render_persistent_xrgb8888_with_recovery(
+                self.render_one_shot_xrgb8888_with_recovery(
                     width,
                     height,
                     pixels,
@@ -185,7 +177,7 @@ where
                 buffer: None,
             };
         }
-        let result = self.render_persistent_dmabuf_with_recovery(frame, preferred_modifiers);
+        let result = self.render_one_shot_dmabuf_with_recovery(frame, preferred_modifiers);
         match result {
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
@@ -222,32 +214,67 @@ where
                 buffer: None,
             };
         }
-        match self.render_persistent_composition_with_recovery(frame, preferred_modifiers) {
+        match self.render_one_shot_composition_with_recovery(frame, preferred_modifiers) {
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
         }
     }
 
-    fn render_persistent_composition_with_recovery(
+    fn create_render_target(
+        &mut self,
+        spec: RenderTargetSpec,
+    ) -> Result<
+        (
+            NativeRenderTarget,
+            std::sync::Arc<NativeFrameSurface>,
+            std::time::Duration,
+        ),
+        NativeGbmScanoutBufferExportDetail,
+    > {
+        let started = Instant::now();
+        let created = create_native_render_target(
+            NativeEglScanoutDevice {
+                egl: &self.egl,
+                display: self.display,
+                gbm_device: &self.gbm_device,
+            },
+            spec,
+        );
+        self.stats.max_target_create = self.stats.max_target_create.max(started.elapsed());
+        if let Ok((_, _, surface_create_duration)) = &created {
+            self.stats.target_creations = self.stats.target_creations.saturating_add(1);
+            self.stats.gl_pipeline_creations =
+                self.stats.gl_pipeline_creations.saturating_add(1);
+            self.stats.frame_surface_creations =
+                self.stats.frame_surface_creations.saturating_add(1);
+            self.stats.max_frame_surface_create = self
+                .stats
+                .max_frame_surface_create
+                .max(*surface_create_duration);
+        }
+        created
+    }
+
+    fn render_one_shot_composition_with_recovery(
         &mut self,
         frame: NativeCompositionFrame<'_>,
         preferred_modifiers: &[u64],
     ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-        let result = self.render_persistent_composition(frame, preferred_modifiers);
+        let result = self.render_one_shot_composition(frame, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| invalidates_persistent_target(*detail))
+            .is_err_and(|detail| should_retry_render_target(*detail))
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
                 self.stats.recovery_replacements.saturating_add(1);
-            self.render_persistent_composition(frame, preferred_modifiers)
+            self.render_one_shot_composition(frame, preferred_modifiers)
         } else {
             result
         }
     }
 
-    fn render_persistent_composition(
+    fn render_one_shot_composition(
         &mut self,
         frame: NativeCompositionFrame<'_>,
         preferred_modifiers: &[u64],
@@ -257,46 +284,6 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.composition_target.as_ref().is_some_and(|target| {
-            target.width == frame.width
-                && target.height == frame.height
-                && target.preferred_modifiers == preferred_modifiers
-        });
-        if !reusable && let Some(target) = self.composition_target.take() {
-            self.destroy_persistent_target(target);
-            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
-        }
-        if let Some(mut target) = self.composition_target.take() {
-            let capture_pixels = self.composition_pixel_proof_attempts < 3;
-            let result = render_persistent_target_composition(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                &mut target,
-                frame,
-                capture_pixels,
-            );
-            if capture_pixels {
-                self.composition_pixel_proof_attempts =
-                    self.composition_pixel_proof_attempts.saturating_add(1);
-            }
-            self.last_composition_pixel_metrics =
-                result.as_ref().ok().and_then(|(_, metrics)| *metrics);
-            if result.is_ok() {
-                self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-                self.destroy_persistent_target(target);
-            } else if result
-                .as_ref()
-                .is_err_and(|detail| invalidates_persistent_target(*detail))
-            {
-                self.destroy_persistent_target(target);
-            } else {
-                self.composition_target = Some(target);
-            }
-            return result.map(|(buffer, _)| buffer);
-        }
-
         self.egl
             .bind_api(khronos_egl::OPENGL_API)
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
@@ -311,36 +298,32 @@ where
             ) else {
                 continue;
             };
-            let target = create_persistent_target(
-                NativeEglScanoutDevice {
-                    egl: &self.egl,
-                    display: self.display,
-                    gbm_device: &self.gbm_device,
-                },
-                PersistentTargetSpec {
-                    width: frame.width,
-                    height: frame.height,
-                    preferred_modifiers: preferred_modifiers.clone(),
-                    config,
-                    candidate,
-                },
-            );
-            let mut target = match target {
-                Ok(target) => target,
+            let created = self.create_render_target(RenderTargetSpec {
+                width: frame.width,
+                height: frame.height,
+                config,
+                candidate,
+            });
+            let (mut target, surface, _) = match created {
+                Ok(created) => created,
                 Err(detail) => {
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                     continue;
                 }
             };
+            self.stats.composition_target_creations =
+                self.stats.composition_target_creations.saturating_add(1);
             let capture_pixels = self.composition_pixel_proof_attempts < 3;
-            let rendered = render_persistent_target_composition(
+            let render_started = Instant::now();
+            let rendered = render_native_target_composition(
                 &self.egl,
                 self.display,
-                &self.gbm_device,
                 &mut target,
+                surface,
                 frame,
                 capture_pixels,
             );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
@@ -349,22 +332,17 @@ where
                 rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
-                    self.stats.target_creations = self.stats.target_creations.saturating_add(1);
-                    self.stats.gl_pipeline_creations =
-                        self.stats.gl_pipeline_creations.saturating_add(1);
-                    self.stats.composition_target_creations =
-                        self.stats.composition_target_creations.saturating_add(1);
                     self.stats.target_recreations =
                         self.stats.target_recreations.saturating_add(1);
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
                 Err(detail) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
             }
@@ -372,26 +350,26 @@ where
         Err(last_detail)
     }
 
-    fn render_persistent_dmabuf_with_recovery(
+    fn render_one_shot_dmabuf_with_recovery(
         &mut self,
         frame: NativeDmaBufFrame<'_>,
         preferred_modifiers: &[u64],
     ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-        let result = self.render_persistent_dmabuf(frame, preferred_modifiers);
+        let result = self.render_one_shot_dmabuf(frame, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| invalidates_persistent_target(*detail))
+            .is_err_and(|detail| should_retry_render_target(*detail))
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
                 self.stats.recovery_replacements.saturating_add(1);
-            self.render_persistent_dmabuf(frame, preferred_modifiers)
+            self.render_one_shot_dmabuf(frame, preferred_modifiers)
         } else {
             result
         }
     }
 
-    fn render_persistent_dmabuf(
+    fn render_one_shot_dmabuf(
         &mut self,
         frame: NativeDmaBufFrame<'_>,
         preferred_modifiers: &[u64],
@@ -401,37 +379,6 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.dmabuf_target.as_ref().is_some_and(|target| {
-            target.width == frame.width
-                && target.height == frame.height
-                && target.preferred_modifiers == preferred_modifiers
-        });
-        if !reusable && let Some(target) = self.dmabuf_target.take() {
-            self.destroy_persistent_target(target);
-            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
-        }
-        if let Some(mut target) = self.dmabuf_target.take() {
-            let result = render_persistent_target_dmabuf(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                &mut target,
-                frame,
-            );
-            if result.is_ok() {
-                self.dmabuf_target = Some(target);
-            } else if result
-                .as_ref()
-                .is_err_and(|detail| invalidates_persistent_target(*detail))
-            {
-                self.destroy_persistent_target(target);
-            } else {
-                self.dmabuf_target = Some(target);
-            }
-            return result;
-        }
-
         self.egl
             .bind_api(khronos_egl::OPENGL_API)
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
@@ -446,49 +393,43 @@ where
             ) else {
                 continue;
             };
-            let target = create_persistent_target(
-                NativeEglScanoutDevice {
-                    egl: &self.egl,
-                    display: self.display,
-                    gbm_device: &self.gbm_device,
-                },
-                PersistentTargetSpec {
-                    width: frame.width,
-                    height: frame.height,
-                    preferred_modifiers: preferred_modifiers.clone(),
-                    config,
-                    candidate,
-                },
-            );
-            let mut target = match target {
-                Ok(target) => target,
+            let created = self.create_render_target(RenderTargetSpec {
+                width: frame.width,
+                height: frame.height,
+                config,
+                candidate,
+            });
+            let (mut target, surface, _) = match created {
+                Ok(created) => created,
                 Err(detail) => {
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                     continue;
                 }
             };
-            match render_persistent_target_dmabuf(
+            self.stats.dmabuf_target_creations =
+                self.stats.dmabuf_target_creations.saturating_add(1);
+            let render_started = Instant::now();
+            let rendered = render_native_target_dmabuf(
                 &self.egl,
                 self.display,
-                &self.gbm_device,
                 &mut target,
+                surface,
                 frame,
-            ) {
+            );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
-                    self.stats.target_creations = self.stats.target_creations.saturating_add(1);
-                    self.stats.gl_pipeline_creations =
-                        self.stats.gl_pipeline_creations.saturating_add(1);
-                    self.stats.dmabuf_target_creations =
-                        self.stats.dmabuf_target_creations.saturating_add(1);
-                    self.dmabuf_target = Some(target);
+                    self.stats.target_recreations =
+                        self.stats.target_recreations.saturating_add(1);
+                    self.destroy_native_render_target(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
                 Err(detail) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
             }
@@ -547,7 +488,7 @@ where
         native_owned_scanout_buffer_from_bo(width, height, buffer, None)
     }
 
-    fn render_persistent_xrgb8888_with_recovery(
+    fn render_one_shot_xrgb8888_with_recovery(
         &mut self,
         width: u32,
         height: u32,
@@ -555,21 +496,21 @@ where
         preferred_modifiers: &[u64],
     ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
         let result =
-            self.render_persistent_xrgb8888(width, height, pixels, preferred_modifiers);
+            self.render_one_shot_xrgb8888(width, height, pixels, preferred_modifiers);
         if result
             .as_ref()
-            .is_err_and(|detail| invalidates_persistent_target(*detail))
+            .is_err_and(|detail| should_retry_render_target(*detail))
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.stats.recovery_replacements =
                 self.stats.recovery_replacements.saturating_add(1);
-            self.render_persistent_xrgb8888(width, height, pixels, preferred_modifiers)
+            self.render_one_shot_xrgb8888(width, height, pixels, preferred_modifiers)
         } else {
             result
         }
     }
 
-    fn render_persistent_xrgb8888(
+    fn render_one_shot_xrgb8888(
         &mut self,
         width: u32,
         height: u32,
@@ -581,38 +522,6 @@ where
             .copied()
             .filter(|modifier| *modifier != u64::MAX)
             .collect::<Vec<_>>();
-        let reusable = self.cpu_target.as_ref().is_some_and(|target| {
-            target.width == width
-                && target.height == height
-                && target.preferred_modifiers == preferred_modifiers
-        });
-        if !reusable && let Some(target) = self.cpu_target.take() {
-            self.destroy_persistent_target(target);
-            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-            self.stats.epoch_replacements = self.stats.epoch_replacements.saturating_add(1);
-        }
-        if let Some(mut target) = self.cpu_target.take() {
-            let result = render_persistent_target_frame(
-                &self.egl,
-                self.display,
-                &self.gbm_device,
-                &mut target,
-                pixels,
-            );
-            if result.is_ok() {
-                self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-                self.cpu_target = Some(target);
-            } else if result
-                .as_ref()
-                .is_err_and(|detail| invalidates_persistent_target(*detail))
-            {
-                self.destroy_persistent_target(target);
-            } else {
-                self.cpu_target = Some(target);
-            }
-            return result;
-        }
-
         self.egl
             .bind_api(khronos_egl::OPENGL_API)
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
@@ -627,50 +536,44 @@ where
             ) else {
                 continue;
             };
-            let target = create_persistent_target(
-                NativeEglScanoutDevice {
-                    egl: &self.egl,
-                    display: self.display,
-                    gbm_device: &self.gbm_device,
-                },
-                PersistentTargetSpec {
-                    width,
-                    height,
-                    preferred_modifiers: preferred_modifiers.clone(),
-                    config,
-                    candidate,
-                },
-            );
-            let mut target = match target {
-                Ok(target) => target,
+            let created = self.create_render_target(RenderTargetSpec {
+                width,
+                height,
+                config,
+                candidate,
+            });
+            let (mut target, surface, _) = match created {
+                Ok(created) => created,
                 Err(detail) => {
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                     continue;
                 }
             };
-            match render_persistent_target_frame(
+            self.stats.cpu_target_creations =
+                self.stats.cpu_target_creations.saturating_add(1);
+            let render_started = Instant::now();
+            let rendered = render_native_target_frame(
                 &self.egl,
                 self.display,
-                &self.gbm_device,
                 &mut target,
+                surface,
                 pixels,
-            ) {
+            );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
-                    self.stats.target_creations = self.stats.target_creations.saturating_add(1);
-                    self.stats.gl_pipeline_creations =
-                        self.stats.gl_pipeline_creations.saturating_add(1);
                     self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-                    self.stats.cpu_target_creations =
-                        self.stats.cpu_target_creations.saturating_add(1);
-                    self.cpu_target = Some(target);
+                    self.stats.target_recreations =
+                        self.stats.target_recreations.saturating_add(1);
+                    self.destroy_native_render_target(target);
                     return Ok(buffer);
                 }
                 Ok(_) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
                 Err(detail) => {
-                    self.destroy_persistent_target(target);
+                    self.destroy_native_render_target(target);
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
             }
@@ -678,13 +581,12 @@ where
         Err(last_detail)
     }
 
-    fn destroy_persistent_target(&self, target: PersistentNativeFrameTarget) {
-        trace_native_lifecycle("persistent_target_destroy_started");
+    fn destroy_native_render_target(&self, target: NativeRenderTarget) {
+        trace_native_lifecycle("native_render_target_destroy_started");
         let _ = self.egl.make_current(self.display, None, None, None);
         drop(target.pipeline);
         let _ = self.egl.destroy_context(self.display, target.egl_context);
         trace_native_lifecycle("egl_context_destroyed");
-        drop(target.surface);
     }
 }
 
@@ -693,21 +595,12 @@ where
     T: std::os::fd::AsFd,
 {
     fn drop(&mut self) {
-        if let Some(target) = self.cpu_target.take() {
-            self.destroy_persistent_target(target);
-        }
-        if let Some(target) = self.dmabuf_target.take() {
-            self.destroy_persistent_target(target);
-        }
-        if let Some(target) = self.composition_target.take() {
-            self.destroy_persistent_target(target);
-        }
         let _ = self.egl.terminate(self.display);
         trace_native_lifecycle("egl_display_terminated");
     }
 }
 
-fn invalidates_persistent_target(detail: NativeGbmScanoutBufferExportDetail) -> bool {
+fn should_retry_render_target(detail: NativeGbmScanoutBufferExportDetail) -> bool {
     matches!(
         detail,
         NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed
@@ -718,4 +611,35 @@ fn invalidates_persistent_target(detail: NativeGbmScanoutBufferExportDetail) -> 
             | NativeGbmScanoutBufferExportDetail::CompositionFinishFailed
             | NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed
     )
+}
+
+#[cfg(test)]
+mod render_target_tests {
+    use super::*;
+
+    #[test]
+    fn context_and_pipeline_failures_receive_a_bounded_retry() {
+        for detail in [
+            NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed,
+            NativeGbmScanoutBufferExportDetail::EglSwapBuffersFailed,
+            NativeGbmScanoutBufferExportDetail::GlSmokeFailed,
+            NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed,
+            NativeGbmScanoutBufferExportDetail::CompositionDrawFailed,
+            NativeGbmScanoutBufferExportDetail::CompositionFinishFailed,
+            NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed,
+        ] {
+            assert!(should_retry_render_target(detail));
+        }
+    }
+
+    #[test]
+    fn export_surface_failures_do_not_retry_the_one_shot_target() {
+        for detail in [
+            NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable,
+            NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable,
+            NativeGbmScanoutBufferExportDetail::FrontBufferLockFailed,
+        ] {
+            assert!(!should_retry_render_target(detail));
+        }
+    }
 }

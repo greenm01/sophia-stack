@@ -3300,3 +3300,44 @@ long as 75 ms, producing 120 ms of measured queue dwell. Physical-input
 presence now selects the existing one-millisecond owner wait budget. Cursor
 and control work retain that same budget, while sessions without those
 latency-sensitive sources keep the 25 ms idle wait.
+
+## 2026-07-25: Retained Contexts Across Fresh Surfaces Are Unsafe
+
+The fail-safe mixed path bundled four lifetimes into one target: EGL context,
+GL pipeline, EGL window surface, and GBM surface. Destroying that bundle after
+every successful export protected the leased front buffer but also rebuilt the
+context and shaders on every frame. This explained the repeated composition
+creation count and left input and page-flip latency coupled to driver setup.
+
+The attempted lifetime split created a distinct GBM/EGL surface for every
+export while retaining the EGL context and GL pipeline. Physical startup
+presented the first two mixed submissions successfully. The third render then
+aborted with `amdgpu: The CS has been rejected ... (-2)`. This falsifies the
+assumption that avoiding same-surface reuse alone is sufficient on this stack:
+the context and pipeline cannot safely be rebound across independent leased
+window surfaces either.
+
+The fail-safe path again destroys the composition context and pipeline after
+every successful export while the exported buffer retains its surface through
+KMS retirement. Resource evidence still distinguishes complete-target and
+frame-surface creation so this invariant is machine-checkable. The next
+optimization is a bounded generational pool of complete targets, not a pool of
+surfaces behind one context. A slot may become free only through explicit
+page-flip retirement, never through reference-count inference.
+
+## 2026-07-25: One-Shot Targets Restore Physical Stability
+
+The first physical cycle after removing every retained GPU target completed
+normally with 253 mixed exports. Target, pipeline, frame-surface, and successful
+target-retirement counts were all 253. Generation and recovery replacement
+were zero, no AMDGPU command stream was rejected, native submissions and
+callbacks drained, and the lifecycle returned exit status zero.
+
+The strict gate exposed a separate owner-scheduling defect. Of 254 callback
+observations, 248 completed within 20 ms and three exceeded 100 ms. Two
+213--214 ms stalls coincided with managed terminal exit and xmonad resize
+epochs; a 171 ms stall covered the final blank frame after the startup terminal
+exited. Target creation peaked at 4 ms and rendering at 47 ms, while input
+queue dwell reached 191 ms. The next fix must prioritize native callback and
+input draining across child-exit and layout-transition work. The latency budget
+must not be relaxed to hide these isolated starvation events.

@@ -56,7 +56,7 @@ if grep -Eq '^sophia_live_session_present schema=2 .* unit_scale=false$' "$EVIDE
 fi
 grep -Eq '^sophia_session_app schema=1 status=started id=terminal source=startup$' "$EVIDENCE_FILE"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' "$EVIDENCE_FILE"
-completion="$(grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$EVIDENCE_FILE")"
+completion="$(grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$EVIDENCE_FILE")"
 [[ " $completion " == *" startup_ready_msec="* ]]
 [[ " $completion " == *" cpu_nonzero_frames="* ]]
 [[ " $completion " == *" surface_resize=committed "* ]]

@@ -15,7 +15,7 @@ pub struct NativeGbmOwnedScanoutBuffer {
     _buffer: Option<gbm::BufferObject<()>>,
     _egl_surface: Option<NativeEglSurfaceOwner>,
     _surface: Option<gbm::Surface<()>>,
-    _persistent_surface: Option<std::sync::Arc<PersistentNativeSurface>>,
+    _frame_surface: Option<std::sync::Arc<NativeFrameSurface>>,
 }
 
 #[derive(Debug)]
@@ -26,12 +26,12 @@ struct NativeEglSurfaceOwner {
 }
 
 #[derive(Debug)]
-struct PersistentNativeSurface {
+struct NativeFrameSurface {
     egl_surface: NativeEglSurfaceOwner,
     gbm_surface: gbm::Surface<()>,
 }
 
-impl PersistentNativeSurface {
+impl NativeFrameSurface {
     const fn egl_surface(&self) -> khronos_egl::Surface {
         self.egl_surface.surface
     }
@@ -58,8 +58,8 @@ impl Drop for NativeGbmOwnedScanoutBuffer {
         drop(self._egl_surface.take());
         drop(self._surface.take());
         trace_native_lifecycle("originating_surface_released");
-        drop(self._persistent_surface.take());
-        trace_native_lifecycle("persistent_surface_lease_released");
+        drop(self._frame_surface.take());
+        trace_native_lifecycle("frame_surface_lease_released");
     }
 }
 

@@ -25,7 +25,7 @@ field() {
 
 deadline=$((SECONDS + WAIT_SECONDS))
 while ! grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
-    ! grep -Eq '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"; do
+    ! grep -Eq '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG"; do
     (( SECONDS < deadline )) || fail "session log is incomplete"
     sleep 0.1
 done
@@ -121,7 +121,7 @@ grep -Eq \
     "$SESSION_LOG" ||
     fail "client pressed-key state did not drain"
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG"
 )
 (( ${#completions[@]} == 1 )) ||
     fail "expected one completed session, found ${#completions[@]}"
@@ -141,6 +141,9 @@ for assignment in \
         fail "completion does not contain $assignment"
 done
 for key in native_mixed_exports native_target_recreations \
+    native_frame_surface_creations \
+    native_max_target_create_msec native_max_frame_surface_create_msec \
+    native_max_render_msec \
     native_max_submit_to_page_flip_msec native_max_upload_msec \
     input_queue_dwell_max_msec; do
     value="$(field "$completion" "$key")" ||
@@ -150,20 +153,21 @@ for key in native_mixed_exports native_target_recreations \
     if [[ "$key" == native_mixed_exports ]]; then
         (( value >= 32 )) ||
             fail "sustained mixed presentation produced only $value exports"
-    elif [[ "$key" != native_target_recreations ]]; then
+    elif [[ "$key" != native_target_recreations &&
+        "$key" != native_frame_surface_creations ]]; then
         (( value <= 100 )) ||
             fail "$key exceeded the 100ms promotion budget: $value"
     fi
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=1 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=2 status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
 resources="${resource_lines[0]}"
-for key in target_creations pipeline_creations cpu_target_creations \
-    dmabuf_target_creations composition_target_creations epoch_replacements \
+for key in target_creations pipeline_creations frame_surface_creations cpu_target_creations \
+    dmabuf_target_creations composition_target_creations generation_replacements \
     recovery_replacements; do
     value="$(field "$resources" "$key")" ||
         fail "resource-lifetime record is missing $key"
@@ -172,22 +176,28 @@ for key in target_creations pipeline_creations cpu_target_creations \
 done
 target_creations="$(field "$resources" target_creations)"
 pipeline_creations="$(field "$resources" pipeline_creations)"
+frame_surface_creations="$(field "$resources" frame_surface_creations)"
 cpu_targets="$(field "$resources" cpu_target_creations)"
 dmabuf_targets="$(field "$resources" dmabuf_target_creations)"
 composition_targets="$(field "$resources" composition_target_creations)"
-epoch_replacements="$(field "$resources" epoch_replacements)"
+generation_replacements="$(field "$resources" generation_replacements)"
 recovery_replacements="$(field "$resources" recovery_replacements)"
 mixed_exports="$(field "$completion" native_mixed_exports)"
 target_recreations="$(field "$completion" native_target_recreations)"
+completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)"
 (( target_creations == pipeline_creations )) ||
     fail "target and pipeline creation counts diverged"
 (( target_creations == cpu_targets + dmabuf_targets + composition_targets )) ||
     fail "resource-class creation counts do not sum to the total"
 (( composition_targets == mixed_exports )) ||
-    fail "composition targets were not retired after every mixed export"
-(( target_recreations == composition_targets )) ||
-    fail "native recreation count includes work outside the guarded composition path"
-(( epoch_replacements == 0 && recovery_replacements == 0 )) ||
+    fail "composition did not use one complete target per safe export"
+(( frame_surface_creations >= mixed_exports )) ||
+    fail "resource evidence omitted export-scoped frame surfaces"
+(( completion_frame_surfaces == frame_surface_creations )) ||
+    fail "completion and resource frame-surface counts diverged"
+(( target_recreations == mixed_exports )) ||
+    fail "composition target retirement did not match safe exports"
+(( generation_replacements == 0 && recovery_replacements == 0 )) ||
     fail "stable CPU or direct DMA-BUF resources were replaced"
 
 grep -Eq \

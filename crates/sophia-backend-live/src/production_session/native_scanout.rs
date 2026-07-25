@@ -71,12 +71,16 @@ mod persistent_native_scanout {
         pub target_creations: usize,
         pub target_recreations: usize,
         pub pipeline_creations: usize,
+        pub frame_surface_creations: usize,
         pub cpu_target_creations: usize,
         pub dmabuf_target_creations: usize,
         pub composition_target_creations: usize,
-        pub epoch_replacements: usize,
+        pub generation_replacements: usize,
         pub recovery_replacements: usize,
         pub uploads: usize,
+        pub max_target_create: Duration,
+        pub max_frame_surface_create: Duration,
+        pub max_render: Duration,
         pub max_upload: Duration,
     }
 
@@ -752,6 +756,9 @@ mod persistent_native_scanout {
                     metrics.pipeline_creations = metrics
                         .pipeline_creations
                         .saturating_add(stats.gl_pipeline_creations);
+                    metrics.frame_surface_creations = metrics
+                        .frame_surface_creations
+                        .saturating_add(stats.frame_surface_creations);
                     metrics.cpu_target_creations = metrics
                         .cpu_target_creations
                         .saturating_add(stats.cpu_target_creations);
@@ -761,13 +768,19 @@ mod persistent_native_scanout {
                     metrics.composition_target_creations = metrics
                         .composition_target_creations
                         .saturating_add(stats.composition_target_creations);
-                    metrics.epoch_replacements = metrics
-                        .epoch_replacements
-                        .saturating_add(stats.epoch_replacements);
+                    metrics.generation_replacements = metrics
+                        .generation_replacements
+                        .saturating_add(stats.generation_replacements);
                     metrics.recovery_replacements = metrics
                         .recovery_replacements
                         .saturating_add(stats.recovery_replacements);
                     metrics.uploads = metrics.uploads.saturating_add(stats.frame_uploads);
+                    metrics.max_target_create =
+                        metrics.max_target_create.max(stats.max_target_create);
+                    metrics.max_frame_surface_create = metrics
+                        .max_frame_surface_create
+                        .max(stats.max_frame_surface_create);
+                    metrics.max_render = metrics.max_render.max(stats.max_render);
                     metrics.max_upload = metrics.max_upload.max(stats.max_upload);
                     metrics
                 },

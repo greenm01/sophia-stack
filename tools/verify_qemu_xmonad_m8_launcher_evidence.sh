@@ -25,7 +25,7 @@ done
 grep -q '^sophia_live_session_mode schema=1 mode=normal configured_apps=1 startup_apps=1$' "$evidence"
 grep -q '^sophia_live_wm schema=1 status=ready adapter=external ' "$evidence"
 grep -Eq '^sophia_live_wm schema=1 status=layout_committed .*surfaces=[2-9][0-9]* ' "$evidence"
-grep -Eq '^sophia_live_session schema=14 status=bounded_complete .*wm_policy=external .*wm_restarts=1 .*wm_degraded=false ' "$evidence"
+grep -Eq '^sophia_live_session schema=(14|15) status=bounded_complete .*wm_policy=external .*wm_restarts=1 .*wm_degraded=false ' "$evidence"
 grep -q '^sophia_qemu_guest schema=1 status=complete scenario=xmonad-m8-launcher$' "$evidence"
 grep -q '^sophia_qemu_xmonad schema=1 status=restart_injected target=compatibility_bridge$' "$evidence"
 grep -q '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$evidence"

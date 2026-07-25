@@ -118,7 +118,12 @@ or layout policy.
   A Mesa RADV `vkcube` trace reaches an Engine transaction without an X11 error.
   The reusable renderer-private DMA-BUF registry and cloneable Present feedback
   router now feed the persistent mixed CPU/DMA-BUF renderer and page-flip
-  retirement path. The paired software and CPU-plus-Vulkan hardware gate now
+  retirement path. Physical AMDGPU evidence requires one complete render target
+  per mixed export. The context and pipeline are destroyed after export rather
+  than rebound; the exported buffer retains its GBM/EGL surface through
+  page-flip retirement. Binding a retained context to a fresh surface still
+  caused the third command stream to be rejected. The paired software and
+  CPU-plus-Vulkan hardware gate now
   passes through Engine-owned KMS with controlled rejection recovery and exact
   resource retirement.
 - XLibre is absent from the production workspace and launcher. Its frozen
@@ -280,6 +285,31 @@ compatibility mechanisms, not the permanent native-X seam.
 Renderer imports and KMS handles remain backend-private. An authority may pass
 an opaque buffer handle with explicit ownership, dimensions, format, damage,
 and fence/readiness facts; it never submits scanout.
+
+## Native Performance Direction
+
+Optimization preserves the same authority boundaries. Engine produces one
+immutable, contiguous frame plan per output generation. The renderer keeps
+contexts, pipelines, imports, and reusable frame surfaces in bounded
+generation-keyed storage; the backend remains the owner of KMS submission and
+page-flip retirement.
+
+The warmed path targets no context, shader, or surface allocation. Damage and
+buffer-age history reduce composition work, while incomplete history forces a
+full repaint. One newest pending frame and one KMS submission are retained per
+output so slow rendering cannot create an unbounded queue. If measurement
+later requires a renderer worker, it consumes only immutable bounded frame
+commands and returns opaque rendered buffers; protocol and WM state remain on
+their existing owners.
+
+Direct scanout and hardware planes are backend capabilities, not alternate
+authority paths. Engine first proves scene eligibility, the backend validates
+the exact format/modifier through an atomic test, and any rejection returns to
+mixed composition without losing committed visual state.
+
+XLibre and mature Wayland compositors may provide external comparison runs and
+implementation lessons. They do not enter Sophia's workspace, production
+dependency graph, protocol surface, or session loop.
 
 ## Input
 

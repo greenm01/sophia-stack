@@ -77,7 +77,10 @@ if [[ "$(grep -c '^sophia_qemu_pointer schema=1 status=sent source=qmp device=vi
 fi
 
 completion_line="$(grep -E '^sophia_live_session .*status=bounded_complete ' "$EVIDENCE_FILE")"
-if [[ ! " $completion_line " =~ " schema=10 " ]] && [[ ! " $completion_line " =~ " schema=11 " ]] && [[ ! " $completion_line " =~ " schema=14 " ]]; then
+if [[ ! " $completion_line " =~ " schema=10 " ]] \
+    && [[ ! " $completion_line " =~ " schema=11 " ]] \
+    && [[ ! " $completion_line " =~ " schema=14 " ]] \
+    && [[ ! " $completion_line " =~ " schema=15 " ]]; then
     echo "QEMU evidence did not use the latency/resource schema" >&2
     exit 1
 fi
@@ -130,6 +133,17 @@ for field in input_presented_latency_msec cpu_max_compose_msec \
     fi
     printf -v "$field" '%s' "$value"
 done
+native_frame_surface_creations=0
+if [[ " $completion_line " =~ " schema=15 " ]]; then
+    native_frame_surface_creations="$(
+        sed -n 's/.* native_frame_surface_creations=\([0-9][0-9]*\).*/\1/p' \
+            <<<"$completion_line"
+    )"
+    if [[ -z "$native_frame_surface_creations" ]]; then
+        echo "QEMU evidence is missing numeric native_frame_surface_creations" >&2
+        exit 1
+    fi
+fi
 if (( input_presented_latency_msec > 100 || cpu_max_compose_msec > 25 \
     || native_max_submit_to_page_flip_msec > 100 || native_max_upload_msec > 100 )); then
     echo "QEMU evidence exceeded its input/rendering latency budget" >&2
@@ -142,6 +156,11 @@ fi
 if ! (( (native_target_creations == 0 && native_pipeline_creations == 0) \
     || (native_target_creations == 2 && native_pipeline_creations == 2) )); then
     echo "QEMU evidence has inconsistent direct-write/persistent-GL resource counters" >&2
+    exit 1
+fi
+if [[ " $completion_line " =~ " schema=15 " ]] \
+    && (( native_frame_surface_creations < native_target_creations )); then
+    echo "QEMU evidence has fewer frame surfaces than renderer epochs" >&2
     exit 1
 fi
 

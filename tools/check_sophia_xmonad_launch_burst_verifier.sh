@@ -20,7 +20,7 @@ trap 'rm -f "$fixture" "$mutation"' EXIT
     echo 'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none'
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=2 retirements=1 callbacks=1 nonzero_exports=2'
     echo 'sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=2 retirements=1 callbacks=1 nonzero_exports=2'
-    echo 'sophia_live_session schema=14 status=bounded_complete placeholder=true'
+    echo 'sophia_live_session schema=15 status=bounded_complete placeholder=true'
     echo 'sophia_live_session_cleanup schema=1 status=clean app_groups=0'
 } >"$fixture"
 

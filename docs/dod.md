@@ -434,6 +434,28 @@ renderers may use native `XPixmap` or `DmaBuf` handles when supported. A GPU
 renderer should keep the same report shape so tests can distinguish "requested
 import path" from "used path" without inspecting renderer-private state.
 
+### NativeRenderTargetSlot
+
+Native rendering models the complete GPU target as a generation-checked pool
+slot. Physical AMDGPU evidence does not permit splitting a retained EGL/GL
+context from the GBM/EGL surface it rendered. A slot is keyed by a reduced
+output generation, dimensions, format, and normalized modifier set, and owns
+the renderer-private context, pipeline, and surfaces as one unit.
+
+A target slot has one of these flat
+states:
+
+- free
+- rendering
+- scanout leased
+- retiring
+
+The normal transition is `free -> rendering -> scanout leased -> retiring ->
+free`. Page-flip retirement is the only authority that completes the final
+transition. Pool exhaustion becomes bounded frame deferral; reference counts
+must not be treated as lease state. Native handles remain inside the renderer
+and backend.
+
 ### Historical CompositePixmapRecord
 
 A composite pixmap record described the retired XLibre bridge-owned lifetime of

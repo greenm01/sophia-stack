@@ -7,7 +7,7 @@ cycles=$(grep -c '^sophia_qemu_m8_soak schema=1 status=cycle_complete ' "$eviden
 (( cycles >= 20 )) || { echo "M8 soak completed only $cycles cycles" >&2; exit 1; }
 restarts=$(grep -c '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$evidence" || true)
 (( restarts >= 2 )) || { echo "M8 soak observed only $restarts bridge recoveries" >&2; exit 1; }
-completion=$(grep '^sophia_live_session schema=14 status=bounded_complete ' "$evidence")
+completion=$(grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$evidence")
 elapsed=$(tr ' ' '\n' <<<"$completion" | sed -n 's/^elapsed_msec=//p')
 [[ "$elapsed" =~ ^[0-9]+$ ]] && (( elapsed >= 1800000 )) || {
     echo "M8 soak ended before 30 minutes: ${elapsed:-missing}" >&2

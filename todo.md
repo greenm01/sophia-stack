@@ -36,11 +36,12 @@ The development TTY profile now establishes:
 
 This is still development evidence: the captured lifecycle reports
 `installed=false`, `build=true`, and `manual_service=true`. The immediate
-blocker is native presentation lifetime and latency. Mixed composition uses
-fail-safe per-export GBM/EGL target retirement because reusing one surface
-while its scanout buffer remains leased makes AMDGPU reject the third render.
-Installed-session promotion requires lease-aware resource reuse and a
-repeatable physical workflow with bounded page-flip and input latency.
+blocker is native presentation lifetime and latency. Physical evidence showed
+that neither a reused GBM surface nor a reused EGL/GL context bound to fresh
+surfaces is safe on the current AMDGPU stack: both fail on the third mixed
+render. Mixed composition therefore uses one complete target per export.
+Installed-session promotion requires preserving that lifetime rule while
+moving to an explicit retirement-driven pool of complete target slots.
 
 ## Daily-Driver Promotion Contract
 
@@ -70,9 +71,23 @@ Promotion now follows the gates below in order.
 
 - [x] Decouple exported scanout-buffer ownership from the persistent EGL
   context, GL pipeline, and GBM target lifetime.
-- [ ] Retain composition rendering resources across a stable
-  size/format/modifier epoch with a bounded lease-aware target pool; never
-  render through a GBM surface while one of its buffers is leased to scanout.
+- [x] Falsify retained-context composition on the physical AMDGPU path: two
+  exports presented, then the third command stream was rejected even though
+  every export used a distinct GBM/EGL surface.
+- [x] Restore one complete context/pipeline/surface target per successful mixed
+  export as the fail-safe baseline.
+- [x] Confirm the restored lifetime in one physical cycle: 253 mixed exports,
+  matching target/pipeline/surface creation and retirement, zero recovery,
+  zero AMDGPU rejection, and a normal exit.
+- [ ] Pass three physical four-Kitty cycles with complete-target creation and
+  retirement equal to the mixed-export count.
+- [ ] Prevent child-exit and resize-epoch work from starving input and native
+  callback service. The first clean lifetime cycle had 248/254 callbacks at or
+  below 20 ms, but three transition callbacks exceeded 100 ms; input dwell
+  peaked at 191 ms and submit-to-page-flip observation at 214 ms.
+- [ ] Introduce a three-slot per-output generational pool of complete render
+  targets; recycle a slot only through explicit page-flip retirement and defer
+  instead of exceeding the bound.
 - [x] Emit reduced recreation-reason and lifetime evidence without native
   handles or application metadata.
 - [x] Remove blocking X11 configure/focus/close acknowledgements from the
@@ -88,8 +103,8 @@ Promotion now follows the gates below in order.
   startup-readiness transition rather than before native initialization.
 - [x] Use the low-latency owner wait budget whenever physical input is active,
   so an idle X channel cannot add 25 ms to queued input before composition.
-- [ ] Prove a stable physical workload has zero per-frame target or pipeline
-  recreation, zero launch-admission timeouts, and bounded input-to-submit and
+- [ ] Prove a stable physical workload has bounded context and pipeline
+  creation, zero launch-admission timeouts, and bounded input-to-submit and
   presentation latency.
 - [ ] Retain focused rollback, resize, output-change, and recovery regressions
   proving resources retire exactly once.
@@ -196,6 +211,40 @@ Failures create the next smallest evidence-driven compatibility or lifecycle
 slice. They do not justify broad X11 conformance work. Milestone 12 exits when
 the installed path—not a repository launcher—passes the complete Daily-Driver
 Promotion Contract.
+
+---
+
+## Milestone 13: Native Graphics Efficiency
+
+This milestone starts only after the installed workday soak. It optimizes the
+same native-X product; XLibre and Wayland remain external performance
+references rather than Sophia runtime components.
+
+- [ ] Recycle three generational frame-surface slots per output through
+  explicit page-flip retirement, with bounded deferral when all slots are
+  leased.
+- [ ] Carry bounded buffer-age damage history per slot and repaint only
+  accumulated damage; fall back to a full repaint whenever history is
+  incomplete.
+- [ ] Add a renderer-private, generation-keyed import cache whose capacity
+  derives from the live-registration bound and whose entries evict only with
+  zero frame and scanout leases.
+- [ ] Keep one latest pending frame and one KMS submission in flight per
+  output; prove input remains within half a refresh period at p99.
+- [ ] Move GL execution to one renderer worker per GPU only if pooled physical
+  evidence still exceeds that input budget. Use immutable bounded commands and
+  explicit retirement tokens.
+- [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
+  layer, followed by a hardware cursor plane; retain mixed composition as the
+  fail-closed fallback.
+- [ ] Compare identical Kitty, Firefox, resize, launch-burst, and soak
+  workloads against separate XLibre+xmonad and mature Wayland-compositor
+  sessions on the same hardware. Comparative results are diagnostic; Sophia's
+  absolute correctness and latency gates remain authoritative.
+
+Milestone 13 exits with bounded warmed resource counts, no steady-state
+allocation growth, refresh-relative latency evidence, and no change to
+Sophia's native-X authority model.
 
 ---
 

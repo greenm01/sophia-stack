@@ -129,7 +129,7 @@ fn native_owned_scanout_buffer_from_bo(
         _buffer: Some(buffer),
         _egl_surface: None,
         _surface: surface,
-        _persistent_surface: None,
+        _frame_surface: None,
     })
 }
 

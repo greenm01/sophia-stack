@@ -73,7 +73,7 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false
     "$SESSION_LOG" || fail "final health was not clean"
 
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=14 status=bounded_complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$SESSION_LOG"
 )
 (( ${#completions[@]} == 1 )) ||
     fail "expected one schema-14 completion; found ${#completions[@]}"
