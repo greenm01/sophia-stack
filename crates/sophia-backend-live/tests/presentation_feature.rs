@@ -11,10 +11,11 @@ use sophia_backend_live::{
     LiveProductionPresentFeedbackCoordinator, LiveProductionPresentGate,
     LiveProductionPresentScheduler, LiveProductionPresentSubmission, LiveResourceReleaseStatus,
 };
+use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
-    AuthorityKind, BufferHandle, BufferSource, DRM_FORMAT_MOD_INVALID, DmaBufDescriptor,
-    DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
-    SurfaceTransactionReadiness, TransactionId,
+    AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
+    DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
+    SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 
 fn fd() -> OwnedFd {
@@ -153,6 +154,101 @@ fn production_feedback_emits_nothing_when_skip_has_no_live_presentation() {
 
     assert_eq!(
         coordinator.reject_skip(transaction, 0, 0),
+        Err(LivePresentFeedbackError::UnknownPresentation { transaction })
+    );
+}
+
+#[test]
+fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once() {
+    let handle = BufferHandle::from_raw(29);
+    let transaction = TransactionId::from_raw(30);
+    let surface = SurfaceId::new(31, 1);
+    let committed = CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 48,
+        },
+        buffer: BufferSource::DmaBuf {
+            handle: handle.raw(),
+        },
+        damage: Region::empty(),
+    };
+    let mut production = ProductionSessionCoordinator::new(HeadlessEngine::default())
+        .with_committed_surfaces(vec![committed.clone()]);
+    let prepared = production.prepare_full_state_present(
+        transaction,
+        &[SurfaceTransaction {
+            transaction,
+            authority: AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: committed.geometry,
+            target_buffer: committed.buffer,
+            damage: Region::empty(),
+            readiness: SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: 1,
+        }],
+    );
+    production.replace_committed_surfaces(Vec::new());
+
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    coordinator
+        .resources_mut()
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction,
+            buffer: handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .mark_submitted(transaction)
+        .unwrap();
+    assert_eq!(
+        coordinator.resources_mut().release_source(handle),
+        LiveResourceReleaseStatus::Deferred
+    );
+
+    let report = production
+        .settle_prepared_retirement(prepared, |commit| match commit.outcome {
+            TransactionOutcome::Committed => coordinator.complete_flip(transaction, 41, 42),
+            TransactionOutcome::RejectedStaleSurface
+            | TransactionOutcome::RejectedInvalidSurface
+            | TransactionOutcome::TimedOut => coordinator.reject_skip(transaction, 41, 42),
+        })
+        .expect("stale page flip should settle through controlled rejection");
+
+    assert_eq!(
+        report.commit.outcome,
+        TransactionOutcome::RejectedStaleSurface
+    );
+    assert!(report.committed_surfaces.is_empty());
+    assert_eq!(
+        report.evidence.feedback,
+        [
+            LivePresentProtocolFeedback::Complete {
+                transaction,
+                ust: 41,
+                msc: 42,
+                mode: LivePresentCompletionMode::Skip,
+            },
+            LivePresentProtocolFeedback::Idle { transaction },
+        ]
+    );
+    assert_eq!(coordinator.resources().source_count(), 0);
+    assert_eq!(coordinator.resources().presentation_count(), 0);
+    assert_eq!(
+        coordinator.reject_skip(transaction, 41, 42),
         Err(LivePresentFeedbackError::UnknownPresentation { transaction })
     );
 }

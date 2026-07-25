@@ -98,6 +98,10 @@ rather than borrowing the completed Kitty-only promotion.
   the continuously presenting xmonad profile before promoting that profile.
 - [x] Release client-visible Ctrl/Alt state and clear WM shortcut modifiers
   before VT suspension; require delivery acknowledgement before switching.
+- [x] Treat an in-flight Present whose surface exits or advances before page
+  flip retirement as a controlled Skip/Idle settlement; preserve newer Engine
+  state, retire resources exactly once, and queue a correction frame when the
+  last active GPU surface disappears.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

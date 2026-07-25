@@ -137,23 +137,15 @@ impl LiveProductionVisualRuntime {
             self.layers.insert(transaction.surface, transaction.clone());
         }
         self.rebuild_input_layers();
+        let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let preserve_gpu_scanout = native_scanout.is_some()
-            && (self
-                .production
-                .committed_surfaces()
-                .iter()
-                .any(|surface| matches!(surface.buffer, BufferSource::DmaBuf { .. }))
-                || self
-                    .layers
-                    .values()
-                    .any(|surface| matches!(surface.target_buffer, BufferSource::DmaBuf { .. })));
+            && live_production_transactions_require_gpu_scanout(&active_transactions);
         let defer_frame = defer_frame || preserve_gpu_scanout;
         let native_scanout = if preserve_gpu_scanout {
             None
         } else {
             native_scanout
         };
-        let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let intake = AuthorityTransactionIntake::new(batch.transaction, rebased_transactions)
             .with_surface_removals(batch.removed_surfaces.clone());
         let (production, outputs) = (&mut self.production, &mut self.outputs);
@@ -734,4 +726,12 @@ fn compositor_tick_input(
 
 fn authority_transaction_count(transactions: &[SurfaceTransaction]) -> usize {
     transactions.len()
+}
+
+pub fn live_production_transactions_require_gpu_scanout(
+    transactions: &[SurfaceTransaction],
+) -> bool {
+    transactions
+        .iter()
+        .any(|transaction| matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }))
 }

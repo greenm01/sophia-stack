@@ -3,6 +3,32 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-24: Stale Present Retirement Is A Controlled Settlement
+
+An xmonad physical run exposed a normal client-exit race: Kitty exited after
+Present transaction 778 entered KMS but before its page-flip callback. The
+surface-removal batch advanced Engine state, so retirement correctly rejected
+the prepared candidate as `RejectedStaleSurface`; the live backend incorrectly
+promoted that controlled result into a fatal session error.
+
+Prepared retirement now remains ordered through the production coordinator:
+Engine revalidates first, then the backend maps a committed result to
+Present `Flip` and a rejected result to `Skip`, followed by `Idle` and exact
+resource release. A rejected retirement never becomes a stable or focusable
+surface and the current Engine snapshot is projected unchanged. Missing or
+duplicate presentation resources remain fatal because they indicate broken
+ownership rather than an ordinary asynchronous race.
+
+CPU-frame preservation now follows the post-batch active transaction set
+instead of a removed pre-batch DMA-BUF surface. Removing the last GPU surface
+therefore queues the current CPU snapshot behind the in-flight frame, allowing
+the asynchronous service to replace exited-client pixels after retirement.
+Focused regressions reproduce the removal-before-retirement ordering without
+physical hardware and require `Skip`, `Idle`, unchanged Engine state, and
+exactly-once resource cleanup. This supersedes the earlier wording that stale
+prepared retirement invokes no feedback callback: it invokes no successful
+`Flip`, but it must still settle backend and protocol lifetimes.
+
 ## 2026-07-24: Architecture Conformance First Slice
 
 - Audited production and test source layout against `docs/style-guide.md` and

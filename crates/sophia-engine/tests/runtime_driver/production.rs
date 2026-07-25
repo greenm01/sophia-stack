@@ -202,6 +202,44 @@ fn production_coordinator_rejects_stale_prepared_baseline_before_backend_feedbac
 }
 
 #[test]
+fn production_coordinator_settles_a_stale_prepared_retirement_without_replacing_current_state() {
+    let engine = HeadlessEngine::default();
+    let old_layer = test_layer(0, 0, 0, Region::empty());
+    let committed = vec![engine.committed_state_from_layer(&old_layer)];
+    let mut coordinator =
+        ProductionSessionCoordinator::new(engine).with_committed_surfaces(committed);
+    let transaction = old_layer.to_surface_transaction(
+        TransactionId::from_raw(207),
+        AuthorityKind::SophiaX,
+        SurfaceTransactionReadiness::Ready,
+        250,
+        1,
+    );
+    let prepared = coordinator.prepare_full_state_present(
+        TransactionId::from_raw(207),
+        std::slice::from_ref(&transaction),
+    );
+    coordinator.replace_committed_surfaces(Vec::new());
+    let mut settled = None;
+
+    let report = coordinator
+        .settle_prepared_retirement(prepared, |commit| {
+            settled = Some(commit.outcome);
+            Ok::<_, &'static str>("skip")
+        })
+        .expect("a stale retirement remains a controlled settlement");
+
+    assert_eq!(settled, Some(TransactionOutcome::RejectedStaleSurface));
+    assert_eq!(
+        report.commit.outcome,
+        TransactionOutcome::RejectedStaleSurface
+    );
+    assert_eq!(report.evidence, "skip");
+    assert!(report.committed_surfaces.is_empty());
+    assert!(coordinator.committed_surfaces().is_empty());
+}
+
+#[test]
 fn production_coordinator_orders_commit_composition_retirement_and_feedback() {
     let mut coordinator = ProductionSessionCoordinator::new(HeadlessEngine::default());
     let mut adapter = RecordingProductionAdapter::default();

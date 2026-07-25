@@ -86,6 +86,13 @@ pub struct ProductionRetirement<Retirement> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ProductionPreparedRetirementReport<Evidence> {
+    pub commit: TransactionCommit,
+    pub committed_surfaces: Vec<CommittedSurfaceState>,
+    pub evidence: Evidence,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProductionSessionCycleReport<Submission, Evidence> {
     pub cycle: u64,
     pub authority_commits: Vec<TransactionCommit>,
@@ -166,6 +173,26 @@ impl ProductionSessionCoordinator {
     ) -> TransactionCommit {
         self.engine
             .apply_prepared_surface_commit(prepared, &mut self.committed_surfaces)
+    }
+
+    /// Revalidates the Engine state for an already-retired frame, then asks the
+    /// backend to settle the matching resource and protocol lifetime.
+    ///
+    /// A rejected commit is a controlled disposition, not an Engine error. The
+    /// settlement callback receives the final commit so protocol adapters can
+    /// distinguish a successful presentation from a skipped stale candidate.
+    pub fn settle_prepared_retirement<Evidence, Error>(
+        &mut self,
+        prepared: PreparedSurfaceCommit,
+        settle: impl FnOnce(&TransactionCommit) -> Result<Evidence, Error>,
+    ) -> Result<ProductionPreparedRetirementReport<Evidence>, Error> {
+        let commit = self.apply_prepared_surface_commit(prepared);
+        let evidence = settle(&commit)?;
+        Ok(ProductionPreparedRetirementReport {
+            commit,
+            committed_surfaces: self.committed_surfaces.clone(),
+            evidence,
+        })
     }
 
     /// Projects the one committed snapshot to every output and delegates the

@@ -190,19 +190,31 @@ impl LiveProductionVisualRuntime {
         let Some(submitted) = self.present_scheduler.take_submitted() else {
             return Ok(None);
         };
-        let commit = self
-            .production
-            .apply_prepared_surface_commit(submitted.prepared);
-        if commit.outcome != TransactionOutcome::Committed {
-            return Err(format!("page flip prepared retirement failed: {commit:?}").into());
-        }
-        let outcome = self
-            .presentation_feedback
-            .complete_flip(submitted.transaction, ust, msc)
-            .map_err(|error| format!("page flip protocol feedback failed: {error:?}"))?;
+        let (production, presentation_feedback) =
+            (&mut self.production, &mut self.presentation_feedback);
+        let completion = production
+            .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
+                TransactionOutcome::Committed => {
+                    presentation_feedback.complete_flip(submitted.transaction, ust, msc)
+                }
+                TransactionOutcome::RejectedStaleSurface
+                | TransactionOutcome::RejectedInvalidSurface
+                | TransactionOutcome::TimedOut => {
+                    presentation_feedback.reject_skip(submitted.transaction, ust, msc)
+                }
+            })
+            .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
         self.outputs
-            .project_committed(self.production.committed_surfaces());
-        self.route_present_feedback(outcome);
+            .project_committed(&completion.committed_surfaces);
+        self.route_present_feedback(completion.evidence);
+        if completion.commit.outcome != TransactionOutcome::Committed {
+            tracing::warn!(
+                transaction = completion.commit.transaction.raw(),
+                outcome = ?completion.commit.outcome,
+                "settled retired Present without applying its stale Engine candidate"
+            );
+            return Ok(None);
+        }
         Ok(Some(LiveProductionRetiredPresent {
             transaction: submitted.transaction,
             surface: submitted.surface,

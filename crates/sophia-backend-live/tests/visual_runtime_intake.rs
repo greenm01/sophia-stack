@@ -1,6 +1,8 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
-use sophia_backend_live::LiveProductionVisualRuntime;
+use sophia_backend_live::{
+    LiveProductionVisualRuntime, live_production_transactions_require_gpu_scanout,
+};
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
     AuthorityKind, BufferSource, OutputId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
@@ -93,4 +95,15 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
     assert_eq!(first.skipped_present, None);
     assert_eq!(second, first);
     assert_eq!(runtime.output_count(), 1);
+}
+
+#[test]
+fn gpu_scanout_preservation_follows_post_batch_active_transactions() {
+    let mut gpu = initial_transaction(0);
+    gpu.target_buffer = BufferSource::DmaBuf { handle: 7 };
+    let cpu = initial_transaction(0);
+
+    assert!(live_production_transactions_require_gpu_scanout(&[gpu]));
+    assert!(!live_production_transactions_require_gpu_scanout(&[cpu]));
+    assert!(!live_production_transactions_require_gpu_scanout(&[]));
 }
