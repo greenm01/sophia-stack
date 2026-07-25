@@ -169,6 +169,13 @@ impl LiveProductionOutputRuntimeSet {
             .any(|output| output.runtime.rendered_primary_plane_scanout_in_flight())
     }
 
+    pub fn native_scanout_in_flight_count(&self) -> usize {
+        self.outputs
+            .values()
+            .filter(|output| output.runtime.rendered_primary_plane_scanout_in_flight())
+            .count()
+    }
+
     pub fn output_native_scanout_in_flight(&self, index: usize) -> Option<bool> {
         self.outputs
             .values()

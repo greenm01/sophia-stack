@@ -75,3 +75,22 @@ fn initial_surface_cannot_seed_a_forged_generation() {
     );
     assert!(runtime.committed_surfaces().is_empty());
 }
+
+#[test]
+fn revoked_native_suspend_is_idempotent_without_active_scanout() {
+    let output = output();
+    let mut runtime =
+        LiveProductionVisualRuntime::new(&[output], None, None).expect("headless runtime");
+
+    let first = runtime
+        .suspend_revoked_native_scanout(&[output])
+        .expect("first revoked suspension");
+    let second = runtime
+        .suspend_revoked_native_scanout(&[output])
+        .expect("duplicate revoked suspension");
+
+    assert_eq!(first.abandoned_scanouts, 0);
+    assert_eq!(first.skipped_present, None);
+    assert_eq!(second, first);
+    assert_eq!(runtime.output_count(), 1);
+}

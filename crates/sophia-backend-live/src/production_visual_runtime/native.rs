@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LiveProductionRevokedSuspendReport {
+    pub abandoned_scanouts: usize,
+    pub skipped_present: Option<TransactionId>,
+}
+
 impl LiveProductionVisualRuntime {
     pub fn suspend_native_scanout(
         &mut self,
@@ -15,6 +21,30 @@ impl LiveProductionVisualRuntime {
             None,
         )?;
         Ok(())
+    }
+
+    pub fn suspend_revoked_native_scanout(
+        &mut self,
+        outputs: &[sophia_engine::HeadlessOutput],
+    ) -> Result<LiveProductionRevokedSuspendReport, Box<dyn std::error::Error>> {
+        let abandoned_scanouts = self.outputs.native_scanout_in_flight_count();
+        let skipped_present = self
+            .present_scheduler
+            .take_submitted()
+            .map(|submitted| submitted.transaction);
+        if let Some(transaction) = skipped_present {
+            self.reject_gpu_presentation(transaction, 0, 0);
+        }
+        self.outputs = LiveProductionOutputRuntimeSet::new(
+            outputs,
+            self.production.committed_surfaces(),
+            None,
+            None,
+        )?;
+        Ok(LiveProductionRevokedSuspendReport {
+            abandoned_scanouts,
+            skipped_present,
+        })
     }
 
     pub fn resume_native_scanout(

@@ -3,21 +3,168 @@
             if let Some(event) = controller.dispatch()? {
                 seat_state = seat_state.observe(event);
             }
+            if seat_state == sophia_backend_live::LiveSeatState::Active
+                && let Some(terminal) = pending_virtual_terminal.take()
+            {
+                println!(
+                    "sophia_live_session_vt schema=3 status=preparing target={terminal}"
+                );
+                std::io::stdout().flush()?;
+                physical_input.take();
+                let quiesced = if let (Some(runtime), Some(native)) =
+                    (runtime.as_mut(), native_scanout.as_mut())
+                {
+                    runtime
+                        .suspend_native_scanout(native, &outputs, Duration::from_secs(2))
+                        .map(|()| true)
+                } else {
+                    Ok(false)
+                };
+                match quiesced {
+                    Ok(_) => {
+                        native_scanout.take();
+                        seat_release_prepared = true;
+                        println!(
+                            "sophia_live_session_vt schema=3 status=quiesced target={terminal}"
+                        );
+                        match controller.switch_session(terminal) {
+                            Ok(()) => {
+                                requested_virtual_terminal =
+                                    Some((terminal, Instant::now()));
+                                println!(
+                                    "sophia_live_session_vt schema=3 status=requested target={terminal}"
+                                );
+                                std::io::stdout().flush()?;
+                                continue;
+                            }
+                            Err(error) => {
+                                seat_release_prepared = false;
+                                let mut resumed = LiveProductionNativeScanout::new_with_seat(
+                                    &controller.device_opener(),
+                                )?;
+                                if resumed.outputs() != outputs {
+                                    return Err(
+                                        "seat switch rejection changed the physical output topology"
+                                            .into(),
+                                    );
+                                }
+                                if let Some(runtime) = runtime.as_mut() {
+                                    let frames = scene.frames_for_outputs(&outputs)?;
+                                    runtime.resume_native_scanout(
+                                        &mut resumed,
+                                        &outputs,
+                                        frames,
+                                    )?;
+                                }
+                                *native_scanout = Some(resumed);
+                                let device_map =
+                                    sophia_backend_live::NativeLibinputDeviceMap::new(
+                                        SeatId::from_raw(SESSION_SEAT_RAW),
+                                    )
+                                    .with_keyboard_device(DeviceId::from_raw(
+                                        SESSION_KEYBOARD_DEVICE_RAW,
+                                    ))
+                                    .with_pointer_device(DeviceId::from_raw(
+                                        SESSION_POINTER_DEVICE_RAW,
+                                    ));
+                                *physical_input = open_session_physical_input(
+                                    config,
+                                    device_map,
+                                    Some(controller.device_opener()),
+                                )?;
+                                modifiers = XCoreKeyboardMapper::new();
+                                virtual_terminal_chord = VirtualTerminalChordState::default();
+                                emergency_chord = EmergencyChordState::armed();
+                                cursor_updates =
+                                    CursorUpdateState::new(pointer.position.is_some());
+                                eprintln!(
+                                    "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=request error={error}"
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
+                            SeatId::from_raw(SESSION_SEAT_RAW),
+                        )
+                        .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
+                        .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
+                        *physical_input = open_session_physical_input(
+                            config,
+                            device_map,
+                            Some(controller.device_opener()),
+                        )?;
+                        modifiers = XCoreKeyboardMapper::new();
+                        virtual_terminal_chord = VirtualTerminalChordState::default();
+                        emergency_chord = EmergencyChordState::armed();
+                        eprintln!(
+                            "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=quiesce error={error}"
+                        );
+                    }
+                }
+                std::io::stdout().flush()?;
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::Active
+                && let Some((terminal, requested_at)) = requested_virtual_terminal
+                && requested_at.elapsed() >= Duration::from_secs(2)
+            {
+                requested_virtual_terminal = None;
+                seat_release_prepared = false;
+                let mut resumed =
+                    LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
+                if resumed.outputs() != outputs {
+                    return Err("seat switch timeout changed the physical output topology".into());
+                }
+                if let Some(runtime) = runtime.as_mut() {
+                    let frames = scene.frames_for_outputs(&outputs)?;
+                    runtime.resume_native_scanout(&mut resumed, &outputs, frames)?;
+                }
+                *native_scanout = Some(resumed);
+                let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
+                    SeatId::from_raw(SESSION_SEAT_RAW),
+                )
+                .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
+                .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
+                *physical_input = open_session_physical_input(
+                    config,
+                    device_map,
+                    Some(controller.device_opener()),
+                )?;
+                modifiers = XCoreKeyboardMapper::new();
+                virtual_terminal_chord = VirtualTerminalChordState::default();
+                emergency_chord = EmergencyChordState::armed();
+                cursor_updates = CursorUpdateState::new(pointer.position.is_some());
+                eprintln!(
+                    "sophia_live_session_vt schema=3 status=rejected target={terminal} phase=disable_timeout"
+                );
+                std::io::stdout().flush()?;
+            }
+            if seat_state == sophia_backend_live::LiveSeatState::Active
+                && requested_virtual_terminal.is_some()
+            {
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            }
             if seat_state == sophia_backend_live::LiveSeatState::ReleasePending {
                 println!("sophia_live_seat schema=1 status=release_pending");
                 physical_input.take();
-                if let (Some(runtime), Some(native)) =
-                    (runtime.as_mut(), native_scanout.as_mut())
+                if !seat_release_prepared
+                    && let Some(runtime) = runtime.as_mut()
                 {
-                    runtime.suspend_native_scanout(
-                        native,
-                        &outputs,
-                        Duration::from_millis(500),
-                    )?;
+                    let report = runtime.suspend_revoked_native_scanout(&outputs)?;
+                    println!(
+                        "sophia_live_seat schema=2 status=forced_detach abandoned_scanouts={} skipped_present={}",
+                        report.abandoned_scanouts,
+                        report
+                            .skipped_present
+                            .map_or_else(|| "none".to_owned(), |transaction| transaction.raw().to_string()),
+                    );
                 }
                 native_scanout.take();
                 controller.acknowledge_disable()?;
                 seat_state = seat_state.released();
+                seat_release_prepared = false;
+                requested_virtual_terminal = None;
                 modifiers = XCoreKeyboardMapper::new();
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();

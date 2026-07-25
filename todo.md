@@ -93,6 +93,9 @@ rather than borrowing the completed Kitty-only promotion.
 - [x] Physically prove the Kitty baseline survives repeated Ctrl-Alt-F3/F7
   release/acquire cycles with its terminal, keyboard, pointer, and rendered
   contents retained; keep the broader F1-through-F12 matrix above open.
+- [x] Quiesce native presentation before an owner-requested VT switch and make
+  unsolicited seat revocation a nonfatal forced-detach path; physically prove
+  the continuously presenting xmonad profile before promoting that profile.
 - [x] Remove global-authority quiet-time starvation from initial WM management;
   continuous application Presents cannot postpone layout indefinitely.
 - [x] Require applied X11 focus and accept stable DMA-BUF presentation before

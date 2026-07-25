@@ -2797,3 +2797,19 @@ and pointer operation. Switching away again continued to work. This promotes
 the libseat-backed Kitty session to the known-good installed baseline while
 leaving the full F1-through-F12 matrix and xmonad workflow as separate open
 proofs.
+
+The first xmonad VT attempt exposed an ordering race hidden by the quieter
+Kitty workload. The xmonad profile had a primary-plane frame in flight when
+Sophia called `libseat_switch_session`. Seat authority moved before the owner
+drained that frame, so its page-flip callback could no longer arrive. Waiting
+500 milliseconds after revocation then failed with `persistent native scanout
+remained in flight during teardown` and incorrectly ended the whole session.
+
+Operator-requested VT changes now use a prepare-before-release boundary shared
+by every profile. The owner stops input, prevents further native submission,
+retires and releases KMS work while the seat is still active, drops the old
+leases, and only then requests the switch. A request rejection or missing
+disable event rebuilds hardware and repaints instead of ending the session.
+An unsolicited disable cannot be drained after authority is gone; that path
+immediately detaches native state, reports any abandoned scanout, completes an
+already-submitted Present as `Skip`, and preserves queued work for acquisition.

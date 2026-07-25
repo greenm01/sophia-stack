@@ -108,6 +108,36 @@ for output in 1 2; do
         "sophia_live_native_page_flip schema=1 status=retired output=${output} " \
         "$SESSION_LOG" "physical output $output did not retire a page flip"
 done
+for record in \
+    'sophia_live_session_vt schema=3 status=queued target=[0-9]+' \
+    'sophia_live_session_vt schema=3 status=preparing target=[0-9]+' \
+    'sophia_live_session_vt schema=3 status=quiesced target=[0-9]+' \
+    'sophia_live_session_vt schema=3 status=requested target=[0-9]+' \
+    'sophia_live_seat schema=1 status=release_pending' \
+    'sophia_live_seat schema=1 status=suspended' \
+    'sophia_live_seat schema=1 status=acquire_pending' \
+    'sophia_live_seat schema=1 status=active source=resume'; do
+    require_line "^${record}$" "$SESSION_LOG" "VT lifecycle record is missing: $record"
+done
+queued_vt_line="$(line_number 'schema=3 status=queued target=' "$SESSION_LOG")"
+preparing_vt_line="$(line_number 'schema=3 status=preparing target=' "$SESSION_LOG")"
+quiesced_vt_line="$(line_number 'schema=3 status=quiesced target=' "$SESSION_LOG")"
+requested_vt_line="$(line_number 'schema=3 status=requested target=' "$SESSION_LOG")"
+release_vt_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
+suspended_vt_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"
+acquire_vt_line="$(line_number 'sophia_live_seat schema=1 status=acquire_pending$' "$SESSION_LOG")"
+resumed_vt_line="$(line_number 'sophia_live_seat schema=1 status=active source=resume$' "$SESSION_LOG")"
+(( queued_vt_line < preparing_vt_line
+    && preparing_vt_line < quiesced_vt_line
+    && quiesced_vt_line < requested_vt_line
+    && requested_vt_line < release_vt_line
+    && release_vt_line < suspended_vt_line
+    && suspended_vt_line < acquire_vt_line
+    && acquire_vt_line < resumed_vt_line )) ||
+    fail "VT prepare, release, and acquire records are out of order"
+if grep -Eq 'status=forced_detach|remained in flight during teardown' "$SESSION_LOG"; then
+    fail "operator-requested VT switch used the revoked-seat fallback"
+fi
 cursor="$(
     grep -E '^sophia_live_session_cursor schema=2 ' "$SESSION_LOG" | tail -n 1
 )"

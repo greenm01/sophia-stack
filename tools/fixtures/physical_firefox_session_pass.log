@@ -22,6 +22,16 @@ sophia_live_wm schema=1 status=hidden_focus_cleared transaction=12
 sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus
 sophia_live_wm schema=1 status=physical_action_committed action=257
 sophia_live_wm schema=1 status=physical_action_committed action=769
+sophia_live_session_vt schema=3 status=queued target=3
+sophia_live_session_vt schema=3 status=preparing target=3
+sophia_live_session_vt schema=3 status=quiesced target=3
+sophia_live_session_vt schema=3 status=requested target=3
+sophia_live_seat schema=1 status=release_pending
+sophia_live_seat schema=1 status=suspended
+sophia_live_seat schema=1 status=acquire_pending
+sophia_live_seat schema=1 status=active source=resume
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=51
+sophia_live_native_page_flip schema=1 status=retired output=2 submission=51
 sophia_session_app schema=1 status=started id=firefox source=action
 sophia_firefox_m8 schema=1 status=page_ready title_bytes=16 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=loaded index=0 title_bytes=24 content=redacted

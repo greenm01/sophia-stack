@@ -149,17 +149,11 @@ macro_rules! drain_physical_input {
                 }
             }
             if let Some(terminal) = report.virtual_terminal {
-                let result = seat_controller
-                    .as_mut()
-                    .ok_or("VT switching requires an active seat controller")?
-                    .switch_session(terminal);
-                match result {
-                    Ok(()) => println!(
-                        "sophia_live_session_vt schema=2 status=requested target={terminal}"
-                    ),
-                    Err(error) => eprintln!(
-                        "sophia_live_session_vt schema=2 status=rejected target={terminal} error={error}"
-                    ),
+                if pending_virtual_terminal.is_none() && requested_virtual_terminal.is_none() {
+                    pending_virtual_terminal = Some(terminal);
+                    println!(
+                        "sophia_live_session_vt schema=3 status=queued target={terminal}"
+                    );
                 }
                 std::io::stdout().flush()?;
             }

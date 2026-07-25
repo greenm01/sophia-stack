@@ -167,6 +167,9 @@ fn run_session_loop(
     let mut startup_ready_reported = false;
     let mut pending_authority_batches = VecDeque::new();
     let mut seat_state = sophia_backend_live::LiveSeatState::Active;
+    let mut pending_virtual_terminal = None;
+    let mut requested_virtual_terminal = None;
+    let mut seat_release_prepared = false;
 
     include!("owner_loop/physical_input_phase.rs")
 }
