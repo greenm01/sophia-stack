@@ -113,24 +113,39 @@ fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
     });
 
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(cpu, None, None, checksum),
+        reduce_live_production_cpu_frame_queue(cpu, None, None, false, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedPending
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, cpu, None, checksum),
+        reduce_live_production_cpu_frame_queue(None, cpu, None, false, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedSubmitted
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, true, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedPresented
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, mixed, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, mixed, false, checksum),
         LiveProductionCpuFrameQueueStatus::Queued
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, checksum + 1),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, checksum + 1),
         LiveProductionCpuFrameQueueStatus::Queued
+    );
+}
+
+#[test]
+fn unchanged_initial_modeset_frame_requires_one_event_bearing_submission() {
+    let checksum = 42;
+    let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
+
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, checksum),
+        LiveProductionCpuFrameQueueStatus::BaselineRequired
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, cpu, true, checksum),
+        LiveProductionCpuFrameQueueStatus::UnchangedPresented
     );
 }
 

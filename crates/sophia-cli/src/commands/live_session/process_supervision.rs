@@ -9,12 +9,25 @@ pub(super) struct SessionProcessGuard {
 
 pub(super) struct ManagedSessionChild {
     pub(super) id: Option<String>,
+    pub(super) launch_transaction: Option<TransactionId>,
     pub(super) child: Child,
 }
 
 impl ManagedSessionChild {
     pub(super) fn new(id: Option<String>, child: Child) -> Self {
-        Self { id, child }
+        Self {
+            id,
+            launch_transaction: None,
+            child,
+        }
+    }
+
+    pub(super) fn for_launch(id: Option<String>, transaction: TransactionId, child: Child) -> Self {
+        Self {
+            id,
+            launch_transaction: Some(transaction),
+            child,
+        }
     }
 }
 

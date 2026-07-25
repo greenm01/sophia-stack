@@ -87,6 +87,12 @@ remains disabled until its real-Kitty resize and physical-session gates pass.
     on secondary outputs and suppress unchanged per-output CPU frames.
   - [x] Make the focused verifier reject forced detach, abandoned scanouts,
     empty submissions, callback imbalance, and incomplete cleanup evidence.
+  - [x] Preserve surfaces admitted while an older resize proposal is pending;
+    committing that proposal must not restore a stale pre-admission snapshot.
+  - [x] Require an event-bearing baseline flip before deduplicating unchanged
+    per-output content, and gate action launches on monotonic startup readiness.
+  - [ ] Physically pass the bounded twenty-press Super-Enter burst proof with
+    sequential admissions, nonfatal capacity rejection, and clean logout.
   - [ ] Repeat the normal four-Kitty proof for three consecutive clean cycles.
 
 Gate command and verifier must be documented in `docs/validation.md`; the

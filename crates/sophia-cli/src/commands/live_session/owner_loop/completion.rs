@@ -189,18 +189,28 @@
     if config.normal_session
         && (layout.pending.is_some()
             || !committed_session_actions.is_empty()
+            || session_launches.pending_len() != 0
+            || session_launches.admission().is_some()
             || !input_delivery.pending.is_empty()
             || wm_session.as_ref().is_some_and(|wm| wm.degraded))
     {
         return Err(format!(
-            "normal session ended with pending work: wm={} actions={} input={} degraded={}",
+            "normal session ended with pending work: wm={} actions={} launches={} admission={} input={} degraded={}",
             usize::from(layout.pending.is_some()),
             committed_session_actions.len(),
+            session_launches.pending_len(),
+            usize::from(session_launches.admission().is_some()),
             input_delivery.pending.len(),
             wm_session.as_ref().is_some_and(|wm| wm.degraded),
         )
         .into());
     }
+    println!(
+        "sophia_session_launches schema=1 status=complete peak_depth={} rejected={} admission_timeouts={}",
+        session_launches.peak_depth(),
+        session_launches.rejected(),
+        session_launches.timed_out(),
+    );
     let input_stats = physical_input
         .as_ref()
         .map_or_else(Default::default, |input| input.stats());

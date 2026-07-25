@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use sophia_cli::resize_transaction::{
-    ResizeRollbackCoordinator, present_pixels_conflict_with_requested_sizes,
-    project_authority_batch_onto_layout,
+    PendingLayoutObservationMerge, ResizeRollbackCoordinator, merge_unrequested_layout_observation,
+    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
 };
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
@@ -15,6 +15,30 @@ use sophia_x_authority::{
 
 fn size(width: i32, height: i32) -> Size {
     Size { width, height }
+}
+
+fn layer(surface: SurfaceId, generation: u64) -> LayerSnapshot {
+    LayerSnapshot {
+        surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        },
+        source: BufferSource::CpuBuffer {
+            handle: surface.index() as u64,
+        },
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation,
+        resize_sync: ResizeSyncCapability::ImplicitOnly,
+    }
 }
 
 #[test]
@@ -203,4 +227,55 @@ fn wrong_size_present_conflicts_but_matching_pixels_can_enter_resize_quarantine(
     assert!(!present_pixels_conflict_with_requested_sizes(
         &requested, &buffers, &batch
     ));
+}
+
+#[test]
+fn pending_layout_retains_surface_admitted_during_resize() {
+    let existing = SurfaceId::new(7, 1);
+    let admitted = SurfaceId::new(8, 1);
+    let mut pending = vec![layer(existing, 1)];
+    let requested = BTreeMap::from([(existing, size(1280, 720))]);
+
+    assert_eq!(
+        merge_unrequested_layout_observation(&mut pending, &requested, layer(admitted, 1)),
+        PendingLayoutObservationMerge::Inserted
+    );
+    assert!(
+        pending
+            .iter()
+            .any(|candidate| candidate.surface == admitted)
+    );
+}
+
+#[test]
+fn pending_layout_updates_unowned_pixels_without_overwriting_resize_owned_state() {
+    let surface = SurfaceId::new(9, 1);
+    let resized = SurfaceId::new(10, 1);
+    let mut pending = vec![layer(surface, 1), layer(resized, 1)];
+    let requested = BTreeMap::from([(resized, size(1280, 720))]);
+
+    assert_eq!(
+        merge_unrequested_layout_observation(&mut pending, &requested, layer(surface, 2)),
+        PendingLayoutObservationMerge::Replaced
+    );
+    assert_eq!(
+        pending
+            .iter()
+            .find(|candidate| candidate.surface == surface)
+            .unwrap()
+            .generation,
+        2
+    );
+    assert_eq!(
+        merge_unrequested_layout_observation(&mut pending, &requested, layer(resized, 2)),
+        PendingLayoutObservationMerge::ResizeOwned
+    );
+    assert_eq!(
+        pending
+            .iter()
+            .find(|candidate| candidate.surface == resized)
+            .unwrap()
+            .generation,
+        1
+    );
 }

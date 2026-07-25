@@ -159,6 +159,11 @@ struct SessionActionExecutionContext<'a> {
     config: &'a PersistentXtermSessionConfig,
     xauthority: &'a std::path::Path,
     children: &'a mut Vec<ManagedSessionChild>,
+    launches: &'a mut SessionLaunchQueue,
+    launch_admission_started_at: &'a mut Option<Instant>,
+    startup_ready: bool,
+    admission_pipeline_idle: bool,
+    stable_admission_surface: Option<SurfaceId>,
     layout: &'a PersistentLiveLayout,
     focus: &'a InputFocusState,
     seat: SeatId,
@@ -174,104 +179,68 @@ fn execute_committed_session_actions(
         config,
         xauthority,
         children,
+        launches,
+        launch_admission_started_at,
+        startup_ready,
+        admission_pipeline_idle,
+        stable_admission_surface,
         layout,
         focus,
         seat,
         control_sender,
         control_ack_receiver,
     } = context;
-    let mut retained = Vec::with_capacity(children.len());
-    for mut child in children.drain(..) {
-        let status = child.child.try_wait()?;
-        match status {
-            None => retained.push(child),
-            Some(status) => {
-                if let Some(id) = child.id.as_deref() {
-                    terminate_session_child(&mut child.child, true)?;
-                    if !status.success() {
-                        return Err(format!(
-                            "managed session application {id:?} exited abnormally: {status}"
-                        )
-                        .into());
-                    }
-                    println!(
-                        "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}"
-                    );
-                }
-            }
-        }
+    if let Some(admission) =
+        launches.complete_if_settled(admission_pipeline_idle, stable_admission_surface)
+    {
+        *launch_admission_started_at = None;
+        println!(
+            "sophia_session_app schema=2 status=admitted source=action transaction={} surface={}",
+            admission.intent.transaction.raw(),
+            admission
+                .observed_surface
+                .expect("settled launch admission requires a surface")
+                .index(),
+        );
+    } else if launch_admission_started_at
+        .is_some_and(|started| started.elapsed() >= Duration::from_millis(SESSION_COMPLETION_TIMEOUT_MSEC))
+        && let Some(admission) = launches.timeout_current()
+    {
+        *launch_admission_started_at = None;
+        eprintln!(
+            "sophia_session_app schema=2 status=failed source=action transaction={} reason=admission_timeout",
+            admission.intent.transaction.raw(),
+        );
     }
-    *children = retained;
+
     let mut logout = false;
     while let Some((transaction, action, target)) = actions.pop_front() {
+        if let WmSessionAction::LaunchApplication { application } = action {
+            match launches.enqueue(
+                SessionLaunchIntent {
+                    transaction,
+                    application,
+                },
+                children.len(),
+            ) {
+                SessionLaunchQueueOutcome::Queued { depth } => println!(
+                    "sophia_session_app schema=2 status=queued source=action transaction={} depth={depth}",
+                    transaction.raw(),
+                ),
+                SessionLaunchQueueOutcome::RejectedCapacity => eprintln!(
+                    "sophia_session_app schema=2 status=rejected source=action transaction={} reason=capacity",
+                    transaction.raw(),
+                ),
+            }
+            println!(
+                "sophia_live_wm schema=1 status=session_action_committed transaction={} action={}",
+                transaction.raw(),
+                session_action_evidence_name(action)
+            );
+            continue;
+        }
         match action {
-            WmSessionAction::LaunchApplication { application }
-                if application == TERMINAL_APPLICATION_ID =>
-            {
-                if children.len() >= 16 {
-                    return Err("approved session child limit reached".into());
-                }
-                if config.normal_session {
-                    let app = config
-                        .application_for_action(action)
-                        .ok_or("WM requested an unadvertised session application")?;
-                    children.push(ManagedSessionChild::new(
-                        Some(app.id.clone()),
-                        PersistentXtermSessionConfig::spawn_session_application(
-                            app,
-                            &config.display,
-                            xauthority,
-                        )?,
-                    ));
-                    println!(
-                        "sophia_session_app schema=1 status=started id={} source=action",
-                        app.id
-                    );
-                } else {
-                    children.push(ManagedSessionChild::new(
-                        None,
-                        spawn_secondary_xterm(
-                            std::path::Path::new(&config.terminal),
-                            &config.display,
-                            xauthority,
-                            None,
-                        )?,
-                    ));
-                }
-            }
-            WmSessionAction::LaunchApplication { application } => {
-                if children.len() >= 16 {
-                    return Err("approved session child limit reached".into());
-                }
-                if config.normal_session {
-                    let app = config
-                        .application_for_action(action)
-                        .ok_or("WM requested an unadvertised session application")?;
-                    children.push(ManagedSessionChild::new(
-                        Some(app.id.clone()),
-                        PersistentXtermSessionConfig::spawn_session_application(
-                            app,
-                            &config.display,
-                            xauthority,
-                        )?,
-                    ));
-                    println!(
-                        "sophia_session_app schema=1 status=started id={} source=action",
-                        app.id
-                    );
-                } else {
-                    let program = match application {
-                        LAUNCHER_APPLICATION_ID => config.session_launcher.as_deref(),
-                        BROWSER_APPLICATION_ID => config.session_firefox.as_deref(),
-                        _ => None,
-                    }
-                    .ok_or("WM requested an unadvertised session executable")?;
-                    children.push(ManagedSessionChild::new(
-                        None,
-                        spawn_approved_application(program, &config.display, xauthority)?,
-                    ));
-                }
-            }
+            WmSessionAction::LaunchApplication { .. } => unreachable!(),
             WmSessionAction::CloseFocused => {
                 let surface = target
                     .or_else(|| focus.focused_surface(seat))
@@ -306,13 +275,90 @@ fn execute_committed_session_actions(
                     .into());
                 }
             }
-            WmSessionAction::Logout => logout = true,
+            WmSessionAction::Logout => {
+                logout = true;
+                let cancelled = launches.cancel_pending();
+                let admission_cancelled = usize::from(launches.fail_current().is_some());
+                *launch_admission_started_at = None;
+                if cancelled != 0 {
+                    println!(
+                        "sophia_session_app schema=2 status=cancelled source=logout pending={cancelled}"
+                    );
+                }
+                if admission_cancelled != 0 {
+                    println!(
+                        "sophia_session_app schema=2 status=cancelled source=logout admission={admission_cancelled}"
+                    );
+                }
+            }
         }
         println!(
             "sophia_live_wm schema=1 status=session_action_committed transaction={} action={}",
             transaction.raw(),
             session_action_evidence_name(action)
         );
+    }
+
+    if logout {
+        return Ok(true);
+    }
+    let Some(intent) = launches.begin_next(startup_ready, admission_pipeline_idle) else {
+        return Ok(false);
+    };
+    if children.len() >= sophia_cli::session_actions::SESSION_ACTION_APPLICATION_CAPACITY {
+        let _ = launches.fail_current();
+        eprintln!(
+            "sophia_session_app schema=2 status=rejected source=action transaction={} reason=capacity",
+            intent.transaction.raw(),
+        );
+        return Ok(false);
+    }
+    let action = WmSessionAction::LaunchApplication {
+        application: intent.application,
+    };
+    let spawned = if config.normal_session {
+        let app = config
+            .application_for_action(action)
+            .ok_or("WM requested an unadvertised session application")?;
+        PersistentXtermSessionConfig::spawn_session_application(app, &config.display, xauthority)
+            .map(|child| (Some(app.id.clone()), child))
+    } else {
+        let program = match intent.application {
+            TERMINAL_APPLICATION_ID => Some(config.terminal.as_str()),
+            LAUNCHER_APPLICATION_ID => config.session_launcher.as_deref(),
+            BROWSER_APPLICATION_ID => config.session_firefox.as_deref(),
+            _ => None,
+        }
+        .ok_or("WM requested an unadvertised session executable")?;
+        spawn_approved_application(program, &config.display, xauthority)
+            .map(|child| (None, child))
+    };
+    match spawned {
+        Ok((id, child)) => {
+            let evidence_id = id.as_deref().unwrap_or("untracked");
+            println!(
+                "sophia_session_app schema=2 status=started id={evidence_id} source=action transaction={}",
+                intent.transaction.raw(),
+            );
+            // Retain the schema-1 compatibility record consumed by existing
+            // physical-session verifiers.
+            println!(
+                "sophia_session_app schema=1 status=started id={evidence_id} source=action"
+            );
+            children.push(ManagedSessionChild::for_launch(
+                id,
+                intent.transaction,
+                child,
+            ));
+            *launch_admission_started_at = Some(Instant::now());
+        }
+        Err(error) => {
+            let _ = launches.fail_current();
+            eprintln!(
+                "sophia_session_app schema=2 status=failed source=action transaction={} reason=spawn error={error}",
+                intent.transaction.raw(),
+            );
+        }
     }
     Ok(logout)
 }

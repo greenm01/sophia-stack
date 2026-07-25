@@ -3036,3 +3036,47 @@ clean evidence. The four-Kitty verifier requires an exact drain, zero
 abandoned scanouts, balanced per-output callbacks and retirements, and no
 empty-content submission. Engine remains application-neutral; the CLI only
 orchestrates and reports the Engine-owned lifecycle.
+
+## 2026-07-25: Pending Layout Commit Merges Concurrent Surface Admission
+
+The first run after per-output hardening reached the four-window transition,
+then exited with `new WM surface is missing from live layout`. Rapid
+Super-Enter actions admitted another Kitty while an older resize proposal was
+waiting for matching pixels. Authority intake inserted the new surface into
+the live layout and unmanaged set, but committing the older proposal replaced
+the layout with its pre-admission snapshot. The unmanaged ID survived without
+its layer, so the next manage request correctly rejected the inconsistent
+state.
+
+Pending layout snapshots now merge every authority observation not owned by
+that proposal's requested-size set. A concurrently admitted surface is
+preserved for the next blind-WM manage request, and ordinary pixel updates for
+unrequested surfaces advance with the pending snapshot. Resize-owned surfaces
+remain quarantined until their matching pixels arrive. The merge is a pure
+data reducer with integration coverage for insert, replace, and resize-owned
+outcomes.
+
+## 2026-07-25: Output Baselines And Launch Pressure Are Separate Lifecycles
+
+The next rapid Super-Enter run did not fail in Engine, KMS submission, or X11
+protocol handling. Initial modeset had already displayed the synthetic marker
+on the secondary output, but modeset itself produced no page-flip callback.
+The new unchanged-CPU-frame reduction saw the same displayed checksum and
+suppressed the first event-bearing flip. Output 2 therefore remained at zero
+callbacks, startup never reached its all-output proof, and the eight-second
+deadline ended the session while several action-launched Kitty clients were
+entering resize transactions.
+
+An unchanged displayed frame is now suppressible only after that output has
+observed a callback. Before then, the reducer emits a baseline-required outcome
+and queues exactly one nonblocking flip; matching pending and submitted frames
+remain deduplicated. Startup readiness is a monotonic passive record pinned to
+the startup surface rather than whichever later surface owns focus.
+
+Application launch pressure is also bounded independently from visual
+authority. The CLI session supervisor retains a sixteen-entry FIFO across
+active and queued action applications, waits for one opaque surface admission
+and stable presentation before spawning the next, and treats capacity, spawn,
+exit, or admission timeout as an application outcome rather than a fatal
+session error. Logout cancels pending work. Engine and the blind WM remain
+application-agnostic.

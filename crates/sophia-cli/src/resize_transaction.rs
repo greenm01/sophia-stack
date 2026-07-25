@@ -132,3 +132,36 @@ pub fn present_pixels_conflict_with_requested_sizes(
             .is_some_and(|(expected, actual)| actual != expected)
     })
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PendingLayoutObservationMerge {
+    Inserted,
+    Replaced,
+    ResizeOwned,
+}
+
+/// Keeps authority observations that are outside a pending resize proposal in
+/// the proposal snapshot. Without this merge, committing an older proposal
+/// can discard a surface admitted while its resize pixels were pending.
+pub fn merge_unrequested_layout_observation(
+    pending_layers: &mut Vec<LayerSnapshot>,
+    requested_sizes: &BTreeMap<SurfaceId, Size>,
+    observed: LayerSnapshot,
+) -> PendingLayoutObservationMerge {
+    if requested_sizes.contains_key(&observed.surface) {
+        return PendingLayoutObservationMerge::ResizeOwned;
+    }
+    match pending_layers
+        .iter_mut()
+        .find(|layer| layer.surface == observed.surface)
+    {
+        Some(layer) => {
+            *layer = observed;
+            PendingLayoutObservationMerge::Replaced
+        }
+        None => {
+            pending_layers.push(observed);
+            PendingLayoutObservationMerge::Inserted
+        }
+    }
+}

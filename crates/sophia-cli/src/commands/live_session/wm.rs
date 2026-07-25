@@ -481,11 +481,12 @@ impl PersistentLiveLayout {
             }
             self.resize
                 .record_committed(transaction.surface, observed_size);
-            match self.layers.get_mut(&transaction.surface) {
+            let observed_layer = match self.layers.get_mut(&transaction.surface) {
                 Some(layer) => {
                     layer.source = transaction.target_buffer;
                     layer.damage = transaction.damage.clone();
                     layer.generation = transaction.previous_committed_generation.saturating_add(1);
+                    layer.clone()
                 }
                 None => {
                     new_surfaces.push(transaction.surface);
@@ -497,27 +498,38 @@ impl PersistentLiveLayout {
                     } else if let Some(output) = self.center_first_surface_in.take() {
                         geometry = center_geometry_without_scaling(geometry, output);
                     }
-                    self.layers.insert(
-                        transaction.surface,
-                        LayerSnapshot {
-                            surface: transaction.surface,
-                            authority_local_id: None,
-                            namespace: None,
-                            stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-                            geometry,
-                            source: transaction.target_buffer,
-                            damage: transaction.damage.clone(),
-                            opacity: 1.0,
-                            crop: None,
-                            transform: Transform::IDENTITY,
-                            generation: transaction.previous_committed_generation.saturating_add(1),
-                            resize_sync: ResizeSyncCapability::ImplicitOnly,
-                        },
-                    );
+                    let layer = LayerSnapshot {
+                        surface: transaction.surface,
+                        authority_local_id: None,
+                        namespace: None,
+                        stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
+                        geometry,
+                        source: transaction.target_buffer,
+                        damage: transaction.damage.clone(),
+                        opacity: 1.0,
+                        crop: None,
+                        transform: Transform::IDENTITY,
+                        generation: transaction.previous_committed_generation.saturating_add(1),
+                        resize_sync: ResizeSyncCapability::ImplicitOnly,
+                    };
+                    self.layers.insert(transaction.surface, layer.clone());
+                    layer
                 }
-            }
+            };
+            self.merge_unrequested_observation_into_pending(observed_layer);
         }
         new_surfaces
+    }
+
+    fn merge_unrequested_observation_into_pending(&mut self, observed: LayerSnapshot) {
+        let Some(pending) = self.pending.as_mut() else {
+            return;
+        };
+        let _ = merge_unrequested_layout_observation(
+            &mut pending.layers,
+            &pending.requested_sizes,
+            observed,
+        );
     }
 
     fn remove_surfaces(&mut self, removed_surfaces: &[SurfaceId]) {
@@ -560,7 +572,10 @@ impl PersistentLiveLayout {
         }
         self.unmanaged_surfaces
             .iter()
-            .find(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) <= 1)
+            .find(|surface| {
+                self.layers.contains_key(surface)
+                    && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
+            })
             .copied()
     }
 
@@ -815,11 +830,12 @@ impl PersistentLiveLayout {
             .into_iter()
             .map(|layer| (layer.surface, layer))
             .collect();
-        if let Some(effects) = pending.effects.as_ref() {
-            self.unmanaged_surfaces.retain(|surface| {
-                effects.workspace_state.surface_workspace(*surface).is_none()
-            });
-        }
+        self.unmanaged_surfaces.retain(|surface| {
+            self.layers.contains_key(surface)
+                && pending.effects.as_ref().is_none_or(|effects| {
+                    effects.workspace_state.surface_workspace(*surface).is_none()
+                })
+        });
         self.admission_retries
             .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
         if let Some(surface) = pending.focus {

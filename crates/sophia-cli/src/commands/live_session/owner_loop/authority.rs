@@ -107,7 +107,21 @@
                         wm_session.notify_surface_removed(*surface)?;
                     }
                 }
-                let _ = layout.observe_authority_batch(&batch);
+                let new_surfaces = layout.observe_authority_batch(&batch);
+                for surface in new_surfaces {
+                    if session_launches.observe_surface(surface) {
+                        println!(
+                            "sophia_session_app schema=2 status=surface_observed source=action transaction={} surface={}",
+                            session_launches
+                                .admission()
+                                .expect("observed launch surface requires an admission")
+                                .intent
+                                .transaction
+                                .raw(),
+                            surface.index(),
+                        );
+                    }
+                }
                 let mut wm_update = layout.resolve_pending();
                 if !resize_proof_complete
                     && let Some((transaction, surface, size)) = resize_proof
@@ -415,6 +429,14 @@
                                 }
                                 applied_client_focus = Some(surface);
                             }
+                            let _ = reduce_session_startup(
+                                &mut startup_readiness,
+                                SessionStartupEvent::PinSurface(surface),
+                            );
+                            let _ = reduce_session_startup(
+                                &mut startup_readiness,
+                                SessionStartupEvent::ClientFocusApplied(surface),
+                            );
                             println!(
                                 "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
                                 transaction.raw()
@@ -440,6 +462,10 @@
                         scene.surface_has_visual_detail(runtime.committed_surfaces(), surface);
                     if !startup_content_ready && cpu_visual_detail {
                         startup_content_ready = true;
+                        let _ = reduce_session_startup(
+                            &mut startup_readiness,
+                            SessionStartupEvent::VisualDetail(surface),
+                        );
                         startup_required_submissions = native_scanout.as_ref().map(|native| {
                             native
                                 .heads
@@ -595,6 +621,14 @@
                 }
                 focused_client_control = None;
                 applied_client_focus = Some(surface);
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::PinSurface(surface),
+                );
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::ClientFocusApplied(surface),
+                );
                 println!(
                     "sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control"
                 );

@@ -591,9 +591,14 @@ mod persistent_native_scanout {
                 head.pending_content,
                 head.submitted_content,
                 head.presented_content,
+                head.callback_accepted != 0,
                 frame.checksum,
             );
-            if status != LiveProductionCpuFrameQueueStatus::Queued {
+            if !matches!(
+                status,
+                LiveProductionCpuFrameQueueStatus::Queued
+                    | LiveProductionCpuFrameQueueStatus::BaselineRequired
+            ) {
                 return status;
             }
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;

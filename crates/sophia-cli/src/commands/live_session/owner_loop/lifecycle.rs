@@ -320,6 +320,8 @@
             if let Some(status) = secondary_children[secondary_index].child.try_wait()? {
                 if config.normal_session {
                     terminate_session_child(&mut secondary_children[secondary_index].child, true)?;
+                    let launch_transaction =
+                        secondary_children[secondary_index].launch_transaction;
                     let id = secondary_children[secondary_index]
                         .id
                         .as_deref()
@@ -327,6 +329,18 @@
                     println!(
                         "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}",
                     );
+                    if launch_transaction.is_some_and(|transaction| {
+                        session_launches
+                            .admission()
+                            .is_some_and(|admission| admission.intent.transaction == transaction)
+                    }) && let Some(admission) = session_launches.fail_current()
+                    {
+                        launch_admission_started_at = None;
+                        eprintln!(
+                            "sophia_session_app schema=2 status=failed id={id} source=action transaction={} reason=exit_before_admission exit_status={status}",
+                            admission.intent.transaction.raw(),
+                        );
+                    }
                     secondary_children.remove(secondary_index);
                 } else {
                     return Err(format!(
@@ -449,6 +463,12 @@
             if let Some(retired) = service.retired_present {
                 let stable = runtime.stable_present(native_scanout, retired.transaction);
                 retired_present_surfaces.insert(retired.surface, retired.transaction);
+                if stable {
+                    let _ = reduce_session_startup(
+                        &mut startup_readiness,
+                        SessionStartupEvent::StablePresented(retired.surface),
+                    );
+                }
                 if stable_gpu_frame_proves_post_input_pixels(
                     input_proof_started_at.is_some(),
                     input_surface,
@@ -589,6 +609,18 @@
                     })
                 })
                 .unwrap_or(0);
+            if cpu_visual_detail || retired_gpu_detail {
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::VisualDetail(surface),
+                );
+            }
+            if retired_gpu_detail {
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::StablePresented(surface),
+                );
+            }
             if input_content_surface != Some(surface)
                 && (cpu_visual_detail || retired_gpu_detail)
             {
@@ -628,6 +660,10 @@
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs))
         {
             startup_outputs_ready_reported = true;
+            let _ = reduce_session_startup(
+                &mut startup_readiness,
+                SessionStartupEvent::OutputsPresented,
+            );
             println!(
                 "sophia_live_session_startup schema=2 status=output_baseline_ready outputs={}/{}",
                 native.heads.len(),
@@ -689,6 +725,10 @@
             startup_required_submissions = None;
             input_content_surface = None;
             startup_outputs_ready_reported = false;
+            let _ = reduce_session_startup(
+                &mut startup_readiness,
+                SessionStartupEvent::NativeRecovered,
+            );
             println!(
                 "sophia_live_session_startup schema=3 status=recovered attempt=1 reason={} outcome={} drained={} abandoned_scanouts={}",
                 if missing_output_callback {
@@ -707,7 +747,7 @@
                 .as_ref()
                 .and_then(|required| startup_output_evidence(native, Some(required)))
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs));
-            let focused_mixed_presented = focused_surface.is_some_and(|surface| {
+            let focused_mixed_presented = startup_readiness.surface.is_some_and(|surface| {
                 retired_present_surfaces
                     .get(&surface)
                     .is_some_and(|transaction| {
@@ -722,10 +762,29 @@
         });
         if !startup_ready_reported
             && config.startup_ready_timeout.is_some()
-            && focus.focused_surface(seat).is_some()
-            && focused_client_ready
-            && startup_content_ready
+            && startup_readiness.surface.is_some()
+            && startup_readiness.client_focus_applied
+            && startup_readiness.visual_detail
             && startup_frame_presented
+        {
+            if startup_frame_presented
+                && let Some(surface) = startup_readiness.surface
+            {
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::StablePresented(surface),
+                );
+            }
+            if startup_outputs_ready_reported {
+                let _ = reduce_session_startup(
+                    &mut startup_readiness,
+                    SessionStartupEvent::OutputsPresented,
+                );
+            }
+        }
+        if !startup_ready_reported
+            && config.startup_ready_timeout.is_some()
+            && startup_readiness.ready
         {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
@@ -756,9 +815,9 @@
                 "not_committed"
             } else if focus.focused_surface(seat).is_none() {
                 "not_focused"
-            } else if !focused_client_ready {
+            } else if !startup_readiness.client_focus_applied {
                 "focus_control_pending"
-            } else if !startup_content_ready {
+            } else if !startup_readiness.visual_detail {
                 "no_visual_detail"
             } else {
                 "not_presented"

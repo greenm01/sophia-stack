@@ -74,6 +74,8 @@ fn run_session_loop(
         require_startup_focus.then_some(output.size),
     );
     let mut committed_session_actions = VecDeque::new();
+    let mut session_launches = SessionLaunchQueue::default();
+    let mut launch_admission_started_at: Option<Instant> = None;
     let mut present_observer = XPresentSessionObserver::new(protocol_router);
     let mut present_feedback = Vec::new();
     let mut runtime = if initialize_empty_runtime {
@@ -145,6 +147,13 @@ fn run_session_loop(
     let mut post_input_deadline: Option<Instant> = None;
     let mut application_surface_gone_at: Option<Instant> = None;
     let mut input_content_surface: Option<SurfaceId> = None;
+    let mut startup_readiness = SessionStartupReadiness::default();
+    if blank_normal_session {
+        let _ = reduce_session_startup(
+            &mut startup_readiness,
+            SessionStartupEvent::BlankSessionReady,
+        );
+    }
     let mut startup_content_ready = blank_normal_session;
     let mut startup_ready_msec = blank_normal_session.then_some(0);
     let mut input_text_match = false;

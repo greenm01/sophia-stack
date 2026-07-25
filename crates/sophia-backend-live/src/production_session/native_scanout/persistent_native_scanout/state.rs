@@ -14,6 +14,7 @@ pub enum LiveProductionScanoutContent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionCpuFrameQueueStatus {
     Queued,
+    BaselineRequired,
     UnchangedPending,
     UnchangedSubmitted,
     UnchangedPresented,
@@ -23,6 +24,7 @@ pub fn reduce_live_production_cpu_frame_queue(
     pending: Option<LiveProductionScanoutContent>,
     submitted: Option<LiveProductionScanoutContent>,
     presented: Option<LiveProductionScanoutContent>,
+    callback_observed: bool,
     checksum: u64,
 ) -> LiveProductionCpuFrameQueueStatus {
     let content = LiveProductionScanoutContent::Cpu { checksum };
@@ -30,6 +32,12 @@ pub fn reduce_live_production_cpu_frame_queue(
         LiveProductionCpuFrameQueueStatus::UnchangedPending
     } else if submitted == Some(content) {
         LiveProductionCpuFrameQueueStatus::UnchangedSubmitted
+    } else if pending.is_none()
+        && submitted.is_none()
+        && presented == Some(content)
+        && !callback_observed
+    {
+        LiveProductionCpuFrameQueueStatus::BaselineRequired
     } else if pending.is_none() && submitted.is_none() && presented == Some(content) {
         LiveProductionCpuFrameQueueStatus::UnchangedPresented
     } else {
