@@ -26,29 +26,36 @@ def main() -> int:
             "get-keyboard|keyboard-off|keyboard-MODE|activate-vt-N"
         )
     action = sys.argv[1]
-    tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
-    with open(tty_path, "rb+", buffering=0) as tty:
+    inherited_fd = os.environ.get("SOPHIA_SESSION_TTY_FD")
+    tty = None
+    if inherited_fd is not None:
+        tty_fd = int(inherited_fd, 10)
+    else:
+        tty_path = os.environ.get("SOPHIA_SESSION_TTY", "/dev/tty")
+        tty = open(tty_path, "rb+", buffering=0)
+        tty_fd = tty.fileno()
+    try:
         if action == "get-keyboard":
             value = array.array("i", [0])
-            fcntl.ioctl(tty.fileno(), KDGKBMODE, value, True)
+            fcntl.ioctl(tty_fd, KDGKBMODE, value, True)
             print(value[0])
             return 0
         if action == "keyboard-off":
-            fcntl.ioctl(tty.fileno(), KDSKBMODE, K_OFF)
+            fcntl.ioctl(tty_fd, KDSKBMODE, K_OFF)
             return 0
         if action.startswith("keyboard-"):
-            fcntl.ioctl(tty.fileno(), KDSKBMODE, int(action.removeprefix("keyboard-"), 10))
+            fcntl.ioctl(tty_fd, KDSKBMODE, int(action.removeprefix("keyboard-"), 10))
             return 0
         if action.startswith("activate-vt-"):
             terminal = int(action.removeprefix("activate-vt-"), 10)
             if terminal < 1 or terminal > 12:
                 raise SystemExit("virtual terminal must be in 1..=12")
-            fcntl.ioctl(tty.fileno(), VT_ACTIVATE, terminal)
-            fcntl.ioctl(tty.fileno(), VT_WAITACTIVE, terminal)
+            fcntl.ioctl(tty_fd, VT_ACTIVATE, terminal)
+            fcntl.ioctl(tty_fd, VT_WAITACTIVE, terminal)
             return 0
         if action == "get":
             value = array.array("i", [0])
-            fcntl.ioctl(tty.fileno(), KDGETMODE, value, True)
+            fcntl.ioctl(tty_fd, KDGETMODE, value, True)
             print(value[0])
             return 0
         if action == "text":
@@ -57,7 +64,10 @@ def main() -> int:
             mode = KD_GRAPHICS
         else:
             mode = int(action, 10)
-        fcntl.ioctl(tty.fileno(), KDSETMODE, mode)
+        fcntl.ioctl(tty_fd, KDSETMODE, mode)
+    finally:
+        if tty is not None:
+            tty.close()
     return 0
 
 

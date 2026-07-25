@@ -37,6 +37,10 @@ if [[ "$REQUIRE_LOCAL_VT" == true && ! "$tty_name" =~ ^/dev/tty[0-9]+$ ]]; then
     echo "Installed Sophia requires a local Linux VT; observed: $tty_name" >&2
     exit 1
 fi
+# Preserve the already-authorized controlling VT before the graphical owner
+# detaches with setsid. Reopening its device path later may be denied after
+# greetd changes VT ownership, while a duplicated descriptor remains valid.
+exec 9<&0
 if [[ "$INSTALLED_SESSION" == true
     && ( "$BUILD_SESSION" != false || "$MANAGE_KEYD" != false ) ]]; then
     echo "Installed Sophia forbids source builds and manual service control." >&2
@@ -319,6 +323,7 @@ session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
     "SOPHIA_SESSION_TTY=$tty_name"
+    SOPHIA_SESSION_TTY_FD=9
 )
 if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then
     session_environment+=(

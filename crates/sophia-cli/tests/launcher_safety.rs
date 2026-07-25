@@ -41,10 +41,13 @@ fn graphical_takeover_saves_and_restores_exact_tty_state() {
 
 #[test]
 fn detached_graphical_owner_retains_its_originating_vt_device() {
-    let export = offset("\"SOPHIA_SESSION_TTY=$tty_name\"");
+    let duplicate = offset("exec 9<&0");
+    let export = offset("SOPHIA_SESSION_TTY_FD=9");
     let session = offset("setsid \"${session_command[@]}\"");
+    assert!(duplicate < export);
     assert!(export < session);
-    assert!(TTY_MODE_HELPER.contains("os.environ.get(\"SOPHIA_SESSION_TTY\", \"/dev/tty\")"));
+    assert!(TTY_MODE_HELPER.contains("os.environ.get(\"SOPHIA_SESSION_TTY_FD\")"));
+    assert!(TTY_MODE_HELPER.contains("fcntl.ioctl(tty_fd, VT_ACTIVATE, terminal)"));
 }
 
 #[test]

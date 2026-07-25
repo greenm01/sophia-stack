@@ -2750,3 +2750,13 @@ as fatal correctly returned to greetd. The wrapper now passes the exact
 originating `/dev/ttyN` as `SOPHIA_SESSION_TTY`, and the detached owner opens
 that explicit device for VT activation. A launcher regression requires the
 device handoff to precede `setsid`.
+
+The next physical run refined that diagnosis: the path was correct, but
+reopening `/dev/tty7` after detachment failed with `EACCES`. Device paths are
+not durable capabilities across display-manager ownership transitions. The
+launcher now duplicates its already-authorized controlling-TTY descriptor
+before takeover and passes the descriptor number as
+`SOPHIA_SESSION_TTY_FD`. Session-control helpers issue VT ioctls directly on
+that inherited descriptor; the path remains only a compatibility fallback.
+This keeps VT control in the session-control boundary without adding
+terminal- or application-specific behavior to Engine.
