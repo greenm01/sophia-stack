@@ -1,0 +1,20 @@
+sophia_live_wm schema=1 status=focus_reconciled transaction=1 target=surface surface=SurfaceId { index: 10, generation: 1 } outcome=Focused
+sophia_live_wm schema=1 status=focus_committed transaction=1 target=surface
+sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=10 generation=100 primitives=4
+sophia_live_wm schema=1 status=layout_committed transaction=2 surfaces=2 moved_surfaces=2 configure_deliveries=2 outcome=Committed
+sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=10 generation=101 primitives=4
+sophia_live_wm schema=2 status=workspace_projection_committed transaction=3 output=1 workspace=2 visible_surfaces=0 focus=none
+sophia_live_wm schema=1 status=hidden_focus_cleared transaction=3
+sophia_live_wm schema=2 status=workspace_projection_committed transaction=4 output=1 workspace=1 visible_surfaces=2 focus=surface
+sophia_live_wm schema=1 status=focus_reconciled transaction=4 target=surface surface=SurfaceId { index: 10, generation: 1 } outcome=Focused
+sophia_live_wm schema=1 status=focus_committed transaction=4 target=surface
+sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=10 generation=101 primitives=4
+sophia_live_seat schema=1 status=suspended
+sophia_live_seat schema=1 status=active source=resume
+sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=10 generation=101 primitives=4
+sophia_live_wm schema=1 status=focus_reconciled transaction=5 target=surface surface=SurfaceId { index: 20, generation: 1 } outcome=Focused
+sophia_live_wm schema=1 status=focus_committed transaction=5 target=surface
+sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=20 generation=200 primitives=4
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session schema=15 status=bounded_complete native_mixed_exports=8 native_submit_failures=0 native_cleanup_pending=false
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed

@@ -22,9 +22,11 @@ impl LiveProductionVisualRuntime {
     pub(super) fn record_focused_border_observation(
         &mut self,
         committed_surfaces: &[CommittedSurfaceState],
+        force: bool,
     ) -> Result<(), CompositorDisplayListError> {
         let display_list = self.display_list(committed_surfaces, &self.presentation_order)?;
         let Some(surface) = self.focused_surface else {
+            self.last_focused_border_observation = None;
             return Ok(());
         };
         let Some(border) = display_list.solid_rects().find(|border| {
@@ -36,6 +38,7 @@ impl LiveProductionVisualRuntime {
                 } if border_surface == surface
             )
         }) else {
+            self.last_focused_border_observation = None;
             return Ok(());
         };
         let observation = LiveFocusedBorderObservation {
@@ -43,7 +46,9 @@ impl LiveProductionVisualRuntime {
             generation: border.generation,
             primitives: display_list.solid_rects().count(),
         };
-        if observation.primitives > 0 && self.last_focused_border_observation != Some(observation) {
+        if observation.primitives > 0
+            && (force || self.last_focused_border_observation != Some(observation))
+        {
             self.last_focused_border_observation = Some(observation);
             self.pending_focused_border_observation = Some(observation);
         }

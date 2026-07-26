@@ -251,7 +251,10 @@ Promotion now follows the gates below in order.
   followed by a rendered four-primitive border on the same opaque surface
   before the next key reaches it, and observes borders on two distinct focus
   targets. Physical focus, resize, workspace, VT, and mixed-presentation
-  confirmation remains required before closing this item.
+  confirmation remains required before closing this item. The fail-closed
+  physical verifier is ready: it requires border/focus correlation on two
+  surfaces, a focused geometry-generation change, empty-workspace hide/restore,
+  a post-VT-resume recompose, nonzero mixed exports, and clean teardown.
 - [ ] Close applications and request xmonad logout; require zero pending input,
   WM work, Presents, fences, scanouts, or cleanup debt, followed by correct TTY
   and greetd restoration.

@@ -635,6 +635,23 @@ complete run must observe borders on at least two distinct focus targets. The
 verifier remains virtual-input evidence; it does not replace physical DRM,
 libinput, resize, workspace, or VT confirmation.
 
+After a normal physical xmonad capture that exercises two focus targets, one
+focused resize, an empty workspace round-trip, and one VT round-trip, run:
+
+```sh
+tools/verify_sophia_xmonad_focused_border.sh
+```
+
+The verifier correlates each border with committed opaque focus, requires four
+primitives, requires a geometry/style generation change without using client
+pixel generations, checks border restoration after workspace and VT resume,
+requires nonzero mixed composition, and rejects degraded or unclean teardown.
+Its own fail-closed fixtures run through:
+
+```sh
+tools/check_sophia_xmonad_focused_border_verifier.sh
+```
+
 Milestone 8 adds two explicit application scenarios:
 
 ```sh

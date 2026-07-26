@@ -30,6 +30,16 @@ missing border, the wrong target, fewer than four primitives, or border
 evidence that arrives after the following key. Physical DRM confirmation across
 focus, resize, workspace, VT, and mixed CPU/DMA-BUF presentation remains open.
 
+Border generation hashes only facts that change compositor pixels: geometry,
+thickness, and color. Client buffer commits therefore do not create false
+compositor damage or repeated evidence. Hiding focus clears retained
+observation state so restoring the workspace proves a new border composition;
+VT and native-recovery repaints explicitly re-emit the reduced border fact even
+when geometry is unchanged. A dedicated physical verifier now requires those
+workspace and VT sequences, two focus targets, a focused geometry-generation
+change, nonzero mixed exports, and clean shutdown. Its pass and mutation
+fixtures fail closed without claiming physical completion.
+
 ## 2026-07-26: Click Focus Requires A Cross-Authority Input Barrier
 
 Physical pointer events were already hit-tested against Engine scene truth and

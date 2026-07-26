@@ -312,7 +312,7 @@ impl LiveProductionVisualRuntime {
                 )
             })?;
         if report.submission.composed {
-            self.record_focused_border_observation(&report.committed_surfaces)?;
+            self.record_focused_border_observation(&report.committed_surfaces, false)?;
         }
         Ok((report.submission, report.committed_surfaces))
     }
@@ -646,7 +646,7 @@ impl LiveProductionVisualRuntime {
         if current_owned.is_some() {
             return Err("visible Present surface is missing from the presentation order".into());
         }
-        self.record_focused_border_observation(&border_candidate)?;
+        self.record_focused_border_observation(&border_candidate, false)?;
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 mixed
@@ -749,7 +749,7 @@ impl LiveProductionVisualRuntime {
         let composition = scene
             .compose_display_list(&committed, &display_list, cursor_position)?
             .clone();
-        self.record_focused_border_observation(&committed)?;
+        self.record_focused_border_observation(&committed, true)?;
         let frames = scene.frames_for_outputs(output_descriptors)?;
         self.initialize_native_scanout(native_scanout, &frames)?;
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();
