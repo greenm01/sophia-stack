@@ -17,6 +17,7 @@ macro_rules! drain_physical_input {
                     focus: &focus,
                     committed_surfaces,
                     input_layers,
+                    surface_roles: &layout.presentation_roles,
                     client_routes: &layout.client_routes,
                     shortcuts: wm_session
                         .as_mut()

@@ -61,6 +61,7 @@ struct PhysicalInputRoutingContext<'a> {
     focus: &'a InputFocusState,
     committed_surfaces: &'a [CommittedSurfaceState],
     input_layers: &'a [LayerSnapshot],
+    surface_roles: &'a BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     client_routes: &'a XAuthorityClientSurfaceRoutes,
     shortcuts: Option<&'a mut WmShortcutRouter>,
     input_sender: &'a SyncSender<XAuthorityRoutedInput>,
@@ -92,6 +93,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         focus,
         committed_surfaces,
         input_layers,
+        surface_roles,
         client_routes,
         shortcuts,
         input_sender,
@@ -118,6 +120,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         focus,
         committed_surfaces,
         input_layers,
+        surface_roles,
         client_routes,
         input_sender,
         modifiers,
@@ -166,11 +169,13 @@ fn route_input_events(
     now_msec: u64,
     physical_text_proof: Option<&mut PhysicalTextProof>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
+    let surface_roles = BTreeMap::new();
     route_input_events_with_pointer_focus(
         events,
         focus,
         committed_surfaces,
         input_layers,
+        &surface_roles,
         _client_routes,
         input_sender,
         modifiers,
@@ -200,6 +205,7 @@ fn route_input_events_with_pointer_focus(
     focus: &InputFocusState,
     committed_surfaces: &[CommittedSurfaceState],
     input_layers: &[LayerSnapshot],
+    surface_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     _client_routes: &XAuthorityClientSurfaceRoutes,
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
@@ -595,16 +601,15 @@ fn route_input_events_with_pointer_focus(
                     local_position: local,
                     kind,
                 };
-                let starts_focus_handoff = matches!(
-                    kind,
-                    sophia_protocol::InputEventKind::PointerButton {
-                        button: 0x110,
-                        pressed: true
-                    }
-                ) && applied_client_focus != Some(surface)
-                    && pointer_focus_handoff
+                let starts_focus_handoff = pointer_press_starts_focus_handoff(
+                    &kind,
+                    applied_client_focus,
+                    surface,
+                    surface_roles.get(&surface).copied(),
+                    pointer_focus_handoff
                         .as_deref()
-                        .is_some_and(|handoff| handoff.target().is_none());
+                        .is_some_and(|handoff| handoff.target().is_none()),
+                );
                 if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
                     if starts_focus_handoff {
                         handoff.begin(surface, now_msec, request)?;
@@ -639,6 +644,24 @@ fn route_input_events_with_pointer_focus(
         }
     }
     Ok(report)
+}
+
+fn pointer_press_starts_focus_handoff(
+    kind: &sophia_protocol::InputEventKind,
+    applied_focus: Option<SurfaceId>,
+    target: SurfaceId,
+    role: Option<sophia_protocol::SurfacePresentationRole>,
+    handoff_idle: bool,
+) -> bool {
+    matches!(
+        kind,
+        sophia_protocol::InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: true
+        }
+    ) && applied_focus != Some(target)
+        && role != Some(sophia_protocol::SurfacePresentationRole::ClientPositioned)
+        && handoff_idle
 }
 
 fn record_pointer_boundary_placement(
