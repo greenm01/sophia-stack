@@ -22,124 +22,11 @@ struct PhysicalInputRouteReport {
     virtual_terminal_modifier_releases: usize,
     pointer_focus_handoff_expired: bool,
     pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
+    pointer_boundary_contacts: Vec<sophia_engine::PointerBoundaryContact>,
+    pointer_boundary_reverse_contacts: Vec<sophia_engine::PointerBoundaryContact>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-struct SessionPointerPlacement {
-    raw_position: Option<Point>,
-    offset: Option<Point>,
-    position: Option<Point>,
-    output_bounds: Vec<Rect>,
-}
-
-fn pointer_offset_for_geometry(raw: Point, geometry: Rect) -> Point {
-    Point {
-        x: f64::from(geometry.x) + f64::from(geometry.width) / 2.0 - raw.x,
-        y: f64::from(geometry.y) + f64::from(geometry.height) / 2.0 - raw.y,
-    }
-}
-
-impl SessionPointerPlacement {
-    fn set_output_bounds(&mut self, output_bounds: Vec<Rect>) {
-        self.output_bounds = output_bounds;
-        if let Some(position) = self.position {
-            self.position =
-                sophia_engine::confine_pointer_to_outputs(position, &self.output_bounds);
-            if let (Some(raw), Some(position)) = (self.raw_position, self.position) {
-                self.offset = Some(Point {
-                    x: position.x - raw.x,
-                    y: position.y - raw.y,
-                });
-            }
-        }
-    }
-
-    fn center_on_primary_output(&mut self, size: Size) -> Point {
-        let center = Point {
-            x: f64::from(size.width.max(1)) / 2.0,
-            y: f64::from(size.height.max(1)) / 2.0,
-        };
-        if self.output_bounds.is_empty() {
-            self.output_bounds.push(Rect {
-                x: 0,
-                y: 0,
-                width: size.width.max(1),
-                height: size.height.max(1),
-            });
-        }
-        self.raw_position = Some(Point::default());
-        self.offset = Some(center);
-        self.position = Some(center);
-        center
-    }
-
-    fn observe_raw(&mut self, raw: Point) {
-        self.raw_position = Some(raw);
-    }
-
-    fn arm_at_focused_surface_center(
-        &mut self,
-        focused_surface: Option<SurfaceId>,
-        input_layers: &[LayerSnapshot],
-    ) -> Option<Point> {
-        let geometry = focused_surface.and_then(|surface| {
-            input_layers
-                .iter()
-                .find(|layer| layer.surface == surface)
-                .map(|layer| layer.geometry)
-        })?;
-        let raw = self.raw_position.unwrap_or_default();
-        let offset = pointer_offset_for_geometry(raw, geometry);
-        let position = Point {
-            x: raw.x + offset.x,
-            y: raw.y + offset.y,
-        };
-        let position =
-            sophia_engine::confine_pointer_to_outputs(position, &self.output_bounds)
-                .unwrap_or(position);
-        self.offset = Some(Point {
-            x: position.x - raw.x,
-            y: position.y - raw.y,
-        });
-        self.position = Some(position);
-        Some(position)
-    }
-
-    fn place(
-        &mut self,
-        raw: Point,
-        focused_surface: Option<SurfaceId>,
-        input_layers: &[LayerSnapshot],
-    ) -> Point {
-        self.observe_raw(raw);
-        let offset = *self.offset.get_or_insert_with(|| {
-            let Some(geometry) = focused_surface.and_then(|surface| {
-                input_layers
-                    .iter()
-                    .find(|layer| layer.surface == surface)
-                    .map(|layer| layer.geometry)
-            }) else {
-                return Point::default();
-            };
-            pointer_offset_for_geometry(raw, geometry)
-        });
-        let proposed = Point {
-            x: raw.x + offset.x,
-            y: raw.y + offset.y,
-        };
-        let position =
-            sophia_engine::confine_pointer_to_outputs(proposed, &self.output_bounds)
-                .unwrap_or(proposed);
-        if position != proposed {
-            self.offset = Some(Point {
-                x: position.x - raw.x,
-                y: position.y - raw.y,
-            });
-        }
-        self.position = Some(position);
-        position
-    }
-}
+type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
 
 fn place_pointer_event_for_routing(
     event: &mut sophia_protocol::InputEventPacket,
@@ -147,11 +34,24 @@ fn place_pointer_event_for_routing(
     input_layers: &[LayerSnapshot],
     pointer: &mut SessionPointerPlacement,
     buttons_only: bool,
-) -> bool {
-    if let Some(raw) = event.global_position {
-        event.global_position = Some(pointer.place(raw, focused_surface, input_layers));
-    }
-    !(buttons_only && matches!(event.kind, sophia_protocol::InputEventKind::PointerMotion))
+) -> (bool, Option<sophia_engine::OutputUnionPointerPlacement>) {
+    let placement = if let Some(raw) = event.global_position {
+        let geometry = focused_surface.and_then(|surface| {
+            input_layers
+                .iter()
+                .find(|layer| layer.surface == surface)
+                .map(|layer| layer.geometry)
+        });
+        let placement = pointer.place(raw, geometry);
+        event.global_position = Some(placement.position);
+        Some(placement)
+    } else {
+        None
+    };
+    (
+        !(buttons_only && matches!(event.kind, sophia_protocol::InputEventKind::PointerMotion)),
+        placement,
+    )
 }
 
 struct PhysicalInputRoutingContext<'a> {
@@ -335,6 +235,8 @@ fn route_input_events_with_pointer_focus(
         virtual_terminal_modifier_releases: 0,
         pointer_focus_handoff_expired: false,
         pointer_focus_handoff_released: None,
+        pointer_boundary_contacts: Vec::new(),
+        pointer_boundary_reverse_contacts: Vec::new(),
     };
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
         report.pointer_focus_handoff_expired = handoff.expire(now_msec);
@@ -583,9 +485,6 @@ fn route_input_events_with_pointer_focus(
                 ) {
                     continue;
                 }
-                if let Some(raw) = event.global_position {
-                    pointer.observe_raw(raw);
-                }
                 let is_button =
                     matches!(kind, sophia_protocol::InputEventKind::PointerButton { .. });
                 let is_axis =
@@ -606,24 +505,27 @@ fn route_input_events_with_pointer_focus(
                 ) {
                     if !is_button {
                         let focused_surface = focus.focused_surface(event.seat);
-                        let _ = place_pointer_event_for_routing(
+                        let (_, placement) = place_pointer_event_for_routing(
                             &mut event,
                             focused_surface,
                             input_layers,
                             pointer,
                             false,
                         );
+                        record_pointer_boundary_placement(&mut report, kind, placement);
                     }
                     continue;
                 }
                 let focused_surface = focus.focused_surface(event.seat);
-                if !place_pointer_event_for_routing(
+                let (route_event, placement) = place_pointer_event_for_routing(
                     &mut event,
                     focused_surface,
                     input_layers,
                     pointer,
                     pointer_buttons_only,
-                ) {
+                );
+                record_pointer_boundary_placement(&mut report, kind, placement);
+                if !route_event {
                     continue;
                 }
                 if !pointer_routing_enabled {
@@ -703,6 +605,27 @@ fn route_input_events_with_pointer_focus(
         }
     }
     Ok(report)
+}
+
+fn record_pointer_boundary_placement(
+    report: &mut PhysicalInputRouteReport,
+    kind: sophia_protocol::InputEventKind,
+    placement: Option<sophia_engine::OutputUnionPointerPlacement>,
+) {
+    if !matches!(kind, sophia_protocol::InputEventKind::PointerMotion) {
+        return;
+    }
+    let Some(placement) = placement else {
+        return;
+    };
+    if !placement.contact.is_empty() {
+        report.pointer_boundary_contacts.push(placement.contact);
+    }
+    if !placement.reversed.is_empty() {
+        report
+            .pointer_boundary_reverse_contacts
+            .push(placement.reversed);
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

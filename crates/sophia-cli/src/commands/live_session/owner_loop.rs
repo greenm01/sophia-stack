@@ -203,7 +203,7 @@ fn run_session_loop(
     let mut selection_conversions = 0usize;
     let mut first_protocol_error = None;
     let mut emergency_exit_requested = false;
-    let mut cursor_updates = CursorUpdateState::new(pointer.position.is_some());
+    let mut cursor_updates = CursorUpdateState::new(pointer.position().is_some());
     let startup_ready_deadline = config
         .startup_ready_timeout
         .map(|timeout| started + timeout);

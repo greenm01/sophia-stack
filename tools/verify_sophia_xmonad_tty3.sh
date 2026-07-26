@@ -242,6 +242,25 @@ if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight duri
     "$SESSION_LOG"; then
     fail "operator-requested VT switch used the revoked-seat fallback"
 fi
+for boundary in \
+    'horizontal minimum' \
+    'horizontal maximum' \
+    'vertical minimum' \
+    'vertical maximum'; do
+    read -r axis side <<<"$boundary"
+    edge_line="$(
+        line_number \
+            "schema=7 status=output_edge_confined axis=${axis} side=${side}$" \
+            "$SESSION_LOG"
+    )"
+    reverse_line="$(
+        line_number_after \
+            "schema=7 status=edge_reverse_immediate axis=${axis} side=${side}$" \
+            "$SESSION_LOG" "$edge_line"
+    )"
+    [[ -n "$reverse_line" ]] ||
+        fail "pointer did not reverse immediately from the ${axis} ${side} edge"
+done
 cursor="$(
     grep -E '^sophia_live_session_cursor schema=3 ' "$SESSION_LOG" | tail -n 1
 )"

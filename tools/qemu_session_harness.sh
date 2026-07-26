@@ -506,6 +506,25 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_focus_key_timeout" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
+    pointer_edge_baseline="$(evidence_count '^sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum$')"
+    if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 4096 0 0; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_pointer_edge_send" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    if ! wait_for_new_evidence '^sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum$' "$pointer_edge_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_edge_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    pointer_reverse_baseline="$(evidence_count '^sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=horizontal side=maximum$')"
+    if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -96 0 0; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_pointer_reverse_send" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    if ! wait_for_new_evidence '^sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=horizontal side=maximum$' "$pointer_reverse_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_reverse_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96" | tee -a "$EVIDENCE_FILE"
 
     chords=("meta_l+k" "meta_l+spc" "meta_l+2" "meta_l+shift+1")
     for chord in "${chords[@]}"; do

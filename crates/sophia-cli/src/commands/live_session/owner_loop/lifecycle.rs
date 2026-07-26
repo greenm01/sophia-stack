@@ -108,7 +108,7 @@
                                 virtual_terminal_chord = VirtualTerminalChordState::default();
                                 emergency_chord = EmergencyChordState::armed();
                                 cursor_updates =
-                                    CursorUpdateState::new(pointer.position.is_some());
+                                    CursorUpdateState::new(pointer.position().is_some());
                                 eprintln!(
                                     "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=request error={error}"
                                 );
@@ -171,7 +171,7 @@
                 {
                     let _ = shortcuts.clear_seat(seat);
                 }
-                cursor_updates = CursorUpdateState::new(pointer.position.is_some());
+                cursor_updates = CursorUpdateState::new(pointer.position().is_some());
                 eprintln!(
                     "sophia_live_session_vt schema=4 status=rejected target={terminal} phase=disable_timeout"
                 );
@@ -235,7 +235,7 @@
                     device_map,
                     Some(controller.device_opener()),
                 )?;
-                cursor_updates = CursorUpdateState::new(pointer.position.is_some());
+                cursor_updates = CursorUpdateState::new(pointer.position().is_some());
                 seat_state = seat_state.acquired();
                 println!("sophia_live_seat schema=1 status=active source=resume");
                 std::io::stdout().flush()?;
@@ -545,7 +545,7 @@
         }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(position)) =
-                (native_scanout.as_mut(), pointer.position)
+                (native_scanout.as_mut(), pointer.position())
         {
             match native_scanout.update_classic_hardware_cursor(position) {
                 Ok(ClassicHardwareCursorUpdate::Visible) => {

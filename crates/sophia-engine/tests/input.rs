@@ -1,5 +1,8 @@
 mod support;
-use sophia_engine::confine_pointer_to_outputs;
+use sophia_engine::{
+    OutputUnionPointerState, PointerBoundaryContact, PointerBoundarySide,
+    confine_pointer_to_outputs,
+};
 use support::*;
 
 #[test]
@@ -55,34 +58,124 @@ fn physical_pointer_is_confined_to_the_nearest_visible_output() {
             y: 1079.0,
         }),
     );
+}
 
-    let raw_at_right_edge = Point {
-        x: 6000.0,
-        y: 900.0,
-    };
-    let confined =
-        confine_pointer_to_outputs(raw_at_right_edge, &outputs).expect("outputs are valid");
-    let corrected_offset = Point {
-        x: confined.x - raw_at_right_edge.x,
-        y: confined.y - raw_at_right_edge.y,
-    };
-    let reversed_raw = Point {
-        x: raw_at_right_edge.x - 10.0,
-        y: raw_at_right_edge.y,
-    };
+#[test]
+fn output_union_pointer_corrects_overshoot_before_the_first_reverse_delta() {
+    let outputs = [
+        Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        },
+        Rect {
+            x: 2560,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+    ];
+    let mut pointer = OutputUnionPointerState::default();
+    pointer.set_output_bounds(outputs.to_vec());
+    pointer.center_on_primary_output(Size {
+        width: 2560,
+        height: 1440,
+    });
+
+    let edge = pointer.place(Point { x: 6000.0, y: 0.0 }, None);
     assert_eq!(
-        confine_pointer_to_outputs(
-            Point {
-                x: reversed_raw.x + corrected_offset.x,
-                y: reversed_raw.y + corrected_offset.y,
-            },
-            &outputs,
-        ),
-        Some(Point {
-            x: 4469.0,
-            y: 900.0,
-        }),
+        edge.position,
+        Point {
+            x: 4479.0,
+            y: 720.0
+        }
     );
+    assert_eq!(
+        edge.contact,
+        PointerBoundaryContact {
+            horizontal: Some(PointerBoundarySide::Maximum),
+            vertical: None,
+        }
+    );
+
+    let stationary = pointer.place(Point { x: 6000.0, y: 0.0 }, None);
+    assert_eq!(stationary.contact, edge.contact);
+    assert_eq!(pointer.boundary_metrics().clamps, 1);
+
+    let reversed = pointer.place(Point { x: 5990.0, y: 0.0 }, None);
+    assert_eq!(
+        reversed.position,
+        Point {
+            x: 4469.0,
+            y: 720.0
+        }
+    );
+    assert_eq!(
+        reversed.reversed,
+        PointerBoundaryContact {
+            horizontal: Some(PointerBoundarySide::Maximum),
+            vertical: None,
+        }
+    );
+    assert_eq!(pointer.boundary_metrics().clamps, 1);
+    assert_eq!(pointer.boundary_metrics().immediate_reversals, 1);
+}
+
+#[test]
+fn output_union_pointer_reports_horizontal_and_vertical_edge_reversals() {
+    let cases = [
+        (
+            Point { x: -500.0, y: 0.0 },
+            Point { x: -490.0, y: 0.0 },
+            PointerBoundaryContact {
+                horizontal: Some(PointerBoundarySide::Minimum),
+                vertical: None,
+            },
+        ),
+        (
+            Point { x: 500.0, y: 0.0 },
+            Point { x: 490.0, y: 0.0 },
+            PointerBoundaryContact {
+                horizontal: Some(PointerBoundarySide::Maximum),
+                vertical: None,
+            },
+        ),
+        (
+            Point { x: 0.0, y: -500.0 },
+            Point { x: 0.0, y: -490.0 },
+            PointerBoundaryContact {
+                horizontal: None,
+                vertical: Some(PointerBoundarySide::Minimum),
+            },
+        ),
+        (
+            Point { x: 0.0, y: 500.0 },
+            Point { x: 0.0, y: 490.0 },
+            PointerBoundaryContact {
+                horizontal: None,
+                vertical: Some(PointerBoundarySide::Maximum),
+            },
+        ),
+    ];
+
+    for (edge, reverse, expected) in cases {
+        let mut pointer = OutputUnionPointerState::default();
+        pointer.set_output_bounds(vec![Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 80,
+        }]);
+        pointer.center_on_primary_output(Size {
+            width: 100,
+            height: 80,
+        });
+        assert_eq!(pointer.place(edge, None).contact, expected);
+        assert_eq!(pointer.place(reverse, None).reversed, expected);
+        assert_eq!(pointer.boundary_metrics().clamps, 1);
+        assert_eq!(pointer.boundary_metrics().immediate_reversals, 1);
+    }
 }
 
 #[test]
@@ -106,6 +199,22 @@ fn physical_pointer_confinement_rejects_invalid_or_missing_geometry() {
         confine_pointer_to_outputs(Point { x: 10.0, y: 10.0 }, &[]),
         None,
     );
+
+    let mut pointer = OutputUnionPointerState::default();
+    pointer.center_on_primary_output(Size {
+        width: 100,
+        height: 80,
+    });
+    let placement = pointer.place(
+        Point {
+            x: f64::INFINITY,
+            y: 10.0,
+        },
+        None,
+    );
+    assert_eq!(placement.position, Point { x: 50.0, y: 40.0 });
+    assert!(placement.contact.is_empty());
+    assert!(placement.reversed.is_empty());
 }
 
 #[test]

@@ -10,15 +10,15 @@ use super::{
     independent_native_output_presented, input_baseline_is_presented,
     managed_child_exit_is_nonfatal, pending_wm_focus_after_engine_decision,
     physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, pointer_offset_for_geometry, record_runtime_commits,
-    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
-    stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
-    successful_primary_exit_ends_session, synchronous_modeset_record,
-    take_settled_input_delivery_wait,
+    place_pointer_event_for_routing, record_runtime_commits, rects_intersect, route_input_events,
+    session_protocol_errors_are_fatal, stable_gpu_frame_proves_post_input_pixels,
+    startup_submission_requirement, successful_primary_exit_ends_session,
+    synchronous_modeset_record, take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::SessionClientKeyState;
 use sophia_engine::{
     InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
+    pointer_offset_for_geometry,
 };
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
@@ -360,7 +360,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
     assert_eq!(proof.matched_events(), 0);
     assert!(input_receiver.try_recv().is_err());
     assert_ne!(
-        pointer.position,
+        pointer.position(),
         Some(Point {
             x: 1280.0,
             y: 720.0
@@ -479,7 +479,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
     assert_eq!(report.pointer_events, 1);
     assert_eq!(report.pointer_routed, 0);
     assert_eq!(
-        pointer.position,
+        pointer.position(),
         Some(Point {
             x: 1292.0,
             y: 712.0,
@@ -597,12 +597,8 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
 
 #[test]
 fn interactive_pointer_proof_routes_motion_after_placement() {
-    let mut pointer = SessionPointerPlacement {
-        raw_position: None,
-        offset: Some(Point { x: 10.0, y: 20.0 }),
-        position: None,
-        ..SessionPointerPlacement::default()
-    };
+    let mut pointer =
+        SessionPointerPlacement::with_raw_to_logical_offset(Point { x: 10.0, y: 20.0 });
     let mut motion = InputEventPacket {
         serial: 1,
         seat: SeatId::from_raw(1),
@@ -614,13 +610,7 @@ fn interactive_pointer_proof_routes_motion_after_placement() {
         local_position: None,
     };
 
-    assert!(place_pointer_event_for_routing(
-        &mut motion,
-        None,
-        &[],
-        &mut pointer,
-        false,
-    ));
+    assert!(place_pointer_event_for_routing(&mut motion, None, &[], &mut pointer, false).0);
     assert_eq!(motion.global_position, Some(Point { x: 40.0, y: 60.0 }));
 }
 

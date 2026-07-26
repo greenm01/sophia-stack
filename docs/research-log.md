@@ -3860,6 +3860,28 @@ beside a shorter output. Completion evidence now counts intentional hidden
 updates separately from successful updates and failures; the strict gate
 requires zero. Physical edge/reversal confirmation remains pending.
 
+The first confinement repair still left its accumulated raw position, startup
+offset, corrected edge offset, and current logical position in the CLI owner.
+That was the right behavior in the wrong authority: the CLI could effectively
+choose Engine cursor state, and the confinement helper alone could not prove
+that a real input stream reversed immediately after overshoot.
+
+`OutputUnionPointerState` now owns that complete state machine inside Engine.
+The live owner supplies only immutable output rectangles, the optional initial
+surface geometry, and each raw backend point. Engine returns a logical
+placement plus reduced boundary contact/reversal facts; no backend handle,
+device identity, client metadata, or pointer coordinate is logged. Deterministic
+coverage proves all four edge directions and unequal-output projection.
+
+The rebuilt two-output `xmonad-m7` guest then drove the real virtio-mouse path
+hard against the right edge and sent one 96-unit reverse delta. Engine emitted
+an output-edge contact followed by an immediate-reversal observation, after
+which the complete click-drag focus, keyboard, workspace, bridge-restart,
+launch/close/logout, and native-drain workflow passed with zero protocol,
+cursor-plane, stale-WM-response, or cleanup failure. This is unattended
+evidence for the state machine; the physical gate still requires every edge of
+the actual output union and visible hardware-cursor confirmation.
+
 ## 2026-07-25: Held-Key Repeat Belongs To Engine Timing And Frontend Semantics
 
 The next physical run retained ordinary keyboard routing but exposed that

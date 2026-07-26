@@ -25,6 +25,14 @@ sophia_live_session_pointer schema=2 status=motion_routed
 sophia_live_session_pointer schema=2 status=button_routed count=1
 sophia_live_session_pointer schema=3 status=axis_observed
 sophia_live_session_pointer schema=3 status=axis_routed
+sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=minimum
+sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=horizontal side=minimum
+sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum
+sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=horizontal side=maximum
+sophia_live_session_pointer schema=7 status=output_edge_confined axis=vertical side=minimum
+sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=vertical side=minimum
+sophia_live_session_pointer schema=7 status=output_edge_confined axis=vertical side=maximum
+sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=vertical side=maximum
 sophia_live_wm schema=1 status=physical_action_committed action=3
 sophia_live_wm schema=1 status=physical_action_committed action=258
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=12 output=1 workspace=2 visible_surfaces=0 focus=none

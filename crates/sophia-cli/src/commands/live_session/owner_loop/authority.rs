@@ -286,7 +286,7 @@
                 let cursor_presentation = if native_scanout.is_some() {
                     LiveProductionCursorPresentation::HardwarePlane
                 } else {
-                    LiveProductionCursorPresentation::Software(pointer.position)
+                    LiveProductionCursorPresentation::Software(pointer.position())
                 };
                 let mut presentation_layout = Vec::with_capacity(layout.layers.len());
                 for layer in layout.layers.values() {

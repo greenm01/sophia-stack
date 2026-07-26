@@ -197,7 +197,12 @@ verifier requires pointer focus request, Engine focus commit, X11 focus
 acknowledgment, retained press/motion/release delivery, and a following
 virtio-keyboard event routed to that same opaque surface, in that order. It
 also rejects a press/release-only gesture, a dropped handoff, or missing
-post-focus keyboard delivery.
+post-focus keyboard delivery. The scenario then drives the virtio mouse beyond
+the right edge of the two-output union and sends one reverse delta. The
+verifier requires an Engine confinement observation, an immediate-reversal
+observation after it, and only then the completed QMP sequence marker. This
+proves the stateful raw-to-logical offset path without claiming physical cursor
+visibility or the required all-edge hardware exercise.
 
 ### X11 Live-Session Stability Diagnostics
 

@@ -29,6 +29,8 @@ for mutation in \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
     'sophia_live_selection schema=1 status=complete ' \
     'sophia_live_session_cursor schema=3 ' \
+    'status=output_edge_confined axis=horizontal side=minimum' \
+    'status=edge_reverse_immediate axis=vertical side=maximum' \
     'sophia_live_session_keys schema=2 '; do
     grep -Fv "$mutation" "$SESSION" >"$TEMP_FILE"
     if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \

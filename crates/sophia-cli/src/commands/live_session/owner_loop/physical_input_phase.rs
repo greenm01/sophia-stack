@@ -116,6 +116,34 @@ macro_rules! drain_physical_input {
                 .pointer_events
                 .saturating_sub(report.pointer_buttons_observed)
                 .saturating_sub(report.pointer_axes_observed);
+            for (status, contacts) in [
+                (
+                    "output_edge_confined",
+                    &report.pointer_boundary_contacts,
+                ),
+                (
+                    "edge_reverse_immediate",
+                    &report.pointer_boundary_reverse_contacts,
+                ),
+            ] {
+                for contact in contacts {
+                    for (axis, side) in [
+                        ("horizontal", contact.horizontal),
+                        ("vertical", contact.vertical),
+                    ] {
+                        let Some(side) = side else {
+                            continue;
+                        };
+                        let side = match side {
+                            sophia_engine::PointerBoundarySide::Minimum => "minimum",
+                            sophia_engine::PointerBoundarySide::Maximum => "maximum",
+                        };
+                        println!(
+                            "sophia_live_session_pointer schema=7 status={status} axis={axis} side={side}"
+                        );
+                    }
+                }
+            }
             if !post_startup_exit_pointer_reported
                 && config.normal_session
                 && primary_child_exited
@@ -129,7 +157,7 @@ macro_rules! drain_physical_input {
                 std::io::stdout().flush()?;
                 post_startup_exit_pointer_reported = true;
             }
-            if pointer_motions_observed > 0 && pointer.position.is_some() {
+            if pointer_motions_observed > 0 && pointer.position().is_some() {
                 if cursor_updates.dirty {
                     metrics.cursor_moves_coalesced = metrics
                         .cursor_moves_coalesced

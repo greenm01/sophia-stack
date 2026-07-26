@@ -191,7 +191,13 @@ Promotion now follows the gates below in order.
   Physical confirmation remains required.
 - [ ] Prove pointer confinement across the complete output union: hard edge
   motion must keep the hardware cursor visible, and reversing direction must
-  move it immediately without first consuming discarded overshoot.
+  move it immediately without first consuming discarded overshoot. The full
+  raw-position, startup-offset, edge-correction, and logical-position state
+  now belongs to Engine rather than the CLI. The two-output xmonad QEMU gate
+  drives the virtio mouse past the right edge and proves that the first reverse
+  delta moves immediately through ordered, reduced Engine observations.
+  Physical visible-cursor confirmation across every actual output edge remains
+  required.
 - [ ] Prove an unmodified primary-button press on an unfocused visible window
   commits WM-selected focus before client delivery; require the following
   keyboard input and ordered button release to reach that target, while hidden

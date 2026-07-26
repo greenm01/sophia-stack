@@ -80,7 +80,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         width: 2560,
         height: 1440,
     });
-    let initial_position = pointer.position;
+    let initial_position = pointer.position();
     let mut next_delivery = 1;
 
     let report = route_input_events(
@@ -112,7 +112,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
     assert_eq!(report.pointer_routed, 0);
     assert_eq!(report.wm_actions, [action]);
     assert_eq!(report.keys_routed, 0);
-    assert_ne!(pointer.position, initial_position);
+    assert_ne!(pointer.position(), initial_position);
     assert!(input_receiver.try_recv().is_err());
 }
 

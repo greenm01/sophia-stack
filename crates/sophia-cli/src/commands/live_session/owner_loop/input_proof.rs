@@ -133,8 +133,15 @@
             let runtime = runtime
                 .as_ref()
                 .ok_or("pointer proof became ready before the backend runtime")?;
+            let focused_geometry = focus.focused_surface(seat).and_then(|surface| {
+                runtime
+                    .input_layers()
+                    .iter()
+                    .find(|layer| layer.surface == surface)
+                    .map(|layer| layer.geometry)
+            });
             pointer
-                .arm_at_focused_surface_center(focus.focused_surface(seat), runtime.input_layers())
+                .arm_at_geometry_center(focused_geometry)
                 .ok_or("pointer proof has no focused application surface to place the cursor")?;
             cursor_updates
                 .dirty_since

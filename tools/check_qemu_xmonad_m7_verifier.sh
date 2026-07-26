@@ -39,6 +39,15 @@ expect_failure missing_drag_motion
 sed '/status=focused_key_routed /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_selected_key
 
+sed '/status=output_edge_confined /d' "$fixture" >"$tmp"
+expect_failure missing_pointer_edge
+
+sed '/status=edge_reverse_immediate /d' "$fixture" >"$tmp"
+expect_failure missing_pointer_reverse
+
+sed '/action=output_edge_reverse /d' "$fixture" >"$tmp"
+expect_failure missing_qmp_pointer_edge_sequence
+
 cp "$fixture" "$tmp"
 printf '%s\n' 'sophia_qemu_guest schema=1 status=failed reason=test' >>"$tmp"
 expect_failure guest_failure
