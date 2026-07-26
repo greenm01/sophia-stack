@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-}"
 case "$SESSION_PROFILE" in
-    kitty|xmonad) ;;
+    kitty|native|xmonad) ;;
     *)
-        echo "SOPHIA_TTY_PROFILE must be kitty or xmonad." >&2
+        echo "SOPHIA_TTY_PROFILE must be kitty, native, or xmonad." >&2
         exit 1
         ;;
 esac
@@ -14,7 +14,11 @@ LAUNCH_LOG="/tmp/sophia-${SESSION_PROFILE}-tty3-launch.log"
 
 if [[ ! -t 0 || "$(tty)" != /dev/tty3 ]]; then
     echo "Switch to tty3 with Ctrl+Alt+F3, log in, then run:" >&2
-    echo "  $ROOT_DIR/tools/start_sophia_${SESSION_PROFILE}_tty3.sh" >&2
+    if [[ "$SESSION_PROFILE" == native ]]; then
+        echo "  $ROOT_DIR/tools/start_sophia_native_hot_reload_tty3.sh" >&2
+    else
+        echo "  $ROOT_DIR/tools/start_sophia_${SESSION_PROFILE}_tty3.sh" >&2
+    fi
     exit 1
 fi
 origin_tty="$(tty)"
@@ -102,5 +106,6 @@ fi
 cd "$ROOT_DIR"
 case "$SESSION_PROFILE" in
     kitty) tools/run_sophia_kitty_session.sh "$@" ;;
+    native) tools/run_sophia_xmonad_session.sh "$@" ;;
     xmonad) tools/run_sophia_xmonad_session.sh "$@" ;;
 esac

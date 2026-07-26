@@ -33,7 +33,8 @@ bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmobar.sh
-bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
+bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh \
+    tools/start_sophia_native_hot_reload_tty3.sh tools/start_sophia_xmonad_tty3.sh
 bash -n tools/start_sophia_xmonad_clipboard_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh
@@ -64,7 +65,8 @@ bash -n tools/verify_sophia_xmonad_focused_border.sh
 bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
-bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh
+bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh \
+    tools/stop_sophia_native_session.sh tools/stop_sophia_session.sh
 bash -n tools/verify_sophia_xmonad_tty3.sh
 bash -n tools/check_sophia_xmonad_tty3_verifier.sh
 bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
@@ -92,6 +94,7 @@ grep -Fq 'SOPHIA_LIVE_SESSION_DIAGNOSTIC=1' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--startup-ready-timeout-ms=8000' tools/run_sophia_xmonad_session.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
+grep -Fq 'native) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
 grep -Fq -- '--exit-when-startup-exits' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--input-seat=$input_seat' tools/run_sophia_xmonad_session.sh
 if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then

@@ -1,9 +1,10 @@
 use crate::WmTransactionUpdate;
 use crate::prelude::*;
 use sophia_protocol::{
-    WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromeStyle, WmHello,
-    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
-    decode_wm_hello_frame, encode_wm_session_descriptor_frame,
+    IpcMessageKind, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromeStyle,
+    WmHello, WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
+    decode_frame, decode_wm_hello_frame, decode_wm_policy_update_frame, decode_wm_response_frame,
+    encode_wm_policy_ack_frame, encode_wm_request_frame, encode_wm_session_descriptor_frame,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -223,6 +224,10 @@ impl WmShortcutRouter {
         self.registry.policy_generation()
     }
 
+    pub fn binding_count(&self) -> usize {
+        self.registry.binding_count()
+    }
+
     pub const fn chrome(&self) -> WmChromeStyle {
         self.registry.chrome()
     }
@@ -381,6 +386,13 @@ pub struct WmSocketTransport {
 }
 
 #[cfg(unix)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum WmSocketIncoming {
+    Response(WmResponsePacket),
+    PolicyUpdate(WmPolicyUpdate),
+}
+
+#[cfg(unix)]
 impl WmSocketTransport {
     pub fn new(stream: UnixStream, config: WmSocketTransportConfig) -> Self {
         Self { stream, config }
@@ -405,10 +417,88 @@ impl WmSocketTransport {
     }
 
     pub fn request(&mut self, request: &WmRequestPacket) -> Result<WmResponsePacket, WmIpcError> {
+        self.send_request(request)?;
+        match self.poll_incoming(self.config.response_timeout)? {
+            Some(WmSocketIncoming::Response(response))
+                if response.transaction == request.transaction =>
+            {
+                Ok(response)
+            }
+            Some(WmSocketIncoming::Response(response)) => Err(WmIpcError::TransactionMismatch {
+                expected: request.transaction,
+                actual: response.transaction,
+            }),
+            Some(WmSocketIncoming::PolicyUpdate(_)) => Err(WmIpcError::Negotiation(
+                "WM policy update requires multiplexed transport",
+            )),
+            None => Err(WmIpcError::Io("WM response timed out".to_owned())),
+        }
+    }
+
+    pub fn send_request(&mut self, request: &WmRequestPacket) -> Result<(), WmIpcError> {
+        let frame = encode_wm_request_frame(request).map_err(WmIpcError::Codec)?;
         self.stream
-            .set_read_timeout(Some(self.config.response_timeout))
+            .write_all(&frame)
+            .and_then(|()| self.stream.flush())
+            .map_err(|error| WmIpcError::Io(error.to_string()))
+    }
+
+    pub fn poll_incoming(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Option<WmSocketIncoming>, WmIpcError> {
+        self.stream
+            .set_read_timeout(Some(timeout))
             .map_err(|error| WmIpcError::Io(error.to_string()))?;
-        request_wm_over_stream(&mut self.stream, request)
+        let mut ready = [0u8; 1];
+        match rustix::net::recv(&self.stream, &mut ready, rustix::net::RecvFlags::PEEK) {
+            Ok((0, _)) => return Err(WmIpcError::Io("WM socket disconnected".to_owned())),
+            Ok(_) => {}
+            Err(error) => {
+                let error = std::io::Error::from(error);
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) {
+                    return Ok(None);
+                }
+                return Err(WmIpcError::Io(error.to_string()));
+            }
+        }
+        let frame = read_ipc_frame(&mut self.stream)?;
+        let (header, _) = decode_frame(&frame).map_err(WmIpcError::Codec)?;
+        match header.message_kind {
+            IpcMessageKind::WmResponse => decode_wm_response_frame(&frame)
+                .map(WmSocketIncoming::Response)
+                .map(Some)
+                .map_err(WmIpcError::Codec),
+            IpcMessageKind::WmPolicyUpdate => decode_wm_policy_update_frame(&frame)
+                .map(WmSocketIncoming::PolicyUpdate)
+                .map(Some)
+                .map_err(WmIpcError::Codec),
+            _ => Err(WmIpcError::Negotiation("unexpected incoming WM message")),
+        }
+    }
+
+    pub fn poll_policy_update(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Option<WmPolicyUpdate>, WmIpcError> {
+        match self.poll_incoming(timeout)? {
+            Some(WmSocketIncoming::PolicyUpdate(update)) => Ok(Some(update)),
+            Some(WmSocketIncoming::Response(_)) => Err(WmIpcError::Negotiation(
+                "unexpected WM response without an active request",
+            )),
+            None => Ok(None),
+        }
+    }
+
+    pub fn acknowledge_policy_update(&mut self, ack: WmPolicyAck) -> Result<(), WmIpcError> {
+        let frame = encode_wm_policy_ack_frame(ack).map_err(WmIpcError::Codec)?;
+        self.stream
+            .write_all(&frame)
+            .and_then(|()| self.stream.flush())
+            .map_err(|error| WmIpcError::Io(error.to_string()))
     }
 }
 

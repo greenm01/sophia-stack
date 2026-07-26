@@ -4298,7 +4298,14 @@ instead of recreating a default at each composition call.
 The WM API advances to version 5. Negotiation carries a nonzero policy
 generation and bounded chrome preference, while Engine continues to own
 geometry, damage, rendering, and scanout. Generation-ordered update/ack
-packets and an idle-shortcut reducer establish the hot-update contract. The
-remaining transport slice is unsolicited delivery through the supervised
-worker; until that lands, native-WM action/layout reload is observed when the
-WM next services an existing request.
+packets and an idle-shortcut reducer establish the hot-update contract.
+
+The supervised transport now completes that contract. The socket worker
+forwards immutable unsolicited candidates to the Engine owner and returns the
+owner's exact-generation acknowledgement; it never applies policy itself. The
+WM suspends new-policy request service until acknowledgement. Both ends also
+handle the race where a bounded Engine request is already in the socket: the
+worker accepts the intervening policy frame, the WM holds the request, and the
+response follows the applied acknowledgement. Socket integration coverage
+exercises atomic file replacement, generation delivery, request deferral, and
+acknowledgement ordering.

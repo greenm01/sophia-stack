@@ -380,6 +380,9 @@ macro_rules! drain_physical_input {
 }
 
 loop {
+    if let Some(wm) = wm_session.as_mut() {
+        wm.service_policy_update()?;
+    }
     service_core_config_reload!();
     service_session_controls!();
     let input_baseline_presented_before_wait = include!("lifecycle.rs");

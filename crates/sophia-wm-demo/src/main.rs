@@ -10,7 +10,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .find_map(|arg| arg.strip_prefix("--wm-config="))
             .map(std::path::Path::new);
         let no_wm_config = args.iter().any(|arg| arg == "--no-wm-config");
-        sophia_wm_demo::run_socket_server_with_config(socket, wm_config, no_wm_config)?;
+        sophia_wm_demo::run_socket_server_with_config_observer(
+            socket,
+            wm_config,
+            no_wm_config,
+            |event| println!("{event}"),
+        )?;
         return Ok(());
     }
 

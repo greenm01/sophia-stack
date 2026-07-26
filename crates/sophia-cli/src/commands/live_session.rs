@@ -26,13 +26,13 @@ use sophia_cli::session_startup::{
 };
 use sophia_engine::{
     FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
-    KeyRepeatTarget, NonBlockingInputPoller, PointerFocusHandoffState, WmShortcutRouter,
-    WmWorkspaceState,
+    KeyRepeatTarget, NonBlockingInputPoller, PointerFocusHandoffState, WmPolicyApplyOutcome,
+    WmShortcutRouter, WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
     SeatId, SessionApplicationId, WM_DEFAULT_WORKSPACES, WmActionActivation, WmActionId,
-    WmManageSurface, WmResponsePacket, WmSessionAction,
+    WmManageSurface, WmPolicyAckOutcome, WmPolicyUpdate, WmResponsePacket, WmSessionAction,
 };
 use sophia_runtime::NamespaceRegistry;
 use sophia_x_authority::{
@@ -75,7 +75,7 @@ use startup_readiness::{
     all_startup_outputs_presented, independent_native_output_presented, rects_intersect,
     startup_output_evidence, startup_submission_requirement, synchronous_modeset_record,
 };
-use wm_transport_worker::{WmTransportSubmitError, WmTransportWorker};
+use wm_transport_worker::{WmTransportPolicyEvent, WmTransportSubmitError, WmTransportWorker};
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 
 include!("live_session/config.rs");

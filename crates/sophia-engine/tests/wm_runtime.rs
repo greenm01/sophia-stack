@@ -1,10 +1,68 @@
 mod support;
-use sophia_engine::{WmShortcutDecision, WmShortcutRegistry};
+use sophia_engine::{
+    WmShortcutDecision, WmShortcutRegistry, WmSocketTransport, WmSocketTransportConfig,
+};
 use sophia_protocol::{
     WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmChromeStyle, WmHello,
-    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate,
+    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, decode_wm_policy_ack_frame,
+    encode_wm_policy_update_frame,
 };
+use std::os::unix::net::UnixStream;
 use support::*;
+
+#[test]
+fn wm_socket_transport_receives_unsolicited_policy_and_writes_acknowledgement() {
+    let (client, mut server) = UnixStream::pair().unwrap();
+    let update = WmPolicyUpdate {
+        api_version: WM_API_VERSION,
+        generation: 2,
+        bindings: vec![WmBindingRegistration {
+            action: WmActionId::from_raw(1),
+            keycode: 28,
+            modifiers: WmModifierMask {
+                bits: WmModifierMask::SUPER,
+            },
+        }],
+        chrome: WmChromeStyle {
+            enabled: true,
+            thickness: 3,
+            ..WmChromeStyle::default()
+        },
+    };
+    server
+        .write_all(&encode_wm_policy_update_frame(&update).unwrap())
+        .unwrap();
+    let mut transport = WmSocketTransport::new(
+        client,
+        WmSocketTransportConfig {
+            response_timeout: Duration::from_millis(100),
+        },
+    );
+
+    assert_eq!(
+        transport
+            .poll_policy_update(Duration::from_millis(100))
+            .unwrap(),
+        Some(update)
+    );
+    let acknowledgement = WmPolicyAck {
+        generation: 2,
+        outcome: WmPolicyAckOutcome::Applied,
+    };
+    transport
+        .acknowledge_policy_update(acknowledgement)
+        .unwrap();
+
+    let mut header = [0u8; SOPHIA_IPC_HEADER_LEN];
+    server.read_exact(&mut header).unwrap();
+    let payload_len = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+    let mut frame = header.to_vec();
+    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
+    server
+        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+        .unwrap();
+    assert_eq!(decode_wm_policy_ack_frame(&frame).unwrap(), acknowledgement);
+}
 
 #[test]
 fn wm_socket_transport_roundtrips_one_engine_minted_transaction() {

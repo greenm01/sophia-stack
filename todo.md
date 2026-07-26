@@ -426,14 +426,16 @@ consecutive passing runs.
 - [x] Version the blind WM API to v5 with negotiated native chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.
-- [ ] Carry native-WM policy updates and acknowledgements through the
+- [x] Carry native-WM policy updates and acknowledgements through the
   supervised live transport without requiring an existing binding to trigger
   a request; update bindings, action policy, workspace policy, and active
   chrome as one idle-boundary transaction.
 - [ ] Add a guarded physical hot-reload proof: valid live edit, invalid edit
   retaining last-known-good state, restart-required edit with no partial
   apply, atomic replacement, deletion/recreation, and external-WM native
-  config isolation.
+  config isolation. The native-WM valid/invalid/delete/recreate runner is
+  `tools/start_sophia_native_hot_reload_tty3.sh`; its physical capture plus
+  core pending-restart and external-WM-isolation evidence remain.
 - [ ] Promote one immutable, versioned release and greetd entry that uses no
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.

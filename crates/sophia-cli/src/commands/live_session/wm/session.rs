@@ -108,6 +108,8 @@ struct LiveWmSession {
     work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
     chrome: sophia_protocol::WmChromeStyle,
+    pending_policy_update: Option<WmPolicyUpdate>,
+    force_transport_restart: bool,
     workspace_state: WmWorkspaceState,
     session_actions: Vec<WmSessionAction>,
     committed: usize,
@@ -213,6 +215,8 @@ impl LiveWmSession {
             restart_policy: RestartPolicy::default(),
             shortcuts: None,
             chrome: sophia_protocol::WmChromeStyle::default(),
+            pending_policy_update: None,
+            force_transport_restart: false,
             workspace_state,
             session_actions,
             socket_path: config.wm_socket_path.clone(),
@@ -269,6 +273,8 @@ impl LiveWmSession {
             Some(shortcuts) => shortcuts.replace_registry(registry),
             None => self.shortcuts = Some(WmShortcutRouter::new(registry)),
         }
+        self.pending_policy_update = None;
+        self.force_transport_restart = false;
         self.transport = Some(WmTransportWorker::new(transport)?);
         let (state, _) = update_supervisor(
             self.supervisor_state.clone(),
@@ -285,15 +291,111 @@ impl LiveWmSession {
         })
     }
 
+    fn service_policy_update(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.degraded || self.force_transport_restart {
+            return Ok(());
+        }
+        if self.pending_policy_update.is_none() {
+            let event = match self
+                .transport
+                .as_ref()
+                .ok_or("WM transport is unavailable")?
+                .try_policy_event()
+            {
+                Ok(event) => event,
+                Err(WmTransportSubmitError::Disconnected) => {
+                    self.request_transport_restart("policy_channel_disconnected", None);
+                    return Ok(());
+                }
+                Err(WmTransportSubmitError::Busy) => {
+                    return Err("WM transport returned an invalid busy policy event".into());
+                }
+            };
+            match event {
+                Some(WmTransportPolicyEvent::Update(update)) => {
+                    self.pending_policy_update = Some(update);
+                }
+                Some(WmTransportPolicyEvent::Failed(error)) => {
+                    self.request_transport_restart("policy_transport_failed", Some(&error));
+                    return Ok(());
+                }
+                None => return Ok(()),
+            }
+        }
+
+        let update = self
+            .pending_policy_update
+            .as_ref()
+            .expect("pending WM policy update was populated");
+        let outcome = self
+            .shortcuts
+            .as_mut()
+            .ok_or("WM shortcut router is unavailable")?
+            .apply_policy_update(update);
+        let WmPolicyApplyOutcome::Acknowledged(acknowledgement) = outcome else {
+            return Ok(());
+        };
+        let applied = acknowledgement.outcome == WmPolicyAckOutcome::Applied;
+        match self
+            .transport
+            .as_ref()
+            .ok_or("WM transport is unavailable")?
+            .try_acknowledge_policy(acknowledgement)
+        {
+            Ok(()) => {}
+            Err(WmTransportSubmitError::Busy) => {
+                return Err("WM policy acknowledgement queue is unexpectedly full".into());
+            }
+            Err(WmTransportSubmitError::Disconnected) => {
+                self.request_transport_restart("policy_ack_disconnected", None);
+                return Ok(());
+            }
+        }
+        if applied {
+            let shortcuts = self
+                .shortcuts
+                .as_ref()
+                .expect("WM shortcut router was available for policy application");
+            self.chrome = shortcuts.chrome();
+            println!(
+                "sophia_live_wm_policy schema=1 status=applied generation={} bindings={} chrome_enabled={} chrome_thickness={}",
+                shortcuts.policy_generation(),
+                shortcuts.binding_count(),
+                self.chrome.enabled,
+                self.chrome.thickness,
+            );
+        }
+        self.pending_policy_update = None;
+        Ok(())
+    }
+
+    fn request_transport_restart(&mut self, reason: &str, error: Option<&str>) {
+        self.force_transport_restart = true;
+        println!(
+            "sophia_live_wm schema=2 status=restart_requested reason={reason} error={}",
+            error.unwrap_or("none"),
+        );
+    }
+
     fn poll_restart(
         &mut self,
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
-        if self.degraded || self.supervisor.poll()?.is_none() {
+        if self.degraded {
             return Ok(None);
         }
+        let restart_requested = self.force_transport_restart;
+        let process_exited = self.supervisor.poll()?.is_some();
+        if !restart_requested && !process_exited {
+            return Ok(None);
+        }
+        if restart_requested && !process_exited {
+            self.supervisor.terminate()?;
+        }
         self.transport = None;
+        self.pending_policy_update = None;
+        self.force_transport_restart = false;
         self.queued_requests.clear();
         self.in_flight_request = None;
         self.restarts = self.restarts.saturating_add(1);

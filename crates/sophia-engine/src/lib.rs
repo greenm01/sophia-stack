@@ -24,7 +24,6 @@ mod prelude {
         SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
         SurfaceTransactionReadiness, TransactionCommit, TransactionId, TransactionOutcome,
         TrustLevel, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
-        decode_wm_response_frame, encode_wm_request_frame,
     };
     pub(crate) use sophia_runtime::{
         RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,

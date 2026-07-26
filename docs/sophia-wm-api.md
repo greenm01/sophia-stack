@@ -70,6 +70,16 @@ modifier remains held. `WmPolicyAck` reports applied, stale, or invalid
 outcomes. Engine owns chrome geometry, display-list insertion, damage, render,
 and scanout regardless of which accepted style is active.
 
+The supervised socket is multiplexed. Its I/O worker may receive a policy
+update while one Engine request is in flight, but it never mutates Engine
+state. It forwards the immutable candidate to the owner loop, which applies it
+only at a shortcut-idle boundary and returns the acknowledgement through the
+worker. The WM may buffer the single bounded in-flight request while awaiting
+that acknowledgement and services it only after the generation is applied.
+This ordering prevents a response planned with policy that Engine has not yet
+accepted. Transport failure requests a supervised WM restart while preserving
+the last committed layout.
+
 A restart repeats negotiation, restores the committed workspace/output mapping,
 then sends a complete relayout snapshot. Negotiation failure leaves applications
 and the last frame alive while supervisor policy decides whether to retry or

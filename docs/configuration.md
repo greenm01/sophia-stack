@@ -77,9 +77,14 @@ degraded.
 WM API version 5 carries a generation and bounded chrome policy during
 negotiation. Versioned policy-update and acknowledgement frames reject stale
 generations; Engine's policy reducer defers replacement until shortcut state
-is idle. Wiring unsolicited update delivery through the supervised live
-transport remains a roadmap item; native-WM action/layout reload currently
-takes effect when the WM next services a request.
+is idle. The supervised transport delivers updates without requiring an
+existing binding or layout request. Its worker performs socket I/O only; the
+Engine owner validates and swaps the immutable policy, then returns the exact
+generation acknowledgement. The WM does not service action or layout requests
+under the new snapshot until that acknowledgement arrives. A request already
+in flight is held across the exchange and answered afterward, so bindings,
+action behavior, workspace/layout policy, and active chrome cross one
+generation boundary.
 
 ## Commands
 
@@ -100,3 +105,22 @@ cargo run --offline -q -p sophia-cli -- config print-effective --wm
 Use `--config=/absolute/path` for the core domain and
 `--wm-config=/absolute/path --wm` for the native-WM domain. The example files
 are [config.kdl](../examples/config.kdl) and [wm.kdl](../examples/wm.kdl).
+
+## Guarded native hot-reload proof
+
+From a logged-in TTY 3, run:
+
+```sh
+tools/start_sophia_native_hot_reload_tty3.sh
+```
+
+The launcher uses a private runtime `wm.kdl`; it does not modify the user's
+default configuration. It atomically advances focused-border thickness from
+2 to 6, submits an invalid edit, deletes the file, and recreates it at
+thickness 4. The border must retain its last-known-good value during the
+invalid and missing-file phases. Open an interactive Kitty with `Super+Enter`
+during each phase and use `Super+Shift+Q` for normal logout after the final
+4-pixel border appears. The launcher prints the exact session and phase-log
+paths before takeover. This runner covers the native-WM live-policy portion;
+core pending-restart and external-WM isolation still require their separate
+physical evidence before the roadmap gate closes.

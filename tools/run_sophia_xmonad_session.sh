@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
+SOPHIA_NATIVE_WM_BIN="${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
@@ -12,8 +13,10 @@ REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
-if [[ "$SESSION_PROFILE" != xmonad && "$SESSION_PROFILE" != kitty ]]; then
-    echo "SOPHIA_TTY_PROFILE must be xmonad or kitty." >&2
+if [[ "$SESSION_PROFILE" != xmonad
+    && "$SESSION_PROFILE" != native
+    && "$SESSION_PROFILE" != kitty ]]; then
+    echo "SOPHIA_TTY_PROFILE must be xmonad, native, or kitty." >&2
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
@@ -127,6 +130,8 @@ if [[ "$BUILD_SESSION" == true ]]; then
     cargo build --offline --release -p sophia-cli --features atomic-scanout-live
     if [[ "$SESSION_PROFILE" == xmonad ]]; then
         cargo build --offline --release -p sophia-x11-wm-bridge
+    elif [[ "$SESSION_PROFILE" == native ]]; then
+        cargo build --offline --release -p sophia-wm-demo
     fi
     tools/atomic_scanout_preflight.sh
 fi
@@ -136,6 +141,10 @@ fi
 }
 if [[ "$SESSION_PROFILE" == xmonad && ! -x "$SOPHIA_WM_BRIDGE_BIN" ]]; then
     echo "Sophia WM bridge is not executable: $SOPHIA_WM_BRIDGE_BIN" >&2
+    exit 1
+fi
+if [[ "$SESSION_PROFILE" == native && ! -x "$SOPHIA_NATIVE_WM_BIN" ]]; then
+    echo "Sophia native WM is not executable: $SOPHIA_NATIVE_WM_BIN" >&2
     exit 1
 fi
 lifecycle_phase complete preflight
@@ -267,6 +276,9 @@ lifecycle_phase complete input_guard
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Starting Sophia with experimental xmonad layout policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
+elif [[ "$SESSION_PROFILE" == native ]]; then
+    echo "Starting Sophia with its native WM policy on $DISPLAY_NAME."
+    echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 else
     echo "Starting the supported Kitty-only Sophia input session on $DISPLAY_NAME."
     echo "xmonad and Super+Enter are intentionally disabled for this input gate."
@@ -331,6 +343,11 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             "--session-app-arg=firefox=file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
         )
     fi
+elif [[ "$SESSION_PROFILE" == native ]]; then
+    session_args+=(
+        --session-action-app=terminal=terminal
+        --wm-process="$SOPHIA_NATIVE_WM_BIN"
+    )
 else
     session_args+=(
         --exit-when-startup-exits
