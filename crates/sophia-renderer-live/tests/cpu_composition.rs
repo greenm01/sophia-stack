@@ -332,13 +332,16 @@ fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
     let mut scene = LiveProductionCpuScene::new(output.size);
 
     scene
-        .compose_display_list(&[], &display_list, None)
+        .compose_display_list(output, &[], &display_list, None)
         .unwrap();
     let frames = scene.frames_for_outputs(&[output]).unwrap();
 
     assert_eq!(frames.len(), 1);
     assert_eq!(
-        frames[0].compositor_display_list.as_ref(),
-        Some(&display_list)
+        frames[0]
+            .output_damage_snapshot
+            .as_ref()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&display_list),
     );
 }

@@ -155,7 +155,16 @@ moves the list to submitted, and only its page-flip callback makes it
 presented. This keeps compositor damage synchronized with the pixels and
 retirement event it describes.
 
-Before native consumption, raw compositor damage is reduced to an output-local
+Every CPU or mixed frame also carries an immutable output-damage snapshot. It
+combines ordered opaque surface IDs, committed client generations, geometry,
+buffer identity, the compositor display list, and optional software-cursor
+bounds. Stacking, creation, removal, generation, geometry, buffer, chrome, and
+software-cursor changes therefore enter one retirement-safe region. Initial
+state and output size or scale changes force full-output damage. A hardware
+cursor remains on its independently retired plane and does not create false
+primary-plane damage.
+
+Before native consumption, combined damage is reduced to an output-local
 repaint plan. Rectangles are clipped to the output and coalesced only when
 their union remains an exact rectangle. Empty damage becomes `skip`; bounded
 low-coverage damage becomes `partial`; excessive input count, fragmentation,
@@ -208,20 +217,25 @@ content, client titles, paths, or texture bytes.
   computes exact chrome damage and advances it through accepted submit and
   page-flip retirement; reduced native evidence reports the retired rectangle
   count.
-- Engine reduces retired chrome damage into bounded `skip`, `partial`, or
+- Engine combines client generation/geometry/stacking, compositor-node, and
+  software-cursor changes in one bounded output snapshot attached to the
+  corresponding pixels. The same accepted-submit/page-flip ledger advances
+  that snapshot.
+- Engine reduces combined output damage into bounded `skip`, `partial`, or
   fail-safe `full` repaint plans after output clipping and exact rectangular
-  coalescing. Native evidence reports the selected mode, rectangle count, and
-  pixel count.
+  coalescing. Native evidence separately reports compositor damage, combined
+  output damage, and the selected repaint mode, rectangle count, and pixel
+  count.
 - Engine has generation-checked `ChromeDescriptor` and `ChromeActionRequest`
   records for sanitized compositor metadata and actions.
 
 ### Target
 
 - Consume the retirement-safe repaint plans in partial composition, output
-  frame scheduling, and supported KMS damage clips so stable compositor nodes
-  avoid redundant output work. Until all client, cursor, and output damage is
-  combined, `skip` remains an observation rather than authority to suppress a
-  complete frame.
+  frame scheduling, and supported KMS damage clips so stable nodes avoid
+  redundant output work. Until destination-buffer preservation or buffer-age
+  reconstruction is proven, `skip` remains an observation rather than
+  authority to suppress a complete frame.
 - Extend native primitives only when demonstrated shell requirements need
   rounded borders, shadows, images, or cached text.
 - Add deterministic capability degradation for each admitted primitive.

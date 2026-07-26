@@ -147,7 +147,7 @@ pub fn try_clone_mixed_frame(
         .collect::<std::io::Result<Vec<_>>>()?;
     Ok(LiveOwnedMixedCompositionFrame {
         layers,
-        compositor_display_list: frame.compositor_display_list.clone(),
+        output_damage_snapshot: frame.output_damage_snapshot.clone(),
     })
 }
 
@@ -285,7 +285,7 @@ impl LivePresentationResourceSession {
         });
         Ok(LiveOwnedMixedCompositionFrame {
             layers,
-            compositor_display_list: None,
+            output_damage_snapshot: None,
         })
     }
 

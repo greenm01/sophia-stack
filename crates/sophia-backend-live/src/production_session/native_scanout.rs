@@ -1,14 +1,14 @@
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod persistent_native_scanout {
     use crate::*;
-    use sophia_engine::{CompositorBackendTickInput, CompositorDisplayListPresentationState};
+    use sophia_engine::{CompositorBackendTickInput, OutputFramePresentationState};
     use sophia_protocol::{OutputId, TransactionId};
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
-    mod compositor_damage;
+    mod frame_damage;
     mod state;
-    use compositor_damage::trace_presented_compositor_damage;
+    use frame_damage::trace_presented_output_damage;
     pub use state::*;
 
     pub struct LiveProductionNativeScanout {
@@ -69,7 +69,7 @@ mod persistent_native_scanout {
         pub initial_modeset_submission: Option<usize>,
         pub nonzero_exports: usize,
         pub last_submit_report: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
-        pub compositor_display_lists: CompositorDisplayListPresentationState,
+        pub output_frames: OutputFramePresentationState,
     }
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -214,7 +214,7 @@ mod persistent_native_scanout {
                         initial_modeset_submission: None,
                         nonzero_exports: 0,
                         last_submit_report: None,
-                        compositor_display_lists: CompositorDisplayListPresentationState::new(
+                        output_frames: OutputFramePresentationState::new(
                             sophia_engine::HeadlessOutput {
                                 id: output_id,
                                 size,
@@ -412,13 +412,9 @@ mod persistent_native_scanout {
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
-                        if self.heads[index]
-                            .compositor_display_lists
-                            .pending()
-                            .is_some()
-                        {
+                        if self.heads[index].output_frames.pending().is_some() {
                             self.heads[index]
-                                .compositor_display_lists
+                                .output_frames
                                 .mark_submitted()
                                 .map_err(|error| {
                                     format!(
@@ -464,7 +460,7 @@ mod persistent_native_scanout {
                         self.submit_deferred = self.submit_deferred.saturating_add(1);
                     }
                     status => {
-                        self.heads[index].compositor_display_lists.discard_pending();
+                        self.heads[index].output_frames.discard_pending();
                         self.submit_failures = self.submit_failures.saturating_add(1);
                         tracing::warn!(
                             "sophia_live_native_submit schema=1 status=failed output={} reason={status:?} content={queued_content:?} export={:?} scanout_buffer={:?} submit={:?} commit={:?}",
@@ -592,16 +588,12 @@ mod persistent_native_scanout {
                     self.heads[index].presented_submissions = submission;
                 }
                 self.heads[index].presented_content = self.heads[index].submitted_content.take();
-                if self.heads[index]
-                    .compositor_display_lists
-                    .submitted()
-                    .is_some()
-                {
+                if self.heads[index].output_frames.submitted().is_some() {
                     let presented = self.heads[index]
-                        .compositor_display_lists
+                        .output_frames
                         .mark_presented()
                         .expect("submitted display-list state checked above");
-                    trace_presented_compositor_damage(
+                    trace_presented_output_damage(
                         "presented",
                         self.heads[index].output.id,
                         &presented,
@@ -669,14 +661,14 @@ mod persistent_native_scanout {
             head.presented_checksum = head.last_checksum;
             head.presented_submissions = head.submissions;
             head.presented_content = head.pending_content.take();
-            if head.compositor_display_lists.pending().is_some() {
+            if head.output_frames.pending().is_some() {
                 let presented = head
-                    .compositor_display_lists
+                    .output_frames
                     .mark_initial_presented()
                     .map_err(|error| {
                         format!("initial compositor display-list transition failed: {error}")
                     })?;
-                trace_presented_compositor_damage("initial_presented", head.output.id, &presented);
+                trace_presented_output_damage("initial_presented", head.output.id, &presented);
             }
             head.initial_modeset_submission = Some(head.submissions);
             Ok(())
@@ -704,7 +696,7 @@ mod persistent_native_scanout {
             }
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
-            head.queue_compositor_display_list(frame.compositor_display_list.clone());
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
                 checksum: frame.checksum,
             });
@@ -731,7 +723,7 @@ mod persistent_native_scanout {
                 transaction,
                 nonzero_rgb_pixels: 0,
             });
-            head.queue_compositor_display_list(frame.compositor_display_list.clone());
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
             head.exporter.set_pending_mixed_frame(frame);
         }
 

@@ -159,6 +159,13 @@ impl LiveProductionOutputRuntimeSet {
         self.outputs.keys().nth(index).copied()
     }
 
+    pub fn output_descriptor(&self, index: usize) -> Option<HeadlessOutput> {
+        self.outputs
+            .values()
+            .nth(index)
+            .map(|output| output.runtime.assembly().engine().output())
+    }
+
     pub fn output_count(&self) -> usize {
         self.outputs.len()
     }

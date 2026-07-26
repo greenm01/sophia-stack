@@ -127,8 +127,11 @@ must not observe a partially applied surface or WM transaction.
 
 ### Frame
 
-The frame domain owns frame epochs, scheduling decisions, page-flip state,
-presentation feedback, and resource retirement. It converts visual changes and
+The frame domain owns immutable output-damage snapshots, frame epochs,
+scheduling decisions, page-flip state, presentation feedback, and resource
+retirement. Its snapshot combines ordered client generations and geometry,
+Engine display-list nodes, and software-cursor bounds without protocol
+metadata or renderer handles. It converts visual changes and
 backend observations into bounded frame work without absorbing renderer or
 protocol state. Its output-scoped service reducer observes one immutable
 record per output and emits named retirement or submission effects. The live

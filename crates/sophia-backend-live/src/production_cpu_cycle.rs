@@ -113,7 +113,7 @@ where
                 FocusedSurfaceBorderStyle::default(),
             )?;
             self.scene
-                .compose_display_list(committed, &display_list, self.cursor_position)?
+                .compose_display_list(*output, committed, &display_list, self.cursor_position)?
                 .clone()
         };
         let native_frames = if self.defer_frame || !self.create_native_frames {

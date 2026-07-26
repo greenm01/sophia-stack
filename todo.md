@@ -252,12 +252,17 @@ Promotion now follows the gates below in order.
   the submitted or presented predecessor as appropriate, rejects failed and
   superseded state transitions, and advances the baseline only after the
   matching page-flip callback. The QEMU gate requires both output baselines and
-  nonzero retired focus damage. Engine now clips that damage to the output,
+  nonzero retired focus damage. Every CPU and mixed frame now carries one
+  immutable Engine snapshot combining ordered client generations, geometry,
+  buffer identity, compositor nodes, and optional software-cursor bounds.
+  Initial or output-shape changes force full damage; the hardware cursor keeps
+  its independent plane lifecycle. Engine clips combined damage to the output,
   coalesces exact rectangular unions, and selects bounded `skip`, `partial`, or
   fail-safe `full` repaint plans under generic rectangle-count and coverage
-  policy. The QEMU focus proof requires a nonempty retired partial plan.
-  Combining client/cursor/output damage and consuming the result in partial
-  redraw or KMS damage clips remain later performance work.
+  policy. The QEMU focus proof correlates compositor damage, combined output
+  damage, and the matching safe repaint decision from one retired frame.
+  Destination-buffer age/history, partial redraw, and KMS damage-clip
+  consumption remain later performance work.
   The two-output QEMU xmonad gate proves that a click-drag focus commit is
   followed by a rendered four-primitive border on the same opaque surface
   before the next key reaches it, and observes borders on two distinct focus

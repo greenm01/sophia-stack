@@ -13,7 +13,8 @@ use sophia_backend_live::{
     LiveRetainedDmaBufLayer, compose_full_state_mixed_frame, try_clone_mixed_frame,
 };
 use sophia_engine::{
-    CompositorDisplayList, CompositorRgb8, HeadlessEngine, ProductionSessionCoordinator,
+    CompositorDisplayList, CompositorRgb8, HeadlessEngine, HeadlessOutput,
+    ProductionSessionCoordinator, output_frame_damage_snapshot,
 };
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
@@ -179,7 +180,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
             frame: frame(),
             placement: placement(64),
         }],
-        compositor_display_list: None,
+        output_damage_snapshot: None,
     };
 
     let composed = compose_full_state_mixed_frame(
@@ -205,7 +206,17 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
 
 #[test]
 fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
-    let display_list = CompositorDisplayList::empty(sophia_protocol::OutputId::from_raw(1));
+    let output = HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: Size {
+            width: 64,
+            height: 48,
+        },
+        scale: 1,
+    };
+    let snapshot =
+        output_frame_damage_snapshot(output, CompositorDisplayList::empty(output.id), &[], None)
+            .unwrap();
     let frame = LiveOwnedMixedCompositionFrame {
         layers: vec![LiveOwnedMixedCompositionLayer::Solid {
             geometry: Rect {
@@ -220,14 +231,14 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
                 blue: 0xff,
             },
         }],
-        compositor_display_list: Some(display_list.clone()),
+        output_damage_snapshot: Some(snapshot.clone()),
     };
 
     let cloned = try_clone_mixed_frame(&frame).unwrap();
     assert_eq!(
-        cloned.compositor_display_list.as_ref(),
-        Some(&display_list),
-        "display-list identity must remain attached to cloned pixels"
+        cloned.output_damage_snapshot.as_ref(),
+        Some(&snapshot),
+        "output damage identity must remain attached to cloned pixels"
     );
     let LiveOwnedMixedCompositionLayer::Solid { geometry, color } = cloned.layers[0] else {
         panic!("solid rectangle changed representation");

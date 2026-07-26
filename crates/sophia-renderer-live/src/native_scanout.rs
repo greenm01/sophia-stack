@@ -186,7 +186,7 @@ pub enum LiveOwnedMixedCompositionLayer {
 #[derive(Debug, Default)]
 pub struct LiveOwnedMixedCompositionFrame {
     pub layers: Vec<LiveOwnedMixedCompositionLayer>,
-    pub compositor_display_list: Option<sophia_engine::CompositorDisplayList>,
+    pub output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

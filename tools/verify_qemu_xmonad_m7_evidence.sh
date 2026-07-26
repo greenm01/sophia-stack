@@ -26,6 +26,8 @@ grep -q '^sophia_live_wm schema=1 status=ready adapter=external ' "$evidence"
 grep -Eq '^sophia_live_wm schema=1 status=layout_committed .*surfaces=[3-9][0-9]* ' "$evidence"
 grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=1 rects=0$' "$evidence"
 grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=2 rects=0$' "$evidence"
+grep -Eq 'sophia_live_output_repaint schema=1 status=initial_presented output=1 mode=full rects=1 pixels=[1-9][0-9]*$' "$evidence"
+grep -Eq 'sophia_live_output_repaint schema=1 status=initial_presented output=2 mode=full rects=1 pixels=[1-9][0-9]*$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-keyboard action=focused_key_probe events=2$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96$' "$evidence"
@@ -57,17 +59,23 @@ awk '
     }
     committed && /sophia_live_compositor_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
         damage = 1
+        expect_output_damage = 1
         next
     }
-    committed && /sophia_live_compositor_repaint schema=1 status=presented output=1 mode=partial rects=[1-9][0-9]* pixels=[1-9][0-9]*$/ {
+    committed && expect_output_damage && /sophia_live_output_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
+        output_damage = 1
+        expect_repaint = 1
+        next
+    }
+    committed && expect_repaint && /sophia_live_output_repaint schema=1 status=presented output=1 mode=(partial|full) rects=[1-9][0-9]* pixels=[1-9][0-9]*$/ {
         repaint = 1
         next
     }
     /^sophia_live_session_pointer schema=6 status=focused_key_routed / {
-        exit !(requested && committed && border && damage && repaint)
+        exit !(requested && committed && border && damage && output_damage && repaint)
     }
     END {
-        if (!(requested && committed && border && damage && repaint)) {
+        if (!(requested && committed && border && damage && output_damage && repaint)) {
             exit 1
         }
     }

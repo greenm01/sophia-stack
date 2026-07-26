@@ -352,8 +352,13 @@ impl LiveProductionVisualRuntime {
             let presentation_order =
                 raised_presentation_order(&self.presentation_order, raised_surface);
             let display_list = self.display_list(&committed_surfaces, &presentation_order)?;
+            let output = output_descriptors
+                .first()
+                .copied()
+                .ok_or("software composition has no output descriptor")?;
             scene
                 .compose_display_list(
+                    output,
                     &committed_surfaces,
                     &display_list,
                     cursor_presentation.composition_position(),
@@ -595,7 +600,16 @@ impl LiveProductionVisualRuntime {
         let retained_surfaces = self.displayed_surfaces.keys().copied().collect::<Vec<_>>();
         let display_list = self.display_list(prepared.candidate(), &self.presentation_order)?;
         let border_candidate = prepared.candidate().to_vec();
-        mixed.compositor_display_list = Some(display_list.clone());
+        let output = self
+            .outputs
+            .output_descriptor(0)
+            .ok_or("mixed composition has no output descriptor")?;
+        mixed.output_damage_snapshot = Some(output_frame_damage_snapshot(
+            output,
+            display_list.clone(),
+            prepared.candidate(),
+            None,
+        )?);
         for command in display_list.commands {
             match command {
                 CompositorDisplayCommand::Surface { surface } if surface == queued_surface => {
@@ -746,9 +760,13 @@ impl LiveProductionVisualRuntime {
         let presentation_order =
             raised_presentation_order(&self.presentation_order, raised_surface);
         let display_list = self.display_list(&committed, &presentation_order)?;
+        let output = output_descriptors
+            .first()
+            .copied()
+            .ok_or("software composition has no output descriptor")?;
         let compose_started = Instant::now();
         let composition = scene
-            .compose_display_list(&committed, &display_list, cursor_position)?
+            .compose_display_list(output, &committed, &display_list, cursor_position)?
             .clone();
         self.record_focused_border_observation(&committed, true)?;
         let frames = scene.frames_for_outputs(output_descriptors)?;

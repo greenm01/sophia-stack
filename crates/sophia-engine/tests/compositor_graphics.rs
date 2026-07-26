@@ -1,9 +1,9 @@
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayListError, CompositorDisplayListPresentationError,
-    CompositorDisplayListPresentationState, CompositorFullRepaintReason, CompositorNodeId,
-    CompositorRepaintPlan, CompositorRepaintPolicy, FocusedSurfaceBorderEdge,
-    FocusedSurfaceBorderStyle, HeadlessOutput, compositor_display_list_damage,
-    focused_surface_display_list, plan_compositor_repaint,
+    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId,
+    FocusedSurfaceBorderEdge, FocusedSurfaceBorderStyle, HeadlessOutput,
+    OutputFramePresentationError, OutputFramePresentationState, OutputFullRepaintReason,
+    OutputRepaintPlan, OutputRepaintPolicy, compositor_display_list_damage,
+    focused_surface_display_list, output_frame_damage_snapshot, plan_output_repaint,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
@@ -21,16 +21,27 @@ fn committed(surface: SurfaceId, geometry: Rect, generation: u64) -> CommittedSu
     }
 }
 
-fn presentation_state(output: OutputId) -> CompositorDisplayListPresentationState {
-    CompositorDisplayListPresentationState::new(HeadlessOutput {
+fn headless_output(output: OutputId) -> HeadlessOutput {
+    HeadlessOutput {
         id: output,
         size: Size {
             width: 200,
             height: 80,
         },
         scale: 1,
-    })
-    .unwrap()
+    }
+}
+
+fn presentation_state(output: OutputId) -> OutputFramePresentationState {
+    OutputFramePresentationState::new(headless_output(output)).unwrap()
+}
+
+fn frame_snapshot(
+    output: OutputId,
+    display_list: sophia_engine::CompositorDisplayList,
+    states: &[CommittedSurfaceState],
+) -> sophia_engine::OutputFrameDamageSnapshot {
+    output_frame_damage_snapshot(headless_output(output), display_list, states, None).unwrap()
 }
 
 #[test]
@@ -318,9 +329,9 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
 
     assert_eq!(
         presentation
-            .queue(first_list.clone())
+            .queue(frame_snapshot(output, first_list.clone(), &states))
             .unwrap()
-            .damage
+            .compositor_damage
             .rects
             .len(),
         4
@@ -329,12 +340,17 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
     presentation.mark_submitted().unwrap();
     assert!(presentation.presented().is_none());
     let first_presented = presentation.mark_presented().unwrap();
-    assert_eq!(first_presented.display_list, first_list);
-    assert_eq!(presentation.presented(), Some(&first_list));
+    assert_eq!(first_presented.snapshot.compositor_display_list, first_list);
+    assert_eq!(
+        presentation
+            .presented()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&first_list)
+    );
 
     assert_eq!(
         presentation
-            .queue(second_list.clone())
+            .queue(frame_snapshot(output, second_list.clone(), &states))
             .unwrap()
             .damage
             .rects
@@ -343,7 +359,10 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
     );
     presentation.mark_submitted().unwrap();
     let second_presented = presentation.mark_presented().unwrap();
-    assert_eq!(second_presented.display_list, second_list);
+    assert_eq!(
+        second_presented.snapshot.compositor_display_list,
+        second_list
+    );
     assert_eq!(second_presented.damage.rects.len(), 8);
 }
 
@@ -391,18 +410,31 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
     )
     .unwrap();
     let mut presentation = presentation_state(output);
-    presentation.queue(first_list.clone()).unwrap();
+    presentation
+        .queue(frame_snapshot(output, first_list.clone(), &states))
+        .unwrap();
     presentation.mark_initial_presented().unwrap();
 
-    presentation.queue(second_list.clone()).unwrap();
+    presentation
+        .queue(frame_snapshot(output, second_list.clone(), &states))
+        .unwrap();
     assert_eq!(
         presentation.discard_pending().unwrap().damage.rects.len(),
         8
     );
-    assert_eq!(presentation.presented(), Some(&first_list));
+    assert_eq!(
+        presentation
+            .presented()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&first_list)
+    );
 
-    presentation.queue(second_list.clone()).unwrap();
-    presentation.queue(first_list.clone()).unwrap();
+    presentation
+        .queue(frame_snapshot(output, second_list.clone(), &states))
+        .unwrap();
+    presentation
+        .queue(frame_snapshot(output, first_list.clone(), &states))
+        .unwrap();
     assert!(
         presentation.pending().unwrap().damage.is_empty(),
         "superseded work must compare with the still-presented list"
@@ -410,10 +442,15 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
     presentation.mark_submitted().unwrap();
     assert_eq!(
         presentation.mark_submitted(),
-        Err(CompositorDisplayListPresentationError::SubmissionInFlight)
+        Err(OutputFramePresentationError::SubmissionInFlight)
     );
     presentation.mark_presented().unwrap();
-    assert_eq!(presentation.presented(), Some(&first_list));
+    assert_eq!(
+        presentation
+            .presented()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&first_list)
+    );
 
     let wrong_output = focused_surface_display_list(
         OutputId::from_raw(2),
@@ -423,9 +460,16 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
         FocusedSurfaceBorderStyle::default(),
     )
     .unwrap();
+    let wrong_snapshot = output_frame_damage_snapshot(
+        headless_output(OutputId::from_raw(2)),
+        wrong_output,
+        &states,
+        None,
+    )
+    .unwrap();
     assert_eq!(
-        presentation.queue(wrong_output),
-        Err(CompositorDisplayListPresentationError::OutputMismatch)
+        presentation.queue(wrong_snapshot),
+        Err(OutputFramePresentationError::OutputMismatch)
     );
 }
 
@@ -473,22 +517,38 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
     )
     .unwrap();
     let mut presentation = presentation_state(output);
-    presentation.queue(first_list.clone()).unwrap();
+    presentation
+        .queue(frame_snapshot(output, first_list.clone(), &states))
+        .unwrap();
     presentation.mark_initial_presented().unwrap();
-    presentation.queue(second_list.clone()).unwrap();
+    presentation
+        .queue(frame_snapshot(output, second_list.clone(), &states))
+        .unwrap();
     presentation.mark_submitted().unwrap();
 
-    let queued = presentation.queue(first_list.clone()).unwrap();
+    let queued = presentation
+        .queue(frame_snapshot(output, first_list.clone(), &states))
+        .unwrap();
     assert_eq!(
         queued.damage.rects.len(),
         8,
         "the next frame follows the submitted list, not the older presented list"
     );
     presentation.mark_presented().unwrap();
-    assert_eq!(presentation.presented(), Some(&second_list));
+    assert_eq!(
+        presentation
+            .presented()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&second_list)
+    );
     presentation.mark_submitted().unwrap();
     presentation.mark_presented().unwrap();
-    assert_eq!(presentation.presented(), Some(&first_list));
+    assert_eq!(
+        presentation
+            .presented()
+            .map(|snapshot| &snapshot.compositor_display_list),
+        Some(&first_list)
+    );
 }
 
 #[test]
@@ -532,10 +592,10 @@ fn repaint_plan_clips_and_coalesces_only_rectangular_output_damage() {
         ],
     };
 
-    let CompositorRepaintPlan::Partial {
+    let OutputRepaintPlan::Partial {
         damage,
         damaged_pixels,
-    } = plan_compositor_repaint(output_size, &damage, CompositorRepaintPolicy::default()).unwrap()
+    } = plan_output_repaint(output_size, &damage, OutputRepaintPolicy::default()).unwrap()
     else {
         panic!("small clipped damage should remain partial");
     };
@@ -578,19 +638,15 @@ fn repaint_plan_falls_back_to_full_output_for_coverage_or_complexity() {
         width: 80,
         height: 80,
     });
-    let CompositorRepaintPlan::Full {
+    let OutputRepaintPlan::Full {
         damage,
         damaged_pixels,
         reason,
-    } = plan_compositor_repaint(output_size, &coverage, CompositorRepaintPolicy::default())
-        .unwrap()
+    } = plan_output_repaint(output_size, &coverage, OutputRepaintPolicy::default()).unwrap()
     else {
         panic!("large coverage should use a full repaint");
     };
-    assert_eq!(
-        reason,
-        CompositorFullRepaintReason::CoverageThresholdReached
-    );
+    assert_eq!(reason, OutputFullRepaintReason::CoverageThresholdReached);
     assert_eq!(
         damage,
         Region::single(Rect {
@@ -612,16 +668,12 @@ fn repaint_plan_falls_back_to_full_output_for_coverage_or_complexity() {
             })
             .collect(),
     };
-    let CompositorRepaintPlan::Full { reason, .. } =
-        plan_compositor_repaint(output_size, &fragmented, CompositorRepaintPolicy::default())
-            .unwrap()
+    let OutputRepaintPlan::Full { reason, .. } =
+        plan_output_repaint(output_size, &fragmented, OutputRepaintPolicy::default()).unwrap()
     else {
         panic!("fragmented damage should use a full repaint");
     };
-    assert_eq!(
-        reason,
-        CompositorFullRepaintReason::PartialRectLimitExceeded
-    );
+    assert_eq!(reason, OutputFullRepaintReason::PartialRectLimitExceeded);
 
     let over_capacity = Region {
         rects: vec![
@@ -631,28 +683,25 @@ fn repaint_plan_falls_back_to_full_output_for_coverage_or_complexity() {
                 width: 1,
                 height: 1,
             };
-            sophia_engine::MAX_COMPOSITOR_DAMAGE_RECTS + 1
+            sophia_engine::MAX_OUTPUT_DAMAGE_RECTS + 1
         ],
     };
-    let CompositorRepaintPlan::Full { reason, .. } = plan_compositor_repaint(
-        output_size,
-        &over_capacity,
-        CompositorRepaintPolicy::default(),
-    )
-    .unwrap() else {
+    let OutputRepaintPlan::Full { reason, .. } =
+        plan_output_repaint(output_size, &over_capacity, OutputRepaintPolicy::default()).unwrap()
+    else {
         panic!("over-capacity damage should fail safe to full repaint");
     };
-    assert_eq!(reason, CompositorFullRepaintReason::DamageCapacityExceeded);
+    assert_eq!(reason, OutputFullRepaintReason::DamageCapacityExceeded);
 }
 
 #[test]
-fn repaint_plan_rejects_invalid_policy_and_presentation_exposes_partial_focus_damage() {
-    let invalid = CompositorRepaintPolicy {
+fn repaint_plan_rejects_invalid_policy_and_initial_presentation_fails_safe_to_full() {
+    let invalid = OutputRepaintPolicy {
         max_partial_rects: 0,
-        ..CompositorRepaintPolicy::default()
+        ..OutputRepaintPolicy::default()
     };
     assert!(
-        plan_compositor_repaint(
+        plan_output_repaint(
             Size {
                 width: 1,
                 height: 1
@@ -663,7 +712,7 @@ fn repaint_plan_rejects_invalid_policy_and_presentation_exposes_partial_focus_da
         .is_err()
     );
     assert_eq!(
-        CompositorDisplayListPresentationState::new(HeadlessOutput {
+        OutputFramePresentationState::new(HeadlessOutput {
             id: OutputId::from_raw(1),
             size: Size {
                 width: 0,
@@ -671,7 +720,7 @@ fn repaint_plan_rejects_invalid_policy_and_presentation_exposes_partial_focus_da
             },
             scale: 1,
         }),
-        Err(CompositorDisplayListPresentationError::InvalidOutputSize)
+        Err(OutputFramePresentationError::InvalidOutputSize)
     );
 
     let output = OutputId::from_raw(1);
@@ -695,14 +744,17 @@ fn repaint_plan_rejects_invalid_policy_and_presentation_exposes_partial_focus_da
     )
     .unwrap();
     let mut presentation = presentation_state(output);
-    let queued = presentation.queue(list).unwrap();
+    let queued = presentation
+        .queue(frame_snapshot(output, list, &states))
+        .unwrap();
 
+    assert_eq!(queued.compositor_damage.rects.len(), 4);
     assert!(matches!(
         queued.repaint,
-        CompositorRepaintPlan::Partial {
-            damaged_pixels: 704,
+        OutputRepaintPlan::Full {
+            damaged_pixels: 16_000,
             ..
         }
     ));
-    assert_eq!(queued.repaint.damage().unwrap().rects.len(), 4);
+    assert_eq!(queued.repaint.damage().unwrap().rects.len(), 1);
 }

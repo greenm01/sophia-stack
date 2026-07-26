@@ -322,7 +322,7 @@ fn pending_rendered_frame_is_a_latest_frame_wins_slot() {
 
     exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
         layers: Vec::new(),
-        compositor_display_list: None,
+        output_damage_snapshot: None,
     });
     assert!(!exporter.pending_cpu_frame());
     assert!(exporter.pending_mixed_frame());

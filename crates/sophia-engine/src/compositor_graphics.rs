@@ -1,8 +1,8 @@
-use crate::HeadlessOutput;
 use crate::prelude::*;
+use crate::{HeadlessOutput, OutputFrameDamageSnapshot, output_frame_damage};
 
 pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 1_024;
-pub const MAX_COMPOSITOR_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
+pub const MAX_OUTPUT_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FocusedSurfaceBorderEdge {
@@ -91,19 +91,20 @@ pub enum CompositorDisplayListError {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CompositorDisplayListPresentation {
-    pub display_list: CompositorDisplayList,
+pub struct OutputFramePresentation {
+    pub snapshot: OutputFrameDamageSnapshot,
+    pub compositor_damage: Region,
     pub damage: Region,
-    pub repaint: CompositorRepaintPlan,
+    pub repaint: OutputRepaintPlan,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CompositorRepaintPolicy {
+pub struct OutputRepaintPolicy {
     pub max_partial_rects: usize,
     pub full_repaint_percent: u8,
 }
 
-impl Default for CompositorRepaintPolicy {
+impl Default for OutputRepaintPolicy {
     fn default() -> Self {
         Self {
             max_partial_rects: 32,
@@ -113,14 +114,14 @@ impl Default for CompositorRepaintPolicy {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompositorFullRepaintReason {
+pub enum OutputFullRepaintReason {
     DamageCapacityExceeded,
     PartialRectLimitExceeded,
     CoverageThresholdReached,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CompositorRepaintPlan {
+pub enum OutputRepaintPlan {
     Skip,
     Partial {
         damage: Region,
@@ -129,11 +130,11 @@ pub enum CompositorRepaintPlan {
     Full {
         damage: Region,
         damaged_pixels: u64,
-        reason: CompositorFullRepaintReason,
+        reason: OutputFullRepaintReason,
     },
 }
 
-impl CompositorRepaintPlan {
+impl OutputRepaintPlan {
     pub const fn reduced_name(&self) -> &'static str {
         match self {
             Self::Skip => "skip",
@@ -160,71 +161,73 @@ impl CompositorRepaintPlan {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompositorRepaintPlanError {
+pub enum OutputRepaintPlanError {
     InvalidOutputSize,
     InvalidPolicy,
 }
 
-impl fmt::Display for CompositorRepaintPlanError {
+impl fmt::Display for OutputRepaintPlanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{self:?}")
     }
 }
 
-impl std::error::Error for CompositorRepaintPlanError {}
+impl std::error::Error for OutputRepaintPlanError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompositorDisplayListPresentationError {
+pub enum OutputFramePresentationError {
     InvalidOutput,
     InvalidOutputSize,
     InvalidRepaintPolicy,
+    InvalidSnapshot,
     OutputMismatch,
     MissingPending,
     SubmissionInFlight,
     MissingSubmitted,
 }
 
-impl fmt::Display for CompositorDisplayListPresentationError {
+impl fmt::Display for OutputFramePresentationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{self:?}")
     }
 }
 
-impl std::error::Error for CompositorDisplayListPresentationError {}
+impl std::error::Error for OutputFramePresentationError {}
 
-/// Tracks compositor display-list state through the scanout lifecycle.
+/// Tracks immutable output-frame state through the scanout lifecycle.
 ///
-/// A queued list is compared with the state that will precede it on screen:
-/// the submitted list when a page flip is in flight, otherwise the presented
-/// list. Failed or superseded queue work never advances presented state.
+/// A queued snapshot is compared with the state that will precede it on
+/// screen: the submitted snapshot when a page flip is in flight, otherwise the
+/// presented snapshot. Failed or superseded queue work never advances
+/// presented state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CompositorDisplayListPresentationState {
+pub struct OutputFramePresentationState {
     output: HeadlessOutput,
-    repaint_policy: CompositorRepaintPolicy,
-    pending: Option<CompositorDisplayListPresentation>,
-    submitted: Option<CompositorDisplayListPresentation>,
-    presented: Option<CompositorDisplayList>,
+    repaint_policy: OutputRepaintPolicy,
+    pending: Option<OutputFramePresentation>,
+    submitted: Option<OutputFramePresentation>,
+    presented: Option<OutputFrameDamageSnapshot>,
 }
 
-impl CompositorDisplayListPresentationState {
-    pub fn new(output: HeadlessOutput) -> Result<Self, CompositorDisplayListPresentationError> {
-        Self::with_repaint_policy(output, CompositorRepaintPolicy::default())
+impl OutputFramePresentationState {
+    pub fn new(output: HeadlessOutput) -> Result<Self, OutputFramePresentationError> {
+        Self::with_repaint_policy(output, OutputRepaintPolicy::default())
     }
 
     pub fn with_repaint_policy(
         output: HeadlessOutput,
-        repaint_policy: CompositorRepaintPolicy,
-    ) -> Result<Self, CompositorDisplayListPresentationError> {
+        repaint_policy: OutputRepaintPolicy,
+    ) -> Result<Self, OutputFramePresentationError> {
         if !output.id.is_valid() {
-            return Err(CompositorDisplayListPresentationError::InvalidOutput);
+            return Err(OutputFramePresentationError::InvalidOutput);
         }
-        validate_compositor_repaint_inputs(output.size, repaint_policy).map_err(
+        validate_output_repaint_inputs(output.size, repaint_policy).map_err(
             |error| match error {
-                CompositorRepaintPlanError::InvalidOutputSize => {
-                    CompositorDisplayListPresentationError::InvalidOutputSize
+                OutputRepaintPlanError::InvalidOutputSize => {
+                    OutputFramePresentationError::InvalidOutputSize
                 }
-                CompositorRepaintPlanError::InvalidPolicy => {
-                    CompositorDisplayListPresentationError::InvalidRepaintPolicy
+                OutputRepaintPlanError::InvalidPolicy => {
+                    OutputFramePresentationError::InvalidRepaintPolicy
                 }
             },
         )?;
@@ -243,85 +246,93 @@ impl CompositorDisplayListPresentationState {
 
     pub fn queue(
         &mut self,
-        display_list: CompositorDisplayList,
-    ) -> Result<&CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
-        if display_list.output != self.output.id {
-            return Err(CompositorDisplayListPresentationError::OutputMismatch);
+        snapshot: OutputFrameDamageSnapshot,
+    ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
+        if snapshot.output != self.output {
+            return Err(OutputFramePresentationError::OutputMismatch);
         }
         let baseline = self
             .submitted
             .as_ref()
-            .map(|submitted| &submitted.display_list)
+            .map(|submitted| &submitted.snapshot)
             .or(self.presented.as_ref());
-        let damage = baseline.map_or_else(
+        let compositor_baseline = baseline.map(|baseline| &baseline.compositor_display_list);
+        let compositor_damage = compositor_baseline.map_or_else(
             || {
                 let empty = CompositorDisplayList::empty(self.output.id);
-                compositor_display_list_damage(&empty, &display_list)
+                compositor_display_list_damage(&empty, &snapshot.compositor_display_list)
             },
-            |baseline| compositor_display_list_damage(baseline, &display_list),
+            |baseline| compositor_display_list_damage(baseline, &snapshot.compositor_display_list),
         );
-        let repaint = plan_compositor_repaint(self.output.size, &damage, self.repaint_policy)
+        let damage = output_frame_damage(baseline, &snapshot).map_err(|error| match error {
+            crate::OutputFrameDamageError::OutputMismatch => {
+                OutputFramePresentationError::OutputMismatch
+            }
+            _ => OutputFramePresentationError::InvalidSnapshot,
+        })?;
+        let repaint = plan_output_repaint(self.output.size, &damage, self.repaint_policy)
             .expect("presentation state validates its output and repaint policy");
-        self.pending = Some(CompositorDisplayListPresentation {
-            display_list,
+        self.pending = Some(OutputFramePresentation {
+            snapshot,
+            compositor_damage,
             damage,
             repaint,
         });
         Ok(self.pending.as_ref().expect("assigned above"))
     }
 
-    pub fn discard_pending(&mut self) -> Option<CompositorDisplayListPresentation> {
+    pub fn discard_pending(&mut self) -> Option<OutputFramePresentation> {
         self.pending.take()
     }
 
     pub fn mark_submitted(
         &mut self,
-    ) -> Result<&CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+    ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
         if self.submitted.is_some() {
-            return Err(CompositorDisplayListPresentationError::SubmissionInFlight);
+            return Err(OutputFramePresentationError::SubmissionInFlight);
         }
         self.submitted = Some(
             self.pending
                 .take()
-                .ok_or(CompositorDisplayListPresentationError::MissingPending)?,
+                .ok_or(OutputFramePresentationError::MissingPending)?,
         );
         Ok(self.submitted.as_ref().expect("assigned above"))
     }
 
     pub fn mark_presented(
         &mut self,
-    ) -> Result<CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+    ) -> Result<OutputFramePresentation, OutputFramePresentationError> {
         let submitted = self
             .submitted
             .take()
-            .ok_or(CompositorDisplayListPresentationError::MissingSubmitted)?;
-        self.presented = Some(submitted.display_list.clone());
+            .ok_or(OutputFramePresentationError::MissingSubmitted)?;
+        self.presented = Some(submitted.snapshot.clone());
         Ok(submitted)
     }
 
     pub fn mark_initial_presented(
         &mut self,
-    ) -> Result<CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+    ) -> Result<OutputFramePresentation, OutputFramePresentationError> {
         if self.submitted.is_some() {
-            return Err(CompositorDisplayListPresentationError::SubmissionInFlight);
+            return Err(OutputFramePresentationError::SubmissionInFlight);
         }
         let pending = self
             .pending
             .take()
-            .ok_or(CompositorDisplayListPresentationError::MissingPending)?;
-        self.presented = Some(pending.display_list.clone());
+            .ok_or(OutputFramePresentationError::MissingPending)?;
+        self.presented = Some(pending.snapshot.clone());
         Ok(pending)
     }
 
-    pub fn pending(&self) -> Option<&CompositorDisplayListPresentation> {
+    pub fn pending(&self) -> Option<&OutputFramePresentation> {
         self.pending.as_ref()
     }
 
-    pub fn submitted(&self) -> Option<&CompositorDisplayListPresentation> {
+    pub fn submitted(&self) -> Option<&OutputFramePresentation> {
         self.submitted.as_ref()
     }
 
-    pub fn presented(&self) -> Option<&CompositorDisplayList> {
+    pub fn presented(&self) -> Option<&OutputFrameDamageSnapshot> {
         self.presented.as_ref()
     }
 }
@@ -331,12 +342,12 @@ impl CompositorDisplayListPresentationState {
 /// Rectangles are clipped to the output and exact rectangular unions are
 /// coalesced deterministically. Excess complexity or coverage falls back to a
 /// full repaint; incomplete proof therefore costs performance, never pixels.
-pub fn plan_compositor_repaint(
+pub fn plan_output_repaint(
     output_size: Size,
     damage: &Region,
-    policy: CompositorRepaintPolicy,
-) -> Result<CompositorRepaintPlan, CompositorRepaintPlanError> {
-    validate_compositor_repaint_inputs(output_size, policy)?;
+    policy: OutputRepaintPolicy,
+) -> Result<OutputRepaintPlan, OutputRepaintPlanError> {
+    validate_output_repaint_inputs(output_size, policy)?;
     let full_output = Rect {
         x: 0,
         y: 0,
@@ -344,11 +355,11 @@ pub fn plan_compositor_repaint(
         height: output_size.height,
     };
     let output_pixels = rect_area(full_output);
-    if damage.rects.len() > MAX_COMPOSITOR_DAMAGE_RECTS {
-        return Ok(CompositorRepaintPlan::Full {
+    if damage.rects.len() > MAX_OUTPUT_DAMAGE_RECTS {
+        return Ok(OutputRepaintPlan::Full {
             damage: Region::single(full_output),
             damaged_pixels: output_pixels,
-            reason: CompositorFullRepaintReason::DamageCapacityExceeded,
+            reason: OutputFullRepaintReason::DamageCapacityExceeded,
         });
     }
 
@@ -370,13 +381,13 @@ pub fn plan_compositor_repaint(
     }
     rects.sort_by_key(|rect| (rect.y, rect.x, rect.height, rect.width));
     if rects.is_empty() {
-        return Ok(CompositorRepaintPlan::Skip);
+        return Ok(OutputRepaintPlan::Skip);
     }
     if rects.len() > policy.max_partial_rects {
-        return Ok(CompositorRepaintPlan::Full {
+        return Ok(OutputRepaintPlan::Full {
             damage: Region::single(full_output),
             damaged_pixels: output_pixels,
-            reason: CompositorFullRepaintReason::PartialRectLimitExceeded,
+            reason: OutputFullRepaintReason::PartialRectLimitExceeded,
         });
     }
 
@@ -388,30 +399,30 @@ pub fn plan_compositor_repaint(
     if damaged_pixels.saturating_mul(100)
         >= output_pixels.saturating_mul(u64::from(policy.full_repaint_percent))
     {
-        return Ok(CompositorRepaintPlan::Full {
+        return Ok(OutputRepaintPlan::Full {
             damage: Region::single(full_output),
             damaged_pixels: output_pixels,
-            reason: CompositorFullRepaintReason::CoverageThresholdReached,
+            reason: OutputFullRepaintReason::CoverageThresholdReached,
         });
     }
-    Ok(CompositorRepaintPlan::Partial {
+    Ok(OutputRepaintPlan::Partial {
         damage: Region { rects },
         damaged_pixels,
     })
 }
 
-fn validate_compositor_repaint_inputs(
+fn validate_output_repaint_inputs(
     output_size: Size,
-    policy: CompositorRepaintPolicy,
-) -> Result<(), CompositorRepaintPlanError> {
+    policy: OutputRepaintPolicy,
+) -> Result<(), OutputRepaintPlanError> {
     if output_size.width <= 0 || output_size.height <= 0 {
-        return Err(CompositorRepaintPlanError::InvalidOutputSize);
+        return Err(OutputRepaintPlanError::InvalidOutputSize);
     }
     if policy.max_partial_rects == 0
-        || policy.max_partial_rects > MAX_COMPOSITOR_DAMAGE_RECTS
+        || policy.max_partial_rects > MAX_OUTPUT_DAMAGE_RECTS
         || !(1..=100).contains(&policy.full_repaint_percent)
     {
-        return Err(CompositorRepaintPlanError::InvalidPolicy);
+        return Err(OutputRepaintPlanError::InvalidPolicy);
     }
     Ok(())
 }

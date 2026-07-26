@@ -69,7 +69,14 @@ impl LiveProductionVisualRuntime {
         let display_list = self
             .display_list(committed, &self.presentation_order)
             .map_err(std::io::Error::other)?;
-        let compositor_display_list = Some(display_list.clone());
+        let output = self
+            .outputs
+            .output_descriptor(0)
+            .ok_or_else(|| std::io::Error::other("mixed composition has no output descriptor"))?;
+        let output_damage_snapshot = Some(
+            output_frame_damage_snapshot(output, display_list.clone(), committed, None)
+                .map_err(std::io::Error::other)?,
+        );
         for command in display_list.commands {
             match command {
                 CompositorDisplayCommand::Surface { surface } => {
@@ -106,7 +113,7 @@ impl LiveProductionVisualRuntime {
                 transaction,
                 LiveOwnedMixedCompositionFrame {
                     layers,
-                    compositor_display_list,
+                    output_damage_snapshot,
                 },
             )
         }))

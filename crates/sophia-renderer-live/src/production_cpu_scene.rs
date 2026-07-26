@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
-use sophia_engine::{CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput};
+use sophia_engine::{
+    CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
+    output_frame_damage_snapshot,
+};
 use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Size, SurfaceId};
 
 use crate::{
@@ -16,7 +19,7 @@ pub struct LiveProductionComposedFrame {
     pub frame: LiveCpuComposedFrame,
     pub checksum: u64,
     pub nonzero_pixel_bytes: usize,
-    pub compositor_display_list: Option<CompositorDisplayList>,
+    pub output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,7 +33,7 @@ pub struct LiveProductionCpuScene {
     output_size: Size,
     buffers: LiveCpuBufferRegistry,
     last_report: Option<LiveCpuCompositionReport>,
-    last_compositor_display_list: Option<CompositorDisplayList>,
+    last_output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
     max_nonzero_pixel_bytes: usize,
     nonzero_frames: usize,
 }
@@ -41,7 +44,7 @@ impl LiveProductionCpuScene {
             output_size,
             buffers: LiveCpuBufferRegistry::new(),
             last_report: None,
-            last_compositor_display_list: None,
+            last_output_damage_snapshot: None,
             max_nonzero_pixel_bytes: 0,
             nonzero_frames: 0,
         }
@@ -118,10 +121,14 @@ impl LiveProductionCpuScene {
 
     pub fn compose_display_list(
         &mut self,
+        output: HeadlessOutput,
         committed_surfaces: &[CommittedSurfaceState],
         display_list: &CompositorDisplayList,
         cursor_position: Option<Point>,
     ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        if output.size != self.output_size {
+            return Err("CPU scene output descriptor has a mismatched size".into());
+        }
         let elements = display_list
             .commands
             .iter()
@@ -162,7 +169,18 @@ impl LiveProductionCpuScene {
                     format!("persistent CPU display-list composition failed: {error:?}")
                 })?,
         );
-        self.last_compositor_display_list = Some(display_list.clone());
+        let cursor_geometry = cursor_position.map(|position| Rect {
+            x: position.x.floor() as i32,
+            y: position.y.floor() as i32,
+            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+        });
+        self.last_output_damage_snapshot = Some(output_frame_damage_snapshot(
+            output,
+            display_list.clone(),
+            committed_surfaces,
+            cursor_geometry,
+        )?);
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
@@ -218,7 +236,7 @@ impl LiveProductionCpuScene {
             compose_live_cpu_frame_ref_with_cursor(self.output_size, &layers, cursor_position)
                 .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
-        self.last_compositor_display_list = None;
+        self.last_output_damage_snapshot = None;
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
@@ -332,10 +350,10 @@ impl LiveProductionCpuScene {
                     frame: primary.frame.clone(),
                     checksum: primary.checksum,
                     nonzero_pixel_bytes: primary.nonzero_pixel_bytes,
-                    compositor_display_list: self
-                        .last_compositor_display_list
+                    output_damage_snapshot: self
+                        .last_output_damage_snapshot
                         .as_ref()
-                        .filter(|display_list| display_list.output == output.id)
+                        .filter(|snapshot| snapshot.output == *output)
                         .cloned(),
                 });
                 continue;
@@ -372,7 +390,12 @@ impl LiveProductionCpuScene {
                 frame: report.frame,
                 checksum: report.checksum,
                 nonzero_pixel_bytes: report.nonzero_pixel_bytes,
-                compositor_display_list: Some(CompositorDisplayList::empty(output.id)),
+                output_damage_snapshot: Some(output_frame_damage_snapshot(
+                    *output,
+                    CompositorDisplayList::empty(output.id),
+                    &[],
+                    None,
+                )?),
             });
         }
         Ok(frames)
