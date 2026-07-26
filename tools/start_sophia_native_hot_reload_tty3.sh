@@ -49,7 +49,8 @@ write_wm_config() {
 
 wait_for_log() {
     local pattern=$1
-    local deadline=$((SECONDS + 30))
+    local timeout_seconds=${2:-30}
+    local deadline=$((SECONDS + timeout_seconds))
     while (( SECONDS < deadline )); do
         if [[ -f "$SESSION_LOG" && "$SESSION_LOG" -nt "$START_MARKER" ]] &&
             grep -Eq "$pattern" "$SESSION_LOG" 2>/dev/null; then
@@ -67,7 +68,7 @@ chmod 600 "$SEQUENCE_LOG"
 : >"$START_MARKER"
 
 (
-    wait_for_log '^sophia_live_session_startup schema=2 status=ready ' || exit 1
+    wait_for_log '^sophia_live_session_startup schema=2 status=ready ' 180 || exit 1
     printf '%s\n' 'phase=baseline thickness=2' >>"$SEQUENCE_LOG"
     sleep 5
 

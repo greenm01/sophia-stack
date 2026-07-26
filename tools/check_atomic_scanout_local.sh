@@ -95,6 +95,7 @@ grep -Fq -- '--startup-ready-timeout-ms=8000' tools/run_sophia_xmonad_session.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
 grep -Fq 'native) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
+grep -Fq "status=ready ' 180" tools/start_sophia_native_hot_reload_tty3.sh
 grep -Fq -- '--exit-when-startup-exits' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--input-seat=$input_seat' tools/run_sophia_xmonad_session.sh
 if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
