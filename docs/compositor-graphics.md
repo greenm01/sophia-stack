@@ -4,11 +4,13 @@
 
 This document defines how Sophia describes and renders compositor-owned visual
 content. [Architecture](architecture.md) defines visual authority and process
-ownership. [Data-Oriented Design](dod.md) defines the records that cross those
-boundaries. [Renderer Import Boundary](renderer-import-boundary.md) defines how
-client buffers enter the renderer. Compositor graphics share the final
-composition and presentation path with those buffers, but they are not client
-surfaces and do not weaken the authority boundaries around them.
+ownership. [Engine Architecture](engine-architecture.md) places this graphics
+pipeline inside the complete Engine domain flow. [Data-Oriented Design](dod.md)
+defines the records that cross those boundaries. [Renderer Import
+Boundary](renderer-import-boundary.md) defines how client buffers enter the
+renderer. Compositor graphics share the final composition and presentation path
+with those buffers, but they are not client surfaces and do not weaken the
+authority boundaries around them.
 
 ## Design Direction
 

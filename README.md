@@ -254,6 +254,8 @@ Sophia is split by authority, not by convenience.
   compatibility admission, and amendment rules. Existing normative contracts
   retain precedence until it is explicitly ratified.
 - `docs/architecture.md` maps processes and load-bearing boundaries.
+- `docs/engine-architecture.md` maps Engine domains, visual data flow, current
+  Rust modules, and the compositor role.
 - `docs/namespaces-and-portals.md` defines admission, isolation profiles,
   capabilities, grants, and cross-namespace failure behavior.
 - `docs/dod.md` defines Sophia's data-oriented design rules.

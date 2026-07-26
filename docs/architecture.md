@@ -5,10 +5,11 @@
 This document defines Sophia's authority boundaries and intended process
 relationships. [Data-Oriented Design](dod.md) defines the records that cross
 those boundaries. [Namespaces and Portals](namespaces-and-portals.md) defines
-the trust and transfer model. [Compositor Graphics](compositor-graphics.md)
-defines the renderer-neutral compositor-owned display list and its native
-lowering. Subsystem documents record implementation detail and current
-coverage.
+the trust and transfer model. [Engine Architecture](engine-architecture.md)
+defines the domains inside Engine and the precise scope of its compositor
+role. [Compositor Graphics](compositor-graphics.md) defines the
+renderer-neutral compositor-owned display list and its native lowering.
+Subsystem documents record implementation detail and current coverage.
 
 Sophia is an X-centric product with an Engine-centered architecture. Sophia
 Engine owns physical input, the scene graph, atomic visual commits, rendering,

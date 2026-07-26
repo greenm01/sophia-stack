@@ -13,6 +13,9 @@ wins when prose disagrees.
 
 - [Architecture](architecture.md) defines process ownership and the boundaries
   between Engine, protocol authorities, runtime, WM, portals, and chrome.
+- [Engine Architecture](engine-architecture.md) defines the domains inside
+  Sophia Engine, their ordered visual data flow, the current Rust module map,
+  and the precise scope of the compositor role.
 - [Compositor Graphics](compositor-graphics.md) defines the renderer-neutral
   display list, native primitive lowering, cached text strategy, damage rules,
   and Niri architectural reference for compositor-owned content.
