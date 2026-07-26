@@ -98,9 +98,12 @@ fn output_union_pointer_corrects_overshoot_before_the_first_reverse_delta() {
             vertical: None,
         }
     );
+    assert_eq!(edge.entered, edge.contact);
+    assert_eq!(edge.output_index, Some(1));
 
     let stationary = pointer.place(Point { x: 6000.0, y: 0.0 }, None);
     assert_eq!(stationary.contact, edge.contact);
+    assert!(stationary.entered.is_empty());
     assert_eq!(pointer.boundary_metrics().clamps, 1);
 
     let reversed = pointer.place(Point { x: 5990.0, y: 0.0 }, None);
@@ -118,8 +121,42 @@ fn output_union_pointer_corrects_overshoot_before_the_first_reverse_delta() {
             vertical: None,
         }
     );
+    assert!(reversed.entered.is_empty());
     assert_eq!(pointer.boundary_metrics().clamps, 1);
     assert_eq!(pointer.boundary_metrics().immediate_reversals, 1);
+}
+
+#[test]
+fn output_union_pointer_retains_one_edge_entry_during_perpendicular_motion() {
+    let mut pointer = OutputUnionPointerState::default();
+    pointer.set_output_bounds(vec![Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+    }]);
+    pointer.center_on_primary_output(Size {
+        width: 100,
+        height: 80,
+    });
+
+    let edge = pointer.place(Point { x: -500.0, y: 0.0 }, None);
+    assert_eq!(
+        edge.entered,
+        PointerBoundaryContact {
+            horizontal: Some(PointerBoundarySide::Minimum),
+            vertical: None,
+        }
+    );
+
+    let perpendicular = pointer.place(Point { x: -500.0, y: 10.0 }, None);
+    assert_eq!(perpendicular.contact, edge.contact);
+    assert!(perpendicular.entered.is_empty());
+
+    let reversed = pointer.place(Point { x: -490.0, y: 10.0 }, None);
+    assert!(reversed.contact.is_empty());
+    assert!(reversed.entered.is_empty());
+    assert_eq!(reversed.reversed, edge.contact);
 }
 
 #[test]
@@ -171,7 +208,9 @@ fn output_union_pointer_reports_horizontal_and_vertical_edge_reversals() {
             width: 100,
             height: 80,
         });
-        assert_eq!(pointer.place(edge, None).contact, expected);
+        let edge = pointer.place(edge, None);
+        assert_eq!(edge.contact, expected);
+        assert_eq!(edge.entered, expected);
         assert_eq!(pointer.place(reverse, None).reversed, expected);
         assert_eq!(pointer.boundary_metrics().clamps, 1);
         assert_eq!(pointer.boundary_metrics().immediate_reversals, 1);
@@ -213,8 +252,49 @@ fn physical_pointer_confinement_rejects_invalid_or_missing_geometry() {
         None,
     );
     assert_eq!(placement.position, Point { x: 50.0, y: 40.0 });
+    assert_eq!(placement.output_index, Some(0));
+    assert!(placement.entered.is_empty());
     assert!(placement.contact.is_empty());
     assert!(placement.reversed.is_empty());
+}
+
+#[test]
+fn output_union_pointer_reports_free_internal_output_transitions() {
+    let mut pointer = OutputUnionPointerState::default();
+    pointer.set_output_bounds(vec![
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 80,
+        },
+        Rect {
+            x: 100,
+            y: 0,
+            width: 100,
+            height: 80,
+        },
+    ]);
+    pointer.center_on_primary_output(Size {
+        width: 100,
+        height: 80,
+    });
+
+    let right = pointer.place(Point { x: 60.0, y: 0.0 }, None);
+    assert_eq!(right.output_index, Some(1));
+    assert_eq!(
+        right.transition,
+        Some(sophia_engine::PointerOutputTransition { from: 0, to: 1 })
+    );
+    assert!(right.contact.is_empty());
+
+    let left = pointer.place(Point { x: 40.0, y: 0.0 }, None);
+    assert_eq!(left.output_index, Some(0));
+    assert_eq!(
+        left.transition,
+        Some(sophia_engine::PointerOutputTransition { from: 1, to: 0 })
+    );
+    assert!(left.contact.is_empty());
 }
 
 #[test]

@@ -24,8 +24,9 @@ struct PhysicalInputRouteReport {
     virtual_terminal_modifier_releases: usize,
     pointer_focus_handoff_expired: bool,
     pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
-    pointer_boundary_contacts: Vec<sophia_engine::PointerBoundaryContact>,
-    pointer_boundary_reverse_contacts: Vec<sophia_engine::PointerBoundaryContact>,
+    pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
+    pointer_boundary_reversals: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
+    pointer_output_transitions: Vec<(sophia_engine::PointerOutputTransition, bool)>,
 }
 
 type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
@@ -239,8 +240,9 @@ fn route_input_events_with_pointer_focus(
         virtual_terminal_modifier_releases: 0,
         pointer_focus_handoff_expired: false,
         pointer_focus_handoff_released: None,
-        pointer_boundary_contacts: Vec::new(),
-        pointer_boundary_reverse_contacts: Vec::new(),
+        pointer_boundary_entries: Vec::new(),
+        pointer_boundary_reversals: Vec::new(),
+        pointer_output_transitions: Vec::new(),
     };
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
         report.pointer_focus_handoff_expired = handoff.expire(now_msec);
@@ -642,13 +644,20 @@ fn record_pointer_boundary_placement(
     let Some(placement) = placement else {
         return;
     };
-    if !placement.contact.is_empty() {
-        report.pointer_boundary_contacts.push(placement.contact);
+    if !placement.entered.is_empty() {
+        report
+            .pointer_boundary_entries
+            .push((placement.entered, placement.output_index));
     }
     if !placement.reversed.is_empty() {
         report
-            .pointer_boundary_reverse_contacts
-            .push(placement.reversed);
+            .pointer_boundary_reversals
+            .push((placement.reversed, placement.output_index));
+    }
+    if let Some(transition) = placement.transition {
+        report
+            .pointer_output_transitions
+            .push((transition, placement.contact.is_empty()));
     }
 }
 

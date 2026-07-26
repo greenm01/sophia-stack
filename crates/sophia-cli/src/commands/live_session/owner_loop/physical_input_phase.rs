@@ -119,14 +119,14 @@ macro_rules! drain_physical_input {
             for (status, contacts) in [
                 (
                     "output_edge_confined",
-                    &report.pointer_boundary_contacts,
+                    &report.pointer_boundary_entries,
                 ),
                 (
                     "edge_reverse_immediate",
-                    &report.pointer_boundary_reverse_contacts,
+                    &report.pointer_boundary_reversals,
                 ),
             ] {
-                for contact in contacts {
+                for (contact, output_index) in contacts {
                     for (axis, side) in [
                         ("horizontal", contact.horizontal),
                         ("vertical", contact.vertical),
@@ -141,8 +141,20 @@ macro_rules! drain_physical_input {
                         println!(
                             "sophia_live_session_pointer schema=7 status={status} axis={axis} side={side}"
                         );
+                        if let Some(output_slot) = output_index {
+                            println!(
+                                "sophia_live_session_pointer schema=8 status={status} axis={axis} side={side} output_slot={output_slot}"
+                            );
+                        }
                     }
                 }
+            }
+            for (transition, boundary_free) in &report.pointer_output_transitions {
+                let boundary = if *boundary_free { "free" } else { "projected" };
+                println!(
+                    "sophia_live_session_pointer schema=8 status=output_transition from_slot={} to_slot={} boundary={boundary}",
+                    transition.from, transition.to
+                );
             }
             if !post_startup_exit_pointer_reported
                 && config.normal_session

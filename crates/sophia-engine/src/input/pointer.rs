@@ -27,8 +27,17 @@ pub struct PointerBoundaryMetrics {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OutputUnionPointerPlacement {
     pub position: Point,
+    pub output_index: Option<usize>,
+    pub entered: PointerBoundaryContact,
     pub contact: PointerBoundaryContact,
     pub reversed: PointerBoundaryContact,
+    pub transition: Option<PointerOutputTransition>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PointerOutputTransition {
+    pub from: usize,
+    pub to: usize,
 }
 
 /// Engine-owned state for projecting one physical pointer into an output union.
@@ -123,15 +132,21 @@ impl OutputUnionPointerState {
         initial_geometry: Option<Rect>,
     ) -> OutputUnionPointerPlacement {
         if !raw.x.is_finite() || !raw.y.is_finite() {
+            let position = self.position.unwrap_or_default();
             return OutputUnionPointerPlacement {
-                position: self.position.unwrap_or_default(),
+                position,
+                output_index: output_index_for_position(position, &self.output_bounds),
+                entered: PointerBoundaryContact::default(),
                 contact: self.boundary_contact,
                 reversed: PointerBoundaryContact::default(),
+                transition: None,
             };
         }
         let previous_raw = self.raw_position;
         let previous_position = self.position;
         let previous_contact = self.boundary_contact;
+        let previous_output_index = previous_position
+            .and_then(|position| output_index_for_position(position, &self.output_bounds));
         self.raw_position = Some(raw);
         let offset = *self.raw_to_logical_offset.get_or_insert_with(|| {
             initial_geometry.map_or_else(Point::default, |geometry| {
@@ -145,11 +160,13 @@ impl OutputUnionPointerState {
         let position =
             confine_pointer_to_outputs(proposed, &self.output_bounds).unwrap_or(proposed);
         let stationary = previous_raw == Some(raw);
-        let contact = if stationary {
-            previous_contact
-        } else {
-            boundary_contact(proposed, position)
-        };
+        let contact = retain_boundary_contact(
+            previous_contact,
+            boundary_contact(proposed, position),
+            previous_position,
+            position,
+        );
+        let entered = boundary_entry(previous_contact, contact);
         if !contact.is_empty() {
             self.raw_to_logical_offset = Some(Point {
                 x: position.x - raw.x,
@@ -170,12 +187,20 @@ impl OutputUnionPointerState {
             self.boundary_metrics.immediate_reversals =
                 self.boundary_metrics.immediate_reversals.saturating_add(1);
         }
+        let output_index = output_index_for_position(position, &self.output_bounds);
+        let transition = previous_output_index
+            .zip(output_index)
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| PointerOutputTransition { from, to });
         self.position = Some(position);
         self.boundary_contact = contact;
         OutputUnionPointerPlacement {
             position,
+            output_index,
+            entered,
             contact,
             reversed,
+            transition,
         }
     }
 }
@@ -241,6 +266,53 @@ fn boundary_contact(proposed: Point, confined: Point) -> PointerBoundaryContact 
             None
         },
     }
+}
+
+fn boundary_entry(
+    previous: PointerBoundaryContact,
+    current: PointerBoundaryContact,
+) -> PointerBoundaryContact {
+    PointerBoundaryContact {
+        horizontal: (current.horizontal != previous.horizontal)
+            .then_some(current.horizontal)
+            .flatten(),
+        vertical: (current.vertical != previous.vertical)
+            .then_some(current.vertical)
+            .flatten(),
+    }
+}
+
+fn retain_boundary_contact(
+    previous: PointerBoundaryContact,
+    current: PointerBoundaryContact,
+    previous_position: Option<Point>,
+    position: Point,
+) -> PointerBoundaryContact {
+    let Some(previous_position) = previous_position else {
+        return current;
+    };
+    PointerBoundaryContact {
+        horizontal: current.horizontal.or_else(|| {
+            (position.x == previous_position.x)
+                .then_some(previous.horizontal)
+                .flatten()
+        }),
+        vertical: current.vertical.or_else(|| {
+            (position.y == previous_position.y)
+                .then_some(previous.vertical)
+                .flatten()
+        }),
+    }
+}
+
+fn output_index_for_position(position: Point, outputs: &[Rect]) -> Option<usize> {
+    outputs.iter().position(|output| {
+        !output.is_empty()
+            && position.x >= f64::from(output.x)
+            && position.x < f64::from(output.x.saturating_add(output.width))
+            && position.y >= f64::from(output.y)
+            && position.y < f64::from(output.y.saturating_add(output.height))
+    })
 }
 
 fn immediate_boundary_reversal(

@@ -209,15 +209,28 @@ Promotion now follows the gates below in order.
   workspaces. It recorded two owner changes and one conversion and completed
   with zero unexpected protocol, input, WM, native-presentation, or cleanup
   failure.
-- [ ] Prove pointer confinement across the complete output union: hard edge
+- [x] Prove pointer confinement across the complete output union: hard edge
   motion must keep the hardware cursor visible, and reversing direction must
   move it immediately without first consuming discarded overshoot. The full
   raw-position, startup-offset, edge-correction, and logical-position state
   now belongs to Engine rather than the CLI. The two-output xmonad QEMU gate
   drives the virtio mouse past the right edge and proves that the first reverse
   delta moves immediately through ordered, reduced Engine observations.
-  Physical visible-cursor confirmation across every actual output edge remains
-  required.
+  A dedicated guarded TTY3 wrapper now asks for free crossing at the internal
+  seam, one clamp/reversal at each far horizontal edge, and one at the top and
+  bottom of each physical output. Reduced schema-8 evidence records boundary
+  entry once, attributes it to a protocol-neutral output slot, distinguishes a
+  free internal transition from projected gap crossing, and avoids logging
+  every repeated edge contact. Its fail-closed verifier requires six ordered
+  Engine clamp/reversal pairs, both free seam directions, visible
+  hardware-cursor health, clean native/WM state, normal logout, and exact TTY
+  restoration. The physical two-output run proved all six ordered edge
+  clamp/reversal pairs and both free seam directions. It completed with 2,245
+  hardware-cursor updates, zero hidden updates or hardware failures, zero WM
+  restarts, clean Engine health, normal logout, and exact TTY restoration. A
+  follow-up regression keeps each edge axis latched during perpendicular
+  motion so one physical contact produces one reduced entry rather than a
+  stream of duplicate observations.
 - [ ] Prove an unmodified primary-button press on an unfocused visible window
   commits WM-selected focus before client delivery; require the following
   keyboard input and ordered button release to reach that target, while hidden
