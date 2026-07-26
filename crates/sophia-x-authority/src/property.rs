@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
-use sophia_protocol::NamespaceId;
+use sophia_protocol::{AxisSpan, NamespaceId, OutputEdge, OutputReservation, Rect};
 
-use crate::{XAtom, XAtomTable, XResourceId, is_metadata_candidate_name};
+use crate::{
+    X_ATOM_CARDINAL, X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, XAtom, XAtomTable,
+    XByteOrder, XResourceId, is_metadata_candidate_name,
+};
 
 pub const X_PROPERTY_MAX_VALUE_BYTES: usize = 256 * 1024;
 pub const X_PROPERTY_MAX_TABLE_BYTES: usize = 4 * 1024 * 1024;
@@ -80,6 +83,58 @@ pub enum XPropertyError {
     ReadTooLarge { len: usize, max: usize },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XOutputReservationDecodeError {
+    InvalidRoot,
+    InvalidType,
+    InvalidFormat,
+    InvalidLength,
+    ValueOutOfRange,
+}
+
+pub fn decode_x_output_reservations(
+    record: &XPropertyRecord,
+    atoms: &XAtomTable,
+    byte_order: XByteOrder,
+    root: Rect,
+) -> Option<Result<Vec<OutputReservation>, XOutputReservationDecodeError>> {
+    let property_name = atoms.name(record.property)?;
+    match property_name {
+        X_ATOM_NAME_NET_WM_STRUT_PARTIAL => {
+            Some(decode_partial_output_reservations(record, byte_order, root))
+        }
+        X_ATOM_NAME_NET_WM_STRUT => {
+            Some(decode_legacy_output_reservations(record, byte_order, root))
+        }
+        _ => None,
+    }
+}
+
+pub fn x_output_reservations_for_window(
+    properties: &XPropertyTable,
+    atoms: &XAtomTable,
+    namespace: NamespaceId,
+    window: XResourceId,
+    byte_order: XByteOrder,
+    root: Rect,
+) -> Vec<OutputReservation> {
+    let partial = atoms
+        .atom(X_ATOM_NAME_NET_WM_STRUT_PARTIAL)
+        .and_then(|property| properties.get(namespace, window, property))
+        .and_then(|record| decode_x_output_reservations(record, atoms, byte_order, root))
+        .and_then(Result::ok);
+    if let Some(reservations) = partial {
+        return reservations;
+    }
+
+    atoms
+        .atom(X_ATOM_NAME_NET_WM_STRUT)
+        .and_then(|property| properties.get(namespace, window, property))
+        .and_then(|record| decode_x_output_reservations(record, atoms, byte_order, root))
+        .and_then(Result::ok)
+        .unwrap_or_default()
+}
+
 pub fn metadata_property_candidate(
     record: &XPropertyRecord,
     atoms: &XAtomTable,
@@ -100,6 +155,191 @@ pub fn metadata_property_candidate(
         format: record.format,
         byte_len: record.bytes.len(),
         generation: record.generation,
+    })
+}
+
+fn decode_partial_output_reservations(
+    record: &XPropertyRecord,
+    byte_order: XByteOrder,
+    root: Rect,
+) -> Result<Vec<OutputReservation>, XOutputReservationDecodeError> {
+    const PARTIAL_CARDINAL_COUNT: usize = 12;
+    let values = decode_cardinals(record, byte_order, PARTIAL_CARDINAL_COUNT)?;
+    let root_horizontal = root_horizontal_span(root)?;
+    let root_vertical = root_vertical_span(root)?;
+    let mut reservations = Vec::with_capacity(4);
+    push_output_reservation(
+        &mut reservations,
+        OutputEdge::Left,
+        values[0],
+        values[4],
+        values[5],
+        root.width,
+        root_vertical,
+    )?;
+    push_output_reservation(
+        &mut reservations,
+        OutputEdge::Right,
+        values[1],
+        values[6],
+        values[7],
+        root.width,
+        root_vertical,
+    )?;
+    push_output_reservation(
+        &mut reservations,
+        OutputEdge::Top,
+        values[2],
+        values[8],
+        values[9],
+        root.height,
+        root_horizontal,
+    )?;
+    push_output_reservation(
+        &mut reservations,
+        OutputEdge::Bottom,
+        values[3],
+        values[10],
+        values[11],
+        root.height,
+        root_horizontal,
+    )?;
+    Ok(reservations)
+}
+
+fn decode_legacy_output_reservations(
+    record: &XPropertyRecord,
+    byte_order: XByteOrder,
+    root: Rect,
+) -> Result<Vec<OutputReservation>, XOutputReservationDecodeError> {
+    const LEGACY_CARDINAL_COUNT: usize = 4;
+    let values = decode_cardinals(record, byte_order, LEGACY_CARDINAL_COUNT)?;
+    let horizontal = root_horizontal_span(root)?;
+    let vertical = root_vertical_span(root)?;
+    let mut reservations = Vec::with_capacity(4);
+    push_legacy_output_reservation(
+        &mut reservations,
+        OutputEdge::Left,
+        values[0],
+        root.width,
+        vertical,
+    )?;
+    push_legacy_output_reservation(
+        &mut reservations,
+        OutputEdge::Right,
+        values[1],
+        root.width,
+        vertical,
+    )?;
+    push_legacy_output_reservation(
+        &mut reservations,
+        OutputEdge::Top,
+        values[2],
+        root.height,
+        horizontal,
+    )?;
+    push_legacy_output_reservation(
+        &mut reservations,
+        OutputEdge::Bottom,
+        values[3],
+        root.height,
+        horizontal,
+    )?;
+    Ok(reservations)
+}
+
+fn decode_cardinals(
+    record: &XPropertyRecord,
+    byte_order: XByteOrder,
+    count: usize,
+) -> Result<Vec<u32>, XOutputReservationDecodeError> {
+    if record.property_type != X_ATOM_CARDINAL {
+        return Err(XOutputReservationDecodeError::InvalidType);
+    }
+    if record.format != 32 {
+        return Err(XOutputReservationDecodeError::InvalidFormat);
+    }
+    if record.bytes.len() != count.saturating_mul(4) {
+        return Err(XOutputReservationDecodeError::InvalidLength);
+    }
+    Ok(record
+        .bytes
+        .chunks_exact(4)
+        .map(|bytes| byte_order.u32(bytes))
+        .collect())
+}
+
+fn push_output_reservation(
+    reservations: &mut Vec<OutputReservation>,
+    edge: OutputEdge,
+    depth: u32,
+    start: u32,
+    inclusive_end: u32,
+    maximum_depth: i32,
+    root_span: AxisSpan,
+) -> Result<(), XOutputReservationDecodeError> {
+    if depth == 0 {
+        return Ok(());
+    }
+    let depth = i32::try_from(depth).map_err(|_| XOutputReservationDecodeError::ValueOutOfRange)?;
+    let start = i32::try_from(start).map_err(|_| XOutputReservationDecodeError::ValueOutOfRange)?;
+    let end = inclusive_end
+        .checked_add(1)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or(XOutputReservationDecodeError::ValueOutOfRange)?;
+    let span = AxisSpan { start, end };
+    if depth > maximum_depth
+        || span.is_empty()
+        || span.start < root_span.start
+        || span.end > root_span.end
+    {
+        return Err(XOutputReservationDecodeError::ValueOutOfRange);
+    }
+    reservations.push(OutputReservation { edge, depth, span });
+    Ok(())
+}
+
+fn push_legacy_output_reservation(
+    reservations: &mut Vec<OutputReservation>,
+    edge: OutputEdge,
+    depth: u32,
+    maximum_depth: i32,
+    span: AxisSpan,
+) -> Result<(), XOutputReservationDecodeError> {
+    if depth == 0 {
+        return Ok(());
+    }
+    let depth = i32::try_from(depth).map_err(|_| XOutputReservationDecodeError::ValueOutOfRange)?;
+    if depth > maximum_depth {
+        return Err(XOutputReservationDecodeError::ValueOutOfRange);
+    }
+    reservations.push(OutputReservation { edge, depth, span });
+    Ok(())
+}
+
+fn root_horizontal_span(root: Rect) -> Result<AxisSpan, XOutputReservationDecodeError> {
+    if root.is_empty() {
+        return Err(XOutputReservationDecodeError::InvalidRoot);
+    }
+    Ok(AxisSpan {
+        start: root.x,
+        end: root
+            .x
+            .checked_add(root.width)
+            .ok_or(XOutputReservationDecodeError::InvalidRoot)?,
+    })
+}
+
+fn root_vertical_span(root: Rect) -> Result<AxisSpan, XOutputReservationDecodeError> {
+    if root.is_empty() {
+        return Err(XOutputReservationDecodeError::InvalidRoot);
+    }
+    Ok(AxisSpan {
+        start: root.y,
+        end: root
+            .y
+            .checked_add(root.height)
+            .ok_or(XOutputReservationDecodeError::InvalidRoot)?,
     })
 }
 

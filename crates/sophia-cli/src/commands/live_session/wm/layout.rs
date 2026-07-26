@@ -11,6 +11,11 @@ struct PendingLiveWmLayout {
     effects: Option<LiveWmCommitEffects>,
 }
 
+struct LiveAuthorityLayoutObservation {
+    new_surfaces: Vec<SurfaceId>,
+    output_reservations_changed: bool,
+}
+
 #[derive(Default)]
 struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
@@ -19,6 +24,7 @@ struct PersistentLiveLayout {
     resize: ResizeRollbackCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+    output_reservations: sophia_engine::SurfaceOutputReservationState,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
     pending: Option<PendingLiveWmLayout>,
@@ -39,11 +45,17 @@ impl PersistentLiveLayout {
     fn observe_authority_batch(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
-    ) -> Vec<SurfaceId> {
+    ) -> LiveAuthorityLayoutObservation {
+        let mut output_reservations_changed = false;
         self.client_routes.observe(batch);
         for presentation in &batch.surface_presentations {
             self.presentation_roles
                 .insert(presentation.surface, presentation.role);
+            output_reservations_changed |= self.output_reservations.observe_presentation(
+                presentation.surface,
+                presentation.role,
+                presentation.mapped,
+            );
             if let Some(layer) = self.layers.get_mut(&presentation.surface)
                 && presentation.role
                     == sophia_protocol::SurfacePresentationRole::ClientPositioned
@@ -61,6 +73,10 @@ impl PersistentLiveLayout {
                 }
             }
         }
+        for snapshot in &batch.surface_output_reservations {
+            output_reservations_changed |=
+                self.output_reservations.observe_reservations(snapshot.clone());
+        }
         for registration in &batch.dma_buf_registrations {
             self.dma_buf_sizes
                 .insert(registration.descriptor.handle, registration.descriptor.size);
@@ -77,6 +93,9 @@ impl PersistentLiveLayout {
         }
         for handle in &batch.released_dma_bufs {
             self.dma_buf_sizes.remove(handle);
+        }
+        for surface in &batch.removed_surfaces {
+            output_reservations_changed |= self.output_reservations.remove_surface(*surface);
         }
         self.remove_surfaces(&batch.removed_surfaces);
         let mut new_surfaces = Vec::new();
@@ -170,7 +189,14 @@ impl PersistentLiveLayout {
             };
             self.merge_unrequested_observation_into_pending(observed_layer);
         }
-        new_surfaces
+        LiveAuthorityLayoutObservation {
+            new_surfaces,
+            output_reservations_changed,
+        }
+    }
+
+    fn active_output_reservations(&self) -> Vec<sophia_protocol::SurfaceOutputReservations> {
+        self.output_reservations.active_reservations()
     }
 
     fn merge_unrequested_observation_into_pending(&mut self, observed: LayerSnapshot) {
@@ -556,6 +582,7 @@ fn wm_update_coordinator_batch(
         transactions: Vec::new(),
         surface_presentations: Vec::new(),
         removed_surfaces: Vec::new(),
+        surface_output_reservations: Vec::new(),
         cpu_buffer_updates: Vec::new(),
         dma_buf_registrations: Vec::new(),
         fence_registrations: Vec::new(),
@@ -574,15 +601,6 @@ fn center_geometry_without_scaling(mut geometry: Rect, output: Size) -> Rect {
     geometry.x = output.width.saturating_sub(geometry.width).max(0) / 2;
     geometry.y = output.height.saturating_sub(geometry.height).max(0) / 2;
     geometry
-}
-
-fn output_bounds(output: sophia_engine::HeadlessOutput) -> Rect {
-    Rect {
-        x: 0,
-        y: 0,
-        width: output.size.width,
-        height: output.size.height,
-    }
 }
 
 fn live_layout_node(layer: &LayerSnapshot, workspace: WorkspaceId) -> LayoutNodeSnapshot {

@@ -341,9 +341,19 @@ fn change_property_request(
     push_u32(&mut out, byte_order, property_type);
     out.push(format);
     out.extend_from_slice(&[0, 0, 0]);
-    push_u32(&mut out, byte_order, bytes.len() as u32);
+    let item_width = usize::from(format / 8).max(1);
+    assert_eq!(bytes.len() % item_width, 0);
+    push_u32(&mut out, byte_order, (bytes.len() / item_width) as u32);
     out.extend_from_slice(bytes);
     pad_to_four(&mut out);
+    out
+}
+
+fn delete_property_request(byte_order: XByteOrder, window: u32, property: u32) -> Vec<u8> {
+    let mut out = vec![19, 0];
+    push_u16(&mut out, byte_order, 3);
+    push_u32(&mut out, byte_order, window);
+    push_u32(&mut out, byte_order, property);
     out
 }
 

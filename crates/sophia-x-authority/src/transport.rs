@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
 use sophia_protocol::{
-    Rect, SurfaceId, SurfacePresentationRole, SurfaceTransaction, TransactionId,
+    Rect, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
+    TransactionId,
 };
 
 use crate::{
@@ -120,6 +121,9 @@ pub struct XAuthorityObservedTransactionBatch {
     pub surface_presentations: Vec<XAuthoritySurfacePresentationObservation>,
     /// Frontend-confirmed surface lifetimes that ended in this batch.
     pub removed_surfaces: Vec<SurfaceId>,
+    /// Complete output-reservation snapshots for surfaces changed by this
+    /// batch. Empty reservations explicitly clear a previous snapshot.
+    pub surface_output_reservations: Vec<SurfaceOutputReservations>,
     pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     pub dma_buf_registrations: Vec<XAuthorityDmaBufRegistration>,
     pub fence_registrations: Vec<XAuthorityFenceRegistration>,
@@ -161,6 +165,7 @@ impl XAuthorityObservedTransactionBatch {
                 })
                 .collect(),
             removed_surfaces: response.removed_surfaces.clone(),
+            surface_output_reservations: Vec::new(),
             cpu_buffer_updates: Vec::new(),
             dma_buf_registrations: Vec::new(),
             fence_registrations: Vec::new(),
@@ -226,6 +231,7 @@ impl XAuthorityObservedTransactionBatch {
             && trace.present_submission.is_none()
             && trace.released_dma_bufs.is_empty()
             && trace.released_fences.is_empty()
+            && trace.surface_output_reservations.is_empty()
             && protocol_errors.is_empty()
             && expected_protocol_errors.is_empty()
             && metadata.is_empty()
@@ -262,6 +268,7 @@ impl XAuthorityObservedTransactionBatch {
             && trace.present_submission.is_none()
             && trace.released_dma_bufs.is_empty()
             && trace.released_fences.is_empty()
+            && trace.surface_output_reservations.is_empty()
             && protocol_errors.is_empty()
             && expected_protocol_errors.is_empty()
             && metadata.is_empty()
@@ -279,6 +286,7 @@ impl XAuthorityObservedTransactionBatch {
             transactions,
             surface_presentations,
             removed_surfaces,
+            surface_output_reservations: trace.surface_output_reservations.clone(),
             cpu_buffer_updates: trace.cpu_buffer_update.clone().into_iter().collect(),
             dma_buf_registrations,
             fence_registrations,

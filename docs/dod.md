@@ -230,6 +230,27 @@ Fields should describe:
 
 The snapshot is flat and immutable for the frame that consumes it.
 
+### SurfaceOutputReservations
+
+An output reservation is a bounded policy fact attached to an opaque Sophia
+surface. Protocol frontends reduce native shell hints into complete
+replacement snapshots; Engine owns activation and output clipping.
+
+Fields should describe:
+
+- surface ID;
+- edge (`left`, `right`, `top`, or `bottom`);
+- positive root-relative depth;
+- half-open span on the edge's orthogonal axis.
+
+One surface may publish at most one reservation per edge. Empty replacement
+snapshots clear prior state. Engine activates a snapshot only for a mapped
+`ClientPositioned` surface, removes it on unmap or surface retirement, takes
+the maximum depth for the same edge, and combines different edges. The reducer
+uses root coordinates so partial reservations project deterministically across
+multiple outputs. Protocol atoms, native object IDs, window types, class/title
+metadata, and application identity do not belong in this record.
+
 ### AuthoritySurface
 
 An authority surface is a protocol-facing record owned by a protocol authority.

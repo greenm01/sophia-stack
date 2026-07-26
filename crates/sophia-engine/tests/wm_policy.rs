@@ -92,6 +92,109 @@ fn workspace_activation_swaps_visible_workspaces_without_mutating_source() {
 }
 
 #[test]
+fn output_bounds_update_preserves_workspace_and_focus_policy() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(5, 1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    state
+        .register_surface(surface, WorkspaceId::from_raw(1))
+        .unwrap();
+    state = state
+        .plan_response(
+            &WmResponsePacket {
+                transaction: TransactionId::from_raw(10),
+                commands: vec![WmCommand::FocusSurface(surface)],
+                timeout_msec: 300,
+            },
+            &[],
+        )
+        .unwrap()
+        .candidate;
+    let work_area = Rect {
+        x: 0,
+        y: 28,
+        width: 1280,
+        height: 692,
+    };
+
+    assert!(state.update_output_bounds(output, work_area).unwrap());
+    assert!(!state.update_output_bounds(output, work_area).unwrap());
+    assert_eq!(state.output(output).unwrap().bounds, work_area);
+    assert_eq!(
+        state.output(output).unwrap().workspace,
+        WorkspaceId::from_raw(1)
+    );
+    assert_eq!(state.output(output).unwrap().focus, Some(surface));
+}
+
+#[test]
+fn output_bounds_update_rejects_unknown_or_empty_outputs() {
+    let output = OutputId::from_raw(1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+
+    assert_eq!(
+        state.update_output_bounds(OutputId::from_raw(2), bounds(0)),
+        Err(WmPolicyError::UnknownOutput)
+    );
+    assert_eq!(
+        state.update_output_bounds(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 720,
+            }
+        ),
+        Err(WmPolicyError::InvalidOutputBounds)
+    );
+}
+
+#[test]
+fn copying_output_bounds_preserves_candidate_workspace_and_focus() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(6, 1);
+    let mut current = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    current
+        .update_output_bounds(
+            output,
+            Rect {
+                x: 0,
+                y: 28,
+                width: 1280,
+                height: 692,
+            },
+        )
+        .unwrap();
+    let mut candidate = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    candidate
+        .register_surface(surface, WorkspaceId::from_raw(1))
+        .unwrap();
+    candidate = candidate
+        .plan_response(
+            &WmResponsePacket {
+                transaction: TransactionId::from_raw(13),
+                commands: vec![WmCommand::FocusSurface(surface)],
+                timeout_msec: 300,
+            },
+            &[],
+        )
+        .unwrap()
+        .candidate;
+
+    assert!(candidate.copy_output_bounds_from(&current).unwrap());
+    assert_eq!(
+        candidate.output(output).unwrap().bounds,
+        current.output(output).unwrap().bounds
+    );
+    assert_eq!(candidate.output(output).unwrap().focus, Some(surface));
+    assert_eq!(
+        candidate.surface_workspace(surface),
+        Some(WorkspaceId::from_raw(1))
+    );
+}
+
+#[test]
 fn workspace_activation_restores_focus_owned_by_each_workspace() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(5, 1);

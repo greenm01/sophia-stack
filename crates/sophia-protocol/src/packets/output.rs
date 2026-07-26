@@ -1,7 +1,69 @@
-use crate::{OutputId, Rect, Size};
+use crate::{OutputId, Rect, Size, SurfaceId};
 use std::collections::BTreeSet;
 
 pub const MAX_OUTPUT_TOPOLOGY_ENTRIES: usize = 16;
+pub const MAX_SURFACE_OUTPUT_RESERVATIONS: usize = 4;
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum OutputEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AxisSpan {
+    pub start: i32,
+    pub end: i32,
+}
+
+impl AxisSpan {
+    pub const fn is_empty(self) -> bool {
+        self.start >= self.end
+    }
+
+    pub const fn intersects(self, other: Self) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OutputReservation {
+    pub edge: OutputEdge,
+    pub depth: i32,
+    pub span: AxisSpan,
+}
+
+impl OutputReservation {
+    pub const fn is_valid(self) -> bool {
+        self.depth > 0 && !self.span.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SurfaceOutputReservations {
+    pub surface: SurfaceId,
+    pub reservations: Vec<OutputReservation>,
+}
+
+impl SurfaceOutputReservations {
+    pub fn is_valid(&self) -> bool {
+        self.surface.is_valid()
+            && self.reservations.len() <= MAX_SURFACE_OUTPUT_RESERVATIONS
+            && self
+                .reservations
+                .iter()
+                .all(|reservation| reservation.is_valid())
+            && self
+                .reservations
+                .iter()
+                .map(|reservation| reservation.edge)
+                .collect::<BTreeSet<_>>()
+                .len()
+                == self.reservations.len()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputTopologyEntry {

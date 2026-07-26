@@ -369,6 +369,21 @@ Engine mints transaction IDs, validates every proposal, and keeps the last
 committed layout when the WM is absent, malformed, timed out, or restarting. A
 valid but rejected layout is a policy failure, not a transport failure.
 
+Client-owned shell surfaces may reserve bounded root-relative edge spans. A
+protocol frontend parses its native mechanism and emits only
+`SurfaceOutputReservations` keyed by opaque `SurfaceId`; it does not send
+atoms, object IDs, window types, metadata, or application identity. Engine
+activates reservations only while the surface is mapped with the
+`ClientPositioned` presentation role, clips partial spans against each output,
+and reduces same-edge reservations by maximum depth. Opposing edges combine.
+An invalid aggregate preserves the last valid work area.
+
+The full output rectangle remains the composition and hit-test space for the
+client-positioned surface. The reduced work rectangle is policy input for
+managed surfaces. Native Sophia WMs and the optional X11 WM bridge receive the
+same `bounds` field, so neither Engine nor the bridge contains an xmobar,
+xmonad, dock, or toolkit branch.
+
 Manage state such as size, focus, fullscreen, and workspace assignment is
 separate from compositor-only render state such as position, z-order, crop,
 opacity, and transforms. Engine owns frame-clock interpolation and cancellation;

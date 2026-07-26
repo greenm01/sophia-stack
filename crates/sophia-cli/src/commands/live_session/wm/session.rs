@@ -82,6 +82,7 @@ struct LiveWmSession {
     request_peak_depth: usize,
     request_rejections: usize,
     stale_responses: usize,
+    work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
     workspace_state: WmWorkspaceState,
     session_actions: Vec<WmSessionAction>,
@@ -198,6 +199,7 @@ impl LiveWmSession {
             request_peak_depth: 0,
             request_rejections: 0,
             stale_responses: 0,
+            work_area_relayout_required: false,
             committed: 0,
             last_committed_at: None,
             max_request: Duration::ZERO,
@@ -303,6 +305,11 @@ impl LiveWmSession {
             .output(output.id)
             .ok_or("WM output is not configured")?
             .workspace;
+        let bounds = self
+            .workspace_state
+            .output(output.id)
+            .ok_or("WM output is not configured")?
+            .bounds;
         let mut planning_state = self.workspace_state.clone();
         planning_state.register_surface(surface, workspace)?;
         let request = WmRequestPacket {
@@ -311,7 +318,7 @@ impl LiveWmSession {
                 node: live_layout_node(node, workspace),
                 output: output.id,
                 workspace,
-                bounds: output_bounds(output),
+                bounds,
             }),
         };
         Ok(self.enqueue_request(LiveWmQueuedRequest {
@@ -331,20 +338,20 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if self.has_request_source(LiveWmProposalSource::Relayout) {
+        if self.has_current_relayout_request(layout) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        let workspace = self
+        let output_state = self
             .workspace_state
             .output(output.id)
-            .ok_or("WM output is not configured")?
-            .workspace;
+            .ok_or("WM output is not configured")?;
+        let workspace = output_state.workspace;
         let request = WmRequestPacket {
             transaction: self.mint_transaction()?,
             kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
                 output: output.id,
                 workspace,
-                bounds: output_bounds(output),
+                bounds: output_state.bounds,
                 nodes: layout
                     .layers
                     .values()
@@ -456,6 +463,14 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.work_area_relayout_required {
+            match self.enqueue_relayout(layout, output)? {
+                LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {}
+                LiveWmRequestAdmission::RejectedCapacity => {
+                    return Err("WM work-area relayout exceeded the owner request capacity".into());
+                }
+            }
+        }
         self.pump_transport()?;
         let completion = match self
             .transport
@@ -547,9 +562,13 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
+        let bounds = planning_state
+            .output(output.id)
+            .ok_or("WM output is not configured")?
+            .bounds;
         let plan = planning_state.plan_response(&response, &self.session_actions)?;
         let transaction = plan.layout;
-        validate_live_wm_transaction(&transaction, layout, output_bounds(output))?;
+        validate_live_wm_transaction(&transaction, layout, bounds)?;
         let mut proposed = layout.layers.values().cloned().collect::<Vec<_>>();
         let engine = HeadlessEngine::new(output);
         let commit = engine.commit_layout_transaction(&transaction, &mut proposed);
@@ -709,9 +728,11 @@ impl LiveWmSession {
         let mut clear_focus = None;
         let mut restore_focus = None;
         if committed && let Some(effects) = result.effects.take() {
+            let mut candidate = effects.workspace_state;
+            let retained_newer_bounds =
+                candidate.copy_output_bounds_from(&self.workspace_state)?;
             let transaction = effects.transaction;
-            let output_state = effects
-                .workspace_state
+            let output_state = candidate
                 .output(output)
                 .ok_or("committed WM state lost its output projection")?;
             let policy_focus = output_state.focus;
@@ -719,10 +740,15 @@ impl LiveWmSession {
                 transaction,
                 output,
                 workspace: output_state.workspace,
-                visible_surfaces: effects.workspace_state.visible_surfaces(output)?.len(),
+                visible_surfaces: candidate.visible_surfaces(output)?.len(),
                 focus_present: policy_focus.is_some(),
             });
-            self.workspace_state = effects.workspace_state;
+            self.workspace_state = candidate;
+            if retained_newer_bounds {
+                self.work_area_relayout_required = true;
+            } else if matches!(result.source, Some(LiveWmProposalSource::Relayout)) {
+                self.work_area_relayout_required = false;
+            }
             session_action = effects
                 .session_action
                 .map(|action| (transaction, action.0, action.1));

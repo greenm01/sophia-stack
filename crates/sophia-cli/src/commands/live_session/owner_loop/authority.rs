@@ -87,6 +87,7 @@
                 let has_engine_work = !batch.transactions.is_empty()
                     || !batch.surface_presentations.is_empty()
                     || !batch.removed_surfaces.is_empty()
+                    || !batch.surface_output_reservations.is_empty()
                     || !batch.cpu_buffer_updates.is_empty()
                     || !batch.dma_buf_registrations.is_empty()
                     || !batch.fence_registrations.is_empty()
@@ -124,8 +125,16 @@
                         )?;
                     }
                 }
-                let new_surfaces = layout.observe_authority_batch(&batch);
-                for surface in new_surfaces {
+                let layout_observation = layout.observe_authority_batch(&batch);
+                if layout_observation.output_reservations_changed
+                    && let Some(wm_session) = wm_session.as_mut()
+                {
+                    require_wm_request_admission(
+                        wm_session.update_output_work_areas(&layout, &outputs, output)?,
+                        "work_area",
+                    )?;
+                }
+                for surface in layout_observation.new_surfaces {
                     if session_launches.observe_surface(surface) {
                         println!(
                             "sophia_session_app schema=2 status=surface_observed source=action transaction={} surface={}",

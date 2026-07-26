@@ -156,6 +156,46 @@ impl WmWorkspaceState {
         self.outputs.get(&output).copied()
     }
 
+    pub fn update_output_bounds(
+        &mut self,
+        output: OutputId,
+        bounds: Rect,
+    ) -> Result<bool, WmPolicyError> {
+        if !output.is_valid() {
+            return Err(WmPolicyError::InvalidOutput);
+        }
+        if bounds.is_empty() {
+            return Err(WmPolicyError::InvalidOutputBounds);
+        }
+        let state = self
+            .outputs
+            .get_mut(&output)
+            .ok_or(WmPolicyError::UnknownOutput)?;
+        if state.bounds == bounds {
+            return Ok(false);
+        }
+        state.bounds = bounds;
+        Ok(true)
+    }
+
+    pub fn copy_output_bounds_from(&mut self, source: &Self) -> Result<bool, WmPolicyError> {
+        if self.outputs.len() != source.outputs.len() {
+            return Err(WmPolicyError::UnknownOutput);
+        }
+        let mut changed = false;
+        for (output, source_state) in &source.outputs {
+            let state = self
+                .outputs
+                .get_mut(output)
+                .ok_or(WmPolicyError::UnknownOutput)?;
+            if state.bounds != source_state.bounds {
+                state.bounds = source_state.bounds;
+                changed = true;
+            }
+        }
+        Ok(changed)
+    }
+
     pub fn output_for_workspace(&self, workspace: WorkspaceId) -> Option<OutputId> {
         self.outputs
             .iter()

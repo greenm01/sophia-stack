@@ -39,7 +39,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let mut setup_lease = None;
     let mut admission_lease = None;
     let mut admission_failure = None;
-    let Some((setup, _setup_success)) = serve_x11_setup_socket_client_with_setup_authorization(
+    let Some((setup, setup_success)) = serve_x11_setup_socket_client_with_setup_authorization(
         stream,
         authorization,
         |setup_request| {
@@ -236,6 +236,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 released_dma_bufs,
                 released_fences,
                 mut server_reply_fds,
+                surface_output_reservations,
             ) = match decode_x11_core_request(
                 XWireClientContext {
                     byte_order: setup.byte_order,
@@ -381,6 +382,31 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         crate::XWireRequest::UnmapWindow { window } => Some(*window),
                         _ => None,
                     };
+                    let output_reservation_property = match &request {
+                        crate::XWireRequest::ChangeProperty(change) => {
+                            Some((change.window, change.property))
+                        }
+                        crate::XWireRequest::DeleteProperty { window, property } => {
+                            Some((*window, *property))
+                        }
+                        _ => None,
+                    };
+                    let output_reservation_surface =
+                        if let Some((window, property)) = output_reservation_property {
+                            surface_windows
+                                .lock()
+                                .map_err(|_| {
+                                    X11SetupSocketError::new(
+                                        "X11 surface/window map lock poisoned",
+                                    )
+                                })?
+                                .iter()
+                                .find_map(|(surface, candidate)| {
+                                    (*candidate == window).then_some((*surface, window, property))
+                                })
+                        } else {
+                            None
+                        };
                     if let crate::XWireRequest::CreateWindow {
                         packet:
                             crate::XAuthorityRequestPacket {
@@ -628,6 +654,36 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             }
                         }
                     }
+                    let surface_output_reservations = dispatch_succeeded
+                        .then_some(output_reservation_surface)
+                        .flatten()
+                        .filter(|(_, _, property)| {
+                            matches!(
+                                atoms.name(*property),
+                                Some(
+                                    X_ATOM_NAME_NET_WM_STRUT
+                                        | X_ATOM_NAME_NET_WM_STRUT_PARTIAL
+                                )
+                            )
+                        })
+                        .map(|(surface, window, _)| SurfaceOutputReservations {
+                            surface,
+                            reservations: x_output_reservations_for_window(
+                                &properties,
+                                &atoms,
+                                namespace,
+                                window,
+                                setup.byte_order,
+                                Rect {
+                                    x: 0,
+                                    y: 0,
+                                    width: setup_success.root_size.width,
+                                    height: setup_success.root_size.height,
+                                },
+                            ),
+                        })
+                        .into_iter()
+                        .collect();
                     (
                         output,
                         cpu_buffer_update,
@@ -637,6 +693,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         released_dma_buf.into_iter().collect::<Vec<_>>(),
                         released_fence.into_iter().collect::<Vec<_>>(),
                         server_reply_fds,
+                        surface_output_reservations,
                     )
                 }
                 Err(error) => {
@@ -647,6 +704,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         None,
                         None,
                         None,
+                        Vec::new(),
                         Vec::new(),
                         Vec::new(),
                         Vec::new(),
@@ -768,6 +826,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 request_stage,
                 failure: parse_failed.then_some(X11ObservedDispatchFailure::ParseRejected),
                 result: output.clone(),
+                surface_output_reservations,
                 cpu_buffer_update: cpu_buffer_update.clone(),
                 received_fd_count: received_fds.len(),
                 received_fds: observed_received_fds,
@@ -883,6 +942,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             request_stage: X11ObservedRequestStage::DisconnectCleanup,
             failure: None,
             result: cleanup,
+            surface_output_reservations: Vec::new(),
             cpu_buffer_update: None,
             received_fd_count: 0,
             received_fds: Vec::new(),

@@ -1,6 +1,6 @@
 use std::os::fd::OwnedFd;
 
-use sophia_protocol::{SurfaceId, TransactionId};
+use sophia_protocol::{SurfaceId, SurfaceOutputReservations, TransactionId};
 
 use crate::{
     XAuthorityCpuBufferUpdate, XDispatchResult, XResourceId, XServerFrontendClientId,
@@ -57,6 +57,9 @@ pub struct X11DispatchObservation {
     pub request_stage: X11ObservedRequestStage,
     pub failure: Option<X11ObservedDispatchFailure>,
     pub result: XDispatchResult,
+    /// Complete, protocol-neutral reservation snapshots changed by this
+    /// dispatch. Protocol property IDs and bytes remain authority-private.
+    pub surface_output_reservations: Vec<SurfaceOutputReservations>,
     pub cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
     pub received_fd_count: usize,
     pub received_fds: Vec<OwnedFd>,

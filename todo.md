@@ -41,7 +41,11 @@ showed that neither a reused GBM surface nor a reused EGL/GL context bound to
 fresh surfaces is safe on the current AMDGPU stack: both fail on the third
 mixed render. Mixed composition therefore keeps one complete target per export
 as the correctness baseline. Retirement-driven target pooling remains a
-post-soak optimization unless measured latency prevents promotion.
+post-soak optimization unless measured latency prevents promotion. The latest
+xmobar run established bar-plus-Kitty presentation but also confirmed that
+managed windows still occupy the full output beneath the overlay. The
+immediate status-bar blocker is reducing the client's strut into a
+protocol-neutral work area before asking the blind WM to relayout.
 
 ## Daily-Driver Promotion Contract
 
@@ -79,6 +83,10 @@ Promotion now follows the gates below in order.
 - [x] Confirm the restored lifetime in one physical cycle: 253 mixed exports,
   matching target/pipeline/surface creation and retirement, zero recovery,
   zero AMDGPU rejection, and a normal exit.
+- [x] Confirm that layer-sized CPU overlays retain the fail-safe lifetime:
+  the first bar-plus-three-Kitty run completed 141 mixed exports with matching
+  target, pipeline, and frame-surface creation, zero native failures, and clean
+  teardown.
 - [ ] Pass three physical four-Kitty cycles with complete-target creation and
   retirement equal to the mixed-export count. One post-worker cycle passes.
 - [x] Prevent child-exit and resize-epoch work from starving input and native
@@ -199,15 +207,38 @@ Promotion now follows the gates below in order.
   second generic boundary: the native GL path rejected CPU layers smaller than
   the output, so all Kitty Presents failed export. Sophia now interleaves
   CPU/GPU surfaces by Engine order and supports persistent, layer-sized CPU
-  textures; the corrected physical rerun remains pending.
-- [ ] Reduce `_NET_WM_STRUT_PARTIAL` into protocol-neutral output reservations
-  so managed layout uses the remaining work area without exposing X atoms or
-  dock metadata to xmonad.
+  textures. The next run rendered the bar with Kitty, completed 141 mixed
+  exports with zero native failures, and exposed the remaining overlap:
+  managed Kitty geometry still begins at `y=0` beneath the bar.
+- [x] Decode bounded `_NET_WM_STRUT_PARTIAL` and legacy `_NET_WM_STRUT` values
+  entirely inside the X
+  frontend and reduce them to protocol-neutral edge/span reservations tied to
+  the presenting surface. Reject malformed type, format, length, range, and
+  overflow without leaking atoms, XIDs, dock metadata, or client identity.
+- [x] Derive an output work area from active mapped, client-positioned
+  reservations and send
+  only that rectangle to the blind WM. Keep client-positioned bar geometry in
+  the full output scene, while managed Kitty geometry begins exactly at the
+  reserved top edge and ends exactly at the output boundary.
+- [x] Make reservation replacement, deletion, unmap, surface destruction,
+  configured-output projection, workspace projection, and frontend teardown
+  trigger one bounded work-area update while preserving workspace and focus
+  state. Invalid aggregate reductions retain the last valid work area.
+- [x] Cover no reservation, valid top reservation, partial-span reservation,
+  malformed values, conflicting edges, two-output clipping, replacement, and
+  removal with passive reducer, lifecycle, policy-state, and X11 socket tests.
+- [ ] Physically prove those lifecycle paths have no stale gap, overlap,
+  resize timeout, or focus change; dynamic output-topology change remains part
+  of the later multi-output hotplug gate.
 - [x] Retain a bounded real-xmobar request trace proving override-redirect
   lifecycle, MIT-SHM pixmap upload/readback, copy-to-window pixels, and no X
   protocol errors.
 - [ ] Retain a guarded physical xmobar regression from the same commit as the
-  status-bar work-area implementation.
+  status-bar work-area implementation. Require an updating bar, Kitty at
+  `y=bar_bottom` with `height=output_height-bar_bottom`, no visible seam or
+  occluded Kitty pixels, working bar pointer interaction, unchanged Kitty
+  keyboard focus, one workspace round-trip, one VT round-trip, and clean
+  teardown.
 
 Milestone 9 exits only when the automated resize regression and both physical
 normal/emergency captures pass from the same committed release.

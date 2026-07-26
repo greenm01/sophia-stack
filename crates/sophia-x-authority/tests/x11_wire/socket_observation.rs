@@ -375,6 +375,7 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
         transactions: Vec::new(),
         surface_presentations: Vec::new(),
         removed_surfaces: vec![surface],
+        surface_output_reservations: Vec::new(),
         cpu_buffer_updates: Vec::new(),
         dma_buf_registrations: Vec::new(),
         fence_registrations: Vec::new(),

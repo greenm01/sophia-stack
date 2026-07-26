@@ -64,7 +64,7 @@ It must not own:
 - portal policy or cross-namespace transfer decisions;
 - compositor chrome.
 
-Before request traffic, the WM sends a version-2 hello containing supported
+Before request traffic, the WM sends a version-3 hello containing supported
 capabilities and a bounded action-binding table. Engine validates the complete
 table, rejects reserved or duplicate chords, then returns the configured
 workspace/output and named-session-action descriptor. The bridge translates
@@ -223,6 +223,11 @@ For `RelayoutWorkspace`:
    recompute layout.
 4. Wait for resulting legacy WM requests and translate them back to Sophia
    commands.
+
+The request bounds are already Engine-reduced managed work areas. The bridge
+does not parse client struts, identify bars or docks, or subtract geometry
+itself. A root-bounds change is ordinary policy input and uses the same path for
+native Sophia WMs and every supported legacy-WM profile.
 
 For `SurfaceRemoved`:
 

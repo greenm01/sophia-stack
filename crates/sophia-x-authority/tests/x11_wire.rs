@@ -1,11 +1,11 @@
 use sophia_protocol::{
-    BufferSource, ClientAdmissionContext, ClientAdmissionId, ClientAuthProvenance,
+    AxisSpan, BufferSource, ClientAdmissionContext, ClientAdmissionId, ClientAuthProvenance,
     ClientAuthenticationMethod, DeviceId, InputEventKind, NamespaceCapabilities, NamespaceContext,
-    NamespaceId, NamespacePortalCapability, NamespaceProfile, OutputId, OutputTopologyEntry,
-    OutputTopologySnapshot, Point, PortalBrokerRequestPacket, PortalDecision, PortalGrant,
-    PortalGrantState, PortalRequest, PortalTransfer, PortalTransferKind, Rect, Region,
-    RoutedInputRequest, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePresentationRole,
-    TransactionId,
+    NamespaceId, NamespacePortalCapability, NamespaceProfile, OutputEdge, OutputId,
+    OutputReservation, OutputTopologyEntry, OutputTopologySnapshot, Point,
+    PortalBrokerRequestPacket, PortalDecision, PortalGrant, PortalGrantState, PortalRequest,
+    PortalTransfer, PortalTransferKind, Rect, Region, RoutedInputRequest, SeatId, Size,
+    SurfaceConstraints, SurfaceId, SurfacePresentationRole, TransactionId,
 };
 use sophia_x_authority::*;
 include!("x11_wire/transport_events.rs");
@@ -20,6 +20,7 @@ include!("x11_wire/resources_frontend.rs");
 include!("x11_wire/admission_frontend.rs");
 include!("x11_wire/clipboard_frontend.rs");
 include!("x11_wire/socket_observation.rs");
+include!("x11_wire/output_reservation_socket.rs");
 include!("x11_wire/routed_service.rs");
 include!("x11_wire/support_requests.rs");
 include!("x11_wire/support_extensions.rs");
