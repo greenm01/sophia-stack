@@ -52,6 +52,10 @@ tools/check_sophia_xmonad_input_proof_verifier.sh
 bash -n tools/verify_sophia_xmonad_pointer_focus.sh
 bash -n tools/check_sophia_xmonad_pointer_focus_verifier.sh
 tools/check_sophia_xmonad_pointer_focus_verifier.sh
+bash -n tools/start_sophia_xmonad_pointer_focus_tty3.sh
+bash -n tools/verify_sophia_xmonad_pointer_focus_pair.sh
+bash -n tools/check_sophia_xmonad_pointer_focus_pair_verifier.sh
+tools/check_sophia_xmonad_pointer_focus_pair_verifier.sh
 bash -n tools/verify_sophia_xmonad_focused_border.sh
 bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh

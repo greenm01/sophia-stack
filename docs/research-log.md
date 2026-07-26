@@ -27,6 +27,15 @@ missing target border/damage/repaint evidence, or a missing completion marker.
 Physical libinput and visual confirmation remain required because QEMU cannot
 prove the actual mouse, display, or TTY path.
 
+The physical operator gate now has the same two-sequence shape through
+`tools/start_sophia_xmonad_pointer_focus_tty3.sh`. The wrapper guides a plain
+click and key, moves focus away, guides a click-drag and different key, then
+automatically checks both ordered handoffs after normal logout. Its verifier
+requires two independent requests and at least press/release for the click
+plus press/motion/release for the drag. It does not infer visual success: the
+operator still confirms pointer selection, border movement, and text delivery
+on the physical outputs.
+
 ## 2026-07-26: Native Lifetime Regressions Form One Named Gate
 
 The remaining Milestone 9.1 regression item did not require a new lifecycle

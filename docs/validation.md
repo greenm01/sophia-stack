@@ -398,20 +398,33 @@ Validate verifier changes with:
 tools/check_sophia_xmonad_four_kitty_verifier.sh
 ```
 
-To isolate click-to-focus ordering in any normal xmonad capture, open at least
-two Kitty windows, press and drag with the unmodified primary button in an
-unfocused tile, release, and then type in that tile. After normal logout, run:
+Use the focused physical click and click-drag gate from TTY3:
 
 ```sh
-tools/verify_sophia_xmonad_pointer_focus.sh
+tools/start_sophia_xmonad_pointer_focus_tty3.sh
 ```
 
-The verifier rejects a dropped handoff and requires the blind WM focus request,
-Engine focus commit, X frontend focus acknowledgment, and delivery of at least
-the retained press/release pair in that order. Validate verifier changes with:
+The wrapper prints the complete interaction sequence, runs the normal xmonad
+session, returns to the originating TTY after normal logout, and automatically
+verifies the retained log. It first requires a plain primary click and
+following key on an unfocused tile, then requires focus to move away before a
+primary click-drag and separate following key on that tile. Both handoffs must
+contain the blind-WM request, Engine commit, X-frontend acknowledgment, ordered
+release, and key delivery to the selected opaque surface. The drag handoff must
+retain at least one motion record in addition to press and release.
+
+For an already captured log, run:
+
+```sh
+tools/verify_sophia_xmonad_pointer_focus_pair.sh
+```
+
+The older `tools/verify_sophia_xmonad_pointer_focus.sh` remains a useful
+single-handoff diagnostic. Validate both verifier shapes with:
 
 ```sh
 tools/check_sophia_xmonad_pointer_focus_verifier.sh
+tools/check_sophia_xmonad_pointer_focus_pair_verifier.sh
 ```
 
 For the focused unmodified-xmobar work-area gate, use:
