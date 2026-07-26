@@ -194,6 +194,13 @@ Promotion now follows the gates below in order.
   With the active 14-pixel top reservation, the physical capture produced one
   `1280x1426` pane and exact `1280x475`, `1280x475`, and `1280x476` stack panes
   spanning `y=14..1440`.
+- [ ] Prove every ManageSurface resize commit and its first matching Present
+  consume the same Engine layout snapshot. No new surface may present at the
+  `(80,60)` admission staging offset after `layout_committed`, and the next
+  focus-only transaction must report `moved_surfaces=0`. Deterministic Present
+  admission, pending pixel/geometry authority, and sequential three-window
+  real-xmonad regressions now cover the boundary; physical confirmation
+  remains required.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
   One work-area-aware frame-service capture passes.
 - [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
@@ -207,6 +214,11 @@ Promotion now follows the gates below in order.
   TTY2/TTY3 round-trip, with keyboard and pointer restored.
 - [ ] Validate full pc105 US shifted punctuation and libseat-backed
   Ctrl-Alt-F1 through Ctrl-Alt-F12 suspend/resume while `K_OFF` is active.
+- [ ] After physical geometry stability, add a minimal Engine-owned focused
+  surface border through the renderer-neutral compositor display list. Derive
+  its bounds and damage from the same committed surface/focus snapshot, keep
+  the blind WM and X frontend unaware of chrome, and verify it across focus,
+  resize, workspace, VT, and mixed CPU/DMA-BUF presentation.
 - [ ] Close applications and request xmonad logout; require zero pending input,
   WM work, Presents, fences, scanouts, or cleanup debt, followed by correct TTY
   and greetd restoration.

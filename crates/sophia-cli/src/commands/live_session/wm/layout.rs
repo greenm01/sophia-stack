@@ -200,6 +200,11 @@ impl PersistentLiveLayout {
     }
 
     fn merge_unrequested_observation_into_pending(&mut self, observed: LayerSnapshot) {
+        let geometry_authority = if self.is_client_positioned(observed.surface) {
+            PendingLayoutGeometryAuthority::Observation
+        } else {
+            PendingLayoutGeometryAuthority::Layout
+        };
         let Some(pending) = self.pending.as_mut() else {
             return;
         };
@@ -207,6 +212,7 @@ impl PersistentLiveLayout {
             &mut pending.layers,
             &pending.requested_sizes,
             observed,
+            geometry_authority,
         );
     }
 

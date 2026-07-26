@@ -2,7 +2,7 @@ use crate::{
     LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityBatch,
 };
 use sophia_engine::PreparedSurfaceCommit;
-use sophia_protocol::{Rect, SurfaceId, SurfaceTransaction, TransactionId};
+use sophia_protocol::{LayerSnapshot, Rect, SurfaceId, SurfaceTransaction, TransactionId};
 use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
 use std::error::Error;
@@ -68,6 +68,7 @@ impl LiveProductionPresentScheduler {
     pub fn enqueue_batch(
         &mut self,
         batch: &LiveProductionAuthorityBatch,
+        presentation_layout: &[LayerSnapshot],
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         deferred_by_layout: bool,
         reject_for_layout: bool,
@@ -84,6 +85,16 @@ impl LiveProductionPresentScheduler {
                 .iter()
                 .find(|transaction| transaction.surface == surface)
                 .ok_or("Present submission has no matching Engine transaction")?;
+            let geometry = presentation_layout
+                .iter()
+                .find(|layer| layer.surface == surface)
+                .map_or(transaction.target_geometry, |layer| layer.geometry);
+            let mut transactions = batch.transactions.clone();
+            for transaction in &mut transactions {
+                if transaction.surface == surface {
+                    transaction.target_geometry = geometry;
+                }
+            }
             let submission = LivePresentationSubmission {
                 transaction: submission.transaction,
                 buffer: submission.buffer,
@@ -117,20 +128,14 @@ impl LiveProductionPresentScheduler {
             self.queued.push_back(LiveProductionQueuedPresent {
                 submission,
                 surface,
-                transactions: batch.transactions.clone(),
+                transactions,
                 cpu_layers: cpu_layers.clone(),
                 target: Rect {
-                    x: transaction
-                        .target_geometry
-                        .x
-                        .saturating_add(i32::from(x_offset)),
-                    y: transaction
-                        .target_geometry
-                        .y
-                        .saturating_add(i32::from(y_offset)),
-                    ..transaction.target_geometry
+                    x: geometry.x.saturating_add(i32::from(x_offset)),
+                    y: geometry.y.saturating_add(i32::from(y_offset)),
+                    ..geometry
                 },
-                surface_clip: transaction.target_geometry,
+                surface_clip: geometry,
                 deferred_by_layout,
                 x_offset,
                 y_offset,

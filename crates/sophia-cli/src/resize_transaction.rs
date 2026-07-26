@@ -136,8 +136,14 @@ pub fn present_pixels_conflict_with_requested_sizes(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PendingLayoutObservationMerge {
     Inserted,
-    Replaced,
+    Merged,
     ResizeOwned,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PendingLayoutGeometryAuthority {
+    Layout,
+    Observation,
 }
 
 /// Keeps authority observations that are outside a pending resize proposal in
@@ -147,6 +153,7 @@ pub fn merge_unrequested_layout_observation(
     pending_layers: &mut Vec<LayerSnapshot>,
     requested_sizes: &BTreeMap<SurfaceId, Size>,
     observed: LayerSnapshot,
+    geometry_authority: PendingLayoutGeometryAuthority,
 ) -> PendingLayoutObservationMerge {
     if requested_sizes.contains_key(&observed.surface) {
         return PendingLayoutObservationMerge::ResizeOwned;
@@ -156,8 +163,19 @@ pub fn merge_unrequested_layout_observation(
         .find(|layer| layer.surface == observed.surface)
     {
         Some(layer) => {
-            *layer = observed;
-            PendingLayoutObservationMerge::Replaced
+            if geometry_authority == PendingLayoutGeometryAuthority::Observation {
+                layer.geometry = observed.geometry;
+            }
+            layer.authority_local_id = observed.authority_local_id;
+            layer.namespace = observed.namespace;
+            layer.source = observed.source;
+            layer.damage = observed.damage;
+            layer.opacity = observed.opacity;
+            layer.crop = observed.crop;
+            layer.transform = observed.transform;
+            layer.generation = observed.generation;
+            layer.resize_sync = observed.resize_sync;
+            PendingLayoutObservationMerge::Merged
         }
         None => {
             pending_layers.push(observed);

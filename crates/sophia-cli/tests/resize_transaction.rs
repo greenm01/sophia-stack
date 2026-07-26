@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use sophia_cli::resize_transaction::{
-    PendingLayoutObservationMerge, ResizeRollbackCoordinator, merge_unrequested_layout_observation,
-    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
+    PendingLayoutGeometryAuthority, PendingLayoutObservationMerge, ResizeRollbackCoordinator,
+    merge_unrequested_layout_observation, present_pixels_conflict_with_requested_sizes,
+    project_authority_batch_onto_layout,
 };
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
@@ -241,7 +242,12 @@ fn pending_layout_retains_surface_admitted_during_resize() {
     let requested = BTreeMap::from([(existing, size(1280, 720))]);
 
     assert_eq!(
-        merge_unrequested_layout_observation(&mut pending, &requested, layer(admitted, 1)),
+        merge_unrequested_layout_observation(
+            &mut pending,
+            &requested,
+            layer(admitted, 1),
+            PendingLayoutGeometryAuthority::Layout,
+        ),
         PendingLayoutObservationMerge::Inserted
     );
     assert!(
@@ -256,22 +262,37 @@ fn pending_layout_updates_unowned_pixels_without_overwriting_resize_owned_state(
     let surface = SurfaceId::new(9, 1);
     let resized = SurfaceId::new(10, 1);
     let mut pending = vec![layer(surface, 1), layer(resized, 1)];
+    pending[0].stack_rank = 7;
+    pending[0].geometry.x = 1280;
     let requested = BTreeMap::from([(resized, size(1280, 720))]);
+    let mut observed = layer(surface, 2);
+    observed.geometry.x = 80;
+    observed.source = BufferSource::CpuBuffer { handle: 99 };
 
     assert_eq!(
-        merge_unrequested_layout_observation(&mut pending, &requested, layer(surface, 2)),
-        PendingLayoutObservationMerge::Replaced
+        merge_unrequested_layout_observation(
+            &mut pending,
+            &requested,
+            observed,
+            PendingLayoutGeometryAuthority::Layout,
+        ),
+        PendingLayoutObservationMerge::Merged
     );
+    let merged = pending
+        .iter()
+        .find(|candidate| candidate.surface == surface)
+        .unwrap();
+    assert_eq!(merged.generation, 2);
+    assert_eq!(merged.source, BufferSource::CpuBuffer { handle: 99 });
+    assert_eq!(merged.geometry.x, 1280);
+    assert_eq!(merged.stack_rank, 7);
     assert_eq!(
-        pending
-            .iter()
-            .find(|candidate| candidate.surface == surface)
-            .unwrap()
-            .generation,
-        2
-    );
-    assert_eq!(
-        merge_unrequested_layout_observation(&mut pending, &requested, layer(resized, 2)),
+        merge_unrequested_layout_observation(
+            &mut pending,
+            &requested,
+            layer(resized, 2),
+            PendingLayoutGeometryAuthority::Layout,
+        ),
         PendingLayoutObservationMerge::ResizeOwned
     );
     assert_eq!(
@@ -282,4 +303,25 @@ fn pending_layout_updates_unowned_pixels_without_overwriting_resize_owned_state(
             .generation,
         1
     );
+}
+
+#[test]
+fn pending_layout_accepts_authority_owned_client_positioned_geometry() {
+    let surface = SurfaceId::new(11, 1);
+    let mut pending = vec![layer(surface, 1)];
+    pending[0].geometry.x = 20;
+    let mut observed = layer(surface, 2);
+    observed.geometry.x = 40;
+
+    assert_eq!(
+        merge_unrequested_layout_observation(
+            &mut pending,
+            &BTreeMap::new(),
+            observed,
+            PendingLayoutGeometryAuthority::Observation,
+        ),
+        PendingLayoutObservationMerge::Merged
+    );
+    assert_eq!(pending[0].geometry.x, 40);
+    assert_eq!(pending[0].generation, 2);
 }

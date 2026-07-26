@@ -342,6 +342,7 @@ impl LiveProductionVisualRuntime {
         }
         let tick = self.run_batch(
             batch,
+            presentation_layout,
             if defer_frame { None } else { native_scanout },
             native_frames,
             cpu_layers,
@@ -408,6 +409,7 @@ impl LiveProductionVisualRuntime {
     pub fn run_batch(
         &mut self,
         batch: &LiveProductionAuthorityBatch,
+        presentation_layout: &[LayerSnapshot],
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         cpu_layers: Vec<LiveCpuPresentationLayer>,
@@ -423,6 +425,7 @@ impl LiveProductionVisualRuntime {
         if !batch.present_submissions.is_empty() {
             let superseded = self.present_scheduler.enqueue_batch(
                 batch,
+                presentation_layout,
                 cpu_layers,
                 defer_present,
                 reject_present_for_layout,

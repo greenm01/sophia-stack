@@ -543,6 +543,7 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(transaction, surface, handle),
+            &[],
             Vec::new(),
             false,
             false,
@@ -586,6 +587,7 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
     scheduler
         .enqueue_batch(
             &batch,
+            &[],
             Vec::new(),
             false,
             false,
@@ -616,6 +618,62 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
 }
 
 #[test]
+fn newly_queued_present_uses_the_committed_presentation_layout() {
+    let handle = BufferHandle::from_raw(50);
+    let transaction = TransactionId::from_raw(51);
+    let surface = SurfaceId::new(52, 1);
+    let mut batch = scheduler_batch(transaction, surface, handle);
+    batch.transactions[0].target_geometry = Rect {
+        x: 80,
+        y: 60,
+        width: 1280,
+        height: 1426,
+    };
+    let geometry = Rect {
+        x: 0,
+        y: 14,
+        width: 1280,
+        height: 1426,
+    };
+    let layout = [sophia_protocol::LayerSnapshot {
+        surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry,
+        source: batch.transactions[0].target_buffer,
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: sophia_protocol::Transform::IDENTITY,
+        generation: 1,
+        resize_sync: sophia_protocol::ResizeSyncCapability::ImplicitOnly,
+    }];
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    scheduler
+        .enqueue_batch(
+            &batch,
+            &layout,
+            Vec::new(),
+            false,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    let queued = scheduler.front().unwrap();
+    assert_eq!(queued.target, geometry);
+    assert_eq!(queued.surface_clip, geometry);
+    assert_eq!(queued.transactions[0].target_geometry, geometry);
+}
+
+#[test]
 fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
     let retained_handle = BufferHandle::from_raw(57);
     let deferred_handle = BufferHandle::from_raw(58);
@@ -633,6 +691,7 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(retained_transaction, surface, retained_handle),
+            &[],
             Vec::new(),
             false,
             false,
@@ -643,6 +702,7 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(deferred_transaction, surface, deferred_handle),
+            &[],
             Vec::new(),
             true,
             false,
@@ -681,6 +741,7 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
     let first_superseded = scheduler
         .enqueue_batch(
             &scheduler_batch(first_transaction, surface, first_handle),
+            &[],
             Vec::new(),
             true,
             false,
@@ -691,6 +752,7 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
     let second_superseded = scheduler
         .enqueue_batch(
             &scheduler_batch(second_transaction, surface, second_handle),
+            &[],
             Vec::new(),
             true,
             false,
@@ -731,6 +793,7 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(matching_transaction, surface, matching_handle),
+            &[],
             Vec::new(),
             true,
             false,
@@ -742,6 +805,7 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
     let rejected = scheduler
         .enqueue_batch(
             &scheduler_batch(rejected_transaction, surface, rejected_handle),
+            &[],
             Vec::new(),
             true,
             true,
