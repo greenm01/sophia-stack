@@ -1,9 +1,9 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsString,
-    fs,
+    fs::{self, File, OpenOptions},
     io::{ErrorKind, Read, Write},
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink},
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -34,6 +34,8 @@ const BRIDGE_TIMEOUT: Duration = Duration::from_secs(3);
 const QUIET_PERIOD: Duration = Duration::from_millis(80);
 const IO_POLL: Duration = Duration::from_millis(20);
 const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
+const FIRST_PRIVATE_X_DISPLAY: u16 = 90;
+const LAST_PRIVATE_X_DISPLAY: u16 = 4_095;
 
 #[derive(Debug)]
 pub struct BridgeRuntimeError(String);
@@ -122,7 +124,8 @@ pub struct LegacyX11WmBridgeRuntime {
     legacy: Receiver<LegacyWmRequest>,
     worker: Option<JoinHandle<Result<(), BridgeRuntimeError>>>,
     child: Child,
-    socket_path: PathBuf,
+    display: u16,
+    display_lease: File,
     config_dir: PathBuf,
     profile: LegacyWmProfile,
     session: Option<WmSessionDescriptor>,
@@ -150,7 +153,9 @@ impl LegacyX11WmBridgeRuntime {
         if let Some(relative_alias) = spec.private_executable_alias.as_deref() {
             validate_private_executable_alias(relative_alias)?;
         }
-        let (listener, display, socket_path) = bind_private_display()?;
+        let private_display = bind_private_display()?;
+        let display = private_display.display;
+        let socket_path = private_display.socket_path;
         let config_dir = std::env::temp_dir().join(format!(
             "sophia-x11-wm-bridge-{}-{display}",
             std::process::id()
@@ -203,7 +208,7 @@ impl LegacyX11WmBridgeRuntime {
                 ))
             })?;
 
-        let stream = match accept_private_legacy_wm(&listener, &mut child) {
+        let stream = match accept_private_legacy_wm(&private_display.listener, &mut child) {
             Ok(stream) => stream,
             Err(error) => {
                 let _ = child.kill();
@@ -213,6 +218,15 @@ impl LegacyX11WmBridgeRuntime {
                 return Err(error);
             }
         };
+        fs::remove_file(&socket_path).map_err(|error| {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_dir_all(&config_dir);
+            BridgeRuntimeError::new(format!(
+                "failed to unlink accepted private X socket {}: {error}",
+                socket_path.display()
+            ))
+        })?;
 
         let (command_tx, command_rx) = mpsc::sync_channel(128);
         let (legacy_tx, legacy_rx) = mpsc::sync_channel(256);
@@ -227,9 +241,10 @@ impl LegacyX11WmBridgeRuntime {
             legacy: legacy_rx,
             worker: Some(worker),
             child,
+            display,
+            display_lease: private_display.lease,
             profile,
             session: None,
-            socket_path,
             config_dir,
         })
     }
@@ -443,6 +458,10 @@ impl LegacyX11WmBridgeRuntime {
     pub fn bridge(&self) -> &X11WmBridgeState {
         &self.bridge
     }
+
+    pub const fn private_display(&self) -> u16 {
+        self.display
+    }
 }
 
 fn validate_private_executable_alias(path: &Path) -> Result<(), BridgeRuntimeError> {
@@ -523,8 +542,8 @@ impl Drop for LegacyX11WmBridgeRuntime {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
-        let _ = fs::remove_file(&self.socket_path);
         let _ = fs::remove_dir_all(&self.config_dir);
+        let _ = self.display_lease.unlock();
     }
 }
 

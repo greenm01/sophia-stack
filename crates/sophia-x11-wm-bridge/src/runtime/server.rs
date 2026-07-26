@@ -109,32 +109,87 @@ fn read_wm_request(stream: &mut UnixStream) -> Result<Option<WmRequestPacket>, B
         .map_err(|error| BridgeRuntimeError::new(format!("failed to decode WM request: {error:?}")))
 }
 
-fn bind_private_display() -> Result<(UnixListener, u16, PathBuf), BridgeRuntimeError> {
+struct PrivateDisplayBinding {
+    listener: UnixListener,
+    display: u16,
+    socket_path: PathBuf,
+    lease: File,
+}
+
+fn bind_private_display() -> Result<PrivateDisplayBinding, BridgeRuntimeError> {
     fs::create_dir_all("/tmp/.X11-unix").map_err(|error| {
         BridgeRuntimeError::new(format!("failed to create /tmp/.X11-unix: {error}"))
     })?;
-    for display in 90..200 {
+    for display in FIRST_PRIVATE_X_DISPLAY..=LAST_PRIVATE_X_DISPLAY {
         let path = PathBuf::from(format!("/tmp/.X11-unix/X{display}"));
-        match UnixListener::bind(&path) {
-            Ok(listener) => {
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|error| {
-                    BridgeRuntimeError::new(format!(
-                        "failed to secure private X socket {}: {error}",
-                        path.display()
-                    ))
-                })?;
-                return Ok((listener, display, path));
-            }
+        let listener = match UnixListener::bind(&path) {
+            Ok(listener) => listener,
             Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => continue,
             Err(error) => {
                 return Err(BridgeRuntimeError::new(format!(
                     "failed to bind private X socket {}: {error}",
                     path.display()
                 )));
             }
+        };
+        let lease_path = PathBuf::from(format!("/tmp/.X11-unix/.sophia-X{display}.lease"));
+        let lease = match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .open(&lease_path)
+        {
+            Ok(lease) => lease,
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+                drop(listener);
+                let _ = fs::remove_file(&path);
+                continue;
+            }
+            Err(error) => {
+                drop(listener);
+                let _ = fs::remove_file(&path);
+                return Err(BridgeRuntimeError::new(format!(
+                    "failed to open private X display lease {}: {error}",
+                    lease_path.display()
+                )));
+            }
+        };
+        match lease.try_lock() {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => {
+                drop(listener);
+                let _ = fs::remove_file(&path);
+                continue;
+            }
+            Err(fs::TryLockError::Error(error)) => {
+                drop(listener);
+                let _ = fs::remove_file(&path);
+                return Err(BridgeRuntimeError::new(format!(
+                    "failed to acquire private X display lease {}: {error}",
+                    lease_path.display()
+                )));
+            }
         }
+        if let Err(error) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+            drop(listener);
+            let _ = fs::remove_file(&path);
+            return Err(BridgeRuntimeError::new(format!(
+                    "failed to secure private X socket {}: {error}",
+                    path.display()
+                )));
+        }
+        return Ok(PrivateDisplayBinding {
+            listener,
+            display,
+            socket_path: path,
+            lease,
+        });
     }
-    Err(BridgeRuntimeError::new("no private X display available"))
+    Err(BridgeRuntimeError::new(format!(
+        "no private X display available in bounded range {FIRST_PRIVATE_X_DISPLAY}..={LAST_PRIVATE_X_DISPLAY}"
+    )))
 }
 
 fn send_engine_update(
@@ -200,4 +255,3 @@ impl XServerState {
         }
     }
 }
-

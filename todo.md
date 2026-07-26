@@ -194,7 +194,7 @@ Promotion now follows the gates below in order.
   modifiers do not. The first capture routed and acknowledged 66 repeat pulses
   with zero coalescing or capacity exhaustion, drained all 1,289 input
   deliveries, and ended with no active repeat seat or pressed-key debt.
-- [ ] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
+- [x] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
   Require copy/paste between independent Kitty clients before and after
   workspace switches, at least one owner change and conversion, no GLFW
   ownership or conversion failure, and visual confirmation that the text is
@@ -204,7 +204,11 @@ Promotion now follows the gates below in order.
   `long_length`), and deletion only after a complete read. Local namespace
   ownership is preferred; cross-namespace source capture and execution
   revalidate the exact namespace and generation through the portal boundary.
-  Physical confirmation remains required.
+  The dedicated physical capture copied the exact token from a workspace-3
+  Kitty and pasted it into the independent workspace-1 Kitty after switching
+  workspaces. It recorded two owner changes and one conversion and completed
+  with zero unexpected protocol, input, WM, native-presentation, or cleanup
+  failure.
 - [ ] Prove pointer confinement across the complete output union: hard edge
   motion must keep the hardware cursor visible, and reversing direction must
   move it immediately without first consuming discarded overshoot. The full
