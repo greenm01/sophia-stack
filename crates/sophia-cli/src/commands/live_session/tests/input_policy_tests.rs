@@ -171,6 +171,72 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
 }
 
 #[test]
+fn full_routing_suppresses_pointer_buttons_when_workspace_has_no_target() {
+    let events = [true, false]
+        .into_iter()
+        .enumerate()
+        .map(|(index, pressed)| InputEventPacket {
+            serial: u64::try_from(index + 1).unwrap(),
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: u64::try_from(index + 1).unwrap(),
+            kind: InputEventKind::PointerButton {
+                button: 0x110,
+                pressed,
+            },
+            global_position: Some(Point { x: 64.0, y: 64.0 }),
+            target_surface: None,
+            local_position: None,
+        })
+        .collect();
+    let (input_sender, input_receiver) = sync_channel(2);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
+    let mut client_keys = SessionClientKeyState::default();
+    let mut emergency = super::super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut pointer = SessionPointerPlacement::default();
+    pointer.center_on_primary_output(Size {
+        width: 2560,
+        height: 1440,
+    });
+    let mut next_delivery = 1;
+
+    let report = route_input_events(
+        events,
+        &InputFocusState::new(),
+        &[],
+        &[],
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        None,
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        0,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.pointer_buttons_observed, 2);
+    assert_eq!(report.pointer_buttons_suppressed_no_target, 2);
+    assert_eq!(report.pointer_buttons_suppressed_by_policy, 0);
+    assert_eq!(report.pointer_buttons_routed, 0);
+    assert!(report.pointer_focus_targets.is_empty());
+    assert!(report.deliveries.is_empty());
+    assert!(input_receiver.try_recv().is_err());
+}
+
+#[test]
 fn routed_keyboard_report_retains_the_opaque_focus_target() {
     let seat = SeatId::from_raw(1);
     let surface = SurfaceId::new(41, 1);

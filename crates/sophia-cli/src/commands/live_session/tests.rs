@@ -7,13 +7,14 @@ use super::{
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
     authority_wait_timeout, center_geometry_without_scaling, global_runtime_deadline_ends_session,
-    independent_native_output_presented, input_baseline_is_presented,
-    managed_child_exit_is_nonfatal, pending_wm_focus_after_engine_decision,
-    physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, record_runtime_commits, rects_intersect, route_input_events,
-    session_protocol_errors_are_fatal, stable_gpu_frame_proves_post_input_pixels,
-    startup_submission_requirement, successful_primary_exit_ends_session,
-    synchronous_modeset_record, take_settled_input_delivery_wait,
+    independent_native_output_presented, initial_session_focus_candidate,
+    input_baseline_is_presented, managed_child_exit_is_nonfatal,
+    pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
+    physical_input_routing_mode, place_pointer_event_for_routing, record_runtime_commits,
+    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
+    stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
+    successful_primary_exit_ends_session, synchronous_modeset_record,
+    take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::SessionClientKeyState;
 use sophia_engine::{
@@ -211,6 +212,36 @@ fn physical_input_preserves_shortcuts_without_an_application_surface() {
     assert_eq!(
         physical_input_routing_mode(true, Some(proof), Some(proof), true),
         PhysicalInputRoutingMode::ShortcutsOnly
+    );
+}
+
+#[test]
+fn external_wm_never_reconciles_focus_to_a_committed_hidden_surface() {
+    let hidden = SurfaceId::new(41, 1);
+    let committed = [CommittedSurfaceState {
+        surface: hidden,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        },
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::empty(),
+    }];
+
+    assert_eq!(
+        initial_session_focus_candidate(true, None, &committed),
+        None
+    );
+    assert_eq!(
+        initial_session_focus_candidate(false, None, &committed),
+        Some(hidden)
+    );
+    assert_eq!(
+        initial_session_focus_candidate(false, Some(hidden), &committed),
+        None
     );
 }
 

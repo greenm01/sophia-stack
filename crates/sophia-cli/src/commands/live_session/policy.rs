@@ -15,6 +15,16 @@ enum PhysicalInputRoutingMode {
     Full,
 }
 
+fn physical_input_routing_mode_label(mode: PhysicalInputRoutingMode) -> &'static str {
+    match mode {
+        PhysicalInputRoutingMode::Suppressed => "suppressed",
+        PhysicalInputRoutingMode::CursorOnly => "cursor_only",
+        PhysicalInputRoutingMode::ShortcutsOnly => "shortcuts_only",
+        PhysicalInputRoutingMode::ControlPlaneOnly => "control_plane_only",
+        PhysicalInputRoutingMode::Full => "full",
+    }
+}
+
 fn physical_input_routing_mode(
     primary_child_exited: bool,
     focused_surface: Option<SurfaceId>,
@@ -50,6 +60,17 @@ struct InitialSessionFocusContext<'a> {
     next_focus_control_transaction: &'a mut u64,
 }
 
+fn initial_session_focus_candidate(
+    wm_session_present: bool,
+    focused_surface: Option<SurfaceId>,
+    committed_surfaces: &[CommittedSurfaceState],
+) -> Option<SurfaceId> {
+    if wm_session_present || focused_surface.is_some() {
+        return None;
+    }
+    committed_surfaces.first().map(|surface| surface.surface)
+}
+
 fn reconcile_initial_session_focus(
     context: InitialSessionFocusContext<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -62,21 +83,21 @@ fn reconcile_initial_session_focus(
         session_controls,
         next_focus_control_transaction,
     } = context;
-    if focus.focused_surface(seat).is_some() {
-        return Ok(());
-    }
-    let Some(surface) = runtime.committed_surfaces().first() else {
+    let Some(surface) = initial_session_focus_candidate(
+        wm_session_present,
+        focus.focused_surface(seat),
+        runtime.committed_surfaces(),
+    ) else {
         return Ok(());
     };
-    if focus.focus_surface(seat, surface.surface, runtime.committed_surfaces())
+    if focus.focus_surface(seat, surface, runtime.committed_surfaces())
         != InputFocusDecision::Focused
-        || wm_session_present
     {
         return Ok(());
     }
     let client = layout
         .client_routes
-        .client_for_surface(surface.surface)
+        .client_for_surface(surface)
         .ok_or("initial X11 focus has no client route")?;
     let transaction = TransactionId::from_raw(*next_focus_control_transaction);
     *next_focus_control_transaction = next_focus_control_transaction
@@ -87,7 +108,7 @@ fn reconcile_initial_session_focus(
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction,
-                surface: surface.surface,
+                surface,
             },
         }, Instant::now())
         .map_err(|error| format!("failed to queue initial X11 focus: {error:?}"))?;

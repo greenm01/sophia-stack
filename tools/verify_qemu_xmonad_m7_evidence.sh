@@ -5,7 +5,7 @@ evidence=${1:-/tmp/sophia-qemu-xmonad-m7.log}
 [[ -r "$evidence" ]] || { echo "missing xmonad evidence: $evidence" >&2; exit 1; }
 
 required_chords=(
-    meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+shift+1
+    meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+1
     meta_l+ret meta_l+shift+c meta_l+shift+q
 )
 for chord in "${required_chords[@]}"; do
@@ -40,6 +40,45 @@ if [[ -z "$reverse_line" || -z "$sequence_line" ]]; then
     echo "xmonad pointer edge/reversal evidence is out of order" >&2
     exit 1
 fi
+awk '
+    /^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$/ {
+        empty = NR
+        next
+    }
+    empty && /^sophia_qemu_xmonad_pointer schema=5 status=begin action=empty_workspace_click$/ {
+        probe = NR
+        next
+    }
+    probe && /^sophia_live_session_pointer schema=8 status=button_suppressed reason=no_target count=[0-9]+ total=[2-9][0-9]*$/ {
+        suppressed = NR
+        next
+    }
+    probe && /^sophia_live_wm schema=3 status=focus_requested source=pointer surface=/ {
+        invalid = 1
+        exit
+    }
+    probe && /^sophia_live_session_pointer schema=2 status=button_routed count=/ {
+        invalid = 1
+        exit
+    }
+    probe && /^sophia_live_session_pointer schema=8 status=button_suppressed reason=policy / {
+        invalid = 1
+        exit
+    }
+    probe && /^sophia_qemu_xmonad_pointer schema=5 status=passed action=empty_workspace_click focus_requests=0 routed_buttons=0$/ {
+        passed = NR
+        exit
+    }
+    END {
+        if (invalid || !empty || !probe || !suppressed || !passed ||
+            !(empty < probe && probe < suppressed && suppressed < passed)) {
+            exit 1
+        }
+    }
+' "$evidence" || {
+    echo "empty-workspace pointer input selected or routed to a hidden surface" >&2
+    exit 1
+}
 "$(dirname "$0")/verify_sophia_xmonad_pointer_focus.sh" "$evidence" >/dev/null
 awk '
     function invalidate() {

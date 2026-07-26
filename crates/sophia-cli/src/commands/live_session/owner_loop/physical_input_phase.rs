@@ -298,6 +298,23 @@ macro_rules! drain_physical_input {
                 );
                 input_observations.pointer_button_observed = true;
             }
+            if report.pointer_buttons_suppressed_no_target > 0 {
+                input_observations.pointer_buttons_suppressed_no_target = input_observations
+                    .pointer_buttons_suppressed_no_target
+                    .saturating_add(report.pointer_buttons_suppressed_no_target);
+                println!(
+                    "sophia_live_session_pointer schema=8 status=button_suppressed reason=no_target count={} total={}",
+                    report.pointer_buttons_suppressed_no_target,
+                    input_observations.pointer_buttons_suppressed_no_target
+                );
+            }
+            if report.pointer_buttons_suppressed_by_policy > 0 {
+                println!(
+                    "sophia_live_session_pointer schema=8 status=button_suppressed reason=policy mode={} count={}",
+                    physical_input_routing_mode_label($routing_mode),
+                    report.pointer_buttons_suppressed_by_policy
+                );
+            }
             if !input_observations.pointer_button_routed && report.pointer_buttons_routed > 0 {
                 println!(
                     "sophia_live_session_pointer schema=2 status=button_routed count={}",

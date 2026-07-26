@@ -6,6 +6,8 @@ struct PhysicalInputRouteReport {
     keys_suppressed_no_focus: usize,
     key_targets: Vec<SurfaceId>,
     pointer_buttons_observed: usize,
+    pointer_buttons_suppressed_no_target: usize,
+    pointer_buttons_suppressed_by_policy: usize,
     pointer_buttons_routed: usize,
     pointer_button_targets: Vec<SurfaceId>,
     pointer_focus_targets: Vec<SurfaceId>,
@@ -221,6 +223,8 @@ fn route_input_events_with_pointer_focus(
         key_targets: Vec::new(),
         pointer_events: 0,
         pointer_buttons_observed: 0,
+        pointer_buttons_suppressed_no_target: 0,
+        pointer_buttons_suppressed_by_policy: 0,
         pointer_axes_observed: 0,
         pointer_routed: 0,
         pointer_buttons_routed: 0,
@@ -479,12 +483,6 @@ fn route_input_events_with_pointer_focus(
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }
             | sophia_protocol::InputEventKind::PointerAxis { .. }) => {
-                if matches!(
-                    routing_mode,
-                    PhysicalInputRoutingMode::Suppressed | PhysicalInputRoutingMode::ShortcutsOnly
-                ) {
-                    continue;
-                }
                 let is_button =
                     matches!(kind, sophia_protocol::InputEventKind::PointerButton { .. });
                 let is_axis =
@@ -500,9 +498,25 @@ fn route_input_events_with_pointer_focus(
                 report.pointer_events = report.pointer_events.saturating_add(1);
                 if matches!(
                     routing_mode,
+                    PhysicalInputRoutingMode::Suppressed | PhysicalInputRoutingMode::ShortcutsOnly
+                ) {
+                    if is_button {
+                        report.pointer_buttons_suppressed_by_policy = report
+                            .pointer_buttons_suppressed_by_policy
+                            .saturating_add(1);
+                    }
+                    continue;
+                }
+                if matches!(
+                    routing_mode,
                     PhysicalInputRoutingMode::CursorOnly
                         | PhysicalInputRoutingMode::ControlPlaneOnly
                 ) {
+                    if is_button {
+                        report.pointer_buttons_suppressed_by_policy = report
+                            .pointer_buttons_suppressed_by_policy
+                            .saturating_add(1);
+                    }
                     if !is_button {
                         let focused_surface = focus.focused_surface(event.seat);
                         let (_, placement) = place_pointer_event_for_routing(
@@ -529,6 +543,11 @@ fn route_input_events_with_pointer_focus(
                     continue;
                 }
                 if !pointer_routing_enabled {
+                    if is_button {
+                        report.pointer_buttons_suppressed_by_policy = report
+                            .pointer_buttons_suppressed_by_policy
+                            .saturating_add(1);
+                    }
                     continue;
                 }
                 let pending_target = pointer_focus_handoff
@@ -544,6 +563,11 @@ fn route_input_events_with_pointer_focus(
                         )
                     },
                 );
+                if is_button && route.target_surface.is_none() {
+                    report.pointer_buttons_suppressed_no_target = report
+                        .pointer_buttons_suppressed_no_target
+                        .saturating_add(1);
+                }
                 let (Some(global), Some(local)) = (event.global_position, route.local_position)
                 else {
                     continue;

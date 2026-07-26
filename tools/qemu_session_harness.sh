@@ -142,6 +142,36 @@ run_pointer_focus_gesture() {
         tee -a "$EVIDENCE_FILE"
 }
 
+probe_empty_workspace_pointer() {
+    local focus_request_baseline
+    local button_suppressed_baseline
+    local focus_request_after
+
+    focus_request_baseline="$(evidence_count '^sophia_live_wm schema=3 status=focus_requested source=pointer surface=')"
+    button_suppressed_baseline="$(evidence_count '^sophia_live_session_pointer schema=8 status=button_suppressed reason=no_target count=[0-9][0-9]* total=[2-9][0-9]*$')"
+    echo "sophia_qemu_xmonad_pointer schema=5 status=begin action=empty_workspace_click" |
+        tee -a "$EVIDENCE_FILE"
+    if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -32 0 1 left; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_empty_workspace_click_send" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    if ! wait_for_new_evidence '^sophia_live_session_pointer schema=8 status=button_suppressed reason=no_target count=[0-9][0-9]* total=[2-9][0-9]*$' "$button_suppressed_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=empty_workspace_click_suppression_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    sleep 0.25
+    focus_request_after="$(evidence_count '^sophia_live_wm schema=3 status=focus_requested source=pointer surface=')"
+    if ((focus_request_after != focus_request_baseline)); then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=hidden_surface_focus_request" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    echo "sophia_qemu_xmonad_pointer schema=5 status=passed action=empty_workspace_click focus_requests=0 routed_buttons=0" |
+        tee -a "$EVIDENCE_FILE"
+}
+
 send_launch_and_wait() {
     local chord=$1
     local pattern=$2
@@ -580,12 +610,24 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     fi
     echo "sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96" | tee -a "$EVIDENCE_FILE"
 
-    chords=("meta_l+k" "meta_l+spc" "meta_l+2" "meta_l+shift+1")
+    chords=("meta_l+k" "meta_l+spc")
     for chord in "${chords[@]}"; do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
         echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$chord" | tee -a "$EVIDENCE_FILE"
         sleep 1
     done
+    empty_workspace_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$')"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+2
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+2" | tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$' "$empty_workspace_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=empty_workspace_projection_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    probe_empty_workspace_pointer
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+1
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+1" | tee -a "$EVIDENCE_FILE"
+    sleep 1
     restart_layout_baseline="$(grep -c '^sophia_live_wm schema=1 status=layout_committed ' "$EVIDENCE_FILE" || true)"
     restart_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=focus_reconciled ' "$EVIDENCE_FILE" || true)"
     restart_clear_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$EVIDENCE_FILE" || true)"
@@ -636,7 +678,7 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         soak_started=$SECONDS
         cycles=0
         while (( SECONDS - soak_started < 1800 )); do
-            for chord in meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+shift+1; do
+            for chord in meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+1; do
                 "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
                 echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$chord" | tee -a "$EVIDENCE_FILE"
                 sleep 1

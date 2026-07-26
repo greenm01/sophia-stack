@@ -175,6 +175,17 @@ Promotion now follows the gates below in order.
 - [ ] Prove typing, pointer motion, click-drag selection, focus changes,
   Super-Enter, tiling resize, workspace switching, and no input delivery to
   hidden or unfocused windows.
+- [x] Physically prove plain-click focus and click-drag focus independently.
+  The guarded TTY3 run routed both gestures to the selected Kitty, preserved
+  cross-window copy/paste during the drag workflow, and rendered the
+  Engine-owned focused border. The retained QEMU gate independently correlates
+  request, Engine commit, X11 application, handoff release, and a following key
+  for each gesture.
+- [x] Keep external-WM empty workspaces focusless. Initial-focus reconciliation
+  now exits before mutating Engine focus whenever an external WM owns policy.
+  The QEMU gate switches to an empty workspace, observes both click edges
+  suppressed with `reason=no_target`, and rejects a hidden focus request or
+  client route before returning with Super-1.
 - [x] Add Engine-owned held-key repeat scheduling with XKB-derived per-key
   repeatability and explicit X-frontend repeat delivery. Repeats bypass global
   shortcut evaluation and cancel on physical release, focus handoff, surface
@@ -308,6 +319,11 @@ Promotion now follows the gates below in order.
   textures. The next run rendered the bar with Kitty, completed 141 mixed
   exports with zero native failures, and exposed the remaining overlap:
   managed Kitty geometry still begins at `y=0` beneath the bar.
+  A later click/drag focus run exposed a brief focused-border outline around
+  the bar during workspace changes. The cause was generic external-WM focus
+  reconciliation selecting the first committed hidden surface after xmonad
+  cleared focus; the owner now rejects that candidate before Engine mutation.
+  Re-run the physical workspace transition once to close the visual regression.
 - [x] Decode bounded `_NET_WM_STRUT_PARTIAL` and legacy `_NET_WM_STRUT` values
   entirely inside the X
   frontend and reduce them to protocol-neutral edge/span reservations tied to

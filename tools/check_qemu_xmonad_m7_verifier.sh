@@ -76,6 +76,27 @@ expect_failure missing_pointer_reverse
 sed '/action=output_edge_reverse /d' "$fixture" >"$tmp"
 expect_failure missing_qmp_pointer_edge_sequence
 
+sed '/visible_surfaces=0 focus=none/d' "$fixture" >"$tmp"
+expect_failure missing_empty_workspace_projection
+
+sed '/status=passed action=empty_workspace_click/d' "$fixture" >"$tmp"
+expect_failure incomplete_empty_workspace_click
+
+sed '/status=button_suppressed reason=no_target/d' "$fixture" >"$tmp"
+expect_failure missing_empty_workspace_suppression
+
+sed '/status=begin action=empty_workspace_click/a sophia_live_wm schema=3 status=focus_requested source=pointer surface=2' \
+    "$fixture" >"$tmp"
+expect_failure hidden_surface_focus_request
+
+sed '/status=begin action=empty_workspace_click/a sophia_live_session_pointer schema=2 status=button_routed count=1' \
+    "$fixture" >"$tmp"
+expect_failure hidden_surface_button_delivery
+
+sed '/status=begin action=empty_workspace_click/a sophia_live_session_pointer schema=8 status=button_suppressed reason=policy mode=control_plane_only count=1' \
+    "$fixture" >"$tmp"
+expect_failure hidden_surface_policy_suppression
+
 cp "$fixture" "$tmp"
 printf '%s\n' 'sophia_qemu_guest schema=1 status=failed reason=test' >>"$tmp"
 expect_failure guest_failure

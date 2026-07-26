@@ -68,6 +68,7 @@ struct InputObservationState {
     pointer_motion_observed: bool,
     pointer_motion_routed: bool,
     pointer_button_observed: bool,
+    pointer_buttons_suppressed_no_target: usize,
     pointer_button_routed: bool,
     pointer_focus_target: Option<SurfaceId>,
     pointer_focus_key_routed: bool,

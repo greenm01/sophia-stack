@@ -190,19 +190,26 @@ count other than 300. QEMU does not claim VRR because virtio-gpu does not expose
 the physical property contract. Keep the physical TTY proof for the AMD
 multi-connector/VRR gates and operator-typed input evidence.
 
-The `xmonad-m7` scenario additionally waits for two visible managed surfaces,
-uses Super-J to establish keyboard focus away from the master tile, then sends
-one primary-button drag from the virtio mouse into that unfocused tile. Its
-verifier requires pointer focus request, Engine focus commit, X11 focus
-acknowledgment, retained press/motion/release delivery, and a following
-virtio-keyboard event routed to that same opaque surface, in that order. It
-also rejects a press/release-only gesture, a dropped handoff, or missing
-post-focus keyboard delivery. The scenario then drives the virtio mouse beyond
-the right edge of the two-output union and sends one reverse delta. The
+The `xmonad-m7` scenario additionally waits for two visible managed surfaces
+and proves plain-click focus and click-drag focus as independent sequences.
+Before each gesture, Super-J establishes keyboard focus away from the target
+tile. The verifier then requires pointer focus request, Engine focus commit,
+focused-border composition and damage, X11 focus acknowledgment, retained
+handoff delivery, and a following virtio-keyboard event routed to the same
+opaque surface, in that order. The click requires both button edges; the drag
+requires press, motion, and release. The scenario then drives the virtio mouse
+beyond the right edge of the two-output union and sends one reverse delta. The
 verifier requires an Engine confinement observation, an immediate-reversal
-observation after it, and only then the completed QMP sequence marker. This
-proves the stateful raw-to-logical offset path without claiming physical cursor
-visibility or the required all-edge hardware exercise.
+observation after it, and only then the completed QMP sequence marker.
+
+The same scenario switches to an authoritative empty workspace before the WM
+restart exercise. It sends one primary click and requires both edges to be
+suppressed with `reason=no_target`, with no pointer-focus request or client
+route. It returns with Super-1 because no focused surface exists to move. This
+guards against initial-focus reconciliation selecting a committed surface that
+the external WM has projected out. Together these checks prove the stateful
+raw-to-logical pointer path and hidden-surface exclusion without claiming
+physical cursor visibility or the required all-edge hardware exercise.
 
 ### X11 Live-Session Stability Diagnostics
 
