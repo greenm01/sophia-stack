@@ -24,7 +24,7 @@ a WM is absent, incompatible, timed out, malformed, or restarting.
 
 ## Policy Model
 
-`WM` is the name of the version 3 policy slot. It is not a requirement that a
+`WM` is the name of the version 4 policy slot. It is not a requirement that a
 client behave like a traditional window manager, nor does it make one layout
 family part of Sophia's architecture.
 
@@ -40,19 +40,20 @@ example, would not turn its panel, decorations, settings, notifications, and
 session services into WM powers. Those parts belong to shell, metadata,
 portal, and session interfaces, while spatial policy remains blind.
 
-Version 3's workspace and registered-action models are current, versioned
+Version 4's workspace, registered-action, and pointer-focus models are current,
+versioned
 contracts. They are not constitutional claims that every later policy model
 must have nine workspaces, keyboard-first control, or the same notion of
 visibility. A later version may broaden those mechanics without weakening the
 ownership rules above.
 
-## Version 3 Session Negotiation
+## Version 4 Session Negotiation
 
-WM API version 3 uses the existing Sophia IPC frame version. It does not change
+WM API version 4 uses the existing Sophia IPC frame version. It does not change
 the framing or the protocol versions of brokers and authorities.
 
 After Engine connects to the supervised WM socket, the WM sends one bounded
-`WmHello` containing API version 3, capability bits, and at most 256 binding
+`WmHello` containing API version 4, capability bits, and at most 256 binding
 registrations. Engine rejects unsupported capabilities, duplicate chords or
 action IDs, invalid modifier masks, zero action IDs, excessive registrations,
 and Ctrl-Alt-Backspace. Engine replies with one `WmSessionDescriptor` containing
@@ -76,6 +77,15 @@ the matching release, and exposes only the action ID to the WM.
 workspace, focused surface, and an immutable layout-node snapshot. The WM may
 respond with the same transactional layout commands used for manage and relayout
 requests.
+
+`WmRequestKind::FocusRequested` carries only the hit-tested opaque surface,
+output, and workspace. It is emitted for an unmodified primary press on an
+unfocused visible surface. The WM may accept that request with
+`FocusSurface`; no raw motion, button payload, protocol handle, namespace, or
+application metadata crosses the policy boundary. Engine retains the press
+and following pointer events in a bounded ordered handoff until both Engine
+focus and frontend protocol focus have committed. Timeout or disappearance
+drops the handoff instead of routing it to stale focus.
 
 Session actions are advertised tokens. Application launches carry only a
 nonzero `SessionApplicationId`; the session maps that ID to its private
@@ -115,6 +125,9 @@ move-to-workspace, three opaque application slots, close, and logout chords.
 Policy-only actions become bounded synthetic events on xmonad's private display.
 Workspace and session actions use private bridge messages and emerge as normal
 Sophia WM commands. They never execute an application on the synthetic display.
+Pointer focus requests become a private synthetic primary-button gesture
+against xmonad's opaque synthetic window so its internal stack remains
+consistent; the bridge response still contains only a Sophia `SurfaceId`.
 
 The profile supplies generic empty ICCCM/EWMH property data. Metadata-dependent
 legacy rules are unsupported by design. Future policy tags require a separate

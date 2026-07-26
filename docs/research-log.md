@@ -3,6 +3,32 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: Click Focus Requires A Cross-Authority Input Barrier
+
+Physical pointer events were already hit-tested against Engine scene truth and
+routed to opaque surfaces, but a primary press never asked spatial policy to
+change focus. Consequently clicking or click-dragging another xmonad tile
+could move the cursor and deliver pointer input without changing Engine, WM,
+or X11 focus.
+
+WM API v4 adds `FocusRequested`, containing only surface, output, and
+workspace. The reference WM returns `FocusSurface`; the metadata-blind legacy
+bridge translates the target into a private synthetic primary-button gesture
+so xmonad updates its own focus stack before returning the same opaque Sophia
+surface. No XID, namespace, application metadata, or raw input payload crosses
+the WM boundary.
+
+Engine now owns a bounded pointer-focus handoff. The initial press and following
+motion/release records remain ordered against the selected surface, including
+drag coordinates outside its geometry, until the X frontend acknowledges that
+same focus. A 256-record capacity and two-second timeout fail closed. Protocol,
+reference-policy, bridge, route, ordering, and timeout regressions pass. The
+real unmodified-xmonad smoke also focused a requested opaque surface. Xmonad's
+focus refresh re-emitted unchanged configure requests, so the compatibility
+runtime discards those only for a focus-only request; the resulting Sophia
+transaction contains `FocusSurface` and no placement. Physical TTY confirmation
+remains the promotion evidence.
+
 ## 2026-07-26: Pending Pixels Must Not Replace WM Geometry
 
 The latest normal xmonad capture exposed a temporal geometry defect that the

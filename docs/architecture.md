@@ -336,13 +336,19 @@ The X frontend then applies X11 focus, grabs, event masks, XKB/XI state, and
 namespace checks. A future frontend would remain responsible for its own
 protocol-local delivery rules after the same Engine route.
 
+When an unmodified primary press selects an unfocused visible surface, Engine
+first sends the opaque target through the blind spatial-policy interface. It
+retains the ordered press, drag motion, and release in a bounded handoff until
+the frontend acknowledges protocol focus on that same surface. Raw pointer
+events and protocol-local identity never enter the WM.
+
 The authority returns a reduced delivery acknowledgement. Engine never writes
 arbitrary client events or receives a client connection handle. Route failure
 does not fall back to synthetic input.
 
-Input delivery stays off the WM path. The WM may choose focus policy in response
-to reduced Engine facts, but it does not receive every motion/key event or
-protocol identity.
+Input delivery stays off the WM path. The WM may choose focus policy in
+response to the reduced opaque click target, but it does not receive motion,
+button payloads, key events, or protocol identity.
 
 ## Spatial Policy And Chrome
 
@@ -457,7 +463,7 @@ archived unless a later specification decision admits a bounded provider.
 - macOS WindowServer/Core Animation: transaction-first presentation and
   fail-closed visual integrity.
 
-The WM policy boundary is versioned independently at Sophia WM API v3. Engine
+The WM policy boundary is versioned independently at Sophia WM API v4. Engine
 owns physical shortcut matching, workspace visibility, transaction validation,
 and opaque session actions. A WM registers bounded keycode/modifier chords to
 opaque action IDs during startup and receives only opaque layout nodes and

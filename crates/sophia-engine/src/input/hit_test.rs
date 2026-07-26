@@ -14,6 +14,39 @@ pub fn hit_test_scene_surface_for_input(
     hit_test_layers(event, layers)
 }
 
+/// Routes an event to an already-selected surface, including positions outside
+/// its geometry. This preserves pointer-grab ordering after a button press.
+pub fn route_scene_surface_for_input(
+    event: &InputEventPacket,
+    layers: &[LayerSnapshot],
+    target: SurfaceId,
+) -> InputRoute {
+    let Some(global_position) = event.global_position else {
+        return missed_input_route(event, Point::default());
+    };
+    let Some(layer) = layers
+        .iter()
+        .find(|layer| layer.surface == target && should_render(layer))
+    else {
+        return missed_input_route(event, global_position);
+    };
+    let Some(untransformed_position) = inverse_transform_point(layer.transform, global_position)
+    else {
+        return missed_input_route(event, global_position);
+    };
+    InputRoute {
+        input_serial: event.serial,
+        target_surface: Some(target),
+        global_position,
+        local_position: Some(Point {
+            x: untransformed_position.x - f64::from(layer.geometry.x),
+            y: untransformed_position.y - f64::from(layer.geometry.y),
+        }),
+        transform: layer.transform,
+        outcome: InputRouteOutcome::Routed,
+    }
+}
+
 fn hit_test_layers(event: &InputEventPacket, layers: &[LayerSnapshot]) -> InputRoute {
     let Some(global_position) = event.global_position else {
         return missed_input_route(event, Point::default());

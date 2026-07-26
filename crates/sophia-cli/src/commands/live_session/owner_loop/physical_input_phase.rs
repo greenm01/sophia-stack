@@ -41,6 +41,8 @@ macro_rules! drain_physical_input {
                     now_msec: u64::try_from(started.elapsed().as_millis())
                         .unwrap_or(u64::MAX),
                     physical_text_proof: physical_text_proof.as_mut(),
+                    pointer_focus_handoff: &mut pointer_focus_handoff,
+                    applied_client_focus,
                 },
             )?;
             metrics.physical_events = metrics.physical_events.saturating_add(report.events);
@@ -56,6 +58,11 @@ macro_rules! drain_physical_input {
             metrics.physical_pointer_buttons_routed = metrics
                 .physical_pointer_buttons_routed
                 .saturating_add(report.pointer_buttons_routed);
+            if report.pointer_focus_handoff_expired {
+                eprintln!(
+                    "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=timeout"
+                );
+            }
             input_delivery.events_expected = input_delivery
                 .events_expected
                 .saturating_add(report.deliveries.len());
@@ -133,6 +140,26 @@ macro_rules! drain_physical_input {
                     }
                     LiveWmRequestAdmission::Duplicate => {
                         return Err("WM action request was unexpectedly deduplicated".into());
+                    }
+                }
+            }
+            for surface in report.pointer_focus_targets.iter().copied() {
+                let wm = wm_session
+                    .as_mut()
+                    .ok_or("pointer focus requested without a live WM session")?;
+                match wm.enqueue_focus(surface, &layout, output)? {
+                    LiveWmRequestAdmission::Admitted => {
+                        println!(
+                            "sophia_live_wm schema=3 status=focus_requested source=pointer surface={}",
+                            surface.index(),
+                        );
+                    }
+                    LiveWmRequestAdmission::Duplicate => {}
+                    LiveWmRequestAdmission::RejectedCapacity => {
+                        eprintln!(
+                            "sophia_live_wm schema=3 status=request_rejected source=pointer_focus reason=capacity surface={}",
+                            surface.index(),
+                        );
                     }
                 }
             }

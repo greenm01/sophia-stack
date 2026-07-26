@@ -322,6 +322,7 @@ impl X11WmBridgeState {
                     self.upsert_visible_node(node.clone(), &mut events)?;
                 }
             }
+            WmRequestKind::FocusRequested(_) => {}
         }
         Ok(BridgeEngineUpdate {
             transaction: request.transaction,

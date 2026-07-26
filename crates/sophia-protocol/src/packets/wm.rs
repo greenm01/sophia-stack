@@ -13,7 +13,7 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 3;
+pub const WM_API_VERSION: u16 = 4;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -92,6 +92,13 @@ pub struct WmActionActivation {
     pub nodes: Vec<LayoutNodeSnapshot>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFocusRequest {
+    pub surface: SurfaceId,
+    pub output: OutputId,
+    pub workspace: WorkspaceId,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmRequestPacket {
     pub transaction: TransactionId,
@@ -107,6 +114,7 @@ pub enum WmRequestKind {
         workspace: WorkspaceId,
     },
     ActionActivated(WmActionActivation),
+    FocusRequested(WmFocusRequest),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

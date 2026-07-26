@@ -166,6 +166,22 @@ fn wm_request_frame_roundtrips() {
 }
 
 #[test]
+fn wm_focus_request_frame_roundtrips_without_client_metadata() {
+    let request = WmRequestPacket {
+        transaction: TransactionId::from_raw(43),
+        kind: WmRequestKind::FocusRequested(WmFocusRequest {
+            surface: SurfaceId::new(17, 2),
+            output: OutputId::from_raw(7),
+            workspace: WorkspaceId::from_raw(3),
+        }),
+    };
+
+    let frame = encode_wm_request_frame(&request).unwrap();
+
+    assert_eq!(decode_wm_request_frame(&frame), Ok(request));
+}
+
+#[test]
 fn wm_response_frame_roundtrips() {
     let surface = SurfaceId::new(4, 9);
     let response = WmResponsePacket {

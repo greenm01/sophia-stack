@@ -1,8 +1,9 @@
 use crate::{
     SessionApplicationId, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
-    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmCommand, WmHello,
-    WmManageSurface, WmModifierMask, WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind,
-    WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor,
+    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmCommand,
+    WmFocusRequest, WmHello, WmManageSurface, WmModifierMask, WmOutputWorkspace,
+    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction,
+    WmSessionDescriptor,
 };
 
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
@@ -264,6 +265,12 @@ fn encode_wm_request_payload(
                 encode_layout_node(node, out);
             }
         }
+        WmRequestKind::FocusRequested(focus) => {
+            push_u16(out, 5);
+            encode_surface_id(focus.surface, out);
+            encode_output_id(focus.output, out);
+            encode_workspace_id(focus.workspace, out);
+        }
     }
     Ok(())
 }
@@ -317,6 +324,11 @@ fn decode_wm_request_payload(
                 nodes,
             })
         }
+        5 => WmRequestKind::FocusRequested(WmFocusRequest {
+            surface: decode_surface_id(cursor)?,
+            output: decode_output_id(cursor)?,
+            workspace: decode_workspace_id(cursor)?,
+        }),
         other => {
             return Err(IpcCodecError::InvalidEnum {
                 field: "wm_request_kind",

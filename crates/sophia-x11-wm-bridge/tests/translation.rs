@@ -1,7 +1,7 @@
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, NamespaceId,
-    OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId, WmCommand, WmModifierMask,
-    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
+    OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId, WmCommand, WmFocusRequest,
+    WmModifierMask, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
     LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeState,
@@ -207,4 +207,41 @@ fn client_size_constraints_bound_both_configure_and_render_geometry() {
         WmCommand::RenderSurface(placement)
             if placement.geometry == Rect { x: 20, y: 30, width: 320, height: 240 }
     )));
+}
+
+#[test]
+fn focus_request_preserves_the_existing_blind_synthetic_topology() {
+    let mut bridge = X11WmBridgeState::new();
+    bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(80),
+            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+                nodes: vec![node(30), node(31)],
+            }),
+        })
+        .unwrap();
+    let target = SurfaceId::new(31, 1);
+    let window = bridge.synthetic_window(target).unwrap();
+
+    let update = bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(81),
+            kind: WmRequestKind::FocusRequested(WmFocusRequest {
+                surface: target,
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+            }),
+        })
+        .unwrap();
+
+    assert!(update.events.is_empty());
+    assert_eq!(bridge.synthetic_window(target), Some(window));
 }

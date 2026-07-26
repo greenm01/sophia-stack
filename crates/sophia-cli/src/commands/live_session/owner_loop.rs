@@ -156,6 +156,7 @@ fn run_session_loop(
     let mut emergency_chord = EmergencyChordState::armed();
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
+    let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
             wm_output_bounds(&outputs)

@@ -18,6 +18,7 @@ impl LiveWmLayoutFingerprint {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveWmProposalSource {
     Action(WmActionId),
+    Focus(SurfaceId),
     Manage(SurfaceId),
     Relayout,
 }
@@ -26,6 +27,7 @@ impl LiveWmProposalSource {
     const fn reduced_name(self) -> &'static str {
         match self {
             Self::Action(_) => "action",
+            Self::Focus(_) => "focus",
             Self::Manage(_) => "manage",
             Self::Relayout => "relayout",
         }
@@ -436,6 +438,50 @@ impl LiveWmSession {
         })
     }
 
+    fn enqueue_focus(
+        &mut self,
+        surface: SurfaceId,
+        layout: &PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let source = LiveWmProposalSource::Focus(surface);
+        if self.has_request_source(source) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        if !layout.layers.contains_key(&surface) {
+            return Err("pointer focus target is missing from the live layout".into());
+        }
+        let output_state = self
+            .workspace_state
+            .output(output.id)
+            .ok_or("WM output is not configured")?;
+        let workspace = self
+            .workspace_state
+            .surface_workspace(surface)
+            .ok_or("pointer focus target is not registered with the WM")?;
+        if workspace != output_state.workspace {
+            return Err("pointer focus target is not on the active workspace".into());
+        }
+        let request = WmRequestPacket {
+            transaction: self.mint_transaction()?,
+            kind: WmRequestKind::FocusRequested(sophia_protocol::WmFocusRequest {
+                surface,
+                output: output.id,
+                workspace,
+            }),
+        };
+        self.enqueue_request(LiveWmQueuedRequest {
+            packet: request,
+            kind: LiveWmQueuedKind::Proposal {
+                base_state: self.workspace_state.clone(),
+                planning_state: self.workspace_state.clone(),
+                fingerprint: LiveWmLayoutFingerprint::capture(layout),
+                source,
+            },
+            queued_at: Instant::now(),
+        })
+    }
+
     fn enqueue_request(
         &mut self,
         request: LiveWmQueuedRequest,
@@ -721,7 +767,9 @@ impl LiveWmSession {
             .flatten()
             .and_then(|source| match source {
                 LiveWmProposalSource::Action(action) => Some(action),
-                LiveWmProposalSource::Manage(_) | LiveWmProposalSource::Relayout => None,
+                LiveWmProposalSource::Focus(_)
+                | LiveWmProposalSource::Manage(_)
+                | LiveWmProposalSource::Relayout => None,
             });
         let mut session_action = None;
         let mut workspace_projection = None;

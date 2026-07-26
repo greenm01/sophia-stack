@@ -10,13 +10,15 @@ use super::{
     independent_native_output_presented, input_baseline_is_presented,
     pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
     physical_input_routing_mode, place_pointer_event_for_routing, pointer_offset_for_geometry,
-    record_runtime_commits, route_input_events, session_protocol_errors_are_fatal,
-    stable_gpu_frame_proves_post_input_pixels, successful_primary_exit_ends_session,
-    synchronous_modeset_record, take_settled_input_delivery_wait,
+    record_runtime_commits, route_input_events, route_input_events_with_pointer_focus,
+    session_protocol_errors_are_fatal, stable_gpu_frame_proves_post_input_pixels,
+    successful_primary_exit_ends_session, synchronous_modeset_record,
+    take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::SessionClientKeyState;
 use sophia_engine::{
-    InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
+    InputFocusState, KeyRepeatConfig, KeyRepeatState, PointerFocusHandoffState, WmShortcutRegistry,
+    WmShortcutRouter,
 };
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
@@ -473,6 +475,144 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         })
     );
     assert!(input_receiver.try_recv().is_err());
+}
+
+#[test]
+fn pointer_focus_handoff_defers_drag_until_frontend_focus_acknowledgment() {
+    let seat = SeatId::from_raw(1);
+    let current = SurfaceId::new(1, 1);
+    let target = SurfaceId::new(2, 1);
+    let layers = [current, target]
+        .into_iter()
+        .enumerate()
+        .map(|(index, surface)| LayerSnapshot {
+            surface,
+            authority_local_id: None,
+            namespace: None,
+            stack_rank: u32::try_from(index).unwrap(),
+            geometry: Rect {
+                x: i32::try_from(index).unwrap() * 100,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            source: BufferSource::CpuBuffer {
+                handle: u64::try_from(index + 1).unwrap(),
+            },
+            damage: Region::empty(),
+            opacity: 1.0,
+            crop: None,
+            transform: Transform::IDENTITY,
+            generation: 1,
+            resize_sync: ResizeSyncCapability::ImplicitOnly,
+        })
+        .collect::<Vec<_>>();
+    let events = [
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: true,
+        },
+        InputEventKind::PointerMotion,
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: false,
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, kind)| InputEventPacket {
+        serial: u64::try_from(index + 1).unwrap(),
+        seat,
+        device: DeviceId::from_raw(2),
+        time_msec: u64::try_from(index + 1).unwrap(),
+        kind,
+        global_position: Some(Point {
+            x: 125.0 + index as f64,
+            y: 25.0,
+        }),
+        target_surface: None,
+        local_position: None,
+    })
+    .collect();
+    let (input_sender, input_receiver) = sync_channel(8);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
+    let mut client_keys = SessionClientKeyState::default();
+    let mut emergency = super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut pointer = SessionPointerPlacement::default();
+    let mut handoff = PointerFocusHandoffState::default();
+    let mut next_delivery = 1;
+
+    let held = route_input_events_with_pointer_focus(
+        events,
+        &InputFocusState::new(),
+        &[],
+        &layers,
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        None,
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        10,
+        None,
+        Some(&mut handoff),
+        Some(current),
+    )
+    .unwrap();
+
+    assert_eq!(held.pointer_focus_targets, [target]);
+    assert_eq!(held.pointer_routed, 0);
+    assert!(input_receiver.try_recv().is_err());
+
+    let released = route_input_events_with_pointer_focus(
+        Vec::new(),
+        &InputFocusState::new(),
+        &[],
+        &layers,
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        None,
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        11,
+        None,
+        Some(&mut handoff),
+        Some(target),
+    )
+    .unwrap();
+
+    assert_eq!(released.pointer_routed, 3);
+    assert_eq!(
+        input_receiver
+            .try_iter()
+            .map(|routed| {
+                assert_eq!(routed.request.target_surface, target);
+                routed.request.serial
+            })
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
 }
 
 #[test]

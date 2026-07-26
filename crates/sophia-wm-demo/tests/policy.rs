@@ -244,4 +244,24 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn pointer_focus_request_roundtrips_and_selects_the_opaque_surface() {
+        let focus = WmFocusRequest {
+            surface: SurfaceId::new(7, 2),
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(3),
+        };
+        let request = WmRequestPacket {
+            transaction: TransactionId::from_raw(24),
+            kind: WmRequestKind::FocusRequested(focus),
+        };
+
+        let encoded = request_to_process_args(&request);
+        assert_eq!(parse_process_request(&encoded).unwrap(), request);
+        assert_eq!(
+            handle_wm_request(request).commands,
+            [WmCommand::FocusSurface(focus.surface)]
+        );
+    }
 }

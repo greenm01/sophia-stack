@@ -110,6 +110,7 @@ fn wm_request_kind_name(kind: &WmRequestKind) -> &'static str {
         WmRequestKind::RelayoutWorkspace(_) => "relayout_workspace",
         WmRequestKind::SurfaceRemoved { .. } => "surface_removed",
         WmRequestKind::ActionActivated(_) => "action_activated",
+        WmRequestKind::FocusRequested(_) => "focus_requested",
     }
 }
 
@@ -119,5 +120,6 @@ fn wm_request_node_count(kind: &WmRequestKind) -> usize {
         WmRequestKind::RelayoutWorkspace(relayout) => relayout.nodes.len(),
         WmRequestKind::SurfaceRemoved { .. } => 0,
         WmRequestKind::ActionActivated(activation) => activation.nodes.len(),
+        WmRequestKind::FocusRequested(_) => 0,
     }
 }

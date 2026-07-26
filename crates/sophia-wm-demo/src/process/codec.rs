@@ -6,7 +6,7 @@ use sophia_protocol::{
 use super::error::WmProcessError;
 
 pub(super) fn process_usage() -> &'static str {
-    "usage: sophia-wm-demo relayout --transaction=N --output=N --workspace=N --bounds=x,y,w,h --node=index:generation[:x,y,w,h]"
+    "usage: sophia-wm-demo <manage|relayout|remove|action|focus> --transaction=N --workspace=N ..."
 }
 
 pub(super) fn required_u64(args: &[String], key: &str) -> Result<u64, WmProcessError> {

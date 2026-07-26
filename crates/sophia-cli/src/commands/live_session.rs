@@ -26,7 +26,8 @@ use sophia_cli::session_startup::{
 };
 use sophia_engine::{
     FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
-    KeyRepeatTarget, NonBlockingInputPoller, WmShortcutRouter, WmWorkspaceState,
+    KeyRepeatTarget, NonBlockingInputPoller, PointerFocusHandoffState, WmShortcutRouter,
+    WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,

@@ -7,6 +7,7 @@ struct PhysicalInputRouteReport {
     pointer_buttons_observed: usize,
     pointer_buttons_routed: usize,
     pointer_button_targets: Vec<SurfaceId>,
+    pointer_focus_targets: Vec<SurfaceId>,
     pointer_axes_observed: usize,
     pointer_axes_routed: usize,
     pointer_axis_targets: Vec<SurfaceId>,
@@ -18,6 +19,7 @@ struct PhysicalInputRouteReport {
     return_suppressed: bool,
     virtual_terminal: Option<u8>,
     virtual_terminal_modifier_releases: usize,
+    pointer_focus_handoff_expired: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -171,6 +173,8 @@ struct PhysicalInputRoutingContext<'a> {
     next_input_delivery: &'a mut u64,
     now_msec: u64,
     physical_text_proof: Option<&'a mut PhysicalTextProof>,
+    pointer_focus_handoff: &'a mut PointerFocusHandoffState,
+    applied_client_focus: Option<SurfaceId>,
 }
 
 fn route_physical_input<P: NonBlockingInputPoller>(
@@ -199,8 +203,10 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         next_input_delivery,
         now_msec,
         physical_text_proof,
+        pointer_focus_handoff,
+        applied_client_focus,
     } = context;
-    route_input_events(
+    route_input_events_with_pointer_focus(
         events,
         focus,
         committed_surfaces,
@@ -222,11 +228,64 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         next_input_delivery,
         now_msec,
         physical_text_proof,
+        Some(pointer_focus_handoff),
+        applied_client_focus,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn route_input_events(
+    events: Vec<sophia_protocol::InputEventPacket>,
+    focus: &InputFocusState,
+    committed_surfaces: &[CommittedSurfaceState],
+    input_layers: &[LayerSnapshot],
+    _client_routes: &XAuthorityClientSurfaceRoutes,
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    modifiers: &mut XCoreKeyboardMapper,
+    key_repeat: &mut KeyRepeatState,
+    key_repeat_map: &XkbKeymapSnapshot,
+    client_keys: &mut SessionClientKeyState,
+    emergency_chord: &mut EmergencyChordState,
+    virtual_terminal_chord: &mut VirtualTerminalChordState,
+    shortcuts: Option<&mut WmShortcutRouter>,
+    pointer: &mut SessionPointerPlacement,
+    pointer_routing_enabled: bool,
+    pointer_proof_required: bool,
+    pointer_buttons_only: bool,
+    routing_mode: PhysicalInputRoutingMode,
+    next_input_delivery: &mut u64,
+    now_msec: u64,
+    physical_text_proof: Option<&mut PhysicalTextProof>,
+) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
+    route_input_events_with_pointer_focus(
+        events,
+        focus,
+        committed_surfaces,
+        input_layers,
+        _client_routes,
+        input_sender,
+        modifiers,
+        key_repeat,
+        key_repeat_map,
+        client_keys,
+        emergency_chord,
+        virtual_terminal_chord,
+        shortcuts,
+        pointer,
+        pointer_routing_enabled,
+        pointer_proof_required,
+        pointer_buttons_only,
+        routing_mode,
+        next_input_delivery,
+        now_msec,
+        physical_text_proof,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn route_input_events_with_pointer_focus(
     events: Vec<sophia_protocol::InputEventPacket>,
     focus: &InputFocusState,
     committed_surfaces: &[CommittedSurfaceState],
@@ -248,6 +307,8 @@ fn route_input_events(
     next_input_delivery: &mut u64,
     now_msec: u64,
     mut physical_text_proof: Option<&mut PhysicalTextProof>,
+    mut pointer_focus_handoff: Option<&mut PointerFocusHandoffState>,
+    applied_client_focus: Option<SurfaceId>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         events: events.len(),
@@ -261,6 +322,7 @@ fn route_input_events(
         pointer_routed: 0,
         pointer_buttons_routed: 0,
         pointer_button_targets: Vec::new(),
+        pointer_focus_targets: Vec::new(),
         pointer_axes_routed: 0,
         pointer_axis_targets: Vec::new(),
         deliveries: Vec::new(),
@@ -268,7 +330,44 @@ fn route_input_events(
         return_suppressed: false,
         virtual_terminal: None,
         virtual_terminal_modifier_releases: 0,
+        pointer_focus_handoff_expired: false,
     };
+    if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
+        report.pointer_focus_handoff_expired = handoff.expire(now_msec);
+        if let Some(mut ready) = handoff.take_ready(applied_client_focus) {
+            while let Some(request) = ready.pop_front() {
+                let is_button = matches!(
+                    request.kind,
+                    sophia_protocol::InputEventKind::PointerButton { .. }
+                );
+                let is_axis = matches!(
+                    request.kind,
+                    sophia_protocol::InputEventKind::PointerAxis { .. }
+                );
+                let target = request.target_surface;
+                let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
+                *next_input_delivery = next_input_delivery
+                    .checked_add(1)
+                    .ok_or("live-session input delivery ID exhausted")?;
+                input_sender.try_send(XAuthorityRoutedInput {
+                    request,
+                    delivery: Some(delivery),
+                    mode: XAuthorityRoutedInputMode::Deliver,
+                })?;
+                report.pointer_routed = report.pointer_routed.saturating_add(1);
+                if is_button {
+                    report.pointer_buttons_routed =
+                        report.pointer_buttons_routed.saturating_add(1);
+                    report.pointer_button_targets.push(target);
+                }
+                if is_axis {
+                    report.pointer_axes_routed = report.pointer_axes_routed.saturating_add(1);
+                    report.pointer_axis_targets.push(target);
+                }
+                report.deliveries.push(delivery);
+            }
+        }
+    }
     for mut event in events {
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
@@ -520,7 +619,19 @@ fn route_input_events(
                 if !pointer_routing_enabled {
                     continue;
                 }
-                let route = sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);
+                let pending_target = pointer_focus_handoff
+                    .as_deref()
+                    .and_then(PointerFocusHandoffState::target);
+                let route = pending_target.map_or_else(
+                    || sophia_engine::hit_test_scene_surface_for_input(&event, input_layers),
+                    |target| {
+                        sophia_engine::route_scene_surface_for_input(
+                            &event,
+                            input_layers,
+                            target,
+                        )
+                    },
+                );
                 let (Some(global), Some(local)) = (event.global_position, route.local_position)
                 else {
                     continue;
@@ -528,21 +639,43 @@ fn route_input_events(
                 let Some(surface) = route.target_surface else {
                     continue;
                 };
+                let request = sophia_protocol::RoutedInputRequest {
+                    serial: event.serial,
+                    seat: event.seat,
+                    device: event.device,
+                    time_msec: event.time_msec,
+                    target_surface: surface,
+                    global_position: global,
+                    local_position: local,
+                    kind,
+                };
+                let starts_focus_handoff = matches!(
+                    kind,
+                    sophia_protocol::InputEventKind::PointerButton {
+                        button: 0x110,
+                        pressed: true
+                    }
+                ) && applied_client_focus != Some(surface)
+                    && pointer_focus_handoff
+                        .as_deref()
+                        .is_some_and(|handoff| handoff.target().is_none());
+                if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
+                    if starts_focus_handoff {
+                        handoff.begin(surface, now_msec, request)?;
+                        report.pointer_focus_targets.push(surface);
+                        continue;
+                    }
+                    if handoff.target().is_some() {
+                        handoff.defer(request)?;
+                        continue;
+                    }
+                }
                 let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
                 *next_input_delivery = next_input_delivery
                     .checked_add(1)
                     .ok_or("live-session input delivery ID exhausted")?;
                 input_sender.try_send(XAuthorityRoutedInput {
-                    request: sophia_protocol::RoutedInputRequest {
-                        serial: event.serial,
-                        seat: event.seat,
-                        device: event.device,
-                        time_msec: event.time_msec,
-                        target_surface: surface,
-                        global_position: global,
-                        local_position: local,
-                        kind,
-                    },
+                    request,
                     delivery: Some(delivery),
                     mode: XAuthorityRoutedInputMode::Deliver,
                 })?;

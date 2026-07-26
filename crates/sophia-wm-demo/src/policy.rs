@@ -147,6 +147,11 @@ pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
                 timeout_msec: 300,
             }
         }
+        WmRequestKind::FocusRequested(focus) => WmResponsePacket {
+            transaction: request.transaction,
+            commands: vec![WmCommand::FocusSurface(focus.surface)],
+            timeout_msec: 300,
+        },
     }
 }
 

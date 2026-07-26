@@ -289,6 +289,19 @@ fn physical_input_route_becomes_authority_request() {
 }
 
 #[test]
+fn selected_surface_route_preserves_drag_outside_its_geometry() {
+    let target = SurfaceId::new(0x44, 1);
+    let layer = test_layer(0x44, 1, 10, Region::empty());
+    let event = motion_event(78, 150.0, 120.0);
+
+    let route = route_scene_surface_for_input(&event, &[layer], target);
+
+    assert_eq!(route.target_surface, Some(target));
+    assert_eq!(route.global_position, Point { x: 150.0, y: 120.0 });
+    assert_eq!(route.local_position, Some(Point { x: 140.0, y: 120.0 }));
+}
+
+#[test]
 fn physical_input_flush_becomes_authority_requests_after_state_change() {
     let mut coalescer = RoutedInputCoalescer::new();
     coalescer.push(motion_event(1, 10.0, 10.0), route(1, 0x30, 10.0, 10.0));
@@ -349,4 +362,77 @@ fn physical_input_route_rejects_malformed_routes() {
         routed_input_request_from_physical_event(&event, &mismatched),
         Err(RoutedInputRequestError::MissingLocalPosition)
     );
+}
+
+#[test]
+fn pointer_focus_handoff_releases_ordered_input_only_after_focus_applies() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = PointerFocusHandoffState::default();
+    let press = handoff_request(
+        1,
+        target,
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: true,
+        },
+    );
+    let motion = handoff_request(2, target, InputEventKind::PointerMotion);
+    let release = handoff_request(
+        3,
+        target,
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: false,
+        },
+    );
+
+    handoff.begin(target, 100, press).unwrap();
+    handoff.defer(motion).unwrap();
+    handoff.defer(release).unwrap();
+
+    assert!(handoff.take_ready(Some(SurfaceId::new(9, 1))).is_none());
+    let ready = handoff.take_ready(Some(target)).unwrap();
+    assert_eq!(
+        ready
+            .into_iter()
+            .map(|request| request.serial)
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(handoff.target(), None);
+}
+
+#[test]
+fn pointer_focus_handoff_expires_without_frontend_acknowledgment() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = PointerFocusHandoffState::default();
+    handoff
+        .begin(
+            target,
+            100,
+            handoff_request(1, target, InputEventKind::PointerMotion),
+        )
+        .unwrap();
+
+    assert!(!handoff.expire(2_099));
+    assert!(handoff.expire(2_100));
+    assert_eq!(handoff.target(), None);
+    assert!(handoff.take_ready(Some(target)).is_none());
+}
+
+fn handoff_request(
+    serial: u64,
+    target_surface: SurfaceId,
+    kind: InputEventKind,
+) -> RoutedInputRequest {
+    RoutedInputRequest {
+        serial,
+        seat: SeatId::from_raw(1),
+        device: DeviceId::from_raw(2),
+        time_msec: serial,
+        target_surface,
+        global_position: Point { x: 5.0, y: 6.0 },
+        local_position: Point { x: 5.0, y: 6.0 },
+        kind,
+    }
 }

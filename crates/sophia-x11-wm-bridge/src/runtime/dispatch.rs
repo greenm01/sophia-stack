@@ -134,6 +134,35 @@ fn apply_server_command(
             event.push(0);
             write_packet(stream, &event)?;
         }
+        ServerCommand::Button {
+            window,
+            button,
+            pressed,
+        } => {
+            let geometry = state
+                .windows
+                .get(&window.raw())
+                .map(|entry| entry.geometry)
+                .ok_or_else(|| BridgeRuntimeError::new("focus click targeted an unknown window"))?;
+            let root_x = i16::try_from(geometry.x.saturating_add(1))
+                .unwrap_or(if geometry.x < 0 { i16::MIN } else { i16::MAX });
+            let root_y = i16::try_from(geometry.y.saturating_add(1))
+                .unwrap_or(if geometry.y < 0 { i16::MIN } else { i16::MAX });
+            let mut event = vec![if pressed { 4 } else { 5 }, button];
+            push_u16(&mut event, state.sequence);
+            push_u32(&mut event, 0);
+            push_u32(&mut event, SYNTHETIC_ROOT_XID);
+            push_u32(&mut event, window.raw());
+            push_u32(&mut event, 0);
+            push_i16(&mut event, root_x);
+            push_i16(&mut event, root_y);
+            push_i16(&mut event, 1);
+            push_i16(&mut event, 1);
+            push_u16(&mut event, 0);
+            event.push(1);
+            event.push(0);
+            write_packet(stream, &event)?;
+        }
         ServerCommand::Wake => {
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
         }
@@ -271,4 +300,3 @@ fn configure_window(
         })
         .map_err(|_| BridgeRuntimeError::new("legacy request channel disconnected"))
 }
-

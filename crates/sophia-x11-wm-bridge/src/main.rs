@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
-    SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmCommand, WmManageSurface,
-    WmOutputWorkspace, WmRequestKind, WmRequestPacket, WmSessionDescriptor, WorkspaceId,
+    SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmCommand, WmFocusRequest,
+    WmManageSurface, WmOutputWorkspace, WmRequestKind, WmRequestPacket, WmSessionDescriptor,
+    WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, run_wm_socket_server,
@@ -204,9 +205,30 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let focus_target = SurfaceId::new(10, 1);
+    let focus = runtime.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(4),
+        kind: WmRequestKind::FocusRequested(WmFocusRequest {
+            surface: focus_target,
+            output: OutputId::from_raw(1),
+            workspace,
+        }),
+    })?;
+    if !response_placements(&focus).is_empty()
+        || !focus
+            .commands
+            .contains(&WmCommand::FocusSurface(focus_target))
+    {
+        return Err(format!(
+            "xmonad did not focus the requested opaque surface without relayout: commands={:?}",
+            focus.commands
+        )
+        .into());
+    }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} master={:?} stack_top={:?} stack_bottom={:?}",
+        "real-xmonad-sequential-three-window-smoke: pass transaction={} focus_transaction={} master={:?} stack_top={:?} stack_bottom={:?}",
         response.transaction.raw(),
+        focus.transaction.raw(),
         actual[0].1,
         actual[1].1,
         actual[2].1,

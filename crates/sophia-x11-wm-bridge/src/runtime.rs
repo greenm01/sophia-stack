@@ -66,7 +66,15 @@ enum ServerCommand {
     Configure(SyntheticXWindowId, Rect),
     Unmap(SyntheticXWindowId),
     Destroy(SyntheticXWindowId),
-    Key { keycode: u8, pressed: bool },
+    Key {
+        keycode: u8,
+        pressed: bool,
+    },
+    Button {
+        window: SyntheticXWindowId,
+        button: u8,
+        pressed: bool,
+    },
     Wake,
     QueryFocus(SyncSender<Option<SyntheticXWindowId>>),
 }
@@ -280,6 +288,7 @@ impl LegacyX11WmBridgeRuntime {
                     .and_then(|surface| self.bridge.cycle_focus_window(surface, false)),
                 _ => None,
             },
+            WmRequestKind::FocusRequested(focus) => self.bridge.synthetic_window(focus.surface),
             _ => None,
         };
 
@@ -305,6 +314,24 @@ impl LegacyX11WmBridgeRuntime {
             commands
                 .send(ServerCommand::Wake)
                 .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+        }
+        if self.profile == LegacyWmProfile::Xmonad
+            && matches!(request.kind, WmRequestKind::FocusRequested(_))
+            && let Some(window) = profiled_focus
+        {
+            let commands = self
+                .commands
+                .as_ref()
+                .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            for pressed in [true, false] {
+                commands
+                    .send(ServerCommand::Button {
+                        window,
+                        button: 1,
+                        pressed,
+                    })
+                    .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            }
         }
 
         let started = Instant::now();
@@ -362,7 +389,11 @@ impl LegacyX11WmBridgeRuntime {
                 configured.len()
             )));
         }
-        let mut requests = configured.into_values().collect::<Vec<_>>();
+        let mut requests = if matches!(request.kind, WmRequestKind::FocusRequested(_)) {
+            Vec::new()
+        } else {
+            configured.into_values().collect::<Vec<_>>()
+        };
         let managed_focus = match &request.kind {
             WmRequestKind::ManageSurface(manage) => {
                 self.bridge.synthetic_window(manage.node.surface)

@@ -1,6 +1,6 @@
 use sophia_protocol::{
-    OutputId, TransactionId, WmActionActivation, WmActionId, WmManageSurface, WmRelayoutWorkspace,
-    WmRequestKind, WmRequestPacket, WorkspaceId,
+    OutputId, TransactionId, WmActionActivation, WmActionId, WmFocusRequest, WmManageSurface,
+    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 
 use super::{
@@ -70,6 +70,17 @@ pub fn request_to_process_args(request: &WmRequestPacket) -> Vec<String> {
             );
             args
         }
+        WmRequestKind::FocusRequested(focus) => vec![
+            "focus".to_owned(),
+            format!("--transaction={}", request.transaction.raw()),
+            format!("--output={}", focus.output.raw()),
+            format!("--workspace={}", focus.workspace.raw()),
+            format!(
+                "--surface={}:{}",
+                focus.surface.index(),
+                focus.surface.generation()
+            ),
+        ],
     }
 }
 
@@ -138,6 +149,18 @@ pub fn parse_process_request(args: &[String]) -> Result<WmRequestPacket, WmProce
                     workspace,
                     focused_surface,
                     nodes,
+                }),
+            })
+        }
+        "focus" => {
+            let output = OutputId::from_raw(required_u64(args, "--output")?);
+            let surface = required_surface(args, "--surface")?;
+            Ok(WmRequestPacket {
+                transaction,
+                kind: WmRequestKind::FocusRequested(WmFocusRequest {
+                    surface,
+                    output,
+                    workspace,
                 }),
             })
         }
