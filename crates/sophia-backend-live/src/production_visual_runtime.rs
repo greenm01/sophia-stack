@@ -334,6 +334,7 @@ impl LiveProductionVisualRuntime {
                 .map(|_| scene.frames_for_outputs(output_descriptors))
                 .transpose()?
         };
+        let cpu_layers = scene.presentation_layers(&committed_surfaces, &self.presentation_order);
         if let (Some(native_scanout), Some(frames)) =
             (native_scanout.as_deref_mut(), native_frames.as_ref())
         {
@@ -343,6 +344,7 @@ impl LiveProductionVisualRuntime {
             batch,
             if defer_frame { None } else { native_scanout },
             native_frames,
+            cpu_layers,
             wm_update,
             defer_present,
             reject_present_for_layout,
@@ -408,6 +410,7 @@ impl LiveProductionVisualRuntime {
         batch: &LiveProductionAuthorityBatch,
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
+        cpu_layers: Vec<LiveCpuPresentationLayer>,
         wm_update: Option<WmTransactionUpdate>,
         defer_present: bool,
         reject_present_for_layout: bool,
@@ -418,13 +421,9 @@ impl LiveProductionVisualRuntime {
         self.displayed_surfaces
             .retain(|surface, _| !batch.removed_surfaces.contains(surface));
         if !batch.present_submissions.is_empty() {
-            let cpu_background = native_frames
-                .as_ref()
-                .and_then(|frames| frames.first())
-                .map(|frame| frame.frame.clone());
             let superseded = self.present_scheduler.enqueue_batch(
                 batch,
-                cpu_background,
+                cpu_layers,
                 defer_present,
                 reject_present_for_layout,
                 self.presentation_feedback.resources_mut(),
@@ -517,7 +516,7 @@ impl LiveProductionVisualRuntime {
         }
         let mut mixed = self.presentation_feedback.resources().build_mixed_frame(
             transaction,
-            queued.cpu_background.clone(),
+            None,
             queued.target,
             Some(queued.surface_clip),
             1.0,
@@ -563,20 +562,52 @@ impl LiveProductionVisualRuntime {
                 .pop()
                 .ok_or("ready Present frame lost its current DMA-BUF layer")?,
         );
-        for surface in &self.presentation_order {
-            if *surface == queued_surface {
-                mixed.layers.push(
-                    current_owned
-                        .take()
-                        .ok_or("current Present appeared twice in the layout")?,
-                );
-                continue;
-            }
-            if let Some(displayed) = self.displayed_surfaces.get(surface) {
-                mixed.layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
-                    frame: displayed.layer.frame.try_clone()?,
-                    placement: displayed.layer.placement,
-                });
+        let cpu_surfaces = queued
+            .cpu_layers
+            .iter()
+            .map(|layer| layer.surface)
+            .collect::<Vec<_>>();
+        let retained_surfaces = self.displayed_surfaces.keys().copied().collect::<Vec<_>>();
+        for source in live_production_mixed_layer_order(
+            &self.presentation_order,
+            queued_surface,
+            &cpu_surfaces,
+            &retained_surfaces,
+        ) {
+            match source {
+                LiveProductionMixedLayerSource::CurrentDmaBuf => {
+                    mixed.layers.push(
+                        current_owned
+                            .take()
+                            .ok_or("current Present appeared twice in the layout")?,
+                    );
+                }
+                LiveProductionMixedLayerSource::Cpu(surface) => {
+                    let layer = queued
+                        .cpu_layers
+                        .iter()
+                        .find(|layer| layer.surface == surface)
+                        .ok_or("ordered CPU layer disappeared from queued Present")?;
+                    mixed.layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                        buffer: layer.buffer.clone(),
+                        placement: LiveCompositionPlacement {
+                            target: layer.geometry,
+                            clip: None,
+                            transform: Transform::IDENTITY,
+                            alpha: 1.0,
+                        },
+                    });
+                }
+                LiveProductionMixedLayerSource::RetainedDmaBuf(surface) => {
+                    let displayed = self
+                        .displayed_surfaces
+                        .get(&surface)
+                        .ok_or("ordered retained DMA-BUF layer disappeared")?;
+                    mixed.layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                        frame: displayed.layer.frame.try_clone()?,
+                        placement: displayed.layer.placement,
+                    });
+                }
             }
         }
         if current_owned.is_some() {
@@ -773,6 +804,35 @@ pub fn live_production_projection_requires_gpu_scanout(
         presentation_order.contains(&transaction.surface)
             && matches!(transaction.target_buffer, BufferSource::DmaBuf { .. })
     })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionMixedLayerSource {
+    CurrentDmaBuf,
+    Cpu(SurfaceId),
+    RetainedDmaBuf(SurfaceId),
+}
+
+pub fn live_production_mixed_layer_order(
+    presentation_order: &[SurfaceId],
+    current: SurfaceId,
+    cpu_surfaces: &[SurfaceId],
+    retained_dma_buf_surfaces: &[SurfaceId],
+) -> Vec<LiveProductionMixedLayerSource> {
+    presentation_order
+        .iter()
+        .filter_map(|surface| {
+            if *surface == current {
+                Some(LiveProductionMixedLayerSource::CurrentDmaBuf)
+            } else if cpu_surfaces.contains(surface) {
+                Some(LiveProductionMixedLayerSource::Cpu(*surface))
+            } else if retained_dma_buf_surfaces.contains(surface) {
+                Some(LiveProductionMixedLayerSource::RetainedDmaBuf(*surface))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 pub const fn reduce_live_production_frame_defer(

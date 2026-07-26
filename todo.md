@@ -194,6 +194,11 @@ Promotion now follows the gates below in order.
 - [ ] Physically prove that xmobar renders above managed Kitty windows,
   continues updating, accepts pointer events, and does not steal keyboard
   focus across launch, resize, workspace, and VT round-trips.
+  The first physical run proved supervised startup, sustained CPU-buffer
+  redraw, and client-positioned role reduction, but exposed a mixed-scene
+  ordering bug: the flattened CPU frame sat below Kitty's DMA-BUF. Sophia now
+  preserves CPU surface identity and interleaves CPU/GPU layers by Engine
+  presentation order; the corrected physical rerun remains pending.
 - [ ] Reduce `_NET_WM_STRUT_PARTIAL` into protocol-neutral output reservations
   so managed layout uses the remaining work area without exposing X atoms or
   dock metadata to xmonad.

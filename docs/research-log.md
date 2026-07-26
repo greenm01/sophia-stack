@@ -3629,3 +3629,23 @@ clients. The unmodified xmobar 0.51.1 smoke subsequently completed 163 requests
 across 28 opcodes with two committed transactions, 8,967 nonzero pixel bytes,
 and `first_error=none`. The source checkouts for xmobar and xmonad were not
 modified.
+
+The first physical session then proved that xmobar stayed supervised, retained
+its client-positioned role, and continued publishing nonzero CPU buffers, but
+the bar was not visible above Kitty. The defect was in the generic mixed
+renderer boundary: all CPU surfaces were flattened into one output-sized
+background before the current and retained DMA-BUF layers were appended.
+Flattening discarded the per-surface ordering needed for a CPU overlay, so the
+later Kitty layer covered valid bar pixels.
+
+Mixed presentation now snapshots CPU surfaces as passive
+surface/geometry/buffer records and reduces the Engine presentation order into
+one interleaved CPU/DMA-BUF layer sequence. The scheduler owns that immutable
+snapshot with each queued Present; the renderer remains unaware of xmobar,
+Kitty, X atoms, or window roles. Reducer regressions cover both a CPU overlay
+above GPU clients and an ordinary CPU client below the current GPU surface.
+The xmobar smoke was also strengthened to require six committed transactions
+and nonzero pixels in the newest redraw; the retained run completed 215
+requests across 28 opcodes with 25,929 nonzero bytes and no protocol error.
+Corrected physical visibility remains pending, and neither client source tree
+was modified.

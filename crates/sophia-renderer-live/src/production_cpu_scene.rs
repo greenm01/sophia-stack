@@ -17,6 +17,13 @@ pub struct LiveProductionComposedFrame {
     pub nonzero_pixel_bytes: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveCpuPresentationLayer {
+    pub surface: SurfaceId,
+    pub geometry: Rect,
+    pub buffer: LiveCpuBufferSource,
+}
+
 pub struct LiveProductionCpuScene {
     output_size: Size,
     buffers: LiveCpuBufferRegistry,
@@ -80,6 +87,29 @@ impl LiveProductionCpuScene {
             raised_surface,
             cursor_position,
         )
+    }
+
+    pub fn presentation_layers(
+        &self,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: &[SurfaceId],
+    ) -> Vec<LiveCpuPresentationLayer> {
+        presentation_order
+            .iter()
+            .filter_map(|surface| {
+                let committed = committed_surfaces
+                    .iter()
+                    .find(|committed| committed.surface == *surface)?;
+                let BufferSource::CpuBuffer { handle } = committed.buffer else {
+                    return None;
+                };
+                Some(LiveCpuPresentationLayer {
+                    surface: *surface,
+                    geometry: committed.geometry,
+                    buffer: self.buffers.get(handle)?.clone(),
+                })
+            })
+            .collect()
     }
 
     fn compose_ordered(

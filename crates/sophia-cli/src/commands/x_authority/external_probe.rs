@@ -169,6 +169,7 @@ fn run_x_authority_external_probe_smoke(
     let mut opcodes = std::collections::BTreeSet::new();
     let mut details = std::collections::BTreeSet::new();
     let mut requests = 0usize;
+    let minimum_transactions = if label == "xmobar" { 6 } else { 1 };
 
     while std::time::Instant::now() < deadline {
         while let Ok(observation) = receiver.try_recv() {
@@ -192,6 +193,10 @@ fn run_x_authority_external_probe_smoke(
         }
         let pixel_proof_ready = match pixel_proof {
             ExternalProbePixelProof::None => true,
+            ExternalProbePixelProof::Nonzero if label == "xmobar" => {
+                latest_transaction_cpu_buffer(&transactions, &cpu_buffers)
+                    .is_some_and(|buffer| buffer.bytes.iter().any(|byte| *byte != 0))
+            }
             ExternalProbePixelProof::Nonzero => cpu_buffers
                 .values()
                 .any(|buffer| buffer.bytes.iter().any(|byte| *byte != 0)),
@@ -199,7 +204,7 @@ fn run_x_authority_external_probe_smoke(
                 cpu_buffers_contain_fixed_text(&cpu_buffers, marker)
             }
         };
-        if !transactions.is_empty() && pixel_proof_ready {
+        if transactions.len() >= minimum_transactions && pixel_proof_ready {
             break;
         }
         if child.try_wait()?.is_some() {
@@ -331,6 +336,10 @@ fn run_x_authority_external_probe_smoke(
     let ascii_marker_match = cpu_buffers_contain_fixed_text(&cpu_buffers, b"Sophia");
     let pixel_proof_passed = match pixel_proof {
         ExternalProbePixelProof::None => true,
+        ExternalProbePixelProof::Nonzero if label == "xmobar" => {
+            latest_transaction_cpu_buffer(&transactions, &cpu_buffers)
+                .is_some_and(|buffer| buffer.bytes.iter().any(|byte| *byte != 0))
+        }
         ExternalProbePixelProof::Nonzero => nonzero_pixel_bytes != 0,
         ExternalProbePixelProof::Ascii(marker) => {
             cpu_buffers_contain_fixed_text(&cpu_buffers, marker)
@@ -342,10 +351,14 @@ fn run_x_authority_external_probe_smoke(
         )
         .into());
     }
-    if require_transactions && (runtime_committed == 0 || runtime_surfaces == 0) {
+    if require_transactions
+        && (runtime_committed < u64::try_from(minimum_transactions).unwrap_or(u64::MAX)
+            || runtime_surfaces == 0)
+    {
         return Err(format!(
-            "{label} transactions did not commit through runtime for {display}: transactions={} committed={} surfaces={}",
+            "{label} transactions did not commit through runtime for {display}: transactions={} minimum={} committed={} surfaces={}",
             transactions.len(),
+            minimum_transactions,
             runtime_committed,
             runtime_surfaces
         )
@@ -380,6 +393,19 @@ fn run_x_authority_external_probe_smoke(
         observed_transactions: transactions,
         observed_cpu_buffers: cpu_buffers.into_values().collect(),
     })
+}
+
+fn latest_transaction_cpu_buffer<'a>(
+    transactions: &[SurfaceTransaction],
+    buffers: &'a std::collections::BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
+) -> Option<&'a XAuthorityCpuBufferSnapshot> {
+    let handle = transactions
+        .last()
+        .and_then(|transaction| match transaction.target_buffer {
+            BufferSource::CpuBuffer { handle } => Some(handle),
+            _ => None,
+        })?;
+    buffers.get(&handle)
 }
 
 fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapshot {

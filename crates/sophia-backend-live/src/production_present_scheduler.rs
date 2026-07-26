@@ -1,9 +1,9 @@
 use crate::{
-    LiveCpuComposedFrame, LivePresentationResourceSession, LivePresentationSubmission,
-    LiveProductionAuthorityBatch,
+    LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityBatch,
 };
 use sophia_engine::PreparedSurfaceCommit;
 use sophia_protocol::{Rect, SurfaceId, SurfaceTransaction, TransactionId};
+use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::time::{Duration, Instant};
@@ -13,7 +13,7 @@ pub struct LiveProductionQueuedPresent {
     pub submission: LivePresentationSubmission,
     pub surface: sophia_protocol::SurfaceId,
     pub transactions: Vec<SurfaceTransaction>,
-    pub cpu_background: Option<LiveCpuComposedFrame>,
+    pub cpu_layers: Vec<LiveCpuPresentationLayer>,
     pub target: Rect,
     pub surface_clip: Rect,
     deferred_by_layout: bool,
@@ -68,7 +68,7 @@ impl LiveProductionPresentScheduler {
     pub fn enqueue_batch(
         &mut self,
         batch: &LiveProductionAuthorityBatch,
-        cpu_background: Option<LiveCpuComposedFrame>,
+        cpu_layers: Vec<LiveCpuPresentationLayer>,
         deferred_by_layout: bool,
         reject_for_layout: bool,
         resources: &mut LivePresentationResourceSession,
@@ -118,7 +118,7 @@ impl LiveProductionPresentScheduler {
                 submission,
                 surface,
                 transactions: batch.transactions.clone(),
-                cpu_background: cpu_background.clone(),
+                cpu_layers: cpu_layers.clone(),
                 target: Rect {
                     x: transaction
                         .target_geometry

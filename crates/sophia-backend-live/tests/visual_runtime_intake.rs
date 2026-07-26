@@ -1,9 +1,9 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LiveProductionCpuFrameQueueStatus, LiveProductionNativeSuspendOutcome,
-    LiveProductionScanoutContent, LiveProductionVisualRuntime,
-    live_production_projection_requires_gpu_scanout,
+    LiveProductionCpuFrameQueueStatus, LiveProductionMixedLayerSource,
+    LiveProductionNativeSuspendOutcome, LiveProductionScanoutContent, LiveProductionVisualRuntime,
+    live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
     live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer,
 };
@@ -47,6 +47,46 @@ fn initial_transaction(previous_committed_generation: u64) -> SurfaceTransaction
         timeout_msec: 250,
         previous_committed_generation,
     }
+}
+
+#[test]
+fn mixed_layer_order_preserves_cpu_overlay_above_gpu_clients() {
+    let lower_gpu = SurfaceId::new(1, 1);
+    let current_gpu = SurfaceId::new(2, 1);
+    let upper_cpu = SurfaceId::new(3, 1);
+
+    assert_eq!(
+        live_production_mixed_layer_order(
+            &[lower_gpu, current_gpu, upper_cpu],
+            current_gpu,
+            &[upper_cpu],
+            &[lower_gpu],
+        ),
+        vec![
+            LiveProductionMixedLayerSource::RetainedDmaBuf(lower_gpu),
+            LiveProductionMixedLayerSource::CurrentDmaBuf,
+            LiveProductionMixedLayerSource::Cpu(upper_cpu),
+        ]
+    );
+}
+
+#[test]
+fn mixed_layer_order_preserves_cpu_client_below_current_gpu() {
+    let lower_cpu = SurfaceId::new(1, 1);
+    let current_gpu = SurfaceId::new(2, 1);
+
+    assert_eq!(
+        live_production_mixed_layer_order(
+            &[lower_cpu, current_gpu],
+            current_gpu,
+            &[lower_cpu],
+            &[],
+        ),
+        vec![
+            LiveProductionMixedLayerSource::Cpu(lower_cpu),
+            LiveProductionMixedLayerSource::CurrentDmaBuf,
+        ]
+    );
 }
 
 #[test]

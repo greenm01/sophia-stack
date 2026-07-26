@@ -543,7 +543,7 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(transaction, surface, handle),
-            None,
+            Vec::new(),
             false,
             false,
             &mut resources,
@@ -584,7 +584,14 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_batch(&batch, None, false, false, &mut resources, Instant::now())
+        .enqueue_batch(
+            &batch,
+            Vec::new(),
+            false,
+            false,
+            &mut resources,
+            Instant::now(),
+        )
         .unwrap();
     let geometry = Rect {
         x: 1280,
@@ -626,7 +633,7 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(retained_transaction, surface, retained_handle),
-            None,
+            Vec::new(),
             false,
             false,
             &mut resources,
@@ -636,7 +643,7 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(deferred_transaction, surface, deferred_handle),
-            None,
+            Vec::new(),
             true,
             false,
             &mut resources,
@@ -674,7 +681,7 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
     let first_superseded = scheduler
         .enqueue_batch(
             &scheduler_batch(first_transaction, surface, first_handle),
-            None,
+            Vec::new(),
             true,
             false,
             &mut resources,
@@ -684,7 +691,7 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
     let second_superseded = scheduler
         .enqueue_batch(
             &scheduler_batch(second_transaction, surface, second_handle),
-            None,
+            Vec::new(),
             true,
             false,
             &mut resources,
@@ -724,7 +731,7 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
     scheduler
         .enqueue_batch(
             &scheduler_batch(matching_transaction, surface, matching_handle),
-            None,
+            Vec::new(),
             true,
             false,
             &mut resources,
@@ -735,7 +742,7 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
     let rejected = scheduler
         .enqueue_batch(
             &scheduler_batch(rejected_transaction, surface, rejected_handle),
-            None,
+            Vec::new(),
             true,
             true,
             &mut resources,
