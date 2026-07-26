@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
 mod authority;
+mod compositor_graphics;
 mod native;
 mod service;
 pub use native::*;
@@ -15,6 +16,13 @@ pub use service::*;
 struct LiveDisplayedSurface {
     layer: LiveRetainedDmaBufLayer,
     retained_transaction: Option<TransactionId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveFocusedBorderObservation {
+    pub surface: SurfaceId,
+    pub generation: u64,
+    pub primitives: usize,
 }
 
 fn replace_displayed_surface(
@@ -42,6 +50,9 @@ pub struct LiveProductionVisualRuntime {
     present_scheduler: LiveProductionPresentScheduler,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
+    focused_surface: Option<SurfaceId>,
+    pending_focused_border_observation: Option<LiveFocusedBorderObservation>,
+    last_focused_border_observation: Option<LiveFocusedBorderObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
     present_scheduling_blocked: bool,
@@ -54,6 +65,7 @@ pub struct LiveProductionCycleRequest<'a> {
     pub scene: &'a mut LiveProductionCpuScene,
     pub updates: Vec<crate::LiveCpuBufferUpdate>,
     pub raised_surface: Option<SurfaceId>,
+    pub focused_surface: Option<SurfaceId>,
     pub cursor_presentation: LiveProductionCursorPresentation,
     pub defer_frame: bool,
     pub defer_present: bool,
@@ -98,6 +110,9 @@ impl LiveProductionVisualRuntime {
             present_scheduler: LiveProductionPresentScheduler::default(),
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
+            focused_surface: None,
+            pending_focused_border_observation: None,
+            last_focused_border_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
             present_scheduling_blocked: false,
@@ -152,6 +167,7 @@ impl LiveProductionVisualRuntime {
             scene,
             updates,
             raised_surface,
+            focused_surface,
             cursor_presentation,
             defer_frame,
             defer_present,
@@ -162,9 +178,19 @@ impl LiveProductionVisualRuntime {
             presentation_layout,
         } = request;
         self.present_scheduling_blocked = defer_present;
+        let focus_changed = self.focused_surface != focused_surface;
+        self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
-        let retained_projection_queued = if presentation_order_changed {
-            match (native_scanout.as_deref_mut(), self.retained_mixed_frame()?) {
+        let visual_projection_changed = presentation_order_changed || focus_changed;
+        let retained_cpu_layers = scene.presentation_layers(
+            self.production.committed_surfaces(),
+            &self.presentation_order,
+        );
+        let retained_projection_queued = if visual_projection_changed {
+            match (
+                native_scanout.as_deref_mut(),
+                self.retained_mixed_frame(&retained_cpu_layers)?,
+            ) {
                 (Some(native_scanout), Some((transaction, frame))) => {
                     let primary = self
                         .outputs
@@ -207,7 +233,7 @@ impl LiveProductionVisualRuntime {
                     )));
         let defer_frame = reduce_live_production_frame_defer(
             defer_frame,
-            presentation_order_changed,
+            visual_projection_changed,
             preserve_gpu_scanout,
         );
         let native_scanout = if preserve_gpu_scanout {
@@ -227,6 +253,7 @@ impl LiveProductionVisualRuntime {
             &self.presentation_order,
             updates,
             raised_surface,
+            focused_surface,
             cursor_presentation.composition_position(),
             defer_frame,
             create_native_frames,
@@ -284,6 +311,9 @@ impl LiveProductionVisualRuntime {
                     error.phase, error.source
                 )
             })?;
+        if report.submission.composed {
+            self.record_focused_border_observation(&report.committed_surfaces)?;
+        }
         Ok((report.submission, report.committed_surfaces))
     }
 
@@ -297,6 +327,7 @@ impl LiveProductionVisualRuntime {
             scene,
             updates,
             raised_surface,
+            focused_surface,
             cursor_presentation,
             defer_frame,
             defer_present,
@@ -307,6 +338,7 @@ impl LiveProductionVisualRuntime {
             presentation_layout,
         } = request;
         self.present_scheduling_blocked = defer_present;
+        self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
@@ -317,11 +349,13 @@ impl LiveProductionVisualRuntime {
                 .cloned()
                 .ok_or("software redraw coalescing has no prior composed frame")?
         } else {
+            let presentation_order =
+                raised_presentation_order(&self.presentation_order, raised_surface);
+            let display_list = self.display_list(&committed_surfaces, &presentation_order)?;
             scene
-                .compose_visible(
+                .compose_display_list(
                     &committed_surfaces,
-                    &self.presentation_order,
-                    raised_surface,
+                    &display_list,
                     cursor_presentation.composition_position(),
                 )?
                 .clone()
@@ -386,24 +420,6 @@ impl LiveProductionVisualRuntime {
             }
         }
         order_changed
-    }
-
-    fn retained_mixed_frame(
-        &self,
-    ) -> Result<Option<(TransactionId, LiveOwnedMixedCompositionFrame)>, std::io::Error> {
-        let mut transaction = None;
-        let mut layers = Vec::with_capacity(self.displayed_surfaces.len());
-        for surface in &self.presentation_order {
-            let Some(displayed) = self.displayed_surfaces.get(surface) else {
-                continue;
-            };
-            transaction = transaction.or(displayed.retained_transaction);
-            layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
-                frame: displayed.layer.frame.try_clone()?,
-                placement: displayed.layer.placement,
-            });
-        }
-        Ok(transaction.map(|transaction| (transaction, LiveOwnedMixedCompositionFrame { layers })))
     }
 
     pub fn run_batch(
@@ -539,7 +555,8 @@ impl LiveProductionVisualRuntime {
                         placement: *placement,
                     })
                 }
-                LiveOwnedMixedCompositionLayer::Cpu { .. } => None,
+                LiveOwnedMixedCompositionLayer::Cpu { .. }
+                | LiveOwnedMixedCompositionLayer::Solid { .. } => None,
             })
             .ok_or("ready Present frame did not retain its DMA-BUF")?;
         if !current_layer.has_unit_scale() {
@@ -576,21 +593,20 @@ impl LiveProductionVisualRuntime {
             .map(|layer| layer.surface)
             .collect::<Vec<_>>();
         let retained_surfaces = self.displayed_surfaces.keys().copied().collect::<Vec<_>>();
-        for source in live_production_mixed_layer_order(
-            &self.presentation_order,
-            queued_surface,
-            &cpu_surfaces,
-            &retained_surfaces,
-        ) {
-            match source {
-                LiveProductionMixedLayerSource::CurrentDmaBuf => {
+        let display_list = self.display_list(prepared.candidate(), &self.presentation_order)?;
+        let border_candidate = prepared.candidate().to_vec();
+        for command in display_list.commands {
+            match command {
+                CompositorDisplayCommand::Surface { surface } if surface == queued_surface => {
                     mixed.layers.push(
                         current_owned
                             .take()
                             .ok_or("current Present appeared twice in the layout")?,
                     );
                 }
-                LiveProductionMixedLayerSource::Cpu(surface) => {
+                CompositorDisplayCommand::Surface { surface }
+                    if cpu_surfaces.contains(&surface) =>
+                {
                     let layer = queued
                         .cpu_layers
                         .iter()
@@ -606,7 +622,9 @@ impl LiveProductionVisualRuntime {
                         },
                     });
                 }
-                LiveProductionMixedLayerSource::RetainedDmaBuf(surface) => {
+                CompositorDisplayCommand::Surface { surface }
+                    if retained_surfaces.contains(&surface) =>
+                {
                     let displayed = self
                         .displayed_surfaces
                         .get(&surface)
@@ -616,11 +634,19 @@ impl LiveProductionVisualRuntime {
                         placement: displayed.layer.placement,
                     });
                 }
+                CompositorDisplayCommand::Surface { .. } => {}
+                CompositorDisplayCommand::SolidRect(rect) => {
+                    mixed.layers.push(LiveOwnedMixedCompositionLayer::Solid {
+                        geometry: rect.geometry,
+                        color: rect.color,
+                    });
+                }
             }
         }
         if current_owned.is_some() {
             return Err("visible Present surface is missing from the presentation order".into());
         }
+        self.record_focused_border_observation(&border_candidate)?;
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 mixed
@@ -633,6 +659,7 @@ impl LiveProductionVisualRuntime {
                         crate::LiveOwnedMixedCompositionLayer::DmaBuf { .. } => {
                             (cpu, dmabuf.saturating_add(1))
                         }
+                        crate::LiveOwnedMixedCompositionLayer::Solid { .. } => (cpu, dmabuf),
                     });
             let (status, detail) = native_scanout.diagnose_mixed_frame(primary_index, mixed);
             self.present_scheduler.pop_front();
@@ -714,15 +741,15 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<LiveProductionCpuSubmission, Box<dyn std::error::Error>> {
         let committed = self.production.committed_surfaces().to_vec();
+        self.focused_surface = raised_surface;
+        let presentation_order =
+            raised_presentation_order(&self.presentation_order, raised_surface);
+        let display_list = self.display_list(&committed, &presentation_order)?;
         let compose_started = Instant::now();
         let composition = scene
-            .compose_visible(
-                &committed,
-                &self.presentation_order,
-                raised_surface,
-                cursor_position,
-            )?
+            .compose_display_list(&committed, &display_list, cursor_position)?
             .clone();
+        self.record_focused_border_observation(&committed)?;
         let frames = scene.frames_for_outputs(output_descriptors)?;
         self.initialize_native_scanout(native_scanout, &frames)?;
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();

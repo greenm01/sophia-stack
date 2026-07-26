@@ -97,10 +97,17 @@ pub struct NativeDmaBufCompositionLayer<'a> {
     pub alpha: f32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeSolidCompositionLayer {
+    pub target: NativeCompositionRect,
+    pub color: [u8; 3],
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum NativeCompositionLayer<'a> {
     Cpu(NativeCpuCompositionLayer<'a>),
     DmaBuf(NativeDmaBufCompositionLayer<'a>),
+    Solid(NativeSolidCompositionLayer),
 }
 
 #[derive(Clone, Copy, Debug)]

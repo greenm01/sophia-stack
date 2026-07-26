@@ -137,6 +137,12 @@ pub fn try_clone_mixed_frame(
                     placement: *placement,
                 })
             }
+            LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
+                Ok(LiveOwnedMixedCompositionLayer::Solid {
+                    geometry: *geometry,
+                    color: *color,
+                })
+            }
         })
         .collect::<std::io::Result<Vec<_>>>()?;
     Ok(LiveOwnedMixedCompositionFrame { layers })

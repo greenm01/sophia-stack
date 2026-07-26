@@ -37,6 +37,7 @@ mod prelude {
 
 mod backend_assembly;
 mod chrome;
+mod compositor_graphics;
 mod drm;
 mod engine;
 mod error;
@@ -53,6 +54,7 @@ mod wm;
 mod wm_policy;
 pub use backend_assembly::*;
 pub use chrome::*;
+pub use compositor_graphics::*;
 pub use drm::*;
 pub use engine::*;
 pub use error::*;

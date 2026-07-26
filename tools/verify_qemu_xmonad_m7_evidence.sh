@@ -38,6 +38,42 @@ if [[ -z "$reverse_line" || -z "$sequence_line" ]]; then
     exit 1
 fi
 "$(dirname "$0")/verify_sophia_xmonad_pointer_focus.sh" "$evidence" >/dev/null
+awk '
+    /^sophia_live_wm schema=3 status=focus_requested source=pointer surface=/ {
+        split($0, fields, "surface=")
+        target = fields[2]
+        requested = 1
+        next
+    }
+    requested && /^sophia_live_wm schema=1 status=focus_committed .* target=surface$/ {
+        committed = 1
+        next
+    }
+    committed && $0 ~ "^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=" target " generation=[0-9]+ primitives=4$" {
+        border = 1
+        next
+    }
+    /^sophia_live_session_pointer schema=6 status=focused_key_routed / {
+        exit !(requested && committed && border)
+    }
+    END {
+        if (!(requested && committed && border)) {
+            exit 1
+        }
+    }
+' "$evidence" || {
+    echo "focused border did not follow committed pointer focus" >&2
+    exit 1
+}
+border_surfaces="$(
+    sed -n 's/^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=\([0-9][0-9]*\) generation=[0-9][0-9]* primitives=4$/\1/p' "$evidence" |
+        sort -u |
+        wc -l
+)"
+if ((border_surfaces < 2)); then
+    echo "focused border did not cover two focus targets" >&2
+    exit 1
+fi
 grep -Eq '^sophia_live_session schema=(14|15) status=bounded_complete .*wm_policy=external .*wm_requests=[1-9][0-9]* .*wm_committed=[1-9][0-9]* .*wm_degraded=false ' "$evidence"
 grep -q '^sophia_qemu_guest schema=1 status=complete scenario=xmonad-m7$' "$evidence"
 grep -q '^sophia_qemu_xmonad schema=1 status=restart_injected target=compatibility_bridge$' "$evidence"

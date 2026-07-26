@@ -206,6 +206,9 @@ where
                         || layer.target.height <= 0
                         || !layer.alpha.is_finite()
                 }
+                NativeCompositionLayer::Solid(layer) => {
+                    layer.target.width <= 0 || layer.target.height <= 0
+                }
             })
         {
             return NativeGbmOwnedScanoutBufferExportReport {

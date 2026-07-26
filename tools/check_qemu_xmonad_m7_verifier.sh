@@ -39,6 +39,9 @@ expect_failure missing_drag_motion
 sed '/status=focused_key_routed /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_selected_key
 
+sed '/sophia_live_compositor_chrome /d' "$fixture" >"$tmp"
+expect_failure missing_focused_border
+
 sed '/status=output_edge_confined /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_edge
 

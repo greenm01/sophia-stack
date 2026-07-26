@@ -10,16 +10,17 @@ use sophia_backend_live::{
     LivePresentationSubmission, LiveProductionAuthorityBatch,
     LiveProductionPresentFeedbackCoordinator, LiveProductionPresentGate,
     LiveProductionPresentScheduler, LiveProductionPresentSubmission, LiveResourceReleaseStatus,
-    LiveRetainedDmaBufLayer, compose_full_state_mixed_frame,
+    LiveRetainedDmaBufLayer, compose_full_state_mixed_frame, try_clone_mixed_frame,
 };
-use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
+use sophia_engine::{CompositorRgb8, HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
     DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 use sophia_renderer_live::{
-    LiveCompositionPlacement, LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
+    LiveCompositionPlacement, LiveOwnedMixedCompositionFrame, LiveOwnedMixedCompositionLayer,
+    LiveOwnedMultiPlaneDmaBufFrame,
 };
 
 fn fd() -> OwnedFd {
@@ -193,9 +194,51 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         .map(|layer| match layer {
             LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
             | LiveOwnedMixedCompositionLayer::Cpu { placement, .. } => placement.target.x,
+            LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => geometry.x,
         })
         .collect::<Vec<_>>();
     assert_eq!(targets, [0, 64]);
+}
+
+#[test]
+fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
+    let frame = LiveOwnedMixedCompositionFrame {
+        layers: vec![LiveOwnedMixedCompositionLayer::Solid {
+            geometry: Rect {
+                x: 4,
+                y: 5,
+                width: 6,
+                height: 7,
+            },
+            color: CompositorRgb8 {
+                red: 0x70,
+                green: 0xb7,
+                blue: 0xff,
+            },
+        }],
+    };
+
+    let cloned = try_clone_mixed_frame(&frame).unwrap();
+    let LiveOwnedMixedCompositionLayer::Solid { geometry, color } = cloned.layers[0] else {
+        panic!("solid rectangle changed representation");
+    };
+    assert_eq!(
+        geometry,
+        Rect {
+            x: 4,
+            y: 5,
+            width: 6,
+            height: 7,
+        }
+    );
+    assert_eq!(
+        color,
+        CompositorRgb8 {
+            red: 0x70,
+            green: 0xb7,
+            blue: 0xff,
+        }
+    );
 }
 
 #[test]

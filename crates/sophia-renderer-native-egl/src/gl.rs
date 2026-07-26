@@ -338,6 +338,47 @@ impl PersistentXrgb8888GlPipeline {
         self.draw_bound_texture(target, clip, alpha, has_alpha)
     }
 
+    pub(crate) fn draw_solid_layer(
+        &self,
+        target: GlCompositionRect,
+        color: [u8; 3],
+    ) -> Result<(), NativeEglDrawSmokeStatus> {
+        let left = i64::from(target.x).max(0);
+        let top = i64::from(target.y).max(0);
+        let right = i64::from(target.x)
+            .saturating_add(i64::from(target.width))
+            .min(i64::from(self.width));
+        let bottom = i64::from(target.y)
+            .saturating_add(i64::from(target.height))
+            .min(i64::from(self.height));
+        if left >= right || top >= bottom {
+            return Ok(());
+        }
+        let x = i32::try_from(left).map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let y = i32::try_from(i64::from(self.height).saturating_sub(bottom))
+            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let width = i32::try_from(right.saturating_sub(left))
+            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let height = i32::try_from(bottom.saturating_sub(top))
+            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        unsafe {
+            self.gl.disable(glow::BLEND);
+            self.gl.enable(glow::SCISSOR_TEST);
+            self.gl.scissor(x, y, width, height);
+            self.gl.clear_color(
+                f32::from(color[0]) / 255.0,
+                f32::from(color[1]) / 255.0,
+                f32::from(color[2]) / 255.0,
+                1.0,
+            );
+            self.gl.clear(glow::COLOR_BUFFER_BIT);
+            if self.gl.get_error() != glow::NO_ERROR {
+                return Err(NativeEglDrawSmokeStatus::GlUnavailable);
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) unsafe fn draw_egl_image(
         &self,
         image_target: unsafe extern "system" fn(u32, *const c_void),

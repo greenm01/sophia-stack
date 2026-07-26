@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
-use sophia_engine::HeadlessOutput;
+use sophia_engine::{CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput};
 use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Size, SurfaceId};
 
 use crate::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferRegistry, LiveCpuBufferSource,
-    LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame, LiveCpuCompositionLayer,
-    LiveCpuCompositionLayerRef, LiveCpuCompositionReport, compose_live_cpu_frame,
+    LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame,
+    LiveCpuCompositionElementRef, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
+    LiveCpuCompositionReport, compose_live_cpu_display_list_frame, compose_live_cpu_frame,
     compose_live_cpu_frame_ref_with_cursor,
 };
 
@@ -112,6 +113,56 @@ impl LiveProductionCpuScene {
             .collect()
     }
 
+    pub fn compose_display_list(
+        &mut self,
+        committed_surfaces: &[CommittedSurfaceState],
+        display_list: &CompositorDisplayList,
+        cursor_position: Option<Point>,
+    ) -> Result<&LiveCpuCompositionReport, Box<dyn std::error::Error>> {
+        let elements = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                CompositorDisplayCommand::Surface { surface } => {
+                    let committed = committed_surfaces
+                        .iter()
+                        .find(|committed| committed.surface == *surface)?;
+                    let BufferSource::CpuBuffer { handle } = committed.buffer else {
+                        return None;
+                    };
+                    let buffer = self.buffers.get(handle)?;
+                    Some(LiveCpuCompositionElementRef::Layer(
+                        LiveCpuCompositionLayerRef {
+                            geometry: committed.geometry,
+                            buffer: LiveCpuBufferSourceRef {
+                                handle: buffer.handle,
+                                size: buffer.size,
+                                stride: buffer.stride,
+                                format: buffer.format,
+                                generation: buffer.generation,
+                                bytes: &buffer.bytes,
+                            },
+                        },
+                    ))
+                }
+                CompositorDisplayCommand::SolidRect(rect) => {
+                    Some(LiveCpuCompositionElementRef::Solid {
+                        geometry: rect.geometry,
+                        color: rect.color,
+                    })
+                }
+            })
+            .collect::<Vec<_>>();
+        self.last_report = Some(
+            compose_live_cpu_display_list_frame(self.output_size, &elements, cursor_position)
+                .map_err(|error| {
+                    format!("persistent CPU display-list composition failed: {error:?}")
+                })?,
+        );
+        self.record_last_report();
+        Ok(self.last_report.as_ref().expect("assigned above"))
+    }
+
     fn compose_ordered(
         &mut self,
         committed_surfaces: &[CommittedSurfaceState],
@@ -163,6 +214,11 @@ impl LiveProductionCpuScene {
             compose_live_cpu_frame_ref_with_cursor(self.output_size, &layers, cursor_position)
                 .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
+        self.record_last_report();
+        Ok(self.last_report.as_ref().expect("assigned above"))
+    }
+
+    fn record_last_report(&mut self) {
         let nonzero_pixel_bytes = self
             .last_report
             .as_ref()
@@ -172,7 +228,6 @@ impl LiveProductionCpuScene {
         self.nonzero_frames = self
             .nonzero_frames
             .saturating_add(usize::from(nonzero_pixel_bytes > 0));
-        Ok(self.last_report.as_ref().expect("assigned above"))
     }
 
     pub fn last_report(&self) -> Option<&LiveCpuCompositionReport> {

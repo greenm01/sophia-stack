@@ -278,6 +278,7 @@
                 let raised_surface = layout
                     .top_client_positioned_surface()
                     .or_else(|| focus.focused_surface(seat));
+                let focused_surface = focus.focused_surface(seat);
                 let updates = batch
                     .cpu_buffer_updates
                     .iter()
@@ -313,6 +314,7 @@
                                 scene: &mut scene,
                                 updates,
                                 raised_surface,
+                                focused_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 defer_present: layout.pending.is_some(),
@@ -340,6 +342,7 @@
                                 scene: &mut scene,
                                 updates,
                                 raised_surface,
+                                focused_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 defer_present: layout.pending.is_some(),
@@ -361,6 +364,14 @@
                             submission.compose_elapsed,
                         )
                     };
+                if let Some(border) = runtime.take_focused_border_observation() {
+                    println!(
+                        "sophia_live_compositor_chrome schema=1 status=focused_border_composed surface={} generation={} primitives={}",
+                        border.surface.index(),
+                        border.generation,
+                        border.primitives,
+                    );
+                }
                 if composed {
                     metrics.max_compose = metrics.max_compose.max(compose_elapsed);
                     metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);

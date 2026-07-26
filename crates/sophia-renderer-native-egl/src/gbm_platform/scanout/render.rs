@@ -501,6 +501,28 @@ fn render_native_target_composition(
                 }
                 result
             }
+            NativeCompositionLayer::Solid(layer) => {
+                trace_native_lifecycle("composition_solid_layer_started");
+                let result = target
+                    .pipeline
+                    .draw_solid_layer(layer.target.into(), layer.color)
+                    .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed);
+                if result.is_ok() {
+                    trace_native_lifecycle("composition_solid_layer_finished");
+                    if trace_pixels {
+                        trace_composition_pixels(
+                            &target.pipeline,
+                            "solid",
+                            layer_index,
+                            layer.target,
+                            0,
+                            u64::MAX,
+                            0,
+                        );
+                    }
+                }
+                result
+            }
         };
     }
     let mut pixel_metrics = None;

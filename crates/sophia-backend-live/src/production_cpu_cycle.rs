@@ -1,5 +1,8 @@
 use crate::{LiveCpuBufferUpdate, LiveCpuCompositionReport, LiveProductionComposedFrame};
-use sophia_engine::{HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement};
+use sophia_engine::{
+    FocusedSurfaceBorderStyle, HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement,
+    focused_surface_display_list,
+};
 use sophia_protocol::{CommittedSurfaceState, Point, SurfaceId, TransactionCommit};
 use sophia_renderer_live::LiveProductionCpuScene;
 use std::error::Error;
@@ -29,6 +32,7 @@ pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     presentation_order: &'layout [SurfaceId],
     updates: Option<Vec<LiveCpuBufferUpdate>>,
     raised_surface: Option<SurfaceId>,
+    focused_surface: Option<SurfaceId>,
     cursor_position: Option<Point>,
     defer_frame: bool,
     create_native_frames: bool,
@@ -43,6 +47,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         presentation_order: &'layout [SurfaceId],
         updates: Vec<LiveCpuBufferUpdate>,
         raised_surface: Option<SurfaceId>,
+        focused_surface: Option<SurfaceId>,
         cursor_position: Option<Point>,
         defer_frame: bool,
         create_native_frames: bool,
@@ -54,6 +59,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
             presentation_order,
             updates: Some(updates),
             raised_surface,
+            focused_surface,
             cursor_position,
             defer_frame,
             create_native_frames,
@@ -93,13 +99,21 @@ where
                 .cloned()
                 .ok_or("software redraw coalescing has no prior composed frame")?
         } else {
+            let presentation_order =
+                raised_presentation_order(self.presentation_order, self.raised_surface);
+            let output = self
+                .output_descriptors
+                .first()
+                .ok_or("software composition has no output descriptor")?;
+            let display_list = focused_surface_display_list(
+                output.id,
+                &presentation_order,
+                committed,
+                self.focused_surface,
+                FocusedSurfaceBorderStyle::default(),
+            )?;
             self.scene
-                .compose_visible(
-                    committed,
-                    self.presentation_order,
-                    self.raised_surface,
-                    self.cursor_position,
-                )?
+                .compose_display_list(committed, &display_list, self.cursor_position)?
                 .clone()
         };
         let native_frames = if self.defer_frame || !self.create_native_frames {
@@ -153,4 +167,21 @@ where
     ) -> Result<Self::Evidence, Self::Error> {
         Ok(())
     }
+}
+
+pub fn raised_presentation_order(
+    presentation_order: &[SurfaceId],
+    raised_surface: Option<SurfaceId>,
+) -> Vec<SurfaceId> {
+    let mut order = presentation_order
+        .iter()
+        .copied()
+        .filter(|surface| Some(*surface) != raised_surface)
+        .collect::<Vec<_>>();
+    if let Some(raised) = raised_surface
+        && presentation_order.contains(&raised)
+    {
+        order.push(raised);
+    }
+    order
 }

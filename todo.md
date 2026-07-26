@@ -242,6 +242,16 @@ Promotion now follows the gates below in order.
   its bounds and damage from the same committed surface/focus snapshot, keep
   the blind WM and X frontend unaware of chrome, and verify it across focus,
   resize, workspace, VT, and mixed CPU/DMA-BUF presentation.
+  The bounded Engine display list, stable border-node identities, old/new
+  damage, CPU reference lowering, and native solid-rectangle lowering are now
+  implemented. The production CPU and mixed CPU/DMA-BUF paths interleave the
+  four border primitives immediately after the focused surface and use the
+  exact committed or prepared-candidate geometry associated with that frame.
+  The two-output QEMU xmonad gate proves that a click-drag focus commit is
+  followed by a rendered four-primitive border on the same opaque surface
+  before the next key reaches it, and observes borders on two distinct focus
+  targets. Physical focus, resize, workspace, VT, and mixed-presentation
+  confirmation remains required before closing this item.
 - [ ] Close applications and request xmonad logout; require zero pending input,
   WM work, Presents, fences, scanouts, or cleanup debt, followed by correct TTY
   and greetd restoration.

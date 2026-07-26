@@ -1,10 +1,11 @@
+use sophia_engine::CompositorRgb8;
 use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
 use sophia_renderer_live::{
     DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferSourceRef,
-    LiveCpuBufferUpdate, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
-    LiveProductionCpuScene, compose_live_cpu_frame, compose_live_cpu_frame_ref,
-    compose_live_cpu_frame_ref_with_cursor,
+    LiveCpuBufferUpdate, LiveCpuCompositionElementRef, LiveCpuCompositionLayer,
+    LiveCpuCompositionLayerRef, LiveProductionCpuScene, compose_live_cpu_display_list_frame,
+    compose_live_cpu_frame, compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
 };
 
 #[test]
@@ -42,6 +43,57 @@ fn cpu_composition_blits_clipped_xrgb_layers() {
     assert_eq!(report.nonzero_pixel_bytes, 4);
     assert_ne!(report.checksum, 0);
     assert_eq!(&report.frame.bytes[32..36], &[0xff; 4]);
+}
+
+#[test]
+fn cpu_display_list_preserves_solid_order_and_clips_to_output() {
+    let size = Size {
+        width: 3,
+        height: 2,
+    };
+    let pixels = vec![0x11; 3 * 2 * 4];
+    let report = compose_live_cpu_display_list_frame(
+        size,
+        &[
+            LiveCpuCompositionElementRef::Layer(LiveCpuCompositionLayerRef {
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 3,
+                    height: 2,
+                },
+                buffer: LiveCpuBufferSourceRef {
+                    handle: 21,
+                    size,
+                    stride: 12,
+                    format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                    generation: 1,
+                    bytes: &pixels,
+                },
+            }),
+            LiveCpuCompositionElementRef::Solid {
+                geometry: Rect {
+                    x: 2,
+                    y: -1,
+                    width: 3,
+                    height: 3,
+                },
+                color: CompositorRgb8 {
+                    red: 0x70,
+                    green: 0xb7,
+                    blue: 0xff,
+                },
+            },
+        ],
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.layers_input, 2);
+    assert_eq!(report.layers_composed, 2);
+    assert_eq!(&report.frame.bytes[0..4], &[0x11; 4]);
+    assert_eq!(&report.frame.bytes[8..12], &[0xff, 0xb7, 0x70, 0xff]);
+    assert_eq!(&report.frame.bytes[20..24], &[0xff, 0xb7, 0x70, 0xff]);
 }
 
 #[test]

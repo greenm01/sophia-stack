@@ -1,3 +1,4 @@
+use sophia_engine::CompositorRgb8;
 use sophia_protocol::{Point, Rect, Size};
 
 use crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888;
@@ -32,6 +33,15 @@ pub struct LiveCpuBufferSourceRef<'a> {
 pub struct LiveCpuCompositionLayerRef<'a> {
     pub geometry: Rect,
     pub buffer: LiveCpuBufferSourceRef<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveCpuCompositionElementRef<'a> {
+    Layer(LiveCpuCompositionLayerRef<'a>),
+    Solid {
+        geometry: Rect,
+        color: CompositorRgb8,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +103,21 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
     layers: &[LiveCpuCompositionLayerRef<'_>],
     cursor_position: Option<Point>,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    let elements = layers
+        .iter()
+        .copied()
+        .map(LiveCpuCompositionElementRef::Layer)
+        .collect::<Vec<_>>();
+    compose_live_cpu_display_list_frame(output_size, &elements, cursor_position)
+}
+
+/// Lowers one renderer-neutral ordered display list into the CPU reference
+/// frame. Solid rectangles remain interleaved with client surfaces.
+pub fn compose_live_cpu_display_list_frame(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
     let width = usize::try_from(output_size.width)
         .ok()
         .filter(|width| *width > 0)
@@ -110,19 +135,24 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
         .ok_or(LiveCpuCompositionError::OutputTooLarge)?;
     let frame_stride =
         u32::try_from(stride).map_err(|_| LiveCpuCompositionError::OutputTooLarge)?;
-    let direct = layers.first().filter(|layer| {
-        layers.len() == 1
-            && layer.geometry
-                == (Rect {
-                    x: 0,
-                    y: 0,
-                    width: output_size.width,
-                    height: output_size.height,
-                })
-            && layer.buffer.size == output_size
-            && layer.buffer.stride == frame_stride
-            && layer.buffer.format == LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
-            && layer.buffer.bytes.len() == byte_len
+    let direct = elements.first().and_then(|element| match element {
+        LiveCpuCompositionElementRef::Layer(layer)
+            if elements.len() == 1
+                && layer.geometry
+                    == (Rect {
+                        x: 0,
+                        y: 0,
+                        width: output_size.width,
+                        height: output_size.height,
+                    })
+                && layer.buffer.size == output_size
+                && layer.buffer.stride == frame_stride
+                && layer.buffer.format == LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+                && layer.buffer.bytes.len() == byte_len =>
+        {
+            Some(layer)
+        }
+        _ => None,
     });
     let mut frame = LiveCpuComposedFrame {
         size: output_size,
@@ -134,8 +164,14 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
     if direct.is_some() {
         layers_composed = 1;
     } else {
-        for layer in layers {
-            if compose_layer(&mut frame, layer) {
+        for element in elements {
+            let composed = match element {
+                LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
+                LiveCpuCompositionElementRef::Solid { geometry, color } => {
+                    compose_solid_rect(&mut frame, *geometry, *color)
+                }
+            };
+            if composed {
                 layers_composed = layers_composed.saturating_add(1);
             }
         }
@@ -146,11 +182,58 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
     let (nonzero_pixel_bytes, checksum) = cpu_frame_metrics(&frame.bytes);
     Ok(LiveCpuCompositionReport {
         frame,
-        layers_input: layers.len(),
+        layers_input: elements.len(),
         layers_composed,
         nonzero_pixel_bytes,
         checksum,
     })
+}
+
+fn compose_solid_rect(
+    frame: &mut LiveCpuComposedFrame,
+    geometry: Rect,
+    color: CompositorRgb8,
+) -> bool {
+    let left = i64::from(geometry.x).max(0);
+    let top = i64::from(geometry.y).max(0);
+    let right = i64::from(geometry.x)
+        .saturating_add(i64::from(geometry.width))
+        .min(i64::from(frame.size.width));
+    let bottom = i64::from(geometry.y)
+        .saturating_add(i64::from(geometry.height))
+        .min(i64::from(frame.size.height));
+    if left >= right || top >= bottom {
+        return false;
+    }
+    let Ok(start_x) = usize::try_from(left) else {
+        return false;
+    };
+    let Ok(start_y) = usize::try_from(top) else {
+        return false;
+    };
+    let Ok(width) = usize::try_from(right.saturating_sub(left)) else {
+        return false;
+    };
+    let Ok(height) = usize::try_from(bottom.saturating_sub(top)) else {
+        return false;
+    };
+    let Ok(stride) = usize::try_from(frame.stride) else {
+        return false;
+    };
+    let pixel = [color.blue, color.green, color.red, 0xff];
+    for y in start_y..start_y.saturating_add(height) {
+        let row_start = y
+            .saturating_mul(stride)
+            .saturating_add(start_x.saturating_mul(4));
+        let row_end = row_start.saturating_add(width.saturating_mul(4));
+        let Some(row) = frame.bytes.get_mut(row_start..row_end) else {
+            return false;
+        };
+        for target in row.chunks_exact_mut(4) {
+            target.copy_from_slice(&pixel);
+        }
+    }
+    true
 }
 
 pub const DEFAULT_CURSOR_EDGE: usize = 16;

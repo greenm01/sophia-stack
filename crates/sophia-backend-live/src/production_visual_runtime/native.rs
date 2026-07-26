@@ -94,7 +94,7 @@ impl LiveProductionVisualRuntime {
             Some(native_scanout),
             Some(frames),
         )?;
-        if let Some((transaction, frame)) = self.retained_mixed_frame()? {
+        if let Some((transaction, frame)) = self.retained_mixed_frame(&[])? {
             let primary = self
                 .outputs
                 .primary_output()

@@ -5,6 +5,7 @@ use crate::{
     LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
     LiveRendererScanoutBufferPlanes, Size,
 };
+use sophia_engine::CompositorRgb8;
 use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, Rect, Transform};
 
 #[derive(Debug)]
@@ -160,6 +161,10 @@ pub enum LiveMixedCompositionLayer<'a> {
         frame: &'a LiveOwnedMultiPlaneDmaBufFrame,
         placement: LiveCompositionPlacement,
     },
+    Solid {
+        geometry: Rect,
+        color: CompositorRgb8,
+    },
 }
 
 #[derive(Debug)]
@@ -171,6 +176,10 @@ pub enum LiveOwnedMixedCompositionLayer {
     DmaBuf {
         frame: LiveOwnedMultiPlaneDmaBufFrame,
         placement: LiveCompositionPlacement,
+    },
+    Solid {
+        geometry: Rect,
+        color: CompositorRgb8,
     },
 }
 
@@ -455,6 +464,17 @@ where
                         },
                     ))
                 }
+                LiveMixedCompositionLayer::Solid { geometry, color } => {
+                    if geometry.is_empty() {
+                        return Err(LiveMixedCompositionError::InvalidLayer);
+                    }
+                    Ok(sophia_renderer_native_egl::NativeCompositionLayer::Solid(
+                        sophia_renderer_native_egl::NativeSolidCompositionLayer {
+                            target: native_rect(*geometry),
+                            color: [color.red, color.green, color.blue],
+                        },
+                    ))
+                }
             })
             .collect::<Result<Vec<_>, LiveMixedCompositionError>>()?;
         Ok(reduced_native_owned_scanout_buffer_export_report(
@@ -497,6 +517,12 @@ where
                     LiveMixedCompositionLayer::DmaBuf {
                         frame,
                         placement: *placement,
+                    }
+                }
+                LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
+                    LiveMixedCompositionLayer::Solid {
+                        geometry: *geometry,
+                        color: *color,
                     }
                 }
             })

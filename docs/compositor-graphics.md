@@ -170,6 +170,16 @@ content, client titles, paths, or texture bytes.
 
 - Engine frame plans carry ordered client layers with targets, clips,
   transforms, opacity, and damage.
+- Engine owns a bounded renderer-neutral display list with ordered surface and
+  solid-rectangle commands, stable focused-border node identities, generations,
+  and old/new extent damage.
+- The minimal focused-surface border is derived from the same committed surface
+  and focus snapshot as presentation. Its four inside-edge primitives are
+  inserted immediately after the focused surface without exposing chrome to
+  the WM or X frontend.
+- The CPU/reference renderer lowers ordered surface and solid commands into
+  deterministic XRGB pixels. The native EGL renderer lowers the same solid
+  command with a clipped opaque draw and no intermediate texture allocation.
 - The native GBM/EGL path composes CPU and DMA-BUF textures using rectangular
   placement, scissor clipping, scaling, and premultiplied-alpha blending.
 - The production path exports the rendered GBM front buffer and retains its
@@ -179,20 +189,17 @@ content, client titles, paths, or texture bytes.
 
 ### Target
 
-- A bounded renderer-neutral compositor display list is part of immutable
-  Engine frame planning.
-- The native renderer provides the initial solid, rounded, border, shadow,
-  image, and cached-text implementations.
-- The CPU/reference path implements enough of the same semantics for
-  deterministic tests and degraded operation.
-- Per-node generations and old/new extents feed damage without redrawing stable
-  compositor content.
+- Integrate display-list damage with output frame scheduling so stable
+  compositor nodes avoid redundant output work.
+- Extend native primitives only when demonstrated shell requirements need
+  rounded borders, shadows, images, or cached text.
+- Add deterministic capability degradation for each admitted primitive.
 - Capability degradation and cache behavior are observable only through reduced
   reports.
 
-Until those target items are implemented, existing chrome descriptors are
-metadata and action records, not a claim that production compositor chrome is
-already rendered.
+Existing chrome descriptors remain metadata and action records. Production
+rendering currently claims only the minimal focused border; it is not yet a
+general shell toolkit.
 
 ## Architectural Reference: Niri
 
