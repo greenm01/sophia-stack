@@ -39,7 +39,11 @@ impl XAuthorityRuntime {
          }
          let owner_record = self
              .selections
-             .current_owner_for_selection(pending.portal_request.failure.selection)
+             .owner(
+                 pending.portal_request.failure.selection,
+                 Some(grant.source_namespace),
+             )
+             .filter(|record| record.owner.is_some())
              .ok_or(ClipboardSelectionExecutionError::StaleOwnerGeneration)?;
          if owner_record.generation != grant.source_generation {
              return Err(ClipboardSelectionExecutionError::StaleOwnerGeneration);
@@ -151,7 +155,11 @@ impl XAuthorityRuntime {
          }
          let Some(owner) = self
              .selections
-             .current_owner_for_selection(failure.selection)
+             .owner(
+                 failure.selection,
+                 Some(pending.portal_request.request.source_namespace),
+             )
+             .filter(|record| record.owner.is_some())
          else {
              return Ok(fail(ClipboardSelectionExecutionError::StaleOwnerGeneration));
          };

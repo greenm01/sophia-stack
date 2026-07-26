@@ -3,6 +3,8 @@
 struct XServerFrontendRouteRegistry {
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    core_event_subscriptions:
+        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
     randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
     present_subscriptions:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
@@ -79,6 +81,8 @@ struct XServerFrontendClientRouteRegistration {
     client: XServerFrontendClientId,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    core_event_subscriptions:
+        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
     randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
     present_subscriptions:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
@@ -204,6 +208,7 @@ impl XServerFrontendRouteRegistry {
                 client,
                 clients: self.clients.clone(),
                 surfaces: self.surfaces.clone(),
+                core_event_subscriptions: self.core_event_subscriptions.clone(),
                 randr_subscriptions: self.randr_subscriptions.clone(),
                 present_subscriptions: self.present_subscriptions.clone(),
                 pending_presentations: self.pending_presentations.clone(),
@@ -935,6 +940,9 @@ impl Drop for XServerFrontendClientRouteRegistration {
         }
         if let Ok(mut surfaces) = self.surfaces.lock() {
             surfaces.retain(|_, route| route.client != self.client);
+        }
+        if let Ok(mut subscriptions) = self.core_event_subscriptions.lock() {
+            subscriptions.retain(|(client, _), _| *client != self.client);
         }
         if let Ok(mut subscriptions) = self.randr_subscriptions.lock() {
             subscriptions.remove(&self.client);

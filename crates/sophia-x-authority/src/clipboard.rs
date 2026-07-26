@@ -116,7 +116,9 @@ pub fn dispatch_clipboard_selection_request(
         .ok_or(ClipboardSelectionRequestError::UnknownRequestorNamespace)?
         .namespace;
     let source_owner = monitor
-        .current_owner_for_selection(request.selection)
+        .owner(request.selection, Some(requestor_namespace))
+        .filter(|record| record.owner.is_some())
+        .or_else(|| monitor.current_owner_for_selection(request.selection))
         .ok_or(ClipboardSelectionRequestError::UnknownSourceOwner)?;
     let source_namespace = source_owner
         .namespace

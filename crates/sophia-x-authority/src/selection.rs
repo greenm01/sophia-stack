@@ -48,6 +48,7 @@ pub struct XSelectionOwnerUpdate {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct XSelectionMonitor {
     owners: BTreeMap<(XAtom, Option<NamespaceId>), XSelectionOwnerRecord>,
+    generation: u64,
 }
 
 impl XSelectionMonitor {
@@ -76,21 +77,29 @@ impl XSelectionMonitor {
         event: XSelectionEvent,
         windows: &XWindowTable,
     ) -> XSelectionOwnerUpdate {
+        self.apply_event_in_namespace(event, windows, None)
+    }
+
+    pub fn apply_event_in_namespace(
+        &mut self,
+        event: XSelectionEvent,
+        windows: &XWindowTable,
+        namespace: Option<NamespaceId>,
+    ) -> XSelectionOwnerUpdate {
         let namespace_from_owner = event
             .owner
             .and_then(|owner| windows.get(owner).map(|window| window.namespace));
-        let namespace =
-            namespace_from_owner.or_else(|| self.namespace_for_existing_selection(event.selection));
+        let namespace = namespace_from_owner
+            .or(namespace)
+            .or_else(|| self.namespace_for_existing_selection(event.selection));
         let key = (event.selection, namespace);
         let previous = self.owners.get(&key).copied();
-        let generation = previous
-            .map(|record| record.generation.saturating_add(1))
-            .unwrap_or(1);
+        self.generation = self.generation.saturating_add(1);
         let current = XSelectionOwnerRecord {
             selection: event.selection,
             namespace,
             owner: event.owner,
-            generation,
+            generation: self.generation,
             timestamp: event.timestamp,
             selection_timestamp: event.selection_timestamp,
         };
@@ -117,7 +126,7 @@ impl XSelectionMonitor {
             .copied()
             .collect::<Vec<_>>();
         for owner in owners {
-            self.apply_event(
+            self.apply_event_in_namespace(
                 XSelectionEvent {
                     selection: owner.selection,
                     owner: None,
@@ -126,6 +135,7 @@ impl XSelectionMonitor {
                     kind,
                 },
                 windows,
+                owner.namespace,
             );
         }
     }

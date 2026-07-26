@@ -90,9 +90,10 @@ Promotion now follows the gates below in order.
   the first bar-plus-three-Kitty run completed 141 mixed exports with matching
   target, pipeline, and frame-surface creation, zero native failures, and clean
   teardown.
-- [ ] Pass three physical four-Kitty cycles with complete-target creation and
-  retirement equal to the mixed-export count. Two clean cycles now pass; the
-  newest completed 259 balanced mixed lifetimes after the output-scoped
+- [x] Pass three physical four-Kitty cycles with complete-target creation and
+  retirement equal to the mixed-export count. The third clean cycle exercised
+  four-window layouts on two workspaces and completed 524 balanced mixed
+  target, pipeline, and frame-surface lifetimes after the output-scoped
   frame-service change.
 - [x] Prevent child-exit and resize-epoch work from starving input and native
   callback service. The first post-worker cycle reduced input dwell to 12 ms
@@ -131,10 +132,12 @@ Promotion now follows the gates below in order.
   startup-readiness transition rather than before native initialization.
 - [x] Use the low-latency owner wait budget whenever physical input is active,
   so an idle X channel cannot add 25 ms to queued input before composition.
-- [ ] Prove a stable physical workload has balanced context, pipeline, and
+- [x] Prove a stable physical workload has balanced context, pipeline, and
   frame-surface creation/retirement with zero live-resource growth, zero
   launch-admission timeouts, and bounded input-to-submit and presentation
-  latency.
+  latency. The 77-second two-workspace run balanced 524 complete composition
+  lifetimes, drained every native and admission ledger, held input dwell to
+  11 ms and submit-to-page-flip observation to 47 ms, and exited cleanly.
 - [ ] Retain focused rollback, resize, output-change, and recovery regressions
   proving resources retire exactly once.
 - [x] Replace the transient aggregate async-service booleans with one
@@ -176,12 +179,16 @@ Promotion now follows the gates below in order.
   with zero coalescing or capacity exhaustion, drained all 1,289 input
   deliveries, and ended with no active repeat seat or pressed-key debt.
 - [ ] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
-  Require at least one owner change and conversion, no GLFW ownership failure,
-  and visual confirmation that an independent Kitty pasted the selected text
+  Require copy/paste between independent Kitty clients before and after
+  workspace switches, at least one owner change and conversion, no GLFW
+  ownership or conversion failure, and visual confirmation that the text is
   unchanged. Deterministic same-namespace and portal regressions now cover
-  Xlib's complete-property request shape (`delete=true`, maximum
-  `long_length`) without an X error and prove deletion only after a complete,
-  type-matching read; physical confirmation remains required.
+  subscriber-routed `PropertyNotify`, distinct target/property atoms, Xlib's
+  complete-property request shape (`AnyPropertyType`, `delete=true`, maximum
+  `long_length`), and deletion only after a complete read. Local namespace
+  ownership is preferred; cross-namespace source capture and execution
+  revalidate the exact namespace and generation through the portal boundary.
+  Physical confirmation remains required.
 - [ ] Prove pointer confinement across the complete output union: hard edge
   motion must keep the hardware cursor visible, and reversing direction must
   move it immediately without first consuming discarded overshoot.
@@ -194,13 +201,15 @@ Promotion now follows the gates below in order.
   With the active 14-pixel top reservation, the physical capture produced one
   `1280x1426` pane and exact `1280x475`, `1280x475`, and `1280x476` stack panes
   spanning `y=14..1440`.
-- [ ] Prove every ManageSurface resize commit and its first matching Present
+- [x] Prove every ManageSurface resize commit and its first matching Present
   consume the same Engine layout snapshot. No new surface may present at the
   `(80,60)` admission staging offset after `layout_committed`, and the next
   focus-only transaction must report `moved_surfaces=0`. Deterministic Present
   admission, pending pixel/geometry authority, and sequential three-window
-  real-xmonad regressions now cover the boundary; physical confirmation
-  remains required.
+  real-xmonad regressions cover the boundary. The physical confirmation
+  correlated seven action-launched surfaces across workspaces 1 and 2: every
+  first post-commit Present used the exact work-area master geometry, every
+  following transaction moved zero surfaces, and no staging target appeared.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
   One work-area-aware frame-service capture passes.
 - [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal

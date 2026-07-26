@@ -363,6 +363,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     };
                     let xkb_get_state = matches!(request, crate::XWireRequest::XkbGetState);
+                    let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
                         crate::XWireRequest::SetInputFocus { focus, .. } => Some(*focus),
                         _ => None,
@@ -476,6 +477,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         &mut atoms,
                         &mut properties,
                     );
+                    trace_selection_property_read_result(selection_property_read, &output);
                     if dri3_query && !state.has_render_device_provider() {
                         for client_output in &mut output.outputs {
                             if let crate::XClientOutput::Reply(
@@ -526,6 +528,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         })?;
                         if let Some((window, event_mask, do_not_propagate_mask)) = event_selection {
                             selections.update(window, event_mask, do_not_propagate_mask);
+                            if let Some(mask) = event_mask
+                                && let Some(routing) = protocol_routing.as_ref()
+                            {
+                                routing.select_core_events(client, window, mask).map_err(
+                                    |error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to update core X11 event subscription: {error}"
+                                        ))
+                                    },
+                                )?;
+                            }
                         }
                         if let Some((window, parent)) = hierarchy_create {
                             selections.register(window, parent);
@@ -541,6 +554,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         if let Some(window) = destroyed_window {
                             selections.remove(window);
+                            if let Some(routing) = protocol_routing.as_ref() {
+                                routing.remove_core_event_window(window).map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to remove core X11 event subscriptions: {error}"
+                                    ))
+                                })?;
+                            }
                         }
                         if let Some((window, mask)) = randr_selection
                             && let Some(routing) = protocol_routing.as_ref()
@@ -711,72 +731,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )
                 }
             };
-            if let Some(routing) = protocol_routing.as_ref()
-                && let Some((index, requestor, property)) = output
-                    .outputs
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, output)| match output {
-                        crate::XClientOutput::Event(XClientEvent::SelectionNotify {
-                            requestor,
-                            property,
-                            ..
-                        }) => Some((index, *requestor, *property)),
-                        _ => None,
-                    })
-            {
-                let mut runtime = state
-                    .runtime
-                    .lock()
-                    .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
-                if runtime.is_clipboard_proxy(namespace, requestor) {
-                    let mut properties = state.properties.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 property table lock poisoned")
-                    })?;
-                    let payload = runtime
-                        .capture_clipboard_source_payload(requestor, property, &mut properties)
-                        .map_err(|error| {
-                            X11SetupSocketError::new(format!(
-                                "failed to capture clipboard source payload: {error:?}"
-                            ))
-                        })?;
-                    routing.source_payload_sender.try_send(payload).map_err(
-                        |error| match error {
-                            TrySendError::Full(_) => {
-                                X11SetupSocketError::new("clipboard source payload queue is full")
-                            }
-                            TrySendError::Disconnected(_) => X11SetupSocketError::new(
-                                "clipboard source payload queue is disconnected",
-                            ),
-                        },
-                    )?;
-                    output.outputs.remove(index);
-                }
-            }
-            if let Some(routing) = protocol_routing.as_ref()
-                && let Some((index, destination, event)) = output
-                    .outputs
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, output)| match output {
-                        crate::XClientOutput::Event(
-                            event @ XClientEvent::SelectionNotify { requestor, .. },
-                        ) => Some((index, *requestor, *event)),
-                        crate::XClientOutput::Event(
-                            event @ XClientEvent::SelectionRequest { owner, .. },
-                        ) => Some((index, *owner, *event)),
-                        crate::XClientOutput::Event(
-                            event @ XClientEvent::SelectionClear { owner, .. },
-                        ) => Some((index, *owner, *event)),
-                        _ => None,
-                    })
-                && let Some(target) = state.client_for_resource(destination)?
-                && target != client
-            {
-                routing.route_protocol(target, event).map_err(|error| {
-                    X11SetupSocketError::new(format!("failed to route X11 protocol event: {error}"))
-                })?;
-                output.outputs.remove(index);
+            if let Some(routing) = protocol_routing.as_ref() {
+                route_x11_dispatch_protocol_outputs(
+                    state,
+                    routing,
+                    namespace,
+                    client,
+                    &mut output,
+                )?;
             }
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 let replies = output
@@ -917,6 +879,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let client_lease = state.release_client(client)?;
     debug_assert_eq!(client_lease.resource_id_range, resource_id_range);
     let release = release_x11_client_lease(state, namespace, client_lease)?;
+    if let Some(routing) = protocol_routing.as_ref() {
+        for window in &release.destroyed_windows {
+            routing
+                .remove_core_event_window(*window)
+                .map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to remove disconnected X11 event subscriptions: {error}"
+                    ))
+                })?;
+        }
+    }
     drop(route_registration);
     let cleanup_observer_result = if release.removed_surfaces.is_empty()
         && release.released_dma_bufs.is_empty()

@@ -319,7 +319,7 @@ impl XAuthorityRuntime {
                     self.resources
                         .lookup(request.namespace, *owner, XResourceKind::Window)?;
                 }
-                let update = self.selections.apply_event(
+                let update = self.selections.apply_event_in_namespace(
                     XSelectionEvent {
                         selection: *selection,
                         owner: *owner,
@@ -328,6 +328,7 @@ impl XAuthorityRuntime {
                         kind: *kind,
                     },
                     &self.windows,
+                    Some(request.namespace),
                 );
                 if let Some(previous_owner) = update.previous.and_then(|record| record.owner)
                     && Some(previous_owner) != *owner

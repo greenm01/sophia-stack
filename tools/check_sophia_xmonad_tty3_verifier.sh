@@ -67,8 +67,8 @@ if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
 fi
 
 for mutation in \
-    's/status=complete owner_changes=2 conversions=2 content=redacted/status=complete owner_changes=0 conversions=2 content=redacted/' \
-    's/status=complete owner_changes=2 conversions=2 content=redacted/status=complete owner_changes=2 conversions=0 content=redacted/'; do
+    's/status=complete owner_changes=2 conversions=2 content=redacted/status=complete owner_changes=1 conversions=2 content=redacted/' \
+    's/status=complete owner_changes=2 conversions=2 content=redacted/status=complete owner_changes=2 conversions=1 content=redacted/'; do
     sed "$mutation" "$SESSION" >"$TEMP_FILE"
     if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
         "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
@@ -87,6 +87,14 @@ sed '1i[0.123] [glfw error 65544]: X11: Failed to become owner of clipboard sele
 if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "xmonad verifier accepted a Kitty clipboard ownership failure" >&2
+    exit 1
+fi
+
+sed '1i[0.123] [glfw error 65545]: X11: Failed to convert selection to data from clipboard' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted a Kitty clipboard conversion failure" >&2
     exit 1
 fi
 

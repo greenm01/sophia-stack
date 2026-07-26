@@ -232,6 +232,88 @@ fn selection_owner_events_track_namespace_and_generation() {
 }
 
 #[test]
+fn selection_request_prefers_its_namespace_before_portal_handoff() {
+    let local_namespace = NamespaceId::from_raw(21);
+    let foreign_namespace = NamespaceId::from_raw(22);
+    let local_owner = XResourceId::new(0x81, 1);
+    let foreign_owner = XResourceId::new(0x82, 1);
+    let windows = window_table_with_two_surfaces(
+        local_owner,
+        local_namespace,
+        foreign_owner,
+        foreign_namespace,
+    );
+    let mut monitor = XSelectionMonitor::new();
+    let local = monitor.apply_event(
+        XSelectionEvent {
+            selection: 1,
+            owner: Some(local_owner),
+            timestamp: 10,
+            selection_timestamp: 10,
+            kind: XSelectionChangeKind::SetOwner,
+        },
+        &windows,
+    );
+    let foreign = monitor.apply_event(
+        XSelectionEvent {
+            selection: 1,
+            owner: Some(foreign_owner),
+            timestamp: 11,
+            selection_timestamp: 11,
+            kind: XSelectionChangeKind::SetOwner,
+        },
+        &windows,
+    );
+    assert_eq!(local.current.generation, 1);
+    assert_eq!(foreign.current.generation, 2);
+    assert_eq!(
+        monitor.current_owner_for_selection(1),
+        Some(foreign.current)
+    );
+
+    let dispatch = dispatch_clipboard_selection_request(
+        XSelectionRequest {
+            requestor: local_owner,
+            selection: 1,
+            target: X_ATOM_STRING,
+            target_name: "STRING".to_owned(),
+            property: X_ATOM_WM_NAME,
+            time: 12,
+        },
+        &monitor,
+        &windows,
+        PortalTransferId::from_raw(9),
+        &mut ClipboardPortal::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        dispatch,
+        ClipboardSelectionDispatch::SameNamespace(ClipboardSelectionOwnerRequest {
+            owner,
+            ..
+        }) if owner == local_owner
+    ));
+
+    monitor.clear_window_owner(
+        foreign_owner,
+        &windows,
+        XSelectionChangeKind::SelectionClientClosed,
+    );
+    assert_eq!(
+        monitor
+            .owner(1, Some(local_namespace))
+            .and_then(|record| record.owner),
+        Some(local_owner)
+    );
+    assert_eq!(
+        monitor
+            .owner(1, Some(foreign_namespace))
+            .and_then(|record| record.owner),
+        None
+    );
+}
+
+#[test]
 fn selection_request_becomes_portal_prompt_and_native_denial_artifact() {
     let source_namespace = NamespaceId::from_raw(11);
     let target_namespace = NamespaceId::from_raw(12);

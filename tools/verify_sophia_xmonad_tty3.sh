@@ -78,6 +78,9 @@ fi
 if grep -Fq 'Failed to become owner of clipboard selection' "$SESSION_LOG"; then
     fail "Kitty could not acquire the X11 clipboard selection"
 fi
+if grep -Fq 'Failed to convert selection to data from clipboard' "$SESSION_LOG"; then
+    fail "Kitty could not convert the X11 clipboard selection"
+fi
 
 require_line '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
     "$SESSION_LOG" "external xmonad policy never became ready"
@@ -271,8 +274,8 @@ selection="$(
         tail -n 1
 )"
 [[ -n "$selection" ]] || fail "final selection evidence is missing"
-require_value_at_least "$selection" owner_changes 1
-require_value_at_least "$selection" conversions 1
+require_value_at_least "$selection" owner_changes 2
+require_value_at_least "$selection" conversions 2
 require_line \
     '^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=[0-9]+ source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+ clip=(none|[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+) unit_scale=true$' \
     "$SESSION_LOG" "no pixel-matched DMA-BUF presentation was retired"

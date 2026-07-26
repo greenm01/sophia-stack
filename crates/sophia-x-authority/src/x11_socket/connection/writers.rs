@@ -64,6 +64,7 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         XClientEvent::SelectionClear { sequence, .. }
         | XClientEvent::SelectionRequest { sequence, .. }
         | XClientEvent::SelectionNotify { sequence, .. }
+        | XClientEvent::PropertyNotify { sequence, .. }
         | XClientEvent::RandrScreenChange { sequence, .. }
         | XClientEvent::RandrCrtcChange { sequence, .. }
         | XClientEvent::RandrOutputChange { sequence, .. }

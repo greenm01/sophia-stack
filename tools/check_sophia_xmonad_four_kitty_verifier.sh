@@ -12,17 +12,20 @@ sophia_session_app schema=1 status=started id=terminal source=startup
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
 sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=2 status=surface_observed source=action transaction=3 surface=4
 sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
 sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1426_0_14
 sophia_live_resize_epoch schema=1 status=held transaction=4 surfaces=4
+sophia_live_wm schema=1 status=layout_committed transaction=4 surfaces=5 moved_surfaces=4 configure_deliveries=3 outcome=Committed
 sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=4
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=4 output=1 workspace=1 visible_surfaces=4 focus=surface
-sophia_live_session_present schema=2 status=retired transaction=10 surface=1 source=1280x1426 target=1280x1426_0_14 clip=1280x1426_0_14 unit_scale=true
-sophia_live_session_present schema=2 status=retired transaction=11 surface=2 source=1280x475 target=1280x475_1280_14 clip=1280x475_1280_14 unit_scale=true
-sophia_live_session_present schema=2 status=retired transaction=12 surface=3 source=1280x475 target=1280x475_1280_489 clip=1280x475_1280_489 unit_scale=true
-sophia_live_session_present schema=2 status=retired transaction=13 surface=4 source=1280x476 target=1280x476_1280_964 clip=1280x476_1280_964 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=10 surface=4 source=1280x1426 target=1280x1426_0_14 clip=1280x1426_0_14 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=11 surface=1 source=1280x475 target=1280x475_1280_14 clip=1280x475_1280_14 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=12 surface=2 source=1280x475 target=1280x475_1280_489 clip=1280x475_1280_489 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=13 surface=3 source=1280x476 target=1280x476_1280_964 clip=1280x476_1280_964 unit_scale=true
+sophia_live_wm schema=1 status=layout_committed transaction=5 surfaces=5 moved_surfaces=0 configure_deliveries=0 outcome=Committed
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
@@ -76,6 +79,15 @@ expect_rejected unsafe_epoch_reuse \
 expect_rejected partial_resize_epoch \
     'matched_surfaces=4' \
     'matched_surfaces=3'
+expect_rejected staging_present \
+    'source=1280x1426 target=1280x1426_0_14 clip=1280x1426_0_14' \
+    'source=1280x1426 target=1280x1426_80_60 clip=1280x1426_80_60'
+expect_rejected mismatched_first_present \
+    'source=1280x1426 target=1280x1426_0_14 clip=1280x1426_0_14' \
+    'source=1280x713 target=1280x1426_0_14 clip=1280x1426_0_14'
+expect_rejected followup_geometry_change \
+    'transaction=5 surfaces=5 moved_surfaces=0' \
+    'transaction=5 surfaces=5 moved_surfaces=1'
 expect_rejected incomplete_projection \
     'visible_surfaces=4 focus=surface' \
     'visible_surfaces=3 focus=surface'

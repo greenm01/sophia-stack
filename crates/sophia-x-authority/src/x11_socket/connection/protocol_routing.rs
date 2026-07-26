@@ -1,0 +1,243 @@
+#[cfg(unix)]
+fn route_x11_dispatch_protocol_outputs(
+    state: &X11CoreSocketServerState,
+    routing: &XServerFrontendRouteRegistry,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    capture_clipboard_proxy_payload(state, routing, namespace, output)?;
+    route_selection_event(state, routing, client, output)?;
+    route_property_events(routing, client, output)
+}
+
+#[cfg(unix)]
+fn capture_clipboard_proxy_payload(
+    state: &X11CoreSocketServerState,
+    routing: &XServerFrontendRouteRegistry,
+    namespace: NamespaceId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    let Some((index, requestor, property)) =
+        output
+            .outputs
+            .iter()
+            .enumerate()
+            .find_map(|(index, output)| match output {
+                crate::XClientOutput::Event(XClientEvent::SelectionNotify {
+                    requestor,
+                    property,
+                    ..
+                }) => Some((index, *requestor, *property)),
+                _ => None,
+            })
+    else {
+        return Ok(());
+    };
+    let mut runtime = state
+        .runtime
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
+    if !runtime.is_clipboard_proxy(namespace, requestor) {
+        return Ok(());
+    }
+    let mut properties = state
+        .properties
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
+    let payload = runtime
+        .capture_clipboard_source_payload(requestor, property, &mut properties)
+        .map_err(|error| {
+            X11SetupSocketError::new(format!(
+                "failed to capture clipboard source payload: {error:?}"
+            ))
+        })?;
+    routing
+        .source_payload_sender
+        .try_send(payload)
+        .map_err(|error| match error {
+            TrySendError::Full(_) => {
+                X11SetupSocketError::new("clipboard source payload queue is full")
+            }
+            TrySendError::Disconnected(_) => {
+                X11SetupSocketError::new("clipboard source payload queue is disconnected")
+            }
+        })?;
+    trace_selection_transfer("portal_source_captured", true);
+    output.outputs.remove(index);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn route_selection_event(
+    state: &X11CoreSocketServerState,
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    let Some((index, destination, event, stage, property_present)) =
+        output
+            .outputs
+            .iter()
+            .enumerate()
+            .find_map(|(index, output)| match output {
+                crate::XClientOutput::Event(
+                    event @ XClientEvent::SelectionNotify {
+                        requestor,
+                        property,
+                        ..
+                    },
+                ) => Some((
+                    index,
+                    *requestor,
+                    *event,
+                    "notify_routed",
+                    *property != crate::X_ATOM_NONE,
+                )),
+                crate::XClientOutput::Event(
+                    event @ XClientEvent::SelectionRequest { owner, .. },
+                ) => Some((index, *owner, *event, "request_routed", true)),
+                crate::XClientOutput::Event(
+                    event @ XClientEvent::SelectionClear { owner, .. },
+                ) => Some((index, *owner, *event, "owner_clear_routed", false)),
+                _ => None,
+            })
+    else {
+        return Ok(());
+    };
+    let Some(target) = state.client_for_resource(destination)? else {
+        return Ok(());
+    };
+    if target == client {
+        return Ok(());
+    }
+    routing.route_protocol(target, event).map_err(|error| {
+        X11SetupSocketError::new(format!("failed to route X11 protocol event: {error}"))
+    })?;
+    trace_selection_transfer(stage, property_present);
+    output.outputs.remove(index);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn route_property_events(
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    let property_events = output
+        .outputs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, output)| match output {
+            crate::XClientOutput::Event(event @ XClientEvent::PropertyNotify { window, .. }) => {
+                Some((index, *window, *event))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut remove = Vec::new();
+    for (index, window, event) in property_events {
+        let subscribers = routing
+            .property_change_subscribers(window)
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to inspect X11 property subscriptions: {error}"
+                ))
+            })?;
+        for target in subscribers.iter().copied().filter(|target| *target != client) {
+            routing.route_protocol(target, event).map_err(|error| {
+                X11SetupSocketError::new(format!("failed to route X11 property event: {error}"))
+            })?;
+        }
+        if subscribers.iter().any(|target| *target != client) {
+            trace_selection_transfer("property_notify_routed", true);
+        }
+        if !subscribers.contains(&client) {
+            remove.push(index);
+        }
+    }
+    for index in remove.into_iter().rev() {
+        output.outputs.remove(index);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy)]
+struct XSelectionPropertyReadTrace {
+    delete: bool,
+    any_type: bool,
+    complete_ceiling: bool,
+}
+
+#[cfg(unix)]
+fn selection_property_read_trace(
+    request: &crate::XWireRequest,
+) -> Option<XSelectionPropertyReadTrace> {
+    let crate::XWireRequest::GetProperty(read) = request else {
+        return None;
+    };
+    (read.delete && read.long_offset == 0).then_some(XSelectionPropertyReadTrace {
+        delete: read.delete,
+        any_type: read.property_type == crate::X_PROPERTY_ANY_TYPE,
+        complete_ceiling: read.long_length > crate::X_PROPERTY_MAX_VALUE_BYTES as u32,
+    })
+}
+
+#[cfg(unix)]
+fn trace_selection_property_read_result(
+    trace: Option<XSelectionPropertyReadTrace>,
+    output: &XDispatchResult,
+) {
+    if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_none() {
+        return;
+    }
+    let Some(trace) = trace else {
+        return;
+    };
+    let reply = output.outputs.iter().find_map(|output| match output {
+        crate::XClientOutput::Reply(crate::XClientReply::GetProperty {
+            property_type,
+            format,
+            bytes_after,
+            item_count,
+            ..
+        }) => Some((*property_type, *format, *bytes_after, *item_count)),
+        _ => None,
+    });
+    let error = output
+        .outputs
+        .iter()
+        .any(|output| matches!(output, crate::XClientOutput::Error(_)));
+    match reply {
+        Some((property_type, format, bytes_after, item_count)) => tracing::info!(
+            "sophia_x11_selection_transfer schema=1 stage=property_read result=reply delete={} any_type={} complete_ceiling={} type_present={} format={} items={} bytes_after={} content=redacted",
+            trace.delete,
+            trace.any_type,
+            trace.complete_ceiling,
+            property_type != crate::X_PROPERTY_ANY_TYPE,
+            format,
+            item_count,
+            bytes_after,
+        ),
+        None => tracing::info!(
+            "sophia_x11_selection_transfer schema=1 stage=property_read result={} delete={} any_type={} complete_ceiling={} content=redacted",
+            if error { "error" } else { "missing" },
+            trace.delete,
+            trace.any_type,
+            trace.complete_ceiling,
+        ),
+    }
+}
+
+#[cfg(unix)]
+fn trace_selection_transfer(stage: &str, property_present: bool) {
+    if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
+        tracing::info!(
+            "sophia_x11_selection_transfer schema=1 stage={} property_present={} content=redacted",
+            stage,
+            property_present,
+        );
+    }
+}

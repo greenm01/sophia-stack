@@ -38,9 +38,25 @@ content into an existing pending layer: source, damage, generation, identity,
 opacity, crop, transform, and resize capability. WM-owned geometry and stack
 rank remain from the proposal. Client-positioned surfaces explicitly retain
 authority-owned geometry, so an xmobar update during a resize epoch is not
-lost. Deterministic regressions cover both authority assignments. Physical
-confirmation must show no staging target after the three-window ManageSurface
-commit and `moved_surfaces=0` in the following focus-only transaction.
+lost. Deterministic regressions cover both authority assignments.
+
+The following 77-second physical run confirmed the authority split across
+seven action-launched Kitty surfaces on workspaces 1 and 2. Each ManageSurface
+commit moved exactly the projected surface count, and the new surface's first
+retired Present used the work-area master geometry. Three-window layouts
+presented one `1280x1426` master and two exact `1280x713` stack panes;
+four-window layouts presented the master plus `1280x475`, `1280x475`, and
+`1280x476` stack panes. No target used `(80,60)`, and every following layout
+transaction reported `moved_surfaces=0`. The run balanced 524 mixed target,
+pipeline, and frame-surface lifetimes, held input dwell to 11 ms and
+submit-to-page-flip observation to 47 ms, recorded no unexpected protocol
+error or WM degradation, and completed cleanly.
+
+The work-area-aware four-Kitty verifier now checks this temporal boundary for
+every action-launched surface it observes. It correlates launch observation,
+ManageSurface commit, active-workspace projection, first retired Present, and
+the following stability transaction. Mutation fixtures reject staging
+geometry, mismatched pixel dimensions, and a second geometry change.
 
 Focused borders remain a separate compositor-chrome concern. They must derive
 from committed focus and committed surface geometry, enter the ordinary Engine
@@ -48,6 +64,47 @@ frame and damage lifecycle, and never compensate for or conceal a placement
 error. The renderer-neutral chrome model in `docs/compositor-graphics.md`
 already defines that boundary; implementation follows physical geometry
 stability.
+
+## 2026-07-26: Clipboard Routing Is Workspace-Blind And Namespace-Explicit
+
+The next physical workflow reported that Ctrl-Shift-C did not work on
+workspace 3. The retained session did not show a swallowed chord or lost
+focus: workspace 3 kept a focused surface, six selection-owner changes and 21
+conversions reached the X authority, and the session exited cleanly. Kitty did,
+however, report four failed selection conversions around workspace
+transitions. The normal-session verifier previously rejected ownership failure
+but could still accept this conversion failure.
+
+The socket audit found a protocol-routing defect independent of Kitty and
+xmonad. A client writing a property on another client's selection requestor
+received the resulting `PropertyNotify` itself. X11 requires delivery to each
+client that selected `PropertyChangeMask` on that window. The routed frontend
+now retains bounded per-client core event subscriptions, routes property
+changes to those subscribers, removes subscriptions with their client or
+window, and preserves synchronous reply/event order when the requester is also
+the subscriber. This state remains inside the X frontend; Engine, workspaces,
+the WM, and the compositor never receive selection objects or payloads.
+
+The same audit tightened namespace resolution. A request first resolves an
+owner in its own admitted namespace and uses ordinary X11 transfer semantics.
+Only the absence of a local owner permits a cross-namespace portal request.
+Owner generations are globally monotonic, and portal source capture plus
+target execution revalidate the exact source namespace and generation instead
+of whichever namespace changed most recently. Explicit owner clear and
+disconnect cleanup also retain that namespace instead of clearing an
+arbitrarily ordered owner. Policy still sees only bounded facts; the runtime
+executor alone handles correlated clipboard bytes.
+
+The same-namespace socket regression now follows Kitty's material request
+shape: distinct target and property atoms, requester-side property
+subscription, `AnyPropertyType`, deletion, and a maximum `long_length`. The
+cross-namespace regression uses the same distinct target/property and
+requester subscription while proving broker-mediated payload capture and
+handoff. The strict physical verifier now rejects Kitty's conversion-failure
+diagnostic as well as ownership failure and requires at least two ownership
+changes plus two conversions. The operator sequence now copies workspace 1 to
+workspace 3 and back before continuing the normal promotion workflow. A new
+physical pass remains required before promotion.
 
 ## 2026-07-26: GetProperty Length Is A Ceiling, Not A Payload
 

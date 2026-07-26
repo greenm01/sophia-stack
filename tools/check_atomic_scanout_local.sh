@@ -34,6 +34,7 @@ bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmobar.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
+bash -n tools/start_sophia_xmonad_clipboard_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh
 bash -n tools/start_sophia_xmonad_xmobar_tty3.sh

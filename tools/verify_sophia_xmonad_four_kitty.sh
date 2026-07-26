@@ -122,6 +122,116 @@ targets=(
     "${stack_width}x${stack_height}_${stack_x}_${middle_stack_y}"
     "${stack_width}x${last_stack_height}_${stack_x}_${last_stack_y}"
 )
+
+mapfile -t managed_observations < <(
+    grep -nE \
+        '^sophia_session_app schema=2 status=surface_observed source=action transaction=[0-9]+ surface=[0-9]+$' \
+        "$SESSION_LOG"
+)
+(( ${#managed_observations[@]} >= 1 )) ||
+    fail "no action-launched managed surface was observed"
+for observation in "${managed_observations[@]}"; do
+    observation_line="${observation%%:*}"
+    observation_record="${observation#*:}"
+    action_transaction="$(field "$observation_record" transaction)"
+    managed_surface="$(field "$observation_record" surface)"
+
+    layout_match="$(
+        awk -v start="$observation_line" '
+            NR > start &&
+                /^sophia_live_wm schema=1 status=layout_committed transaction=[0-9]+ surfaces=[0-9]+ moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$/ {
+                print NR ":" $0
+                exit
+            }
+        ' "$SESSION_LOG"
+    )"
+    [[ -n "$layout_match" ]] ||
+        fail "surface $managed_surface has no following committed WM layout"
+    layout_line="${layout_match%%:*}"
+    layout_record="${layout_match#*:}"
+    layout_transaction="$(field "$layout_record" transaction)"
+    (( layout_transaction > action_transaction )) ||
+        fail "surface $managed_surface layout did not follow its launch action"
+
+    projection="$(
+        grep -Em1 \
+            "^sophia_live_wm schema=2 status=workspace_projection_committed transaction=${layout_transaction} output=[0-9]+ workspace=[0-9]+ visible_surfaces=[0-9]+ focus=surface$" \
+            "$SESSION_LOG" || true
+    )"
+    [[ -n "$projection" ]] ||
+        fail "surface $managed_surface layout has no focused workspace projection"
+    projection_output="$(field "$projection" output)"
+    visible_surfaces="$(field "$projection" visible_surfaces)"
+    (( visible_surfaces >= 1 && visible_surfaces <= 4 )) ||
+        fail "surface $managed_surface projection has unsupported Tall count $visible_surfaces"
+    moved_surfaces="$(field "$layout_record" moved_surfaces)"
+    (( moved_surfaces == visible_surfaces )) ||
+        fail "surface $managed_surface ManageSurface commit moved $moved_surfaces of $visible_surfaces visible surfaces"
+
+    projection_work_area_record="$(
+        grep -E \
+            "^sophia_live_work_area schema=1 status=applied output=${projection_output} " \
+            "$SESSION_LOG" | tail -n 1
+    )"
+    [[ -n "$projection_work_area_record" ]] ||
+        fail "surface $managed_surface output has no Engine work area"
+    projection_work_area="$(field "$projection_work_area_record" work)"
+    if [[ "$projection_work_area" =~ ^([0-9]+)x([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$ ]]; then
+        projection_width="${BASH_REMATCH[1]}"
+        projection_height="${BASH_REMATCH[2]}"
+        projection_x="${BASH_REMATCH[3]}"
+        projection_y="${BASH_REMATCH[4]}"
+    else
+        fail "surface $managed_surface work-area geometry is malformed: $projection_work_area"
+    fi
+    if (( visible_surfaces == 1 )); then
+        expected_managed_target="$projection_work_area"
+    else
+        expected_managed_target="$((projection_width / 2))x${projection_height}_${projection_x}_${projection_y}"
+    fi
+
+    present_match="$(
+        awk -v start="$layout_line" -v surface="$managed_surface" '
+            NR > start &&
+                /^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=/ &&
+                index($0, " surface=" surface " ") {
+                print NR ":" $0
+                exit
+            }
+        ' "$SESSION_LOG"
+    )"
+    [[ -n "$present_match" ]] ||
+        fail "surface $managed_surface has no retired Present after ManageSurface"
+    present_record="${present_match#*:}"
+    present_source="$(field "$present_record" source)"
+    present_target="$(field "$present_record" target)"
+    present_clip="$(field "$present_record" clip)"
+    present_scale="$(field "$present_record" unit_scale)"
+    [[ "$present_target" == "$expected_managed_target" ]] ||
+        fail "surface $managed_surface first Present used $present_target, expected $expected_managed_target"
+    [[ "$present_source" == "${present_target%%_*}" &&
+        "$present_clip" == "$present_target" &&
+        "$present_scale" == true ]] ||
+        fail "surface $managed_surface first Present did not consume one pixel-matched layout snapshot"
+    [[ "$present_target" != *_80_60 ]] ||
+        fail "surface $managed_surface presented at the admission staging offset"
+
+    following_layout="$(
+        awk -v start="$layout_line" '
+            NR > start &&
+                /^sophia_live_wm schema=1 status=layout_committed transaction=[0-9]+ surfaces=[0-9]+ moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$/ {
+                print
+                exit
+            }
+        ' "$SESSION_LOG"
+    )"
+    [[ -n "$following_layout" ]] ||
+        fail "surface $managed_surface ManageSurface commit has no following stability transaction"
+    following_moved="$(field "$following_layout" moved_surfaces)"
+    (( following_moved == 0 )) ||
+        fail "surface $managed_surface moved again in the following transaction"
+done
+
 for target in "${targets[@]}"; do
     grep -Eq \
         "^sophia_live_session_present schema=2 status=retired .* source=${target%%_*} target=${target} .* unit_scale=true$" \

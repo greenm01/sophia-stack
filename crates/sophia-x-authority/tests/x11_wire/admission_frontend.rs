@@ -478,6 +478,9 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    const TARGET: u32 = X_ATOM_STRING;
+    const PROPERTY: u32 = X_ATOM_WM_NAME;
+
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x-server-frontend-selection-route-test-{}-{}.sock",
         std::process::id(),
@@ -545,14 +548,21 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     assert_eq!(read_x_record(&mut requestor)[0], 22);
+    requestor
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            requestor_window,
+            1 << 22,
+        ))
+        .unwrap();
 
     requestor
         .write_all(&convert_selection_request(
             XByteOrder::LittleEndian,
             requestor_window,
             1,
-            31,
-            31,
+            TARGET,
+            PROPERTY,
             10,
         ))
         .unwrap();
@@ -568,8 +578,14 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         requestor_window
     );
     assert_eq!(read_u32(XByteOrder::LittleEndian, &request[16..20]), 1);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &request[20..24]), 31);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &request[24..28]), 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &request[20..24]),
+        TARGET
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &request[24..28]),
+        PROPERTY
+    );
 
     let selection_bytes = b"same namespace";
     owner
@@ -577,19 +593,22 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
             XByteOrder::LittleEndian,
             XPropertyMode::Replace,
             requestor_window,
-            31,
-            31,
+            PROPERTY,
+            TARGET,
             8,
             selection_bytes,
         ))
         .unwrap();
-    let new_value = read_x_record(&mut owner);
+    let new_value = read_x_record(&mut requestor);
     assert_eq!(new_value[0], 28);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &new_value[4..8]),
         requestor_window
     );
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &new_value[8..12]), 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &new_value[8..12]),
+        PROPERTY
+    );
 
     owner
         .write_all(&send_selection_notify_request(
@@ -603,40 +622,54 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         .unwrap();
     let event = read_x_record(&mut requestor);
     assert_eq!(event[0] & 0x7f, 31);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[2..4]), 2);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[2..4]), 3);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &event[8..12]),
         requestor_window
     );
     assert_eq!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 1);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[16..20]), 31);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[20..24]), 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &event[16..20]),
+        TARGET
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &event[20..24]),
+        PROPERTY
+    );
 
     requestor
         .write_all(&get_property_request(
             XByteOrder::LittleEndian,
             true,
             requestor_window,
-            31,
-            31,
+            PROPERTY,
+            X_PROPERTY_ANY_TYPE,
             0,
             u32::MAX,
         ))
         .unwrap();
     let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reply[8..12]),
+        TARGET
+    );
+    assert_eq!(reply[1], 8);
     assert_eq!(&reply[32..32 + selection_bytes.len()], selection_bytes);
     let deleted = read_x_record(&mut requestor);
     assert_eq!(deleted[0], 28);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[4..8]), requestor_window);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[8..12]), 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &deleted[8..12]),
+        PROPERTY
+    );
     assert_eq!(deleted[16], 1);
     requestor
         .write_all(&get_property_request(
             XByteOrder::LittleEndian,
             false,
             requestor_window,
-            31,
-            31,
+            PROPERTY,
+            X_PROPERTY_ANY_TYPE,
             0,
             u32::MAX,
         ))

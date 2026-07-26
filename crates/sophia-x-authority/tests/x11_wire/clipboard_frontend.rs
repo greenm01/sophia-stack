@@ -189,12 +189,28 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         .unwrap();
     read_x_record(&mut requestor);
     requestor
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            requestor_window,
+            1 << 22,
+        ))
+        .unwrap();
+    requestor
+        .write_all(&intern_atom_request(
+            XByteOrder::LittleEndian,
+            false,
+            "GLFW_SELECTION",
+        ))
+        .unwrap();
+    let property =
+        read_u32(XByteOrder::LittleEndian, &read_x_record(&mut requestor)[8..12]);
+    requestor
         .write_all(&convert_selection_request(
             XByteOrder::LittleEndian,
             requestor_window,
             selection,
             utf8,
-            utf8,
+            property,
             11,
         ))
         .unwrap();
@@ -214,7 +230,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             b"cross namespace",
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut owner)[0], 28);
     owner
         .write_all(&send_selection_notify_request(
             XByteOrder::LittleEndian,
@@ -227,19 +242,26 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         .unwrap();
     let notify = read_x_record(&mut requestor);
     assert_eq!(notify[0], 31);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &notify[20..24]), utf8);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &notify[20..24]),
+        property
+    );
     requestor
         .write_all(&get_property_request(
             XByteOrder::LittleEndian,
             true,
             requestor_window,
-            utf8,
-            utf8,
+            property,
+            X_PROPERTY_ANY_TYPE,
             0,
             u32::MAX,
         ))
         .unwrap();
     let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reply[8..12]),
+        utf8
+    );
     assert_eq!(&reply[32..47], b"cross namespace");
     let deleted = read_x_record(&mut requestor);
     assert_eq!(deleted[0], 28);
@@ -247,15 +269,18 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         read_u32(XByteOrder::LittleEndian, &deleted[4..8]),
         requestor_window
     );
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[8..12]), utf8);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &deleted[8..12]),
+        property
+    );
     assert_eq!(deleted[16], 1);
     requestor
         .write_all(&get_property_request(
             XByteOrder::LittleEndian,
             false,
             requestor_window,
-            utf8,
-            utf8,
+            property,
+            X_PROPERTY_ANY_TYPE,
             0,
             u32::MAX,
         ))
@@ -271,7 +296,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             requestor_window,
             selection,
             utf8,
-            utf8,
+            property,
             12,
         ))
         .unwrap();
@@ -324,7 +349,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
                 requestor_window,
                 selection,
                 utf8,
-                utf8,
+                property,
                 12,
             ))
             .unwrap();
