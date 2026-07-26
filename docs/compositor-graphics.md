@@ -57,6 +57,11 @@ other shell-owned UI without turning Engine into a general-purpose UI toolkit.
 New primitives require demonstrated compositor use. One-off visual novelty is
 not sufficient reason to expand the stable Engine boundary.
 
+“Shell-owned” is an ownership rule, not a product description. It covers a
+small status bar and a full set of panels and decorations alike. The display
+list describes the resulting visual intent without learning which kind of
+session asked for it.
+
 ## Ownership
 
 Sophia Engine owns:

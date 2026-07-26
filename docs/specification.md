@@ -25,6 +25,18 @@ frontends. A future compatibility translator or native application interface
 may be evaluated from demonstrated product requirements, but no such interface
 is currently supported or planned.
 
+Sophia does not prescribe the shape of a session, either. The same boundaries
+must serve a lean policy client such as xmonad or qtile, a conventional
+environment such as Xfce, and designs that do not look much like today's window
+managers. Tiling, scrolling, stacking, floating, and hybrid layouts are policy
+choices. Panels, decorations, launchers, and other shell pieces are separate
+choices. None of them changes who owns input, pixels, protocol state, or
+presentation.
+
+A future Sophia-native compositor/Engine protocol, if product evidence calls
+for one, would be another bounded route to the same Engine mechanisms. It would
+not dictate one shell, layout, or application model.
+
 ## Invariants
 
 These rules hold regardless of profile, frontend, or milestone. A design that
@@ -55,6 +67,11 @@ violates one is not a Sophia design.
    use bounded packets, snapshots, commands, explicit ownership, and
    generation-checked typed IDs as defined by [dod.md](dod.md). They do not
    share mutable protocol, renderer, or policy objects.
+7. **Form-neutral boundaries.** Public records describe capabilities, state,
+   geometry, and ownership. They do not bake in a tiling tree, a scrolling
+   column, a stacking convention, or a particular desktop shell. Current
+   clients and profiles are evidence, not templates every later session must
+   follow.
 
 ## Hard Architectural Non-Goals
 

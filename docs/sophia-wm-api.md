@@ -22,6 +22,30 @@ bounded policy changes and never receives:
 The Engine validates every proposal and preserves the last committed layout when
 a WM is absent, incompatible, timed out, malformed, or restarting.
 
+## Policy Model
+
+`WM` is the name of the version 3 policy slot. It is not a requirement that a
+client behave like a traditional window manager, nor does it make one layout
+family part of Sophia's architecture.
+
+The API carries surface capabilities, state, constraints, and geometry. It
+does not carry a tiling tree, master-and-stack roles, scrolling columns, or a
+global stacking model. A policy client may keep any such structure privately
+and return the same bounded Sophia commands. Tiling clients such as xmonad and
+qtile, scrolling policies, freeform stacking policies, hybrid layouts, and
+single-application sessions therefore share one Engine boundary.
+
+A larger environment uses other boundaries as well. An Xfce-style session, for
+example, would not turn its panel, decorations, settings, notifications, and
+session services into WM powers. Those parts belong to shell, metadata,
+portal, and session interfaces, while spatial policy remains blind.
+
+Version 3's workspace and registered-action models are current, versioned
+contracts. They are not constitutional claims that every later policy model
+must have nine workspaces, keyboard-first control, or the same notion of
+visibility. A later version may broaden those mechanics without weakening the
+ownership rules above.
+
 ## Version 3 Session Negotiation
 
 WM API version 3 uses the existing Sophia IPC frame version. It does not change

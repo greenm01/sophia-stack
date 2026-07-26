@@ -669,6 +669,12 @@ Fields must not include `XWindowId`, `NamespaceId`, raw title, app class, PID,
 or icon pixels. App-specific behavior should come later from launch/session
 policy hints, not WM sniffing of client metadata.
 
+A layout node describes a manageable surface, not its place in a particular
+policy data structure. It must not grow parent and child fields for a tiling
+tree, column offsets for a scrolling layout, or presentation metadata for a
+desktop shell. A policy process may keep any of those privately and return
+ordinary Sophia commands.
+
 ### ChromeDescriptor
 
 Chrome descriptors are compositor-owned presentation metadata. They are separate

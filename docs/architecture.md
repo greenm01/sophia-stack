@@ -206,7 +206,7 @@ remain historical evidence and cannot become alternate production loops.
 | Sophia Engine | physical input, scene graph, hit-testing, committed visual state, damage, frame scheduling, rendering, DRM/KMS presentation | client protocol parsing, protocol-local resources, portal decisions, WM policy |
 | X Server Frontend | X11 sockets, authentication adapter, XIDs, atoms, properties, selections, focus, grabs, events, drawing readiness | physical devices, workspaces, final layout, portal policy, renderer imports, scanout |
 | Session runtime | process supervision, namespace registry, admission, authorization publication, bounded I/O coordination, recovery | protocol meaning, visual policy, portal allow/deny decisions |
-| Sophia WM | layout, workspace, focus and launch policy through opaque handles | XIDs, protocol objects, namespaces, titles, PIDs, payloads, rendering |
+| Spatial policy process (current Sophia WM) | layout, workspace, focus and launch policy through opaque handles | XIDs, protocol objects, namespaces, titles, PIDs, payloads, rendering |
 | Portal broker | bounded transfer policy, decision and grant lifecycle | protocol object tables, payload rendering, DRM/KMS, client-global visibility |
 | Portal executor | concrete payload/handle transfer and native protocol completion | policy decisions or ambient namespace authority |
 | Metadata broker/shell | sanitization and compositor-owned chrome | WM identity disclosure or client-protocol authority |
@@ -343,12 +343,27 @@ Input delivery stays off the WM path. The WM may choose focus policy in response
 to reduced Engine facts, but it does not receive every motion/key event or
 protocol identity.
 
-## Window Manager And Chrome
+## Spatial Policy And Chrome
 
 The WM consumes immutable snapshots keyed by opaque `SurfaceId` values and
 emits `LayoutTransaction` proposals. It never sees XIDs, protocol object IDs,
 namespace IDs, titles, classes, PIDs, paths, icons, credentials, or portal
 payloads.
+
+“WM” is the name of the current spatial-policy role, not a preferred kind of
+interface. A policy process may tile, scroll, stack, float, combine those
+approaches, run a single-application session, or try a model for which the
+usual window-manager vocabulary is a poor fit. The packets carry geometry,
+capabilities, and state; the policy process keeps its own trees, columns,
+stacks, or other private model.
+
+A complete environment is not folded into that role. For example, xmonad or
+qtile may occupy the policy slot with only a small companion shell. An
+Xfce-style environment divides work among spatial policy, panels and
+decorations, session services, portals, and ordinary applications. A future
+Sophia-native compositor/Engine protocol would still meet these same authority
+boundaries. The examples differ in form, not in who is allowed to own input,
+protocol state, rendering, or scanout.
 
 Engine mints transaction IDs, validates every proposal, and keeps the last
 committed layout when the WM is absent, malformed, timed out, or restarting. A

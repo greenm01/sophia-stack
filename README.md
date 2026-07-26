@@ -41,7 +41,22 @@ not design a speculative replacement protocol today.
 
 Layout policy belongs in an external process. The Sophia Window Manager receives opaque layout nodes. It never sees an XID, a window title, a namespace, or a protocol-local object ID. It crunches the geometry and returns command packets. Because the window manager is blind, it cannot leak secure metadata. Because it sits outside the rendering hot path, it can crash, restart, or be rewritten in any language without taking down the session.
 
-Sophia gives you the flawless visual integrity of a modern macOS environment and the hackable freedom of a tiling setup. 
+## The Boundaries Do Not Dictate the Interface
+
+Sophia's current policy slot is called the window manager, but the architecture
+does not belong to one kind of window manager—or even to one familiar kind of
+desktop. A policy client may tile, scroll, stack, float, mix those approaches,
+or organize a single-purpose session. Xmonad and qtile are useful examples of
+replaceable policy. An Xfce-style environment would add panels, decorations,
+settings, and session services through their proper shell and service
+boundaries instead of turning them into compositor privileges.
+
+The same restraint applies to future interfaces. If experience eventually
+justifies a Sophia-native compositor/Engine protocol, it must preserve the
+authority split rather than make one shell or interaction model permanent.
+
+Sophia aims for the visual integrity of a modern composited system and the
+freedom to replace the policy and interface around it.
 
 No tearing. No shared mutable state. NOT designed by committee.
 
@@ -222,8 +237,8 @@ Sophia is split by authority, not by convenience.
   transaction commits, rendering, and display output.
 - **Sophia X Server Frontend** owns X11 compatibility and translates protocol
   state into Sophia surface transactions.
-- **Sophia WM** owns layout, focus policy, keybindings, workspaces, and launch
-  decisions.
+- **Spatial policy**, currently served by the Sophia WM API, owns layout,
+  focus policy, keybindings, workspaces, and launch decisions.
 - **Sophia Portals** handle intentional namespace crossing: clipboard,
   drag-and-drop, files, screen capture/recording, notifications, and URI
   handoff.
