@@ -444,7 +444,7 @@
                     }
                     focus.clear_surface(surface);
                     key_repeat.cancel_surface(surface);
-                    let abandoned = clear_removed_surface_keys(
+                    let abandoned = clear_client_pressed_keys_state_only(
                         surface,
                         &mut client_keys,
                         &mut client_key_scratch,

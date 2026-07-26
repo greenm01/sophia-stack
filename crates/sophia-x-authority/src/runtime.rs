@@ -25,6 +25,7 @@ use crate::{
 include!("runtime/clipboard.rs");
 include!("runtime/drawing.rs");
 include!("runtime/render_resources.rs");
+include!("runtime/sync.rs");
 include!("runtime/windows.rs");
 
 /// Effects of releasing every currently supported resource allocated from one
@@ -63,6 +64,7 @@ pub struct XAuthorityRuntime {
     dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
     next_dma_buf_handle: u64,
     dri3_fences: BTreeMap<crate::XResourceId, sophia_protocol::FenceHandle>,
+    sync_counters: BTreeMap<crate::XResourceId, i64>,
     xfixes_regions: BTreeMap<crate::XResourceId, Region>,
     next_fence_handle: u64,
     graphics_contexts: XGraphicsContextTable,
@@ -93,6 +95,7 @@ impl Default for XAuthorityRuntime {
             dri3_pixmaps: Default::default(),
             next_dma_buf_handle: 1,
             dri3_fences: Default::default(),
+            sync_counters: Default::default(),
             xfixes_regions: Default::default(),
             next_fence_handle: 1,
             graphics_contexts: Default::default(),

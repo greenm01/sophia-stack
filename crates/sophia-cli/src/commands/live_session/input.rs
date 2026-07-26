@@ -804,7 +804,7 @@ fn flush_client_pressed_keys(
     Ok(scratch.len())
 }
 
-fn clear_removed_surface_keys(
+fn clear_client_pressed_keys_state_only(
     surface: SurfaceId,
     client_keys: &mut SessionClientKeyState,
     scratch: &mut Vec<SessionClientPressedKey>,
@@ -839,5 +839,5 @@ fn clear_removed_surface_keys(
         })?;
         client_keys.record_state_only_release(key);
     }
-    Ok(client_keys.clear_surface(surface))
+    Ok(scratch.len())
 }

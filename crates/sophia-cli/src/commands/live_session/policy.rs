@@ -179,7 +179,7 @@ struct SessionActionExecutionContext<'a> {
     launch_admission_started_at: &'a mut Option<Instant>,
     startup_ready: bool,
     admission_pipeline_idle: bool,
-    presented_admission_surface: Option<SurfaceId>,
+    stable_admission_surface: Option<SurfaceId>,
     layout: &'a PersistentLiveLayout,
     focus: &'a InputFocusState,
     seat: SeatId,
@@ -198,22 +198,21 @@ fn execute_committed_session_actions(
         launch_admission_started_at,
         startup_ready,
         admission_pipeline_idle,
-        presented_admission_surface,
+        stable_admission_surface,
         layout,
         focus,
         seat,
         session_controls,
     } = context;
     if let Some(admission) =
-        launches.complete_if_presented(admission_pipeline_idle, presented_admission_surface)
+        launches.complete_if_stable(admission_pipeline_idle, stable_admission_surface)
     {
         *launch_admission_started_at = None;
         println!(
             "sophia_session_app schema=2 status=admitted source=action transaction={} surface={}",
             admission.intent.transaction.raw(),
-            admission
-                .observed_surface
-                .expect("settled launch admission requires a surface")
+            stable_admission_surface
+                .expect("settled launch admission requires a stable surface")
                 .index(),
         );
     } else if launch_admission_started_at

@@ -183,8 +183,12 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || 
         set -- "$@" --session-app=terminal=/usr/bin/xterm
         set -- "$@" --session-app-arg=terminal=-cm --session-app-arg=terminal=-dc
         set -- "$@" --session-app=vulkan=/usr/bin/vkcube --session-app-arg=vulkan=--wsi --session-app-arg=vulkan=xcb
-        set -- "$@" --session-app-arg=vulkan=--width --session-app-arg=vulkan=640
-        set -- "$@" --session-app-arg=vulkan=--height --session-app-arg=vulkan=720
+        # Match the deterministic two-column QEMU content allocation. Under
+        # TCG, resizing Lavapipe during initial admission can exceed the
+        # production two-second transaction budget; Firefox still exercises
+        # the mixed-workload resize path after startup.
+        set -- "$@" --session-app-arg=vulkan=--width --session-app-arg=vulkan=636
+        set -- "$@" --session-app-arg=vulkan=--height --session-app-arg=vulkan=796
         set -- "$@" --session-app=launcher=/usr/bin/sophia-zenity-launcher
         set -- "$@" --session-app=firefox=/usr/bin/firefox --session-app-arg=firefox=--new-instance --session-app-arg=firefox=--no-remote
         set -- "$@" --session-app-arg=firefox=--profile --session-app-arg=firefox=/tmp/firefox-profile

@@ -24,6 +24,7 @@ include!("wire/extensions/query_version.rs");
 include!("wire/extensions/randr.rs");
 include!("wire/extensions/shm.rs");
 include!("wire/extensions/sophia_present.rs");
+include!("wire/extensions/sync.rs");
 include!("wire/extensions/xfixes.rs");
 include!("wire/extensions/xi.rs");
 include!("wire/extensions/xkb.rs");
@@ -586,6 +587,25 @@ pub enum XWireRequest {
         desired_major: u8,
         desired_minor: u8,
     },
+    SyncListSystemCounters,
+    SyncCreateCounter {
+        counter: XResourceId,
+        initial_value: i64,
+    },
+    SyncSetCounter {
+        counter: XResourceId,
+        value: i64,
+    },
+    SyncChangeCounter {
+        counter: XResourceId,
+        delta: i64,
+    },
+    SyncQueryCounter {
+        counter: XResourceId,
+    },
+    SyncDestroyCounter {
+        counter: XResourceId,
+    },
     SyncDestroyFence {
         fence: XResourceId,
     },
@@ -877,22 +897,7 @@ pub fn decode_x11_core_request(
         X_PRESENT_MAJOR_OPCODE => decode_present(context, bytes),
         X_XFIXES_MAJOR_OPCODE => decode_xfixes(context, bytes),
         X_GLX_MAJOR_OPCODE => decode_glx(context, bytes),
-        X_SYNC_MAJOR_OPCODE => match bytes[1] {
-            X_SYNC_INITIALIZE_MINOR_OPCODE => {
-                require_exact_len(X_SYNC_MAJOR_OPCODE, 8, bytes.len())?;
-                Ok(XWireRequest::SyncInitialize {
-                    desired_major: bytes[4],
-                    desired_minor: bytes[5],
-                })
-            }
-            X_SYNC_DESTROY_FENCE_MINOR_OPCODE => {
-                require_exact_len(X_SYNC_MAJOR_OPCODE, 8, bytes.len())?;
-                Ok(XWireRequest::SyncDestroyFence {
-                    fence: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-                })
-            }
-            other => Err(XWireParseError::UnknownOpcode(other)),
-        },
+        X_SYNC_MAJOR_OPCODE => decode_sync(context, bytes),
         other => Err(XWireParseError::UnknownOpcode(other)),
     }
 }

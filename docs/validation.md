@@ -324,25 +324,12 @@ xmonad only as the selected policy client. Kitty remains a normal application
 in the bounded session registry; neither Engine nor X Authority contains
 Kitty-specific window-management behavior.
 
-Arm the independent guard when prompted. For the normal promotion capture,
-first type `repeat-test-abcdef`, hold Left until the cursor moves several
-places, and hold Backspace until several characters disappear. Clear the line,
-type a unique word in the initial Kitty, click-drag it, and use Ctrl-Shift-C;
-use Super-Enter to launch an independent Kitty, use Ctrl-Shift-V there, confirm
-the word is pasted unchanged, then exit that clipboard peer. Move the pointer
-hard against every output edge and require it to remain visible and reverse
-immediately. Switch to another TTY and back, exit the startup Kitty, and move
-the pointer on the empty desktop. Use Super-Enter twice and type independently
-in both new Kittys; use Super-J to change focus and Super-Space to change
-layout; close one with Super-Shift-C; use Super-2,
-type one harmless key while the workspace is empty, use Super-3 and confirm it
-is also empty, then use Super-1 to return while confirming the hidden window
-received no input; use Super-Shift-C to
-close a focused Kitty; then use
-Super-Shift-Q for normal logout. Do not use Ctrl-Alt-Backspace in that capture.
-After returning to TTY3, run:
+The former normal-promotion workflow combined repeat, clipboard, pointer-edge,
+VT, workspace, close, and layout gestures into one long operator script. It is
+retained only as an exhaustive focused diagnostic:
 
 ```sh
+tools/start_sophia_xmonad_tty3.sh
 tools/verify_sophia_xmonad_tty3.sh
 ```
 
@@ -357,7 +344,14 @@ untriggered guard, and exact KD mode and termios restoration. Its default eviden
 `/tmp/sophia-xmonad-tty3-launch.log`. A failed condition names the missing
 proof.
 
-For the focused four-Kitty Tall regression, use:
+The promotion ledger instead launches the short hardware smoke through
+`tools/start_sophia_xmonad_hardware_smoke_tty3.sh`. Its complete sequence is
+printed on screen: create four stable Kitty tiles, confirm click focus and
+typing, make one TTY2/TTY3 round-trip, and log out normally. The verifier also
+runs the strict four-Kitty geometry, latency, resource-lifetime, and teardown
+checks against that same session log.
+
+For the standalone focused four-Kitty Tall regression, use:
 
 ```sh
 tools/start_sophia_xmonad_four_kitty_tty3.sh
@@ -434,21 +428,23 @@ tools/check_sophia_xmonad_pointer_focus_verifier.sh
 tools/check_sophia_xmonad_pointer_focus_pair_verifier.sh
 ```
 
-For the focused unmodified-xmobar work-area gate, use:
+For the exhaustive unmodified-xmobar work-area diagnostic, use:
 
 ```sh
 tools/start_sophia_xmonad_xmobar_tty3.sh
 tools/verify_sophia_xmonad_xmobar.sh
 ```
 
-Follow the launcher's exact click, scroll, workspace, VT, and normal-logout
+Follow the launcher's exact click, scroll, and normal-logout
 sequence. The verifier requires one active reservation reduced across both
 outputs, exact top-edge work-area geometry, pixel-matched managed presentation
 below the bar, and both button and axis routing to a generic
-`ClientPositioned` surface. It also requires workspace return, seat
-suspend/resume, clean native drain, an untriggered emergency guard, and exact
-TTY restoration. The role evidence is application-agnostic: the Engine and
-live input path do not identify xmobar or any other bar implementation.
+`ClientPositioned` surface. The short promotion verifier also requires clean
+native drain, an untriggered emergency guard, and exact TTY restoration. The
+older strict verifier retains workspace/VT assertions for focused regression
+work after those domains change. The role evidence is application-agnostic:
+the Engine and live input path do not identify xmobar or any other bar
+implementation.
 
 Validate changes to this focused verifier with:
 
@@ -463,19 +459,41 @@ bar without naming xmobar inside Engine or the renderer.
 
 ## Commit-pinned Milestone 9 promotion
 
-After committing a candidate, switch to TTY3 and repeatedly run:
+After committing a candidate, run the first gate from any text terminal:
 
 ```sh
 tools/sophia_m9_promotion.sh next
 ```
 
-The command refuses a dirty worktree, selects exactly one pending gate, guides
-the physical interaction, archives session/guard/recovery/sequence evidence
-under `$XDG_STATE_HOME/sophia/m9-promotion/<commit>/`, and marks the gate
-passed only after its fail-closed verifier succeeds. The ordered gates are
-native chrome, external core-config isolation, the complete normal workflow,
-pointer focus, three four-Kitty cycles, launch burst, full US keyboard plus
-F1-F12 VT coverage, xmobar, and independent emergency recovery.
+Gate zero is unattended. It runs the canonical offline local regression suite
+followed by the two-output M7 xmonad and M8 mixed-application QEMU scenarios. The retained
+evidence covers focus click and drag, hidden-workspace input suppression,
+layout/workspace actions, launch/close/logout, clipboard and PRIMARY,
+Firefox/Kitty/Vulkan interaction, resize, dialog, bridge restart, compositor
+damage, and clean teardown. It is tied to the exact candidate commit.
+The M8 browser scroll stage first requires a newly observed and routed physical
+axis event, then uses a focused Space key to advance the deterministic local
+page. It proves Engine axis routing but does not claim that the current X
+frontend produces native Firefox DOM `wheel` events.
+
+After that gate passes, switch to a logged-in TTY3 and run the same command
+once for each remaining pending gate. The command refuses a dirty worktree,
+selects exactly one gate, prints its complete short interaction sequence,
+archives session/guard/recovery/sequence evidence under
+`$XDG_STATE_HOME/sophia/m9-promotion/<commit>/`, and advances only after its
+fail-closed verifier succeeds. The ordered gates are:
+
+1. Unattended QEMU semantic gate.
+2. Native chrome and hot-reload hardware proof.
+3. Four-Kitty keyboard, pointer-focus, two-output, and one-VT hardware smoke.
+4. Short xmobar geometry, pointer, and retained-keyboard-focus hardware smoke.
+5. Independent emergency recovery.
+
+QEMU does not certify the physical GPU/KMS path, actual keyboard and mouse,
+monitor pixels, libseat VT ownership, greetd transition, or emergency TTY
+recovery. Those remain physical. Conversely, the physical gates do not ask the
+operator to manually replay deterministic clipboard, workspace, application,
+and protocol state machines already exercised by QEMU.
 
 Inspect progress from any text terminal with:
 
@@ -483,12 +501,25 @@ Inspect progress from any text terminal with:
 tools/sophia_m9_promotion.sh status
 ```
 
-Evidence from another commit cannot satisfy the current ledger. Failed runs
-are retained in timestamped directories but do not advance the next gate.
+Evidence from another commit cannot implicitly satisfy the current ledger.
+Failed runs are retained in timestamped directories but do not advance the
+next gate.
 
-The keyboard/VT gate logs only the count of 21 shifted printable key positions
-and 12 VT targets; typed content remains redacted. Its verifier requires every
-queued and requested VT target plus the expected suspend/resume lifecycle:
+If a promotion-tool-only commit immediately follows a candidate whose native
+chrome gate already passed, this explicit command may adopt that one parent
+gate:
+
+```sh
+tools/sophia_m9_promotion.sh adopt-parent-native
+```
+
+Adoption succeeds only when the parent result still verifies and Git proves
+that Engine/runtime crates plus every native gate dependency are unchanged.
+The copied result records both the current commit and its source commit.
+
+The exhaustive keyboard/VT runner remains a focused diagnostic after input,
+XKB, seat, or VT changes. It logs only the count of 21 shifted printable key
+positions and 12 VT targets; typed content remains redacted:
 
 ```sh
 tools/check_sophia_xmonad_keyboard_vt_verifier.sh
@@ -752,6 +783,8 @@ Firefox, `vkcube`, and Mesa Lavapipe; set `SOPHIA_FIREFOX_BIN`,
 standard Void paths. The mix verifier requires four managed application IDs,
 two independently retired outputs, workspace and bridge-recovery evidence,
 zero normal-session protocol errors, and final frontend/application cleanup.
+It also requires each close shortcut to clear its client key ledger without a
+delivery barrier, a fully drained control queue, and zero control timeouts.
 The soak reuses that scenario for at least 1,800,000 ms and twenty complete
 interaction cycles. Application launch and close steps are evidence-driven:
 the harness waits for the matching managed-process start, committed layout,

@@ -182,15 +182,40 @@
         }
         let admission_pipeline_idle =
             layout.pending.is_none() && layout.next_unmanaged_surface().is_none();
-        let presented_admission_surface = session_launches
-            .admission()
-            .and_then(|admission| admission.observed_surface)
-            .filter(|surface| retired_present_surfaces.contains_key(surface));
+        let stable_admission_surface = session_launches.admission().and_then(|admission| {
+            admission.observed_surfaces().find(|surface| {
+                runtime.as_ref().is_some_and(|runtime| {
+                    runtime
+                        .committed_surfaces()
+                        .iter()
+                        .any(|committed| committed.surface == *surface)
+                        && (scene.surface_has_visual_detail(
+                            runtime.committed_surfaces(),
+                            *surface,
+                        ) || retired_present_surfaces.contains_key(surface))
+                })
+            })
+        });
         for (_, action, target) in &committed_session_actions {
             if *action == WmSessionAction::CloseFocused
                 && let Some(surface) = target.or(applied_client_focus)
             {
-                flush_client_keys!(surface, "close_surface");
+                key_repeat.cancel_surface(surface);
+                let cleared = clear_client_pressed_keys_state_only(
+                    surface,
+                    &mut client_keys,
+                    &mut client_key_scratch,
+                    &mut modifiers,
+                    input_sender,
+                    &mut input_delivery.next,
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                )?;
+                if cleared != 0 {
+                    println!(
+                        "sophia_live_session_keys schema=1 status=cleared reason=close_surface surface={} count={cleared}",
+                        surface.index(),
+                    );
+                }
             } else if *action == WmSessionAction::Logout
                 && let Some(surface) = applied_client_focus
             {
@@ -206,7 +231,7 @@
                 launch_admission_started_at: &mut launch_admission_started_at,
                 startup_ready: startup_ready_reported || config.startup_ready_timeout.is_none(),
                 admission_pipeline_idle,
-                presented_admission_surface,
+                stable_admission_surface,
                 layout: &layout,
                 focus: &focus,
                 seat,

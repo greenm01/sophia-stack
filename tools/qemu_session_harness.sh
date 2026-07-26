@@ -32,6 +32,7 @@ fi
 EVIDENCE_FILE="${SOPHIA_QEMU_EVIDENCE:-$DEFAULT_EVIDENCE_FILE}"
 QEMU_BIN="${SOPHIA_QEMU_BIN:-qemu-system-x86_64}"
 MEMORY_MIB="${SOPHIA_QEMU_MEMORY_MIB:-2048}"
+VIRTUAL_CPUS="${SOPHIA_QEMU_CPUS:-2}"
 VNC_SOCKET="${SOPHIA_QEMU_VNC_SOCKET:-$OUT_DIR/display.sock}"
 QMP_SOCKET="${SOPHIA_QEMU_QMP_SOCKET:-$OUT_DIR/qmp.sock}"
 SERIAL_FIFO="${SOPHIA_QEMU_SERIAL_FIFO:-$OUT_DIR/serial.fifo}"
@@ -87,21 +88,23 @@ run_pointer_focus_gesture() {
         tee -a "$EVIDENCE_FILE"
     case "$gesture" in
         click)
-            if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 0 1 left; then
+            if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 0 0 ||
+                ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 32 0 1 left; then
                 echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_focus_click_send" |
                     tee -a "$EVIDENCE_FILE"
                 return 1
             fi
-            echo "sophia_qemu_xmonad_pointer schema=4 status=sent source=qmp device=virtio-mouse action=focus_click anchor=left_edge clicks=1 commands=3" |
+            echo "sophia_qemu_xmonad_pointer schema=5 status=sent source=qmp device=virtio-mouse action=focus_click anchor=left_content inset=32 clicks=1 commands=4" |
                 tee -a "$EVIDENCE_FILE"
             ;;
         drag)
-            if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" drag 0 0 96 24 left; then
+            if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 0 0 ||
+                ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" drag 32 0 96 24 left; then
                 echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_focus_drag_send" |
                     tee -a "$EVIDENCE_FILE"
                 return 1
             fi
-            echo "sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4" |
+            echo "sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_content inset=32 drag=96x24 commands=5" |
                 tee -a "$EVIDENCE_FILE"
             ;;
         *)
@@ -262,6 +265,48 @@ wait_for_firefox_stage() {
     fi
 }
 
+isolate_focused_interaction_surface() {
+    local projection_baseline
+    projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=surface$')"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+3
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+3 phase=interaction-isolate" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+3
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+3 phase=interaction-isolate" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j phase=interaction-isolate-focus" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=surface$' "$projection_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_isolation_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 -4096 0
+    "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 32 0 0
+    for _ in $(seq 1 8); do
+        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 16 0
+    done
+    echo "sophia_qemu_xmonad_pointer schema=1 status=positioned anchor=isolated_page x_inset=32 y_steps=8x16" |
+        tee -a "$EVIDENCE_FILE"
+}
+
+restore_focused_interaction_surface() {
+    local projection_baseline
+    projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 .* focus=')"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+1
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+1 phase=interaction-restore" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+1
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+1 phase=interaction-restore" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 .* focus=\(surface\|none\)$' "$projection_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_restore_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+}
+
 run_firefox_m8_interactions() {
     local page_focus_baseline
     local keyboard_complete=false
@@ -311,12 +356,18 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage clipboard
     for _ in $(seq 1 10); do
-        # Firefox's native PRIMARY paste gesture is a middle click. The fixture
-        # expands the target over its content area for this stage; sweep a
-        # bounded grid because the browser shares two outputs with other apps.
+        # Shift+Insert consumes PRIMARY without depending on a stale tile count
+        # or pointer coordinate. The browser can expose more than one top-level,
+        # so failed attempts rotate focus and retry. Keep the bounded middle
+        # click sweep as an independent native pointer fallback.
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+l
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" f6
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+a
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" shift+insert
+        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=primary ' 0 20; then
+            primary_complete=true
+            break
+        fi
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 -4096 0 middle
         for _row in $(seq 1 4); do
             "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 160 0 middle
@@ -338,8 +389,13 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage primary
+    isolate_focused_interaction_surface
+    axis_route_baseline="$(evidence_count '^sophia_live_session_pointer schema=3 status=axis_routed$')"
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
+        if wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80; then
+            "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" spc
+        fi
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' 0 20; then
             scroll_complete=true
             break
@@ -350,6 +406,7 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage scroll
+    restore_focused_interaction_surface
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+spc
         echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+spc phase=firefox-resize" | tee -a "$EVIDENCE_FILE"
@@ -380,15 +437,10 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage refocus
+    isolate_focused_interaction_surface
     for _ in $(seq 1 10); do
-        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 -4096 0 left
-        for _row in $(seq 1 4); do
-            "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" -4096 160 0 left
-            for _column in $(seq 1 4); do
-                "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 320 0 1 left
-                "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
-            done
-        done
+        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ' 0 20; then
             dialog_complete=true
             break
@@ -442,6 +494,10 @@ if [[ ! "$MEMORY_MIB" =~ ^[0-9]+$ ]] || (( MEMORY_MIB < 512 || MEMORY_MIB > 1638
     echo "SOPHIA_QEMU_MEMORY_MIB must be from 512 through 16384" >&2
     exit 1
 fi
+if [[ ! "$VIRTUAL_CPUS" =~ ^[0-9]+$ ]] || (( VIRTUAL_CPUS < 1 || VIRTUAL_CPUS > 16 )); then
+    echo "SOPHIA_QEMU_CPUS must be from 1 through 16" >&2
+    exit 1
+fi
 
 mkdir -p "$(dirname "$EVIDENCE_FILE")"
 : > "$EVIDENCE_FILE"
@@ -465,7 +521,7 @@ LOGGER_PID=$!
 
 "$QEMU_BIN" \
     -machine q35,accel=kvm:tcg \
-    -smp 2 \
+    -smp "$VIRTUAL_CPUS" \
     -m "$MEMORY_MIB" \
     -nodefaults \
     -no-reboot \
@@ -610,6 +666,20 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     fi
     echo "sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96" | tee -a "$EVIDENCE_FILE"
 
+    empty_workspace_chord=meta_l+2
+    if [[ "$SCENARIO" == "xmonad-m8-mix" || "$SCENARIO" == "xmonad-m8-soak" ]]; then
+        moved_vulkan_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=')"
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+2
+        echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+2" |
+            tee -a "$EVIDENCE_FILE"
+        if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=\(surface\|none\)$' "$moved_vulkan_baseline"; then
+            echo "sophia_qemu_xmonad schema=1 status=failed reason=vulkan_workspace_move_timeout" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        empty_workspace_chord=meta_l+3
+    fi
+
     chords=("meta_l+k" "meta_l+spc")
     for chord in "${chords[@]}"; do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
@@ -617,8 +687,9 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         sleep 1
     done
     empty_workspace_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$')"
-    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+2
-    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+2" | tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$empty_workspace_chord"
+    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$empty_workspace_chord" |
+        tee -a "$EVIDENCE_FILE"
     if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$' "$empty_workspace_baseline"; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=empty_workspace_projection_timeout" |
             tee -a "$EVIDENCE_FILE"
@@ -678,7 +749,7 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         soak_started=$SECONDS
         cycles=0
         while (( SECONDS - soak_started < 1800 )); do
-            for chord in meta_l+j meta_l+k meta_l+spc meta_l+2 meta_l+1; do
+            for chord in meta_l+j meta_l+k meta_l+spc meta_l+3 meta_l+1; do
                 "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
                 echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$chord" | tee -a "$EVIDENCE_FILE"
                 sleep 1

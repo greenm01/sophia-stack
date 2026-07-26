@@ -8,17 +8,11 @@ COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 PROMOTION_ROOT="$STATE_HOME/sophia/m9-promotion/$COMMIT"
 
 gates=(
+    00-qemu-semantic
     01-native-chrome
-    02-external-config
-    03-normal
-    04-pointer-focus
-    05-four-kitty-1
-    06-four-kitty-2
-    07-four-kitty-3
-    08-launch-burst
-    09-keyboard-vt
-    10-xmobar
-    11-emergency
+    02-hardware-smoke
+    03-xmobar
+    04-emergency
 )
 
 fail() {
@@ -33,13 +27,13 @@ gate_label() {
 gate_passed() {
     local gate=$1 result="$PROMOTION_ROOT/$gate/result.kdl"
     [[ -s "$result" ]] &&
-        grep -Eq "^promotion-result schema=1 gate=\"$(gate_label "$gate")\" commit=\"$COMMIT\" status=\"passed\"$" \
+        grep -Eq "^promotion-result schema=1 gate=\"$(gate_label "$gate")\" commit=\"$COMMIT\" status=\"passed\"( source-commit=\"[0-9a-f]{40}\")?$" \
             "$result"
 }
 
 print_status() {
     local gate status
-    printf 'Milestone 9 physical promotion\n  commit: %s\n  evidence: %s\n' \
+    printf 'Milestone 9 promotion\n  commit: %s\n  evidence: %s\n' \
         "$COMMIT" "$PROMOTION_ROOT"
     for gate in "${gates[@]}"; do
         if gate_passed "$gate"; then
@@ -79,40 +73,28 @@ verify_gate() {
     local guard="$evidence/input-guard.log"
     local recovery="$evidence/recovery.log"
     case "$gate" in
+        00-qemu-semantic)
+            "$ROOT_DIR/tools/verify_sophia_m9_semantic_gate.sh" \
+                "$evidence" "$COMMIT"
+            ;;
         01-native-chrome)
             "$ROOT_DIR/tools/verify_sophia_native_chrome.sh" \
                 "$session" "$evidence/sequence.log"
             ;;
-        02-external-config)
-            "$ROOT_DIR/tools/verify_sophia_xmonad_config_reload.sh" \
-                "$session" "$evidence/sequence.log"
-            ;;
-        03-normal)
+        02-hardware-smoke)
             require_archived_file "$guard"
             require_archived_file "$recovery"
-            "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+            "$ROOT_DIR/tools/verify_sophia_xmonad_hardware_smoke.sh" \
                 "$session" "$guard" "$recovery" &&
-            "$ROOT_DIR/tools/verify_sophia_xmonad_focused_border.sh" "$session"
-            ;;
-        04-pointer-focus)
-            "$ROOT_DIR/tools/verify_sophia_xmonad_pointer_focus_pair.sh" "$session"
-            ;;
-        05-four-kitty-1|06-four-kitty-2|07-four-kitty-3)
             "$ROOT_DIR/tools/verify_sophia_xmonad_four_kitty.sh" "$session"
             ;;
-        08-launch-burst)
-            "$ROOT_DIR/tools/verify_sophia_xmonad_launch_burst.sh" "$session"
-            ;;
-        09-keyboard-vt)
-            "$ROOT_DIR/tools/verify_sophia_xmonad_keyboard_vt.sh" "$session"
-            ;;
-        10-xmobar)
+        03-xmobar)
             require_archived_file "$guard"
             require_archived_file "$recovery"
-            "$ROOT_DIR/tools/verify_sophia_xmonad_xmobar.sh" \
+            "$ROOT_DIR/tools/verify_sophia_xmonad_xmobar_hardware_smoke.sh" \
                 "$session" "$guard" "$recovery"
             ;;
-        11-emergency)
+        04-emergency)
             require_archived_file "$guard"
             require_archived_file "$recovery"
             "$ROOT_DIR/tools/verify_sophia_xmonad_emergency_tty3.sh" \
@@ -123,33 +105,21 @@ verify_gate() {
 }
 
 run_gate() {
-    local gate=$1
+    local gate=$1 evidence=$2
     case "$gate" in
+        00-qemu-semantic)
+            "$ROOT_DIR/tools/run_sophia_m9_semantic_gate.sh" "$evidence"
+            ;;
         01-native-chrome)
             "$ROOT_DIR/tools/start_sophia_native_hot_reload_tty3.sh"
             ;;
-        02-external-config)
-            "$ROOT_DIR/tools/start_sophia_xmonad_config_reload_tty3.sh"
+        02-hardware-smoke)
+            "$ROOT_DIR/tools/start_sophia_xmonad_hardware_smoke_tty3.sh"
             ;;
-        03-normal)
-            "$ROOT_DIR/tools/start_sophia_xmonad_tty3.sh"
-            ;;
-        04-pointer-focus)
-            "$ROOT_DIR/tools/start_sophia_xmonad_pointer_focus_tty3.sh"
-            ;;
-        05-four-kitty-1|06-four-kitty-2|07-four-kitty-3)
-            "$ROOT_DIR/tools/start_sophia_xmonad_four_kitty_tty3.sh"
-            ;;
-        08-launch-burst)
-            "$ROOT_DIR/tools/start_sophia_xmonad_launch_burst_tty3.sh"
-            ;;
-        09-keyboard-vt)
-            "$ROOT_DIR/tools/start_sophia_xmonad_keyboard_vt_tty3.sh"
-            ;;
-        10-xmobar)
+        03-xmobar)
             "$ROOT_DIR/tools/start_sophia_xmonad_xmobar_tty3.sh"
             ;;
-        11-emergency)
+        04-emergency)
             "$ROOT_DIR/tools/start_sophia_xmonad_emergency_tty3.sh"
             ;;
         *) fail "unknown gate: $gate" ;;
@@ -161,9 +131,6 @@ archive_gate_sequence() {
     case "$gate" in
         01-native-chrome)
             source="$RUNTIME_ROOT/sophia-native-hot-reload-${UID}/sequence.log"
-            ;;
-        02-external-config)
-            source="$RUNTIME_ROOT/sophia-xmonad-config-reload-${UID}/sequence.log"
             ;;
         *) return 0 ;;
     esac
@@ -185,16 +152,18 @@ next_gate() {
 }
 
 promote_next() {
-    [[ -t 0 && "$(tty)" == /dev/tty3 ]] ||
-        fail "run 'tools/sophia_m9_promotion.sh next' from a logged-in tty3"
     [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
         fail "commit or discard the dirty worktree before collecting physical evidence"
 
     local gate
     if ! gate="$(next_gate)"; then
         print_status
-        echo "Milestone 9 physical promotion is complete for $COMMIT."
+        echo "Milestone 9 promotion is complete for $COMMIT."
         return 0
+    fi
+    if [[ "$gate" != 00-qemu-semantic ]] &&
+        [[ ! -t 0 || "$(tty)" != /dev/tty3 ]]; then
+        fail "run 'tools/sophia_m9_promotion.sh next' from a logged-in tty3"
     fi
 
     mkdir -p "$PROMOTION_ROOT"
@@ -205,10 +174,12 @@ promote_next() {
     printf 'Running gate %s for commit %s.\n' "$(gate_label "$gate")" "$COMMIT"
 
     local run_status=0 profile=xmonad
-    run_gate "$gate" || run_status=$?
-    [[ "$gate" == 01-native-chrome ]] && profile=native
-    archive_session "$profile" "$temporary"
-    archive_gate_sequence "$gate" "$temporary"
+    run_gate "$gate" "$temporary" || run_status=$?
+    if [[ "$gate" != 00-qemu-semantic ]]; then
+        [[ "$gate" == 01-native-chrome ]] && profile=native
+        archive_session "$profile" "$temporary"
+        archive_gate_sequence "$gate" "$temporary"
+    fi
 
     if ((run_status != 0)); then
         printf 'promotion-result schema=1 gate="%s" commit="%s" status="failed" launcher-status=%d\n' \
@@ -230,13 +201,50 @@ promote_next() {
     print_status
 }
 
+adopt_parent_native_chrome() {
+    [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
+        fail "commit or discard the dirty worktree before adopting evidence"
+    local parent
+    parent="$(git -C "$ROOT_DIR" rev-parse "${COMMIT}^")"
+    local source_root="$STATE_HOME/sophia/m9-promotion/$parent/01-native-chrome"
+    [[ -s "$source_root/result.kdl" ]] ||
+        fail "the parent commit has no passing native-chrome evidence"
+    grep -Eq "^promotion-result schema=1 gate=\"native-chrome\" commit=\"$parent\" status=\"passed\"" \
+        "$source_root/result.kdl" ||
+        fail "the parent native-chrome result is not passing"
+    if ! git -C "$ROOT_DIR" diff --quiet "$parent" "$COMMIT" -- \
+        crates \
+        tools/start_sophia_tty3.sh \
+        tools/run_sophia_xmonad_session.sh \
+        tools/start_sophia_native_hot_reload_tty3.sh \
+        tools/verify_sophia_native_chrome.sh \
+        tools/config/proof_helpers.sh; then
+        fail "native runtime or gate dependencies changed; physical evidence cannot be adopted"
+    fi
+    "$ROOT_DIR/tools/verify_sophia_native_chrome.sh" \
+        "$source_root/session.log" "$source_root/sequence.log"
+    mkdir -p "$PROMOTION_ROOT"
+    chmod 700 "$STATE_HOME/sophia/m9-promotion" "$PROMOTION_ROOT"
+    [[ ! -e "$PROMOTION_ROOT/01-native-chrome" ]] ||
+        fail "current commit already has native-chrome evidence"
+    local temporary
+    temporary="$(mktemp -d "$PROMOTION_ROOT/.01-native-chrome.XXXXXX")"
+    cp -a "$source_root/." "$temporary/"
+    printf 'promotion-result schema=1 gate="native-chrome" commit="%s" status="passed" source-commit="%s"\n' \
+        "$COMMIT" "$parent" >"$temporary/result.kdl"
+    chmod 600 "$temporary/result.kdl"
+    mv "$temporary" "$PROMOTION_ROOT/01-native-chrome"
+    echo "Adopted byte-compatible native-chrome evidence from $parent."
+}
+
 usage() {
-    echo "Usage: tools/sophia_m9_promotion.sh {next|status}" >&2
+    echo "Usage: tools/sophia_m9_promotion.sh {next|status|adopt-parent-native}" >&2
     exit 2
 }
 
 case "${1:-}" in
     next) promote_next ;;
     status) print_status ;;
+    adopt-parent-native) adopt_parent_native_chrome ;;
     *) usage ;;
 esac

@@ -6,9 +6,9 @@ use super::{
     PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
-    authority_wait_timeout, center_geometry_without_scaling, global_runtime_deadline_ends_session,
-    independent_native_output_presented, initial_session_focus_candidate,
-    input_baseline_is_presented, managed_child_exit_is_nonfatal,
+    authority_wait_timeout, center_geometry_without_scaling, clear_client_pressed_keys_state_only,
+    global_runtime_deadline_ends_session, independent_native_output_presented,
+    initial_session_focus_candidate, input_baseline_is_presented, managed_child_exit_is_nonfatal,
     pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
     physical_input_routing_mode, place_pointer_event_for_routing,
     pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
@@ -17,7 +17,9 @@ use super::{
     successful_primary_exit_ends_session, synchronous_modeset_record,
     take_settled_input_delivery_wait,
 };
-use sophia_cli::session_keyboard::{PhysicalKeyboardCoverage, SessionClientKeyState};
+use sophia_cli::session_keyboard::{
+    PhysicalKeyboardCoverage, SessionClientKeyState, SessionClientPressedKey,
+};
 use sophia_engine::{
     InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
     pointer_offset_for_geometry,
@@ -28,7 +30,7 @@ use sophia_protocol::{
     WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmHello, WmModifierMask,
     WmSessionAction,
 };
-use sophia_x_authority::X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888;
+use sophia_x_authority::{X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888, XAuthorityRoutedInputMode};
 use sophia_x_authority::{
     XAuthorityClientSurfaceRoutes, XCoreKeyboardMapper, XKB_DEFAULT_REPEAT_DELAY_MSEC,
     XKB_DEFAULT_REPEAT_INTERVAL_MSEC, XkbKeymapSnapshot, XkbRmlvoConfig,
@@ -526,6 +528,48 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         })
     );
     assert!(input_receiver.try_recv().is_err());
+}
+
+#[test]
+fn closing_surface_clears_pressed_keys_without_client_delivery_barrier() {
+    let surface = SurfaceId::new(7, 1);
+    let key = SessionClientPressedKey {
+        surface,
+        seat: SeatId::from_raw(1),
+        device: DeviceId::from_raw(1),
+        keycode: 125,
+    };
+    let mut client_keys = SessionClientKeyState::default();
+    client_keys.record_routed(key, true).unwrap();
+    let mut scratch = Vec::new();
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (input_sender, input_receiver) = sync_channel(1);
+    let mut next_delivery = 9;
+
+    let cleared = clear_client_pressed_keys_state_only(
+        surface,
+        &mut client_keys,
+        &mut scratch,
+        &mut modifiers,
+        &input_sender,
+        &mut next_delivery,
+        10,
+    )
+    .unwrap();
+    let routed = input_receiver.try_recv().unwrap();
+
+    assert_eq!(cleared, 1);
+    assert_eq!(client_keys.pending_len(), 0);
+    assert_eq!(next_delivery, 10);
+    assert_eq!(routed.delivery, None);
+    assert_eq!(routed.mode, XAuthorityRoutedInputMode::StateOnly);
+    assert_eq!(
+        routed.request.kind,
+        InputEventKind::Key {
+            keycode: 125,
+            pressed: false,
+        }
+    );
 }
 
 #[test]

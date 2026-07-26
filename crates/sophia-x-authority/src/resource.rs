@@ -34,6 +34,7 @@ pub enum XResourceKind {
     Cursor,
     Fence,
     Region,
+    SyncCounter,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

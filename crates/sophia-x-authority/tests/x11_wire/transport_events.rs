@@ -709,7 +709,7 @@ fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
 }
 
 #[test]
-fn kitty_sync_and_colormap_teardown_requests_decode() {
+fn sync_counter_and_kitty_teardown_requests_decode() {
     let namespace = NamespaceId::from_raw(1);
     let mut initialize = vec![
         X_SYNC_MAJOR_OPCODE,
@@ -730,6 +730,65 @@ fn kitty_sync_and_colormap_teardown_requests_decode() {
             desired_minor: 1
         }
     );
+    let counter = 0x0020_0010u32;
+    for (minor, value, expected) in [
+        (
+            X_SYNC_CREATE_COUNTER_MINOR_OPCODE,
+            -2i64,
+            XWireRequest::SyncCreateCounter {
+                counter: XResourceId::new(u64::from(counter), 1),
+                initial_value: -2,
+            },
+        ),
+        (
+            X_SYNC_SET_COUNTER_MINOR_OPCODE,
+            17,
+            XWireRequest::SyncSetCounter {
+                counter: XResourceId::new(u64::from(counter), 1),
+                value: 17,
+            },
+        ),
+        (
+            X_SYNC_CHANGE_COUNTER_MINOR_OPCODE,
+            -3,
+            XWireRequest::SyncChangeCounter {
+                counter: XResourceId::new(u64::from(counter), 1),
+                delta: -3,
+            },
+        ),
+    ] {
+        let mut request = vec![X_SYNC_MAJOR_OPCODE, minor, 4, 0];
+        request.extend_from_slice(&counter.to_le_bytes());
+        request.extend_from_slice(&((value >> 32) as u32).to_le_bytes());
+        request.extend_from_slice(&(value as u32).to_le_bytes());
+        assert_eq!(
+            decode_x11_core_request(context(namespace, 2, XByteOrder::LittleEndian), &request)
+                .unwrap(),
+            expected
+        );
+    }
+    for (minor, expected) in [
+        (
+            X_SYNC_QUERY_COUNTER_MINOR_OPCODE,
+            XWireRequest::SyncQueryCounter {
+                counter: XResourceId::new(u64::from(counter), 1),
+            },
+        ),
+        (
+            X_SYNC_DESTROY_COUNTER_MINOR_OPCODE,
+            XWireRequest::SyncDestroyCounter {
+                counter: XResourceId::new(u64::from(counter), 1),
+            },
+        ),
+    ] {
+        let mut request = vec![X_SYNC_MAJOR_OPCODE, minor, 2, 0];
+        request.extend_from_slice(&counter.to_le_bytes());
+        assert_eq!(
+            decode_x11_core_request(context(namespace, 3, XByteOrder::LittleEndian), &request)
+                .unwrap(),
+            expected
+        );
+    }
     for (major, minor, expected) in [
         (
             X_SYNC_MAJOR_OPCODE,

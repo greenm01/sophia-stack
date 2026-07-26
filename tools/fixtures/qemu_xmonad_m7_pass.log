@@ -6,7 +6,7 @@ sophia_live_output_repaint schema=1 status=initial_presented output=2 mode=full 
 sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=1 generation=1 primitives=4
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j
 sophia_qemu_xmonad_pointer_focus schema=1 status=begin gesture=click
-sophia_qemu_xmonad_pointer schema=4 status=sent source=qmp device=virtio-mouse action=focus_click anchor=left_edge clicks=1 commands=3
+sophia_qemu_xmonad_pointer schema=5 status=sent source=qmp device=virtio-mouse action=focus_click anchor=left_content inset=32 clicks=1 commands=4
 sophia_qemu_xmonad_pointer_focus schema=1 status=gesture_sent gesture=click
 sophia_live_wm schema=3 status=focus_requested source=pointer surface=2
 sophia_live_wm schema=1 status=focus_committed transaction=2 target=surface
@@ -22,7 +22,7 @@ sophia_live_session_pointer schema=6 status=focused_key_routed surface=2
 sophia_qemu_xmonad_pointer_focus schema=1 status=complete gesture=click
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j
 sophia_qemu_xmonad_pointer_focus schema=1 status=begin gesture=drag
-sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4
+sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_content inset=32 drag=96x24 commands=5
 sophia_qemu_xmonad_pointer_focus schema=1 status=gesture_sent gesture=drag
 sophia_live_wm schema=3 status=focus_requested source=pointer surface=2
 sophia_live_wm schema=1 status=focus_committed transaction=3 target=surface

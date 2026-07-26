@@ -39,10 +39,10 @@ fn launches_advance_only_after_the_observed_surface_is_stable() {
 
     let surface = SurfaceId::new(7, 1);
     assert!(queue.observe_surface(surface));
-    assert_eq!(queue.complete_if_presented(false, Some(surface)), None);
+    assert_eq!(queue.complete_if_stable(false, Some(surface)), None);
     assert_eq!(
         queue
-            .complete_if_presented(true, Some(surface))
+            .complete_if_stable(true, Some(surface))
             .map(|admission| admission.intent),
         Some(intent(1))
     );
@@ -64,6 +64,26 @@ fn an_observed_application_can_exit_before_the_admission_poll_settles() {
         Some(intent(1))
     );
     assert!(queue.admission().is_none());
+}
+
+#[test]
+fn a_multi_toplevel_launch_settles_on_any_presented_observed_surface() {
+    let mut queue = SessionLaunchQueue::default();
+    queue.enqueue(intent(1), 0);
+    assert_eq!(queue.begin_next(true, true), Some(intent(1)));
+
+    let transient = SurfaceId::new(10, 1);
+    let stable = SurfaceId::new(11, 1);
+    assert!(queue.observe_surface(transient));
+    assert!(queue.observe_surface(stable));
+    assert!(!queue.observe_surface(stable));
+    assert_eq!(queue.complete_if_stable(true, None), None);
+    assert_eq!(
+        queue
+            .complete_if_stable(true, Some(stable))
+            .map(|admission| admission.intent),
+        Some(intent(1))
+    );
 }
 
 #[test]

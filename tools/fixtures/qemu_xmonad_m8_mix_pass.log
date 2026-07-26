@@ -15,20 +15,27 @@ sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_byte
 sophia_firefox_m8 schema=1 status=stage_complete stage=refocus index=6 title_bytes=120 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=dialog index=7 title_bytes=136 content=redacted
 sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true
+sophia_live_session_pointer schema=3 status=axis_observed
+sophia_live_session_pointer schema=3 status=axis_routed
 sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=2 selection_conversions=2 content=redacted
 sophia_live_wm schema=1 status=session_action_committed transaction=10 action=CloseFocused
+sophia_live_session_keys schema=1 status=cleared reason=close_surface surface=10 count=2
 sophia_live_wm schema=1 status=session_action_committed transaction=12 action=CloseFocused
+sophia_live_session_keys schema=1 status=cleared reason=close_surface surface=12 count=2
 sophia_live_wm schema=1 status=session_action_committed transaction=14 action=CloseFocused
+sophia_live_session_keys schema=1 status=cleared reason=close_surface surface=14 count=2
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+k
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+spc
-sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+2
-sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+1
+sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+2
+sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+3
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+f
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+p
 sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal
 sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session_control schema=1 status=complete enqueued=16 dispatched=16 delivered=16 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=1 max_queue_dwell_msec=1 max_ack_msec=1
+sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=2 synthetic_releases=2 state_only_releases=6 orphan_releases_suppressed=0 removed_surface_keys=0
 sophia_live_session_protocol_errors schema=1 expected=2 unexpected=0
 sophia_live_output schema=1 status=complete output=1 checksum=10 submissions=2 retirements=2 callbacks=2 nonzero_exports=2
 sophia_live_output schema=1 status=complete output=2 checksum=20 submissions=2 retirements=2 callbacks=2 nonzero_exports=2

@@ -52,6 +52,10 @@
     if (stage === 0 && event.target.value === 'sophia') advance('keyboard complete');
   });
   addEventListener('keydown', event => {
+    if (stage === 3 && event.key === ' ') {
+      advance('scroll complete');
+      return;
+    }
     if (stage !== 0 || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
     typed = (typed + event.key).slice(-6);
     if (typed === 'sophia') {

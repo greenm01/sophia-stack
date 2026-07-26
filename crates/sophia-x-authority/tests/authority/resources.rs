@@ -339,6 +339,14 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
             3,
         )
         .unwrap();
+    let sync_counter = XResourceId::new(0x0020_0009, 1);
+    runtime
+        .create_sync_counter(namespace, sync_counter, 1, 41)
+        .unwrap();
+    runtime
+        .change_sync_counter(namespace, sync_counter, 1)
+        .unwrap();
+    assert_eq!(runtime.sync_counter(namespace, sync_counter), Ok(42));
 
     let release = runtime
         .release_client_resource_range(
@@ -369,6 +377,10 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
     assert_eq!(
         runtime.validate_window_access(namespace, retained_window),
         Ok(())
+    );
+    assert_eq!(
+        runtime.sync_counter(namespace, sync_counter),
+        Err(XAuthorityRuntimeError::UnknownResource)
     );
 }
 

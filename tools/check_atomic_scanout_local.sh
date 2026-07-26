@@ -47,11 +47,22 @@ bash -n tools/start_sophia_xmonad_keyboard_vt_tty3.sh \
     tools/verify_sophia_xmonad_keyboard_vt.sh \
     tools/check_sophia_xmonad_keyboard_vt_verifier.sh
 tools/check_sophia_xmonad_keyboard_vt_verifier.sh
-bash -n tools/sophia_m9_promotion.sh
+bash -n tools/run_sophia_m9_semantic_gate.sh \
+    tools/verify_sophia_m9_semantic_gate.sh \
+    tools/check_sophia_m9_semantic_verifier.sh \
+    tools/sophia_m9_promotion.sh
+tools/check_sophia_m9_semantic_verifier.sh
 bash -n tools/start_sophia_xmonad_clipboard_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh
-bash -n tools/start_sophia_xmonad_xmobar_tty3.sh
+bash -n tools/start_sophia_xmonad_hardware_smoke_tty3.sh \
+    tools/verify_sophia_xmonad_hardware_smoke.sh \
+    tools/check_sophia_xmonad_hardware_smoke_verifier.sh
+tools/check_sophia_xmonad_hardware_smoke_verifier.sh
+bash -n tools/start_sophia_xmonad_xmobar_tty3.sh \
+    tools/verify_sophia_xmonad_xmobar_hardware_smoke.sh \
+    tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
+tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
 bash -n tools/verify_sophia_xmonad_xmobar.sh
 bash -n tools/check_sophia_xmonad_xmobar_verifier.sh
 tools/check_sophia_xmonad_xmobar_verifier.sh

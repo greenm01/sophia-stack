@@ -358,6 +358,10 @@ impl XAuthorityRuntime {
                      self.resources.remove(record.id);
                      self.xfixes_regions.remove(&record.id);
                  }
+                 XResourceKind::SyncCounter => {
+                     self.resources.remove(record.id);
+                     self.sync_counters.remove(&record.id);
+                 }
              }
          }
          Ok(release)

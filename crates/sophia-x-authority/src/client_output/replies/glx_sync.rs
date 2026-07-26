@@ -11,6 +11,8 @@ fn encode_glx_sync_reply(
             | XClientReply::GlxIsDirect { .. }
             | XClientReply::GlxDrawableAttributes { .. }
             | XClientReply::SyncInitialize { .. }
+            | XClientReply::SyncListSystemCounters { .. }
+            | XClientReply::SyncQueryCounter { .. }
     ) {
         return Err(reply);
     }
@@ -102,6 +104,19 @@ fn encode_glx_sync_reply(
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     out[8] = major_version;
                     out[9] = minor_version;
+                    out
+                }
+                XClientReply::SyncListSystemCounters { sequence } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u32(byte_order, &mut out[8..12], 0);
+                    out
+                }
+                XClientReply::SyncQueryCounter { sequence, value } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u32(byte_order, &mut out[8..12], (value >> 32) as u32);
+                    put_u32(byte_order, &mut out[12..16], value as u32);
                     out
                 }
         _ => unreachable!("reply family checked before encoding"),

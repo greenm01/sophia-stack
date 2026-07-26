@@ -460,6 +460,13 @@ pub enum XClientReply {
         major_version: u8,
         minor_version: u8,
     },
+    SyncListSystemCounters {
+        sequence: u16,
+    },
+    SyncQueryCounter {
+        sequence: u16,
+        value: i64,
+    },
     XkbGetMap {
         sequence: u16,
         present: u16,

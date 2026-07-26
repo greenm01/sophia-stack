@@ -9,8 +9,9 @@ Roadmap rules:
 
 - Keep exit criteria measurable and fail closed.
 - Expand X11 behavior only from retained real-client evidence.
-- Do not substitute QEMU evidence for a physical DRM, input, VT, or
-  display-manager requirement.
+- Use QEMU for repeatable policy, protocol, transaction, and application
+  semantics. Do not substitute it for physical DRM, input-device, VT,
+  display-manager, or visible-pixel requirements.
 - Keep Engine protocol-neutral and free of application-specific policy.
 - Archive a milestone when its complete exit gate passes.
 
@@ -36,7 +37,8 @@ The development TTY profile now establishes:
 
 This is still development evidence: the captured lifecycle reports
 `installed=false`, `build=true`, and `manual_service=true`. The immediate
-blocker is completing the strict physical xmonad workflow. Physical evidence
+blocker is completing one commit-pinned unattended semantic gate plus the
+short physical hardware gates. Physical evidence
 showed that neither a reused GBM surface nor a reused EGL/GL context bound to
 fresh surfaces is safe on the current AMDGPU stack: both fail on the third
 mixed render. Mixed composition therefore keeps one complete target per export
@@ -47,12 +49,14 @@ on both outputs: the 14-pixel top reservation produced exact reduced managed
 geometry, button and axis input reached the client-positioned bar without
 stealing Kitty focus, workspace and repeated VT round-trips preserved the
 scene, 50 mixed composition lifetimes balanced with zero replacement, and
-teardown was clean. Held-repeat, clipboard, post-last-window pointer, and the
-broader interaction sequence remain in the normal xmonad gate.
-Milestone 9 now has one commit-pinned promotion ledger:
-`tools/sophia_m9_promotion.sh next` selects the next strict physical gate,
-archives its immutable evidence, runs the matching verifier, and refuses a
-dirty worktree or evidence from another commit.
+teardown was clean. Held-repeat, clipboard, workspace, focus, application, and
+teardown semantics are retained by the Rust and two-output QEMU suites instead
+of being manually repeated on every candidate.
+Milestone 9 has one commit-pinned promotion ledger:
+`tools/sophia_m9_promotion.sh next` first runs the unattended semantic gate,
+then selects the next short physical gate, archives immutable evidence, runs
+the matching verifier, and refuses a dirty worktree or evidence from another
+commit.
 
 ## Daily-Driver Promotion Contract
 
@@ -72,7 +76,7 @@ xmonad session proves all of the following:
 
 ---
 
-## Milestone 9: Physical xmonad Session Promotion
+## Milestone 9: xmonad Session Promotion
 
 This is the active milestone. The Kitty-only physical baseline and the
 underlying xmonad protocol/resize corrections are established and archived.
@@ -157,11 +161,10 @@ Promotion now follows the gates below in order.
   before presentation, reserves the primary queued-Present path without
   starving secondary pending frames, and issues each effect at most once per
   service pass.
-- [ ] Re-run the xmobar, four-Kitty, and normal xmonad gates from the same
-  frame-lifecycle commit with no latency, ordering, or resource regression.
-  Historical xmobar and four-Kitty captures pass; the commit-pinned promotion
-  ledger requires fresh native-chrome, xmobar, three four-Kitty, and normal
-  captures from one candidate commit.
+- [ ] Pass the same-commit unattended QEMU semantic gate, four-Kitty hardware
+  smoke, and xmobar hardware smoke with no latency, ordering, or resource
+  regression. Historical captures remain diagnostic evidence; the
+  commit-pinned ledger is authoritative for the candidate.
 
 ### 9.2 Complete physical xmonad workflow
 
@@ -174,13 +177,14 @@ Promotion now follows the gates below in order.
   and two workspace-3 actions, restored each workspace's focus, submitted a
   blank CPU frame for an empty projection, recorded no resize timeout, and
   drained native scanout cleanly.
-- [ ] Capture the documented standard run from TTY3 with launcher, guard,
+- [ ] Capture the short hardware smoke from TTY3 with launcher, guard,
   recovery, WM, frontend, renderer, and lifecycle evidence.
 - [ ] Require focused Kitty within eight seconds, `outputs_ready=2/2`, nonzero
   mixed composition, and correct retained content on both outputs.
-- [ ] Prove typing, pointer motion, click-drag selection, focus changes,
-  Super-Enter, tiling resize, workspace switching, and no input delivery to
-  hidden or unfocused windows.
+- [ ] In the candidate ledger, prove physical typing, pointer focus,
+  Super-Enter, one VT round-trip, four-window geometry, and normal logout.
+  Prove layout switching, workspaces, clipboard/PRIMARY, hidden-surface input
+  suppression, application close, and bridge recovery unattended in QEMU.
 - [x] Physically prove plain-click focus and click-drag focus independently.
   The guarded TTY3 run routed both gestures to the selected Kitty, preserved
   cross-window copy/paste during the drag workflow, and rendered the
@@ -269,22 +273,25 @@ Promotion now follows the gates below in order.
   correlated seven action-launched surfaces across workspaces 1 and 2: every
   first post-commit Present used the exact work-area master geometry, every
   following transaction moved zero surfaces, and no staging target appeared.
-- [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
-  One work-area-aware frame-service capture passes.
-- [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
-  capacity-overflow proof with bounded rejection and no session failure.
+- [ ] Pass the short physical four-Kitty hardware smoke once from the candidate
+  commit. Keep multi-cycle repetition as an unattended soak and release-burn-in
+  requirement rather than an operator promotion ritual.
+- [ ] Add the rapid Super-Enter capacity-overflow workload to an unattended
+  QEMU scenario. The passive queue-capacity tests remain authoritative until
+  that scenario exists; the physical hardware smoke performs three ordered
+  launches.
 - [x] Require the session-control ledger to drain with balanced
   enqueue/dispatch/delivery counts, zero rejection/timeout/unexpected
   acknowledgements, and queue/ack latency at or below 100 ms. The three-
   workspace cycle drained 22/22 controls with 17 ms queue dwell and 14 ms
   acknowledgement latency.
-- [ ] Prove three tiled Kitty windows remain usable before and after a
-  TTY2/TTY3 round-trip, with keyboard and pointer restored.
-- [ ] Validate full pc105 US shifted punctuation and libseat-backed
-  Ctrl-Alt-F1 through Ctrl-Alt-F12 suspend/resume while `K_OFF` is active.
-  The guided runner and privacy-preserving verifier now count all 21 shifted
-  printable positions and all 12 VT targets without retaining typed content;
-  the physical promotion capture remains.
+- [ ] Prove four tiled Kitty windows remain usable before and after one
+  TTY2/TTY3 round-trip, with keyboard, pointer, pixels, and bar restored.
+- [ ] Retain the full pc105 US shifted-punctuation and Ctrl-Alt-F1 through
+  Ctrl-Alt-F12 runner as a focused hardware diagnostic. Candidate promotion
+  requires one real VT suspend/resume plus the complete deterministic XKB
+  suite; repeat the exhaustive physical matrix only after input/seat changes
+  or for release burn-in.
 - [x] After physical geometry stability, add a minimal Engine-owned focused
   surface border through the renderer-neutral compositor display list. Derive
   its bounds and damage from the same committed surface/focus snapshot, keep
@@ -338,7 +345,9 @@ Promotion now follows the gates below in order.
   xmonad TTY launcher, with a deterministic Sophia-owned local config.
 - [ ] Re-prove that xmobar renders above managed Kitty windows,
   continues updating, accepts pointer events, and does not steal keyboard
-  focus across launch, resize, workspace, and VT round-trips.
+  focus during the short candidate hardware smoke. Workspace and lifecycle
+  semantics remain in the unattended QEMU gate; the exhaustive focused
+  xmobar runner remains available after work-area or seat changes.
   The first physical run exposed a mixed-scene ordering bug: the flattened CPU
   frame sat below Kitty's DMA-BUF. The next run rendered the bar and exposed a
   second generic boundary: the native GL path rejected CPU layers smaller than
@@ -393,8 +402,9 @@ Promotion now follows the gates below in order.
   composition target/pipeline/frame-surface lifetimes with zero replacement,
   and exited normally with clean TTY recovery.
 
-Milestone 9 exits only when the automated resize regression and both physical
-normal/emergency captures pass from the same committed release.
+Milestone 9 exits only when the commit-pinned unattended semantic, native
+chrome, four-Kitty hardware, xmobar hardware, and emergency gates pass for one
+candidate commit.
 
 ---
 
@@ -404,6 +414,12 @@ QEMU already proves the bounded Firefox protocol workflow. This milestone
 tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
 than adding speculative browser compatibility.
 
+- [ ] Complete generic Firefox wheel compatibility in the X frontend. Preserve
+  protocol-neutral Engine axis routing, translate it through the appropriate
+  X11 input semantics, and require a real routed axis event to produce the
+  deterministic local page's DOM `wheel` stage. The current QEMU gate proves
+  axis observation/routing and uses focused Space only as an explicit stage
+  fallback.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,

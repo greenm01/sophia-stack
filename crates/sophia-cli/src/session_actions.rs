@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use sophia_protocol::{SessionApplicationId, SurfaceId, TransactionId};
 
 pub const SESSION_ACTION_APPLICATION_CAPACITY: usize = 16;
+pub const SESSION_ACTION_SURFACE_CAPACITY: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionLaunchIntent {
@@ -13,7 +14,18 @@ pub struct SessionLaunchIntent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionLaunchAdmission {
     pub intent: SessionLaunchIntent,
-    pub observed_surface: Option<SurfaceId>,
+    observed_surfaces: [Option<SurfaceId>; SESSION_ACTION_SURFACE_CAPACITY],
+    observed_surface_count: usize,
+}
+
+impl SessionLaunchAdmission {
+    pub fn observed_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
+        self.observed_surfaces.iter().flatten().copied()
+    }
+
+    pub const fn has_observed_surface(&self) -> bool {
+        self.observed_surface_count != 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,7 +73,8 @@ impl SessionLaunchQueue {
         let intent = self.pending.pop_front()?;
         self.admission = Some(SessionLaunchAdmission {
             intent,
-            observed_surface: None,
+            observed_surfaces: [None; SESSION_ACTION_SURFACE_CAPACITY],
+            observed_surface_count: 0,
         });
         Some(intent)
     }
@@ -70,22 +83,27 @@ impl SessionLaunchQueue {
         let Some(admission) = self.admission.as_mut() else {
             return false;
         };
-        if admission.observed_surface.is_none() {
-            admission.observed_surface = Some(surface);
-            return true;
+        if admission
+            .observed_surfaces()
+            .any(|candidate| candidate == surface)
+            || admission.observed_surface_count >= SESSION_ACTION_SURFACE_CAPACITY
+        {
+            return false;
         }
-        false
+        admission.observed_surfaces[admission.observed_surface_count] = Some(surface);
+        admission.observed_surface_count += 1;
+        true
     }
 
-    pub fn complete_if_presented(
+    pub fn complete_if_stable(
         &mut self,
         admission_pipeline_idle: bool,
-        presented_surface: Option<SurfaceId>,
+        stable_surface: Option<SurfaceId>,
     ) -> Option<SessionLaunchAdmission> {
         let admission = self.admission?;
         if !admission_pipeline_idle
-            || admission.observed_surface.is_none()
-            || admission.observed_surface != presented_surface
+            || !stable_surface
+                .is_some_and(|surface| admission.observed_surfaces().any(|seen| seen == surface))
         {
             return None;
         }
@@ -98,7 +116,7 @@ impl SessionLaunchQueue {
 
     pub fn complete_observed_exit(&mut self) -> Option<SessionLaunchAdmission> {
         self.admission
-            .is_some_and(|admission| admission.observed_surface.is_some())
+            .is_some_and(|admission| admission.has_observed_surface())
             .then(|| self.admission.take())
             .flatten()
     }
