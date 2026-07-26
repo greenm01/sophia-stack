@@ -47,21 +47,23 @@
                 }
                 metrics.expected_protocol_error_count = metrics.expected_protocol_error_count
                     .saturating_add(batch.expected_protocol_errors.len());
+                if batch.selection_owner_change {
+                    selection_owner_changes = selection_owner_changes.saturating_add(1);
+                    if config.firefox_m8_proof {
+                        println!(
+                            "sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count={selection_owner_changes} content=redacted"
+                        );
+                    }
+                }
+                if batch.selection_conversion {
+                    selection_conversions = selection_conversions.saturating_add(1);
+                    if config.firefox_m8_proof {
+                        println!(
+                            "sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count={selection_conversions} content=redacted"
+                        );
+                    }
+                }
                 if config.firefox_m8_proof {
-                    if batch.selection_owner_change {
-                        firefox_m8_selection_owner_changes =
-                            firefox_m8_selection_owner_changes.saturating_add(1);
-                        println!(
-                            "sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count={firefox_m8_selection_owner_changes} content=redacted"
-                        );
-                    }
-                    if batch.selection_conversion {
-                        firefox_m8_selection_conversions =
-                            firefox_m8_selection_conversions.saturating_add(1);
-                        println!(
-                            "sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count={firefox_m8_selection_conversions} content=redacted"
-                        );
-                    }
                     for metadata in &batch.metadata {
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
@@ -388,6 +390,7 @@
                         application_surface_gone_at.get_or_insert_with(Instant::now);
                     }
                     focus.clear_surface(surface);
+                    key_repeat.cancel_surface(surface);
                     let abandoned = clear_removed_surface_keys(
                         surface,
                         &mut client_keys,

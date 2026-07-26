@@ -15,7 +15,9 @@ use super::{
     synchronous_modeset_record, take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::SessionClientKeyState;
-use sophia_engine::{InputFocusState, WmShortcutRegistry, WmShortcutRouter};
+use sophia_engine::{
+    InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
+};
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
     NamespaceProfile, Point, SeatId, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness,
@@ -23,13 +25,29 @@ use sophia_protocol::{
     WmSessionAction,
 };
 use sophia_x_authority::X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888;
-use sophia_x_authority::{XAuthorityClientSurfaceRoutes, XCoreKeyboardMapper};
+use sophia_x_authority::{
+    XAuthorityClientSurfaceRoutes, XCoreKeyboardMapper, XKB_DEFAULT_REPEAT_DELAY_MSEC,
+    XKB_DEFAULT_REPEAT_INTERVAL_MSEC, XkbKeymapSnapshot, XkbRmlvoConfig,
+};
 use std::io::Write;
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
 
 mod input_policy_tests;
 mod presentation_tests;
+
+fn test_key_repeat_parts() -> (KeyRepeatState, XkbKeymapSnapshot) {
+    (
+        KeyRepeatState::new(
+            KeyRepeatConfig::new(
+                u64::from(XKB_DEFAULT_REPEAT_DELAY_MSEC),
+                u64::from(XKB_DEFAULT_REPEAT_INTERVAL_MSEC),
+            )
+            .unwrap(),
+        ),
+        XkbKeymapSnapshot::new(&XkbRmlvoConfig::default()).unwrap(),
+    )
+}
 
 #[test]
 fn physical_input_selects_the_low_latency_owner_wait_budget() {
@@ -218,6 +236,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         .collect();
     let (input_sender, input_receiver) = sync_channel(4);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -232,6 +251,8 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -242,6 +263,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         false,
         PhysicalInputRoutingMode::ShortcutsOnly,
         &mut next_delivery,
+        0,
         None,
     )
     .unwrap();
@@ -281,6 +303,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
     ];
     let (input_sender, input_receiver) = sync_channel(2);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -300,6 +323,8 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -310,6 +335,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         false,
         PhysicalInputRoutingMode::CursorOnly,
         &mut next_delivery,
+        0,
         Some(&mut proof),
     )
     .unwrap();
@@ -407,6 +433,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
     }];
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -419,6 +446,8 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -429,6 +458,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         false,
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
+        0,
         None,
     )
     .unwrap();
@@ -490,6 +520,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         .collect();
     let (input_sender, input_receiver) = sync_channel(8);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -504,6 +535,8 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -514,6 +547,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         false,
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
+        0,
         None,
     )
     .unwrap();
@@ -554,6 +588,7 @@ fn interactive_pointer_proof_routes_motion_after_placement() {
         raw_position: None,
         offset: Some(Point { x: 10.0, y: 20.0 }),
         position: None,
+        ..SessionPointerPlacement::default()
     };
     let mut motion = InputEventPacket {
         serial: 1,

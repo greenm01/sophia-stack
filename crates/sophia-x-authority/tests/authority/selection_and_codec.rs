@@ -120,6 +120,20 @@ fn default_pc105_us_map_covers_printable_and_function_keys() {
 }
 
 #[test]
+fn default_pc105_us_repeat_map_distinguishes_editing_keys_from_modifiers() {
+    let keymap = XkbKeymapSnapshot::new(&XkbRmlvoConfig::default())
+        .expect("the default US keymap must compile");
+
+    assert!(keymap.evdev_key_repeats(14), "Backspace must repeat");
+    assert!(keymap.evdev_key_repeats(103), "Up must repeat");
+    assert!(keymap.evdev_key_repeats(105), "Left must repeat");
+    assert!(!keymap.evdev_key_repeats(42), "Shift must not repeat");
+    assert!(!keymap.evdev_key_repeats(125), "Super must not repeat");
+    assert!(!keymap.evdev_key_repeats(0));
+    assert!(!keymap.evdev_key_repeats(u32::MAX));
+}
+
+#[test]
 fn evdev_pointer_mapping_preserves_core_button_state_order() {
     let mut pointer = XCorePointerMapper::new();
 

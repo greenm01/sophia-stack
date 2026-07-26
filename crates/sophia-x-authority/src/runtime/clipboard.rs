@@ -1,4 +1,17 @@
 impl XAuthorityRuntime {
+     /// Returns the core X11 selection owner visible inside one admitted
+     /// namespace. Classic shared-X clients use the same namespace; confined
+     /// clients cannot discover an owner from another namespace.
+     pub fn selection_owner(
+         &self,
+         namespace: NamespaceId,
+         selection: crate::XAtom,
+     ) -> Option<crate::XResourceId> {
+         self.selections
+             .owner(selection, Some(namespace))
+             .and_then(|record| record.owner)
+     }
+
      pub(crate) fn set_pending_clipboard_byte_order(
          &mut self,
          transfer: sophia_protocol::PortalTransferId,

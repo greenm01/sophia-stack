@@ -23,6 +23,8 @@ macro_rules! drain_physical_input {
                         .and_then(|wm_session| wm_session.shortcuts.as_mut()),
                     input_sender,
                     modifiers: &mut modifiers,
+                    key_repeat: &mut key_repeat,
+                    key_repeat_map: &key_repeat_map,
                     client_keys: &mut client_keys,
                     emergency_chord: &mut emergency_chord,
                     virtual_terminal_chord: &mut virtual_terminal_chord,
@@ -36,6 +38,8 @@ macro_rules! drain_physical_input {
                     pointer_buttons_only: false,
                     routing_mode: $routing_mode,
                     next_input_delivery: &mut input_delivery.next,
+                    now_msec: u64::try_from(started.elapsed().as_millis())
+                        .unwrap_or(u64::MAX),
                     physical_text_proof: physical_text_proof.as_mut(),
                 },
             )?;
@@ -58,6 +62,26 @@ macro_rules! drain_physical_input {
             input_delivery
                 .pending
                 .extend(report.deliveries.iter().copied());
+            let repeat_report = route_due_key_repeat(
+                &mut key_repeat,
+                seat,
+                u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                $routing_mode,
+                &focus,
+                committed_surfaces,
+                &client_keys,
+                input_sender,
+                &mut input_delivery.next,
+            )?;
+            metrics.key_repeats_routed = metrics
+                .key_repeats_routed
+                .saturating_add(repeat_report.routed);
+            input_delivery.events_expected = input_delivery
+                .events_expected
+                .saturating_add(usize::from(repeat_report.delivery.is_some()));
+            if let Some(delivery) = repeat_report.delivery {
+                input_delivery.pending.insert(delivery);
+            }
             if !report.deliveries.is_empty() && input_proof_started_at.is_some() {
                 input_delivery
                     .wait_started_at

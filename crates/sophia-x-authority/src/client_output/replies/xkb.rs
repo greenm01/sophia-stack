@@ -156,8 +156,16 @@ fn encode_xkb_reply(
                     write_reply_header(byte_order, &mut out[..32], sequence, 15);
                     out[1] = 3;
                     out[9] = 1;
-                    put_u16(byte_order, &mut out[20..22], 660);
-                    put_u16(byte_order, &mut out[22..24], 40);
+                    put_u16(
+                        byte_order,
+                        &mut out[20..22],
+                        crate::XKB_DEFAULT_REPEAT_DELAY_MSEC,
+                    );
+                    put_u16(
+                        byte_order,
+                        &mut out[22..24],
+                        crate::XKB_DEFAULT_REPEAT_INTERVAL_MSEC,
+                    );
                     out
                 }
                 XClientReply::XkbGetNames {

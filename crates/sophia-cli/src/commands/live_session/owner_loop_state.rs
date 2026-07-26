@@ -13,6 +13,7 @@ struct SessionLoopMetrics {
     runtime_surfaces: u64,
     physical_events: usize,
     physical_keys_routed: usize,
+    key_repeats_routed: usize,
     physical_pointer_events: usize,
     physical_pointer_routed: usize,
     physical_pointer_buttons_routed: usize,

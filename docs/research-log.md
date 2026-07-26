@@ -3482,3 +3482,113 @@ retained mixed DMA-BUF frame when available, and otherwise paints the bounded
 CPU background until the client supplies new pixels. Thus a workspace commit
 always has a concrete scanout consequence instead of leaving the old workspace
 on screen.
+
+The follow-up physical cycle exercised workspace 1 seven times, workspace 2
+nine times, and workspace 3 twice. Empty projections submitted the stable
+blank CPU frame; populated projections restored their retained mixed frame and
+focus. The run recorded no layout timeout or resize abort, zero native submit
+and retirement failures, a clean native drain, and bounded completion after
+122 submissions and 120 asynchronous retirements. The operator confirmed all
+three workspaces visually.
+
+Future captures no longer rely on that visual statement alone. Every committed
+WM policy state now emits a reduced projection record containing only
+transaction, output, workspace, visible-surface count, and whether focus is
+present. The strict verifier requires workspace 2 and 3 to commit empty,
+requires workspace 1 to return with visible surfaces and focus, and correlates
+the focus-clear, suppressed-key, workspace-3, return, and focus-restore order.
+
+The first capture with projection schema 2 populated Kitty independently on
+workspaces 1, 2, and 3, committed 25 layouts without a timeout, and closed one
+workspace-2 client without disturbing the others. It completed with zero
+native submit, retirement, callback, control, or protocol failure. The control
+ledger drained 22 enqueued and delivered commands with 17 ms maximum queue
+dwell and 14 ms maximum acknowledgement latency; the input ledger drained
+2,258 events with no pending key state.
+
+This was a valid workspace and control-ledger proof, but not the complete
+standard workflow. The startup Kitty remained open, and the capture contained
+no click/drag button route, focus-next action, next-layout action,
+hidden-workspace key suppression, or VT lifecycle. The strict verifier
+correctly stopped at the missing startup exit instead of treating a clean
+logout as evidence for steps that were not performed.
+
+## 2026-07-25: Core Selection Ownership Must Be Queryable
+
+The next physical cycle covered the normal interaction set in a different
+order. Mouse selection worked, but Ctrl-Shift-C and Ctrl-Shift-V did not.
+Kitty's GLFW layer repeatedly reported that it failed to become owner of the
+clipboard selection. This distinguishes the defect from physical key routing:
+Kitty received the copy chord and attempted the X11 ownership transition.
+
+The frontend accepted `SetSelectionOwner` into its namespace-aware selection
+table, but core `GetSelectionOwner` unconditionally replied with `None`.
+GLFW performs the standard set-then-query ownership check and therefore
+correctly treated every copy as failed. Core owner queries now return only the
+owner visible in the caller's admitted namespace. Classic shared-X clients see
+the shared owner, while a confined client cannot discover an owner in another
+namespace. The wire regression covers the visible and confined cases.
+
+Normal-session evidence now reports only owner-change and conversion counts;
+clipboard content remains redacted. The strict physical gate requires both
+operations, rejects GLFW ownership failures, and retains operator confirmation
+that the selected text was pasted unchanged.
+
+The first retest acquired clipboard ownership twice with no GLFW ownership
+failure, and the operator confirmed that paste appeared to work. It produced
+no `ConvertSelection`, however, because the copy and paste occurred inside one
+Kitty process; Kitty can reuse its locally held selection without a protocol
+round trip. The promotion sequence now pastes into an independently launched
+Kitty before the owner exits, so the conversion witness measures the intended
+same-namespace X11 path.
+
+That retest also exposed an independent pointer-boundary defect. After paste,
+the hardware cursor disappeared. Input remained healthy and the final record
+showed 160 successful cursor-plane updates with zero failures, but only 1,202
+of 8,158 observed pointer events routed to a surface. Session pointer placement
+had applied the libinput accumulator plus its startup offset without confining
+the result to any Engine output. The KMS cursor owner deliberately detaches the
+cursor plane when given a point outside every output, so that reachable path
+matches the reported disappearance without producing a hardware failure.
+
+Engine now provides one output-union confinement system. The live session
+projects its existing ordered output topology into that system before physical
+input starts. Confinement chooses the nearest valid point across all output
+rectangles, including unequal output heights, and corrects the raw-to-logical
+offset at the edge so discarded overshoot does not create a sticky boundary.
+Integration coverage drives positions past every side and into the dead area
+beside a shorter output. Completion evidence now counts intentional hidden
+updates separately from successful updates and failures; the strict gate
+requires zero. Physical edge/reversal confirmation remains pending.
+
+## 2026-07-25: Held-Key Repeat Belongs To Engine Timing And Frontend Semantics
+
+The next physical run retained ordinary keyboard routing but exposed that
+holding Backspace or an arrow produced only one action. This is expected from
+libinput: it reports physical press and release edges; the display stack must
+schedule held-key repeat. Sophia had no such scheduler.
+
+Engine now owns a fixed-capacity, allocation-free repeat clock with one active
+repeatable key per seat. The live owner binds that record to the exact focused
+surface, seat, device, and physical key. The configured XKB map determines
+repeatability, so editing and cursor keys repeat while modifiers and Super do
+not. Existing focus, workspace, surface-removal, and VT release barriers cancel
+the bound record; a repeat can never migrate to a newly focused client.
+
+The X frontend receives an explicit repeat delivery mode. It emits another
+KeyPress with current XKB modifiers without replaying a physical state
+transition or reactivating a passive grab. This keeps Engine timing
+protocol-neutral, preserves X11 delivery authority, and prevents xmonad global
+shortcuts from repeating. Missed timer intervals coalesce to one pulse rather
+than bursting after a slow frame. Completion evidence requires the scheduled
+and routed counts to match, capacity exhaustion to remain zero, and every seat
+to drain.
+
+The first physical capture routed and acknowledged 66 held-key pulses with
+zero missed-interval coalescing and zero repeat-seat capacity exhaustion. The
+operator confirmed the editing/navigation behavior, and logout left no active
+repeat seat or pressed-key debt after all 1,289 expected input deliveries
+flushed. The run retained clean input, cursor, protocol, renderer, KMS, and
+frontend teardown. It did not complete the broader promotion sequence: the
+startup Kitty remained open and the clipboard peer performed no
+`ConvertSelection`, so those independent gates remain pending.

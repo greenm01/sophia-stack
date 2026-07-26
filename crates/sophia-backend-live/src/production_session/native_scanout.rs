@@ -30,6 +30,7 @@ mod persistent_native_scanout {
         pub vsync_overlap_rejections: usize,
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
+        pub cursor_hidden_updates: usize,
         pub cursor_deferred_primary_in_flight: usize,
         pub cursor_update_failures: usize,
         pub max_cursor_update: Duration,
@@ -241,6 +242,7 @@ mod persistent_native_scanout {
                 vsync_overlap_rejections: 0,
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
+                cursor_hidden_updates: 0,
                 cursor_deferred_primary_in_flight: 0,
                 cursor_update_failures: 0,
                 max_cursor_update: Duration::ZERO,
@@ -301,6 +303,7 @@ mod persistent_native_scanout {
             } else if visible {
                 crate::ClassicHardwareCursorUpdate::Visible
             } else {
+                self.cursor_hidden_updates = self.cursor_hidden_updates.saturating_add(1);
                 crate::ClassicHardwareCursorUpdate::Hidden
             })
         }

@@ -121,8 +121,18 @@ struct LiveWmOwnerCommit {
     update: WmTransactionUpdate,
     physical_action: Option<WmActionId>,
     session_action: Option<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
+    workspace_projection: Option<LiveWmWorkspaceProjection>,
     clear_focus: Option<(TransactionId, SurfaceId)>,
     restore_focus: Option<(TransactionId, SurfaceId)>,
+}
+
+#[derive(Clone, Copy)]
+struct LiveWmWorkspaceProjection {
+    transaction: TransactionId,
+    output: sophia_protocol::OutputId,
+    workspace: WorkspaceId,
+    visible_surfaces: usize,
+    focus_present: bool,
 }
 
 impl LiveWmSession {
@@ -695,14 +705,23 @@ impl LiveWmSession {
                 LiveWmProposalSource::Manage(_) | LiveWmProposalSource::Relayout => None,
             });
         let mut session_action = None;
+        let mut workspace_projection = None;
         let mut clear_focus = None;
         let mut restore_focus = None;
         if committed && let Some(effects) = result.effects.take() {
             let transaction = effects.transaction;
-            let policy_focus = effects
+            let output_state = effects
                 .workspace_state
                 .output(output)
-                .and_then(|state| state.focus);
+                .ok_or("committed WM state lost its output projection")?;
+            let policy_focus = output_state.focus;
+            workspace_projection = Some(LiveWmWorkspaceProjection {
+                transaction,
+                output,
+                workspace: output_state.workspace,
+                visible_surfaces: effects.workspace_state.visible_surfaces(output)?.len(),
+                focus_present: policy_focus.is_some(),
+            });
             self.workspace_state = effects.workspace_state;
             session_action = effects
                 .session_action
@@ -721,6 +740,7 @@ impl LiveWmSession {
             update: result.update,
             physical_action,
             session_action,
+            workspace_projection,
             clear_focus,
             restore_focus,
         };

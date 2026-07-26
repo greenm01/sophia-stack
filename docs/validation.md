@@ -301,11 +301,19 @@ in the bounded session registry; neither Engine nor X Authority contains
 Kitty-specific window-management behavior.
 
 Arm the independent guard when prompted. For the normal promotion capture,
-type in the initial Kitty and click-drag a selection; move the cursor across
-both outputs; use Super-Enter and type independently in the second Kitty;
-use Super-J to change focus and Super-Space to change layout; use Super-2,
-type one harmless key while the workspace is empty, then use Super-1 to return
-while confirming the hidden window received no input; use Super-Shift-C to
+first type `repeat-test-abcdef`, hold Left until the cursor moves several
+places, and hold Backspace until several characters disappear. Clear the line,
+type a unique word in the initial Kitty, click-drag it, and use Ctrl-Shift-C;
+use Super-Enter to launch an independent Kitty, use Ctrl-Shift-V there, confirm
+the word is pasted unchanged, then exit that clipboard peer. Move the pointer
+hard against every output edge and require it to remain visible and reverse
+immediately. Switch to another TTY and back, exit the startup Kitty, and move
+the pointer on the empty desktop. Use Super-Enter twice and type independently
+in both new Kittys; use Super-J to change focus and Super-Space to change
+layout; close one with Super-Shift-C; use Super-2,
+type one harmless key while the workspace is empty, use Super-3 and confirm it
+is also empty, then use Super-1 to return while confirming the hidden window
+received no input; use Super-Shift-C to
 close a focused Kitty; then use
 Super-Shift-Q for normal logout. Do not use Ctrl-Alt-Backspace in that capture.
 After returning to TTY3, run:
@@ -314,8 +322,10 @@ After returning to TTY3, run:
 tools/verify_sophia_xmonad_tty3.sh
 ```
 
-The verifier requires physical keyboard routing, click-drag pointer
-transitions, startup and action-launched Kitty processes, committed focus,
+The verifier requires physical keyboard routing, at least two XKB-derived
+held-key repeat pulses with a fully drained repeat ledger, click-drag pointer
+transitions, at least one clipboard owner change and selection conversion,
+startup and action-launched Kitty processes, committed focus,
 layout, workspace-away/workspace-return, close, and logout actions, independent
 page-flip retirement on two outputs, clean native retirement, an armed but
 untriggered guard, and exact KD mode and termios restoration. Its default evidence is under

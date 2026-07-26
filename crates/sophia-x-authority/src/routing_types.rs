@@ -68,6 +68,7 @@ pub struct XAuthorityRoutedInput {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityRoutedInputMode {
     Deliver,
+    Repeat,
     StateOnly,
 }
 

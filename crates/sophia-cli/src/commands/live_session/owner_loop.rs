@@ -142,6 +142,13 @@ fn run_session_loop(
     let mut input_cpu_update_baseline = None;
     let mut focus = InputFocusState::new();
     let mut modifiers = XCoreKeyboardMapper::new();
+    let key_repeat_map = XkbKeymapSnapshot::new(&config.xkb_config)?;
+    let key_repeat_config = KeyRepeatConfig::new(
+        u64::from(XKB_DEFAULT_REPEAT_DELAY_MSEC),
+        u64::from(XKB_DEFAULT_REPEAT_INTERVAL_MSEC),
+    )
+    .ok_or("X11 key repeat controls must be nonzero")?;
+    let mut key_repeat = KeyRepeatState::new(key_repeat_config);
     let mut client_keys = SessionClientKeyState::default();
     let mut client_key_scratch = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
     let mut client_key_deliveries = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
@@ -150,6 +157,12 @@ fn run_session_loop(
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut pointer = SessionPointerPlacement::default();
     if native_scanout.is_some() {
+        pointer.set_output_bounds(
+            wm_output_bounds(&outputs)
+                .into_iter()
+                .map(|(_, bounds)| bounds)
+                .collect(),
+        );
         pointer.center_on_primary_output(output.size);
     }
     let seat = SeatId::from_raw(SESSION_SEAT_RAW);
@@ -185,8 +198,8 @@ fn run_session_loop(
     let mut client_stdout = Vec::new();
     let mut firefox_m8_proof = FirefoxM8StageProof::default();
     let mut firefox_m8_page_ready_reported = false;
-    let mut firefox_m8_selection_owner_changes = 0usize;
-    let mut firefox_m8_selection_conversions = 0usize;
+    let mut selection_owner_changes = 0usize;
+    let mut selection_conversions = 0usize;
     let mut first_protocol_error = None;
     let mut emergency_exit_requested = false;
     let mut cursor_updates = CursorUpdateState::new(pointer.position.is_some());

@@ -576,6 +576,32 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         read_u32(XByteOrder::LittleEndian, &first_key[12..16]),
         0x0020_0701
     );
+    input_sender
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 30,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 50,
+                target_surface: routes[0].1,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::Key {
+                    keycode: 30,
+                    pressed: true,
+                },
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Repeat,
+        })
+        .unwrap();
+    let first_repeat = read_x_record(&mut first);
+    assert_eq!(first_repeat[0], 2);
+    assert_eq!(first_repeat[1], 38);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &first_repeat[12..16]),
+        0x0020_0701
+    );
     assert_eq!(read_x_record(&mut second)[0], 9);
     let second_key = read_x_record(&mut second);
     assert_eq!(second_key[0], 2);

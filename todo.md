@@ -36,12 +36,12 @@ The development TTY profile now establishes:
 
 This is still development evidence: the captured lifecycle reports
 `installed=false`, `build=true`, and `manual_service=true`. The immediate
-blocker is native presentation lifetime and latency. Physical evidence showed
-that neither a reused GBM surface nor a reused EGL/GL context bound to fresh
-surfaces is safe on the current AMDGPU stack: both fail on the third mixed
-render. Mixed composition therefore uses one complete target per export.
-Installed-session promotion requires preserving that lifetime rule while
-moving to an explicit retirement-driven pool of complete target slots.
+blocker is completing the strict physical xmonad workflow. Physical evidence
+showed that neither a reused GBM surface nor a reused EGL/GL context bound to
+fresh surfaces is safe on the current AMDGPU stack: both fail on the third
+mixed render. Mixed composition therefore keeps one complete target per export
+as the correctness baseline. Retirement-driven target pooling remains a
+post-soak optimization unless measured latency prevents promotion.
 
 ## Daily-Driver Promotion Contract
 
@@ -103,9 +103,6 @@ Promotion now follows the gates below in order.
   workspace-stress cycle recorded zero native submit failures and a 12 ms
   maximum cursor update; it then exposed an independent workspace-visibility
   defect.
-- [ ] Introduce a three-slot per-output generational pool of complete render
-  targets; recycle a slot only through explicit page-flip retirement and defer
-  instead of exceeding the bound.
 - [x] Emit reduced recreation-reason and lifetime evidence without native
   handles or application metadata.
 - [x] Remove blocking X11 configure/focus/close acknowledgements from the
@@ -121,9 +118,10 @@ Promotion now follows the gates below in order.
   startup-readiness transition rather than before native initialization.
 - [x] Use the low-latency owner wait budget whenever physical input is active,
   so an idle X channel cannot add 25 ms to queued input before composition.
-- [ ] Prove a stable physical workload has bounded context and pipeline
-  creation, zero launch-admission timeouts, and bounded input-to-submit and
-  presentation latency.
+- [ ] Prove a stable physical workload has balanced context, pipeline, and
+  frame-surface creation/retirement with zero live-resource growth, zero
+  launch-admission timeouts, and bounded input-to-submit and presentation
+  latency.
 - [ ] Retain focused rollback, resize, output-change, and recovery regressions
   proving resources retire exactly once.
 
@@ -133,10 +131,11 @@ Promotion now follows the gates below in order.
   preserve focus per workspace, restrict xmonad synthetic mappings and
   relayout nodes to the active workspace, and project only visible surfaces
   into composition and hit-testing.
-- [ ] Re-run the workspace stress sequence through Super-1, Super-2, and
-  Super-3; require hidden workspaces to produce no presentation layers or
-  input targets, restored workspaces to recover their prior focus, and no
-  cross-workspace resize epoch.
+- [x] Re-run the workspace stress sequence through Super-1, Super-2, and
+  Super-3. The physical cycle committed seven workspace-1, nine workspace-2,
+  and two workspace-3 actions, restored each workspace's focus, submitted a
+  blank CPU frame for an empty projection, recorded no resize timeout, and
+  drained native scanout cleanly.
 - [ ] Capture the documented standard run from TTY3 with launcher, guard,
   recovery, WM, frontend, renderer, and lifecycle evidence.
 - [ ] Require focused Kitty within eight seconds, `outputs_ready=2/2`, nonzero
@@ -144,6 +143,21 @@ Promotion now follows the gates below in order.
 - [ ] Prove typing, pointer motion, click-drag selection, focus changes,
   Super-Enter, tiling resize, workspace switching, and no input delivery to
   hidden or unfocused windows.
+- [x] Add Engine-owned held-key repeat scheduling with XKB-derived per-key
+  repeatability and explicit X-frontend repeat delivery. Repeats bypass global
+  shortcut evaluation and cancel on physical release, focus handoff, surface
+  removal, workspace hiding, and seat suspension.
+- [x] Physically prove held editing/navigation keys repeat while Super and
+  modifiers do not. The first capture routed and acknowledged 66 repeat pulses
+  with zero coalescing or capacity exhaustion, drained all 1,289 input
+  deliveries, and ended with no active repeat seat or pressed-key debt.
+- [ ] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
+  Require at least one owner change and conversion, no GLFW ownership failure,
+  and visual confirmation that an independent Kitty pasted the selected text
+  unchanged.
+- [ ] Prove pointer confinement across the complete output union: hard edge
+  motion must keep the hardware cursor visible, and reversing direction must
+  move it immediately without first consuming discarded overshoot.
 - [ ] Prove an unmodified primary-button press on an unfocused visible window
   commits WM-selected focus before client delivery; require the following
   keyboard input and ordered button release to reach that target, while hidden
@@ -153,9 +167,11 @@ Promotion now follows the gates below in order.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
 - [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
   capacity-overflow proof with bounded rejection and no session failure.
-- [ ] Require the session-control ledger to drain with balanced
+- [x] Require the session-control ledger to drain with balanced
   enqueue/dispatch/delivery counts, zero rejection/timeout/unexpected
-  acknowledgements, and queue/ack latency at or below 100 ms.
+  acknowledgements, and queue/ack latency at or below 100 ms. The three-
+  workspace cycle drained 22/22 controls with 17 ms queue dwell and 14 ms
+  acknowledgement latency.
 - [ ] Prove three tiled Kitty windows remain usable before and after a
   TTY2/TTY3 round-trip, with keyboard and pointer restored.
 - [ ] Validate full pc105 US shifted punctuation and libseat-backed

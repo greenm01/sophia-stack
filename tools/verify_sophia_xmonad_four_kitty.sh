@@ -124,7 +124,7 @@ control_ack_latency="$(field "$session_control" max_ack_msec)"
 (( control_queue_dwell <= 100 && control_ack_latency <= 100 )) ||
     fail "session-control latency exceeded 100ms"
 grep -Eq \
-    '^sophia_live_session_keys schema=1 status=complete pending=0 release_barrier_pending=0 peak_pressed=[0-9]+ synthetic_releases=[0-9]+ state_only_releases=[0-9]+ orphan_releases_suppressed=[0-9]+ removed_surface_keys=0$' \
+    '^sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=[0-9]+ synthetic_releases=[0-9]+ state_only_releases=[0-9]+ orphan_releases_suppressed=[0-9]+ removed_surface_keys=0 repeat_active_seats=0 repeat_armed=[0-9]+ repeat_routed=[0-9]+ repeat_pulses=[0-9]+ repeat_coalesced=[0-9]+ repeat_cancelled=[0-9]+ repeat_capacity_exhausted=0$' \
     "$SESSION_LOG" ||
     fail "client pressed-key state did not drain"
 mapfile -t completions < <(

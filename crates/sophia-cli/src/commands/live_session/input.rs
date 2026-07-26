@@ -18,11 +18,12 @@ struct PhysicalInputRouteReport {
     virtual_terminal_modifier_releases: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct SessionPointerPlacement {
     raw_position: Option<Point>,
     offset: Option<Point>,
     position: Option<Point>,
+    output_bounds: Vec<Rect>,
 }
 
 fn pointer_offset_for_geometry(raw: Point, geometry: Rect) -> Point {
@@ -33,11 +34,33 @@ fn pointer_offset_for_geometry(raw: Point, geometry: Rect) -> Point {
 }
 
 impl SessionPointerPlacement {
+    fn set_output_bounds(&mut self, output_bounds: Vec<Rect>) {
+        self.output_bounds = output_bounds;
+        if let Some(position) = self.position {
+            self.position =
+                sophia_engine::confine_pointer_to_outputs(position, &self.output_bounds);
+            if let (Some(raw), Some(position)) = (self.raw_position, self.position) {
+                self.offset = Some(Point {
+                    x: position.x - raw.x,
+                    y: position.y - raw.y,
+                });
+            }
+        }
+    }
+
     fn center_on_primary_output(&mut self, size: Size) -> Point {
         let center = Point {
             x: f64::from(size.width.max(1)) / 2.0,
             y: f64::from(size.height.max(1)) / 2.0,
         };
+        if self.output_bounds.is_empty() {
+            self.output_bounds.push(Rect {
+                x: 0,
+                y: 0,
+                width: size.width.max(1),
+                height: size.height.max(1),
+            });
+        }
         self.raw_position = Some(Point::default());
         self.offset = Some(center);
         self.position = Some(center);
@@ -65,7 +88,13 @@ impl SessionPointerPlacement {
             x: raw.x + offset.x,
             y: raw.y + offset.y,
         };
-        self.offset = Some(offset);
+        let position =
+            sophia_engine::confine_pointer_to_outputs(position, &self.output_bounds)
+                .unwrap_or(position);
+        self.offset = Some(Point {
+            x: position.x - raw.x,
+            y: position.y - raw.y,
+        });
         self.position = Some(position);
         Some(position)
     }
@@ -88,10 +117,19 @@ impl SessionPointerPlacement {
             };
             pointer_offset_for_geometry(raw, geometry)
         });
-        let position = Point {
+        let proposed = Point {
             x: raw.x + offset.x,
             y: raw.y + offset.y,
         };
+        let position =
+            sophia_engine::confine_pointer_to_outputs(proposed, &self.output_bounds)
+                .unwrap_or(proposed);
+        if position != proposed {
+            self.offset = Some(Point {
+                x: position.x - raw.x,
+                y: position.y - raw.y,
+            });
+        }
         self.position = Some(position);
         position
     }
@@ -118,6 +156,8 @@ struct PhysicalInputRoutingContext<'a> {
     shortcuts: Option<&'a mut WmShortcutRouter>,
     input_sender: &'a SyncSender<XAuthorityRoutedInput>,
     modifiers: &'a mut XCoreKeyboardMapper,
+    key_repeat: &'a mut KeyRepeatState,
+    key_repeat_map: &'a XkbKeymapSnapshot,
     client_keys: &'a mut SessionClientKeyState,
     emergency_chord: &'a mut EmergencyChordState,
     virtual_terminal_chord: &'a mut VirtualTerminalChordState,
@@ -127,6 +167,7 @@ struct PhysicalInputRoutingContext<'a> {
     pointer_buttons_only: bool,
     routing_mode: PhysicalInputRoutingMode,
     next_input_delivery: &'a mut u64,
+    now_msec: u64,
     physical_text_proof: Option<&'a mut PhysicalTextProof>,
 }
 
@@ -143,6 +184,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         shortcuts,
         input_sender,
         modifiers,
+        key_repeat,
+        key_repeat_map,
         client_keys,
         emergency_chord,
         virtual_terminal_chord,
@@ -152,6 +195,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         pointer_buttons_only,
         routing_mode,
         next_input_delivery,
+        now_msec,
         physical_text_proof,
     } = context;
     route_input_events(
@@ -162,6 +206,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         client_routes,
         input_sender,
         modifiers,
+        key_repeat,
+        key_repeat_map,
         client_keys,
         emergency_chord,
         virtual_terminal_chord,
@@ -172,6 +218,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         pointer_buttons_only,
         routing_mode,
         next_input_delivery,
+        now_msec,
         physical_text_proof,
     )
 }
@@ -185,6 +232,8 @@ fn route_input_events(
     _client_routes: &XAuthorityClientSurfaceRoutes,
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
+    key_repeat: &mut KeyRepeatState,
+    key_repeat_map: &XkbKeymapSnapshot,
     client_keys: &mut SessionClientKeyState,
     emergency_chord: &mut EmergencyChordState,
     virtual_terminal_chord: &mut VirtualTerminalChordState,
@@ -195,6 +244,7 @@ fn route_input_events(
     pointer_buttons_only: bool,
     routing_mode: PhysicalInputRoutingMode,
     next_input_delivery: &mut u64,
+    now_msec: u64,
     mut physical_text_proof: Option<&mut PhysicalTextProof>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
@@ -219,6 +269,9 @@ fn route_input_events(
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
                 report.keys_observed = report.keys_observed.saturating_add(1);
+                if !pressed {
+                    let _ = key_repeat.release(event.seat, event.device, keycode);
+                }
                 match virtual_terminal_chord.observe(keycode, pressed) {
                     VirtualTerminalChordAction::Pass => {}
                     VirtualTerminalChordAction::Consume => continue,
@@ -299,6 +352,9 @@ fn route_input_events(
                 {
                     let decision = shortcuts.route_key(event.seat, keycode, pressed);
                     if decision.consumed {
+                        if pressed && key_repeat_map.evdev_key_repeats(keycode) {
+                            key_repeat.cancel_seat(event.seat);
+                        }
                         report.wm_actions.extend(decision.action);
                         continue;
                     }
@@ -339,6 +395,7 @@ fn route_input_events(
                     client_keys.record_routed(key, false)?;
                     continue;
                 }
+                let evdev_keycode = keycode;
                 let Some((keycode, state)) = modifiers.map_evdev_key(keycode, pressed) else {
                     continue;
                 };
@@ -382,6 +439,25 @@ fn route_input_events(
                     mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
                 client_keys.record_routed(key, pressed)?;
+                if pressed {
+                    match key_repeat.arm(
+                        KeyRepeatTarget {
+                            surface: target_surface,
+                            seat: event.seat,
+                            device: event.device,
+                            keycode: evdev_keycode,
+                            source_time_msec: event.time_msec,
+                        },
+                        now_msec,
+                        key_repeat_map.evdev_key_repeats(evdev_keycode),
+                    ) {
+                        sophia_engine::KeyRepeatArmOutcome::Armed
+                        | sophia_engine::KeyRepeatArmOutcome::NotRepeatable => {}
+                        sophia_engine::KeyRepeatArmOutcome::SeatCapacityExhausted => {
+                            return Err("key repeat seat capacity exhausted".into());
+                        }
+                    }
+                }
                 report.keys_routed = report.keys_routed.saturating_add(1);
                 report.deliveries.push(delivery);
             }
@@ -477,6 +553,75 @@ fn route_input_events(
             }
         }
     }
+    Ok(report)
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct KeyRepeatRouteReport {
+    routed: usize,
+    delivery: Option<XAuthorityInputDeliveryId>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn route_due_key_repeat(
+    key_repeat: &mut KeyRepeatState,
+    seat: SeatId,
+    now_msec: u64,
+    routing_mode: PhysicalInputRoutingMode,
+    focus: &InputFocusState,
+    committed_surfaces: &[CommittedSurfaceState],
+    client_keys: &SessionClientKeyState,
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    next_input_delivery: &mut u64,
+) -> Result<KeyRepeatRouteReport, Box<dyn std::error::Error>> {
+    let mut report = KeyRepeatRouteReport::default();
+    if routing_mode != PhysicalInputRoutingMode::Full {
+        return Ok(report);
+    }
+    let Some(target) = key_repeat.active_target(seat) else {
+        return Ok(report);
+    };
+    let pressed = SessionClientPressedKey {
+        surface: target.surface,
+        seat: target.seat,
+        device: target.device,
+        keycode: target.keycode,
+    };
+    let target_is_current = focus.focused_surface(seat) == Some(target.surface)
+        && committed_surfaces
+            .iter()
+            .any(|committed| committed.surface == target.surface)
+        && client_keys.is_pressed(pressed);
+    if !target_is_current {
+        key_repeat.cancel_seat(seat);
+        return Ok(report);
+    }
+    let Some(pulse) = key_repeat.take_due(seat, now_msec) else {
+        return Ok(report);
+    };
+    let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
+    *next_input_delivery = next_input_delivery
+        .checked_add(1)
+        .ok_or("live-session input delivery ID exhausted")?;
+    input_sender.try_send(XAuthorityRoutedInput {
+        request: sophia_protocol::RoutedInputRequest {
+            serial: delivery.raw(),
+            seat: pulse.target.seat,
+            device: pulse.target.device,
+            time_msec: pulse.time_msec,
+            target_surface: pulse.target.surface,
+            global_position: Point::default(),
+            local_position: Point::default(),
+            kind: sophia_protocol::InputEventKind::Key {
+                keycode: pulse.target.keycode,
+                pressed: true,
+            },
+        },
+        delivery: Some(delivery),
+        mode: XAuthorityRoutedInputMode::Repeat,
+    })?;
+    report.routed = 1;
+    report.delivery = Some(delivery);
     Ok(report)
 }
 

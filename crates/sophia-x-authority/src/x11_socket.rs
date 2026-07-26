@@ -56,6 +56,7 @@ use sophia_protocol::{
 
 include!("x11_socket/routing/broker.rs");
 include!("x11_socket/routing/registry.rs");
+include!("x11_socket/routing/keyboard.rs");
 include!("x11_socket/routing/input.rs");
 include!("x11_socket/frontend/service.rs");
 include!("x11_socket/frontend/clipboard.rs");

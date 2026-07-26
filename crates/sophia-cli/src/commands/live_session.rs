@@ -24,8 +24,8 @@ use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
 use sophia_engine::{
-    FocusedInputRoute, InputFocusDecision, InputFocusState, NonBlockingInputPoller,
-    WmShortcutRouter, WmWorkspaceState,
+    FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
+    KeyRepeatTarget, NonBlockingInputPoller, WmShortcutRouter, WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
@@ -37,11 +37,13 @@ use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlKind,
     XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
-    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XPresentCompletionMode,
-    XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
-    XServerFrontendConfig, XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
+    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XKB_DEFAULT_REPEAT_DELAY_MSEC,
+    XKB_DEFAULT_REPEAT_INTERVAL_MSEC, XPresentCompletionMode, XServerFrontendAdmissionError,
+    XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendConfig,
+    XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
     XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker, XServerFrontendServiceCommand,
-    XServerFrontendSetupAuthorization, run_x_server_frontend_routed_until_stopped,
+    XServerFrontendSetupAuthorization, XkbKeymapSnapshot,
+    run_x_server_frontend_routed_until_stopped,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{Read, Write};

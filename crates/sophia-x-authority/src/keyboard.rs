@@ -1,6 +1,8 @@
 use xkbcommon::xkb;
 
 pub const XKB_RMLVO_FIELD_MAX_BYTES: usize = 128;
+pub const XKB_DEFAULT_REPEAT_DELAY_MSEC: u16 = 660;
+pub const XKB_DEFAULT_REPEAT_INTERVAL_MSEC: u16 = 40;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XkbRmlvoConfig {
@@ -71,6 +73,7 @@ pub struct XkbKeymapSnapshot {
     min_keycode: u8,
     max_keycode: u8,
     keysyms: Vec<[u32; 2]>,
+    repeatable: Vec<bool>,
     modifier_map: Vec<(u8, u8)>,
 }
 
@@ -83,6 +86,7 @@ impl XkbKeymapSnapshot {
         let min_keycode = 8;
         let max_keycode = u8::MAX;
         let mut keysyms = Vec::with_capacity(usize::from(max_keycode - min_keycode) + 1);
+        let mut repeatable = Vec::with_capacity(usize::from(max_keycode - min_keycode) + 1);
         for raw in min_keycode..=max_keycode {
             let key = xkb::Keycode::new(u32::from(raw));
             let base = keymap
@@ -94,12 +98,14 @@ impl XkbKeymapSnapshot {
                 .first()
                 .map_or(base, |keysym| keysym.raw());
             keysyms.push([base, shifted]);
+            repeatable.push(keymap.key_repeats(key));
         }
         Ok(Self {
             config: config.clone(),
             min_keycode,
             max_keycode,
             keysyms,
+            repeatable,
             modifier_map: vec![
                 (50, 1),
                 (62, 1),
@@ -139,6 +145,16 @@ impl XkbKeymapSnapshot {
 
     pub fn modifier_map(&self) -> Vec<(u8, u8)> {
         self.modifier_map.clone()
+    }
+
+    pub fn evdev_key_repeats(&self, evdev_keycode: u32) -> bool {
+        evdev_keycode
+            .checked_add(8)
+            .and_then(|keycode| u8::try_from(keycode).ok())
+            .and_then(|keycode| keycode.checked_sub(self.min_keycode))
+            .and_then(|index| self.repeatable.get(usize::from(index)))
+            .copied()
+            .unwrap_or(false)
     }
 
     pub const fn min_keycode(&self) -> u8 {

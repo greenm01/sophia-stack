@@ -163,6 +163,7 @@
                     Some(controller.device_opener()),
                 )?;
                 modifiers = XCoreKeyboardMapper::new();
+                key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
                 if let Some(wm) = wm_session.as_mut()
@@ -206,6 +207,7 @@
                 seat_release_prepared = false;
                 requested_virtual_terminal = None;
                 modifiers = XCoreKeyboardMapper::new();
+                key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
                 println!("sophia_live_seat schema=1 status=suspended");

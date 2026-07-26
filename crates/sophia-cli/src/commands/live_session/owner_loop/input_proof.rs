@@ -71,6 +71,8 @@
                     &layout.client_routes,
                     input_sender,
                     &mut modifiers,
+                    &mut key_repeat,
+                    &key_repeat_map,
                     &mut client_keys,
                     &mut emergency_chord,
                     &mut virtual_terminal_chord,
@@ -81,6 +83,7 @@
                     false,
                     PhysicalInputRoutingMode::Full,
                     &mut input_delivery.next,
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                     None,
                 )?;
                 if report.keys_routed != expected {

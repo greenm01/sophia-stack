@@ -30,8 +30,12 @@ pub struct SessionClientKeyState {
 }
 
 impl SessionClientKeyState {
-    pub fn release_is_routable(&self, key: SessionClientPressedKey) -> bool {
+    pub fn is_pressed(&self, key: SessionClientPressedKey) -> bool {
         self.pressed.contains(&key)
+    }
+
+    pub fn release_is_routable(&self, key: SessionClientPressedKey) -> bool {
+        self.is_pressed(key)
     }
 
     pub fn record_routed(

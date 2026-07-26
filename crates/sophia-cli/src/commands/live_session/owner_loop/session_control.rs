@@ -44,6 +44,7 @@ macro_rules! service_session_controls {
 macro_rules! flush_client_keys {
     ($surface:expr, $reason:expr) => {{
         let surface = $surface;
+        key_repeat.cancel_surface(surface);
         let released = flush_client_pressed_keys(
             surface,
             &mut client_keys,
@@ -85,6 +86,16 @@ macro_rules! apply_wm_commit_result {
         }
         if let Some(action) = owner_commit.session_action {
             committed_session_actions.push_back(action);
+        }
+        if let Some(projection) = owner_commit.workspace_projection {
+            println!(
+                "sophia_live_wm schema=2 status=workspace_projection_committed transaction={} output={} workspace={} visible_surfaces={} focus={}",
+                projection.transaction.raw(),
+                projection.output.raw(),
+                projection.workspace.raw(),
+                projection.visible_surfaces,
+                if projection.focus_present { "surface" } else { "none" },
+            );
         }
         if let Some((transaction, surface)) = owner_commit.clear_focus {
             let client = layout

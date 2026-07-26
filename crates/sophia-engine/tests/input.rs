@@ -1,5 +1,112 @@
 mod support;
+use sophia_engine::confine_pointer_to_outputs;
 use support::*;
+
+#[test]
+fn physical_pointer_is_confined_to_the_nearest_visible_output() {
+    let outputs = [
+        Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        },
+        Rect {
+            x: 2560,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+    ];
+
+    assert_eq!(
+        confine_pointer_to_outputs(
+            Point {
+                x: -500.0,
+                y: 900.0
+            },
+            &outputs
+        ),
+        Some(Point { x: 0.0, y: 900.0 }),
+    );
+    assert_eq!(
+        confine_pointer_to_outputs(
+            Point {
+                x: 6000.0,
+                y: 1300.0,
+            },
+            &outputs,
+        ),
+        Some(Point {
+            x: 4479.0,
+            y: 1079.0,
+        }),
+    );
+    assert_eq!(
+        confine_pointer_to_outputs(
+            Point {
+                x: 3000.0,
+                y: 1300.0,
+            },
+            &outputs,
+        ),
+        Some(Point {
+            x: 3000.0,
+            y: 1079.0,
+        }),
+    );
+
+    let raw_at_right_edge = Point {
+        x: 6000.0,
+        y: 900.0,
+    };
+    let confined =
+        confine_pointer_to_outputs(raw_at_right_edge, &outputs).expect("outputs are valid");
+    let corrected_offset = Point {
+        x: confined.x - raw_at_right_edge.x,
+        y: confined.y - raw_at_right_edge.y,
+    };
+    let reversed_raw = Point {
+        x: raw_at_right_edge.x - 10.0,
+        y: raw_at_right_edge.y,
+    };
+    assert_eq!(
+        confine_pointer_to_outputs(
+            Point {
+                x: reversed_raw.x + corrected_offset.x,
+                y: reversed_raw.y + corrected_offset.y,
+            },
+            &outputs,
+        ),
+        Some(Point {
+            x: 4469.0,
+            y: 900.0,
+        }),
+    );
+}
+
+#[test]
+fn physical_pointer_confinement_rejects_invalid_or_missing_geometry() {
+    assert_eq!(
+        confine_pointer_to_outputs(
+            Point {
+                x: f64::NAN,
+                y: 10.0,
+            },
+            &[Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            }],
+        ),
+        None,
+    );
+    assert_eq!(
+        confine_pointer_to_outputs(Point { x: 10.0, y: 10.0 }, &[]),
+        None,
+    );
+}
 
 #[test]
 fn routed_input_coalescer_keeps_latest_stable_motion_until_frame() {

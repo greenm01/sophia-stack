@@ -202,11 +202,11 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetSelectionOwner { .. } => XDispatchResult {
+                XWireRequest::GetSelectionOwner { selection } => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetSelectionOwner {
                         sequence: context.sequence,
-                        owner: None,
+                        owner: runtime.selection_owner(context.namespace, selection),
                     })],
                     metadata_candidates: Vec::new(),
                 },

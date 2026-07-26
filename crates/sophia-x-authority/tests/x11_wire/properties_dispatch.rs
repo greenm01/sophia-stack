@@ -251,6 +251,76 @@ fn x11_dispatch_get_selection_owner_reports_no_owner() {
 }
 
 #[test]
+fn x11_dispatch_get_selection_owner_reflects_same_namespace_updates() {
+    let namespace = NamespaceId::from_raw(45);
+    let other_namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let owner = 0x220010;
+    let selection = 7;
+
+    let create = decode_x11_core_request(
+        context(namespace, 545, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, owner, 0, 0, 300, 200),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let set_owner = decode_x11_core_request(
+        context(namespace, 546, XByteOrder::LittleEndian),
+        &set_selection_owner_request(
+            XByteOrder::LittleEndian,
+            owner,
+            selection,
+            10,
+        ),
+    )
+    .unwrap();
+    let set_owner = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 22),
+        set_owner,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(set_owner.outputs.is_empty());
+
+    let mut get_owner = |namespace, transaction, sequence, runtime: &mut XAuthorityRuntime| {
+        let request = decode_x11_core_request(
+            context(namespace, transaction, XByteOrder::LittleEndian),
+            &resource_request(XByteOrder::LittleEndian, 23, selection),
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 23),
+            request,
+            runtime,
+            &mut atoms,
+            &mut properties,
+        )
+        .encoded_outputs(XByteOrder::LittleEndian)
+    };
+
+    let visible = get_owner(namespace, 547, 3, &mut runtime);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &visible[0][8..12]),
+        owner
+    );
+    let confined = get_owner(other_namespace, 548, 4, &mut runtime);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &confined[0][8..12]),
+        0
+    );
+}
+
+#[test]
 fn x11_dispatch_accepts_root_button_grab_lifecycle() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();
@@ -674,4 +744,3 @@ fn x11_client_event_encoders_emit_32_byte_records() {
     assert_eq!(button[1], 1);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &button[2..4]), 13);
 }
-

@@ -60,6 +60,12 @@ require_value_at_most() {
 line_number() {
     grep -nEm1 "$1" "$2" | cut -d: -f1
 }
+line_number_after() {
+    local pattern="$1" file="$2" minimum="$3"
+    grep -nE "$pattern" "$file" |
+        cut -d: -f1 |
+        awk -v minimum="$minimum" '$1 > minimum { print; exit }'
+}
 
 require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
@@ -68,6 +74,9 @@ require_file "$RECOVERY_LOG"
 if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degraded)([[:space:]]|$))' \
     "$SESSION_LOG"; then
     fail "session log contains a Sophia error, panic, or degraded status"
+fi
+if grep -Fq 'Failed to become owner of clipboard selection' "$SESSION_LOG"; then
+    fail "Kitty could not acquire the X11 clipboard selection"
 fi
 
 require_line '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
@@ -84,7 +93,7 @@ require_line '^sophia_session_app schema=1 status=started id=terminal source=act
     "$SESSION_LOG" "Super-Enter did not launch a second Kitty"
 require_count_at_least \
     '^sophia_session_app schema=1 status=started id=terminal source=(startup|action)$' \
-    "$SESSION_LOG" 2 "two independent Kitty launches were not recorded"
+    "$SESSION_LOG" 3 "the startup, clipboard-peer, and desktop-relaunch Kittys were not recorded"
 require_line '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' \
     "$SESSION_LOG" "xmonad did not commit a layout"
 require_line '^sophia_live_wm schema=1 status=focus_committed .* target=surface$' \
@@ -115,6 +124,7 @@ for action in \
     3 \
     257 \
     258 \
+    259 \
     769; do
     require_line \
         "^sophia_live_wm schema=1 status=physical_action_committed action=${action}$" \
@@ -123,29 +133,73 @@ done
 startup_exit_line="$(
     line_number 'status=exited id=terminal source=startup exit_status=exit status: 0$' "$SESSION_LOG"
 )"
+clipboard_peer_line="$(
+    line_number 'status=started id=terminal source=action$' "$SESSION_LOG"
+)"
 desktop_pointer_line="$(
     line_number 'status=desktop_pointer_active source=post_startup_exit$' "$SESSION_LOG"
 )"
-super_enter_line="$(line_number 'status=physical_action_committed action=768$' "$SESSION_LOG")"
-action_terminal_line="$(
-    line_number 'status=started id=terminal source=action$' "$SESSION_LOG"
+super_enter_line="$(
+    line_number_after \
+        'status=physical_action_committed action=768$' \
+        "$SESSION_LOG" "$desktop_pointer_line"
 )"
-(( startup_exit_line < desktop_pointer_line
+action_terminal_line="$(
+    line_number_after \
+        'status=started id=terminal source=action$' \
+        "$SESSION_LOG" "$super_enter_line"
+)"
+(( clipboard_peer_line < startup_exit_line
+    && startup_exit_line < desktop_pointer_line
     && desktop_pointer_line < super_enter_line
     && super_enter_line < action_terminal_line )) ||
-    fail "last-window exit, pointer recovery, and Super-Enter launch are out of order"
+    fail "clipboard peer, last-window exit, pointer recovery, and desktop relaunch are out of order"
 require_line '^sophia_live_wm schema=1 status=hidden_focus_cleared transaction=[0-9]+$' \
     "$SESSION_LOG" "workspace-away did not clear Engine and X11 focus"
 require_line '^sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus$' \
     "$SESSION_LOG" "no key was suppressed while the workspace had no focus"
 workspace_away_line="$(line_number 'status=physical_action_committed action=258$' "$SESSION_LOG")"
+workspace_two_projection_line="$(
+    line_number \
+        'schema=2 status=workspace_projection_committed transaction=[0-9]+ output=1 workspace=2 visible_surfaces=0 focus=none$' \
+        "$SESSION_LOG"
+)"
 focus_clear_line="$(line_number 'status=hidden_focus_cleared ' "$SESSION_LOG")"
 suppressed_key_line="$(line_number 'status=key_suppressed reason=no_focus$' "$SESSION_LOG")"
-workspace_return_line="$(line_number 'status=physical_action_committed action=257$' "$SESSION_LOG")"
-(( workspace_away_line < focus_clear_line
+workspace_three_action_line="$(
+    line_number_after \
+        'status=physical_action_committed action=259$' \
+        "$SESSION_LOG" "$suppressed_key_line"
+)"
+workspace_three_projection_line="$(
+    line_number_after \
+        'schema=2 status=workspace_projection_committed transaction=[0-9]+ output=1 workspace=3 visible_surfaces=0 focus=none$' \
+        "$SESSION_LOG" "$workspace_three_action_line"
+)"
+workspace_return_line="$(
+    line_number_after \
+        'status=physical_action_committed action=257$' \
+        "$SESSION_LOG" "$workspace_three_projection_line"
+)"
+workspace_one_projection_line="$(
+    line_number_after \
+        'schema=2 status=workspace_projection_committed transaction=[0-9]+ output=1 workspace=1 visible_surfaces=[1-9][0-9]* focus=surface$' \
+        "$SESSION_LOG" "$workspace_return_line"
+)"
+workspace_focus_restore_line="$(
+    line_number_after \
+        'status=workspace_focus_restore_queued transaction=[0-9]+ surface=[0-9]+$' \
+        "$SESSION_LOG" "$workspace_one_projection_line"
+)"
+(( workspace_away_line < workspace_two_projection_line
+    && workspace_two_projection_line < focus_clear_line
     && focus_clear_line < suppressed_key_line
-    && suppressed_key_line < workspace_return_line )) ||
-    fail "hidden-workspace focus clearing and key suppression are out of order"
+    && suppressed_key_line < workspace_three_action_line
+    && workspace_three_action_line < workspace_three_projection_line
+    && workspace_three_projection_line < workspace_return_line
+    && workspace_return_line < workspace_one_projection_line
+    && workspace_one_projection_line < workspace_focus_restore_line )) ||
+    fail "workspace visibility, focus clearing, and focus restoration are out of order"
 require_line \
     '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
     "$SESSION_LOG" "two-output native ownership was not established"
@@ -191,10 +245,34 @@ cursor="$(
 [[ -n "$cursor" ]] || fail "final cursor health record is missing"
 require_value_at_least "$cursor" buttons_routed 2
 require_value_at_most "$cursor" max_update_msec 100
+require_eq "$cursor" hidden_updates 0
+keys="$(
+    grep -E '^sophia_live_session_keys schema=2 status=complete ' "$SESSION_LOG" |
+        tail -n 1
+)"
+[[ -n "$keys" ]] || fail "final held-key repeat evidence is missing"
+require_eq "$keys" pending 0
+require_eq "$keys" release_barrier_pending 0
+require_eq "$keys" repeat_active_seats 0
+require_value_at_least "$keys" repeat_routed 2
+require_eq "$keys" repeat_capacity_exhausted 0
+repeat_routed="$(field "$keys" repeat_routed)" ||
+    fail "held-key repeat evidence is missing repeat_routed"
+repeat_pulses="$(field "$keys" repeat_pulses)" ||
+    fail "held-key repeat evidence is missing repeat_pulses"
+[[ "$repeat_routed" == "$repeat_pulses" ]] ||
+    fail "held-key repeat did not drain exactly: routed=$repeat_routed pulses=$repeat_pulses"
 require_line '^sophia_live_session_health schema=1 status=clean .* wm_degraded=false$' \
     "$SESSION_LOG" "final session health was not clean"
 require_line '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" "normal session emitted an unexpected X protocol error"
+selection="$(
+    grep -E '^sophia_live_selection schema=1 status=complete ' "$SESSION_LOG" |
+        tail -n 1
+)"
+[[ -n "$selection" ]] || fail "final selection evidence is missing"
+require_value_at_least "$selection" owner_changes 1
+require_value_at_least "$selection" conversions 1
 require_line \
     '^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=[0-9]+ source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+ clip=(none|[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_-?[0-9]+) unit_scale=true$' \
     "$SESSION_LOG" "no pixel-matched DMA-BUF presentation was retired"

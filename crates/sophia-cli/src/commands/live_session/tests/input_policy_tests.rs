@@ -71,6 +71,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
     ];
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -90,6 +91,8 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -100,6 +103,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         false,
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
+        0,
         None,
     )
     .unwrap();
@@ -129,6 +133,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
     }];
     let (input_sender, input_receiver) = sync_channel(1);
     let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
@@ -143,6 +148,8 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
         &XAuthorityClientSurfaceRoutes::default(),
         &input_sender,
         &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
@@ -153,6 +160,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
         false,
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
+        0,
         None,
     )
     .unwrap();

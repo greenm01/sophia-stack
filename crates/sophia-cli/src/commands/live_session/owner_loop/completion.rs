@@ -13,6 +13,7 @@
         runtime_surfaces,
         physical_events,
         physical_keys_routed,
+        key_repeats_routed,
         physical_pointer_events,
         physical_pointer_routed,
         physical_pointer_buttons_routed,
@@ -159,23 +160,23 @@
     }
     if config.firefox_m8_proof {
         if !firefox_m8_proof.complete()
-            || firefox_m8_selection_owner_changes < 2
-            || firefox_m8_selection_conversions < 2
+            || selection_owner_changes < 2
+            || selection_conversions < 2
         {
             return Err(format!(
                 "Firefox M8 proof incomplete: stages={}/{} selection_owner_changes={} selection_conversions={}",
                 firefox_m8_proof.completed_stage,
                 FirefoxM8StageProof::STAGES.len(),
-                firefox_m8_selection_owner_changes,
-                firefox_m8_selection_conversions,
+                selection_owner_changes,
+                selection_conversions,
             )
             .into());
         }
         println!(
             "sophia_firefox_m8 schema=1 status=complete stages={} selection_owner_changes={} selection_conversions={} content=redacted",
             firefox_m8_proof.completed_stage,
-            firefox_m8_selection_owner_changes,
-            firefox_m8_selection_conversions,
+            selection_owner_changes,
+            selection_conversions,
         );
     }
     if config.inject_surface_resize.is_some() && !resize_proof_complete {
@@ -281,7 +282,7 @@
         );
     }
     println!(
-        "sophia_live_session_cursor schema=3 moves_coalesced={} max_motion_to_submit_msec={} max_update_msec={} deferred_primary_in_flight={} buttons_routed={} hardware_updates={} hardware_failures={}",
+        "sophia_live_session_cursor schema=3 moves_coalesced={} max_motion_to_submit_msec={} max_update_msec={} deferred_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.as_millis(),
         native_scanout
@@ -294,6 +295,9 @@
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.cursor_updates),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_hidden_updates),
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.cursor_update_failures),
@@ -315,6 +319,10 @@
     println!(
         "sophia_live_session_protocol_errors schema=1 expected={} unexpected={}",
         expected_protocol_error_count, protocol_error_count,
+    );
+    println!(
+        "sophia_live_selection schema=1 status=complete owner_changes={} conversions={} content=redacted",
+        selection_owner_changes, selection_conversions,
     );
 
     let present_observation = &present_observer;
@@ -598,8 +606,9 @@
         return Err("persistent session controls did not drain cleanly".into());
     }
     let key_metrics = client_keys.metrics();
+    let repeat_metrics = key_repeat.metrics();
     println!(
-        "sophia_live_session_keys schema=1 status=complete pending={} release_barrier_pending={} peak_pressed={} synthetic_releases={} state_only_releases={} orphan_releases_suppressed={} removed_surface_keys={}",
+        "sophia_live_session_keys schema=2 status=complete pending={} release_barrier_pending={} peak_pressed={} synthetic_releases={} state_only_releases={} orphan_releases_suppressed={} removed_surface_keys={} repeat_active_seats={} repeat_armed={} repeat_routed={} repeat_pulses={} repeat_coalesced={} repeat_cancelled={} repeat_capacity_exhausted={}",
         client_keys.pending_len(),
         client_key_release_barrier.len(),
         key_metrics.peak_pressed,
@@ -607,8 +616,20 @@
         key_metrics.state_only_releases,
         key_metrics.orphan_releases_suppressed,
         key_metrics.removed_surface_keys,
+        key_repeat.active_seats(),
+        repeat_metrics.armed,
+        key_repeats_routed,
+        repeat_metrics.pulses,
+        repeat_metrics.coalesced,
+        repeat_metrics.cancelled,
+        repeat_metrics.seat_capacity_exhausted,
     );
-    if client_keys.pending_len() != 0 || !client_key_release_barrier.is_empty() {
+    if client_keys.pending_len() != 0
+        || !client_key_release_barrier.is_empty()
+        || key_repeat.active_seats() != 0
+        || repeat_metrics.seat_capacity_exhausted != 0
+        || repeat_metrics.pulses != u64::try_from(key_repeats_routed).unwrap_or(u64::MAX)
+    {
         return Err("persistent client key state did not drain cleanly".into());
     }
     Ok(())

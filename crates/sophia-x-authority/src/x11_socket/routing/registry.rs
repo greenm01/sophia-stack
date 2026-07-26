@@ -650,26 +650,15 @@ impl XServerFrontendRouteRegistry {
             .or_insert_with(crate::XCorePointerMapper::new);
         let time_msec = u32::try_from(route.request.time_msec).unwrap_or(u32::MAX);
         let event = match route.request.kind {
-            InputEventKind::Key { keycode, pressed } => {
-                if let Some(grab) = self
-                    .input_authority
-                    .lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .keyboard_grab(surface_route.namespace)
-                {
-                    client = XServerFrontendClientId(grab.owner);
-                    target_window = Some(if grab.owner_events && client == surface_route.client {
-                        surface_route.window
-                    } else {
-                        grab.window
-                    });
-                }
-                let Some((keycode, state, modifiers_after)) =
-                    self.xkb_worker.request(XkbWorkerCommand::Key {
-                    seat: route.request.seat,
-                    keycode,
-                    pressed,
-                })?
+            InputEventKind::Key { .. } => {
+                let XKeyboardRouteResolution::Routed(resolved) = resolve_x_keyboard_input(
+                    &route,
+                    surface_route,
+                    &self.input_authority,
+                    &self.xkb_worker,
+                    pointer.state(),
+                    time_msec,
+                )?
                 else {
                     return self.send_input_delivery(
                         client,
@@ -677,35 +666,9 @@ impl XServerFrontendRouteRegistry {
                         XAuthorityInputDeliveryOutcome::RouteRejected,
                     );
                 };
-                let passive = if pressed {
-                    self.input_authority
-                        .lock()
-                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                        .activate_key(surface_route.namespace, keycode, state & 0xff)
-                } else {
-                    None
-                };
-                if let Some(grab) = passive {
-                    client = XServerFrontendClientId(grab.owner);
-                    target_window = Some(if grab.owner_events && client == surface_route.client {
-                        surface_route.window
-                    } else {
-                        grab.window
-                    });
-                }
-                if !pressed {
-                    self.input_authority
-                        .lock()
-                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                        .release_key(surface_route.namespace, keycode);
-                }
-                XAuthorityInputEvent::Key(XAuthorityKeyEvent {
-                    keycode,
-                    pressed,
-                    state: state | pointer.state(),
-                    modifiers_after: modifiers_after as u8,
-                    time_msec,
-                })
+                client = resolved.client;
+                target_window = resolved.target_window;
+                resolved.event
             }
             InputEventKind::PointerMotion => {
                 if let Some(grab) = self
