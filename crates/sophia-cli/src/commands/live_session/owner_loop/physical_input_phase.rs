@@ -232,6 +232,18 @@ macro_rules! drain_physical_input {
                 );
                 input_observations.pointer_button_routed = true;
             }
+            if !input_observations.client_positioned_pointer_button_routed
+                && report
+                    .pointer_button_targets
+                    .iter()
+                    .copied()
+                    .any(|surface| layout.is_client_positioned(surface))
+            {
+                println!(
+                    "sophia_live_session_pointer schema=4 status=target_routed role=client_positioned kind=button"
+                );
+                input_observations.client_positioned_pointer_button_routed = true;
+            }
             if !input_observations.pointer_axis_observed && report.pointer_axes_observed > 0 {
                 println!("sophia_live_session_pointer schema=3 status=axis_observed");
                 input_observations.pointer_axis_observed = true;
@@ -239,6 +251,18 @@ macro_rules! drain_physical_input {
             if !input_observations.pointer_axis_routed && report.pointer_axes_routed > 0 {
                 println!("sophia_live_session_pointer schema=3 status=axis_routed");
                 input_observations.pointer_axis_routed = true;
+            }
+            if !input_observations.client_positioned_pointer_axis_routed
+                && report
+                    .pointer_axis_targets
+                    .iter()
+                    .copied()
+                    .any(|surface| layout.is_client_positioned(surface))
+            {
+                println!(
+                    "sophia_live_session_pointer schema=4 status=target_routed role=client_positioned kind=axis"
+                );
+                input_observations.client_positioned_pointer_axis_routed = true;
             }
             if input_observations.pointer_motion_observed
                 || input_observations.pointer_button_observed

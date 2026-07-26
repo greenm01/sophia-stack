@@ -1,6 +1,5 @@
 use glow::HasContext;
 use std::{
-    cell::Cell,
     ffi::c_void,
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -8,6 +7,8 @@ use std::{
 use crate::NativeEglDrawSmokeStatus;
 #[cfg(feature = "gbm-platform")]
 use crate::{NativeCompositionPixelMetrics, native_composition_pixel_metrics};
+#[cfg(feature = "gbm-platform")]
+use std::cell::Cell;
 
 #[cfg(feature = "gbm-platform")]
 const FULLSCREEN_QUAD_VERTICES: [f32; 16] = [
@@ -36,6 +37,7 @@ pub(crate) struct GlCompositionRect {
     pub height: i32,
 }
 
+#[cfg(feature = "gbm-platform")]
 pub(crate) struct GlCpuLayer<'a> {
     pub width: u32,
     pub height: u32,

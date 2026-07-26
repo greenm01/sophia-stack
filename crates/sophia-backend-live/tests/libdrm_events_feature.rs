@@ -90,17 +90,17 @@ use sophia_backend_live::{
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
     LiveCpuComposedFrame, LiveGbmEglFrameTargetStatus, LiveProductionCursorPresentation,
-    LiveProductionOutputRuntimeSet, LiveProductionOutputServiceState, LiveProductionScanoutContent,
+    LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
     NativeGbmRenderedScanoutBufferDiscoveryExporter, NativeGbmRenderedScanoutContextStatus,
     RealAtomicScanoutSmokeConfig, RenderDeviceDiscoveryBackend,
-    live_production_scanout_is_stable_present, reduce_live_production_async_service_observation,
+    live_production_scanout_is_stable_present, reduce_output_native_frame_phase,
 };
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
     LiveRendererImportHealth, LiveRendererImportPathStatus, LiveRendererRuntimeObservation,
     LiveRendererSelectionObservation, real_atomic_runtime_rendered_scanout_renderer_observation,
 };
-use sophia_engine::AuthorityTransactionIntake;
+use sophia_engine::{AuthorityTransactionIntake, OutputNativeFramePhase};
 use sophia_protocol::{
     AuthorityKind, BufferSource, NamespaceId, Rect, Region, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId,

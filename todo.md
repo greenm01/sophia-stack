@@ -42,10 +42,12 @@ fresh surfaces is safe on the current AMDGPU stack: both fail on the third
 mixed render. Mixed composition therefore keeps one complete target per export
 as the correctness baseline. Retirement-driven target pooling remains a
 post-soak optimization unless measured latency prevents promotion. The latest
-xmobar run established bar-plus-Kitty presentation but also confirmed that
-managed windows still occupy the full output beneath the overlay. The
-immediate status-bar blocker is reducing the client's strut into a
-protocol-neutral work area before asking the blind WM to relayout.
+xmobar run established the protocol-neutral work-area path on both outputs:
+the 14-pixel top reservation produced reduced managed geometry, 162 mixed
+exports completed without native failure, and teardown was clean. That run
+was exploratory rather than a promotion capture; it did not exercise the
+bar-pointer, held-repeat, clipboard, post-last-window pointer, workspace, and
+VT assertions required by the strict physical gate.
 
 ## Daily-Driver Promotion Contract
 
@@ -132,6 +134,16 @@ Promotion now follows the gates below in order.
   latency.
 - [ ] Retain focused rollback, resize, output-change, and recovery regressions
   proving resources retire exactly once.
+- [x] Replace the transient aggregate async-service booleans with one
+  Engine-owned, output-scoped frame-service reducer. Backend-live must execute
+  only named native effects, reobserve after each effect, and remain bounded
+  when callbacks or cleanup do not advance. The reducer now validates one
+  stable primary and bounded unique output set, orders per-output retirement
+  before presentation, reserves the primary queued-Present path without
+  starving secondary pending frames, and issues each effect at most once per
+  service pass.
+- [ ] Re-run the xmobar, four-Kitty, and normal xmonad gates from the same
+  frame-lifecycle commit with no latency, ordering, or resource regression.
 
 ### 9.2 Complete physical xmonad workflow
 
@@ -239,6 +251,10 @@ Promotion now follows the gates below in order.
   occluded Kitty pixels, working bar pointer interaction, unchanged Kitty
   keyboard focus, one workspace round-trip, one VT round-trip, and clean
   teardown.
+  The first post-work-area run applied `y=14` on both outputs and retained
+  matching managed pixels with clean teardown. It remains partial because it
+  did not record a client-positioned pointer target, a VT round-trip, or the
+  complete focused interaction sequence.
 
 Milestone 9 exits only when the automated resize regression and both physical
 normal/emergency captures pass from the same committed release.

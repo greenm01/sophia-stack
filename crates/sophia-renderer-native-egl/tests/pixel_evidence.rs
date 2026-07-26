@@ -1,8 +1,10 @@
+#[cfg(feature = "gbm-platform")]
+use sophia_renderer_native_egl::{NativeCpuTextureUpload, native_cpu_texture_upload};
 use sophia_renderer_native_egl::{
-    NativeCpuTextureUpload, native_composition_pixel_metrics,
-    native_composition_pixel_metrics_from_rows, native_cpu_texture_upload,
+    native_composition_pixel_metrics, native_composition_pixel_metrics_from_rows,
 };
 
+#[cfg(feature = "gbm-platform")]
 #[test]
 fn cpu_texture_upload_reallocates_only_when_layer_extent_changes() {
     assert_eq!(

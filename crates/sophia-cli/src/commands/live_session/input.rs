@@ -6,8 +6,10 @@ struct PhysicalInputRouteReport {
     keys_suppressed_no_focus: usize,
     pointer_buttons_observed: usize,
     pointer_buttons_routed: usize,
+    pointer_button_targets: Vec<SurfaceId>,
     pointer_axes_observed: usize,
     pointer_axes_routed: usize,
+    pointer_axis_targets: Vec<SurfaceId>,
     keys_routed: usize,
     pointer_events: usize,
     pointer_routed: usize,
@@ -258,7 +260,9 @@ fn route_input_events(
         pointer_axes_observed: 0,
         pointer_routed: 0,
         pointer_buttons_routed: 0,
+        pointer_button_targets: Vec::new(),
         pointer_axes_routed: 0,
+        pointer_axis_targets: Vec::new(),
         deliveries: Vec::new(),
         emergency_exit: false,
         return_suppressed: false,
@@ -545,9 +549,11 @@ fn route_input_events(
                 report.pointer_routed = report.pointer_routed.saturating_add(1);
                 if is_button {
                     report.pointer_buttons_routed = report.pointer_buttons_routed.saturating_add(1);
+                    report.pointer_button_targets.push(surface);
                 }
                 if is_axis {
                     report.pointer_axes_routed = report.pointer_axes_routed.saturating_add(1);
+                    report.pointer_axis_targets.push(surface);
                 }
                 report.deliveries.push(delivery);
             }

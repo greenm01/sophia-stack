@@ -130,7 +130,10 @@ must not observe a partially applied surface or WM transaction.
 The frame domain owns frame epochs, scheduling decisions, page-flip state,
 presentation feedback, and resource retirement. It converts visual changes and
 backend observations into bounded frame work without absorbing renderer or
-protocol state.
+protocol state. Its output-scoped service reducer observes one immutable
+record per output and emits named retirement or submission effects. The live
+backend executes those effects and reobserves native state; it does not infer
+scheduling policy from aggregate readiness booleans.
 
 ### Render Planning
 

@@ -508,9 +508,14 @@ impl LiveProductionVisualRuntime {
         if native_scanout.output_index(primary_output) != Some(primary_index) {
             return Err("persistent backend and native primary output ordering diverged".into());
         }
-        let output_states = self.native_output_service_states(native_scanout)?;
-        if reduce_live_production_async_service_observation(&output_states, true)?
-            .present_output_blocked
+        if self
+            .outputs
+            .output_native_scanout_in_flight(primary_index)
+            .ok_or("persistent backend primary in-flight state was not registered")?
+            || self
+                .outputs
+                .output_native_cleanup_pending(primary_index)
+                .ok_or("persistent backend primary cleanup state was not registered")?
         {
             return self.run_observation_tick();
         }

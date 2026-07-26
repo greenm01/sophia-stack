@@ -599,10 +599,9 @@
                             !stable,
                         );
                     }
-                    if let Some(tick) = service.tick {
-                        metrics.backend_ticks = metrics.backend_ticks.saturating_add(1);
-                        let _ = tick;
-                    }
+                    metrics.backend_ticks = metrics
+                        .backend_ticks
+                        .saturating_add(service.ticks.len());
                     metrics.runtime_surfaces =
                         u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
                     reconcile_initial_session_focus(InitialSessionFocusContext {

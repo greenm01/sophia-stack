@@ -153,86 +153,79 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
-    pub fn run_native_idle(
+    pub(super) fn run_native_pending_output(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
-    ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
-        self.run_native_idle_with_primary_reservation(native_scanout, false)
-    }
-
-    pub(super) fn run_native_idle_with_primary_reservation(
-        &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
-        reserve_primary: bool,
+        selected_output: OutputId,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();
-        let output_count = self.outputs.output_count();
-        let primary_index = self
+        let index = self
             .outputs
-            .primary_output()
-            .and_then(|output| self.outputs.output_index(output))
-            .ok_or("persistent backend runtime has no primary output")?;
-        let production = &self.production;
-        let outputs = &mut self.outputs;
-        let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
-            output_count,
-            |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
-                let output = outputs
-                    .values_mut()
-                    .nth(index)
-                    .ok_or("production output index was not registered")?;
-                output
-                    .runtime
-                    .assembly_mut()
-                    .replace_committed_surfaces(committed.to_vec());
-                if (reserve_primary && index == primary_index)
-                    || output.runtime.rendered_primary_plane_scanout_in_flight()
-                    || output
-                        .runtime
-                        .rendered_primary_plane_scanout_cleanup_pending()
-                    || !native_scanout.pending_frame(index)
-                {
-                    return Ok(None);
-                }
-                Ok(Some(native_scanout.run_tick(
-                    index,
-                    &mut output.runtime,
-                    compositor_tick_input(&transactions, 0, Vec::new(), None),
-                )?))
-            },
-        );
-        production
-            .run_outputs(&mut adapter)?
-            .into_iter()
-            .flatten()
-            .next()
-            .ok_or_else(|| "persistent native idle tick had no pending output".into())
+            .output_index(selected_output)
+            .ok_or("frame service selected an unknown output")?;
+        let committed = self.production.committed_surfaces().to_vec();
+        let output = self
+            .outputs
+            .values_mut()
+            .nth(index)
+            .ok_or("production output index was not registered")?;
+        output
+            .runtime
+            .assembly_mut()
+            .replace_committed_surfaces(committed);
+        if output.runtime.rendered_primary_plane_scanout_in_flight()
+            || output
+                .runtime
+                .rendered_primary_plane_scanout_cleanup_pending()
+            || !native_scanout.pending_frame(index)
+        {
+            return Err("frame service selected an output that is not ready".into());
+        }
+        native_scanout.run_tick(
+            index,
+            &mut output.runtime,
+            compositor_tick_input(&transactions, 0, Vec::new(), None),
+        )
     }
 
     pub fn retire_native_scanout(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
-        let output_count = self.outputs.output_count();
-        let production = &self.production;
-        let outputs = &mut self.outputs;
-        let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
-            output_count,
-            |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
-                let output = outputs
-                    .values_mut()
-                    .nth(index)
-                    .ok_or("production output index was not registered")?;
-                output
-                    .runtime
-                    .assembly_mut()
-                    .replace_committed_surfaces(committed.to_vec());
-                native_scanout.retire_ready_and_retry_cleanup(index, &mut output.runtime)
-            },
-        );
-        let _ = production.run_outputs(&mut adapter)?;
-        if let Some(primary) = self.outputs.primary_output()
-            && let Some((ust, msc)) = native_scanout.take_presentation_feedback(primary)
+        let outputs = (0..self.outputs.output_count())
+            .filter_map(|index| self.outputs.output_id(index))
+            .collect::<Vec<_>>();
+        let mut retired_present = None;
+        for output in outputs {
+            if let Some(retired) = self.retire_native_scanout_output(native_scanout, output)? {
+                retired_present = Some(retired);
+            }
+        }
+        Ok(retired_present)
+    }
+
+    pub(super) fn retire_native_scanout_output(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        selected_output: OutputId,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        let index = self
+            .outputs
+            .output_index(selected_output)
+            .ok_or("frame service selected an unknown retirement output")?;
+        let committed = self.production.committed_surfaces().to_vec();
+        let output = self
+            .outputs
+            .values_mut()
+            .nth(index)
+            .ok_or("production output index was not registered")?;
+        output
+            .runtime
+            .assembly_mut()
+            .replace_committed_surfaces(committed);
+        native_scanout.retire_ready_and_retry_cleanup(index, &mut output.runtime)?;
+        if self.outputs.primary_output() == Some(selected_output)
+            && let Some((ust, msc)) = native_scanout.take_presentation_feedback(selected_output)
         {
             return self.finalize_gpu_page_flip(ust, msc);
         }

@@ -36,6 +36,10 @@ bash -n tools/resolve_sophia_xmobar.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh
+bash -n tools/start_sophia_xmonad_xmobar_tty3.sh
+bash -n tools/verify_sophia_xmonad_xmobar.sh
+bash -n tools/check_sophia_xmonad_xmobar_verifier.sh
+tools/check_sophia_xmonad_xmobar_verifier.sh
 bash -n tools/install_and_run_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/verify_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/check_sophia_xmonad_input_proof_verifier.sh

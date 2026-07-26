@@ -67,123 +67,104 @@ pub struct LiveProductionRetiredPresent {
 
 #[derive(Debug)]
 pub struct LiveProductionNativeServiceReport {
-    pub tick: Option<LiveBackendRuntimeTickReport>,
+    pub ticks: Vec<LiveBackendRuntimeTickReport>,
     pub retired_present: Option<LiveProductionRetiredPresent>,
-    pub retirement_polled: bool,
-    pub present_polled: bool,
-    pub pending_frame_polled: bool,
+    pub effects: Vec<OutputFrameServiceEffect>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LiveProductionOutputServiceState {
-    pub output: OutputId,
-    pub primary: bool,
-    pub in_flight: bool,
-    pub cleanup_pending: bool,
-    pub frame_pending: bool,
-}
-
-pub fn reduce_live_production_async_service_observation(
-    outputs: &[LiveProductionOutputServiceState],
-    present_queued: bool,
-) -> Result<ProductionAsyncServiceObservation, &'static str> {
-    if outputs.iter().filter(|output| output.primary).count() != 1 {
-        return Err("production async service requires exactly one primary output");
+pub const fn reduce_output_native_frame_phase(
+    in_flight: bool,
+    cleanup_pending: bool,
+) -> OutputNativeFramePhase {
+    if cleanup_pending {
+        OutputNativeFramePhase::CleanupPending
+    } else if in_flight {
+        OutputNativeFramePhase::InFlight
+    } else {
+        OutputNativeFramePhase::Idle
     }
-    let primary = outputs
-        .iter()
-        .find(|output| output.primary)
-        .expect("validated above");
-    Ok(ProductionAsyncServiceObservation {
-        retirement_required: outputs
-            .iter()
-            .any(|output| output.in_flight || output.cleanup_pending),
-        present_output_blocked: primary.in_flight || primary.cleanup_pending,
-        present_queued,
-        pending_output_ready: outputs.iter().any(|output| {
-            output.frame_pending
-                && !output.in_flight
-                && !output.cleanup_pending
-                && (!present_queued || !output.primary)
-        }),
-    })
 }
 
 impl LiveProductionVisualRuntime {
-    pub fn native_output_service_states(
+    pub fn native_output_service_request(
         &self,
         native_scanout: &LiveProductionNativeScanout,
-    ) -> Result<Vec<LiveProductionOutputServiceState>, Box<dyn std::error::Error>> {
+    ) -> Result<OutputFrameServiceRequest, Box<dyn std::error::Error>> {
         let primary = self
             .outputs
             .primary_output()
             .ok_or("persistent backend runtime has no primary output")?;
-        (0..self.output_count())
+        let outputs = (0..self.output_count())
             .map(|index| {
                 let output = self
                     .outputs
                     .output_id(index)
                     .ok_or("production output index was not registered")?;
-                Ok(LiveProductionOutputServiceState {
+                let in_flight = self
+                    .outputs
+                    .output_native_scanout_in_flight(index)
+                    .ok_or("production output in-flight state was not registered")?;
+                let cleanup_pending = self
+                    .outputs
+                    .output_native_cleanup_pending(index)
+                    .ok_or("production output cleanup state was not registered")?;
+                Ok(OutputFrameServiceObservation {
                     output,
                     primary: output == primary,
-                    in_flight: self
-                        .outputs
-                        .output_native_scanout_in_flight(index)
-                        .ok_or("production output in-flight state was not registered")?,
-                    cleanup_pending: self
-                        .outputs
-                        .output_native_cleanup_pending(index)
-                        .ok_or("production output cleanup state was not registered")?,
-                    frame_pending: native_scanout.pending_frame(index),
+                    native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
+                    pending_frame: native_scanout.pending_frame(index),
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+        Ok(OutputFrameServiceRequest {
+            outputs,
+            presentation_queued: self.diagnostics().present_queued
+                && !self.diagnostics().present_scheduling_blocked,
+        })
     }
 
     pub fn service_native(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<LiveProductionNativeServiceReport, Box<dyn std::error::Error>> {
-        let mut coordinator = ProductionAsyncServiceCoordinator::new();
-        let mut tick = None;
+        let initial = self.native_output_service_request(native_scanout)?;
+        let mut reducer = OutputFrameServiceReducer::begin(&initial)
+            .map_err(|error| format!("invalid output frame service state: {error:?}"))?;
+        let mut ticks = Vec::new();
         let mut retired_present = None;
-        let mut retirement_polled = false;
-        let mut present_polled = false;
-        let mut pending_frame_polled = false;
+        let mut effects = Vec::new();
         loop {
-            let output_states = self.native_output_service_states(native_scanout)?;
-            let observation = reduce_live_production_async_service_observation(
-                &output_states,
-                self.diagnostics().present_queued && !self.diagnostics().present_scheduling_blocked,
-            )?;
-            let phase = coordinator.next_phase(observation);
-            match phase {
-                Some(ProductionAsyncServicePhase::KmsRetire) => {
-                    retirement_polled = true;
-                    retired_present = self.retire_native_scanout(native_scanout)?;
+            let observation = self.native_output_service_request(native_scanout)?;
+            let Some(effect) = reducer
+                .next_effect(&observation)
+                .map_err(|error| format!("output frame service reduction failed: {error:?}"))?
+            else {
+                break;
+            };
+            effects.push(effect);
+            match effect {
+                OutputFrameServiceEffect::PollRetirement { output } => {
+                    if let Some(retired) =
+                        self.retire_native_scanout_output(native_scanout, output)?
+                    {
+                        retired_present = Some(retired);
+                    }
                 }
-                Some(ProductionAsyncServicePhase::SchedulePresent) => {
-                    present_polled = true;
-                    tick = Some(self.drive_gpu_presentation(Some(native_scanout))?);
+                OutputFrameServiceEffect::SubmitQueuedPresentation { output } => {
+                    if output != reducer.primary() {
+                        return Err("queued presentation targeted a non-primary output".into());
+                    }
+                    ticks.push(self.drive_gpu_presentation(Some(native_scanout))?);
                 }
-                Some(ProductionAsyncServicePhase::SubmitPendingFrame) => {
-                    pending_frame_polled = true;
-                    tick = Some(self.run_native_idle_with_primary_reservation(
-                        native_scanout,
-                        self.diagnostics().present_queued
-                            && !self.diagnostics().present_scheduling_blocked,
-                    )?);
+                OutputFrameServiceEffect::SubmitPendingFrame { output } => {
+                    ticks.push(self.run_native_pending_output(native_scanout, output)?);
                 }
-                None => break,
             }
         }
         Ok(LiveProductionNativeServiceReport {
-            tick,
+            ticks,
             retired_present,
-            retirement_polled,
-            present_polled,
-            pending_frame_polled,
+            effects,
         })
     }
 }

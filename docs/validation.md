@@ -380,6 +380,28 @@ Validate verifier changes with:
 tools/check_sophia_xmonad_four_kitty_verifier.sh
 ```
 
+For the focused unmodified-xmobar work-area gate, use:
+
+```sh
+tools/start_sophia_xmonad_xmobar_tty3.sh
+tools/verify_sophia_xmonad_xmobar.sh
+```
+
+Follow the launcher's exact click, scroll, workspace, VT, and normal-logout
+sequence. The verifier requires one active reservation reduced across both
+outputs, exact top-edge work-area geometry, pixel-matched managed presentation
+below the bar, and both button and axis routing to a generic
+`ClientPositioned` surface. It also requires workspace return, seat
+suspend/resume, clean native drain, an untriggered emergency guard, and exact
+TTY restoration. The role evidence is application-agnostic: the Engine and
+live input path do not identify xmobar or any other bar implementation.
+
+Validate changes to this focused verifier with:
+
+```sh
+tools/check_sophia_xmonad_xmobar_verifier.sh
+```
+
 For the bounded Super-Enter overload regression, use:
 
 ```sh

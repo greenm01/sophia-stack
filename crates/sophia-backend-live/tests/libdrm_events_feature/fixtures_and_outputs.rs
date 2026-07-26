@@ -417,119 +417,23 @@ fn production_output_runtime_resolves_primary_by_output_identity() {
 
 #[cfg(feature = "gbm-probe")]
 #[test]
-fn output_scoped_service_retires_secondary_without_blocking_primary_present() {
-    let observation = reduce_live_production_async_service_observation(
-        &[
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(9),
-                primary: false,
-                in_flight: true,
-                cleanup_pending: false,
-                frame_pending: true,
-            },
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(3),
-                primary: true,
-                in_flight: false,
-                cleanup_pending: false,
-                frame_pending: false,
-            },
-        ],
-        true,
-    )
-    .unwrap();
-
-    assert!(observation.retirement_required);
-    assert!(!observation.present_output_blocked);
-    assert!(observation.present_queued);
-    assert!(!observation.pending_output_ready);
-}
-
-#[cfg(feature = "gbm-probe")]
-#[test]
-fn output_scoped_service_selects_idle_pending_output_while_primary_is_blocked() {
-    let observation = reduce_live_production_async_service_observation(
-        &[
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(3),
-                primary: true,
-                in_flight: true,
-                cleanup_pending: false,
-                frame_pending: false,
-            },
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(9),
-                primary: false,
-                in_flight: false,
-                cleanup_pending: false,
-                frame_pending: true,
-            },
-        ],
-        false,
-    )
-    .unwrap();
-
-    assert!(observation.retirement_required);
-    assert!(observation.present_output_blocked);
-    assert!(observation.pending_output_ready);
-}
-
-#[cfg(feature = "gbm-probe")]
-#[test]
-fn queued_present_reserves_idle_primary_from_pending_cpu_frame() {
-    let observation = reduce_live_production_async_service_observation(
-        &[
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(3),
-                primary: true,
-                in_flight: false,
-                cleanup_pending: false,
-                frame_pending: true,
-            },
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(9),
-                primary: false,
-                in_flight: true,
-                cleanup_pending: false,
-                frame_pending: false,
-            },
-        ],
-        true,
-    )
-    .unwrap();
-
-    assert!(observation.present_queued);
-    assert!(!observation.present_output_blocked);
-    assert!(!observation.pending_output_ready);
-}
-
-#[cfg(feature = "gbm-probe")]
-#[test]
-fn queued_present_still_allows_idle_secondary_pending_frame() {
-    let observation = reduce_live_production_async_service_observation(
-        &[
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(3),
-                primary: true,
-                in_flight: false,
-                cleanup_pending: false,
-                frame_pending: true,
-            },
-            LiveProductionOutputServiceState {
-                output: OutputId::from_raw(9),
-                primary: false,
-                in_flight: false,
-                cleanup_pending: false,
-                frame_pending: true,
-            },
-        ],
-        true,
-    )
-    .unwrap();
-
-    assert!(observation.present_queued);
-    assert!(!observation.present_output_blocked);
-    assert!(observation.pending_output_ready);
+fn output_service_reduces_native_resource_state_without_handles() {
+    assert_eq!(
+        reduce_output_native_frame_phase(false, false),
+        OutputNativeFramePhase::Idle
+    );
+    assert_eq!(
+        reduce_output_native_frame_phase(true, false),
+        OutputNativeFramePhase::InFlight
+    );
+    assert_eq!(
+        reduce_output_native_frame_phase(false, true),
+        OutputNativeFramePhase::CleanupPending
+    );
+    assert_eq!(
+        reduce_output_native_frame_phase(true, true),
+        OutputNativeFramePhase::CleanupPending
+    );
 }
 
 impl FakeRenderedScanoutExporter {
