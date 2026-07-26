@@ -1,7 +1,7 @@
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayList, FocusedSurfaceBorderStyle, HeadlessOutput,
-    OutputFrameDamageError, OutputFramePresentationState, OutputRepaintPlan,
-    focused_surface_display_list, output_frame_damage, output_frame_damage_snapshot,
+    CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageError,
+    OutputFramePresentationState, OutputRepaintPlan, SurfaceChromeStyle, output_frame_damage,
+    output_frame_damage_snapshot, surface_chrome_display_list,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
@@ -44,12 +44,12 @@ fn initial_output_snapshot_requires_full_damage_and_stable_state_requires_none()
         },
         1,
     );
-    let display_list = focused_surface_display_list(
+    let display_list = surface_chrome_display_list(
         output.id,
         &[surface],
         std::slice::from_ref(&committed),
         Some(surface),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let snapshot =
@@ -99,12 +99,12 @@ fn client_generation_geometry_and_stacking_changes_damage_old_and_new_extents() 
     ];
     let before = output_frame_damage_snapshot(
         output,
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output.id,
             &[first, second],
             &before_states,
             None,
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         )
         .unwrap(),
         &before_states,
@@ -113,12 +113,12 @@ fn client_generation_geometry_and_stacking_changes_damage_old_and_new_extents() 
     .unwrap();
     let generation_changed = output_frame_damage_snapshot(
         output,
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output.id,
             &[first, second],
             &after_states,
             None,
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         )
         .unwrap(),
         &after_states,
@@ -130,12 +130,12 @@ fn client_generation_geometry_and_stacking_changes_damage_old_and_new_extents() 
 
     let reordered = output_frame_damage_snapshot(
         output,
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output.id,
             &[second, first],
             &after_states,
             None,
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         )
         .unwrap(),
         &after_states,
@@ -189,12 +189,12 @@ fn compositor_focus_and_software_cursor_share_one_combined_damage_region() {
     };
     let before = output_frame_damage_snapshot(
         output,
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output.id,
             &[first, second],
             &states,
             Some(first),
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         )
         .unwrap(),
         &states,
@@ -203,12 +203,12 @@ fn compositor_focus_and_software_cursor_share_one_combined_damage_region() {
     .unwrap();
     let after = output_frame_damage_snapshot(
         output,
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output.id,
             &[first, second],
             &states,
             Some(second),
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         )
         .unwrap(),
         &states,

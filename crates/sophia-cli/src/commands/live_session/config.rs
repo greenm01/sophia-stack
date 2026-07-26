@@ -1,68 +1,8 @@
-fn output_topology_from_engine_outputs(
-    outputs: &[sophia_engine::HeadlessOutput],
-) -> Result<sophia_protocol::OutputTopologySnapshot, Box<dyn std::error::Error>> {
-    let primary = outputs
-        .first()
-        .ok_or("live session requires at least one Engine output")?
-        .id;
-    let mut logical_x = 0i32;
-    let entries = outputs
-        .iter()
-        .map(|output| {
-            let scale = output.scale.max(1);
-            let scale_i32 = i32::try_from(scale).unwrap_or(i32::MAX);
-            let logical_size = Size {
-                width: output.size.width.saturating_div(scale_i32).max(1),
-                height: output.size.height.saturating_div(scale_i32).max(1),
-            };
-            let logical = Rect {
-                x: logical_x,
-                y: 0,
-                width: logical_size.width,
-                height: logical_size.height,
-            };
-            logical_x = logical_x.saturating_add(logical_size.width);
-            sophia_protocol::OutputTopologyEntry {
-                output: output.id,
-                logical,
-                pixel_size: output.size,
-                scale,
-                refresh_millihz: 60_000,
-            }
-        })
-        .collect();
-    let snapshot = sophia_protocol::OutputTopologySnapshot {
-        generation: 1,
-        primary,
-        outputs: entries,
-    };
-    snapshot
-        .validate()
-        .map_err(|error| -> Box<dyn std::error::Error> {
-            format!("invalid live Engine output topology: {error:?}").into()
-        })?;
-    Ok(snapshot)
-}
-
-fn wm_output_bounds(
-    outputs: &[sophia_engine::HeadlessOutput],
-) -> Vec<(sophia_protocol::OutputId, Rect)> {
-    let mut x = 0;
-    outputs
-        .iter()
-        .map(|output| {
-            let scale = i32::try_from(output.scale.max(1)).unwrap_or(i32::MAX);
-            let bounds = Rect {
-                x,
-                y: 0,
-                width: output.size.width.saturating_div(scale).max(1),
-                height: output.size.height.saturating_div(scale).max(1),
-            };
-            x = x.saturating_add(bounds.width);
-            (output.id, bounds)
-        })
-        .collect()
-}
+#[path = "config/chrome.rs"]
+mod chrome;
+#[path = "config/output.rs"]
+mod output;
+use output::{output_topology_from_engine_outputs, wm_output_bounds};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SessionApplicationSpec {
@@ -146,7 +86,7 @@ struct PersistentXtermSessionConfig {
     key_repeat_config: sophia_config::RepeatConfig,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
-    focused_border_style: sophia_engine::FocusedSurfaceBorderStyle,
+    surface_chrome_style: sophia_engine::SurfaceChromeStyle,
     verbose_diagnostics: bool,
     inject_output_size: Option<Size>,
     inject_surface_resize: Option<Size>,
@@ -649,7 +589,7 @@ impl PersistentXtermSessionConfig {
             namespace_capabilities: NamespaceCapabilities::NONE,
             xkb_config,
             key_repeat_config: core_snapshot.input.repeat,
-            focused_border_style: Self::focused_border_style(core_snapshot.fallback_chrome),
+            surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,
             core_config_source,
             core_config_state,
@@ -693,40 +633,6 @@ impl PersistentXtermSessionConfig {
             );
         }
         Ok(applications)
-    }
-
-    fn focused_border_style(
-        style: sophia_config::ChromeStyle,
-    ) -> sophia_engine::FocusedSurfaceBorderStyle {
-        sophia_engine::FocusedSurfaceBorderStyle {
-            thickness: if style.enabled {
-                i32::try_from(style.thickness).unwrap_or(i32::MAX)
-            } else {
-                0
-            },
-            color: sophia_engine::CompositorRgb8 {
-                red: style.color.red,
-                green: style.color.green,
-                blue: style.color.blue,
-            },
-        }
-    }
-
-    fn wm_focused_border_style(
-        style: sophia_protocol::WmChromeStyle,
-    ) -> sophia_engine::FocusedSurfaceBorderStyle {
-        sophia_engine::FocusedSurfaceBorderStyle {
-            thickness: if style.enabled {
-                i32::try_from(style.thickness).unwrap_or(i32::MAX)
-            } else {
-                0
-            },
-            color: sophia_engine::CompositorRgb8 {
-                red: style.color.red,
-                green: style.color.green,
-                blue: style.color.blue,
-            },
-        }
     }
 
     fn validate_session_app_id(id: &str) -> Result<(), Box<dyn std::error::Error>> {

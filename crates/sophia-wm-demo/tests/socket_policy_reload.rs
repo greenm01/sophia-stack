@@ -49,7 +49,7 @@ fn socket_server_emits_and_acknowledges_hot_reloaded_policy() {
         })
         .unwrap();
     assert_eq!(registry.policy_generation(), 1);
-    assert_eq!(registry.chrome().thickness, 2);
+    assert_eq!(registry.chrome().focus_ring.width, 2);
 
     let candidate = guard.directory.join("wm.next");
     write_private_config(&candidate, wm_config(5));
@@ -69,7 +69,7 @@ fn socket_server_emits_and_acknowledges_hot_reloaded_policy() {
     };
 
     assert_eq!(update.generation, 2);
-    assert_eq!(update.chrome.thickness, 5);
+    assert_eq!(update.chrome.focus_ring.width, 5);
     let request = WmRequestPacket {
         transaction: TransactionId::from_raw(7),
         kind: WmRequestKind::ActionActivated(WmActionActivation {
@@ -96,17 +96,20 @@ fn socket_server_emits_and_acknowledges_hot_reloaded_policy() {
     ));
 }
 
-fn wm_config(chrome_thickness: u16) -> String {
+fn wm_config(focus_ring_width: u16) -> String {
     format!(
         r##"/- kdl-version 2
-schema 1
+schema 2
 
 policy timeout-ms=300
 workspace 1
 layout "columns"
 action "focus-next" id=1 behavior="focus-next"
 binding action=1 keycode=57 modifiers="super"
-chrome enabled=#true thickness={chrome_thickness} color="#70b7ff"
+chrome {{
+    focus-ring enabled=#true width={focus_ring_width} color="#70b7ff"
+    frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+}}
 "##
     )
 }

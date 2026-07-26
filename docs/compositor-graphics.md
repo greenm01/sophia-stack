@@ -199,12 +199,13 @@ content, client titles, paths, or texture bytes.
 - Engine frame plans carry ordered client layers with targets, clips,
   transforms, opacity, and damage.
 - Engine owns a bounded renderer-neutral display list with ordered surface and
-  solid-rectangle commands, stable focused-border node identities, generations,
-  and old/new extent damage.
-- The minimal focused-surface border is derived from the same committed surface
-  and focus snapshot as presentation. Its four inside-edge primitives are
-  inserted immediately after the focused surface without exposing chrome to
-  the WM or X frontend.
+  semantic rectangular-border commands, stable surface/role node identities,
+  generations, and old/new extent damage.
+- Focus rings and frames use one stable Engine-owned clearance inside the WM's
+  outer allocation. Client content is inset by that clearance, so chrome never
+  covers client pixels or a neighboring allocation. Frame and ring commands
+  precede their client surface and lower through one fixed four-band geometry
+  system without exposing chrome policy to a protocol frontend.
 - The CPU/reference renderer lowers ordered surface and solid commands into
   deterministic XRGB pixels. The native EGL renderer lowers the same solid
   command with a clipped opaque draw and no intermediate texture allocation.
@@ -243,7 +244,7 @@ content, client titles, paths, or texture bytes.
   reports.
 
 Existing chrome descriptors remain metadata and action records. Production
-rendering currently claims only the minimal focused border; it is not yet a
+rendering currently claims rectangular focus rings and frames; it is not yet a
 general shell toolkit.
 
 ## Architectural Reference: Niri

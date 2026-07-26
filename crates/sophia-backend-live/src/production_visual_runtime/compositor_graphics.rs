@@ -10,53 +10,57 @@ impl LiveProductionVisualRuntime {
             .outputs
             .primary_output()
             .ok_or(CompositorDisplayListError::InvalidOutput)?;
-        focused_surface_display_list(
+        surface_chrome_display_list_for_surfaces(
             output,
             presentation_order,
+            &self.chrome_surfaces,
             committed_surfaces,
             self.focused_surface,
-            self.focused_border_style,
+            self.surface_chrome_style,
         )
     }
 
-    pub(super) fn record_focused_border_observation(
+    pub(super) fn record_focus_ring_observation(
         &mut self,
         committed_surfaces: &[CommittedSurfaceState],
         force: bool,
     ) -> Result<(), CompositorDisplayListError> {
         let display_list = self.display_list(committed_surfaces, &self.presentation_order)?;
         let Some(surface) = self.focused_surface else {
-            self.last_focused_border_observation = None;
+            self.last_focus_ring_observation = None;
             return Ok(());
         };
-        let Some(border) = display_list.solid_rects().find(|border| {
+        let Some(border) = display_list.borders().find(|border| {
             matches!(
                 border.node,
-                CompositorNodeId::FocusedSurfaceBorder {
+                CompositorNodeId::SurfaceChrome {
                     surface: border_surface,
-                    ..
+                    role: SurfaceChromeRole::FocusRing,
                 } if border_surface == surface
             )
         }) else {
-            self.last_focused_border_observation = None;
+            self.last_focus_ring_observation = None;
             return Ok(());
         };
-        let observation = LiveFocusedBorderObservation {
+        let observation = LiveFocusRingObservation {
             surface,
             generation: border.generation,
-            primitives: display_list.solid_rects().count(),
+            primitives: compositor_border_bands(border)
+                .into_iter()
+                .filter(|band| !band.geometry.is_empty())
+                .count(),
         };
         if observation.primitives > 0
-            && (force || self.last_focused_border_observation != Some(observation))
+            && (force || self.last_focus_ring_observation != Some(observation))
         {
-            self.last_focused_border_observation = Some(observation);
-            self.pending_focused_border_observation = Some(observation);
+            self.last_focus_ring_observation = Some(observation);
+            self.pending_focus_ring_observation = Some(observation);
         }
         Ok(())
     }
 
-    pub fn take_focused_border_observation(&mut self) -> Option<LiveFocusedBorderObservation> {
-        self.pending_focused_border_observation.take()
+    pub fn take_focus_ring_observation(&mut self) -> Option<LiveFocusRingObservation> {
+        self.pending_focus_ring_observation.take()
     }
 
     pub(super) fn retained_mixed_frame(
@@ -100,11 +104,15 @@ impl LiveProductionVisualRuntime {
                         });
                     }
                 }
-                CompositorDisplayCommand::SolidRect(rect) => {
-                    layers.push(LiveOwnedMixedCompositionLayer::Solid {
-                        geometry: rect.geometry,
-                        color: rect.color,
-                    });
+                CompositorDisplayCommand::Border(border) => {
+                    for band in compositor_border_bands(border) {
+                        if !band.geometry.is_empty() {
+                            layers.push(LiveOwnedMixedCompositionLayer::Solid {
+                                geometry: band.geometry,
+                                color: band.color,
+                            });
+                        }
+                    }
                 }
             }
         }

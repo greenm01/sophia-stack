@@ -80,25 +80,28 @@ macro_rules! service_core_config_reload {
                         .ok_or("KDL2 key repeat controls must be nonzero")?;
                         key_repeat.cancel_seat(seat);
                         key_repeat = KeyRepeatState::new(repeat);
-                        config.focused_border_style =
-                            PersistentXtermSessionConfig::focused_border_style(
+                        config.surface_chrome_style =
+                            PersistentXtermSessionConfig::surface_chrome_style(
                                 snapshot.fallback_chrome,
                             );
+                        if let Some(wm) = wm_session.as_mut() {
+                            wm.set_fallback_chrome(config.surface_chrome_style);
+                        }
                         if let Some(runtime) = runtime.as_mut() {
                             let style = wm_session
                                 .as_ref()
-                                .and_then(|wm| wm.focused_border_style())
-                                .unwrap_or(config.focused_border_style);
-                            runtime.set_focused_border_style(style);
+                                .and_then(|wm| wm.surface_chrome_style())
+                                .unwrap_or(config.surface_chrome_style);
+                            runtime.set_surface_chrome_style(style);
                         }
                         if config.verbose_diagnostics {
                             println!(
-                                "sophia_config_reload_detail schema=1 source={:?} pending_restart=false applications={} repeat_delay_ms={} repeat_interval_ms={} chrome_thickness={}",
+                                "sophia_config_reload_detail schema=2 source={:?} pending_restart=false applications={} repeat_delay_ms={} repeat_interval_ms={} chrome_clearance={}",
                                 config.core_config_source.class,
                                 config.applications.applications.len(),
                                 config.key_repeat_config.delay_msec,
                                 config.key_repeat_config.interval_msec,
-                                config.focused_border_style.thickness,
+                                config.surface_chrome_style.clearance(),
                             );
                         }
                         println!(

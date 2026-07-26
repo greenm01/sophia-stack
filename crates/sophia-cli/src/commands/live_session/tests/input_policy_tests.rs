@@ -22,7 +22,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
         policy_generation: 1,
-        chrome: sophia_protocol::WmChromeStyle::default(),
+        chrome: sophia_protocol::WmChromePolicy::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 28,

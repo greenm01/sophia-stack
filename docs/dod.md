@@ -600,7 +600,11 @@ direct client delivery.
 
 ### LayoutTransaction
 
-The WM emits layout transactions, not one-off mutations.
+The WM emits layout transactions, not one-off mutations. WM geometry describes
+an outer layout allocation. Engine combines that passive allocation with its
+committed chrome policy to derive client-content geometry. Protocol authorities
+receive only the resulting content request and never receive compositor chrome
+style or decoration math.
 
 Fields should describe:
 
@@ -611,7 +615,7 @@ Fields should describe:
 - workspace/tag changes
 - render positions
 - z-order
-- decorations
+- outer layout allocations; Engine-owned decoration clearance remains private
 - timeout policy
 
 Sophia Engine commits the transaction as a unit when possible. If clients lag,

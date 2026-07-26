@@ -674,12 +674,12 @@ unfocused visible surface. Plain click queues and releases the primary press
 and release; click-drag additionally queues motion between them. Each sequence
 must commit WM-selected focus, receive X-frontend acknowledgment, release its
 ordered handoff, and route its own following key to that same opaque surface.
-Each committed pointer focus must also produce a four-primitive focused border
+Each committed pointer focus must also produce a four-band focus ring
 and retire nonzero compositor plus combined output damage before the sequence
 completes. The matching safe repaint may be `partial` when only small regions
 changed or `full` when the transaction also changed client generations,
-stacking, or sufficient coverage. The complete run must observe borders on at
-least two distinct focus targets and initial display-list baselines on both
+stacking, or sufficient coverage. The complete run must observe focus rings on
+at least two distinct focus targets and initial display-list baselines on both
 outputs. The verifier remains virtual-input evidence; it does not replace
 physical DRM, libinput, resize, workspace, or VT confirmation.
 
@@ -690,9 +690,9 @@ focused resize, an empty workspace round-trip, and one VT round-trip, run:
 tools/verify_sophia_xmonad_focused_border.sh
 ```
 
-The verifier correlates each border with committed opaque focus, requires four
-primitives, requires a geometry/style generation change without using client
-pixel generations, checks border restoration after workspace and VT resume,
+The verifier correlates each ring with committed opaque focus, requires four
+bands, requires a geometry/style generation change without using client pixel
+generations, checks ring restoration after workspace and VT resume,
 requires nonzero mixed composition, and rejects degraded or unclean teardown.
 Its own fail-closed fixtures run through:
 

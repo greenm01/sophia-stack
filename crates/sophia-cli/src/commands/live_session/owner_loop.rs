@@ -102,8 +102,8 @@ fn run_session_loop(
     let mut present_feedback = Vec::new();
     let initial_border_style = wm_session
         .as_ref()
-        .and_then(|wm| wm.focused_border_style())
-        .unwrap_or(config.focused_border_style);
+        .and_then(|wm| wm.surface_chrome_style())
+        .unwrap_or(config.surface_chrome_style);
     let mut runtime = if initialize_empty_runtime {
         Some(
             LiveProductionVisualRuntime::new(
@@ -116,7 +116,7 @@ fn run_session_loop(
                 config.m4_reject_first_present,
                 config.m4_diagnose_first_mixed_export,
             )
-            .with_focused_border_style(initial_border_style),
+            .with_surface_chrome_style(initial_border_style),
         )
     } else {
         None

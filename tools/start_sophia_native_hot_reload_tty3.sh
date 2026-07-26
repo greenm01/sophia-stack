@@ -15,12 +15,12 @@ chmod 700 "$PROOF_DIR"
 
 write_wm_config() {
     local path=$1
-    local thickness=$2
+    local width=$2
     local extra=${3:-}
     {
         printf '%s\n' \
             '/- kdl-version 2' \
-            'schema 1' \
+            'schema 2' \
             '' \
             'policy timeout-ms=300' \
             'workspace 1' \
@@ -41,7 +41,10 @@ write_wm_config() {
             'binding action=2 keycode=3 modifiers="super"' \
             'binding action=3 keycode=28 modifiers="super"' \
             'binding action=4 keycode=16 modifiers="super+shift"' \
-            "chrome enabled=#true thickness=$thickness color=\"#70b7ff\""
+            'chrome {' \
+            "    focus-ring enabled=#true width=$width color=\"#70b7ff\"" \
+            '    frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"' \
+            '}'
         [[ -z "$extra" ]] || printf '%s\n' "$extra"
     } >"$path"
     chmod 600 "$path"
@@ -69,32 +72,32 @@ chmod 600 "$SEQUENCE_LOG"
 
 (
     wait_for_log '^sophia_live_session_startup schema=2 status=ready ' 180 || exit 1
-    printf '%s\n' 'phase=baseline thickness=2' >>"$SEQUENCE_LOG"
+    printf '%s\n' 'phase=baseline focus_ring_width=2' >>"$SEQUENCE_LOG"
     sleep 5
 
     write_wm_config "$NEXT_CONFIG" 6
     mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_live_wm_policy schema=1 status=applied generation=2 .*chrome_thickness=6$' ||
+    wait_for_log '^sophia_live_wm_policy schema=2 status=applied generation=2 .*focus_ring_width=6 .*clearance=6$' ||
         exit 1
-    printf '%s\n' 'phase=valid_applied generation=2 thickness=6' >>"$SEQUENCE_LOG"
+    printf '%s\n' 'phase=valid_applied generation=2 focus_ring_width=6' >>"$SEQUENCE_LOG"
     sleep 5
 
     write_wm_config "$NEXT_CONFIG" 9 'unknown-node #true'
     mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_wm_config_reload schema=1 status=rejected reason=parse ' || exit 1
-    printf '%s\n' 'phase=invalid_rejected retained_thickness=6' >>"$SEQUENCE_LOG"
+    wait_for_log '^sophia_wm_config_reload schema=2 status=rejected reason=parse ' || exit 1
+    printf '%s\n' 'phase=invalid_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
     sleep 5
 
     rm -f "$WM_CONFIG"
-    wait_for_log '^sophia_wm_config_reload schema=1 status=rejected reason=read ' || exit 1
-    printf '%s\n' 'phase=deletion_rejected retained_thickness=6' >>"$SEQUENCE_LOG"
+    wait_for_log '^sophia_wm_config_reload schema=2 status=rejected reason=read ' || exit 1
+    printf '%s\n' 'phase=deletion_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
     sleep 3
 
     write_wm_config "$NEXT_CONFIG" 4
     mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_live_wm_policy schema=1 status=applied generation=3 .*chrome_thickness=4$' ||
+    wait_for_log '^sophia_live_wm_policy schema=2 status=applied generation=3 .*focus_ring_width=4 .*clearance=4$' ||
         exit 1
-    printf '%s\n' 'phase=recreated_applied generation=3 thickness=4' >>"$SEQUENCE_LOG"
+    printf '%s\n' 'phase=recreated_applied generation=3 focus_ring_width=4' >>"$SEQUENCE_LOG"
 ) &
 sequence_pid=$!
 
@@ -113,11 +116,11 @@ trap cleanup_sequence EXIT
 
 printf '%s\n' \
     'Native WM hot-reload proof:' \
-    '  1. Wait five seconds after Kitty appears; the focused border changes from 2px to 6px.' \
+    '  1. Wait five seconds after Kitty appears; the focus ring changes from 2px to 6px.' \
     '  2. It must remain 6px through the invalid-edit and deletion phases.' \
     '  3. It then changes to 4px after the configuration is recreated.' \
     '  4. During every phase, use Super+Enter and verify the new Kitty is interactive.' \
-    '  5. Press Super+Shift+Q for normal logout after the final 4px border appears.' \
+    '  5. Press Super+Shift+Q for normal logout after the final 4px ring appears.' \
     "Evidence: $SESSION_LOG" \
     "Sequence: $SEQUENCE_LOG"
 

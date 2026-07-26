@@ -13,11 +13,11 @@ fn watches_parent_directory_across_atomic_replacement() {
     }
     fs::create_dir(&root).expect("create watch test directory");
     let path = root.join("config.kdl");
-    fs::write(&path, "schema 1\n").expect("write initial config");
+    fs::write(&path, "schema 2\n").expect("write initial config");
     let watcher = ConfigWatcher::spawn(&path).expect("start watcher");
 
     let replacement = root.join(".config.kdl.next");
-    fs::write(&replacement, "schema 1\ndiagnostics verbose=#true\n").expect("write replacement");
+    fs::write(&replacement, "schema 2\ndiagnostics verbose=#true\n").expect("write replacement");
     fs::rename(&replacement, &path).expect("atomically replace config");
 
     let deadline = Instant::now() + Duration::from_secs(3);

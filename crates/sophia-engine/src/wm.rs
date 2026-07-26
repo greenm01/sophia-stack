@@ -1,7 +1,7 @@
 use crate::WmTransactionUpdate;
 use crate::prelude::*;
 use sophia_protocol::{
-    IpcMessageKind, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromeStyle,
+    IpcMessageKind, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromePolicy,
     WmHello, WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
     decode_frame, decode_wm_hello_frame, decode_wm_policy_update_frame, decode_wm_response_frame,
     encode_wm_policy_ack_frame, encode_wm_request_frame, encode_wm_session_descriptor_frame,
@@ -37,8 +37,9 @@ impl fmt::Display for WmIpcError {
 pub struct WmShortcutRegistry {
     bindings: BTreeMap<(u32, u32), WmActionId>,
     held: BTreeMap<u32, WmActionId>,
+    capabilities: WmCapabilities,
     policy_generation: u64,
-    chrome: WmChromeStyle,
+    chrome: WmChromePolicy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,7 +65,7 @@ impl WmShortcutRegistry {
         if hello.policy_generation == 0 {
             return Err(WmIpcError::Negotiation("invalid WM policy generation"));
         }
-        if hello.chrome.thickness > 64 || (hello.chrome.enabled && hello.chrome.thickness == 0) {
+        if !valid_chrome_policy(hello.chrome) {
             return Err(WmIpcError::Negotiation("invalid WM chrome policy"));
         }
         if hello.bindings.len() > WM_MAX_BINDINGS {
@@ -100,6 +101,7 @@ impl WmShortcutRegistry {
         Ok(Self {
             bindings,
             held: BTreeMap::new(),
+            capabilities: hello.capabilities,
             policy_generation: hello.policy_generation,
             chrome: hello.chrome,
         })
@@ -138,8 +140,12 @@ impl WmShortcutRegistry {
         self.policy_generation
     }
 
-    pub const fn chrome(&self) -> WmChromeStyle {
+    pub const fn chrome(&self) -> WmChromePolicy {
         self.chrome
+    }
+
+    pub const fn supports_chrome_policy(&self) -> bool {
+        self.capabilities.bits & WmCapabilities::POLICY_CHROME_V2 != 0
     }
 
     pub fn is_idle(&self) -> bool {
@@ -228,8 +234,12 @@ impl WmShortcutRouter {
         self.registry.binding_count()
     }
 
-    pub const fn chrome(&self) -> WmChromeStyle {
+    pub const fn chrome(&self) -> WmChromePolicy {
         self.registry.chrome()
+    }
+
+    pub const fn supports_chrome_policy(&self) -> bool {
+        self.registry.supports_chrome_policy()
     }
 
     pub fn apply_policy_update(&mut self, update: &WmPolicyUpdate) -> WmPolicyApplyOutcome {
@@ -239,12 +249,18 @@ impl WmShortcutRouter {
                 outcome: WmPolicyAckOutcome::RejectedStale,
             });
         }
+        if !self.registry.supports_chrome_policy() && update.chrome != self.registry.chrome() {
+            return WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+                generation: update.generation,
+                outcome: WmPolicyAckOutcome::RejectedInvalid,
+            });
+        }
         if !self.shortcut_idle() {
             return WmPolicyApplyOutcome::DeferredUntilShortcutIdle;
         }
         let hello = WmHello {
             api_version: update.api_version,
-            capabilities: WmCapabilities::all_supported(),
+            capabilities: self.registry.capabilities,
             policy_generation: update.generation,
             bindings: update.bindings.clone(),
             chrome: update.chrome,
@@ -267,6 +283,14 @@ impl WmShortcutRouter {
             .values()
             .all(|state| state.shortcuts.is_idle() && state.modifiers.is_idle())
     }
+}
+
+fn valid_chrome_policy(chrome: WmChromePolicy) -> bool {
+    let valid_style = |enabled: bool, width: u32| {
+        width <= 64 && ((enabled && width > 0) || (!enabled && width == 0))
+    };
+    valid_style(chrome.focus_ring.enabled, chrome.focus_ring.width)
+        && valid_style(chrome.frame.enabled, chrome.frame.width)
 }
 
 impl WmPhysicalModifierState {

@@ -6,14 +6,21 @@ use kdl::{KdlDocument, KdlEntry, KdlNode, KdlValue};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ApplicationConfig, ChromeStyle, ConfigDigest, ConfigGeneration, CoreConfigSnapshot,
-    ExternalWmConfig, InputConfig, InputSourceConfig, OutputConfig, RepeatConfig, Rgb8,
-    SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS, SOPHIA_CONFIG_MAX_APPLICATIONS,
+    ApplicationConfig, ChromePolicy, ConfigDigest, ConfigGeneration, CoreConfigSnapshot,
+    ExternalWmConfig, FocusRingStyle, FrameStyle, InputConfig, InputSourceConfig, OutputConfig,
+    RepeatConfig, Rgb8, SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH, SOPHIA_CONFIG_MAX_APPLICATIONS,
     SOPHIA_CONFIG_MAX_ARGUMENT_BYTES, SOPHIA_CONFIG_MAX_ARGUMENTS, SOPHIA_CONFIG_MAX_OUTPUTS,
     SOPHIA_CONFIG_MAX_WM_ACTIONS, SOPHIA_CONFIG_MAX_WM_BINDINGS, SOPHIA_CONFIG_MAX_WORKSPACES,
     SOPHIA_CONFIG_SCHEMA_VERSION, SessionConfig, WmActionBehavior, WmActionConfig, WmBindingConfig,
     WmConfigSnapshot, WmLayoutKind, XkbConfig,
 };
+
+#[path = "parse/chrome.rs"]
+mod chrome;
+use chrome::{parse_chrome_policy, parse_compositor};
+#[path = "parse/wm.rs"]
+mod wm;
+use wm::{parse_wm_actions, parse_wm_bindings};
 
 const MODIFIER_SHIFT: u32 = 1 << 0;
 const MODIFIER_CONTROL: u32 = 1 << 1;
@@ -88,13 +95,13 @@ pub fn parse_core_config(
         .map(parse_outputs)
         .transpose()?
         .unwrap_or_default();
-    let (fallback_chrome, max_border_thickness) = document
+    let (fallback_chrome, max_chrome_width) = document
         .get("compositor")
         .map(parse_compositor)
         .transpose()?
         .unwrap_or((
-            ChromeStyle::default(),
-            SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS,
+            ChromePolicy::default(),
+            SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH,
         ));
     let namespace_profile = document
         .get("namespace")
@@ -118,7 +125,7 @@ pub fn parse_core_config(
         input,
         outputs,
         fallback_chrome,
-        max_border_thickness,
+        max_chrome_width,
         namespace_profile,
         external_wm,
         verbose_diagnostics,
@@ -190,7 +197,7 @@ pub fn parse_wm_config(
     let bindings = parse_wm_bindings(&document, &actions)?;
     let chrome = document
         .get("chrome")
-        .map(|node| parse_chrome_style(node, SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS))
+        .map(|node| parse_chrome_policy(node, SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH))
         .transpose()?
         .unwrap_or_default();
     Ok(WmConfigSnapshot {
@@ -213,6 +220,11 @@ fn parse_schema(document: &KdlDocument) -> Result<u32, ConfigParseError> {
     exact_shape(node, 1, &[], false)?;
     let schema = integer_argument_u32(node, 0, 1, u32::MAX)?;
     if schema != SOPHIA_CONFIG_SCHEMA_VERSION {
+        if schema == 1 {
+            return schema_error(
+                "schema 1 chrome syntax is unsupported; migrate to schema 2 focus-ring/frame nodes",
+            );
+        }
         return schema_error(format!(
             "unsupported schema {schema}; expected {SOPHIA_CONFIG_SCHEMA_VERSION}"
         ));
@@ -407,50 +419,6 @@ fn parse_outputs(node: &KdlNode) -> Result<Vec<OutputConfig>, ConfigParseError> 
     Ok(outputs)
 }
 
-fn parse_compositor(node: &KdlNode) -> Result<(ChromeStyle, u32), ConfigParseError> {
-    exact_shape(node, 0, &[], true)?;
-    let children = children(node)?;
-    validate_root_names(children, &["chrome-fallback", "chrome-limits"])?;
-    require_singletons(children, &["chrome-fallback", "chrome-limits"])?;
-    let max = children
-        .get("chrome-limits")
-        .map(|limits| {
-            exact_shape(limits, 0, &["max-thickness"], false)?;
-            integer_property_u32(
-                limits,
-                "max-thickness",
-                0,
-                SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS,
-            )
-        })
-        .transpose()?
-        .unwrap_or(SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS);
-    let style = children
-        .get("chrome-fallback")
-        .map(|chrome| parse_chrome_style(chrome, max))
-        .transpose()?
-        .unwrap_or_default();
-    if style.thickness > max {
-        return schema_error("chrome fallback thickness exceeds configured maximum");
-    }
-    Ok((style, max))
-}
-
-fn parse_chrome_style(node: &KdlNode, max_thickness: u32) -> Result<ChromeStyle, ConfigParseError> {
-    exact_shape(node, 0, &["enabled", "thickness", "color"], false)?;
-    let enabled = optional_bool_property(node, "enabled", true)?;
-    let thickness = integer_property_u32(node, "thickness", 0, max_thickness)?;
-    if enabled && thickness == 0 {
-        return schema_error("enabled chrome must have nonzero thickness");
-    }
-    let color = parse_rgb(required_string_property(node, "color", 7, 7)?)?;
-    Ok(ChromeStyle {
-        enabled,
-        thickness,
-        color,
-    })
-}
-
 fn parse_namespace(node: &KdlNode) -> Result<String, ConfigParseError> {
     exact_shape(node, 0, &["profile"], false)?;
     let profile = required_string_property(node, "profile", 1, 64)?;
@@ -475,151 +443,6 @@ fn parse_external_wm(node: &KdlNode) -> Result<ExternalWmConfig, ConfigParseErro
 fn parse_diagnostics(node: &KdlNode) -> Result<bool, ConfigParseError> {
     exact_shape(node, 0, &["verbose"], false)?;
     optional_bool_property(node, "verbose", false)
-}
-
-fn parse_wm_actions(
-    document: &KdlDocument,
-    workspaces: &BTreeSet<u64>,
-) -> Result<Vec<WmActionConfig>, ConfigParseError> {
-    let mut actions = Vec::new();
-    let mut ids = BTreeSet::new();
-    let mut names = BTreeSet::new();
-    for node in document
-        .nodes()
-        .iter()
-        .filter(|node| node.name().value() == "action")
-    {
-        exact_shape(
-            node,
-            1,
-            &["id", "behavior", "workspace", "application"],
-            false,
-        )?;
-        if actions.len() >= SOPHIA_CONFIG_MAX_WM_ACTIONS {
-            return schema_error("too many WM actions");
-        }
-        let name = string_argument(node, 0, 1, 32)?.to_owned();
-        validate_identifier(&name, "WM action name")?;
-        let id = integer_property_u64(node, "id", 1, u64::MAX)?;
-        if !ids.insert(id) {
-            return schema_error(format!("duplicate WM action ID {id}"));
-        }
-        if !names.insert(name.clone()) {
-            return schema_error(format!("duplicate WM action name {name:?}"));
-        }
-        let behavior_name = required_string_property(node, "behavior", 1, 64)?;
-        let workspace = optional_integer_property_u64(node, "workspace", 1, u64::MAX)?;
-        let application = optional_integer_property_u64(node, "application", 1, u64::MAX)?;
-        let behavior = match behavior_name {
-            "focus-next" if workspace.is_none() && application.is_none() => {
-                WmActionBehavior::FocusNext
-            }
-            "focus-previous" if workspace.is_none() && application.is_none() => {
-                WmActionBehavior::FocusPrevious
-            }
-            "next-layout" if workspace.is_none() && application.is_none() => {
-                WmActionBehavior::NextLayout
-            }
-            "activate-workspace" if application.is_none() => {
-                let workspace = workspace.ok_or_else(|| {
-                    ConfigParseError::Schema(
-                        "activate-workspace action requires workspace".to_owned(),
-                    )
-                })?;
-                if !workspaces.is_empty() && !workspaces.contains(&workspace) {
-                    return schema_error(format!(
-                        "action references unknown workspace {workspace}"
-                    ));
-                }
-                WmActionBehavior::ActivateWorkspace { workspace }
-            }
-            "launch-application" if workspace.is_none() => WmActionBehavior::LaunchApplication {
-                application: application.ok_or_else(|| {
-                    ConfigParseError::Schema(
-                        "launch-application action requires application".to_owned(),
-                    )
-                })?,
-            },
-            "close-focused" if workspace.is_none() && application.is_none() => {
-                WmActionBehavior::CloseFocused
-            }
-            "logout" if workspace.is_none() && application.is_none() => WmActionBehavior::Logout,
-            _ => {
-                return schema_error(format!(
-                    "invalid properties for WM action behavior {behavior_name:?}"
-                ));
-            }
-        };
-        actions.push(WmActionConfig { id, name, behavior });
-    }
-    Ok(actions)
-}
-
-fn parse_wm_bindings(
-    document: &KdlDocument,
-    actions: &[WmActionConfig],
-) -> Result<Vec<WmBindingConfig>, ConfigParseError> {
-    let action_ids = actions
-        .iter()
-        .map(|action| action.id)
-        .collect::<BTreeSet<_>>();
-    let mut bindings = Vec::new();
-    let mut chords = BTreeSet::new();
-    let mut bound_actions = BTreeSet::new();
-    for node in document
-        .nodes()
-        .iter()
-        .filter(|node| node.name().value() == "binding")
-    {
-        exact_shape(node, 0, &["action", "keycode", "modifiers"], false)?;
-        if bindings.len() >= SOPHIA_CONFIG_MAX_WM_BINDINGS {
-            return schema_error("too many WM bindings");
-        }
-        let action = integer_property_u64(node, "action", 1, u64::MAX)?;
-        let keycode = integer_property_u32(node, "keycode", 1, 0x2ff)?;
-        let modifiers = parse_modifiers(required_string_property(node, "modifiers", 0, 64)?)?;
-        if !action_ids.contains(&action) {
-            return schema_error(format!("binding references unknown action ID {action}"));
-        }
-        if !bound_actions.insert(action) {
-            return schema_error(format!("duplicate binding for action ID {action}"));
-        }
-        if !chords.insert((keycode, modifiers)) {
-            return schema_error("duplicate WM key chord");
-        }
-        if keycode == 14
-            && modifiers & (MODIFIER_CONTROL | MODIFIER_ALT) == MODIFIER_CONTROL | MODIFIER_ALT
-        {
-            return schema_error("reserved emergency chord cannot be bound by a WM");
-        }
-        bindings.push(WmBindingConfig {
-            action,
-            keycode,
-            modifiers,
-        });
-    }
-    Ok(bindings)
-}
-
-fn parse_modifiers(value: &str) -> Result<u32, ConfigParseError> {
-    if value.is_empty() {
-        return Ok(0);
-    }
-    let mut modifiers = 0;
-    for modifier in value.split('+') {
-        let bit = match modifier {
-            "shift" => MODIFIER_SHIFT,
-            "control" => MODIFIER_CONTROL,
-            "alt" => MODIFIER_ALT,
-            "super" => MODIFIER_SUPER,
-            other => return schema_error(format!("unsupported WM modifier {other:?}")),
-        };
-        if modifiers & bit != 0 {
-            return schema_error(format!("duplicate WM modifier {modifier:?}"));
-        }
-        modifiers |= bit;
-    }
-    Ok(modifiers)
 }
 
 fn validate_root_names(document: &KdlDocument, allowed: &[&str]) -> Result<(), ConfigParseError> {

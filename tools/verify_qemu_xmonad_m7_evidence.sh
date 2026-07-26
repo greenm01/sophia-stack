@@ -122,7 +122,7 @@ awk '
         phase = 3
         next
     }
-    active && phase >= 3 && $0 ~ "^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=" target " generation=[0-9]+ primitives=4$" {
+    active && phase >= 3 && $0 ~ "^sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=" target " generation=[0-9]+ primitives=4$" {
         border = 1
         next
     }
@@ -181,7 +181,7 @@ awk '
     exit 1
 }
 border_surfaces="$(
-    sed -n 's/^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=\([0-9][0-9]*\) generation=[0-9][0-9]* primitives=4$/\1/p' "$evidence" |
+    sed -n 's/^sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=\([0-9][0-9]*\) generation=[0-9][0-9]* primitives=4$/\1/p' "$evidence" |
         sort -u |
         wc -l
 )"

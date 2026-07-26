@@ -61,7 +61,7 @@ pub fn output_frame_damage_snapshot(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::SolidRect(_) => None,
+            CompositorDisplayCommand::Border(_) => None,
         })
     {
         if !surface.is_valid() {
@@ -174,9 +174,7 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
             CompositorDisplayCommand::Surface { surface } if seen.contains(surface) => {
                 Some(*surface)
             }
-            CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::SolidRect(_) => {
-                None
-            }
+            CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::Border(_) => None,
         })
         .collect::<Vec<_>>();
     let snapshot_order = snapshot

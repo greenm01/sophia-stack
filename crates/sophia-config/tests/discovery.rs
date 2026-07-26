@@ -34,7 +34,7 @@ fn discovers_xdg_user_source() {
     let directory = root.join("sophia");
     fs::create_dir(&directory).expect("create Sophia config directory");
     let path = directory.join("wm.kdl");
-    fs::write(&path, "schema 1\n").expect("write config");
+    fs::write(&path, "schema 2\n").expect("write config");
 
     let source = discover_config_source(ConfigDomain::Wm, None, Some(&root));
 
@@ -47,11 +47,11 @@ fn discovers_xdg_user_source() {
 fn validates_regular_file_mode_and_absolute_path() {
     let root = temporary_directory("mode");
     let path = root.join("config.kdl");
-    fs::write(&path, "schema 1\n").expect("write config");
+    fs::write(&path, "schema 2\n").expect("write config");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("set safe mode");
     assert_eq!(
         read_config_file(&path).expect("read safe config"),
-        b"schema 1\n"
+        b"schema 2\n"
     );
 
     fs::set_permissions(&path, fs::Permissions::from_mode(0o622)).expect("set unsafe mode");

@@ -5,6 +5,10 @@ use crate::ids::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
+/// A WM proposal expressed in compositor-owned outer allocations.
+///
+/// Engine validates this record and derives client-content size and placement
+/// from the active chrome clearance before committing it.
 pub struct LayoutTransaction {
     pub transaction: TransactionId,
     pub requested_sizes: Vec<SurfaceSizeRequest>,
@@ -13,7 +17,7 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 5;
+pub const WM_API_VERSION: u16 = 6;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -26,9 +30,9 @@ impl WmCapabilities {
     pub const BINDINGS: u64 = 1 << 0;
     pub const WORKSPACES: u64 = 1 << 1;
     pub const SESSION_ACTIONS: u64 = 1 << 2;
-    pub const POLICY_CHROME: u64 = 1 << 3;
+    pub const POLICY_CHROME_V2: u64 = 1 << 3;
     pub const SUPPORTED: u64 =
-        Self::BINDINGS | Self::WORKSPACES | Self::SESSION_ACTIONS | Self::POLICY_CHROME;
+        Self::BINDINGS | Self::WORKSPACES | Self::SESSION_ACTIONS | Self::POLICY_CHROME_V2;
 
     pub const fn all_supported() -> Self {
         Self {
@@ -65,17 +69,17 @@ pub struct WmRgb8 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmChromeStyle {
+pub struct WmFocusRingStyle {
     pub enabled: bool,
-    pub thickness: u32,
+    pub width: u32,
     pub color: WmRgb8,
 }
 
-impl Default for WmChromeStyle {
+impl Default for WmFocusRingStyle {
     fn default() -> Self {
         Self {
             enabled: true,
-            thickness: 2,
+            width: 2,
             color: WmRgb8 {
                 red: 0x70,
                 green: 0xb7,
@@ -85,13 +89,58 @@ impl Default for WmChromeStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFrameStyle {
+    pub enabled: bool,
+    pub width: u32,
+    pub focused_color: WmRgb8,
+    pub unfocused_color: WmRgb8,
+}
+
+impl Default for WmFrameStyle {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            width: 0,
+            focused_color: WmFocusRingStyle::default().color,
+            unfocused_color: WmRgb8 {
+                red: 0x30,
+                green: 0x30,
+                blue: 0x30,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WmChromePolicy {
+    pub focus_ring: WmFocusRingStyle,
+    pub frame: WmFrameStyle,
+}
+
+impl WmChromePolicy {
+    pub const fn clearance(self) -> u32 {
+        let ring = if self.focus_ring.enabled {
+            self.focus_ring.width
+        } else {
+            0
+        };
+        let frame = if self.frame.enabled {
+            self.frame.width
+        } else {
+            0
+        };
+        if ring > frame { ring } else { frame }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmHello {
     pub api_version: u16,
     pub capabilities: WmCapabilities,
     pub policy_generation: u64,
     pub bindings: Vec<WmBindingRegistration>,
-    pub chrome: WmChromeStyle,
+    pub chrome: WmChromePolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,7 +148,7 @@ pub struct WmPolicyUpdate {
     pub api_version: u16,
     pub generation: u64,
     pub bindings: Vec<WmBindingRegistration>,
-    pub chrome: WmChromeStyle,
+    pub chrome: WmChromePolicy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,22 +1,24 @@
 use crate::prelude::*;
 use crate::{HeadlessOutput, OutputFrameDamageSnapshot, output_frame_damage};
 
+#[path = "compositor_graphics/chrome_layout.rs"]
+mod chrome_layout;
+pub use chrome_layout::*;
+
 pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 1_024;
 pub const MAX_OUTPUT_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FocusedSurfaceBorderEdge {
-    Top,
-    Right,
-    Bottom,
-    Left,
+pub enum SurfaceChromeRole {
+    Frame,
+    FocusRing,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CompositorNodeId {
-    FocusedSurfaceBorder {
+    SurfaceChrome {
         surface: SurfaceId,
-        edge: FocusedSurfaceBorderEdge,
+        role: SurfaceChromeRole,
     },
 }
 
@@ -29,16 +31,23 @@ pub struct CompositorRgb8 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompositorSolidRect {
+    pub geometry: Rect,
+    pub color: CompositorRgb8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorBorder {
     pub node: CompositorNodeId,
     pub generation: u64,
-    pub geometry: Rect,
+    pub outer: Rect,
+    pub inner: Rect,
     pub color: CompositorRgb8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand {
     Surface { surface: SurfaceId },
-    SolidRect(CompositorSolidRect),
+    Border(CompositorBorder),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,30 +64,73 @@ impl CompositorDisplayList {
         }
     }
 
-    pub fn solid_rects(&self) -> impl Iterator<Item = CompositorSolidRect> + '_ {
+    pub fn borders(&self) -> impl Iterator<Item = CompositorBorder> + '_ {
         self.commands.iter().filter_map(|command| match command {
-            CompositorDisplayCommand::SolidRect(rect) => Some(*rect),
+            CompositorDisplayCommand::Border(border) => Some(*border),
             CompositorDisplayCommand::Surface { .. } => None,
         })
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FocusedSurfaceBorderStyle {
-    pub thickness: i32,
+pub struct FocusRingStyle {
+    pub width: i32,
     pub color: CompositorRgb8,
 }
 
-impl Default for FocusedSurfaceBorderStyle {
+impl Default for FocusRingStyle {
     fn default() -> Self {
         Self {
-            thickness: 2,
+            width: 2,
             color: CompositorRgb8 {
                 red: 0x70,
                 green: 0xb7,
                 blue: 0xff,
             },
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SurfaceFrameStyle {
+    pub width: i32,
+    pub focused_color: CompositorRgb8,
+    pub unfocused_color: CompositorRgb8,
+}
+
+impl Default for SurfaceFrameStyle {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            focused_color: FocusRingStyle::default().color,
+            unfocused_color: CompositorRgb8 {
+                red: 0x30,
+                green: 0x30,
+                blue: 0x30,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SurfaceChromeStyle {
+    pub focus_ring: FocusRingStyle,
+    pub frame: SurfaceFrameStyle,
+}
+
+impl SurfaceChromeStyle {
+    pub const fn clearance(self) -> i32 {
+        let ring = if self.focus_ring.width > 0 {
+            self.focus_ring.width
+        } else {
+            0
+        };
+        let frame = if self.frame.width > 0 {
+            self.frame.width
+        } else {
+            0
+        };
+        if ring > frame { ring } else { frame }
     }
 }
 
@@ -491,15 +543,32 @@ impl std::error::Error for CompositorDisplayListError {}
 
 /// Builds one immutable compositor display list from committed visual state.
 ///
-/// Surface commands preserve Engine presentation order. A focused border is
-/// inserted immediately after its surface, so renderer lowering does not need
-/// focus policy or a protocol-specific window concept.
-pub fn focused_surface_display_list(
+/// Surface commands preserve Engine presentation order. Engine-owned frame and
+/// focus-ring nodes are inserted before their content surface.
+pub fn surface_chrome_display_list(
     output: OutputId,
     presentation_order: &[SurfaceId],
     committed_surfaces: &[CommittedSurfaceState],
     focused_surface: Option<SurfaceId>,
-    style: FocusedSurfaceBorderStyle,
+    style: SurfaceChromeStyle,
+) -> Result<CompositorDisplayList, CompositorDisplayListError> {
+    surface_chrome_display_list_for_surfaces(
+        output,
+        presentation_order,
+        presentation_order,
+        committed_surfaces,
+        focused_surface,
+        style,
+    )
+}
+
+pub fn surface_chrome_display_list_for_surfaces(
+    output: OutputId,
+    presentation_order: &[SurfaceId],
+    chrome_surfaces: &[SurfaceId],
+    committed_surfaces: &[CommittedSurfaceState],
+    focused_surface: Option<SurfaceId>,
+    style: SurfaceChromeStyle,
 ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
     if !output.is_valid() {
         return Err(CompositorDisplayListError::InvalidOutput);
@@ -507,7 +576,8 @@ pub fn focused_surface_display_list(
     let mut commands = Vec::with_capacity(
         presentation_order
             .len()
-            .saturating_add(4)
+            .saturating_mul(2)
+            .saturating_add(1)
             .min(MAX_COMPOSITOR_DISPLAY_COMMANDS),
     );
     let mut seen = BTreeSet::new();
@@ -518,19 +588,41 @@ pub fn focused_surface_display_list(
         if !seen.insert(surface) {
             return Err(CompositorDisplayListError::DuplicateSurface);
         }
-        push_display_command(&mut commands, CompositorDisplayCommand::Surface { surface })?;
-        if focused_surface != Some(surface) {
-            continue;
-        }
         let Some(committed) = committed_surfaces
             .iter()
             .find(|committed| committed.surface == surface)
         else {
+            push_display_command(&mut commands, CompositorDisplayCommand::Surface { surface })?;
             continue;
         };
-        for rect in focused_surface_border_rects(committed, style) {
-            push_display_command(&mut commands, CompositorDisplayCommand::SolidRect(rect))?;
+        let focused = focused_surface == Some(surface);
+        if !chrome_surfaces.contains(&surface) {
+            push_display_command(&mut commands, CompositorDisplayCommand::Surface { surface })?;
+            continue;
         }
+        if let Some(frame) = surface_chrome_border(
+            committed,
+            SurfaceChromeRole::Frame,
+            style.frame.width,
+            if focused {
+                style.frame.focused_color
+            } else {
+                style.frame.unfocused_color
+            },
+        ) {
+            push_display_command(&mut commands, CompositorDisplayCommand::Border(frame))?;
+        }
+        if focused
+            && let Some(ring) = surface_chrome_border(
+                committed,
+                SurfaceChromeRole::FocusRing,
+                style.focus_ring.width,
+                style.focus_ring.color,
+            )
+        {
+            push_display_command(&mut commands, CompositorDisplayCommand::Border(ring))?;
+        }
+        push_display_command(&mut commands, CompositorDisplayCommand::Surface { surface })?;
     }
     Ok(CompositorDisplayList { output, commands })
 }
@@ -545,12 +637,12 @@ pub fn compositor_display_list_damage(
     current: &CompositorDisplayList,
 ) -> Region {
     let previous = previous
-        .solid_rects()
-        .map(|rect| (rect.node, rect))
+        .borders()
+        .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
     let current = current
-        .solid_rects()
-        .map(|rect| (rect.node, rect))
+        .borders()
+        .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
     let mut damage = Region::empty();
     for node in previous
@@ -562,11 +654,11 @@ pub fn compositor_display_list_damage(
         match (previous.get(&node), current.get(&node)) {
             (Some(before), Some(after)) if before == after => {}
             (Some(before), Some(after)) => {
-                damage.push(before.geometry);
-                damage.push(after.geometry);
+                push_border_damage(&mut damage, *before);
+                push_border_damage(&mut damage, *after);
             }
-            (Some(before), None) => damage.push(before.geometry),
-            (None, Some(after)) => damage.push(after.geometry),
+            (Some(before), None) => push_border_damage(&mut damage, *before),
+            (None, Some(after)) => push_border_damage(&mut damage, *after),
             (None, None) => unreachable!("node came from one display list"),
         }
     }
@@ -584,102 +676,95 @@ fn push_display_command(
     Ok(())
 }
 
-fn focused_surface_border_rects(
+fn surface_chrome_border(
     committed: &CommittedSurfaceState,
-    style: FocusedSurfaceBorderStyle,
-) -> Vec<CompositorSolidRect> {
-    let geometry = committed.geometry;
-    if geometry.is_empty() || style.thickness <= 0 {
-        return Vec::new();
+    role: SurfaceChromeRole,
+    width: i32,
+    color: CompositorRgb8,
+) -> Option<CompositorBorder> {
+    let inner = committed.geometry;
+    if inner.is_empty() || width <= 0 {
+        return None;
     }
-    let thickness = style
-        .thickness
-        .min((geometry.width / 2).max(1))
-        .min((geometry.height / 2).max(1));
-    let mut rects = Vec::with_capacity(4);
-    push_border_rect(
-        &mut rects,
-        committed,
-        style,
-        FocusedSurfaceBorderEdge::Top,
-        Rect {
-            height: thickness,
-            ..geometry
+    let doubled = width.checked_mul(2)?;
+    let outer = Rect {
+        x: inner.x.checked_sub(width)?,
+        y: inner.y.checked_sub(width)?,
+        width: inner.width.checked_add(doubled)?,
+        height: inner.height.checked_add(doubled)?,
+    };
+    Some(CompositorBorder {
+        node: CompositorNodeId::SurfaceChrome {
+            surface: committed.surface,
+            role,
         },
-    );
-    if geometry.height > thickness {
-        push_border_rect(
-            &mut rects,
-            committed,
-            style,
-            FocusedSurfaceBorderEdge::Bottom,
-            Rect {
-                y: geometry
+        generation: surface_chrome_generation(inner, width, color, role),
+        outer,
+        inner,
+        color,
+    })
+}
+
+pub fn compositor_border_bands(border: CompositorBorder) -> [CompositorSolidRect; 4] {
+    let outer = border.outer;
+    let inner = border.inner;
+    [
+        CompositorSolidRect {
+            geometry: Rect {
+                height: inner.y.saturating_sub(outer.y),
+                ..outer
+            },
+            color: border.color,
+        },
+        CompositorSolidRect {
+            geometry: Rect {
+                y: inner.y.saturating_add(inner.height),
+                height: outer
                     .y
-                    .saturating_add(geometry.height)
-                    .saturating_sub(thickness),
-                height: thickness,
-                ..geometry
+                    .saturating_add(outer.height)
+                    .saturating_sub(inner.y.saturating_add(inner.height)),
+                ..outer
             },
-        );
-    }
-    let middle_height = geometry.height.saturating_sub(thickness.saturating_mul(2));
-    if middle_height > 0 {
-        push_border_rect(
-            &mut rects,
-            committed,
-            style,
-            FocusedSurfaceBorderEdge::Left,
-            Rect {
-                y: geometry.y.saturating_add(thickness),
-                width: thickness,
-                height: middle_height,
-                ..geometry
+            color: border.color,
+        },
+        CompositorSolidRect {
+            geometry: Rect {
+                y: inner.y,
+                width: inner.x.saturating_sub(outer.x),
+                height: inner.height,
+                ..outer
             },
-        );
-        if geometry.width > thickness {
-            push_border_rect(
-                &mut rects,
-                committed,
-                style,
-                FocusedSurfaceBorderEdge::Right,
-                Rect {
-                    x: geometry
-                        .x
-                        .saturating_add(geometry.width)
-                        .saturating_sub(thickness),
-                    y: geometry.y.saturating_add(thickness),
-                    width: thickness,
-                    height: middle_height,
-                },
-            );
+            color: border.color,
+        },
+        CompositorSolidRect {
+            geometry: Rect {
+                x: inner.x.saturating_add(inner.width),
+                y: inner.y,
+                width: outer
+                    .x
+                    .saturating_add(outer.width)
+                    .saturating_sub(inner.x.saturating_add(inner.width)),
+                height: inner.height,
+            },
+            color: border.color,
+        },
+    ]
+}
+
+fn push_border_damage(damage: &mut Region, border: CompositorBorder) {
+    for band in compositor_border_bands(border) {
+        if !band.geometry.is_empty() {
+            damage.push(band.geometry);
         }
     }
-    rects
 }
 
-fn push_border_rect(
-    rects: &mut Vec<CompositorSolidRect>,
-    committed: &CommittedSurfaceState,
-    style: FocusedSurfaceBorderStyle,
-    edge: FocusedSurfaceBorderEdge,
+fn surface_chrome_generation(
     geometry: Rect,
-) {
-    if geometry.is_empty() {
-        return;
-    }
-    rects.push(CompositorSolidRect {
-        node: CompositorNodeId::FocusedSurfaceBorder {
-            surface: committed.surface,
-            edge,
-        },
-        generation: focused_surface_border_generation(committed.geometry, style),
-        geometry,
-        color: style.color,
-    });
-}
-
-fn focused_surface_border_generation(geometry: Rect, style: FocusedSurfaceBorderStyle) -> u64 {
+    width: i32,
+    color: CompositorRgb8,
+    role: SurfaceChromeRole,
+) -> u64 {
     let mut generation = 0xcbf2_9ce4_8422_2325u64;
     for byte in geometry
         .x
@@ -688,8 +773,8 @@ fn focused_surface_border_generation(geometry: Rect, style: FocusedSurfaceBorder
         .chain(geometry.y.to_le_bytes())
         .chain(geometry.width.to_le_bytes())
         .chain(geometry.height.to_le_bytes())
-        .chain(style.thickness.to_le_bytes())
-        .chain([style.color.red, style.color.green, style.color.blue])
+        .chain(width.to_le_bytes())
+        .chain([color.red, color.green, color.blue, role as u8])
     {
         generation = (generation ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3);
     }

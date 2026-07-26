@@ -270,11 +270,11 @@
                                 config.m4_reject_first_present,
                                 config.m4_diagnose_first_mixed_export,
                             )
-                            .with_focused_border_style(
+                            .with_surface_chrome_style(
                                 wm_session
                                     .as_ref()
-                                    .and_then(|wm| wm.focused_border_style())
-                                    .unwrap_or(config.focused_border_style),
+                                    .and_then(|wm| wm.surface_chrome_style())
+                                    .unwrap_or(config.surface_chrome_style),
                             ),
                     );
                 }
@@ -312,6 +312,11 @@
                     }
                 }
                 presentation_layout.sort_by_key(|layer| layer.stack_rank);
+                let chrome_surfaces = presentation_layout
+                    .iter()
+                    .filter(|layer| !layout.is_client_positioned(layer.surface))
+                    .map(|layer| layer.surface)
+                    .collect::<Vec<_>>();
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if batch.present_submissions.is_empty() {
                         let (submission, committed_surfaces) =
@@ -333,6 +338,7 @@
                                 },
                                 wm_update,
                                 presentation_layout: &presentation_layout,
+                                chrome_surfaces: &chrome_surfaces,
                             })?;
                         (
                             submission.tick,
@@ -361,6 +367,7 @@
                                 },
                                 wm_update,
                                 presentation_layout: &presentation_layout,
+                                chrome_surfaces: &chrome_surfaces,
                             })?;
                         (
                             submission.tick,
@@ -370,12 +377,12 @@
                             submission.compose_elapsed,
                         )
                     };
-                if let Some(border) = runtime.take_focused_border_observation() {
+                if let Some(ring) = runtime.take_focus_ring_observation() {
                     println!(
-                        "sophia_live_compositor_chrome schema=1 status=focused_border_composed surface={} generation={} primitives={}",
-                        border.surface.index(),
-                        border.generation,
-                        border.primitives,
+                        "sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface={} generation={} primitives={}",
+                        ring.surface.index(),
+                        ring.generation,
+                        ring.primitives,
                     );
                 }
                 if composed {

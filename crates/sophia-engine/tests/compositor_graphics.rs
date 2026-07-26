@@ -1,9 +1,9 @@
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId,
-    FocusedSurfaceBorderEdge, FocusedSurfaceBorderStyle, HeadlessOutput,
+    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId, HeadlessOutput,
     OutputFramePresentationError, OutputFramePresentationState, OutputFullRepaintReason,
-    OutputRepaintPlan, OutputRepaintPolicy, compositor_display_list_damage,
-    focused_surface_display_list, output_frame_damage_snapshot, plan_output_repaint,
+    OutputRepaintPlan, OutputRepaintPolicy, SurfaceChromeRole, SurfaceChromeStyle,
+    compositor_border_bands, compositor_display_list_damage, output_frame_damage_snapshot,
+    plan_output_repaint, surface_chrome_display_list,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
@@ -45,7 +45,7 @@ fn frame_snapshot(
 }
 
 #[test]
-fn focused_border_is_inserted_after_the_matching_committed_surface() {
+fn focused_ring_is_outside_content_and_inserted_before_its_surface() {
     let output = OutputId::from_raw(1);
     let first = SurfaceId::new(1, 1);
     let focused = SurfaceId::new(2, 1);
@@ -55,7 +55,7 @@ fn focused_border_is_inserted_after_the_matching_committed_surface() {
         width: 300,
         height: 200,
     };
-    let list = focused_surface_display_list(
+    let list = surface_chrome_display_list(
         output,
         &[first, focused],
         &[
@@ -63,56 +63,58 @@ fn focused_border_is_inserted_after_the_matching_committed_surface() {
             committed(focused, geometry, 7),
         ],
         Some(focused),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
 
     assert_eq!(list.output, output);
-    assert_eq!(list.commands.len(), 6);
+    assert_eq!(list.commands.len(), 3);
     assert_eq!(
         list.commands[0],
         CompositorDisplayCommand::Surface { surface: first }
     );
     assert_eq!(
-        list.commands[1],
+        list.commands[2],
         CompositorDisplayCommand::Surface { surface: focused }
     );
-    let rects = list.solid_rects().collect::<Vec<_>>();
+    let borders = list.borders().collect::<Vec<_>>();
+    assert_eq!(borders.len(), 1);
+    let rects = compositor_border_bands(borders[0]).to_vec();
     assert_eq!(rects.len(), 4);
-    assert_ne!(rects[0].generation, 0);
+    assert_ne!(borders[0].generation, 0);
     assert_eq!(
-        rects[0].node,
-        CompositorNodeId::FocusedSurfaceBorder {
+        borders[0].node,
+        CompositorNodeId::SurfaceChrome {
             surface: focused,
-            edge: FocusedSurfaceBorderEdge::Top,
+            role: SurfaceChromeRole::FocusRing,
         }
     );
     assert_eq!(
         rects.iter().map(|rect| rect.geometry).collect::<Vec<_>>(),
         [
             Rect {
-                x: 100,
+                x: 98,
+                y: 38,
+                width: 304,
+                height: 2,
+            },
+            Rect {
+                x: 98,
+                y: 240,
+                width: 304,
+                height: 2,
+            },
+            Rect {
+                x: 98,
                 y: 40,
-                width: 300,
-                height: 2,
-            },
-            Rect {
-                x: 100,
-                y: 238,
-                width: 300,
-                height: 2,
-            },
-            Rect {
-                x: 100,
-                y: 42,
                 width: 2,
-                height: 196,
+                height: 200,
             },
             Rect {
-                x: 398,
-                y: 42,
+                x: 400,
+                y: 40,
                 width: 2,
-                height: 196,
+                height: 200,
             },
         ]
     );
@@ -146,26 +148,26 @@ fn hidden_or_uncommitted_focus_produces_no_border() {
         ),
     ];
 
-    let hidden_list = focused_surface_display_list(
+    let hidden_list = surface_chrome_display_list(
         output,
         &[visible],
         &states,
         Some(hidden),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    assert_eq!(hidden_list.solid_rects().count(), 0);
+    assert_eq!(hidden_list.borders().count(), 0);
 
     let missing = SurfaceId::new(3, 1);
-    let missing_list = focused_surface_display_list(
+    let missing_list = surface_chrome_display_list(
         output,
         &[visible, missing],
         &states,
         Some(missing),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    assert_eq!(missing_list.solid_rects().count(), 0);
+    assert_eq!(missing_list.borders().count(), 0);
 }
 
 #[test]
@@ -195,23 +197,23 @@ fn display_list_damage_covers_old_and_new_focus_extents_once_per_edge() {
             1,
         ),
     ];
-    let first_list = focused_surface_display_list(
+    let first_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let stable_list = focused_surface_display_list(
+    let stable_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let pixel_generation_only = focused_surface_display_list(
+    let pixel_generation_only = surface_chrome_display_list(
         output,
         &[first, second],
         &[
@@ -219,15 +221,15 @@ fn display_list_damage_covers_old_and_new_focus_extents_once_per_edge() {
             committed(second, states[1].geometry, 100),
         ],
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let second_list = focused_surface_display_list(
+    let second_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(second),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
 
@@ -238,8 +240,8 @@ fn display_list_damage_covers_old_and_new_focus_extents_once_per_edge() {
     );
     let damage = compositor_display_list_damage(&first_list, &second_list);
     assert_eq!(damage.rects.len(), 8);
-    assert!(damage.rects.iter().any(|rect| rect.x == 0));
-    assert!(damage.rects.iter().any(|rect| rect.x == 100));
+    assert!(damage.rects.iter().any(|rect| rect.x == -2));
+    assert!(damage.rects.iter().any(|rect| rect.x == 98));
 }
 
 #[test]
@@ -247,22 +249,22 @@ fn display_list_rejects_invalid_duplicate_and_over_capacity_surface_streams() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(1, 1);
     assert_eq!(
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output,
             &[surface, surface],
             &[],
             None,
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         ),
         Err(CompositorDisplayListError::DuplicateSurface)
     );
     assert_eq!(
-        focused_surface_display_list(
+        surface_chrome_display_list(
             output,
             &[SurfaceId::INVALID],
             &[],
             None,
-            FocusedSurfaceBorderStyle::default(),
+            SurfaceChromeStyle::default(),
         ),
         Err(CompositorDisplayListError::InvalidSurface)
     );
@@ -271,13 +273,7 @@ fn display_list_rejects_invalid_duplicate_and_over_capacity_surface_streams() {
         .map(|index| SurfaceId::new(u32::try_from(index).unwrap(), 1))
         .collect::<Vec<_>>();
     assert_eq!(
-        focused_surface_display_list(
-            output,
-            &surfaces,
-            &[],
-            None,
-            FocusedSurfaceBorderStyle::default(),
-        ),
+        surface_chrome_display_list(output, &surfaces, &[], None, SurfaceChromeStyle::default(),),
         Err(CompositorDisplayListError::CapacityExceeded)
     );
 }
@@ -309,20 +305,20 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
             1,
         ),
     ];
-    let first_list = focused_surface_display_list(
+    let first_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let second_list = focused_surface_display_list(
+    let second_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(second),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let mut presentation = presentation_state(output);
@@ -393,20 +389,20 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
             1,
         ),
     ];
-    let first_list = focused_surface_display_list(
+    let first_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let second_list = focused_surface_display_list(
+    let second_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(second),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let mut presentation = presentation_state(output);
@@ -452,12 +448,12 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
         Some(&first_list)
     );
 
-    let wrong_output = focused_surface_display_list(
+    let wrong_output = surface_chrome_display_list(
         OutputId::from_raw(2),
         &[first],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let wrong_snapshot = output_frame_damage_snapshot(
@@ -500,20 +496,20 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
             1,
         ),
     ];
-    let first_list = focused_surface_display_list(
+    let first_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(first),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
-    let second_list = focused_surface_display_list(
+    let second_list = surface_chrome_display_list(
         output,
         &[first, second],
         &states,
         Some(second),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let mut presentation = presentation_state(output);
@@ -735,12 +731,12 @@ fn repaint_plan_rejects_invalid_policy_and_initial_presentation_fails_safe_to_fu
         },
         1,
     )];
-    let list = focused_surface_display_list(
+    let list = surface_chrome_display_list(
         output,
         &[surface],
         &states,
         Some(surface),
-        FocusedSurfaceBorderStyle::default(),
+        SurfaceChromeStyle::default(),
     )
     .unwrap();
     let mut presentation = presentation_state(output);

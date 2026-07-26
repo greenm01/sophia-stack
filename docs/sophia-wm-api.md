@@ -22,9 +22,13 @@ bounded policy changes and never receives:
 The Engine validates every proposal and preserves the last committed layout when
 a WM is absent, incompatible, timed out, malformed, or restarting.
 
+Chrome policy is an explicit capability. A Sophia-native WM may advertise it;
+the X11 compatibility bridge does not, so external WMs remain unaware of
+Engine chrome and use the compositor fallback from `config.kdl`.
+
 ## Policy Model
 
-`WM` is the name of the version 5 policy slot. It is not a requirement that a
+`WM` is the name of the version 6 policy slot. It is not a requirement that a
 client behave like a traditional window manager, nor does it make one layout
 family part of Sophia's architecture.
 
@@ -40,35 +44,37 @@ example, would not turn its panel, decorations, settings, notifications, and
 session services into WM powers. Those parts belong to shell, metadata,
 portal, and session interfaces, while spatial policy remains blind.
 
-Version 5's workspace, registered-action, pointer-focus, and chrome-policy models are current,
-versioned
-contracts. They are not constitutional claims that every later policy model
-must have nine workspaces, keyboard-first control, or the same notion of
-visibility. A later version may broaden those mechanics without weakening the
-ownership rules above.
+Version 6's workspace, registered-action, pointer-focus, and chrome-policy
+models are current, versioned contracts. They are not constitutional claims
+that every later policy model must have nine workspaces, keyboard-first
+control, or the same notion of visibility. A later version may broaden those
+mechanics without weakening the ownership rules above.
 
-## Version 5 Session Negotiation
+## Version 6 Session Negotiation
 
-WM API version 5 uses the existing Sophia IPC frame version. It does not change
+WM API version 6 uses the existing Sophia IPC frame version. It does not change
 the framing or the protocol versions of brokers and authorities.
 
 After Engine connects to the supervised WM socket, the WM sends one bounded
-`WmHello` containing API version 5, a nonzero policy generation, capability
-bits, bounded compositor chrome, and at most 256 binding registrations. Engine
-rejects unsupported capabilities, stale or zero generations, invalid chrome,
-duplicate chords or
-action IDs, invalid modifier masks, zero action IDs, excessive registrations,
-and Ctrl-Alt-Backspace. Engine replies with one `WmSessionDescriptor` containing
-the configured outputs, nine opaque workspace IDs by default, the active
-workspace for every output, and the opaque session actions available to that WM.
-No layout or action request is sent before this exchange succeeds.
+`WmHello` containing API version 6, a nonzero policy generation, capability
+bits, bounded focus-ring/frame chrome policy, and at most 256 binding
+registrations. Engine rejects unsupported capabilities, stale or zero
+generations, invalid chrome, duplicate chords or action IDs, invalid modifier
+masks, zero action IDs, excessive registrations, and Ctrl-Alt-Backspace.
+Engine replies with one `WmSessionDescriptor` containing the configured
+outputs, nine opaque workspace IDs by default, the active workspace for every
+output, and the opaque session actions available to that WM. No layout or
+action request is sent before this exchange succeeds.
 
 `WmPolicyUpdate` carries the same bounded binding and chrome policy with a
 strictly increasing generation. Engine rejects stale generations and invalid
 candidates, and defers an otherwise valid replacement while a shortcut or
 modifier remains held. `WmPolicyAck` reports applied, stale, or invalid
 outcomes. Engine owns chrome geometry, display-list insertion, damage, render,
-and scanout regardless of which accepted style is active.
+and scanout regardless of which accepted style is active. WM placements and
+size requests describe outer allocations. Engine reserves the maximum enabled
+chrome width and derives client-content geometry once, so neither a focus ring
+nor a frame consumes application pixels.
 
 The supervised socket is multiplexed. Its I/O worker may receive a policy
 update while one Engine request is in flight, but it never mutates Engine

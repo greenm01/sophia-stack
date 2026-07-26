@@ -1,10 +1,11 @@
 use sophia_engine::{
-    WmPolicyError, WmShortcutDecision, WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
+    WmPolicyApplyOutcome, WmPolicyError, WmShortcutDecision, WmShortcutRegistry, WmShortcutRouter,
+    WmWorkspaceState,
 };
 use sophia_protocol::{
     OutputId, Rect, SeatId, SurfaceId, TransactionId, WM_API_VERSION, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask, WmResponsePacket,
-    WmSessionAction, WorkspaceId,
+    WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask, WmPolicyAckOutcome,
+    WmPolicyUpdate, WmResponsePacket, WmSessionAction, WorkspaceId,
 };
 
 fn bounds(x: i32) -> Rect {
@@ -17,13 +18,47 @@ fn bounds(x: i32) -> Rect {
 }
 
 #[test]
+fn chrome_capability_is_explicit_and_blocks_unadvertised_policy_changes() {
+    let chrome = sophia_protocol::WmChromePolicy::default();
+    let registry = WmShortcutRegistry::from_hello(&WmHello {
+        api_version: WM_API_VERSION,
+        capabilities: WmCapabilities {
+            bits: WmCapabilities::BINDINGS
+                | WmCapabilities::WORKSPACES
+                | WmCapabilities::SESSION_ACTIONS,
+        },
+        policy_generation: 1,
+        chrome,
+        bindings: Vec::new(),
+    })
+    .unwrap();
+    assert!(!registry.supports_chrome_policy());
+    let mut router = WmShortcutRouter::new(registry);
+    let mut changed = chrome;
+    changed.focus_ring.width = 6;
+
+    assert_eq!(
+        router.apply_policy_update(&WmPolicyUpdate {
+            api_version: WM_API_VERSION,
+            generation: 2,
+            bindings: Vec::new(),
+            chrome: changed,
+        }),
+        WmPolicyApplyOutcome::Acknowledged(sophia_protocol::WmPolicyAck {
+            generation: 2,
+            outcome: WmPolicyAckOutcome::RejectedInvalid,
+        })
+    );
+}
+
+#[test]
 fn physical_shortcut_router_tracks_super_per_seat_and_suppresses_repeats() {
     let action = WmActionId::from_raw(7);
     let registry = WmShortcutRegistry::from_hello(&WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
         policy_generation: 1,
-        chrome: sophia_protocol::WmChromeStyle::default(),
+        chrome: sophia_protocol::WmChromePolicy::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 36,

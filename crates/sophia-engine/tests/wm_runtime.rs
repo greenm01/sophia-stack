@@ -3,7 +3,7 @@ use sophia_engine::{
     WmShortcutDecision, WmShortcutRegistry, WmSocketTransport, WmSocketTransportConfig,
 };
 use sophia_protocol::{
-    WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmChromeStyle, WmHello,
+    WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmChromePolicy, WmHello,
     WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, decode_wm_policy_ack_frame,
     encode_wm_policy_update_frame,
 };
@@ -23,10 +23,12 @@ fn wm_socket_transport_receives_unsolicited_policy_and_writes_acknowledgement() 
                 bits: WmModifierMask::SUPER,
             },
         }],
-        chrome: WmChromeStyle {
-            enabled: true,
-            thickness: 3,
-            ..WmChromeStyle::default()
+        chrome: WmChromePolicy {
+            focus_ring: sophia_protocol::WmFocusRingStyle {
+                width: 3,
+                ..sophia_protocol::WmFocusRingStyle::default()
+            },
+            ..WmChromePolicy::default()
         },
     };
     server
@@ -299,7 +301,7 @@ fn wm_shortcuts_validate_and_suppress_repeats_until_release() {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
         policy_generation: 1,
-        chrome: sophia_protocol::WmChromeStyle::default(),
+        chrome: sophia_protocol::WmChromePolicy::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 28,
@@ -362,7 +364,7 @@ fn wm_shortcuts_reject_the_emergency_chord() {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
         policy_generation: 1,
-        chrome: sophia_protocol::WmChromeStyle::default(),
+        chrome: sophia_protocol::WmChromePolicy::default(),
         bindings: vec![WmBindingRegistration {
             action: WmActionId::from_raw(1),
             keycode: 14,
@@ -384,7 +386,7 @@ fn wm_policy_update_defers_until_shortcut_idle_and_rejects_stale_generation() {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
         policy_generation: 1,
-        chrome: WmChromeStyle::default(),
+        chrome: WmChromePolicy::default(),
         bindings: vec![WmBindingRegistration {
             action: WmActionId::from_raw(1),
             keycode: 28,
@@ -401,10 +403,12 @@ fn wm_policy_update_defers_until_shortcut_idle_and_rejects_stale_generation() {
         api_version: WM_API_VERSION,
         generation: 2,
         bindings: Vec::new(),
-        chrome: WmChromeStyle {
-            enabled: true,
-            thickness: 4,
-            ..WmChromeStyle::default()
+        chrome: WmChromePolicy {
+            focus_ring: sophia_protocol::WmFocusRingStyle {
+                width: 4,
+                ..sophia_protocol::WmFocusRingStyle::default()
+            },
+            ..WmChromePolicy::default()
         },
     };
     assert_eq!(
@@ -419,7 +423,7 @@ fn wm_policy_update_defers_until_shortcut_idle_and_rejects_stale_generation() {
             outcome: WmPolicyAckOutcome::Applied,
         })
     );
-    assert_eq!(router.chrome().thickness, 4);
+    assert_eq!(router.chrome().focus_ring.width, 4);
     assert_eq!(
         router.apply_policy_update(&update),
         sophia_engine::WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {

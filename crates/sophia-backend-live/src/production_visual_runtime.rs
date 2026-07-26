@@ -19,7 +19,7 @@ struct LiveDisplayedSurface {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LiveFocusedBorderObservation {
+pub struct LiveFocusRingObservation {
     pub surface: SurfaceId,
     pub generation: u64,
     pub primitives: usize,
@@ -50,10 +50,11 @@ pub struct LiveProductionVisualRuntime {
     present_scheduler: LiveProductionPresentScheduler,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
+    chrome_surfaces: Vec<SurfaceId>,
     focused_surface: Option<SurfaceId>,
-    focused_border_style: FocusedSurfaceBorderStyle,
-    pending_focused_border_observation: Option<LiveFocusedBorderObservation>,
-    last_focused_border_observation: Option<LiveFocusedBorderObservation>,
+    surface_chrome_style: SurfaceChromeStyle,
+    pending_focus_ring_observation: Option<LiveFocusRingObservation>,
+    last_focus_ring_observation: Option<LiveFocusRingObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
     present_scheduling_blocked: bool,
@@ -75,6 +76,7 @@ pub struct LiveProductionCycleRequest<'a> {
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub wm_update: Option<WmTransactionUpdate>,
     pub presentation_layout: &'a [LayerSnapshot],
+    pub chrome_surfaces: &'a [SurfaceId],
 }
 
 pub struct LiveAuthorityTransactionRun<'a> {
@@ -111,10 +113,11 @@ impl LiveProductionVisualRuntime {
             present_scheduler: LiveProductionPresentScheduler::default(),
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
+            chrome_surfaces: Vec::new(),
             focused_surface: None,
-            focused_border_style: FocusedSurfaceBorderStyle::default(),
-            pending_focused_border_observation: None,
-            last_focused_border_observation: None,
+            surface_chrome_style: SurfaceChromeStyle::default(),
+            pending_focus_ring_observation: None,
+            last_focus_ring_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
             present_scheduling_blocked: false,
@@ -154,17 +157,17 @@ impl LiveProductionVisualRuntime {
         self
     }
 
-    pub fn with_focused_border_style(mut self, style: FocusedSurfaceBorderStyle) -> Self {
-        self.focused_border_style = style;
+    pub fn with_surface_chrome_style(mut self, style: SurfaceChromeStyle) -> Self {
+        self.surface_chrome_style = style;
         self
     }
 
-    pub fn set_focused_border_style(&mut self, style: FocusedSurfaceBorderStyle) -> bool {
-        if self.focused_border_style == style {
+    pub fn set_surface_chrome_style(&mut self, style: SurfaceChromeStyle) -> bool {
+        if self.surface_chrome_style == style {
             return false;
         }
-        self.focused_border_style = style;
-        self.last_focused_border_observation = None;
+        self.surface_chrome_style = style;
+        self.last_focus_ring_observation = None;
         true
     }
 
@@ -192,12 +195,15 @@ impl LiveProductionVisualRuntime {
             mut native_scanout,
             wm_update,
             presentation_layout,
+            chrome_surfaces,
         } = request;
         self.present_scheduling_blocked = defer_present;
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
-        let visual_projection_changed = presentation_order_changed || focus_changed;
+        let chrome_surfaces_changed = self.set_chrome_surfaces(chrome_surfaces);
+        let visual_projection_changed =
+            presentation_order_changed || chrome_surfaces_changed || focus_changed;
         let retained_cpu_layers = scene.presentation_layers(
             self.production.committed_surfaces(),
             &self.presentation_order,
@@ -270,7 +276,7 @@ impl LiveProductionVisualRuntime {
             updates,
             raised_surface,
             focused_surface,
-            self.focused_border_style,
+            self.surface_chrome_style,
             cursor_presentation.composition_position(),
             defer_frame,
             create_native_frames,
@@ -329,7 +335,7 @@ impl LiveProductionVisualRuntime {
                 )
             })?;
         if report.submission.composed {
-            self.record_focused_border_observation(&report.committed_surfaces, false)?;
+            self.record_focus_ring_observation(&report.committed_surfaces, false)?;
         }
         Ok((report.submission, report.committed_surfaces))
     }
@@ -353,10 +359,12 @@ impl LiveProductionVisualRuntime {
             mut native_scanout,
             wm_update,
             presentation_layout,
+            chrome_surfaces,
         } = request;
         self.present_scheduling_blocked = defer_present;
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
+        self.set_chrome_surfaces(chrome_surfaces);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_updates(updates, &committed_surfaces)?;
         let compose_started = Instant::now();
@@ -442,6 +450,15 @@ impl LiveProductionVisualRuntime {
             }
         }
         order_changed
+    }
+
+    fn set_chrome_surfaces(&mut self, surfaces: &[SurfaceId]) -> bool {
+        if self.chrome_surfaces == surfaces {
+            return false;
+        }
+        self.chrome_surfaces.clear();
+        self.chrome_surfaces.extend_from_slice(surfaces);
+        true
     }
 
     pub fn run_batch(
@@ -667,18 +684,22 @@ impl LiveProductionVisualRuntime {
                     });
                 }
                 CompositorDisplayCommand::Surface { .. } => {}
-                CompositorDisplayCommand::SolidRect(rect) => {
-                    mixed.layers.push(LiveOwnedMixedCompositionLayer::Solid {
-                        geometry: rect.geometry,
-                        color: rect.color,
-                    });
+                CompositorDisplayCommand::Border(border) => {
+                    for band in compositor_border_bands(border) {
+                        if !band.geometry.is_empty() {
+                            mixed.layers.push(LiveOwnedMixedCompositionLayer::Solid {
+                                geometry: band.geometry,
+                                color: band.color,
+                            });
+                        }
+                    }
                 }
             }
         }
         if current_owned.is_some() {
             return Err("visible Present surface is missing from the presentation order".into());
         }
-        self.record_focused_border_observation(&border_candidate, false)?;
+        self.record_focus_ring_observation(&border_candidate, false)?;
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 mixed
@@ -785,7 +806,7 @@ impl LiveProductionVisualRuntime {
         let composition = scene
             .compose_display_list(output, &committed, &display_list, cursor_position)?
             .clone();
-        self.record_focused_border_observation(&committed, true)?;
+        self.record_focus_ring_observation(&committed, true)?;
         let frames = scene.frames_for_outputs(output_descriptors)?;
         self.initialize_native_scanout(native_scanout, &frames)?;
         let transactions = self.layers.values().cloned().collect::<Vec<_>>();

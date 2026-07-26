@@ -125,6 +125,13 @@ placement, stacking, focus, Engine-owned chrome, output association, and
 damage-relevant generations. State changes become visible atomically. Rendering
 must not observe a partially applied surface or WM transaction.
 
+For decorated managed surfaces, visual state retains the WM-owned outer
+allocation and Engine-derived client-content geometry as one committed fact.
+The chrome clearance is stable across focus changes. A style-width reload that
+changes clearance follows the same prepare/commit/rollback path as a client
+resize; render planning cannot combine candidate chrome with old client
+geometry.
+
 ### Frame
 
 The frame domain owns immutable output-damage snapshots, frame epochs,

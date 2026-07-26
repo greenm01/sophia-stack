@@ -129,19 +129,23 @@ impl LiveProductionCpuScene {
         if output.size != self.output_size {
             return Err("CPU scene output descriptor has a mismatched size".into());
         }
-        let elements = display_list
-            .commands
-            .iter()
-            .filter_map(|command| match command {
+        let mut elements = Vec::with_capacity(display_list.commands.len().saturating_mul(4));
+        for command in &display_list.commands {
+            match command {
                 CompositorDisplayCommand::Surface { surface } => {
                     let committed = committed_surfaces
                         .iter()
-                        .find(|committed| committed.surface == *surface)?;
-                    let BufferSource::CpuBuffer { handle } = committed.buffer else {
-                        return None;
+                        .find(|committed| committed.surface == *surface);
+                    let Some(committed) = committed else {
+                        continue;
                     };
-                    let buffer = self.buffers.get(handle)?;
-                    Some(LiveCpuCompositionElementRef::Layer(
+                    let BufferSource::CpuBuffer { handle } = committed.buffer else {
+                        continue;
+                    };
+                    let Some(buffer) = self.buffers.get(handle) else {
+                        continue;
+                    };
+                    elements.push(LiveCpuCompositionElementRef::Layer(
                         LiveCpuCompositionLayerRef {
                             geometry: committed.geometry,
                             buffer: LiveCpuBufferSourceRef {
@@ -153,16 +157,20 @@ impl LiveProductionCpuScene {
                                 bytes: &buffer.bytes,
                             },
                         },
-                    ))
+                    ));
                 }
-                CompositorDisplayCommand::SolidRect(rect) => {
-                    Some(LiveCpuCompositionElementRef::Solid {
-                        geometry: rect.geometry,
-                        color: rect.color,
-                    })
+                CompositorDisplayCommand::Border(border) => {
+                    for band in sophia_engine::compositor_border_bands(*border) {
+                        if !band.geometry.is_empty() {
+                            elements.push(LiveCpuCompositionElementRef::Solid {
+                                geometry: band.geometry,
+                                color: band.color,
+                            });
+                        }
+                    }
                 }
-            })
-            .collect::<Vec<_>>();
+            }
+        }
         self.last_report = Some(
             compose_live_cpu_display_list_frame(self.output_size, &elements, cursor_position)
                 .map_err(|error| {

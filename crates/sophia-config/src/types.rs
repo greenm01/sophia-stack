@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-pub const SOPHIA_CONFIG_SCHEMA_VERSION: u32 = 1;
+pub const SOPHIA_CONFIG_SCHEMA_VERSION: u32 = 2;
 pub const SOPHIA_CONFIG_MAX_BYTES: usize = 1024 * 1024;
 pub const SOPHIA_CONFIG_MAX_APPLICATIONS: usize = 32;
 pub const SOPHIA_CONFIG_MAX_ARGUMENTS: usize = 32;
@@ -10,7 +10,7 @@ pub const SOPHIA_CONFIG_MAX_OUTPUTS: usize = 32;
 pub const SOPHIA_CONFIG_MAX_WM_ACTIONS: usize = 256;
 pub const SOPHIA_CONFIG_MAX_WM_BINDINGS: usize = 256;
 pub const SOPHIA_CONFIG_MAX_WORKSPACES: usize = 64;
-pub const SOPHIA_CONFIG_COMPILED_MAX_BORDER_THICKNESS: u32 = 64;
+pub const SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH: u32 = 64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ConfigGeneration(u64);
@@ -78,23 +78,68 @@ pub struct Rgb8 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChromeStyle {
+pub struct FocusRingStyle {
     pub enabled: bool,
-    pub thickness: u32,
+    pub width: u32,
     pub color: Rgb8,
 }
 
-impl Default for ChromeStyle {
+impl Default for FocusRingStyle {
     fn default() -> Self {
         Self {
             enabled: true,
-            thickness: 2,
+            width: 2,
             color: Rgb8 {
                 red: 0x70,
                 green: 0xb7,
                 blue: 0xff,
             },
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameStyle {
+    pub enabled: bool,
+    pub width: u32,
+    pub focused_color: Rgb8,
+    pub unfocused_color: Rgb8,
+}
+
+impl Default for FrameStyle {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            width: 0,
+            focused_color: FocusRingStyle::default().color,
+            unfocused_color: Rgb8 {
+                red: 0x30,
+                green: 0x30,
+                blue: 0x30,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ChromePolicy {
+    pub focus_ring: FocusRingStyle,
+    pub frame: FrameStyle,
+}
+
+impl ChromePolicy {
+    pub const fn clearance(self) -> u32 {
+        let ring = if self.focus_ring.enabled {
+            self.focus_ring.width
+        } else {
+            0
+        };
+        let frame = if self.frame.enabled {
+            self.frame.width
+        } else {
+            0
+        };
+        if ring > frame { ring } else { frame }
     }
 }
 
@@ -195,8 +240,8 @@ pub struct CoreConfigSnapshot {
     pub session: SessionConfig,
     pub input: InputConfig,
     pub outputs: Vec<OutputConfig>,
-    pub fallback_chrome: ChromeStyle,
-    pub max_border_thickness: u32,
+    pub fallback_chrome: ChromePolicy,
+    pub max_chrome_width: u32,
     pub namespace_profile: String,
     pub external_wm: Option<ExternalWmConfig>,
     pub verbose_diagnostics: bool,
@@ -242,7 +287,7 @@ pub struct WmConfigSnapshot {
     pub layout: WmLayoutKind,
     pub actions: Vec<WmActionConfig>,
     pub bindings: Vec<WmBindingConfig>,
-    pub chrome: ChromeStyle,
+    pub chrome: ChromePolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -260,7 +305,7 @@ impl CoreConfigDelta {
             applications_changed: active.session != candidate.session,
             repeat_changed: active.input.repeat != candidate.input.repeat,
             chrome_changed: active.fallback_chrome != candidate.fallback_chrome
-                || active.max_border_thickness != candidate.max_border_thickness,
+                || active.max_chrome_width != candidate.max_chrome_width,
             diagnostics_changed: active.verbose_diagnostics != candidate.verbose_diagnostics,
             restart_required: active.input.source != candidate.input.source
                 || active.input.xkb != candidate.input.xkb

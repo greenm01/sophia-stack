@@ -48,7 +48,8 @@ group- or world-writable.
 
 ## Validation and transactions
 
-Both files require `schema 1`. Parsers reject unknown nodes and properties,
+Both files require `schema 2`. Schema 1 chrome syntax is rejected with a
+targeted migration diagnostic. Parsers reject unknown nodes and properties,
 duplicate singleton nodes and properties, type annotations, invalid IDs,
 unbounded strings or vectors, invalid cross-references, unsafe paths, and the
 reserved Ctrl-Alt-Backspace emergency chord. A SHA-256 digest identifies the
@@ -70,11 +71,21 @@ Core reload is whole-file atomic:
   fields.
 
 The active native WM chrome preference wins while that WM is healthy. Engine
-still validates its geometry and renders/damages the chrome. The
-`config.kdl` style is the fallback when the WM is absent, invalid, or
-degraded.
+still validates its geometry and renders/damages the chrome. An external WM
+does not advertise chrome-policy ownership, so it uses `config.kdl`. A failed
+or restarting WM retains the last complete visual chrome and geometry until a
+replacement policy can relayout atomically.
 
-WM API version 5 carries a generation and bounded chrome policy during
+Chrome has two explicit roles. A focus ring is painted only for the focused
+managed surface. A frame may be painted for every managed surface with
+focused and unfocused colors. Engine reserves one stable clearance equal to
+the maximum enabled width, then derives client content geometry by insetting
+the WM's outer allocation. Focus and color changes repaint without resizing.
+A clearance change is prepared through the ordinary atomic resize path; the
+old complete style and client geometry remain visible until every matching
+client buffer is ready.
+
+WM API version 6 carries a generation and bounded focus-ring/frame policy during
 negotiation. Versioned policy-update and acknowledgement frames reject stale
 generations; Engine's policy reducer defers replacement until shortcut state
 is idle. The supervised transport delivers updates without requiring an
@@ -115,12 +126,12 @@ tools/start_sophia_native_hot_reload_tty3.sh
 ```
 
 The launcher uses a private runtime `wm.kdl`; it does not modify the user's
-default configuration. It atomically advances focused-border thickness from
-2 to 6, submits an invalid edit, deletes the file, and recreates it at
-thickness 4. The border must retain its last-known-good value during the
-invalid and missing-file phases. Open an interactive Kitty with `Super+Enter`
-during each phase and use `Super+Shift+Q` for normal logout after the final
-4-pixel border appears. The launcher prints the exact session and phase-log
+default configuration. It atomically advances focus-ring width from 2 to 6,
+submits an invalid edit, deletes the file, and recreates it at width 4. The
+ring must retain its last-known-good value during the invalid and missing-file
+phases. Open an interactive Kitty with `Super+Enter` during each phase and use
+`Super+Shift+Q` for normal logout after the final 4-pixel ring appears. The
+launcher prints the exact session and phase-log
 paths before takeover. This runner covers the native-WM live-policy portion;
 core pending-restart and external-WM isolation still require their separate
 physical evidence before the roadmap gate closes.

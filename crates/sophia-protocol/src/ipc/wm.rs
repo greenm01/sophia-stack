@@ -1,9 +1,10 @@
 use crate::{
     SessionApplicationId, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
-    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmChromeStyle,
-    WmCommand, WmFocusRequest, WmHello, WmManageSurface, WmModifierMask, WmOutputWorkspace,
-    WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmRelayoutWorkspace, WmRequestKind,
-    WmRequestPacket, WmResponsePacket, WmRgb8, WmSessionAction, WmSessionDescriptor,
+    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmChromePolicy,
+    WmCommand, WmFocusRequest, WmFocusRingStyle, WmFrameStyle, WmHello, WmManageSurface,
+    WmModifierMask, WmOutputWorkspace, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate,
+    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmResponsePacket, WmRgb8, WmSessionAction,
+    WmSessionDescriptor,
 };
 
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
@@ -189,30 +190,61 @@ pub fn decode_wm_policy_ack_frame(frame: &[u8]) -> Result<WmPolicyAck, IpcCodecE
     })
 }
 
-fn encode_chrome(chrome: WmChromeStyle, payload: &mut Vec<u8>) {
-    push_u16(payload, u16::from(chrome.enabled));
-    push_u32(payload, chrome.thickness);
-    payload.extend_from_slice(&[chrome.color.red, chrome.color.green, chrome.color.blue]);
+fn encode_chrome(chrome: WmChromePolicy, payload: &mut Vec<u8>) {
+    push_u16(payload, u16::from(chrome.focus_ring.enabled));
+    push_u32(payload, chrome.focus_ring.width);
+    encode_rgb(chrome.focus_ring.color, payload);
+    push_u16(payload, u16::from(chrome.frame.enabled));
+    push_u32(payload, chrome.frame.width);
+    encode_rgb(chrome.frame.focused_color, payload);
+    encode_rgb(chrome.frame.unfocused_color, payload);
 }
 
-fn decode_chrome(cursor: &mut Cursor<'_>) -> Result<WmChromeStyle, IpcCodecError> {
-    Ok(WmChromeStyle {
-        enabled: match cursor.u16()? {
-            0 => false,
-            1 => true,
-            other => {
-                return Err(IpcCodecError::InvalidBool {
-                    field: "wm_chrome_enabled",
-                    value: u8::try_from(other).unwrap_or(u8::MAX),
-                });
-            }
+fn decode_chrome(cursor: &mut Cursor<'_>) -> Result<WmChromePolicy, IpcCodecError> {
+    let focus_ring_enabled = decode_bool(cursor, "wm_focus_ring_enabled")?;
+    let focus_ring_width = cursor.u32()?;
+    let focus_ring_color = decode_rgb(cursor)?;
+    let frame_enabled = decode_bool(cursor, "wm_frame_enabled")?;
+    let frame_width = cursor.u32()?;
+    let focused_color = decode_rgb(cursor)?;
+    let unfocused_color = decode_rgb(cursor)?;
+    Ok(WmChromePolicy {
+        focus_ring: WmFocusRingStyle {
+            enabled: focus_ring_enabled,
+            width: focus_ring_width,
+            color: focus_ring_color,
         },
-        thickness: cursor.u32()?,
-        color: WmRgb8 {
-            red: cursor.u8()?,
-            green: cursor.u8()?,
-            blue: cursor.u8()?,
+        frame: WmFrameStyle {
+            enabled: frame_enabled,
+            width: frame_width,
+            focused_color,
+            unfocused_color,
         },
+    })
+}
+
+fn decode_bool(cursor: &mut Cursor<'_>, field: &'static str) -> Result<bool, IpcCodecError> {
+    Ok(match cursor.u16()? {
+        0 => false,
+        1 => true,
+        other => {
+            return Err(IpcCodecError::InvalidBool {
+                field,
+                value: u8::try_from(other).unwrap_or(u8::MAX),
+            });
+        }
+    })
+}
+
+fn encode_rgb(color: WmRgb8, payload: &mut Vec<u8>) {
+    payload.extend_from_slice(&[color.red, color.green, color.blue]);
+}
+
+fn decode_rgb(cursor: &mut Cursor<'_>) -> Result<WmRgb8, IpcCodecError> {
+    Ok(WmRgb8 {
+        red: cursor.u8()?,
+        green: cursor.u8()?,
+        blue: cursor.u8()?,
     })
 }
 

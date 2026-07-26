@@ -107,7 +107,11 @@ struct LiveWmSession {
     stale_responses: usize,
     work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
-    chrome: sophia_protocol::WmChromeStyle,
+    wm_chrome_supported: bool,
+    chrome: sophia_protocol::WmChromePolicy,
+    fallback_chrome: sophia_engine::SurfaceChromeStyle,
+    visual_chrome: sophia_engine::SurfaceChromeStyle,
+    pending_visual_chrome: Option<sophia_engine::SurfaceChromeStyle>,
     pending_policy_update: Option<WmPolicyUpdate>,
     force_transport_restart: bool,
     workspace_state: WmWorkspaceState,
@@ -214,7 +218,11 @@ impl LiveWmSession {
             ),
             restart_policy: RestartPolicy::default(),
             shortcuts: None,
-            chrome: sophia_protocol::WmChromeStyle::default(),
+            wm_chrome_supported: false,
+            chrome: sophia_protocol::WmChromePolicy::default(),
+            fallback_chrome: config.surface_chrome_style,
+            visual_chrome: config.surface_chrome_style,
+            pending_visual_chrome: None,
             pending_policy_update: None,
             force_transport_restart: false,
             workspace_state,
@@ -268,7 +276,9 @@ impl LiveWmSession {
             .workspace_state
             .descriptor(self.session_actions.clone());
         let registry = transport.negotiate(&descriptor)?;
+        self.wm_chrome_supported = registry.supports_chrome_policy();
         self.chrome = registry.chrome();
+        self.stage_visual_chrome(self.candidate_chrome_style());
         match self.shortcuts.as_mut() {
             Some(shortcuts) => shortcuts.replace_registry(registry),
             None => self.shortcuts = Some(WmShortcutRouter::new(registry)),
@@ -282,90 +292,6 @@ impl LiveWmSession {
             self.restart_policy,
         );
         self.supervisor_state = state;
-        Ok(())
-    }
-
-    fn focused_border_style(&self) -> Option<sophia_engine::FocusedSurfaceBorderStyle> {
-        (!self.degraded).then(|| {
-            PersistentXtermSessionConfig::wm_focused_border_style(self.chrome)
-        })
-    }
-
-    fn service_policy_update(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.degraded || self.force_transport_restart {
-            return Ok(());
-        }
-        if self.pending_policy_update.is_none() {
-            let event = match self
-                .transport
-                .as_ref()
-                .ok_or("WM transport is unavailable")?
-                .try_policy_event()
-            {
-                Ok(event) => event,
-                Err(WmTransportSubmitError::Disconnected) => {
-                    self.request_transport_restart("policy_channel_disconnected", None);
-                    return Ok(());
-                }
-                Err(WmTransportSubmitError::Busy) => {
-                    return Err("WM transport returned an invalid busy policy event".into());
-                }
-            };
-            match event {
-                Some(WmTransportPolicyEvent::Update(update)) => {
-                    self.pending_policy_update = Some(update);
-                }
-                Some(WmTransportPolicyEvent::Failed(error)) => {
-                    self.request_transport_restart("policy_transport_failed", Some(&error));
-                    return Ok(());
-                }
-                None => return Ok(()),
-            }
-        }
-
-        let update = self
-            .pending_policy_update
-            .as_ref()
-            .expect("pending WM policy update was populated");
-        let outcome = self
-            .shortcuts
-            .as_mut()
-            .ok_or("WM shortcut router is unavailable")?
-            .apply_policy_update(update);
-        let WmPolicyApplyOutcome::Acknowledged(acknowledgement) = outcome else {
-            return Ok(());
-        };
-        let applied = acknowledgement.outcome == WmPolicyAckOutcome::Applied;
-        match self
-            .transport
-            .as_ref()
-            .ok_or("WM transport is unavailable")?
-            .try_acknowledge_policy(acknowledgement)
-        {
-            Ok(()) => {}
-            Err(WmTransportSubmitError::Busy) => {
-                return Err("WM policy acknowledgement queue is unexpectedly full".into());
-            }
-            Err(WmTransportSubmitError::Disconnected) => {
-                self.request_transport_restart("policy_ack_disconnected", None);
-                return Ok(());
-            }
-        }
-        if applied {
-            let shortcuts = self
-                .shortcuts
-                .as_ref()
-                .expect("WM shortcut router was available for policy application");
-            self.chrome = shortcuts.chrome();
-            println!(
-                "sophia_live_wm_policy schema=1 status=applied generation={} bindings={} chrome_enabled={} chrome_thickness={}",
-                shortcuts.policy_generation(),
-                shortcuts.binding_count(),
-                self.chrome.enabled,
-                self.chrome.thickness,
-            );
-        }
-        self.pending_policy_update = None;
         Ok(())
     }
 
@@ -741,7 +667,10 @@ impl LiveWmSession {
             .ok_or("WM output is not configured")?
             .bounds;
         let plan = planning_state.plan_response(&response, &self.session_actions)?;
-        let transaction = plan.layout;
+        let transaction = sophia_engine::apply_surface_chrome_clearance(
+            &plan.layout,
+            self.candidate_chrome_style(),
+        )?;
         validate_live_wm_transaction(&transaction, layout, bounds)?;
         let mut proposed = layout.layers.values().cloned().collect::<Vec<_>>();
         let engine = HeadlessEngine::new(output);
@@ -863,98 +792,4 @@ impl LiveWmSession {
         self.last_committed_at = Some(Instant::now());
     }
 
-    const fn max_request(&self) -> Duration {
-        self.max_request
-    }
-
-    fn pending_request_count(&self) -> usize {
-        self.queued_requests
-            .len()
-            .saturating_add(usize::from(self.in_flight_request.is_some()))
-    }
-
-    fn surface_visible_on_output(
-        &self,
-        surface: SurfaceId,
-        output: sophia_protocol::OutputId,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        self.workspace_state
-            .surface_visible_on_output(surface, output)
-            .map_err(Into::into)
-    }
-
-    fn apply_commit_result(
-        &mut self,
-        mut result: LiveWmCommitResult,
-        previous_focus: Option<SurfaceId>,
-        output: sophia_protocol::OutputId,
-    ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
-        let committed = result.update.commit.outcome == TransactionOutcome::Committed;
-        let physical_action = committed
-            .then_some(result.source)
-            .flatten()
-            .and_then(|source| match source {
-                LiveWmProposalSource::Action(action) => Some(action),
-                LiveWmProposalSource::Focus(_)
-                | LiveWmProposalSource::Manage(_)
-                | LiveWmProposalSource::Relayout => None,
-            });
-        let mut session_action = None;
-        let mut workspace_projection = None;
-        let mut clear_focus = None;
-        let mut restore_focus = None;
-        if committed && let Some(effects) = result.effects.take() {
-            let mut candidate = effects.workspace_state;
-            let retained_newer_bounds =
-                candidate.copy_output_bounds_from(&self.workspace_state)?;
-            let transaction = effects.transaction;
-            let output_state = candidate
-                .output(output)
-                .ok_or("committed WM state lost its output projection")?;
-            let policy_focus = output_state.focus;
-            workspace_projection = Some(LiveWmWorkspaceProjection {
-                transaction,
-                output,
-                workspace: output_state.workspace,
-                visible_surfaces: candidate.visible_surfaces(output)?.len(),
-                focus_present: policy_focus.is_some(),
-            });
-            self.workspace_state = candidate;
-            if retained_newer_bounds {
-                self.work_area_relayout_required = true;
-            } else if matches!(result.source, Some(LiveWmProposalSource::Relayout)) {
-                self.work_area_relayout_required = false;
-            }
-            session_action = effects
-                .session_action
-                .map(|action| (transaction, action.0, action.1));
-            if policy_focus.is_none() && let Some(surface) = previous_focus {
-                clear_focus = Some((transaction, surface));
-            }
-            if let Some(surface) = policy_focus
-                && policy_focus != previous_focus
-            {
-                restore_focus = Some((transaction, surface));
-            }
-            self.mark_committed();
-        }
-        let owner_commit = LiveWmOwnerCommit {
-            update: result.update,
-            physical_action,
-            session_action,
-            workspace_projection,
-            clear_focus,
-            restore_focus,
-        };
-        self.pump_transport()?;
-        Ok(owner_commit)
-    }
-}
-
-impl Drop for LiveWmSession {
-    fn drop(&mut self) {
-        let _ = self.supervisor.terminate();
-        self.transport.take();
-        let _ = std::fs::remove_file(&self.socket_path);
-    }
 }

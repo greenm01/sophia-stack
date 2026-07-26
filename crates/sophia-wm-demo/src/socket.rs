@@ -12,10 +12,11 @@ use std::{
 #[cfg(unix)]
 use sophia_protocol::{
     IpcMessageKind, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, WM_API_VERSION, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmChromeStyle, WmHello, WmModifierMask, WmPolicyAck,
-    WmPolicyAckOutcome, WmPolicyUpdate, WmRequestPacket, WmRgb8, decode_frame,
-    decode_wm_policy_ack_frame, decode_wm_request_frame, decode_wm_session_descriptor_frame,
-    encode_wm_hello_frame, encode_wm_policy_update_frame, encode_wm_response_frame,
+    WmBindingRegistration, WmCapabilities, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmHello,
+    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmRequestPacket, WmRgb8,
+    decode_frame, decode_wm_policy_ack_frame, decode_wm_request_frame,
+    decode_wm_session_descriptor_frame, encode_wm_hello_frame, encode_wm_policy_update_frame,
+    encode_wm_response_frame,
 };
 
 #[cfg(unix)]
@@ -48,19 +49,19 @@ impl fmt::Display for WmConfigReloadEvent {
         match self {
             Self::Candidate { generation } => write!(
                 formatter,
-                "sophia_wm_config_reload schema=1 status=candidate generation={generation}"
+                "sophia_wm_config_reload schema=2 status=candidate generation={generation}"
             ),
             Self::Applied { generation } => write!(
                 formatter,
-                "sophia_wm_config_reload schema=1 status=applied generation={generation}"
+                "sophia_wm_config_reload schema=2 status=applied generation={generation}"
             ),
             Self::Unchanged { generation } => write!(
                 formatter,
-                "sophia_wm_config_reload schema=1 status=unchanged generation={generation}"
+                "sophia_wm_config_reload schema=2 status=unchanged generation={generation}"
             ),
             Self::Rejected { stage, message } => write!(
                 formatter,
-                "sophia_wm_config_reload schema=1 status=rejected reason={stage} error={message}"
+                "sophia_wm_config_reload schema=2 status=rejected reason={stage} error={message}"
             ),
         }
     }
@@ -240,13 +241,29 @@ fn wm_policy_update(snapshot: &sophia_config::WmConfigSnapshot) -> WmPolicyUpdat
                 },
             })
             .collect(),
-        chrome: WmChromeStyle {
-            enabled: snapshot.chrome.enabled,
-            thickness: snapshot.chrome.thickness,
-            color: WmRgb8 {
-                red: snapshot.chrome.color.red,
-                green: snapshot.chrome.color.green,
-                blue: snapshot.chrome.color.blue,
+        chrome: WmChromePolicy {
+            focus_ring: WmFocusRingStyle {
+                enabled: snapshot.chrome.focus_ring.enabled,
+                width: snapshot.chrome.focus_ring.width,
+                color: WmRgb8 {
+                    red: snapshot.chrome.focus_ring.color.red,
+                    green: snapshot.chrome.focus_ring.color.green,
+                    blue: snapshot.chrome.focus_ring.color.blue,
+                },
+            },
+            frame: WmFrameStyle {
+                enabled: snapshot.chrome.frame.enabled,
+                width: snapshot.chrome.frame.width,
+                focused_color: WmRgb8 {
+                    red: snapshot.chrome.frame.focused_color.red,
+                    green: snapshot.chrome.frame.focused_color.green,
+                    blue: snapshot.chrome.frame.focused_color.blue,
+                },
+                unfocused_color: WmRgb8 {
+                    red: snapshot.chrome.frame.unfocused_color.red,
+                    green: snapshot.chrome.frame.unfocused_color.green,
+                    blue: snapshot.chrome.frame.unfocused_color.blue,
+                },
             },
         },
     }

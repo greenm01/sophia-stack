@@ -1,5 +1,5 @@
 /- kdl-version 2
-schema 1
+schema 2
 
 session {
     application "terminal" id=1 executable="/usr/bin/kitty"
@@ -17,8 +17,11 @@ outputs {
 }
 
 compositor {
-    chrome-fallback enabled=#true thickness=2 color="#70b7ff"
-    chrome-limits max-thickness=64
+    chrome-fallback {
+        focus-ring enabled=#true width=2 color="#70b7ff"
+        frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+    }
+    chrome-limits max-width=64
 }
 
 namespace profile="classic-shared"

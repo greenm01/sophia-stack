@@ -1,7 +1,7 @@
 use crate::{LiveCpuBufferUpdate, LiveCpuCompositionReport, LiveProductionComposedFrame};
 use sophia_engine::{
-    FocusedSurfaceBorderStyle, HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement,
-    focused_surface_display_list,
+    HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement, SurfaceChromeStyle,
+    surface_chrome_display_list,
 };
 use sophia_protocol::{CommittedSurfaceState, Point, SurfaceId, TransactionCommit};
 use sophia_renderer_live::LiveProductionCpuScene;
@@ -33,7 +33,7 @@ pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     updates: Option<Vec<LiveCpuBufferUpdate>>,
     raised_surface: Option<SurfaceId>,
     focused_surface: Option<SurfaceId>,
-    focused_border_style: FocusedSurfaceBorderStyle,
+    surface_chrome_style: SurfaceChromeStyle,
     cursor_position: Option<Point>,
     defer_frame: bool,
     create_native_frames: bool,
@@ -49,7 +49,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         updates: Vec<LiveCpuBufferUpdate>,
         raised_surface: Option<SurfaceId>,
         focused_surface: Option<SurfaceId>,
-        focused_border_style: FocusedSurfaceBorderStyle,
+        surface_chrome_style: SurfaceChromeStyle,
         cursor_position: Option<Point>,
         defer_frame: bool,
         create_native_frames: bool,
@@ -62,7 +62,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
             updates: Some(updates),
             raised_surface,
             focused_surface,
-            focused_border_style,
+            surface_chrome_style,
             cursor_position,
             defer_frame,
             create_native_frames,
@@ -108,12 +108,12 @@ where
                 .output_descriptors
                 .first()
                 .ok_or("software composition has no output descriptor")?;
-            let display_list = focused_surface_display_list(
+            let display_list = surface_chrome_display_list(
                 output.id,
                 &presentation_order,
                 committed,
                 self.focused_surface,
-                self.focused_border_style,
+                self.surface_chrome_style,
             )?;
             self.scene
                 .compose_display_list(*output, committed, &display_list, self.cursor_position)?

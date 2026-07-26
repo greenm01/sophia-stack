@@ -8,6 +8,16 @@ use sophia_x11_wm_bridge::{
     XMONAD_ACTION_APPLICATION_1,
 };
 
+#[test]
+fn compatibility_profiles_leave_compositor_chrome_to_engine_config() {
+    let hello = LegacyWmProfile::Xmonad.hello();
+
+    assert_eq!(
+        hello.capabilities.bits & sophia_protocol::WmCapabilities::POLICY_CHROME_V2,
+        0
+    );
+}
+
 fn node(raw: u32) -> LayoutNodeSnapshot {
     LayoutNodeSnapshot {
         surface: SurfaceId::new(raw, 1),

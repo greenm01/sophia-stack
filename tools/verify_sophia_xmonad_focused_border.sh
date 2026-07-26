@@ -28,7 +28,7 @@ awk '
         next
     }
     committed &&
-        $0 ~ "^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=" target " generation=[0-9]+ primitives=4$" {
+        $0 ~ "^sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=" target " generation=[0-9]+ primitives=4$" {
         pairs++
         seen[target] = 1
         reconciled = 0
@@ -49,7 +49,7 @@ awk '
 }
 
 resize_proven="$(
-    sed -n 's/^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=\([0-9][0-9]*\) generation=\([0-9][0-9]*\) primitives=4$/\1 \2/p' "$evidence" |
+    sed -n 's/^sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=\([0-9][0-9]*\) generation=\([0-9][0-9]*\) primitives=4$/\1 \2/p' "$evidence" |
         sort -u |
         awk '{ generations[$1]++ } END { for (surface in generations) if (generations[surface] >= 2) { print "yes"; exit } }'
 )"
@@ -65,7 +65,7 @@ awk '
     hidden && /^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=[1-9][0-9]* focus=surface$/ {
         restored = NR
     }
-    restored && /^sophia_live_compositor_chrome schema=1 status=focused_border_composed / {
+    restored && /^sophia_live_compositor_chrome schema=2 status=focus_ring_composed / {
         border = NR
         exit
     }
@@ -78,7 +78,7 @@ awk '
 awk '
     /^sophia_live_seat schema=1 status=suspended$/ { suspended = NR }
     suspended && /^sophia_live_seat schema=1 status=active source=resume$/ { resumed = NR }
-    resumed && /^sophia_live_compositor_chrome schema=1 status=focused_border_composed / {
+    resumed && /^sophia_live_compositor_chrome schema=2 status=focus_ring_composed / {
         border = NR
         exit
     }

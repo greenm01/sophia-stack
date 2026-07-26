@@ -1,14 +1,17 @@
 pub const COMPILED_CORE_CONFIG: &str = r##"
 /- kdl-version 2
-schema 1
+schema 2
 input {
     seat "seat0"
     keyboard rules="evdev" model="pc105" layout="us" variant="" options=""
     repeat delay-ms=660 interval-ms=25
 }
 compositor {
-    chrome-fallback enabled=#true thickness=2 color="#70b7ff"
-    chrome-limits max-thickness=64
+    chrome-fallback {
+        focus-ring enabled=#true width=2 color="#70b7ff"
+        frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+    }
+    chrome-limits max-width=64
 }
 namespace profile="classic-shared"
 diagnostics verbose=#false
@@ -16,7 +19,7 @@ diagnostics verbose=#false
 
 pub const COMPILED_WM_CONFIG: &str = r##"
 /- kdl-version 2
-schema 1
+schema 2
 policy timeout-ms=300
 workspace 1
 workspace 2
@@ -34,5 +37,8 @@ action "terminal" id=3 behavior="launch-application" application=1
 binding action=1 keycode=57 modifiers="super"
 binding action=2 keycode=3 modifiers="super"
 binding action=3 keycode=28 modifiers="super"
-chrome enabled=#true thickness=2 color="#70b7ff"
+chrome {
+    focus-ring enabled=#true width=2 color="#70b7ff"
+    frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+}
 "##;

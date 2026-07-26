@@ -423,7 +423,19 @@ consecutive passing runs.
   future application launches, idle key-repeat replacement, fallback chrome,
   and diagnostics. Engine-owned border rendering now consumes runtime style
   instead of a backend hard-code.
-- [x] Version the blind WM API to v5 with negotiated native chrome,
+- [x] Split compositor chrome into explicit focus-ring and frame roles. Reserve
+  stable Engine-owned clearance inside each WM allocation, derive client
+  content once through a checked data-oriented geometry system, keep
+  client-positioned surfaces ineligible, and lower semantic borders through
+  one shared fixed-band path so wide chrome cannot cover application pixels.
+- [x] Make native chrome ownership an explicit WM API capability. Keep the X11
+  compatibility bridge chrome-blind, route external WMs through the core
+  fallback, and hold candidate width changes behind the same committed
+  relayout boundary used by native policy.
+- [ ] Complete the physical schema-2 proof for ring-only, frame-only, and
+  combined chrome. Require an atomic 2→6 width transition with no content
+  occlusion, partial geometry, focus resize, bar decoration, or input loss.
+- [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.
 - [x] Carry native-WM policy updates and acknowledgements through the
