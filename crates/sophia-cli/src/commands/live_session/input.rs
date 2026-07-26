@@ -20,6 +20,7 @@ struct PhysicalInputRouteReport {
     virtual_terminal: Option<u8>,
     virtual_terminal_modifier_releases: usize,
     pointer_focus_handoff_expired: bool,
+    pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -331,10 +332,13 @@ fn route_input_events_with_pointer_focus(
         virtual_terminal: None,
         virtual_terminal_modifier_releases: 0,
         pointer_focus_handoff_expired: false,
+        pointer_focus_handoff_released: None,
     };
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
         report.pointer_focus_handoff_expired = handoff.expire(now_msec);
         if let Some(mut ready) = handoff.take_ready(applied_client_focus) {
+            let released_target = applied_client_focus;
+            let released_count = ready.len();
             while let Some(request) = ready.pop_front() {
                 let is_button = matches!(
                     request.kind,
@@ -366,6 +370,8 @@ fn route_input_events_with_pointer_focus(
                 }
                 report.deliveries.push(delivery);
             }
+            report.pointer_focus_handoff_released =
+                released_target.map(|surface| (surface, released_count));
         }
     }
     for mut event in events {

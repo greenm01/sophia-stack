@@ -381,6 +381,22 @@ Validate verifier changes with:
 tools/check_sophia_xmonad_four_kitty_verifier.sh
 ```
 
+To isolate click-to-focus ordering in any normal xmonad capture, open at least
+two Kitty windows, press and drag with the unmodified primary button in an
+unfocused tile, release, and then type in that tile. After normal logout, run:
+
+```sh
+tools/verify_sophia_xmonad_pointer_focus.sh
+```
+
+The verifier rejects a dropped handoff and requires the blind WM focus request,
+Engine focus commit, X frontend focus acknowledgment, and delivery of at least
+the retained press/release pair in that order. Validate verifier changes with:
+
+```sh
+tools/check_sophia_xmonad_pointer_focus_verifier.sh
+```
+
 For the focused unmodified-xmobar work-area gate, use:
 
 ```sh
