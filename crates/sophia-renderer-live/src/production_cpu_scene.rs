@@ -16,6 +16,7 @@ pub struct LiveProductionComposedFrame {
     pub frame: LiveCpuComposedFrame,
     pub checksum: u64,
     pub nonzero_pixel_bytes: usize,
+    pub compositor_display_list: Option<CompositorDisplayList>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,6 +30,7 @@ pub struct LiveProductionCpuScene {
     output_size: Size,
     buffers: LiveCpuBufferRegistry,
     last_report: Option<LiveCpuCompositionReport>,
+    last_compositor_display_list: Option<CompositorDisplayList>,
     max_nonzero_pixel_bytes: usize,
     nonzero_frames: usize,
 }
@@ -39,6 +41,7 @@ impl LiveProductionCpuScene {
             output_size,
             buffers: LiveCpuBufferRegistry::new(),
             last_report: None,
+            last_compositor_display_list: None,
             max_nonzero_pixel_bytes: 0,
             nonzero_frames: 0,
         }
@@ -159,6 +162,7 @@ impl LiveProductionCpuScene {
                     format!("persistent CPU display-list composition failed: {error:?}")
                 })?,
         );
+        self.last_compositor_display_list = Some(display_list.clone());
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
@@ -214,6 +218,7 @@ impl LiveProductionCpuScene {
             compose_live_cpu_frame_ref_with_cursor(self.output_size, &layers, cursor_position)
                 .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
+        self.last_compositor_display_list = None;
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
@@ -327,6 +332,11 @@ impl LiveProductionCpuScene {
                     frame: primary.frame.clone(),
                     checksum: primary.checksum,
                     nonzero_pixel_bytes: primary.nonzero_pixel_bytes,
+                    compositor_display_list: self
+                        .last_compositor_display_list
+                        .as_ref()
+                        .filter(|display_list| display_list.output == output.id)
+                        .cloned(),
                 });
                 continue;
             }
@@ -362,6 +372,7 @@ impl LiveProductionCpuScene {
                 frame: report.frame,
                 checksum: report.checksum,
                 nonzero_pixel_bytes: report.nonzero_pixel_bytes,
+                compositor_display_list: Some(CompositorDisplayList::empty(output.id)),
             });
         }
         Ok(frames)

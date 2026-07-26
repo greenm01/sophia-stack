@@ -632,8 +632,10 @@ The M7 gate also requires compositor-chrome evidence for the pointer-focus
 sequence. A committed pointer focus must produce a four-primitive focused
 border for the same opaque surface before the following key is routed, and the
 complete run must observe borders on at least two distinct focus targets. The
-verifier remains virtual-input evidence; it does not replace physical DRM,
-libinput, resize, workspace, or VT confirmation.
+same gate requires an initial display-list baseline on both outputs and
+nonzero compositor damage retired after that pointer focus and before the
+following key. The verifier remains virtual-input evidence; it does not
+replace physical DRM, libinput, resize, workspace, or VT confirmation.
 
 After a normal physical xmonad capture that exercises two focus targets, one
 focused resize, an empty workspace round-trip, and one VT round-trip, run:

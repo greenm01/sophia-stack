@@ -24,6 +24,8 @@ done
 
 grep -q '^sophia_live_wm schema=1 status=ready adapter=external ' "$evidence"
 grep -Eq '^sophia_live_wm schema=1 status=layout_committed .*surfaces=[3-9][0-9]* ' "$evidence"
+grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=1 rects=0$' "$evidence"
+grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=2 rects=0$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-keyboard action=focused_key_probe events=2$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96$' "$evidence"
@@ -53,16 +55,20 @@ awk '
         border = 1
         next
     }
+    committed && /sophia_live_compositor_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
+        damage = 1
+        next
+    }
     /^sophia_live_session_pointer schema=6 status=focused_key_routed / {
-        exit !(requested && committed && border)
+        exit !(requested && committed && border && damage)
     }
     END {
-        if (!(requested && committed && border)) {
+        if (!(requested && committed && border && damage)) {
             exit 1
         }
     }
 ' "$evidence" || {
-    echo "focused border did not follow committed pointer focus" >&2
+    echo "focused border and retired damage did not follow committed pointer focus" >&2
     exit 1
 }
 border_surfaces="$(

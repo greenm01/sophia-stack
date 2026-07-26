@@ -1,7 +1,7 @@
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId,
-    FocusedSurfaceBorderEdge, FocusedSurfaceBorderStyle, compositor_display_list_damage,
-    focused_surface_display_list,
+    CompositorDisplayCommand, CompositorDisplayListError, CompositorDisplayListPresentationError,
+    CompositorDisplayListPresentationState, CompositorNodeId, FocusedSurfaceBorderEdge,
+    FocusedSurfaceBorderStyle, compositor_display_list_damage, focused_surface_display_list,
 };
 use sophia_protocol::{BufferSource, CommittedSurfaceState, OutputId, Rect, Region, SurfaceId};
 
@@ -253,4 +253,224 @@ fn display_list_rejects_invalid_duplicate_and_over_capacity_surface_streams() {
         ),
         Err(CompositorDisplayListError::CapacityExceeded)
     );
+}
+
+#[test]
+fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
+    let output = OutputId::from_raw(1);
+    let first = SurfaceId::new(1, 1);
+    let second = SurfaceId::new(2, 1);
+    let states = [
+        committed(
+            first,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+        committed(
+            second,
+            Rect {
+                x: 100,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+    ];
+    let first_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(first),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let second_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(second),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+
+    assert_eq!(
+        presentation
+            .queue(first_list.clone())
+            .unwrap()
+            .damage
+            .rects
+            .len(),
+        4
+    );
+    assert!(presentation.presented().is_none());
+    presentation.mark_submitted().unwrap();
+    assert!(presentation.presented().is_none());
+    let first_presented = presentation.mark_presented().unwrap();
+    assert_eq!(first_presented.display_list, first_list);
+    assert_eq!(presentation.presented(), Some(&first_list));
+
+    assert_eq!(
+        presentation
+            .queue(second_list.clone())
+            .unwrap()
+            .damage
+            .rects
+            .len(),
+        8
+    );
+    presentation.mark_submitted().unwrap();
+    let second_presented = presentation.mark_presented().unwrap();
+    assert_eq!(second_presented.display_list, second_list);
+    assert_eq!(second_presented.damage.rects.len(), 8);
+}
+
+#[test]
+fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline() {
+    let output = OutputId::from_raw(1);
+    let first = SurfaceId::new(1, 1);
+    let second = SurfaceId::new(2, 1);
+    let states = [
+        committed(
+            first,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+        committed(
+            second,
+            Rect {
+                x: 100,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+    ];
+    let first_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(first),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let second_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(second),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+    presentation.queue(first_list.clone()).unwrap();
+    presentation.mark_initial_presented().unwrap();
+
+    presentation.queue(second_list.clone()).unwrap();
+    assert_eq!(
+        presentation.discard_pending().unwrap().damage.rects.len(),
+        8
+    );
+    assert_eq!(presentation.presented(), Some(&first_list));
+
+    presentation.queue(second_list.clone()).unwrap();
+    presentation.queue(first_list.clone()).unwrap();
+    assert!(
+        presentation.pending().unwrap().damage.is_empty(),
+        "superseded work must compare with the still-presented list"
+    );
+    presentation.mark_submitted().unwrap();
+    assert_eq!(
+        presentation.mark_submitted(),
+        Err(CompositorDisplayListPresentationError::SubmissionInFlight)
+    );
+    presentation.mark_presented().unwrap();
+    assert_eq!(presentation.presented(), Some(&first_list));
+
+    let wrong_output = focused_surface_display_list(
+        OutputId::from_raw(2),
+        &[first],
+        &states,
+        Some(first),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        presentation.queue(wrong_output),
+        Err(CompositorDisplayListPresentationError::OutputMismatch)
+    );
+}
+
+#[test]
+fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
+    let output = OutputId::from_raw(1);
+    let first = SurfaceId::new(1, 1);
+    let second = SurfaceId::new(2, 1);
+    let states = [
+        committed(
+            first,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+        committed(
+            second,
+            Rect {
+                x: 100,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            1,
+        ),
+    ];
+    let first_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(first),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let second_list = focused_surface_display_list(
+        output,
+        &[first, second],
+        &states,
+        Some(second),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+    presentation.queue(first_list.clone()).unwrap();
+    presentation.mark_initial_presented().unwrap();
+    presentation.queue(second_list.clone()).unwrap();
+    presentation.mark_submitted().unwrap();
+
+    let queued = presentation.queue(first_list.clone()).unwrap();
+    assert_eq!(
+        queued.damage.rects.len(),
+        8,
+        "the next frame follows the submitted list, not the older presented list"
+    );
+    presentation.mark_presented().unwrap();
+    assert_eq!(presentation.presented(), Some(&second_list));
+    presentation.mark_submitted().unwrap();
+    presentation.mark_presented().unwrap();
+    assert_eq!(presentation.presented(), Some(&first_list));
 }

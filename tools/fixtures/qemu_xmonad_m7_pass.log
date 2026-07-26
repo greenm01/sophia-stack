@@ -1,4 +1,6 @@
 sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0
+sophia_live_compositor_damage schema=1 status=initial_presented output=1 rects=0
+sophia_live_compositor_damage schema=1 status=initial_presented output=2 rects=0
 sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=1 generation=1 primitives=4
 sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j
 sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4
@@ -7,6 +9,7 @@ sophia_live_wm schema=1 status=focus_committed transaction=2 target=surface
 sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
 sophia_live_session_pointer schema=5 status=focus_handoff_released surface=2 count=3
 sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=2 generation=1 primitives=4
+sophia_live_compositor_damage schema=1 status=presented output=1 rects=8
 sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-keyboard action=focused_key_probe events=2
 sophia_live_session_pointer schema=6 status=focused_key_routed surface=2
 sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum

@@ -88,6 +88,141 @@ pub enum CompositorDisplayListError {
     CapacityExceeded,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositorDisplayListPresentation {
+    pub display_list: CompositorDisplayList,
+    pub damage: Region,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompositorDisplayListPresentationError {
+    InvalidOutput,
+    OutputMismatch,
+    MissingPending,
+    SubmissionInFlight,
+    MissingSubmitted,
+}
+
+impl fmt::Display for CompositorDisplayListPresentationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for CompositorDisplayListPresentationError {}
+
+/// Tracks compositor display-list state through the scanout lifecycle.
+///
+/// A queued list is compared with the state that will precede it on screen:
+/// the submitted list when a page flip is in flight, otherwise the presented
+/// list. Failed or superseded queue work never advances presented state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositorDisplayListPresentationState {
+    output: OutputId,
+    pending: Option<CompositorDisplayListPresentation>,
+    submitted: Option<CompositorDisplayListPresentation>,
+    presented: Option<CompositorDisplayList>,
+}
+
+impl CompositorDisplayListPresentationState {
+    pub fn new(output: OutputId) -> Result<Self, CompositorDisplayListPresentationError> {
+        if !output.is_valid() {
+            return Err(CompositorDisplayListPresentationError::InvalidOutput);
+        }
+        Ok(Self {
+            output,
+            pending: None,
+            submitted: None,
+            presented: None,
+        })
+    }
+
+    pub const fn output(&self) -> OutputId {
+        self.output
+    }
+
+    pub fn queue(
+        &mut self,
+        display_list: CompositorDisplayList,
+    ) -> Result<&CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+        if display_list.output != self.output {
+            return Err(CompositorDisplayListPresentationError::OutputMismatch);
+        }
+        let baseline = self
+            .submitted
+            .as_ref()
+            .map(|submitted| &submitted.display_list)
+            .or(self.presented.as_ref());
+        let damage = baseline.map_or_else(
+            || {
+                let empty = CompositorDisplayList::empty(self.output);
+                compositor_display_list_damage(&empty, &display_list)
+            },
+            |baseline| compositor_display_list_damage(baseline, &display_list),
+        );
+        self.pending = Some(CompositorDisplayListPresentation {
+            display_list,
+            damage,
+        });
+        Ok(self.pending.as_ref().expect("assigned above"))
+    }
+
+    pub fn discard_pending(&mut self) -> Option<CompositorDisplayListPresentation> {
+        self.pending.take()
+    }
+
+    pub fn mark_submitted(
+        &mut self,
+    ) -> Result<&CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+        if self.submitted.is_some() {
+            return Err(CompositorDisplayListPresentationError::SubmissionInFlight);
+        }
+        self.submitted = Some(
+            self.pending
+                .take()
+                .ok_or(CompositorDisplayListPresentationError::MissingPending)?,
+        );
+        Ok(self.submitted.as_ref().expect("assigned above"))
+    }
+
+    pub fn mark_presented(
+        &mut self,
+    ) -> Result<CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+        let submitted = self
+            .submitted
+            .take()
+            .ok_or(CompositorDisplayListPresentationError::MissingSubmitted)?;
+        self.presented = Some(submitted.display_list.clone());
+        Ok(submitted)
+    }
+
+    pub fn mark_initial_presented(
+        &mut self,
+    ) -> Result<CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
+        if self.submitted.is_some() {
+            return Err(CompositorDisplayListPresentationError::SubmissionInFlight);
+        }
+        let pending = self
+            .pending
+            .take()
+            .ok_or(CompositorDisplayListPresentationError::MissingPending)?;
+        self.presented = Some(pending.display_list.clone());
+        Ok(pending)
+    }
+
+    pub fn pending(&self) -> Option<&CompositorDisplayListPresentation> {
+        self.pending.as_ref()
+    }
+
+    pub fn submitted(&self) -> Option<&CompositorDisplayListPresentation> {
+        self.submitted.as_ref()
+    }
+
+    pub fn presented(&self) -> Option<&CompositorDisplayList> {
+        self.presented.as_ref()
+    }
+}
+
 impl fmt::Display for CompositorDisplayListError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{self:?}")

@@ -595,6 +595,7 @@ impl LiveProductionVisualRuntime {
         let retained_surfaces = self.displayed_surfaces.keys().copied().collect::<Vec<_>>();
         let display_list = self.display_list(prepared.candidate(), &self.presentation_order)?;
         let border_candidate = prepared.candidate().to_vec();
+        mixed.compositor_display_list = Some(display_list.clone());
         for command in display_list.commands {
             match command {
                 CompositorDisplayCommand::Surface { surface } if surface == queued_surface => {

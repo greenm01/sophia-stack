@@ -1,5 +1,7 @@
-use sophia_engine::CompositorRgb8;
-use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
+use sophia_engine::{CompositorDisplayList, CompositorRgb8, HeadlessOutput};
+use sophia_protocol::{
+    BufferSource, CommittedSurfaceState, OutputId, Point, Rect, Region, Size, SurfaceId,
+};
 use sophia_renderer_live::{
     DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferSourceRef,
@@ -314,4 +316,29 @@ fn production_scene_composes_only_the_visible_surface_order() {
         .unwrap();
     assert_eq!(visible.layers_composed, 1);
     assert_eq!(visible.nonzero_pixel_bytes, 16);
+}
+
+#[test]
+fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        scale: 1,
+    };
+    let display_list = CompositorDisplayList::empty(output.id);
+    let mut scene = LiveProductionCpuScene::new(output.size);
+
+    scene
+        .compose_display_list(&[], &display_list, None)
+        .unwrap();
+    let frames = scene.frames_for_outputs(&[output]).unwrap();
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(
+        frames[0].compositor_display_list.as_ref(),
+        Some(&display_list)
+    );
 }

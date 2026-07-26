@@ -69,6 +69,7 @@ impl LiveProductionVisualRuntime {
         let display_list = self
             .display_list(committed, &self.presentation_order)
             .map_err(std::io::Error::other)?;
+        let compositor_display_list = Some(display_list.clone());
         for command in display_list.commands {
             match command {
                 CompositorDisplayCommand::Surface { surface } => {
@@ -100,6 +101,14 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
-        Ok(transaction.map(|transaction| (transaction, LiveOwnedMixedCompositionFrame { layers })))
+        Ok(transaction.map(|transaction| {
+            (
+                transaction,
+                LiveOwnedMixedCompositionFrame {
+                    layers,
+                    compositor_display_list,
+                },
+            )
+        }))
     }
 }

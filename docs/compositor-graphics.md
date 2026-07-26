@@ -146,6 +146,15 @@ is attached to a client surface, its geometry must be derived from the same
 committed surface state used for that frame. Pending client geometry must not
 move committed chrome ahead of matching client pixels.
 
+Each composed frame carries the immutable display list used to produce its
+pixels. Engine owns a bounded per-output `pending → submitted → presented`
+ledger for those lists. New damage is computed against an in-flight submitted
+list when one exists, otherwise against the last presented list. A superseded
+or failed pending frame cannot advance the baseline; an accepted KMS submit
+moves the list to submitted, and only its page-flip callback makes it
+presented. This keeps compositor damage synchronized with the pixels and
+retirement event it describes.
+
 Animations are Engine-clocked state. The Engine or session reducer determines
 the semantic state for each frame; the renderer only draws that immutable
 state. The WM, metadata broker, and renderer do not drive independent animation
@@ -184,13 +193,19 @@ content, client titles, paths, or texture bytes.
   placement, scissor clipping, scaling, and premultiplied-alpha blending.
 - The production path exports the rendered GBM front buffer and retains its
   resources through KMS page-flip retirement.
+- CPU and mixed CPU/DMA-BUF frames retain their immutable display-list
+  identity through composition and cloning. The per-output Engine ledger
+  computes exact chrome damage and advances it through accepted submit and
+  page-flip retirement; reduced native evidence reports the retired rectangle
+  count.
 - Engine has generation-checked `ChromeDescriptor` and `ChromeActionRequest`
   records for sanitized compositor metadata and actions.
 
 ### Target
 
-- Integrate display-list damage with output frame scheduling so stable
-  compositor nodes avoid redundant output work.
+- Consume the retirement-safe display-list damage in partial composition,
+  output frame scheduling, and supported KMS damage clips so stable compositor
+  nodes avoid redundant output work.
 - Extend native primitives only when demonstrated shell requirements need
   rounded borders, shadows, images, or cached text.
 - Add deterministic capability degradation for each admitted primitive.

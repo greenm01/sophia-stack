@@ -247,6 +247,13 @@ Promotion now follows the gates below in order.
   implemented. The production CPU and mixed CPU/DMA-BUF paths interleave the
   four border primitives immediately after the focused surface and use the
   exact committed or prepared-candidate geometry associated with that frame.
+  Those frames retain their immutable display-list identity through native
+  queueing. A bounded per-output Engine ledger now compares pending chrome with
+  the submitted or presented predecessor as appropriate, rejects failed and
+  superseded state transitions, and advances the baseline only after the
+  matching page-flip callback. The QEMU gate requires both output baselines and
+  nonzero retired focus damage. Partial redraw and KMS damage-clip consumption
+  remain later performance work.
   The two-output QEMU xmonad gate proves that a click-drag focus commit is
   followed by a rendered four-primitive border on the same opaque surface
   before the next key reaches it, and observes borders on two distinct focus

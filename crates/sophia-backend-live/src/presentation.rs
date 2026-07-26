@@ -145,7 +145,10 @@ pub fn try_clone_mixed_frame(
             }
         })
         .collect::<std::io::Result<Vec<_>>>()?;
-    Ok(LiveOwnedMixedCompositionFrame { layers })
+    Ok(LiveOwnedMixedCompositionFrame {
+        layers,
+        compositor_display_list: frame.compositor_display_list.clone(),
+    })
 }
 
 #[derive(Debug, Default)]
@@ -280,7 +283,10 @@ impl LivePresentationResourceSession {
             },
             placement: pixel_aligned_dma_buf_placement(descriptor.size, target, clip, alpha),
         });
-        Ok(LiveOwnedMixedCompositionFrame { layers })
+        Ok(LiveOwnedMixedCompositionFrame {
+            layers,
+            compositor_display_list: None,
+        })
     }
 
     pub fn release_source(&mut self, handle: BufferHandle) -> LiveResourceReleaseStatus {

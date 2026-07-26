@@ -42,6 +42,12 @@ expect_failure missing_pointer_selected_key
 sed '/sophia_live_compositor_chrome /d' "$fixture" >"$tmp"
 expect_failure missing_focused_border
 
+sed '/status=presented output=1 rects=8/d' "$fixture" >"$tmp"
+expect_failure missing_retired_compositor_damage
+
+sed '/status=initial_presented output=2/d' "$fixture" >"$tmp"
+expect_failure missing_secondary_damage_baseline
+
 sed '/status=output_edge_confined /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_edge
 
