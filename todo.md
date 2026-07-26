@@ -41,13 +41,14 @@ showed that neither a reused GBM surface nor a reused EGL/GL context bound to
 fresh surfaces is safe on the current AMDGPU stack: both fail on the third
 mixed render. Mixed composition therefore keeps one complete target per export
 as the correctness baseline. Retirement-driven target pooling remains a
-post-soak optimization unless measured latency prevents promotion. The latest
-xmobar run established the protocol-neutral work-area path on both outputs:
-the 14-pixel top reservation produced reduced managed geometry, 162 mixed
-exports completed without native failure, and teardown was clean. That run
-was exploratory rather than a promotion capture; it did not exercise the
-bar-pointer, held-repeat, clipboard, post-last-window pointer, workspace, and
-VT assertions required by the strict physical gate.
+post-soak optimization unless measured latency prevents promotion. The focused
+xmobar promotion capture now establishes the protocol-neutral work-area path
+on both outputs: the 14-pixel top reservation produced exact reduced managed
+geometry, button and axis input reached the client-positioned bar without
+stealing Kitty focus, workspace and repeated VT round-trips preserved the
+scene, 50 mixed composition lifetimes balanced with zero replacement, and
+teardown was clean. Held-repeat, clipboard, post-last-window pointer, and the
+broader interaction sequence remain in the normal xmonad gate.
 
 ## Daily-Driver Promotion Contract
 
@@ -245,16 +246,18 @@ Promotion now follows the gates below in order.
 - [x] Retain a bounded real-xmobar request trace proving override-redirect
   lifecycle, MIT-SHM pixmap upload/readback, copy-to-window pixels, and no X
   protocol errors.
-- [ ] Retain a guarded physical xmobar regression from the same commit as the
+- [x] Retain a guarded physical xmobar regression from the same commit as the
   status-bar work-area implementation. Require an updating bar, Kitty at
   `y=bar_bottom` with `height=output_height-bar_bottom`, no visible seam or
   occluded Kitty pixels, working bar pointer interaction, unchanged Kitty
   keyboard focus, one workspace round-trip, one VT round-trip, and clean
   teardown.
-  The first post-work-area run applied `y=14` on both outputs and retained
-  matching managed pixels with clean teardown. It remains partial because it
-  did not record a client-positioned pointer target, a VT round-trip, or the
-  complete focused interaction sequence.
+  The guarded capture on frame-service commit `9b14ea9` applied `y=14` on both
+  outputs, routed button and axis input to the generic client-positioned role,
+  preserved Kitty focus across the interaction, committed workspace 2/1,
+  completed three clean VT suspend/resume cycles, balanced 50 mixed
+  composition target/pipeline/frame-surface lifetimes with zero replacement,
+  and exited normally with clean TTY recovery.
 
 Milestone 9 exits only when the automated resize regression and both physical
 normal/emergency captures pass from the same committed release.
