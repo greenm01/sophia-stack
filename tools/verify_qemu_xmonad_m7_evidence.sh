@@ -59,16 +59,20 @@ awk '
         damage = 1
         next
     }
+    committed && /sophia_live_compositor_repaint schema=1 status=presented output=1 mode=partial rects=[1-9][0-9]* pixels=[1-9][0-9]*$/ {
+        repaint = 1
+        next
+    }
     /^sophia_live_session_pointer schema=6 status=focused_key_routed / {
-        exit !(requested && committed && border && damage)
+        exit !(requested && committed && border && damage && repaint)
     }
     END {
-        if (!(requested && committed && border && damage)) {
+        if (!(requested && committed && border && damage && repaint)) {
             exit 1
         }
     }
 ' "$evidence" || {
-    echo "focused border and retired damage did not follow committed pointer focus" >&2
+    echo "focused border and bounded repaint did not follow committed pointer focus" >&2
     exit 1
 }
 border_surfaces="$(

@@ -1,9 +1,13 @@
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayListError, CompositorDisplayListPresentationError,
-    CompositorDisplayListPresentationState, CompositorNodeId, FocusedSurfaceBorderEdge,
-    FocusedSurfaceBorderStyle, compositor_display_list_damage, focused_surface_display_list,
+    CompositorDisplayListPresentationState, CompositorFullRepaintReason, CompositorNodeId,
+    CompositorRepaintPlan, CompositorRepaintPolicy, FocusedSurfaceBorderEdge,
+    FocusedSurfaceBorderStyle, HeadlessOutput, compositor_display_list_damage,
+    focused_surface_display_list, plan_compositor_repaint,
 };
-use sophia_protocol::{BufferSource, CommittedSurfaceState, OutputId, Rect, Region, SurfaceId};
+use sophia_protocol::{
+    BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
+};
 
 fn committed(surface: SurfaceId, geometry: Rect, generation: u64) -> CommittedSurfaceState {
     CommittedSurfaceState {
@@ -15,6 +19,18 @@ fn committed(surface: SurfaceId, geometry: Rect, generation: u64) -> CommittedSu
         },
         damage: Region::single(geometry),
     }
+}
+
+fn presentation_state(output: OutputId) -> CompositorDisplayListPresentationState {
+    CompositorDisplayListPresentationState::new(HeadlessOutput {
+        id: output,
+        size: Size {
+            width: 200,
+            height: 80,
+        },
+        scale: 1,
+    })
+    .unwrap()
 }
 
 #[test]
@@ -298,7 +314,7 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
         FocusedSurfaceBorderStyle::default(),
     )
     .unwrap();
-    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+    let mut presentation = presentation_state(output);
 
     assert_eq!(
         presentation
@@ -374,7 +390,7 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
         FocusedSurfaceBorderStyle::default(),
     )
     .unwrap();
-    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+    let mut presentation = presentation_state(output);
     presentation.queue(first_list.clone()).unwrap();
     presentation.mark_initial_presented().unwrap();
 
@@ -456,7 +472,7 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
         FocusedSurfaceBorderStyle::default(),
     )
     .unwrap();
-    let mut presentation = CompositorDisplayListPresentationState::new(output).unwrap();
+    let mut presentation = presentation_state(output);
     presentation.queue(first_list.clone()).unwrap();
     presentation.mark_initial_presented().unwrap();
     presentation.queue(second_list.clone()).unwrap();
@@ -473,4 +489,220 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
     presentation.mark_submitted().unwrap();
     presentation.mark_presented().unwrap();
     assert_eq!(presentation.presented(), Some(&first_list));
+}
+
+#[test]
+fn repaint_plan_clips_and_coalesces_only_rectangular_output_damage() {
+    let output_size = Size {
+        width: 100,
+        height: 100,
+    };
+    let damage = Region {
+        rects: vec![
+            Rect {
+                x: -5,
+                y: 10,
+                width: 10,
+                height: 10,
+            },
+            Rect {
+                x: 5,
+                y: 10,
+                width: 5,
+                height: 10,
+            },
+            Rect {
+                x: 20,
+                y: 20,
+                width: 10,
+                height: 2,
+            },
+            Rect {
+                x: 20,
+                y: 22,
+                width: 2,
+                height: 8,
+            },
+            Rect {
+                x: 150,
+                y: 150,
+                width: 10,
+                height: 10,
+            },
+        ],
+    };
+
+    let CompositorRepaintPlan::Partial {
+        damage,
+        damaged_pixels,
+    } = plan_compositor_repaint(output_size, &damage, CompositorRepaintPolicy::default()).unwrap()
+    else {
+        panic!("small clipped damage should remain partial");
+    };
+
+    assert_eq!(
+        damage.rects,
+        [
+            Rect {
+                x: 0,
+                y: 10,
+                width: 10,
+                height: 10,
+            },
+            Rect {
+                x: 20,
+                y: 20,
+                width: 10,
+                height: 2,
+            },
+            Rect {
+                x: 20,
+                y: 22,
+                width: 2,
+                height: 8,
+            },
+        ]
+    );
+    assert_eq!(damaged_pixels, 136);
+}
+
+#[test]
+fn repaint_plan_falls_back_to_full_output_for_coverage_or_complexity() {
+    let output_size = Size {
+        width: 100,
+        height: 100,
+    };
+    let coverage = Region::single(Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 80,
+    });
+    let CompositorRepaintPlan::Full {
+        damage,
+        damaged_pixels,
+        reason,
+    } = plan_compositor_repaint(output_size, &coverage, CompositorRepaintPolicy::default())
+        .unwrap()
+    else {
+        panic!("large coverage should use a full repaint");
+    };
+    assert_eq!(
+        reason,
+        CompositorFullRepaintReason::CoverageThresholdReached
+    );
+    assert_eq!(
+        damage,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        })
+    );
+    assert_eq!(damaged_pixels, 10_000);
+
+    let fragmented = Region {
+        rects: (0..33)
+            .map(|index| Rect {
+                x: index * 2,
+                y: 0,
+                width: 1,
+                height: 1,
+            })
+            .collect(),
+    };
+    let CompositorRepaintPlan::Full { reason, .. } =
+        plan_compositor_repaint(output_size, &fragmented, CompositorRepaintPolicy::default())
+            .unwrap()
+    else {
+        panic!("fragmented damage should use a full repaint");
+    };
+    assert_eq!(
+        reason,
+        CompositorFullRepaintReason::PartialRectLimitExceeded
+    );
+
+    let over_capacity = Region {
+        rects: vec![
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            };
+            sophia_engine::MAX_COMPOSITOR_DAMAGE_RECTS + 1
+        ],
+    };
+    let CompositorRepaintPlan::Full { reason, .. } = plan_compositor_repaint(
+        output_size,
+        &over_capacity,
+        CompositorRepaintPolicy::default(),
+    )
+    .unwrap() else {
+        panic!("over-capacity damage should fail safe to full repaint");
+    };
+    assert_eq!(reason, CompositorFullRepaintReason::DamageCapacityExceeded);
+}
+
+#[test]
+fn repaint_plan_rejects_invalid_policy_and_presentation_exposes_partial_focus_damage() {
+    let invalid = CompositorRepaintPolicy {
+        max_partial_rects: 0,
+        ..CompositorRepaintPolicy::default()
+    };
+    assert!(
+        plan_compositor_repaint(
+            Size {
+                width: 1,
+                height: 1
+            },
+            &Region::empty(),
+            invalid
+        )
+        .is_err()
+    );
+    assert_eq!(
+        CompositorDisplayListPresentationState::new(HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: Size {
+                width: 0,
+                height: 1,
+            },
+            scale: 1,
+        }),
+        Err(CompositorDisplayListPresentationError::InvalidOutputSize)
+    );
+
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(1, 1);
+    let states = [committed(
+        surface,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 80,
+        },
+        1,
+    )];
+    let list = focused_surface_display_list(
+        output,
+        &[surface],
+        &states,
+        Some(surface),
+        FocusedSurfaceBorderStyle::default(),
+    )
+    .unwrap();
+    let mut presentation = presentation_state(output);
+    let queued = presentation.queue(list).unwrap();
+
+    assert!(matches!(
+        queued.repaint,
+        CompositorRepaintPlan::Partial {
+            damaged_pixels: 704,
+            ..
+        }
+    ));
+    assert_eq!(queued.repaint.damage().unwrap().rects.len(), 4);
 }

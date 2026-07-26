@@ -1,6 +1,8 @@
+use crate::HeadlessOutput;
 use crate::prelude::*;
 
 pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 1_024;
+pub const MAX_COMPOSITOR_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FocusedSurfaceBorderEdge {
@@ -92,11 +94,90 @@ pub enum CompositorDisplayListError {
 pub struct CompositorDisplayListPresentation {
     pub display_list: CompositorDisplayList,
     pub damage: Region,
+    pub repaint: CompositorRepaintPlan,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorRepaintPolicy {
+    pub max_partial_rects: usize,
+    pub full_repaint_percent: u8,
+}
+
+impl Default for CompositorRepaintPolicy {
+    fn default() -> Self {
+        Self {
+            max_partial_rects: 32,
+            full_repaint_percent: 60,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompositorFullRepaintReason {
+    DamageCapacityExceeded,
+    PartialRectLimitExceeded,
+    CoverageThresholdReached,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompositorRepaintPlan {
+    Skip,
+    Partial {
+        damage: Region,
+        damaged_pixels: u64,
+    },
+    Full {
+        damage: Region,
+        damaged_pixels: u64,
+        reason: CompositorFullRepaintReason,
+    },
+}
+
+impl CompositorRepaintPlan {
+    pub const fn reduced_name(&self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Partial { .. } => "partial",
+            Self::Full { .. } => "full",
+        }
+    }
+
+    pub fn damage(&self) -> Option<&Region> {
+        match self {
+            Self::Skip => None,
+            Self::Partial { damage, .. } | Self::Full { damage, .. } => Some(damage),
+        }
+    }
+
+    pub const fn damaged_pixels(&self) -> u64 {
+        match self {
+            Self::Skip => 0,
+            Self::Partial { damaged_pixels, .. } | Self::Full { damaged_pixels, .. } => {
+                *damaged_pixels
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompositorRepaintPlanError {
+    InvalidOutputSize,
+    InvalidPolicy,
+}
+
+impl fmt::Display for CompositorRepaintPlanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for CompositorRepaintPlanError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayListPresentationError {
     InvalidOutput,
+    InvalidOutputSize,
+    InvalidRepaintPolicy,
     OutputMismatch,
     MissingPending,
     SubmissionInFlight,
@@ -118,19 +199,38 @@ impl std::error::Error for CompositorDisplayListPresentationError {}
 /// list. Failed or superseded queue work never advances presented state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompositorDisplayListPresentationState {
-    output: OutputId,
+    output: HeadlessOutput,
+    repaint_policy: CompositorRepaintPolicy,
     pending: Option<CompositorDisplayListPresentation>,
     submitted: Option<CompositorDisplayListPresentation>,
     presented: Option<CompositorDisplayList>,
 }
 
 impl CompositorDisplayListPresentationState {
-    pub fn new(output: OutputId) -> Result<Self, CompositorDisplayListPresentationError> {
-        if !output.is_valid() {
+    pub fn new(output: HeadlessOutput) -> Result<Self, CompositorDisplayListPresentationError> {
+        Self::with_repaint_policy(output, CompositorRepaintPolicy::default())
+    }
+
+    pub fn with_repaint_policy(
+        output: HeadlessOutput,
+        repaint_policy: CompositorRepaintPolicy,
+    ) -> Result<Self, CompositorDisplayListPresentationError> {
+        if !output.id.is_valid() {
             return Err(CompositorDisplayListPresentationError::InvalidOutput);
         }
+        validate_compositor_repaint_inputs(output.size, repaint_policy).map_err(
+            |error| match error {
+                CompositorRepaintPlanError::InvalidOutputSize => {
+                    CompositorDisplayListPresentationError::InvalidOutputSize
+                }
+                CompositorRepaintPlanError::InvalidPolicy => {
+                    CompositorDisplayListPresentationError::InvalidRepaintPolicy
+                }
+            },
+        )?;
         Ok(Self {
             output,
+            repaint_policy,
             pending: None,
             submitted: None,
             presented: None,
@@ -138,14 +238,14 @@ impl CompositorDisplayListPresentationState {
     }
 
     pub const fn output(&self) -> OutputId {
-        self.output
+        self.output.id
     }
 
     pub fn queue(
         &mut self,
         display_list: CompositorDisplayList,
     ) -> Result<&CompositorDisplayListPresentation, CompositorDisplayListPresentationError> {
-        if display_list.output != self.output {
+        if display_list.output != self.output.id {
             return Err(CompositorDisplayListPresentationError::OutputMismatch);
         }
         let baseline = self
@@ -155,14 +255,17 @@ impl CompositorDisplayListPresentationState {
             .or(self.presented.as_ref());
         let damage = baseline.map_or_else(
             || {
-                let empty = CompositorDisplayList::empty(self.output);
+                let empty = CompositorDisplayList::empty(self.output.id);
                 compositor_display_list_damage(&empty, &display_list)
             },
             |baseline| compositor_display_list_damage(baseline, &display_list),
         );
+        let repaint = plan_compositor_repaint(self.output.size, &damage, self.repaint_policy)
+            .expect("presentation state validates its output and repaint policy");
         self.pending = Some(CompositorDisplayListPresentation {
             display_list,
             damage,
+            repaint,
         });
         Ok(self.pending.as_ref().expect("assigned above"))
     }
@@ -221,6 +324,150 @@ impl CompositorDisplayListPresentationState {
     pub fn presented(&self) -> Option<&CompositorDisplayList> {
         self.presented.as_ref()
     }
+}
+
+/// Reduces raw compositor-node damage into bounded output-local repaint work.
+///
+/// Rectangles are clipped to the output and exact rectangular unions are
+/// coalesced deterministically. Excess complexity or coverage falls back to a
+/// full repaint; incomplete proof therefore costs performance, never pixels.
+pub fn plan_compositor_repaint(
+    output_size: Size,
+    damage: &Region,
+    policy: CompositorRepaintPolicy,
+) -> Result<CompositorRepaintPlan, CompositorRepaintPlanError> {
+    validate_compositor_repaint_inputs(output_size, policy)?;
+    let full_output = Rect {
+        x: 0,
+        y: 0,
+        width: output_size.width,
+        height: output_size.height,
+    };
+    let output_pixels = rect_area(full_output);
+    if damage.rects.len() > MAX_COMPOSITOR_DAMAGE_RECTS {
+        return Ok(CompositorRepaintPlan::Full {
+            damage: Region::single(full_output),
+            damaged_pixels: output_pixels,
+            reason: CompositorFullRepaintReason::DamageCapacityExceeded,
+        });
+    }
+
+    let mut rects = Vec::with_capacity(damage.rects.len());
+    for rect in damage.rects.iter().copied() {
+        let Some(mut current) = clip_rect(rect, full_output) else {
+            continue;
+        };
+        let mut index = 0;
+        while index < rects.len() {
+            if rects_form_rectangle(current, rects[index]) {
+                current = bounding_rect(current, rects.swap_remove(index));
+                index = 0;
+            } else {
+                index += 1;
+            }
+        }
+        rects.push(current);
+    }
+    rects.sort_by_key(|rect| (rect.y, rect.x, rect.height, rect.width));
+    if rects.is_empty() {
+        return Ok(CompositorRepaintPlan::Skip);
+    }
+    if rects.len() > policy.max_partial_rects {
+        return Ok(CompositorRepaintPlan::Full {
+            damage: Region::single(full_output),
+            damaged_pixels: output_pixels,
+            reason: CompositorFullRepaintReason::PartialRectLimitExceeded,
+        });
+    }
+
+    let damaged_pixels = rects
+        .iter()
+        .copied()
+        .map(rect_area)
+        .fold(0_u64, u64::saturating_add);
+    if damaged_pixels.saturating_mul(100)
+        >= output_pixels.saturating_mul(u64::from(policy.full_repaint_percent))
+    {
+        return Ok(CompositorRepaintPlan::Full {
+            damage: Region::single(full_output),
+            damaged_pixels: output_pixels,
+            reason: CompositorFullRepaintReason::CoverageThresholdReached,
+        });
+    }
+    Ok(CompositorRepaintPlan::Partial {
+        damage: Region { rects },
+        damaged_pixels,
+    })
+}
+
+fn validate_compositor_repaint_inputs(
+    output_size: Size,
+    policy: CompositorRepaintPolicy,
+) -> Result<(), CompositorRepaintPlanError> {
+    if output_size.width <= 0 || output_size.height <= 0 {
+        return Err(CompositorRepaintPlanError::InvalidOutputSize);
+    }
+    if policy.max_partial_rects == 0
+        || policy.max_partial_rects > MAX_COMPOSITOR_DAMAGE_RECTS
+        || !(1..=100).contains(&policy.full_repaint_percent)
+    {
+        return Err(CompositorRepaintPlanError::InvalidPolicy);
+    }
+    Ok(())
+}
+
+fn clip_rect(rect: Rect, bounds: Rect) -> Option<Rect> {
+    let x = rect.x.max(bounds.x);
+    let y = rect.y.max(bounds.y);
+    let right = rect
+        .x
+        .saturating_add(rect.width)
+        .min(bounds.x.saturating_add(bounds.width));
+    let bottom = rect
+        .y
+        .saturating_add(rect.height)
+        .min(bounds.y.saturating_add(bounds.height));
+    let clipped = Rect {
+        x,
+        y,
+        width: right.saturating_sub(x),
+        height: bottom.saturating_sub(y),
+    };
+    (!clipped.is_empty()).then_some(clipped)
+}
+
+fn rects_form_rectangle(left: Rect, right: Rect) -> bool {
+    let bounds = bounding_rect(left, right);
+    let intersection = clip_rect(left, right).map_or(0, rect_area);
+    rect_area(bounds)
+        == rect_area(left)
+            .saturating_add(rect_area(right))
+            .saturating_sub(intersection)
+}
+
+fn bounding_rect(left: Rect, right: Rect) -> Rect {
+    let x = left.x.min(right.x);
+    let y = left.y.min(right.y);
+    Rect {
+        x,
+        y,
+        width: left
+            .x
+            .saturating_add(left.width)
+            .max(right.x.saturating_add(right.width))
+            .saturating_sub(x),
+        height: left
+            .y
+            .saturating_add(left.height)
+            .max(right.y.saturating_add(right.height))
+            .saturating_sub(y),
+    }
+}
+
+fn rect_area(rect: Rect) -> u64 {
+    u64::try_from(rect.width)
+        .unwrap_or_default()
+        .saturating_mul(u64::try_from(rect.height).unwrap_or_default())
 }
 
 impl fmt::Display for CompositorDisplayListError {

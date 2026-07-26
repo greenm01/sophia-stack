@@ -6,7 +6,9 @@ mod persistent_native_scanout {
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
+    mod compositor_damage;
     mod state;
+    use compositor_damage::trace_presented_compositor_damage;
     pub use state::*;
 
     pub struct LiveProductionNativeScanout {
@@ -68,25 +70,6 @@ mod persistent_native_scanout {
         pub nonzero_exports: usize,
         pub last_submit_report: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
         pub compositor_display_lists: CompositorDisplayListPresentationState,
-    }
-
-    impl LiveProductionNativeHead {
-        fn queue_compositor_display_list(
-            &mut self,
-            display_list: Option<sophia_engine::CompositorDisplayList>,
-        ) {
-            let Some(display_list) = display_list else {
-                self.compositor_display_lists.discard_pending();
-                return;
-            };
-            if let Err(error) = self.compositor_display_lists.queue(display_list) {
-                tracing::warn!(
-                    "sophia_live_compositor_damage schema=1 status=queue_rejected output={} reason={error}",
-                    self.output.id.raw(),
-                );
-                self.compositor_display_lists.discard_pending();
-            }
-        }
     }
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -232,7 +215,11 @@ mod persistent_native_scanout {
                         nonzero_exports: 0,
                         last_submit_report: None,
                         compositor_display_lists: CompositorDisplayListPresentationState::new(
-                            output_id,
+                            sophia_engine::HeadlessOutput {
+                                id: output_id,
+                                size,
+                                scale: 1,
+                            },
                         )
                         .map_err(|error| {
                             format!(
@@ -614,10 +601,10 @@ mod persistent_native_scanout {
                         .compositor_display_lists
                         .mark_presented()
                         .expect("submitted display-list state checked above");
-                    tracing::info!(
-                        "sophia_live_compositor_damage schema=1 status=presented output={} rects={}",
-                        self.heads[index].output.id.raw(),
-                        presented.damage.rects.len(),
+                    trace_presented_compositor_damage(
+                        "presented",
+                        self.heads[index].output.id,
+                        &presented,
                     );
                 }
                 let output = self.heads[index].output.id;
@@ -689,11 +676,7 @@ mod persistent_native_scanout {
                     .map_err(|error| {
                         format!("initial compositor display-list transition failed: {error}")
                     })?;
-                tracing::info!(
-                    "sophia_live_compositor_damage schema=1 status=initial_presented output={} rects={}",
-                    head.output.id.raw(),
-                    presented.damage.rects.len(),
-                );
+                trace_presented_compositor_damage("initial_presented", head.output.id, &presented);
             }
             head.initial_modeset_submission = Some(head.submissions);
             Ok(())

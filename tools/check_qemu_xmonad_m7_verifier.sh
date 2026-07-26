@@ -45,6 +45,9 @@ expect_failure missing_focused_border
 sed '/status=presented output=1 rects=8/d' "$fixture" >"$tmp"
 expect_failure missing_retired_compositor_damage
 
+sed '/status=presented output=1 mode=partial/d' "$fixture" >"$tmp"
+expect_failure missing_bounded_compositor_repaint
+
 sed '/status=initial_presented output=2/d' "$fixture" >"$tmp"
 expect_failure missing_secondary_damage_baseline
 

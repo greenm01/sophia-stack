@@ -155,6 +155,16 @@ moves the list to submitted, and only its page-flip callback makes it
 presented. This keeps compositor damage synchronized with the pixels and
 retirement event it describes.
 
+Before native consumption, raw compositor damage is reduced to an output-local
+repaint plan. Rectangles are clipped to the output and coalesced only when
+their union remains an exact rectangle. Empty damage becomes `skip`; bounded
+low-coverage damage becomes `partial`; excessive input count, fragmentation,
+or coverage becomes a full-output fallback. The default policy admits at most
+32 partial rectangles and switches to full output at 60 percent coverage.
+These are generic Engine policy values, not WM-, application-, toolkit-, or
+protocol-specific behavior. A failed or incomplete proof increases work
+rather than risking stale pixels.
+
 Animations are Engine-clocked state. The Engine or session reducer determines
 the semantic state for each frame; the renderer only draws that immutable
 state. The WM, metadata broker, and renderer do not drive independent animation
@@ -198,14 +208,20 @@ content, client titles, paths, or texture bytes.
   computes exact chrome damage and advances it through accepted submit and
   page-flip retirement; reduced native evidence reports the retired rectangle
   count.
+- Engine reduces retired chrome damage into bounded `skip`, `partial`, or
+  fail-safe `full` repaint plans after output clipping and exact rectangular
+  coalescing. Native evidence reports the selected mode, rectangle count, and
+  pixel count.
 - Engine has generation-checked `ChromeDescriptor` and `ChromeActionRequest`
   records for sanitized compositor metadata and actions.
 
 ### Target
 
-- Consume the retirement-safe display-list damage in partial composition,
-  output frame scheduling, and supported KMS damage clips so stable compositor
-  nodes avoid redundant output work.
+- Consume the retirement-safe repaint plans in partial composition, output
+  frame scheduling, and supported KMS damage clips so stable compositor nodes
+  avoid redundant output work. Until all client, cursor, and output damage is
+  combined, `skip` remains an observation rather than authority to suppress a
+  complete frame.
 - Extend native primitives only when demonstrated shell requirements need
   rounded borders, shadows, images, or cached text.
 - Add deterministic capability degradation for each admitted primitive.
