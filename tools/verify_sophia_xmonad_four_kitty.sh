@@ -77,16 +77,52 @@ grep -Eq \
     "$four_window_log" ||
     fail "four-window resize epoch did not commit all $four_window_surfaces held surfaces together"
 
+four_window_projection="$(
+    grep -Em1 \
+        "^sophia_live_wm schema=2 status=workspace_projection_committed transaction=${four_window_transaction} output=[0-9]+ workspace=1 visible_surfaces=4 focus=surface$" \
+        "$four_window_log" || true
+)"
+[[ -n "$four_window_projection" ]] ||
+    fail "four-window layout did not project four focused surfaces"
+four_window_output="$(field "$four_window_projection" output)"
+work_area_record="$(
+    grep -E \
+        "^sophia_live_work_area schema=1 status=applied output=${four_window_output} " \
+        "$SESSION_LOG" | tail -n 1
+)"
+[[ -n "$work_area_record" ]] ||
+    fail "four-window output has no applied Engine work area"
+work_area="$(field "$work_area_record" work)"
+if [[ "$work_area" =~ ^([0-9]+)x([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$ ]]; then
+    work_width="${BASH_REMATCH[1]}"
+    work_height="${BASH_REMATCH[2]}"
+    work_x="${BASH_REMATCH[3]}"
+    work_y="${BASH_REMATCH[4]}"
+else
+    fail "four-window work-area geometry is malformed: $work_area"
+fi
+(( work_width >= 2 && work_height >= 3 )) ||
+    fail "four-window work area is too small for the Tall layout: $work_area"
+
 if grep -Eq 'status=(layout_timeout|aborted)|rejected Present whose pixels do not match' \
     "$four_window_log"; then
     fail "four-window resize timed out, aborted, or rejected matching pixels"
 fi
 
-for target in \
-    '1280x1440_0_0' \
-    '1280x480_1280_0' \
-    '1280x480_1280_480' \
-    '1280x480_1280_960'; do
+master_width=$((work_width / 2))
+stack_width=$((work_width - master_width))
+stack_x=$((work_x + master_width))
+stack_height=$((work_height / 3))
+last_stack_height=$((work_height - stack_height * 2))
+middle_stack_y=$((work_y + stack_height))
+last_stack_y=$((middle_stack_y + stack_height))
+targets=(
+    "${master_width}x${work_height}_${work_x}_${work_y}"
+    "${stack_width}x${stack_height}_${stack_x}_${work_y}"
+    "${stack_width}x${stack_height}_${stack_x}_${middle_stack_y}"
+    "${stack_width}x${last_stack_height}_${stack_x}_${last_stack_y}"
+)
+for target in "${targets[@]}"; do
     grep -Eq \
         "^sophia_live_session_present schema=2 status=retired .* source=${target%%_*} target=${target} .* unit_scale=true$" \
         "$four_window_log" ||

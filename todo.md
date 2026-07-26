@@ -91,7 +91,9 @@ Promotion now follows the gates below in order.
   target, pipeline, and frame-surface creation, zero native failures, and clean
   teardown.
 - [ ] Pass three physical four-Kitty cycles with complete-target creation and
-  retirement equal to the mixed-export count. One post-worker cycle passes.
+  retirement equal to the mixed-export count. Two clean cycles now pass; the
+  newest completed 259 balanced mixed lifetimes after the output-scoped
+  frame-service change.
 - [x] Prevent child-exit and resize-epoch work from starving input and native
   callback service. The first post-worker cycle reduced input dwell to 12 ms
   and submit-to-page-flip observation to 23 ms.
@@ -145,6 +147,7 @@ Promotion now follows the gates below in order.
   service pass.
 - [ ] Re-run the xmobar, four-Kitty, and normal xmonad gates from the same
   frame-lifecycle commit with no latency, ordering, or resource regression.
+  Xmobar and four-Kitty now pass; the complete normal xmonad gate remains.
 
 ### 9.2 Complete physical xmonad workflow
 
@@ -183,9 +186,13 @@ Promotion now follows the gates below in order.
   commits WM-selected focus before client delivery; require the following
   keyboard input and ordered button release to reach that target, while hidden
   surfaces remain unselectable.
-- [ ] Prove the four-Kitty Tall layout has one full-height pane and three
+- [x] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
+  With the active 14-pixel top reservation, the physical capture produced one
+  `1280x1426` pane and exact `1280x475`, `1280x475`, and `1280x476` stack panes
+  spanning `y=14..1440`.
 - [ ] Pass that normal four-Kitty workflow for three consecutive clean cycles.
+  One work-area-aware frame-service capture passes.
 - [ ] Capture twenty rapid Super-Enter presses as a separate nonfatal
   capacity-overflow proof with bounded rejection and no session failure.
 - [x] Require the session-control ledger to drain with balanced

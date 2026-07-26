@@ -343,8 +343,9 @@ tools/verify_sophia_xmonad_four_kitty.sh
 Follow the sequence printed by the launcher and use normal xmonad logout.
 The verifier waits briefly for completion, correlates the four-window held
 resize epoch with a matching atomic commit of all three or four changed
-surfaces, requires one pixel-matched full-height pane plus three stack panes,
-and rejects empty per-output
+surfaces, derives the Tall layout from the Engine work area applied to that
+output, requires one pixel-matched work-area-height pane plus three stack panes
+that exactly cover the remainder, and rejects empty per-output
 submissions, forced native detach, abandoned scanouts, callback imbalance, or
 cleanup debt. It also requires at least 32 mixed exports, one complete
 composition target and frame surface per safe export, zero recovery
