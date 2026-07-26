@@ -324,7 +324,10 @@
         let mut secondary_index = 0;
         while secondary_index < secondary_children.len() {
             if let Some(status) = secondary_children[secondary_index].child.try_wait()? {
-                if config.normal_session {
+                if managed_child_exit_is_nonfatal(
+                    config.normal_session,
+                    secondary_children[secondary_index].launch_transaction,
+                ) {
                     terminate_session_child(&mut secondary_children[secondary_index].child, true)?;
                     let launch_transaction =
                         secondary_children[secondary_index].launch_transaction;
@@ -335,11 +338,22 @@
                     println!(
                         "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}",
                     );
-                    if launch_transaction.is_some_and(|transaction| {
+                    let exiting_admission = launch_transaction.is_some_and(|transaction| {
                         session_launches
                             .admission()
                             .is_some_and(|admission| admission.intent.transaction == transaction)
-                    }) && let Some(admission) = session_launches.fail_current()
+                    });
+                    if exiting_admission
+                        && status.success()
+                        && let Some(admission) = session_launches.complete_observed_exit()
+                    {
+                        launch_admission_started_at = None;
+                        println!(
+                            "sophia_session_app schema=2 status=completed id={id} source=action transaction={} reason=normal_exit_after_surface exit_status={status}",
+                            admission.intent.transaction.raw(),
+                        );
+                    } else if exiting_admission
+                        && let Some(admission) = session_launches.fail_current()
                     {
                         launch_admission_started_at = None;
                         eprintln!(
@@ -787,7 +801,6 @@
             (focused_mixed_presented && every_output_has_retired) || all_outputs_presented
         });
         if !startup_ready_reported
-            && config.startup_ready_timeout.is_some()
             && startup_readiness.surface.is_some()
             && startup_readiness.client_focus_applied
             && startup_readiness.visual_detail
@@ -808,10 +821,7 @@
                 );
             }
         }
-        if !startup_ready_reported
-            && config.startup_ready_timeout.is_some()
-            && startup_readiness.ready
-        {
+        if !startup_ready_reported && startup_readiness.ready {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
             println!(

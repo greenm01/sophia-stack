@@ -50,6 +50,23 @@ fn launches_advance_only_after_the_observed_surface_is_stable() {
 }
 
 #[test]
+fn an_observed_application_can_exit_before_the_admission_poll_settles() {
+    let mut queue = SessionLaunchQueue::default();
+    queue.enqueue(intent(1), 0);
+    assert_eq!(queue.begin_next(true, true), Some(intent(1)));
+    assert!(queue.complete_observed_exit().is_none());
+
+    assert!(queue.observe_surface(SurfaceId::new(9, 1)));
+    assert_eq!(
+        queue
+            .complete_observed_exit()
+            .map(|admission| admission.intent),
+        Some(intent(1))
+    );
+    assert!(queue.admission().is_none());
+}
+
+#[test]
 fn timeout_and_logout_release_bounded_work() {
     let mut queue = SessionLaunchQueue::default();
     queue.enqueue(intent(1), 0);

@@ -31,6 +31,13 @@ impl ManagedSessionChild {
     }
 }
 
+pub(super) const fn managed_child_exit_is_nonfatal(
+    normal_session: bool,
+    launch_transaction: Option<TransactionId>,
+) -> bool {
+    normal_session || launch_transaction.is_some()
+}
+
 pub(super) fn terminate_session_child(
     child: &mut Child,
     grouped: bool,

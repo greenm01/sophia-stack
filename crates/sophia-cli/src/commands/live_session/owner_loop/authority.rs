@@ -508,13 +508,30 @@
                             &mut startup_readiness,
                             SessionStartupEvent::VisualDetail(surface),
                         );
+                        let focused_geometry = runtime
+                            .committed_surfaces()
+                            .iter()
+                            .find(|committed| committed.surface == surface)
+                            .map(|committed| committed.geometry);
+                        let output_bounds = wm_output_bounds(&outputs);
                         startup_required_submissions = native_scanout.as_ref().map(|native| {
                             native
                                 .heads
                                 .iter()
                                 .map(|head| {
-                                    head.submissions
-                                        .max(head.presented_submissions.saturating_add(1))
+                                    let intersects = output_bounds
+                                        .iter()
+                                        .find(|(output, _)| *output == head.output.id)
+                                        .is_some_and(|(_, bounds)| {
+                                            focused_geometry.is_some_and(|geometry| {
+                                                rects_intersect(geometry, *bounds)
+                                            })
+                                        });
+                                    startup_submission_requirement(
+                                        head.submissions,
+                                        head.presented_submissions,
+                                        intersects,
+                                    )
                                 })
                                 .collect()
                         });

@@ -259,11 +259,14 @@ and restores the TTY. Launcher output is retained in
 `/tmp/sophia-kitty-tty3-launch.log`.
 
 The initial classic hardware cursor is centered on the primary output before
-the first application surface. Sophia atomically detaches inherited cursor
-planes before attaching its canonical X11 `left_ptr`; legacy cursor ioctls are
-not mixed with atomic primary-plane ownership. Move it across both outputs,
-click and drag to select terminal text, type into Kitty, and close Kitty
-normally. xmonad and Super-Enter remain outside this gate.
+the first application surface. Sophia prefers atomic cursor planes, detaches
+inherited ownership before attaching its canonical X11 `left_ptr`, and uses
+the DRM legacy hardware-cursor ioctl only on devices such as virtio-gpu that
+expose no compatible atomic cursor plane. Both paths retain one backend-owned
+hardware cursor; neither bakes a second cursor into primary-plane pixels. Move
+it across both outputs, click and drag to select terminal text, type into
+Kitty, and close Kitty normally. xmonad and Super-Enter remain outside this
+gate.
 Ctrl-Alt-Backspace remains the independent emergency recovery chord.
 
 The launcher uses libinput's udev backend on `seat0`. It discovers every

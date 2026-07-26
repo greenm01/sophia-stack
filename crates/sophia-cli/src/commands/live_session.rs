@@ -67,11 +67,14 @@ mod wm_transport_worker;
 mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
-use process_supervision::{ManagedSessionChild, SessionProcessGuard, terminate_session_child};
+use process_supervision::{
+    ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal,
+    terminate_session_child,
+};
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use startup_readiness::{
-    all_startup_outputs_presented, independent_native_output_presented, startup_output_evidence,
-    synchronous_modeset_record,
+    all_startup_outputs_presented, independent_native_output_presented, rects_intersect,
+    startup_output_evidence, startup_submission_requirement, synchronous_modeset_record,
 };
 use wm_transport_worker::{WmTransportSubmitError, WmTransportWorker};
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};

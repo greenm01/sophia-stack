@@ -6,6 +6,10 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 export XDG_RUNTIME_DIR=/tmp/sophia-runtime
 export LIBGL_DRIVERS_PATH=/usr/lib/dri
+# The minimal guest deliberately has neither logind nor a seatd daemon.
+# Select libseat's direct no-op VT/device backend explicitly; production sessions
+# retain normal libseat backend discovery.
+export LIBSEAT_BACKEND=noop
 
 mkdir -p /proc /sys /dev /run /run/udev /tmp /tmp/.X11-unix "$XDG_RUNTIME_DIR"
 mount -t proc proc /proc 2>/dev/null || true

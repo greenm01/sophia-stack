@@ -481,6 +481,7 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     done
     restart_layout_baseline="$(grep -c '^sophia_live_wm schema=1 status=layout_committed ' "$EVIDENCE_FILE" || true)"
     restart_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=focus_reconciled ' "$EVIDENCE_FILE" || true)"
+    restart_clear_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$EVIDENCE_FILE" || true)"
     restarted=false
     for _ in $(seq 1 400); do
         if grep -q '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$EVIDENCE_FILE"; then
@@ -508,8 +509,20 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=restart_layout_timeout" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
-    if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=focus_reconciled ' "$restart_focus_baseline"; then
-        echo "sophia_qemu_xmonad schema=1 status=failed reason=restart_focus_timeout" | tee -a "$EVIDENCE_FILE"
+    focus_state_recovered=false
+    for _ in $(seq 1 400); do
+        current_focus_count="$(grep -c '^sophia_live_wm schema=1 status=focus_reconciled ' "$EVIDENCE_FILE" || true)"
+        current_clear_focus_count="$(grep -c '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$EVIDENCE_FILE" || true)"
+        if (( current_focus_count > restart_focus_baseline
+            || current_clear_focus_count > restart_clear_focus_baseline )); then
+            focus_state_recovered=true
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$focus_state_recovered" != true ]]; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=restart_focus_state_timeout" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
     if [[ "$SCENARIO" == "xmonad-m8-soak" ]]; then

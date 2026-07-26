@@ -199,7 +199,10 @@ Promotion now follows the gates below in order.
   the bounded Engine press/motion/release handoff now have deterministic
   coverage. A fail-closed physical evidence verifier requires request, Engine
   commit, frontend acknowledgment, and retained input release in order;
-  physical confirmation remains.
+  physical confirmation remains. The unattended two-output xmonad gate now
+  also completes startup, ordered WM response rebasing, bridge restart,
+  action-window launch/close, empty-workspace logout, and native drain with
+  zero stale responses or protocol errors.
 - [x] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
   With the active 14-pixel top reservation, the physical capture produced one

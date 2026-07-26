@@ -96,11 +96,6 @@ impl RealAtomicScanoutPageFlipSession {
                 crtc_h: required("CRTC_H")?,
             });
         }
-        if cursor_planes.is_empty() {
-            return Err(io::Error::other(
-                "selected KMS outputs expose no compatible atomic cursor plane",
-            ));
-        }
         Ok(cursor_planes)
     }
 
@@ -144,7 +139,8 @@ impl RealAtomicScanoutPageFlipSession {
         if self.cursor_planes.is_none() {
             self.cursor_planes = Some(self.discover_atomic_cursor_planes()?);
         }
-        if !self.cursor_crtcs_sanitized {
+        let legacy_cursor = self.cursor_planes.as_ref().is_some_and(Vec::is_empty);
+        if !legacy_cursor && !self.cursor_crtcs_sanitized {
             let planes = self
                 .cursor_planes
                 .as_deref()
@@ -178,8 +174,14 @@ impl RealAtomicScanoutPageFlipSession {
                     }
                 }
             }
-            self.cursor_framebuffer = Some(self.card.add_framebuffer(&buffer, 32, 32)?);
             self.cursor_buffer = Some(buffer);
+        }
+        if !legacy_cursor && self.cursor_framebuffer.is_none() {
+            let buffer = self
+                .cursor_buffer
+                .as_ref()
+                .ok_or_else(|| io::Error::other("hardware cursor buffer is unavailable"))?;
+            self.cursor_framebuffer = Some(self.card.add_framebuffer(buffer, 32, 32)?);
         }
 
         let target = target.filter(|(selection, _, _)| {
@@ -187,6 +189,9 @@ impl RealAtomicScanoutPageFlipSession {
                 .iter()
                 .any(|candidate| candidate.crtc == selection.crtc)
         });
+        if legacy_cursor {
+            return self.update_legacy_hardware_cursor(target);
+        }
         let Some((selection, x, y)) = target else {
             let Some(previous_plane) = self.cursor_plane else {
                 return Ok(ClassicHardwareCursorUpdate::Hidden);
@@ -297,6 +302,39 @@ impl RealAtomicScanoutPageFlipSession {
             }
             Err(error) => Err(error),
         }
+    }
+
+    #[cfg(feature = "gbm-probe")]
+    #[allow(deprecated)]
+    fn update_legacy_hardware_cursor(
+        &mut self,
+        target: Option<(LibdrmNativePrimaryPlaneSelection, i32, i32)>,
+    ) -> io::Result<ClassicHardwareCursorUpdate> {
+        use drm::control::Device as _;
+
+        let Some((selection, x, y)) = target else {
+            let Some(previous) = self.cursor_crtc.take() else {
+                return Ok(ClassicHardwareCursorUpdate::Hidden);
+            };
+            self.card
+                .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(previous, None)?;
+            return Ok(ClassicHardwareCursorUpdate::Hidden);
+        };
+        if self.cursor_crtc != Some(selection.crtc) {
+            if let Some(previous) = self.cursor_crtc {
+                self.card
+                    .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(previous, None)?;
+            }
+            let buffer = self
+                .cursor_buffer
+                .as_ref()
+                .ok_or_else(|| io::Error::other("legacy hardware cursor buffer is unavailable"))?;
+            self.card
+                .set_cursor2(selection.crtc, Some(buffer), (0, 0))?;
+            self.cursor_crtc = Some(selection.crtc);
+        }
+        self.card.move_cursor(selection.crtc, (x, y))?;
+        Ok(ClassicHardwareCursorUpdate::Visible)
     }
 
     pub fn card(&self) -> &RealAtomicScanoutCard {
@@ -472,7 +510,16 @@ impl Drop for RealAtomicScanoutPageFlipSession {
         {
             use drm::control::Device as _;
             if let Some(planes) = self.cursor_planes.as_deref() {
-                let _ = self.detach_atomic_cursor_planes(planes);
+                if planes.is_empty() {
+                    if let Some(crtc) = self.cursor_crtc {
+                        #[allow(deprecated)]
+                        let _ = self
+                            .card
+                            .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(crtc, None);
+                    }
+                } else {
+                    let _ = self.detach_atomic_cursor_planes(planes);
+                }
             }
             self.cursor_plane = None;
             self.cursor_crtc = None;

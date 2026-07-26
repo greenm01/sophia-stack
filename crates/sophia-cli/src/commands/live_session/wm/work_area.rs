@@ -1,6 +1,6 @@
 impl LiveWmSession {
     fn has_current_relayout_request(&self, layout: &PersistentLiveLayout) -> bool {
-        let fingerprint = LiveWmLayoutFingerprint::capture(layout);
+        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &self.workspace_state);
         self.in_flight_request
             .iter()
             .chain(self.queued_requests.iter())

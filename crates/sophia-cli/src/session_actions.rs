@@ -96,6 +96,13 @@ impl SessionLaunchQueue {
         self.admission.take()
     }
 
+    pub fn complete_observed_exit(&mut self) -> Option<SessionLaunchAdmission> {
+        self.admission
+            .is_some_and(|admission| admission.observed_surface.is_some())
+            .then(|| self.admission.take())
+            .flatten()
+    }
+
     pub fn timeout_current(&mut self) -> Option<SessionLaunchAdmission> {
         let admission = self.admission.take()?;
         self.timed_out = self.timed_out.saturating_add(1);

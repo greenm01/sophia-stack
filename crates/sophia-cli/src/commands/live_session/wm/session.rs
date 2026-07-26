@@ -1,17 +1,24 @@
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LiveWmLayoutFingerprint(Vec<(SurfaceId, Rect)>);
+struct LiveWmLayoutFingerprint(Vec<SurfaceId>);
 
 impl LiveWmLayoutFingerprint {
-    fn capture(layout: &PersistentLiveLayout) -> Self {
+    fn capture(layout: &PersistentLiveLayout, state: &WmWorkspaceState) -> Self {
         Self(
             layout
                 .layers
                 .values()
-                .map(|layer| (layer.surface, layer.geometry))
+                .filter(|layer| state.surface_workspace(layer.surface).is_some())
+                .map(|layer| layer.surface)
                 .collect(),
         )
+    }
+
+    fn still_matches(&self, layout: &PersistentLiveLayout) -> bool {
+        self.0
+            .iter()
+            .all(|surface| layout.layers.contains_key(surface))
     }
 }
 
@@ -37,7 +44,6 @@ impl LiveWmProposalSource {
 enum LiveWmQueuedKind {
     Proposal {
         base_state: WmWorkspaceState,
-        planning_state: WmWorkspaceState,
         fingerprint: LiveWmLayoutFingerprint,
         source: LiveWmProposalSource,
     },
@@ -69,6 +75,21 @@ fn require_wm_request_admission(
             Err(format!("WM {source} request exceeded the owner queue capacity").into())
         }
     }
+}
+
+fn planning_state_for_response(
+    current: &WmWorkspaceState,
+    request: &WmRequestPacket,
+) -> Result<WmWorkspaceState, Box<dyn std::error::Error>> {
+    let mut planning_state = current.clone();
+    if let WmRequestKind::ManageSurface(manage) = &request.kind
+        && planning_state
+            .surface_workspace(manage.node.surface)
+            .is_none()
+    {
+        planning_state.register_surface(manage.node.surface, manage.workspace)?;
+    }
+    Ok(planning_state)
 }
 
 struct LiveWmSession {
@@ -323,12 +344,12 @@ impl LiveWmSession {
                 bounds,
             }),
         };
+        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &planning_state);
         Ok(self.enqueue_request(LiveWmQueuedRequest {
             packet: request,
             kind: LiveWmQueuedKind::Proposal {
                 base_state: self.workspace_state.clone(),
-                planning_state,
-                fingerprint: LiveWmLayoutFingerprint::capture(layout),
+                fingerprint,
                 source: LiveWmProposalSource::Manage(surface),
             },
             queued_at: Instant::now(),
@@ -368,8 +389,7 @@ impl LiveWmSession {
             packet: request,
             kind: LiveWmQueuedKind::Proposal {
                 base_state: self.workspace_state.clone(),
-                planning_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout),
+                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
                 source: LiveWmProposalSource::Relayout,
             },
             queued_at: Instant::now(),
@@ -430,8 +450,7 @@ impl LiveWmSession {
             packet: request,
             kind: LiveWmQueuedKind::Proposal {
                 base_state: self.workspace_state.clone(),
-                planning_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout),
+                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
                 source: LiveWmProposalSource::Action(action),
             },
             queued_at: Instant::now(),
@@ -474,8 +493,7 @@ impl LiveWmSession {
             packet: request,
             kind: LiveWmQueuedKind::Proposal {
                 base_state: self.workspace_state.clone(),
-                planning_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout),
+                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
                 source,
             },
             queued_at: Instant::now(),
@@ -568,14 +586,11 @@ impl LiveWmSession {
                 None
             }
             LiveWmQueuedKind::Proposal {
-                base_state,
-                planning_state,
                 fingerprint,
                 source,
+                ..
             } => {
-                if base_state != self.workspace_state
-                    || fingerprint != LiveWmLayoutFingerprint::capture(layout)
-                {
+                if !fingerprint.still_matches(layout) {
                     self.stale_responses = self.stale_responses.saturating_add(1);
                     println!(
                         "sophia_live_wm schema=2 status=response_rejected reason=stale_layout transaction={} source={}",
@@ -584,6 +599,8 @@ impl LiveWmSession {
                     );
                     None
                 } else {
+                    let planning_state =
+                        planning_state_for_response(&self.workspace_state, &queued.packet)?;
                     Some(self.proposal_from_response(
                         response,
                         planning_state,
