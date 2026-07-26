@@ -3649,3 +3649,21 @@ and nonzero pixels in the newest redraw; the retained run completed 215
 requests across 28 opcodes with 25,929 nonzero bytes and no protocol error.
 Corrected physical visibility remains pending, and neither client source tree
 was modified.
+
+The next physical run rendered the status bar, confirming the corrected
+surface order, but Kitty never became visible. Kitty did start, registered
+three DMA-BUFs and fences, submitted 19 Presents, and Super-Enter committed a
+`LaunchTerminal` action. All 15 attempted mixed native submissions failed
+before KMS with `ScanoutExportFailed`, after which the startup focus-control
+gate timed out.
+
+The remaining defect was a stale renderer invariant. Its persistent CPU
+texture was allocated at output size and `draw_cpu_layer` rejected every other
+extent because the previous mixed seam supplied only a flattened full-output
+background. A correctly represented status bar is instead a narrow CPU layer.
+The native pipeline now tracks the texture's allocated extent, reallocates it
+only when the next CPU layer differs, and uses the existing sub-image fast path
+for same-sized redraws. This supports arbitrary application-agnostic CPU
+layers without allocating a new texture for each bar update. A passive reducer
+test locks the reallocate-versus-update decision; corrected physical
+bar-plus-Kitty presentation remains pending.

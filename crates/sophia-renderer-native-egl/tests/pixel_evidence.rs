@@ -1,6 +1,19 @@
 use sophia_renderer_native_egl::{
-    native_composition_pixel_metrics, native_composition_pixel_metrics_from_rows,
+    NativeCpuTextureUpload, native_composition_pixel_metrics,
+    native_composition_pixel_metrics_from_rows, native_cpu_texture_upload,
 };
+
+#[test]
+fn cpu_texture_upload_reallocates_only_when_layer_extent_changes() {
+    assert_eq!(
+        native_cpu_texture_upload(2560, 1440, 2560, 24),
+        NativeCpuTextureUpload::Reallocate
+    );
+    assert_eq!(
+        native_cpu_texture_upload(2560, 24, 2560, 24),
+        NativeCpuTextureUpload::Update
+    );
+}
 
 #[test]
 fn pixel_metrics_distinguish_rgb_and_alpha_populations() {

@@ -1,5 +1,6 @@
 use glow::HasContext;
 use std::{
+    cell::Cell,
     ffi::c_void,
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -19,6 +20,8 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     program: glow::NativeProgram,
     texture: glow::NativeTexture,
     cpu_layer_texture: glow::NativeTexture,
+    cpu_layer_texture_width: Cell<u32>,
+    cpu_layer_texture_height: Cell<u32>,
     vertex_buffer: glow::NativeBuffer,
     width: u32,
     height: u32,
@@ -40,6 +43,27 @@ pub(crate) struct GlCpuLayer<'a> {
     pub pixels: &'a [u8],
     pub alpha: f32,
     pub has_alpha: bool,
+}
+
+#[cfg(feature = "gbm-platform")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeCpuTextureUpload {
+    Reallocate,
+    Update,
+}
+
+#[cfg(feature = "gbm-platform")]
+pub const fn native_cpu_texture_upload(
+    allocated_width: u32,
+    allocated_height: u32,
+    layer_width: u32,
+    layer_height: u32,
+) -> NativeCpuTextureUpload {
+    if allocated_width == layer_width && allocated_height == layer_height {
+        NativeCpuTextureUpload::Update
+    } else {
+        NativeCpuTextureUpload::Reallocate
+    }
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -158,6 +182,8 @@ impl PersistentXrgb8888GlPipeline {
             program,
             texture,
             cpu_layer_texture,
+            cpu_layer_texture_width: Cell::new(width),
+            cpu_layer_texture_height: Cell::new(height),
             vertex_buffer,
             width,
             height,
@@ -268,29 +294,44 @@ impl PersistentXrgb8888GlPipeline {
         if width == 0 || height == 0 || stride != expected_stride || pixels.len() != expected {
             return Err(NativeEglDrawSmokeStatus::GlUnavailable);
         }
-        if width != self.width || height != self.height {
-            return Err(NativeEglDrawSmokeStatus::GlUnavailable);
-        }
+        let upload = native_cpu_texture_upload(
+            self.cpu_layer_texture_width.get(),
+            self.cpu_layer_texture_height.get(),
+            width,
+            height,
+        );
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
-            // Mixed composition owns a dedicated, fixed-size CPU texture.
-            // Keep its allocation distinct and stable while the same command
-            // stream samples an imported EGLImage. The live seam currently
-            // supplies one full-output CPU background, so fail closed for any
-            // other size.
             self.gl
                 .bind_texture(glow::TEXTURE_2D, Some(self.cpu_layer_texture));
-            self.gl.tex_sub_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                0,
-                0,
-                width as i32,
-                height as i32,
-                glow::BGRA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(pixels)),
-            );
+            match upload {
+                NativeCpuTextureUpload::Update => self.gl.tex_sub_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    0,
+                    0,
+                    width as i32,
+                    height as i32,
+                    glow::BGRA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(pixels)),
+                ),
+                NativeCpuTextureUpload::Reallocate => self.gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as i32,
+                    width as i32,
+                    height as i32,
+                    0,
+                    glow::BGRA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(pixels)),
+                ),
+            }
+            if upload == NativeCpuTextureUpload::Reallocate {
+                self.cpu_layer_texture_width.set(width);
+                self.cpu_layer_texture_height.set(height);
+            }
         }
         self.draw_bound_texture(target, clip, alpha, has_alpha)
     }
