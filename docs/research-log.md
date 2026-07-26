@@ -4271,3 +4271,34 @@ all 1,397 expected input deliveries, retired native presentation without a
 failure or live fence, logged out normally, restored the TTY exactly, and
 revoked the frontend namespace. This closes the physical same-namespace
 cross-workspace clipboard gate.
+
+## 2026-07-26: Configuration Is Two Ownership Domains, Not an Override Stack
+
+Sophia now resolves one strict KDL 2 source for session/Engine mechanism and a
+separate source for Sophia-native WM policy. The user defaults are
+`${XDG_CONFIG_HOME:-$HOME/.config}/sophia/config.kdl` and `wm.kdl`;
+`/etc/sophia` and compiled snapshots are ordered fallbacks. There is no
+include graph, field merge, KDL 1 fallback, or WM override of Engine policy.
+External WMs continue to use their native configuration.
+
+The new `sophia-config` crate contains only bounded passive schema data,
+discovery, parsing, snapshots, deltas, last-known-good state, and a
+parent-directory inotify source. Atomic editor replacement is therefore
+observable without watching a stale inode. Unsafe ownership/mode, files over
+one MiB, unknown or duplicate fields, broken references, invalid paths, and
+the emergency chord fail closed.
+
+Core candidates apply as one transaction. Application registry, repeat,
+fallback chrome, and diagnostic changes are live-safe; mechanism changes mark
+the complete candidate pending restart and do not leak its live-safe subset.
+The session owner waits for an idle key ledger before replacement. Renderer
+entry points now consume the Engine border style stored by the visual runtime
+instead of recreating a default at each composition call.
+
+The WM API advances to version 5. Negotiation carries a nonzero policy
+generation and bounded chrome preference, while Engine continues to own
+geometry, damage, rendering, and scanout. Generation-ordered update/ack
+packets and an idle-shortcut reducer establish the hot-update contract. The
+remaining transport slice is unsolicited delivery through the supervised
+worker; until that lands, native-WM action/layout reload is observed when the
+WM next services an existing request.

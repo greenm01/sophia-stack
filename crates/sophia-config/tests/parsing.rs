@@ -1,0 +1,224 @@
+use sophia_config::{
+    COMPILED_CORE_CONFIG, COMPILED_WM_CONFIG, ChromeStyle, ConfigGeneration, ConfigParseError,
+    CoreConfigDelta, CoreConfigState, InputSourceConfig, ReloadDisposition, WmActionBehavior,
+    WmConfigState, parse_core_config, parse_wm_config,
+};
+
+const CORE: &str = r##"
+/- kdl-version 2
+schema 1
+session {
+    application "terminal" id=1 executable="/usr/bin/kitty" {
+        arg "--single-instance"
+    }
+    startup 1
+}
+input {
+    seat "seat0"
+    keyboard rules="evdev" model="pc105" layout="us" variant="" options=""
+    repeat delay-ms=500 interval-ms=25
+}
+outputs {
+    output "DP-1" x=0 y=0 mode="preferred" scale=1 primary=#true
+}
+compositor {
+    chrome-fallback enabled=#true thickness=3 color="#70b7ff"
+    chrome-limits max-thickness=12
+}
+namespace profile="classic-shared"
+external-wm executable="/usr/bin/xmonad" {
+    arg "--replace"
+}
+diagnostics verbose=#true
+"##;
+
+const WM: &str = r##"
+/- kdl-version 2
+schema 1
+policy timeout-ms=250
+workspace 1
+workspace 2
+layout "columns"
+action "next" id=1 behavior="focus-next"
+action "workspace-two" id=2 behavior="activate-workspace" workspace=2
+action "terminal" id=3 behavior="launch-application" application=1
+binding action=1 keycode=36 modifiers="super"
+binding action=2 keycode=3 modifiers="super"
+chrome enabled=#true thickness=2 color="#70b7ff"
+"##;
+
+#[test]
+fn parses_complete_core_snapshot() {
+    let snapshot =
+        parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid core config");
+
+    assert_eq!(snapshot.session.applications.len(), 1);
+    assert_eq!(snapshot.session.startup, [1]);
+    assert_eq!(
+        snapshot.input.source,
+        InputSourceConfig::Seat("seat0".to_owned())
+    );
+    assert_eq!(snapshot.input.repeat.delay_msec, 500);
+    assert_eq!(snapshot.outputs.len(), 1);
+    assert_eq!(snapshot.fallback_chrome.thickness, 3);
+    assert_eq!(snapshot.max_border_thickness, 12);
+    assert!(snapshot.verbose_diagnostics);
+}
+
+#[test]
+fn parses_complete_native_wm_snapshot() {
+    let snapshot =
+        parse_wm_config(WM.as_bytes(), ConfigGeneration::INITIAL).expect("valid WM config");
+
+    assert_eq!(snapshot.timeout_msec, 250);
+    assert_eq!(snapshot.workspaces, [1, 2]);
+    assert_eq!(snapshot.bindings.len(), 2);
+    assert_eq!(
+        snapshot.actions[1].behavior,
+        WmActionBehavior::ActivateWorkspace { workspace: 2 }
+    );
+}
+
+#[test]
+fn rejects_unknown_and_duplicate_fields() {
+    let unknown = "schema 1\nmystery #true\n";
+    assert!(matches!(
+        parse_core_config(unknown.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("unknown node")
+    ));
+
+    let duplicate = "schema 1\ndiagnostics verbose=#true verbose=#false\n";
+    assert!(matches!(
+        parse_core_config(duplicate.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("duplicate property")
+    ));
+}
+
+#[test]
+fn rejects_kdl_one_boolean_spelling() {
+    let source = "schema 1\ndiagnostics verbose=true\n";
+    assert!(parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL).is_err());
+}
+
+#[test]
+fn rejects_invalid_cross_references_and_reserved_chord() {
+    let unknown_workspace = r##"
+schema 1
+workspace 1
+action "bad" id=1 behavior="activate-workspace" workspace=2
+"##;
+    assert!(matches!(
+        parse_wm_config(unknown_workspace.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("unknown workspace")
+    ));
+
+    let reserved = r##"
+schema 1
+action "bad" id=1 behavior="logout"
+binding action=1 keycode=14 modifiers="control+alt"
+"##;
+    assert!(matches!(
+        parse_wm_config(reserved.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("reserved emergency chord")
+    ));
+}
+
+#[test]
+fn default_workspace_set_is_validated() {
+    let source = r##"
+schema 1
+action "bad" id=1 behavior="activate-workspace" workspace=10
+"##;
+    assert!(matches!(
+        parse_wm_config(source.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("unknown workspace")
+    ));
+}
+
+#[test]
+fn core_delta_never_partially_applies_restart_fields() {
+    let active =
+        parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid active config");
+    let candidate_source = CORE.replace("profile=\"classic-shared\"", "profile=\"confined\"");
+    let candidate = parse_core_config(candidate_source.as_bytes(), ConfigGeneration::from_raw(2))
+        .expect("valid candidate config");
+
+    let delta = CoreConfigDelta::between(&active, &candidate);
+    assert!(delta.restart_required);
+    assert!(!delta.applications_changed);
+}
+
+#[test]
+fn rejects_default_chrome_outside_tighter_limit() {
+    let source = "schema 1\ncompositor { chrome-limits max-thickness=1 }\n";
+    assert!(matches!(
+        parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL),
+        Err(ConfigParseError::Schema(message)) if message.contains("exceeds")
+    ));
+}
+
+#[test]
+fn empty_documents_and_missing_schema_are_rejected() {
+    assert!(parse_core_config(b"", ConfigGeneration::INITIAL).is_err());
+    assert!(parse_wm_config(b"", ConfigGeneration::INITIAL).is_err());
+    assert_eq!(ChromeStyle::default().thickness, 2);
+}
+
+#[test]
+fn compiled_defaults_are_valid_kdl_two() {
+    parse_core_config(COMPILED_CORE_CONFIG.as_bytes(), ConfigGeneration::INITIAL)
+        .expect("valid compiled core config");
+    parse_wm_config(COMPILED_WM_CONFIG.as_bytes(), ConfigGeneration::INITIAL)
+        .expect("valid compiled WM config");
+}
+
+#[test]
+fn last_known_good_survives_rejected_reload() {
+    let active =
+        parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid active config");
+    let digest = active.digest;
+    let mut state = CoreConfigState::from_snapshot(active);
+
+    assert!(state.reload(b"not valid {").is_err());
+    assert_eq!(state.active().digest, digest);
+    assert!(state.pending_restart().is_none());
+}
+
+#[test]
+fn restart_candidate_does_not_partially_replace_active_snapshot() {
+    let active =
+        parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid active config");
+    let active_profile = active.namespace_profile.clone();
+    let mut state = CoreConfigState::from_snapshot(active);
+    let candidate = CORE.replace("classic-shared", "confined");
+
+    let report = state
+        .reload(candidate.as_bytes())
+        .expect("valid restart candidate");
+
+    assert_eq!(report.disposition, ReloadDisposition::PendingRestart);
+    assert_eq!(state.active().namespace_profile, active_profile);
+    assert_eq!(
+        state
+            .pending_restart()
+            .expect("pending restart snapshot")
+            .namespace_profile,
+        "confined"
+    );
+}
+
+#[test]
+fn wm_reload_is_atomic_and_generation_ordered() {
+    let active =
+        parse_wm_config(WM.as_bytes(), ConfigGeneration::INITIAL).expect("valid active WM config");
+    let mut state = WmConfigState::from_snapshot(active);
+    let candidate = WM.replace("timeout-ms=250", "timeout-ms=400");
+
+    let report = state
+        .reload(candidate.as_bytes())
+        .expect("valid WM candidate");
+
+    assert_eq!(report.disposition, ReloadDisposition::Applied);
+    assert_eq!(state.active().generation.raw(), 2);
+    assert_eq!(state.active().timeout_msec, 400);
+}

@@ -39,10 +39,9 @@ use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlKind,
     XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
-    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XKB_DEFAULT_REPEAT_DELAY_MSEC,
-    XKB_DEFAULT_REPEAT_INTERVAL_MSEC, XPresentCompletionMode, XServerFrontendAdmissionError,
-    XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendConfig,
-    XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
+    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XPresentCompletionMode,
+    XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
+    XServerFrontendConfig, XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
     XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker, XServerFrontendServiceCommand,
     XServerFrontendSetupAuthorization, XkbKeymapSnapshot,
     run_x_server_frontend_routed_until_stopped,
@@ -163,7 +162,7 @@ fn open_session_physical_input(
 pub(crate) fn run_persistent_xterm_session(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let config = PersistentXtermSessionConfig::from_args(args)?;
+    let mut config = PersistentXtermSessionConfig::from_args(args)?;
     let terminal = if config.client.is_none() {
         Some(super::x_authority::resolve_external_probe_binary(
             "xterm",
@@ -195,7 +194,7 @@ pub(crate) fn run_persistent_xterm_session(
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
             .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
     let mut physical_input = open_session_physical_input(
-        &config,
+        &mut config,
         device_map,
         seat_controller
             .as_ref()
@@ -550,7 +549,7 @@ pub(crate) fn run_persistent_xterm_session(
 
     let (primary_child, secondary_children) = process.children_mut();
     let result = run_session_loop(
-        &config,
+        &mut config,
         SessionLoopChannels {
             authority: &authority_receiver,
             input: &input_sender,

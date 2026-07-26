@@ -50,7 +50,9 @@ impl LegacyWmProfile {
         WmHello {
             api_version: WM_API_VERSION,
             capabilities: WmCapabilities::all_supported(),
+            policy_generation: 1,
             bindings,
+            chrome: sophia_protocol::WmChromeStyle::default(),
         }
     }
 }

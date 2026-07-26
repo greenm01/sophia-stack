@@ -251,6 +251,8 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
     let registry = WmShortcutRegistry::from_hello(&WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: sophia_protocol::WmChromeStyle::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 28,

@@ -1,9 +1,9 @@
 use crate::{
     SessionApplicationId, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
-    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmCommand,
-    WmFocusRequest, WmHello, WmManageSurface, WmModifierMask, WmOutputWorkspace,
-    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction,
-    WmSessionDescriptor,
+    WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmChromeStyle,
+    WmCommand, WmFocusRequest, WmHello, WmManageSurface, WmModifierMask, WmOutputWorkspace,
+    WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmRelayoutWorkspace, WmRequestKind,
+    WmRequestPacket, WmResponsePacket, WmRgb8, WmSessionAction, WmSessionDescriptor,
 };
 
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
@@ -60,12 +60,14 @@ pub fn encode_wm_hello_frame(hello: &WmHello) -> Result<Vec<u8>, IpcCodecError> 
     let mut payload = Vec::new();
     push_u16(&mut payload, hello.api_version);
     push_u64(&mut payload, hello.capabilities.bits);
+    push_u64(&mut payload, hello.policy_generation);
     push_u32(&mut payload, hello.bindings.len() as u32);
     for binding in &hello.bindings {
         push_u64(&mut payload, binding.action.raw());
         push_u32(&mut payload, binding.keycode);
         push_u32(&mut payload, binding.modifiers.bits);
     }
+    encode_chrome(hello.chrome, &mut payload);
     encode_frame(IpcMessageKind::WmHello, TransactionId::INVALID, &payload)
 }
 
@@ -77,6 +79,7 @@ pub fn decode_wm_hello_frame(frame: &[u8]) -> Result<WmHello, IpcCodecError> {
     let capabilities = WmCapabilities {
         bits: cursor.u64()?,
     };
+    let policy_generation = cursor.u64()?;
     let count = decode_count(&mut cursor)?;
     let mut bindings = Vec::with_capacity(count);
     for _ in 0..count {
@@ -88,11 +91,128 @@ pub fn decode_wm_hello_frame(frame: &[u8]) -> Result<WmHello, IpcCodecError> {
             },
         });
     }
+    let chrome = decode_chrome(&mut cursor)?;
     cursor.finish()?;
     Ok(WmHello {
         api_version,
         capabilities,
+        policy_generation,
         bindings,
+        chrome,
+    })
+}
+
+pub fn encode_wm_policy_update_frame(update: &WmPolicyUpdate) -> Result<Vec<u8>, IpcCodecError> {
+    check_count(update.bindings.len())?;
+    let mut payload = Vec::new();
+    push_u16(&mut payload, update.api_version);
+    push_u64(&mut payload, update.generation);
+    push_u32(&mut payload, update.bindings.len() as u32);
+    for binding in &update.bindings {
+        push_u64(&mut payload, binding.action.raw());
+        push_u32(&mut payload, binding.keycode);
+        push_u32(&mut payload, binding.modifiers.bits);
+    }
+    encode_chrome(update.chrome, &mut payload);
+    encode_frame(
+        IpcMessageKind::WmPolicyUpdate,
+        TransactionId::INVALID,
+        &payload,
+    )
+}
+
+pub fn decode_wm_policy_update_frame(frame: &[u8]) -> Result<WmPolicyUpdate, IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    expect_message_kind(header.message_kind, IpcMessageKind::WmPolicyUpdate)?;
+    let mut cursor = Cursor::new(payload);
+    let api_version = cursor.u16()?;
+    let generation = cursor.u64()?;
+    let count = decode_count(&mut cursor)?;
+    let mut bindings = Vec::with_capacity(count);
+    for _ in 0..count {
+        bindings.push(WmBindingRegistration {
+            action: WmActionId::from_raw(cursor.u64()?),
+            keycode: cursor.u32()?,
+            modifiers: WmModifierMask {
+                bits: cursor.u32()?,
+            },
+        });
+    }
+    let chrome = decode_chrome(&mut cursor)?;
+    cursor.finish()?;
+    Ok(WmPolicyUpdate {
+        api_version,
+        generation,
+        bindings,
+        chrome,
+    })
+}
+
+pub fn encode_wm_policy_ack_frame(ack: WmPolicyAck) -> Result<Vec<u8>, IpcCodecError> {
+    let mut payload = Vec::new();
+    push_u64(&mut payload, ack.generation);
+    push_u16(
+        &mut payload,
+        match ack.outcome {
+            WmPolicyAckOutcome::Applied => 1,
+            WmPolicyAckOutcome::RejectedStale => 2,
+            WmPolicyAckOutcome::RejectedInvalid => 3,
+        },
+    );
+    encode_frame(
+        IpcMessageKind::WmPolicyAck,
+        TransactionId::INVALID,
+        &payload,
+    )
+}
+
+pub fn decode_wm_policy_ack_frame(frame: &[u8]) -> Result<WmPolicyAck, IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    expect_message_kind(header.message_kind, IpcMessageKind::WmPolicyAck)?;
+    let mut cursor = Cursor::new(payload);
+    let generation = cursor.u64()?;
+    let outcome = match cursor.u16()? {
+        1 => WmPolicyAckOutcome::Applied,
+        2 => WmPolicyAckOutcome::RejectedStale,
+        3 => WmPolicyAckOutcome::RejectedInvalid,
+        other => {
+            return Err(IpcCodecError::InvalidEnum {
+                field: "wm_policy_ack",
+                value: u32::from(other),
+            });
+        }
+    };
+    cursor.finish()?;
+    Ok(WmPolicyAck {
+        generation,
+        outcome,
+    })
+}
+
+fn encode_chrome(chrome: WmChromeStyle, payload: &mut Vec<u8>) {
+    push_u16(payload, u16::from(chrome.enabled));
+    push_u32(payload, chrome.thickness);
+    payload.extend_from_slice(&[chrome.color.red, chrome.color.green, chrome.color.blue]);
+}
+
+fn decode_chrome(cursor: &mut Cursor<'_>) -> Result<WmChromeStyle, IpcCodecError> {
+    Ok(WmChromeStyle {
+        enabled: match cursor.u16()? {
+            0 => false,
+            1 => true,
+            other => {
+                return Err(IpcCodecError::InvalidBool {
+                    field: "wm_chrome_enabled",
+                    value: u8::try_from(other).unwrap_or(u8::MAX),
+                });
+            }
+        },
+        thickness: cursor.u32()?,
+        color: WmRgb8 {
+            red: cursor.u8()?,
+            green: cursor.u8()?,
+            blue: cursor.u8()?,
+        },
     })
 }
 

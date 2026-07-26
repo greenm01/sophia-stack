@@ -33,6 +33,7 @@ pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     updates: Option<Vec<LiveCpuBufferUpdate>>,
     raised_surface: Option<SurfaceId>,
     focused_surface: Option<SurfaceId>,
+    focused_border_style: FocusedSurfaceBorderStyle,
     cursor_position: Option<Point>,
     defer_frame: bool,
     create_native_frames: bool,
@@ -48,6 +49,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         updates: Vec<LiveCpuBufferUpdate>,
         raised_surface: Option<SurfaceId>,
         focused_surface: Option<SurfaceId>,
+        focused_border_style: FocusedSurfaceBorderStyle,
         cursor_position: Option<Point>,
         defer_frame: bool,
         create_native_frames: bool,
@@ -60,6 +62,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
             updates: Some(updates),
             raised_surface,
             focused_surface,
+            focused_border_style,
             cursor_position,
             defer_frame,
             create_native_frames,
@@ -110,7 +113,7 @@ where
                 &presentation_order,
                 committed,
                 self.focused_surface,
-                FocusedSurfaceBorderStyle::default(),
+                self.focused_border_style,
             )?;
             self.scene
                 .compose_display_list(*output, committed, &display_list, self.cursor_position)?

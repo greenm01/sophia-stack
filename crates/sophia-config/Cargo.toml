@@ -1,0 +1,15 @@
+[package]
+name = "sophia-config"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kdl.workspace = true
+rustix.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

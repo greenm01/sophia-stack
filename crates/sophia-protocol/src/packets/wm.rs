@@ -13,7 +13,7 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 4;
+pub const WM_API_VERSION: u16 = 5;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -26,7 +26,9 @@ impl WmCapabilities {
     pub const BINDINGS: u64 = 1 << 0;
     pub const WORKSPACES: u64 = 1 << 1;
     pub const SESSION_ACTIONS: u64 = 1 << 2;
-    pub const SUPPORTED: u64 = Self::BINDINGS | Self::WORKSPACES | Self::SESSION_ACTIONS;
+    pub const POLICY_CHROME: u64 = 1 << 3;
+    pub const SUPPORTED: u64 =
+        Self::BINDINGS | Self::WORKSPACES | Self::SESSION_ACTIONS | Self::POLICY_CHROME;
 
     pub const fn all_supported() -> Self {
         Self {
@@ -55,11 +57,62 @@ pub struct WmBindingRegistration {
     pub modifiers: WmModifierMask,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmRgb8 {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmChromeStyle {
+    pub enabled: bool,
+    pub thickness: u32,
+    pub color: WmRgb8,
+}
+
+impl Default for WmChromeStyle {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            thickness: 2,
+            color: WmRgb8 {
+                red: 0x70,
+                green: 0xb7,
+                blue: 0xff,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmHello {
     pub api_version: u16,
     pub capabilities: WmCapabilities,
+    pub policy_generation: u64,
     pub bindings: Vec<WmBindingRegistration>,
+    pub chrome: WmChromeStyle,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmPolicyUpdate {
+    pub api_version: u16,
+    pub generation: u64,
+    pub bindings: Vec<WmBindingRegistration>,
+    pub chrome: WmChromeStyle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmPolicyAckOutcome {
+    Applied,
+    RejectedStale,
+    RejectedInvalid,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmPolicyAck {
+    pub generation: u64,
+    pub outcome: WmPolicyAckOutcome,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

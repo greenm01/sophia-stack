@@ -21,6 +21,8 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
     let registry = WmShortcutRegistry::from_hello(&WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: sophia_protocol::WmChromeStyle::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 28,

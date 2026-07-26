@@ -51,6 +51,7 @@ pub struct LiveProductionVisualRuntime {
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
     focused_surface: Option<SurfaceId>,
+    focused_border_style: FocusedSurfaceBorderStyle,
     pending_focused_border_observation: Option<LiveFocusedBorderObservation>,
     last_focused_border_observation: Option<LiveFocusedBorderObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
@@ -111,6 +112,7 @@ impl LiveProductionVisualRuntime {
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
             focused_surface: None,
+            focused_border_style: FocusedSurfaceBorderStyle::default(),
             pending_focused_border_observation: None,
             last_focused_border_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
@@ -150,6 +152,20 @@ impl LiveProductionVisualRuntime {
             diagnose_first_mixed_export,
         );
         self
+    }
+
+    pub fn with_focused_border_style(mut self, style: FocusedSurfaceBorderStyle) -> Self {
+        self.focused_border_style = style;
+        self
+    }
+
+    pub fn set_focused_border_style(&mut self, style: FocusedSurfaceBorderStyle) -> bool {
+        if self.focused_border_style == style {
+            return false;
+        }
+        self.focused_border_style = style;
+        self.last_focused_border_observation = None;
+        true
     }
 
     pub fn run_cpu_production_cycle(
@@ -254,6 +270,7 @@ impl LiveProductionVisualRuntime {
             updates,
             raised_surface,
             focused_surface,
+            self.focused_border_style,
             cursor_presentation.composition_position(),
             defer_frame,
             create_native_frames,

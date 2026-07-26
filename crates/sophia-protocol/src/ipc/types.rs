@@ -17,6 +17,8 @@ pub enum IpcMessageKind {
     PortalBrokerResponse = 7,
     WmHello = 9,
     WmSessionDescriptor = 10,
+    WmPolicyUpdate = 11,
+    WmPolicyAck = 12,
     PortalClipboardPayload = 8,
 }
 

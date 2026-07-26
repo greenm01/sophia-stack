@@ -143,6 +143,11 @@ struct PersistentXtermSessionConfig {
     namespace_profile: NamespaceProfile,
     namespace_capabilities: NamespaceCapabilities,
     xkb_config: sophia_x_authority::XkbRmlvoConfig,
+    key_repeat_config: sophia_config::RepeatConfig,
+    core_config_source: sophia_config::ConfigSource,
+    core_config_state: sophia_config::CoreConfigState,
+    focused_border_style: sophia_engine::FocusedSurfaceBorderStyle,
+    verbose_diagnostics: bool,
     inject_output_size: Option<Size>,
     inject_surface_resize: Option<Size>,
     m4_first_acquire_delay: Option<Duration>,
@@ -153,9 +158,35 @@ struct PersistentXtermSessionConfig {
 
 impl PersistentXtermSessionConfig {
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
+        let no_config = args.iter().any(|argument| argument == "--no-config");
+        let explicit_config = arg_value(args, "--config")
+            .map(std::path::PathBuf::from);
+        if no_config && explicit_config.is_some() {
+            return Err("--no-config and --config are mutually exclusive".into());
+        }
+        if explicit_config
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute() || path.as_os_str().is_empty())
+        {
+            return Err("--config requires an absolute path".into());
+        }
+        let core_config_source = if no_config {
+            sophia_config::ConfigSource {
+                class: sophia_config::ConfigSourceClass::CompiledDefault,
+                path: None,
+            }
+        } else {
+            sophia_config::discover_default_config_source(
+                sophia_config::ConfigDomain::Core,
+                explicit_config.as_deref(),
+            )
+        };
+        let core_config_state = sophia_config::CoreConfigState::load(&core_config_source)?;
+        let core_snapshot = core_config_state.active();
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
-        let normal_session = args.iter().any(|arg| arg == "--session-mode=normal");
+        let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
+            || !core_snapshot.session.applications.is_empty();
         let exit_when_startup_exits = args.iter().any(|arg| arg == "--exit-when-startup-exits");
         let startup_ready_timeout = arg_value(args, "--startup-ready-timeout-ms")
             .as_deref()
@@ -167,7 +198,7 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--startup-ready-timeout-ms accepts 100-60000 milliseconds".into());
         }
-        let mut applications = SessionApplicationConfig::default();
+        let mut applications = Self::applications_from_core(core_snapshot)?;
         for value in args
             .iter()
             .filter_map(|arg| arg.strip_prefix("--session-app="))
@@ -387,17 +418,25 @@ impl PersistentXtermSessionConfig {
         let secondary_terminal = args.iter().any(|arg| arg == "--secondary-terminal");
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
-        let namespace_profile = match arg_value(args, "--namespace-profile").as_deref() {
-            None | Some("classic") | Some("classic-shared") => NamespaceProfile::ClassicShared,
-            Some("confined") => NamespaceProfile::Confined,
-            Some(profile) => {
+        let namespace_profile_name = arg_value(args, "--namespace-profile")
+            .unwrap_or_else(|| core_snapshot.namespace_profile.clone());
+        let namespace_profile = match namespace_profile_name.as_str() {
+            "classic" | "classic-shared" => NamespaceProfile::ClassicShared,
+            "confined" => NamespaceProfile::Confined,
+            profile => {
                 return Err(format!(
                     "unsupported namespace profile {profile:?}; expected classic or confined"
                 )
                 .into());
             }
         };
-        let defaults = sophia_x_authority::XkbRmlvoConfig::default();
+        let defaults = sophia_x_authority::XkbRmlvoConfig {
+            rules: core_snapshot.input.xkb.rules.clone(),
+            model: core_snapshot.input.xkb.model.clone(),
+            layout: core_snapshot.input.xkb.layout.clone(),
+            variant: core_snapshot.input.xkb.variant.clone(),
+            options: core_snapshot.input.xkb.options.clone(),
+        };
         let xkb_config = sophia_x_authority::XkbRmlvoConfig {
             rules: arg_value(args, "--xkb-rules").unwrap_or(defaults.rules),
             model: arg_value(args, "--xkb-model").unwrap_or(defaults.model),
@@ -434,12 +473,25 @@ impl PersistentXtermSessionConfig {
                     .into(),
             );
         }
-        let wm_process = arg_value(args, "--wm-process");
-        let wm_process_args = args
+        let configured_wm = core_snapshot.external_wm.as_ref();
+        let explicit_wm_process = arg_value(args, "--wm-process");
+        let wm_process = explicit_wm_process.clone().or_else(|| {
+                configured_wm
+                    .and_then(|wm| wm.executable.to_str())
+                    .map(ToOwned::to_owned)
+            });
+        let mut wm_process_args = if explicit_wm_process.is_some() {
+            Vec::new()
+        } else {
+            configured_wm
+                .map(|wm| wm.arguments.clone())
+                .unwrap_or_default()
+        };
+        wm_process_args.extend(args
             .iter()
             .filter_map(|arg| arg.strip_prefix("--wm-process-arg="))
             .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
+        );
         if wm_process.is_none() && !wm_process_args.is_empty() {
             return Err("--wm-process-arg requires --wm-process".into());
         }
@@ -449,14 +501,28 @@ impl PersistentXtermSessionConfig {
                     .into(),
             );
         }
-        let input_devices = arg_value(args, "--input-devices")
+        let input_devices_argument = arg_value(args, "--input-devices");
+        let input_seat_argument = arg_value(args, "--input-seat");
+        if input_devices_argument.is_some() && input_seat_argument.is_some() {
+            return Err("--input-seat and --input-devices are mutually exclusive".into());
+        }
+        let input_devices = input_devices_argument
             .map(|paths| {
                 paths
                     .split(',')
                     .map(std::path::PathBuf::from)
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                if input_seat_argument.is_some() {
+                    Vec::new()
+                } else {
+                    match &core_snapshot.input.source {
+                        sophia_config::InputSourceConfig::Devices(devices) => devices.clone(),
+                        sophia_config::InputSourceConfig::Seat(_) => Vec::new(),
+                    }
+                }
+            });
         if input_devices.len() > 16
             || input_devices
                 .iter()
@@ -464,7 +530,16 @@ impl PersistentXtermSessionConfig {
         {
             return Err("--input-devices accepts 1-16 comma-separated absolute paths".into());
         }
-        let input_seat = arg_value(args, "--input-seat");
+        let input_seat = input_seat_argument.or_else(|| {
+            if input_devices.is_empty() {
+                match &core_snapshot.input.source {
+                    sophia_config::InputSourceConfig::Seat(seat) => Some(seat.clone()),
+                    sophia_config::InputSourceConfig::Devices(_) => None,
+                }
+            } else {
+                None
+            }
+        });
         if input_seat.as_ref().is_some_and(|seat| {
             seat.is_empty()
                 || seat.len() > 64
@@ -573,6 +648,11 @@ impl PersistentXtermSessionConfig {
 
             namespace_capabilities: NamespaceCapabilities::NONE,
             xkb_config,
+            key_repeat_config: core_snapshot.input.repeat,
+            focused_border_style: Self::focused_border_style(core_snapshot.fallback_chrome),
+            verbose_diagnostics: core_snapshot.verbose_diagnostics,
+            core_config_source,
+            core_config_state,
             inject_output_size,
             inject_surface_resize,
             m4_first_acquire_delay,
@@ -580,6 +660,73 @@ impl PersistentXtermSessionConfig {
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
         })
+    }
+
+    fn applications_from_core(
+        snapshot: &sophia_config::CoreConfigSnapshot,
+    ) -> Result<SessionApplicationConfig, Box<dyn std::error::Error>> {
+        let mut applications = SessionApplicationConfig::default();
+        let mut names_by_id = BTreeMap::new();
+        for app in &snapshot.session.applications {
+            names_by_id.insert(app.id, app.name.clone());
+            applications.applications.insert(
+                app.name.clone(),
+                SessionApplicationSpec {
+                    id: app.name.clone(),
+                    executable: app.executable.clone(),
+                    arguments: app.arguments.clone(),
+                },
+            );
+            match app.id {
+                1 => applications.terminal = Some(app.name.clone()),
+                2 => applications.launcher = Some(app.name.clone()),
+                3 => applications.firefox = Some(app.name.clone()),
+                _ => {}
+            }
+        }
+        for id in &snapshot.session.startup {
+            applications.startup.push(
+                names_by_id
+                    .get(id)
+                    .ok_or_else(|| format!("core config startup references unknown app {id}"))?
+                    .clone(),
+            );
+        }
+        Ok(applications)
+    }
+
+    fn focused_border_style(
+        style: sophia_config::ChromeStyle,
+    ) -> sophia_engine::FocusedSurfaceBorderStyle {
+        sophia_engine::FocusedSurfaceBorderStyle {
+            thickness: if style.enabled {
+                i32::try_from(style.thickness).unwrap_or(i32::MAX)
+            } else {
+                0
+            },
+            color: sophia_engine::CompositorRgb8 {
+                red: style.color.red,
+                green: style.color.green,
+                blue: style.color.blue,
+            },
+        }
+    }
+
+    fn wm_focused_border_style(
+        style: sophia_protocol::WmChromeStyle,
+    ) -> sophia_engine::FocusedSurfaceBorderStyle {
+        sophia_engine::FocusedSurfaceBorderStyle {
+            thickness: if style.enabled {
+                i32::try_from(style.thickness).unwrap_or(i32::MAX)
+            } else {
+                0
+            },
+            color: sophia_engine::CompositorRgb8 {
+                red: style.color.red,
+                green: style.color.green,
+                blue: style.color.blue,
+            },
+        }
     }
 
     fn validate_session_app_id(id: &str) -> Result<(), Box<dyn std::error::Error>> {

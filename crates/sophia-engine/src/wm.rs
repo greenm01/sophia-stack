@@ -1,8 +1,9 @@
 use crate::WmTransactionUpdate;
 use crate::prelude::*;
 use sophia_protocol::{
-    WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmHello, WmModifierMask,
-    WmSessionDescriptor, decode_wm_hello_frame, encode_wm_session_descriptor_frame,
+    WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromeStyle, WmHello,
+    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
+    decode_wm_hello_frame, encode_wm_session_descriptor_frame,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,12 +36,20 @@ impl fmt::Display for WmIpcError {
 pub struct WmShortcutRegistry {
     bindings: BTreeMap<(u32, u32), WmActionId>,
     held: BTreeMap<u32, WmActionId>,
+    policy_generation: u64,
+    chrome: WmChromeStyle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WmShortcutDecision {
     pub action: Option<WmActionId>,
     pub consumed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmPolicyApplyOutcome {
+    DeferredUntilShortcutIdle,
+    Acknowledged(WmPolicyAck),
 }
 
 impl WmShortcutRegistry {
@@ -50,6 +59,12 @@ impl WmShortcutRegistry {
         }
         if hello.capabilities.bits & !WmCapabilities::SUPPORTED != 0 {
             return Err(WmIpcError::Negotiation("unsupported WM capability"));
+        }
+        if hello.policy_generation == 0 {
+            return Err(WmIpcError::Negotiation("invalid WM policy generation"));
+        }
+        if hello.chrome.thickness > 64 || (hello.chrome.enabled && hello.chrome.thickness == 0) {
+            return Err(WmIpcError::Negotiation("invalid WM chrome policy"));
         }
         if hello.bindings.len() > WM_MAX_BINDINGS {
             return Err(WmIpcError::Negotiation("too many WM bindings"));
@@ -84,6 +99,8 @@ impl WmShortcutRegistry {
         Ok(Self {
             bindings,
             held: BTreeMap::new(),
+            policy_generation: hello.policy_generation,
+            chrome: hello.chrome,
         })
     }
 
@@ -114,6 +131,18 @@ impl WmShortcutRegistry {
 
     pub fn binding_count(&self) -> usize {
         self.bindings.len()
+    }
+
+    pub const fn policy_generation(&self) -> u64 {
+        self.policy_generation
+    }
+
+    pub const fn chrome(&self) -> WmChromeStyle {
+        self.chrome
+    }
+
+    pub fn is_idle(&self) -> bool {
+        self.held.is_empty()
     }
 }
 
@@ -189,9 +218,64 @@ impl WmShortcutRouter {
     pub fn clear_seat(&mut self, seat: SeatId) -> bool {
         self.seats.remove(&seat).is_some()
     }
+
+    pub const fn policy_generation(&self) -> u64 {
+        self.registry.policy_generation()
+    }
+
+    pub const fn chrome(&self) -> WmChromeStyle {
+        self.registry.chrome()
+    }
+
+    pub fn apply_policy_update(&mut self, update: &WmPolicyUpdate) -> WmPolicyApplyOutcome {
+        if update.generation <= self.registry.policy_generation() {
+            return WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+                generation: update.generation,
+                outcome: WmPolicyAckOutcome::RejectedStale,
+            });
+        }
+        if !self.shortcut_idle() {
+            return WmPolicyApplyOutcome::DeferredUntilShortcutIdle;
+        }
+        let hello = WmHello {
+            api_version: update.api_version,
+            capabilities: WmCapabilities::all_supported(),
+            policy_generation: update.generation,
+            bindings: update.bindings.clone(),
+            chrome: update.chrome,
+        };
+        let Ok(registry) = WmShortcutRegistry::from_hello(&hello) else {
+            return WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+                generation: update.generation,
+                outcome: WmPolicyAckOutcome::RejectedInvalid,
+            });
+        };
+        self.replace_registry(registry);
+        WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+            generation: update.generation,
+            outcome: WmPolicyAckOutcome::Applied,
+        })
+    }
+
+    pub fn shortcut_idle(&self) -> bool {
+        self.seats
+            .values()
+            .all(|state| state.shortcuts.is_idle() && state.modifiers.is_idle())
+    }
 }
 
 impl WmPhysicalModifierState {
+    fn is_idle(self) -> bool {
+        !self.left_shift
+            && !self.right_shift
+            && !self.left_control
+            && !self.right_control
+            && !self.left_alt
+            && !self.right_alt
+            && !self.left_super
+            && !self.right_super
+    }
+
     fn mask(self) -> WmModifierMask {
         let mut bits = 0;
         if self.left_shift || self.right_shift {

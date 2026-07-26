@@ -40,7 +40,7 @@ fn authority_wait_timeout(
 }
 
 fn run_session_loop(
-    config: &PersistentXtermSessionConfig,
+    config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
     resources: SessionLoopResources<'_>,
     startup: SessionLoopStartup<'_>,
@@ -70,6 +70,13 @@ fn run_session_loop(
         output_notifications,
     } = startup;
     let started = Instant::now();
+    let config_watcher = config
+        .core_config_source
+        .path
+        .as_deref()
+        .map(sophia_config::ConfigWatcher::spawn)
+        .transpose()?;
+    let mut config_reload_pending = false;
     let deadline = config.max_runtime.map(|duration| started + duration);
     let blank_normal_session = config.normal_session && config.applications.startup.is_empty();
     let initialize_empty_runtime =
@@ -93,6 +100,10 @@ fn run_session_loop(
     let mut launch_admission_started_at: Option<Instant> = None;
     let mut present_observer = XPresentSessionObserver::new(protocol_router);
     let mut present_feedback = Vec::new();
+    let initial_border_style = wm_session
+        .as_ref()
+        .and_then(|wm| wm.focused_border_style())
+        .unwrap_or(config.focused_border_style);
     let mut runtime = if initialize_empty_runtime {
         Some(
             LiveProductionVisualRuntime::new(
@@ -104,7 +115,8 @@ fn run_session_loop(
                 config.m4_first_acquire_delay,
                 config.m4_reject_first_present,
                 config.m4_diagnose_first_mixed_export,
-            ),
+            )
+            .with_focused_border_style(initial_border_style),
         )
     } else {
         None
@@ -144,8 +156,8 @@ fn run_session_loop(
     let mut modifiers = XCoreKeyboardMapper::new();
     let key_repeat_map = XkbKeymapSnapshot::new(&config.xkb_config)?;
     let key_repeat_config = KeyRepeatConfig::new(
-        u64::from(XKB_DEFAULT_REPEAT_DELAY_MSEC),
-        u64::from(XKB_DEFAULT_REPEAT_INTERVAL_MSEC),
+        config.key_repeat_config.delay_msec,
+        config.key_repeat_config.interval_msec,
     )
     .ok_or("X11 key repeat controls must be nonzero")?;
     let mut key_repeat = KeyRepeatState::new(key_repeat_config);

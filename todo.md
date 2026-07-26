@@ -412,6 +412,28 @@ consecutive passing runs.
 
 ## Milestone 11: Installed Daily-Driver Candidate
 
+- [x] Establish two strict KDL 2 configuration domains: XDG
+  `sophia/config.kdl` for session/Engine mechanism and `sophia/wm.kdl` only
+  for a Sophia-native WM. External WMs retain their native configuration.
+- [x] Add single-source discovery, safe file admission, compiled defaults,
+  immutable SHA-256 snapshots, strict schema/cross-reference validation,
+  public check/print commands, parent-directory inotify, last-known-good
+  retention, and whole-file pending-restart semantics.
+- [x] Apply the initial live-safe core slice at owner-loop boundaries:
+  future application launches, idle key-repeat replacement, fallback chrome,
+  and diagnostics. Engine-owned border rendering now consumes runtime style
+  instead of a backend hard-code.
+- [x] Version the blind WM API to v5 with negotiated native chrome,
+  generation-ordered policy-update/ack packets, stale rejection, and an
+  Engine idle-shortcut application reducer.
+- [ ] Carry native-WM policy updates and acknowledgements through the
+  supervised live transport without requiring an existing binding to trigger
+  a request; update bindings, action policy, workspace policy, and active
+  chrome as one idle-boundary transaction.
+- [ ] Add a guarded physical hot-reload proof: valid live edit, invalid edit
+  retaining last-known-good state, restart-required edit with no partial
+  apply, atomic replacement, deletion/recreation, and external-WM native
+  config isolation.
 - [ ] Promote one immutable, versioned release and greetd entry that uses no
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.

@@ -9,15 +9,48 @@ use std::{
 #[cfg(unix)]
 use sophia_protocol::{
     SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, WM_API_VERSION, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmHello, WmModifierMask, WmRequestPacket,
-    decode_wm_request_frame, decode_wm_session_descriptor_frame, encode_wm_hello_frame,
+    WmBindingRegistration, WmCapabilities, WmChromeStyle, WmHello, WmModifierMask, WmRequestPacket,
+    WmRgb8, decode_wm_request_frame, decode_wm_session_descriptor_frame, encode_wm_hello_frame,
     encode_wm_response_frame,
 };
 
 #[cfg(unix)]
-use crate::{WmProcessError, handle_wm_request};
+use crate::{WmProcessError, handle_wm_request_with_config};
 
 pub fn run_socket_server(path: impl AsRef<Path>) -> Result<(), WmProcessError> {
+    run_socket_server_with_config(path, None, false)
+}
+
+pub fn run_socket_server_with_config(
+    path: impl AsRef<Path>,
+    explicit_config: Option<&Path>,
+    no_config: bool,
+) -> Result<(), WmProcessError> {
+    if no_config && explicit_config.is_some() {
+        return Err(WmProcessError::new(
+            "--no-wm-config and --wm-config are mutually exclusive",
+        ));
+    }
+    let source = if no_config {
+        sophia_config::ConfigSource {
+            class: sophia_config::ConfigSourceClass::CompiledDefault,
+            path: None,
+        }
+    } else {
+        sophia_config::discover_default_config_source(
+            sophia_config::ConfigDomain::Wm,
+            explicit_config,
+        )
+    };
+    let mut config = sophia_config::WmConfigState::load(&source)
+        .map_err(|error| WmProcessError::new(format!("failed to load WM config: {error}")))?;
+    let source_path = source.path.clone();
+    let watcher = source
+        .path
+        .as_deref()
+        .map(sophia_config::ConfigWatcher::spawn)
+        .transpose()
+        .map_err(|error| WmProcessError::new(format!("failed to watch WM config: {error}")))?;
     let path = path.as_ref();
     match std::fs::remove_file(path) {
         Ok(()) => {}
@@ -39,7 +72,12 @@ pub fn run_socket_server(path: impl AsRef<Path>) -> Result<(), WmProcessError> {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => serve_socket_client(&mut stream)?,
+            Ok(mut stream) => serve_socket_client(
+                &mut stream,
+                &mut config,
+                watcher.as_ref(),
+                source_path.as_deref(),
+            )?,
             Err(error) => {
                 return Err(WmProcessError::new(format!(
                     "failed to accept WM socket client on {}: {error}",
@@ -53,33 +91,38 @@ pub fn run_socket_server(path: impl AsRef<Path>) -> Result<(), WmProcessError> {
 }
 
 #[cfg(unix)]
-fn serve_socket_client(stream: &mut UnixStream) -> Result<(), WmProcessError> {
+fn serve_socket_client(
+    stream: &mut UnixStream,
+    config: &mut sophia_config::WmConfigState,
+    watcher: Option<&sophia_config::ConfigWatcher>,
+    source_path: Option<&Path>,
+) -> Result<(), WmProcessError> {
+    service_wm_config(config, watcher, source_path);
+    let snapshot = config.active();
     let hello = WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
-        bindings: vec![
-            WmBindingRegistration {
-                action: WmActionId::from_raw(1),
-                keycode: 57,
+        policy_generation: snapshot.generation.raw(),
+        bindings: snapshot
+            .bindings
+            .iter()
+            .map(|binding| WmBindingRegistration {
+                action: WmActionId::from_raw(binding.action),
+                keycode: binding.keycode,
                 modifiers: WmModifierMask {
-                    bits: WmModifierMask::SUPER,
+                    bits: binding.modifiers,
                 },
+            })
+            .collect(),
+        chrome: WmChromeStyle {
+            enabled: snapshot.chrome.enabled,
+            thickness: snapshot.chrome.thickness,
+            color: WmRgb8 {
+                red: snapshot.chrome.color.red,
+                green: snapshot.chrome.color.green,
+                blue: snapshot.chrome.color.blue,
             },
-            WmBindingRegistration {
-                action: WmActionId::from_raw(2),
-                keycode: 3,
-                modifiers: WmModifierMask {
-                    bits: WmModifierMask::SUPER,
-                },
-            },
-            WmBindingRegistration {
-                action: WmActionId::from_raw(3),
-                keycode: 28,
-                modifiers: WmModifierMask {
-                    bits: WmModifierMask::SUPER,
-                },
-            },
-        ],
+        },
     };
     let frame = encode_wm_hello_frame(&hello)
         .map_err(|error| WmProcessError::new(format!("failed to encode WM hello: {error:?}")))?;
@@ -93,7 +136,8 @@ fn serve_socket_client(stream: &mut UnixStream) -> Result<(), WmProcessError> {
     })?;
 
     while let Some(request) = read_wm_request(stream)? {
-        let response = handle_wm_request(request);
+        service_wm_config(config, watcher, source_path);
+        let response = handle_wm_request_with_config(request, config.active());
         let frame = encode_wm_response_frame(&response).map_err(|error| {
             WmProcessError::new(format!("failed to encode WM response: {error:?}"))
         })?;
@@ -106,6 +150,29 @@ fn serve_socket_client(stream: &mut UnixStream) -> Result<(), WmProcessError> {
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn service_wm_config(
+    config: &mut sophia_config::WmConfigState,
+    watcher: Option<&sophia_config::ConfigWatcher>,
+    source_path: Option<&Path>,
+) {
+    let mut changed = false;
+    if let Some(watcher) = watcher {
+        while watcher.try_recv().is_ok() {
+            changed = true;
+        }
+    }
+    if !changed {
+        return;
+    }
+    let Some(path) = source_path else {
+        return;
+    };
+    if let Ok(bytes) = sophia_config::read_config_file(path) {
+        let _ = config.reload(&bytes);
+    }
 }
 
 #[cfg(unix)]

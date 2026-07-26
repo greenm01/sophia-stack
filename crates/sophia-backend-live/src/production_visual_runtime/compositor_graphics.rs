@@ -15,7 +15,7 @@ impl LiveProductionVisualRuntime {
             presentation_order,
             committed_surfaces,
             self.focused_surface,
-            FocusedSurfaceBorderStyle::default(),
+            self.focused_border_style,
         )
     }
 

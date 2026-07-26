@@ -2,6 +2,13 @@
     if let Some(wm) = wm_session.as_mut() {
         let _ = wm.poll_restart(&layout, output)?;
     }
+    if let Some(runtime) = runtime.as_mut() {
+        let style = wm_session
+            .as_ref()
+            .and_then(|wm| wm.focused_border_style())
+            .unwrap_or(config.focused_border_style);
+        runtime.set_focused_border_style(style);
+    }
     if pending_wm_update.is_none()
         && layout.pending.is_none()
         && let Some(wm) = wm_session.as_mut()

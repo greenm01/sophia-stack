@@ -62,10 +62,12 @@ fn output_topology_rejects_duplicate_and_unbounded_facts() {
     );
 }
 #[test]
-fn wm_api_v3_negotiation_and_opaque_application_actions_round_trip() {
+fn wm_api_v5_negotiation_and_opaque_application_actions_round_trip() {
     let hello = WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: WmChromeStyle::default(),
         bindings: vec![WmBindingRegistration {
             action: WmActionId::from_raw(7),
             keycode: 36,
@@ -157,5 +159,41 @@ fn wm_api_v3_negotiation_and_opaque_application_actions_round_trip() {
     assert_eq!(
         decode_wm_response_frame(&encode_wm_response_frame(&response).unwrap()).unwrap(),
         response
+    );
+}
+
+#[test]
+fn wm_policy_update_and_ack_round_trip() {
+    let update = WmPolicyUpdate {
+        api_version: WM_API_VERSION,
+        generation: 9,
+        bindings: vec![WmBindingRegistration {
+            action: WmActionId::from_raw(4),
+            keycode: 57,
+            modifiers: WmModifierMask {
+                bits: WmModifierMask::SUPER,
+            },
+        }],
+        chrome: WmChromeStyle {
+            enabled: true,
+            thickness: 4,
+            color: WmRgb8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+            },
+        },
+    };
+    assert_eq!(
+        decode_wm_policy_update_frame(&encode_wm_policy_update_frame(&update).unwrap()).unwrap(),
+        update
+    );
+    let ack = WmPolicyAck {
+        generation: 9,
+        outcome: WmPolicyAckOutcome::Applied,
+    };
+    assert_eq!(
+        decode_wm_policy_ack_frame(&encode_wm_policy_ack_frame(ack).unwrap()).unwrap(),
+        ack
     );
 }

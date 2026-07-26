@@ -1,0 +1,28 @@
+/- kdl-version 2
+schema 1
+
+session {
+    application "terminal" id=1 executable="/usr/bin/kitty"
+    startup 1
+}
+
+input {
+    seat "seat0"
+    keyboard rules="evdev" model="pc105" layout="us" variant="" options=""
+    repeat delay-ms=500 interval-ms=25
+}
+
+outputs {
+    output "DP-1" x=0 y=0 mode="preferred" scale=1 primary=#true
+}
+
+compositor {
+    chrome-fallback enabled=#true thickness=2 color="#70b7ff"
+    chrome-limits max-thickness=64
+}
+
+namespace profile="classic-shared"
+
+external-wm executable="/usr/bin/xmonad"
+
+diagnostics verbose=#false

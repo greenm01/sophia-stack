@@ -26,6 +26,8 @@ wins when prose disagrees.
   private-state rules used across those boundaries.
 - [Style Guide](style-guide.md) defines source-layout and implementation
   discipline.
+- [Configuration](configuration.md) defines the two KDL 2 ownership domains,
+  source precedence, strict validation, and transactional hot reload.
 
 Normative documents describe both current and target contracts. They must label
 unimplemented target behavior explicitly.

@@ -1,7 +1,8 @@
 mod support;
 use sophia_engine::{WmShortcutDecision, WmShortcutRegistry};
 use sophia_protocol::{
-    WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmHello, WmModifierMask,
+    WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmChromeStyle, WmHello,
+    WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate,
 };
 use support::*;
 
@@ -239,6 +240,8 @@ fn wm_shortcuts_validate_and_suppress_repeats_until_release() {
     let hello = WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: sophia_protocol::WmChromeStyle::default(),
         bindings: vec![WmBindingRegistration {
             action,
             keycode: 28,
@@ -300,6 +303,8 @@ fn wm_shortcuts_reject_the_emergency_chord() {
     let hello = WmHello {
         api_version: WM_API_VERSION,
         capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: sophia_protocol::WmChromeStyle::default(),
         bindings: vec![WmBindingRegistration {
             action: WmActionId::from_raw(1),
             keycode: 14,
@@ -312,5 +317,56 @@ fn wm_shortcuts_reject_the_emergency_chord() {
     assert_eq!(
         WmShortcutRegistry::from_hello(&hello),
         Err(WmIpcError::Negotiation("reserved emergency chord"))
+    );
+}
+
+#[test]
+fn wm_policy_update_defers_until_shortcut_idle_and_rejects_stale_generation() {
+    let hello = WmHello {
+        api_version: WM_API_VERSION,
+        capabilities: WmCapabilities::all_supported(),
+        policy_generation: 1,
+        chrome: WmChromeStyle::default(),
+        bindings: vec![WmBindingRegistration {
+            action: WmActionId::from_raw(1),
+            keycode: 28,
+            modifiers: WmModifierMask {
+                bits: WmModifierMask::SUPER,
+            },
+        }],
+    };
+    let mut router =
+        sophia_engine::WmShortcutRouter::new(WmShortcutRegistry::from_hello(&hello).unwrap());
+    let seat = SeatId::from_raw(1);
+    router.route_key(seat, 125, true);
+    let update = WmPolicyUpdate {
+        api_version: WM_API_VERSION,
+        generation: 2,
+        bindings: Vec::new(),
+        chrome: WmChromeStyle {
+            enabled: true,
+            thickness: 4,
+            ..WmChromeStyle::default()
+        },
+    };
+    assert_eq!(
+        router.apply_policy_update(&update),
+        sophia_engine::WmPolicyApplyOutcome::DeferredUntilShortcutIdle
+    );
+    router.route_key(seat, 125, false);
+    assert_eq!(
+        router.apply_policy_update(&update),
+        sophia_engine::WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+            generation: 2,
+            outcome: WmPolicyAckOutcome::Applied,
+        })
+    );
+    assert_eq!(router.chrome().thickness, 4);
+    assert_eq!(
+        router.apply_policy_update(&update),
+        sophia_engine::WmPolicyApplyOutcome::Acknowledged(WmPolicyAck {
+            generation: 2,
+            outcome: WmPolicyAckOutcome::RejectedStale,
+        })
     );
 }

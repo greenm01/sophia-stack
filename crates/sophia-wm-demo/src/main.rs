@@ -5,7 +5,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .find_map(|arg| arg.strip_prefix("--socket="))
             .ok_or("missing --socket=PATH")?;
-        sophia_wm_demo::run_socket_server(socket)?;
+        let wm_config = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--wm-config="))
+            .map(std::path::Path::new);
+        let no_wm_config = args.iter().any(|arg| arg == "--no-wm-config");
+        sophia_wm_demo::run_socket_server_with_config(socket, wm_config, no_wm_config)?;
         return Ok(());
     }
 

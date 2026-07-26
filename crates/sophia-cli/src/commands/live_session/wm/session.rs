@@ -107,6 +107,7 @@ struct LiveWmSession {
     stale_responses: usize,
     work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
+    chrome: sophia_protocol::WmChromeStyle,
     workspace_state: WmWorkspaceState,
     session_actions: Vec<WmSessionAction>,
     committed: usize,
@@ -211,6 +212,7 @@ impl LiveWmSession {
             ),
             restart_policy: RestartPolicy::default(),
             shortcuts: None,
+            chrome: sophia_protocol::WmChromeStyle::default(),
             workspace_state,
             session_actions,
             socket_path: config.wm_socket_path.clone(),
@@ -262,6 +264,7 @@ impl LiveWmSession {
             .workspace_state
             .descriptor(self.session_actions.clone());
         let registry = transport.negotiate(&descriptor)?;
+        self.chrome = registry.chrome();
         match self.shortcuts.as_mut() {
             Some(shortcuts) => shortcuts.replace_registry(registry),
             None => self.shortcuts = Some(WmShortcutRouter::new(registry)),
@@ -274,6 +277,12 @@ impl LiveWmSession {
         );
         self.supervisor_state = state;
         Ok(())
+    }
+
+    fn focused_border_style(&self) -> Option<sophia_engine::FocusedSurfaceBorderStyle> {
+        (!self.degraded).then(|| {
+            PersistentXtermSessionConfig::wm_focused_border_style(self.chrome)
+        })
     }
 
     fn poll_restart(

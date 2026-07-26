@@ -41,6 +41,113 @@ macro_rules! service_session_controls {
     }};
 }
 
+macro_rules! service_core_config_reload {
+    () => {{
+        if let Some(watcher) = config_watcher.as_ref() {
+            while watcher.try_recv().is_ok() {
+                config_reload_pending = true;
+            }
+        }
+        let wm_shortcuts_idle = wm_session
+            .as_ref()
+            .and_then(|wm| wm.shortcuts.as_ref())
+            .is_none_or(WmShortcutRouter::shortcut_idle);
+        let input_idle = client_keys.pending_len() == 0
+            && input_delivery.pending.is_empty()
+            && wm_shortcuts_idle;
+        if config_reload_pending && input_idle {
+            config_reload_pending = false;
+            let path = config
+                .core_config_source
+                .path
+                .as_deref()
+                .expect("only file-backed config creates a watcher");
+            match sophia_config::read_config_file(path) {
+                Ok(bytes) => match config.core_config_state.reload(&bytes) {
+                    Ok(report)
+                        if report.disposition
+                            == sophia_config::ReloadDisposition::Applied =>
+                    {
+                        let snapshot = config.core_config_state.active().clone();
+                        config.applications =
+                            PersistentXtermSessionConfig::applications_from_core(&snapshot)?;
+                        config.key_repeat_config = snapshot.input.repeat;
+                        config.verbose_diagnostics = snapshot.verbose_diagnostics;
+                        let repeat = KeyRepeatConfig::new(
+                            snapshot.input.repeat.delay_msec,
+                            snapshot.input.repeat.interval_msec,
+                        )
+                        .ok_or("KDL2 key repeat controls must be nonzero")?;
+                        key_repeat.cancel_seat(seat);
+                        key_repeat = KeyRepeatState::new(repeat);
+                        config.focused_border_style =
+                            PersistentXtermSessionConfig::focused_border_style(
+                                snapshot.fallback_chrome,
+                            );
+                        if let Some(runtime) = runtime.as_mut() {
+                            let style = wm_session
+                                .as_ref()
+                                .and_then(|wm| wm.focused_border_style())
+                                .unwrap_or(config.focused_border_style);
+                            runtime.set_focused_border_style(style);
+                        }
+                        if config.verbose_diagnostics {
+                            println!(
+                                "sophia_config_reload_detail schema=1 source={:?} pending_restart=false applications={} repeat_delay_ms={} repeat_interval_ms={} chrome_thickness={}",
+                                config.core_config_source.class,
+                                config.applications.applications.len(),
+                                config.key_repeat_config.delay_msec,
+                                config.key_repeat_config.interval_msec,
+                                config.focused_border_style.thickness,
+                            );
+                        }
+                        println!(
+                            "sophia_config_reload schema=1 status=applied generation={} digest={} applications_changed={} repeat_changed={} chrome_changed={} diagnostics_changed={}",
+                            report.generation.raw(),
+                            snapshot.digest,
+                            report.delta.applications_changed,
+                            report.delta.repeat_changed,
+                            report.delta.chrome_changed,
+                            report.delta.diagnostics_changed,
+                        );
+                    }
+                    Ok(report)
+                        if report.disposition
+                            == sophia_config::ReloadDisposition::PendingRestart =>
+                    {
+                        let pending = config
+                            .core_config_state
+                            .pending_restart()
+                            .expect("pending restart disposition retains candidate");
+                        println!(
+                            "sophia_config_reload schema=1 status=pending_restart generation={} digest={}",
+                            report.generation.raw(),
+                            pending.digest,
+                        );
+                    }
+                    Ok(report) => {
+                        println!(
+                            "sophia_config_reload schema=1 status=unchanged generation={}",
+                            report.generation.raw(),
+                        );
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "sophia_config_reload schema=1 status=rejected reason=parse error={error}"
+                        );
+                    }
+                },
+                Err(error) => {
+                    eprintln!(
+                        "sophia_config_reload schema=1 status=rejected reason=read error={error}"
+                    );
+                }
+            }
+            std::io::stdout().flush()?;
+        }
+    }};
+}
+
 macro_rules! flush_client_keys {
     ($surface:expr, $reason:expr) => {{
         let surface = $surface;

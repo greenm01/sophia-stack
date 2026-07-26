@@ -380,6 +380,7 @@ macro_rules! drain_physical_input {
 }
 
 loop {
+    service_core_config_reload!();
     service_session_controls!();
     let input_baseline_presented_before_wait = include!("lifecycle.rs");
     include!("wm_phase.rs");

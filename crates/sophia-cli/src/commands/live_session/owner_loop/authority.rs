@@ -269,6 +269,12 @@
                                 config.m4_first_acquire_delay,
                                 config.m4_reject_first_present,
                                 config.m4_diagnose_first_mixed_export,
+                            )
+                            .with_focused_border_style(
+                                wm_session
+                                    .as_ref()
+                                    .and_then(|wm| wm.focused_border_style())
+                                    .unwrap_or(config.focused_border_style),
                             ),
                     );
                 }

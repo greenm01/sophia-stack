@@ -15,7 +15,8 @@ pub use portal::{
 };
 pub use types::*;
 pub use wm::{
-    decode_wm_hello_frame, decode_wm_request_frame, decode_wm_response_frame,
-    decode_wm_session_descriptor_frame, encode_wm_hello_frame, encode_wm_request_frame,
-    encode_wm_response_frame, encode_wm_session_descriptor_frame,
+    decode_wm_hello_frame, decode_wm_policy_ack_frame, decode_wm_policy_update_frame,
+    decode_wm_request_frame, decode_wm_response_frame, decode_wm_session_descriptor_frame,
+    encode_wm_hello_frame, encode_wm_policy_ack_frame, encode_wm_policy_update_frame,
+    encode_wm_request_frame, encode_wm_response_frame, encode_wm_session_descriptor_frame,
 };

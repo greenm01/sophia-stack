@@ -1,5 +1,6 @@
 #[cfg(feature = "atomic-scanout-live")]
 mod backend;
+mod config;
 mod help;
 #[cfg(feature = "atomic-scanout-live")]
 mod live_session;
@@ -50,6 +51,9 @@ mod prelude {
 }
 
 pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if config::try_run(args)? {
+        return Ok(());
+    }
     #[cfg(feature = "atomic-scanout-live")]
     if backend::try_run(args)? {
         return Ok(());
