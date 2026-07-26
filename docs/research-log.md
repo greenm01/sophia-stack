@@ -4227,3 +4227,11 @@ compatibility-bridge restart, and completed the independent click and drag
 proofs plus clean logout. Reduced policy-suppression evidence remains available
 for diagnosing future Engine/frontend focus transitions; it carries only mode
 and counts.
+
+The follow-up physical session exercised 36 workspace projections. Ten empty
+projections retained `focus=none`; 26 populated projections restored focus.
+No focused-border composition occurred between an empty projection and its
+next legitimate focus restoration, no pointer button was suppressed by the
+focus-transition policy, and the session completed with clean protocol, WM,
+input, native-scanout, frontend, and namespace state. This closes the transient
+status-bar border regression without adding client-specific chrome policy.

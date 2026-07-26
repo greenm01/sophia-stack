@@ -323,7 +323,9 @@ Promotion now follows the gates below in order.
   the bar during workspace changes. The cause was generic external-WM focus
   reconciliation selecting the first committed hidden surface after xmonad
   cleared focus; the owner now rejects that candidate before Engine mutation.
-  Re-run the physical workspace transition once to close the visual regression.
+  The follow-up physical run committed 10 empty focusless projections and 26
+  focused restorations with zero focused-border compositions during any empty
+  interval, zero pointer-policy suppressions, and clean teardown.
 - [x] Decode bounded `_NET_WM_STRUT_PARTIAL` and legacy `_NET_WM_STRUT` values
   entirely inside the X
   frontend and reduce them to protocol-neutral edge/span reservations tied to
