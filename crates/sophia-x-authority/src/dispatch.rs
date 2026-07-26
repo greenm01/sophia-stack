@@ -738,26 +738,40 @@ fn atom_type_is_unknown(atoms: &XAtomTable, atom: u32) -> bool {
     atom != crate::X_PROPERTY_ANY_TYPE && atoms.name(atom).is_none()
 }
 
-fn x_client_output_from_property_read(
+fn x_client_outputs_from_property_read(
     context: &XDispatchContext,
-    result: Result<crate::XPropertyReadReply, XPropertyError>,
-) -> XClientOutput {
+    window: XResourceId,
+    property: u32,
+    result: Result<crate::XPropertyReadOutcome, XPropertyError>,
+) -> Vec<XClientOutput> {
     match result {
-        Ok(reply) => XClientOutput::Reply(XClientReply::GetProperty {
-            sequence: context.sequence,
-            property_type: reply.property_type,
-            format: reply.format,
-            bytes_after: reply.bytes_after,
-            item_count: reply.item_count,
-            bytes: reply.bytes,
-        }),
-        Err(error) => XClientOutput::Error(crate::XClientError {
+        Ok(outcome) => {
+            let mut outputs = vec![XClientOutput::Reply(XClientReply::GetProperty {
+                sequence: context.sequence,
+                property_type: outcome.reply.property_type,
+                format: outcome.reply.format,
+                bytes_after: outcome.reply.bytes_after,
+                item_count: outcome.reply.item_count,
+                bytes: outcome.reply.bytes,
+            })];
+            if outcome.deleted {
+                outputs.push(XClientOutput::Event(XClientEvent::PropertyNotify {
+                    sequence: context.sequence,
+                    window,
+                    atom: property,
+                    time: 0,
+                    new_value: false,
+                }));
+            }
+            outputs
+        }
+        Err(error) => vec![XClientOutput::Error(crate::XClientError {
             code: x_error_from_property_read(error),
             sequence: context.sequence,
             resource_id: 0,
             minor_code: 0,
             major_code: context.major_opcode,
-        }),
+        })],
     }
 }
 
@@ -791,8 +805,7 @@ fn x_error_from_property_read(error: XPropertyError) -> XErrorCode {
         | XPropertyError::ValueTooLarge { .. }
         | XPropertyError::TableTooLarge { .. }
         | XPropertyError::TypeMismatch
-        | XPropertyError::InvalidOffset
-        | XPropertyError::ReadTooLarge { .. } => XErrorCode::BadValue,
+        | XPropertyError::InvalidOffset => XErrorCode::BadValue,
     }
 }
 

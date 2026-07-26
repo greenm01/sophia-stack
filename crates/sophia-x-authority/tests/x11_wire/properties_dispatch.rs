@@ -225,6 +225,210 @@ fn x11_dispatch_reads_bounded_property_slices() {
 }
 
 #[test]
+fn x_property_reads_clamp_large_ceilings_and_delete_only_complete_matches() {
+    let namespace = NamespaceId::from_raw(45);
+    let window = XResourceId::new(0x220009, 1);
+    let property = 71;
+    let property_type = 72;
+    let bytes = b"bounded clipboard value";
+    let mut properties = XPropertyTable::new();
+    properties
+        .apply_change(
+            namespace,
+            XPropertyChange {
+                mode: XPropertyMode::Replace,
+                window,
+                property,
+                property_type,
+                format: 8,
+                bytes: bytes.to_vec(),
+            },
+        )
+        .unwrap();
+
+    let partial = properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property,
+                property_type,
+                long_offset: 0,
+                long_length: 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(partial.reply.bytes, bytes[..4]);
+    assert_eq!(
+        partial.reply.bytes_after,
+        u32::try_from(bytes.len() - 4).unwrap()
+    );
+    assert!(!partial.deleted);
+    assert!(properties.get(namespace, window, property).is_some());
+
+    let type_mismatch = properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property,
+                property_type: property_type + 1,
+                long_offset: 0,
+                long_length: u32::MAX,
+            },
+        )
+        .unwrap();
+    assert!(type_mismatch.reply.bytes.is_empty());
+    assert_eq!(
+        type_mismatch.reply.bytes_after,
+        u32::try_from(bytes.len()).unwrap()
+    );
+    assert!(!type_mismatch.deleted);
+    assert!(properties.get(namespace, window, property).is_some());
+
+    assert_eq!(
+        properties.read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property,
+                property_type,
+                long_offset: u32::MAX,
+                long_length: u32::MAX,
+            },
+        ),
+        Err(XPropertyError::InvalidOffset)
+    );
+    assert!(properties.get(namespace, window, property).is_some());
+
+    let complete = properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property,
+                property_type,
+                long_offset: 0,
+                long_length: u32::MAX,
+            },
+        )
+        .unwrap();
+    assert_eq!(complete.reply.bytes, bytes);
+    assert_eq!(complete.reply.bytes_after, 0);
+    assert!(complete.deleted);
+    assert!(properties.get(namespace, window, property).is_none());
+
+    let missing = properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property,
+                property_type,
+                long_offset: 0,
+                long_length: u32::MAX,
+            },
+        )
+        .unwrap();
+    assert_eq!(missing.reply.property_type, X_PROPERTY_ANY_TYPE);
+    assert!(!missing.deleted);
+}
+
+#[test]
+fn x11_dispatch_deletes_a_fully_read_property_after_the_reply() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let utf8 = atoms
+        .intern(X_ATOM_NAME_UTF8_STRING, false)
+        .unwrap()
+        .unwrap();
+    let clipboard = atoms.intern("CLIPBOARD", false).unwrap().unwrap();
+    let window = 0x22000a;
+    let bytes = b"kitty-shaped selection";
+
+    let create = decode_x11_core_request(
+        context(namespace, 516, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 300, 200),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let change = decode_x11_core_request(
+        context(namespace, 517, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            window,
+            clipboard,
+            utf8,
+            8,
+            bytes,
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 18),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let read = decode_x11_core_request(
+        context(namespace, 518, XByteOrder::LittleEndian),
+        &get_property_request(
+            XByteOrder::LittleEndian,
+            true,
+            window,
+            clipboard,
+            utf8,
+            0,
+            u32::MAX,
+        ),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 20),
+        read,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
+
+    assert_eq!(encoded.len(), 2);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(&encoded[0][32..32 + bytes.len()], bytes);
+    assert_eq!(encoded[1][0], 28);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[1][4..8]),
+        window
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[1][8..12]),
+        clipboard
+    );
+    assert_eq!(encoded[1][16], 1);
+    assert!(
+        properties
+            .get(namespace, XResourceId::new(u64::from(window), 1), clipboard)
+            .is_none()
+    );
+}
+
+#[test]
 fn x11_dispatch_get_selection_owner_reports_no_owner() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

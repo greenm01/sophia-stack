@@ -48,6 +48,12 @@ pub struct XPropertyReadReply {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XPropertyReadOutcome {
+    pub reply: XPropertyReadReply,
+    pub deleted: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XPropertyRecord {
     pub namespace: NamespaceId,
     pub window: XResourceId,
@@ -80,7 +86,6 @@ pub enum XPropertyError {
     TableTooLarge { len: usize, max: usize },
     TypeMismatch,
     InvalidOffset,
-    ReadTooLarge { len: usize, max: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -487,10 +492,10 @@ impl XPropertyTable {
     }
 
     pub fn read_property(
-        &self,
+        &mut self,
         namespace: NamespaceId,
         read: XPropertyRead,
-    ) -> Result<XPropertyReadReply, XPropertyError> {
+    ) -> Result<XPropertyReadOutcome, XPropertyError> {
         if !namespace.is_valid() {
             return Err(XPropertyError::InvalidNamespace);
         }
@@ -499,23 +504,35 @@ impl XPropertyTable {
         }
 
         let Some(record) = self.get(namespace, read.window, read.property) else {
-            return Ok(XPropertyReadReply {
-                property_type: X_PROPERTY_ANY_TYPE,
-                format: 0,
-                bytes_after: 0,
-                item_count: 0,
-                bytes: Vec::new(),
+            return Ok(XPropertyReadOutcome {
+                reply: XPropertyReadReply {
+                    property_type: X_PROPERTY_ANY_TYPE,
+                    format: 0,
+                    bytes_after: 0,
+                    item_count: 0,
+                    bytes: Vec::new(),
+                },
+                deleted: false,
             });
         };
 
-        read_property_value(
+        let reply = read_property_value(
             record.property_type,
             record.format,
             &record.bytes,
             read.property_type,
             read.long_offset,
             read.long_length,
-        )
+        )?;
+        let deleted = read.delete
+            && reply.property_type != X_PROPERTY_ANY_TYPE
+            && (read.property_type == X_PROPERTY_ANY_TYPE
+                || read.property_type == reply.property_type)
+            && reply.bytes_after == 0;
+        if deleted {
+            self.remove(namespace, read.window, read.property);
+        }
+        Ok(XPropertyReadOutcome { reply, deleted })
     }
 }
 
@@ -545,22 +562,11 @@ pub(crate) fn read_property_value(
         return Err(XPropertyError::InvalidOffset);
     }
 
-    let max_read = usize::try_from(long_length)
-        .ok()
-        .and_then(|value| value.checked_mul(4))
-        .ok_or(XPropertyError::ReadTooLarge {
-            len: usize::MAX,
-            max: X_PROPERTY_MAX_VALUE_BYTES,
-        })?;
-    if max_read > X_PROPERTY_MAX_VALUE_BYTES {
-        return Err(XPropertyError::ReadTooLarge {
-            len: max_read,
-            max: X_PROPERTY_MAX_VALUE_BYTES,
-        });
-    }
-
     let remaining = bytes.len() - offset;
-    let returned_len = remaining.min(max_read);
+    let requested_bytes = usize::try_from(long_length)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(4);
+    let returned_len = remaining.min(requested_bytes);
     let bytes_after = remaining - returned_len;
     let item_width = usize::from(format / 8);
     Ok(XPropertyReadReply {

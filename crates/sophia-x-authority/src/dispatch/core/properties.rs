@@ -140,40 +140,46 @@ fn dispatch_core_property_request(
                     }
                 }
                 XWireRequest::GetProperty(read) => {
-                    let output = if read.property == crate::X_PROPERTY_ANY_TYPE
+                    let window = read.window;
+                    let property = read.property;
+                    let outputs = if property == crate::X_PROPERTY_ANY_TYPE
                         || atoms.name(read.property).is_none()
                         || atom_type_is_unknown(atoms, read.property_type)
                     {
-                        XClientOutput::Error(crate::XClientError {
+                        vec![XClientOutput::Error(crate::XClientError {
                             code: crate::XErrorCode::BadAtom,
                             sequence: context.sequence,
-                            resource_id: read.property,
+                            resource_id: property,
                             minor_code: 0,
                             major_code: context.major_opcode,
-                        })
-                    } else if read.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-                        x_client_output_from_property_read(
+                        })]
+                    } else if window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+                        x_client_outputs_from_property_read(
                             &context,
+                            window,
+                            property,
                             properties.read_property(context.namespace, read),
                         )
                     } else if let Err(error) =
-                        runtime.validate_window_access(context.namespace, read.window)
+                        runtime.validate_window_access(context.namespace, window)
                     {
-                        XClientOutput::Error(x_error_from_runtime(
+                        vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(read.window.local.raw()).unwrap_or(0),
-                        ))
+                            u32::try_from(window.local.raw()).unwrap_or(0),
+                        ))]
                     } else {
-                        x_client_output_from_property_read(
+                        x_client_outputs_from_property_read(
                             &context,
+                            window,
+                            property,
                             properties.read_property(context.namespace, read),
                         )
                     };
                     XDispatchResult {
                         response: None,
-                        outputs: vec![output],
+                        outputs,
                         metadata_candidates: Vec::new(),
                     }
                 }

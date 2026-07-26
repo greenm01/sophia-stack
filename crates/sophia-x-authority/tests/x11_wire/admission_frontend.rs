@@ -571,14 +571,34 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     assert_eq!(read_u32(XByteOrder::LittleEndian, &request[20..24]), 31);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &request[24..28]), 31);
 
+    let selection_bytes = b"same namespace";
+    owner
+        .write_all(&change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            requestor_window,
+            31,
+            31,
+            8,
+            selection_bytes,
+        ))
+        .unwrap();
+    let new_value = read_x_record(&mut owner);
+    assert_eq!(new_value[0], 28);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &new_value[4..8]),
+        requestor_window
+    );
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &new_value[8..12]), 31);
+
     owner
         .write_all(&send_selection_notify_request(
             XByteOrder::LittleEndian,
             requestor_window,
-            10,
-            11,
-            12,
-            13,
+            read_u32(XByteOrder::LittleEndian, &request[4..8]),
+            read_u32(XByteOrder::LittleEndian, &request[16..20]),
+            read_u32(XByteOrder::LittleEndian, &request[20..24]),
+            read_u32(XByteOrder::LittleEndian, &request[24..28]),
         ))
         .unwrap();
     let event = read_x_record(&mut requestor);
@@ -588,9 +608,42 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         read_u32(XByteOrder::LittleEndian, &event[8..12]),
         requestor_window
     );
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 11);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[16..20]), 12);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[20..24]), 13);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[16..20]), 31);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[20..24]), 31);
+
+    requestor
+        .write_all(&get_property_request(
+            XByteOrder::LittleEndian,
+            true,
+            requestor_window,
+            31,
+            31,
+            0,
+            u32::MAX,
+        ))
+        .unwrap();
+    let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(&reply[32..32 + selection_bytes.len()], selection_bytes);
+    let deleted = read_x_record(&mut requestor);
+    assert_eq!(deleted[0], 28);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[4..8]), requestor_window);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[8..12]), 31);
+    assert_eq!(deleted[16], 1);
+    requestor
+        .write_all(&get_property_request(
+            XByteOrder::LittleEndian,
+            false,
+            requestor_window,
+            31,
+            31,
+            0,
+            u32::MAX,
+        ))
+        .unwrap();
+    let missing = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[8..12]), 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[16..20]), 0);
 
     requestor
         .write_all(&set_selection_owner_request(
@@ -602,7 +655,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         .unwrap();
     let clear = read_x_record(&mut owner);
     assert_eq!(clear[0], 29);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &clear[2..4]), 3);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &clear[2..4]), 4);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &clear[8..12]),
         owner_window

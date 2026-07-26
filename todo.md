@@ -178,7 +178,10 @@ Promotion now follows the gates below in order.
 - [ ] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
   Require at least one owner change and conversion, no GLFW ownership failure,
   and visual confirmation that an independent Kitty pasted the selected text
-  unchanged.
+  unchanged. Deterministic same-namespace and portal regressions now cover
+  Xlib's complete-property request shape (`delete=true`, maximum
+  `long_length`) without an X error and prove deletion only after a complete,
+  type-matching read; physical confirmation remains required.
 - [ ] Prove pointer confinement across the complete output union: hard edge
   motion must keep the hardware cursor visible, and reversing direction must
   move it immediately without first consuming discarded overshoot.

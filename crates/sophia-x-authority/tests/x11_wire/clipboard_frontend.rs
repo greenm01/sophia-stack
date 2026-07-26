@@ -231,16 +231,38 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
     requestor
         .write_all(&get_property_request(
             XByteOrder::LittleEndian,
+            true,
+            requestor_window,
+            utf8,
+            utf8,
+            0,
+            u32::MAX,
+        ))
+        .unwrap();
+    let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(&reply[32..47], b"cross namespace");
+    let deleted = read_x_record(&mut requestor);
+    assert_eq!(deleted[0], 28);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &deleted[4..8]),
+        requestor_window
+    );
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &deleted[8..12]), utf8);
+    assert_eq!(deleted[16], 1);
+    requestor
+        .write_all(&get_property_request(
+            XByteOrder::LittleEndian,
             false,
             requestor_window,
             utf8,
             utf8,
             0,
-            64,
+            u32::MAX,
         ))
         .unwrap();
-    let reply = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
-    assert_eq!(&reply[32..47], b"cross namespace");
+    let missing = read_x_reply(&mut requestor, XByteOrder::LittleEndian);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[8..12]), 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &missing[16..20]), 0);
     portal_server.join().unwrap().unwrap();
 
     requestor
