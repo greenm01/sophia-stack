@@ -649,18 +649,19 @@ new owner. The gate is deterministic lifecycle evidence; balanced target,
 pipeline, frame-surface, callback, and shutdown counts in a physical session
 remain required.
 
-The M7 gate also requires compositor-chrome evidence for the pointer-focus
-sequence. A committed pointer focus must produce a four-primitive focused
-border for the same opaque surface before the following key is routed, and the
-complete run must observe borders on at least two distinct focus targets. The
-same gate requires an initial display-list baseline on both outputs and
-nonzero compositor damage retired after that pointer focus and before the
-following key. The same retired frame must report nonzero combined output
-damage and a bounded nonempty safe repaint decision. That decision may be
-`partial` when only small regions changed or `full` when the focus transaction
-also changed client generations, stacking, or sufficient coverage. The
-verifier remains virtual-input evidence; it does not replace physical DRM,
-libinput, resize, workspace, or VT confirmation.
+The M7 gate independently drives two pointer-focus sequences against an
+unfocused visible surface. Plain click queues and releases the primary press
+and release; click-drag additionally queues motion between them. Each sequence
+must commit WM-selected focus, receive X-frontend acknowledgment, release its
+ordered handoff, and route its own following key to that same opaque surface.
+Each committed pointer focus must also produce a four-primitive focused border
+and retire nonzero compositor plus combined output damage before the sequence
+completes. The matching safe repaint may be `partial` when only small regions
+changed or `full` when the transaction also changed client generations,
+stacking, or sufficient coverage. The complete run must observe borders on at
+least two distinct focus targets and initial display-list baselines on both
+outputs. The verifier remains virtual-input evidence; it does not replace
+physical DRM, libinput, resize, workspace, or VT confirmation.
 
 After a normal physical xmonad capture that exercises two focus targets, one
 focused resize, an empty workspace round-trip, and one VT round-trip, run:

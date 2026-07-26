@@ -32,9 +32,22 @@ expect_failure missing_restart
 sed '/sophia_qemu_xmonad_pointer /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_gesture
 
+sed 's/status=focus_handoff_released surface=2 count=2/status=focus_handoff_released surface=2 count=1/' \
+    "$fixture" >"$tmp"
+expect_failure missing_click_release
+
 sed 's/status=focus_handoff_released surface=2 count=3/status=focus_handoff_released surface=2 count=2/' \
     "$fixture" >"$tmp"
 expect_failure missing_drag_motion
+
+sed '/status=key_probe_begin gesture=click/d' "$fixture" >"$tmp"
+expect_failure missing_click_key_probe_boundary
+
+sed '/status=complete gesture=click/d' "$fixture" >"$tmp"
+expect_failure incomplete_click_sequence
+
+sed '/status=complete gesture=drag/d' "$fixture" >"$tmp"
+expect_failure incomplete_drag_sequence
 
 sed '/status=focused_key_routed /d' "$fixture" >"$tmp"
 expect_failure missing_pointer_selected_key

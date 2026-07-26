@@ -211,10 +211,14 @@ Promotion now follows the gates below in order.
   coverage. A fail-closed physical evidence verifier requires request, Engine
   commit, frontend acknowledgment, retained input release, and a following key
   routed to the selected surface in order; physical confirmation remains. The
-  unattended two-output xmonad gate now performs that complete click-drag/key
-  sequence through virtio input and also completes startup, ordered WM response
-  rebasing, bridge restart, action-window launch/close, empty-workspace logout,
-  and native drain with zero stale responses or protocol errors.
+  unattended two-output xmonad gate now independently performs a plain
+  click/key sequence and a click-drag/key sequence through virtio input. Each
+  requires its own focus request, Engine commit, frontend acknowledgment,
+  ordered handoff release, focused border/damage retirement, and following key
+  on the selected surface. The same run also completes startup, ordered WM
+  response rebasing, bridge restart, action-window launch/close,
+  empty-workspace logout, and native drain with zero stale responses or
+  protocol errors.
 - [x] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
   With the active 14-pixel top reservation, the physical capture produced one

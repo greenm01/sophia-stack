@@ -3,6 +3,30 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: Click And Drag Now Have Independent Focus Proofs
+
+The first unattended pointer-focus proof used only a click-drag gesture. That
+exercised the generic ordered handoff but left plain click-to-focus as an
+inference. The M7 harness now creates two independent focus transitions against
+an unfocused visible surface. The first sends primary press/release and a
+following key. It then moves focus away through the WM and sends primary
+press/motion/release plus a different following key.
+
+Both real QEMU sequences passed through virtio input, Engine hit testing, the
+blind-WM focus request, X-frontend acknowledgment, ordered deferred-input
+release, focused-border composition, combined output-damage retirement, and
+keyboard delivery to the selected opaque surface. The click released two
+records and the drag released three. Completion retained two output baselines,
+clean bridge recovery and logout, zero stale WM responses, zero protocol
+errors, and no native cleanup debt.
+
+The verifier treats each gesture as its own bounded state machine. It rejects a
+missing or overlapping gesture, an incomplete handoff, insufficient click or
+drag records, a missing key-probe boundary, a key routed to another surface,
+missing target border/damage/repaint evidence, or a missing completion marker.
+Physical libinput and visual confirmation remain required because QEMU cannot
+prove the actual mouse, display, or TTY path.
+
 ## 2026-07-26: Native Lifetime Regressions Form One Named Gate
 
 The remaining Milestone 9.1 regression item did not require a new lifecycle

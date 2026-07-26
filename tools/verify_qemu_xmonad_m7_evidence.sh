@@ -28,10 +28,9 @@ grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=
 grep -q 'sophia_live_compositor_damage schema=1 status=initial_presented output=2 rects=0$' "$evidence"
 grep -Eq 'sophia_live_output_repaint schema=1 status=initial_presented output=1 mode=full rects=1 pixels=[1-9][0-9]*$' "$evidence"
 grep -Eq 'sophia_live_output_repaint schema=1 status=initial_presented output=2 mode=full rects=1 pixels=[1-9][0-9]*$' "$evidence"
+grep -q '^sophia_qemu_xmonad_pointer schema=4 status=sent source=qmp device=virtio-mouse action=focus_click anchor=left_edge clicks=1 commands=3$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4$' "$evidence"
-grep -q '^sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-keyboard action=focused_key_probe events=2$' "$evidence"
 grep -q '^sophia_qemu_xmonad_pointer schema=3 status=passed source=qmp device=virtio-mouse action=output_edge_reverse edge=right reverse_delta=96$' "$evidence"
-grep -Eq '^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=[0-9]+ count=[3-9][0-9]*$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=7 status=edge_reverse_immediate axis=horizontal side=maximum$' "$evidence"
 edge_line="$(grep -n -m1 '^sophia_live_session_pointer schema=7 status=output_edge_confined axis=horizontal side=maximum$' "$evidence" | cut -d: -f1)"
@@ -43,44 +42,103 @@ if [[ -z "$reverse_line" || -z "$sequence_line" ]]; then
 fi
 "$(dirname "$0")/verify_sophia_xmonad_pointer_focus.sh" "$evidence" >/dev/null
 awk '
+    function invalidate() {
+        invalid = 1
+        exit 1
+    }
+    function reset_sequence() {
+        target = ""
+        phase = 1
+        gesture_sent = 0
+        key_probe_sent = 0
+        border = 0
+        compositor_damage = 0
+        output_damage = 0
+        repaint = 0
+    }
+    /^sophia_qemu_xmonad_pointer_focus schema=1 status=begin gesture=(click|drag)$/ {
+        if (active) {
+            invalidate()
+        }
+        gesture = $0
+        sub(/^.*gesture=/, "", gesture)
+        active = 1
+        reset_sequence()
+        next
+    }
+    active && $0 == "sophia_qemu_xmonad_pointer_focus schema=1 status=gesture_sent gesture=" gesture {
+        gesture_sent = 1
+        next
+    }
     /^sophia_live_wm schema=3 status=focus_requested source=pointer surface=/ {
+        if (!active || phase != 1) {
+            next
+        }
         split($0, fields, "surface=")
         target = fields[2]
-        requested = 1
+        phase = 2
         next
     }
-    requested && /^sophia_live_wm schema=1 status=focus_committed .* target=surface$/ {
-        committed = 1
+    active && phase == 2 && /^sophia_live_wm schema=1 status=focus_committed .* target=surface$/ {
+        phase = 3
         next
     }
-    committed && $0 ~ "^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=" target " generation=[0-9]+ primitives=4$" {
+    active && phase >= 3 && $0 ~ "^sophia_live_compositor_chrome schema=1 status=focused_border_composed surface=" target " generation=[0-9]+ primitives=4$" {
         border = 1
         next
     }
-    committed && /sophia_live_compositor_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
-        damage = 1
-        expect_output_damage = 1
+    active && phase >= 3 && /sophia_live_compositor_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
+        compositor_damage = 1
         next
     }
-    committed && expect_output_damage && /sophia_live_output_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
+    active && phase >= 3 && compositor_damage && /sophia_live_output_damage schema=1 status=presented output=1 rects=[1-9][0-9]*$/ {
         output_damage = 1
-        expect_repaint = 1
         next
     }
-    committed && expect_repaint && /sophia_live_output_repaint schema=1 status=presented output=1 mode=(partial|full) rects=[1-9][0-9]* pixels=[1-9][0-9]*$/ {
+    active && phase >= 3 && output_damage && /sophia_live_output_repaint schema=1 status=presented output=1 mode=(partial|full) rects=[1-9][0-9]* pixels=[1-9][0-9]*$/ {
         repaint = 1
         next
     }
-    /^sophia_live_session_pointer schema=6 status=focused_key_routed / {
-        exit !(requested && committed && border && damage && output_damage && repaint)
+    active && phase == 3 && /^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$/ {
+        phase = 4
+        next
+    }
+    active && phase == 4 && $0 ~ "^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=" target " count=[0-9]+$" {
+        count = $0
+        sub(/^.*count=/, "", count)
+        if ((gesture == "click" && count < 2) || (gesture == "drag" && count < 3)) {
+            invalidate()
+        }
+        phase = 5
+        next
+    }
+    active && phase == 5 && $0 == "sophia_qemu_xmonad_pointer_focus schema=1 status=key_probe_begin gesture=" gesture " events=2" {
+        phase = 6
+        next
+    }
+    active && $0 == "sophia_qemu_xmonad_pointer_focus schema=1 status=key_probe_sent gesture=" gesture " events=2" {
+        key_probe_sent = 1
+        next
+    }
+    active && phase == 6 && $0 == "sophia_live_session_pointer schema=6 status=focused_key_routed surface=" target {
+        phase = 7
+        next
+    }
+    active && $0 == "sophia_qemu_xmonad_pointer_focus schema=1 status=complete gesture=" gesture {
+        if (phase != 7 || !gesture_sent || !key_probe_sent || !border || !compositor_damage || !output_damage || !repaint) {
+            invalidate()
+        }
+        completed[gesture] = 1
+        active = 0
+        next
     }
     END {
-        if (!(requested && committed && border && damage && output_damage && repaint)) {
+        if (invalid || active || !completed["click"] || !completed["drag"]) {
             exit 1
         }
     }
 ' "$evidence" || {
-    echo "focused border and bounded repaint did not follow committed pointer focus" >&2
+    echo "plain-click and click-drag focus sequences were not independently committed, rendered, released, and keyboard-proven" >&2
     exit 1
 }
 border_surfaces="$(
