@@ -628,6 +628,27 @@ terminal launch and close, logout, bridge restart recovery, and clean two-output
 shutdown. The frozen Milestone 7 regression remains
 `tools/qemu_xmonad_m7_acceptance.sh`.
 
+The deterministic native-presentation lifecycle gate is:
+
+```sh
+cargo test --offline -q -p sophia-cli \
+  --test resize_transaction --test session_startup
+cargo test --offline -q -p sophia-renderer-live \
+  --test buffer_registry --test presentation_boundary
+cargo test --offline -q -p sophia-backend-live --all-features \
+  --test startup --test presentation_feature --test libdrm_events_feature
+```
+
+This set retains compensating resize rollback and abandoned-pixel fencing,
+output/target size replacement and stale-allocation removal, stale prepared
+page-flip settlement, displayed-buffer replacement, cleanup retry, and
+duplicate-retirement rejection. The relevant tests assert that an accepted
+replacement retires only its predecessor, final cleanup retires the displayed
+owner, repeated cleanup becomes a no-op, and stale callbacks cannot consume a
+new owner. The gate is deterministic lifecycle evidence; balanced target,
+pipeline, frame-surface, callback, and shutdown counts in a physical session
+remain required.
+
 The M7 gate also requires compositor-chrome evidence for the pointer-focus
 sequence. A committed pointer focus must produce a four-primitive focused
 border for the same opaque surface before the following key is routed, and the

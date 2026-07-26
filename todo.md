@@ -138,8 +138,13 @@ Promotion now follows the gates below in order.
   latency. The 77-second two-workspace run balanced 524 complete composition
   lifetimes, drained every native and admission ledger, held input dwell to
   11 ms and submit-to-page-flip observation to 47 ms, and exited cleanly.
-- [ ] Retain focused rollback, resize, output-change, and recovery regressions
-  proving resources retire exactly once.
+- [x] Retain focused rollback, resize, output-change, and recovery regressions
+  proving resources retire exactly once. The named native-presentation
+  lifecycle gate covers compensating resize rollback and late-pixel fencing,
+  output/target size replacement and stale-allocation removal, stale prepared
+  page-flip settlement, displayed-buffer replacement, cleanup retry, and
+  duplicate-retirement rejection. Each case remains an isolated reducer or
+  fake-device test; no native handles or application policy enter Engine.
 - [x] Replace the transient aggregate async-service booleans with one
   Engine-owned, output-scoped frame-service reducer. Backend-live must execute
   only named native effects, reobserve after each effect, and remain bounded
