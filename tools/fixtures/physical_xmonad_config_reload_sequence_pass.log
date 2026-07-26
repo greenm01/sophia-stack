@@ -1,0 +1,6 @@
+commit=3103e31000000000000000000000000000000000
+phase=external_baseline source=core_fallback focus_ring_width=2
+phase=core_live_applied generation=2 focus_ring_width=4
+phase=pending_restart_retained candidate_width=6 active_width=4
+phase=invalid_rejected active_width=4
+phase=core_restored generation=3 focus_ring_width=2

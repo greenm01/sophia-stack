@@ -67,6 +67,9 @@ done
 require_line \
     '^sophia_live_session_present schema=2 status=retired .* target=[1-9][0-9]*x[1-9][0-9]*_-?[0-9]+_[1-9][0-9]* .* unit_scale=true$' \
     "$SESSION_LOG" "no pixel-matched managed presentation began below the bar"
+require_line \
+    '^sophia_live_compositor_chrome_set schema=1 status=composed generation=[0-9]+ eligible_surfaces=1 frames=1 focused_frames=1 unfocused_frames=0 focus_rings=1 primitives=8 clearance=4$' \
+    "$SESSION_LOG" "managed Kitty chrome did not exclude the client-positioned bar"
 for pointer_kind in button axis; do
     require_line \
         "^sophia_live_session_pointer schema=4 status=target_routed role=client_positioned kind=${pointer_kind}$" \

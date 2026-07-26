@@ -276,9 +276,7 @@ impl LiveWmSession {
             .workspace_state
             .descriptor(self.session_actions.clone());
         let registry = transport.negotiate(&descriptor)?;
-        self.wm_chrome_supported = registry.supports_chrome_policy();
-        self.chrome = registry.chrome();
-        self.stage_visual_chrome(self.candidate_chrome_style());
+        self.accept_negotiated_chrome(&registry);
         match self.shortcuts.as_mut() {
             Some(shortcuts) => shortcuts.replace_registry(registry),
             None => self.shortcuts = Some(WmShortcutRouter::new(registry)),

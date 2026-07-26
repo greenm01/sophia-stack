@@ -456,6 +456,44 @@ Validate changes to this focused verifier with:
 tools/check_sophia_xmonad_xmobar_verifier.sh
 ```
 
+The xmobar verifier also requires one aggregate compositor-chrome record with
+one eligible managed Kitty, one focused frame, one focus ring, and no second
+eligible surface. This proves the generic `ClientPositioned` role excludes the
+bar without naming xmobar inside Engine or the renderer.
+
+## Commit-pinned Milestone 9 promotion
+
+After committing a candidate, switch to TTY3 and repeatedly run:
+
+```sh
+tools/sophia_m9_promotion.sh next
+```
+
+The command refuses a dirty worktree, selects exactly one pending gate, guides
+the physical interaction, archives session/guard/recovery/sequence evidence
+under `$XDG_STATE_HOME/sophia/m9-promotion/<commit>/`, and marks the gate
+passed only after its fail-closed verifier succeeds. The ordered gates are
+native chrome, external core-config isolation, the complete normal workflow,
+pointer focus, three four-Kitty cycles, launch burst, full US keyboard plus
+F1-F12 VT coverage, xmobar, and independent emergency recovery.
+
+Inspect progress from any text terminal with:
+
+```sh
+tools/sophia_m9_promotion.sh status
+```
+
+Evidence from another commit cannot satisfy the current ledger. Failed runs
+are retained in timestamped directories but do not advance the next gate.
+
+The keyboard/VT gate logs only the count of 21 shifted printable key positions
+and 12 VT targets; typed content remains redacted. Its verifier requires every
+queued and requested VT target plus the expected suspend/resume lifecycle:
+
+```sh
+tools/check_sophia_xmonad_keyboard_vt_verifier.sh
+```
+
 For the bounded Super-Enter overload regression, use:
 
 ```sh

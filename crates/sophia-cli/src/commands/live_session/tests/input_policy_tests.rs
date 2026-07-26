@@ -77,6 +77,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     pointer.center_on_primary_output(Size {
         width: 2560,
@@ -98,6 +99,7 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         Some(&mut shortcuts),
         &mut pointer,
         false,
@@ -139,6 +141,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -155,6 +158,7 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         false,
@@ -197,6 +201,7 @@ fn full_routing_suppresses_pointer_buttons_when_workspace_has_no_target() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     pointer.center_on_primary_output(Size {
         width: 2560,
@@ -217,6 +222,7 @@ fn full_routing_suppresses_pointer_buttons_when_workspace_has_no_target() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         true,
@@ -279,6 +285,7 @@ fn routed_keyboard_report_retains_the_opaque_focus_target() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -295,6 +302,7 @@ fn routed_keyboard_report_retains_the_opaque_focus_target() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         false,

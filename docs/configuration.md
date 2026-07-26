@@ -126,12 +126,26 @@ tools/start_sophia_native_hot_reload_tty3.sh
 ```
 
 The launcher uses a private runtime `wm.kdl`; it does not modify the user's
-default configuration. It atomically advances focus-ring width from 2 to 6,
-submits an invalid edit, deletes the file, and recreates it at width 4. The
-ring must retain its last-known-good value during the invalid and missing-file
-phases. Open an interactive Kitty with `Super+Enter` during each phase and use
-`Super+Shift+Q` for normal logout after the final 4-pixel ring appears. The
-launcher prints the exact session and phase-log
-paths before takeover. This runner covers the native-WM live-policy portion;
-core pending-restart and external-WM isolation still require their separate
-physical evidence before the roadmap gate closes.
+default configuration. After two Kitty surfaces are visible, it advances a
+2-pixel ring to 6 pixels, rejects an invalid edit, rejects deletion while
+retaining the last-known-good state, applies a 4-pixel frame-only policy, then
+applies a 2-pixel ring with a 6-pixel focused/unfocused frame. Each width
+change must cross a matching two-surface resize epoch before the reduced
+chrome-set observation can advance.
+
+The external-WM half uses the core domain:
+
+```sh
+tools/start_sophia_xmonad_config_reload_tty3.sh
+```
+
+It proves that the chrome-blind xmonad bridge uses core fallback chrome, a
+live-safe width edit applies atomically, a namespace edit remains wholly
+pending restart, an invalid edit retains the active value, and no native-WM
+reload record appears. Both launchers retain a commit-bearing ordered sequence
+log. Validate their verifier logic without physical hardware with:
+
+```sh
+tools/check_sophia_native_chrome_verifier.sh
+tools/check_sophia_xmonad_config_reload_verifier.sh
+```

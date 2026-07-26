@@ -18,8 +18,8 @@ use sophia_cli::session_actions::{
 };
 use sophia_cli::session_control::{SESSION_CONTROL_CAPACITY, SessionControlQueue};
 use sophia_cli::session_keyboard::{
-    SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
-    VirtualTerminalChordAction, VirtualTerminalChordState,
+    PhysicalKeyboardCoverage, SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState,
+    SessionClientPressedKey, VirtualTerminalChordAction, VirtualTerminalChordState,
 };
 use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
@@ -27,7 +27,7 @@ use sophia_cli::session_startup::{
 use sophia_engine::{
     FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
     KeyRepeatTarget, NonBlockingInputPoller, PointerFocusHandoffState, WmPolicyApplyOutcome,
-    WmShortcutRouter, WmWorkspaceState,
+    WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,

@@ -25,6 +25,18 @@ pub struct LiveFocusRingObservation {
     pub primitives: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveChromeSetObservation {
+    pub generation: u64,
+    pub eligible_surfaces: usize,
+    pub frames: usize,
+    pub focused_frames: usize,
+    pub unfocused_frames: usize,
+    pub focus_rings: usize,
+    pub primitives: usize,
+    pub clearance: i32,
+}
+
 fn replace_displayed_surface(
     displayed_surfaces: &mut BTreeMap<SurfaceId, LiveDisplayedSurface>,
     surface: SurfaceId,
@@ -55,6 +67,8 @@ pub struct LiveProductionVisualRuntime {
     surface_chrome_style: SurfaceChromeStyle,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
+    pending_chrome_set_observation: Option<LiveChromeSetObservation>,
+    last_chrome_set_observation: Option<LiveChromeSetObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
     present_scheduling_blocked: bool,
@@ -118,6 +132,8 @@ impl LiveProductionVisualRuntime {
             surface_chrome_style: SurfaceChromeStyle::default(),
             pending_focus_ring_observation: None,
             last_focus_ring_observation: None,
+            pending_chrome_set_observation: None,
+            last_chrome_set_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
             present_scheduling_blocked: false,
@@ -168,6 +184,7 @@ impl LiveProductionVisualRuntime {
         }
         self.surface_chrome_style = style;
         self.last_focus_ring_observation = None;
+        self.last_chrome_set_observation = None;
         true
     }
 

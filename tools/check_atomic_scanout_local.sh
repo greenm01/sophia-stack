@@ -35,6 +35,19 @@ bash -n tools/run_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmobar.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh \
     tools/start_sophia_native_hot_reload_tty3.sh tools/start_sophia_xmonad_tty3.sh
+bash -n tools/config/proof_helpers.sh tools/config/write_core_chrome_config.sh
+bash -n tools/verify_sophia_native_chrome.sh \
+    tools/check_sophia_native_chrome_verifier.sh
+tools/check_sophia_native_chrome_verifier.sh
+bash -n tools/start_sophia_xmonad_config_reload_tty3.sh \
+    tools/verify_sophia_xmonad_config_reload.sh \
+    tools/check_sophia_xmonad_config_reload_verifier.sh
+tools/check_sophia_xmonad_config_reload_verifier.sh
+bash -n tools/start_sophia_xmonad_keyboard_vt_tty3.sh \
+    tools/verify_sophia_xmonad_keyboard_vt.sh \
+    tools/check_sophia_xmonad_keyboard_vt_verifier.sh
+tools/check_sophia_xmonad_keyboard_vt_verifier.sh
+bash -n tools/sophia_m9_promotion.sh
 bash -n tools/start_sophia_xmonad_clipboard_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh

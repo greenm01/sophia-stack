@@ -26,41 +26,64 @@ impl LiveProductionVisualRuntime {
         force: bool,
     ) -> Result<(), CompositorDisplayListError> {
         let display_list = self.display_list(committed_surfaces, &self.presentation_order)?;
-        let Some(surface) = self.focused_surface else {
+        if let Some(surface) = self.focused_surface {
+            if let Some(border) = display_list.borders().find(|border| {
+                matches!(
+                    border.node,
+                    CompositorNodeId::SurfaceChrome {
+                        surface: border_surface,
+                        role: SurfaceChromeRole::FocusRing,
+                    } if border_surface == surface
+                )
+            }) {
+                let observation = LiveFocusRingObservation {
+                    surface,
+                    generation: border.generation,
+                    primitives: compositor_border_bands(border)
+                        .into_iter()
+                        .filter(|band| !band.geometry.is_empty())
+                        .count(),
+                };
+                if observation.primitives > 0
+                    && (force || self.last_focus_ring_observation != Some(observation))
+                {
+                    self.last_focus_ring_observation = Some(observation);
+                    self.pending_focus_ring_observation = Some(observation);
+                }
+            } else {
+                self.last_focus_ring_observation = None;
+            }
+        } else {
             self.last_focus_ring_observation = None;
-            return Ok(());
-        };
-        let Some(border) = display_list.borders().find(|border| {
-            matches!(
-                border.node,
-                CompositorNodeId::SurfaceChrome {
-                    surface: border_surface,
-                    role: SurfaceChromeRole::FocusRing,
-                } if border_surface == surface
-            )
-        }) else {
-            self.last_focus_ring_observation = None;
-            return Ok(());
-        };
-        let observation = LiveFocusRingObservation {
-            surface,
-            generation: border.generation,
-            primitives: compositor_border_bands(border)
-                .into_iter()
-                .filter(|band| !band.geometry.is_empty())
+        }
+        let summary = compositor_chrome_summary(&display_list, self.focused_surface);
+        let observation = LiveChromeSetObservation {
+            generation: summary.generation,
+            eligible_surfaces: self
+                .chrome_surfaces
+                .iter()
+                .filter(|surface| self.presentation_order.contains(surface))
                 .count(),
+            frames: summary.frames,
+            focused_frames: summary.focused_frames,
+            unfocused_frames: summary.unfocused_frames,
+            focus_rings: summary.focus_rings,
+            primitives: summary.primitives,
+            clearance: summary.clearance,
         };
-        if observation.primitives > 0
-            && (force || self.last_focus_ring_observation != Some(observation))
-        {
-            self.last_focus_ring_observation = Some(observation);
-            self.pending_focus_ring_observation = Some(observation);
+        if self.last_chrome_set_observation != Some(observation) {
+            self.last_chrome_set_observation = Some(observation);
+            self.pending_chrome_set_observation = Some(observation);
         }
         Ok(())
     }
 
     pub fn take_focus_ring_observation(&mut self) -> Option<LiveFocusRingObservation> {
         self.pending_focus_ring_observation.take()
+    }
+
+    pub fn take_chrome_set_observation(&mut self) -> Option<LiveChromeSetObservation> {
+        self.pending_chrome_set_observation.take()
     }
 
     pub(super) fn retained_mixed_frame(

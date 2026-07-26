@@ -4,6 +4,11 @@ const EVDEV_KEY_LEFTCTRL: u32 = 29;
 const EVDEV_KEY_LEFTALT: u32 = 56;
 const EVDEV_KEY_RIGHTCTRL: u32 = 97;
 const EVDEV_KEY_RIGHTALT: u32 = 100;
+const EVDEV_KEY_LEFTSHIFT: u32 = 42;
+const EVDEV_KEY_RIGHTSHIFT: u32 = 54;
+const SHIFTED_PRINTABLE_KEYCODES: [u32; 21] = [
+    41, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 26, 27, 43, 39, 40, 51, 52, 53,
+];
 pub const SESSION_CLIENT_PRESSED_KEY_CAPACITY: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -104,6 +109,55 @@ impl SessionClientKeyState {
 
     pub fn metrics(&self) -> SessionClientKeyMetrics {
         self.metrics
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PhysicalKeyboardCoverage {
+    left_shift: bool,
+    right_shift: bool,
+    shifted_printable_mask: u32,
+    virtual_terminal_mask: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhysicalKeyboardCoverageSnapshot {
+    pub shifted_positions: u32,
+    pub shifted_positions_required: u32,
+    pub virtual_terminals: u32,
+    pub virtual_terminals_required: u32,
+}
+
+impl PhysicalKeyboardCoverage {
+    pub fn observe_key(&mut self, keycode: u32, pressed: bool) {
+        match keycode {
+            EVDEV_KEY_LEFTSHIFT => self.left_shift = pressed,
+            EVDEV_KEY_RIGHTSHIFT => self.right_shift = pressed,
+            _ if pressed && (self.left_shift || self.right_shift) => {
+                if let Some(index) = SHIFTED_PRINTABLE_KEYCODES
+                    .iter()
+                    .position(|candidate| *candidate == keycode)
+                {
+                    self.shifted_printable_mask |= 1 << index;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn observe_virtual_terminal(&mut self, terminal: u8) {
+        if (1..=12).contains(&terminal) {
+            self.virtual_terminal_mask |= 1 << (terminal - 1);
+        }
+    }
+
+    pub fn snapshot(self) -> PhysicalKeyboardCoverageSnapshot {
+        PhysicalKeyboardCoverageSnapshot {
+            shifted_positions: self.shifted_printable_mask.count_ones(),
+            shifted_positions_required: SHIFTED_PRINTABLE_KEYCODES.len() as u32,
+            virtual_terminals: self.virtual_terminal_mask.count_ones(),
+            virtual_terminals_required: 12,
+        }
     }
 }
 

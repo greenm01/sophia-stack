@@ -70,6 +70,7 @@ struct PhysicalInputRoutingContext<'a> {
     client_keys: &'a mut SessionClientKeyState,
     emergency_chord: &'a mut EmergencyChordState,
     virtual_terminal_chord: &'a mut VirtualTerminalChordState,
+    keyboard_coverage: &'a mut PhysicalKeyboardCoverage,
     pointer: &'a mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
     pointer_proof_required: bool,
@@ -100,6 +101,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         client_keys,
         emergency_chord,
         virtual_terminal_chord,
+        keyboard_coverage,
         pointer,
         pointer_routing_enabled,
         pointer_proof_required,
@@ -124,6 +126,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         client_keys,
         emergency_chord,
         virtual_terminal_chord,
+        keyboard_coverage,
         shortcuts,
         pointer,
         pointer_routing_enabled,
@@ -152,6 +155,7 @@ fn route_input_events(
     client_keys: &mut SessionClientKeyState,
     emergency_chord: &mut EmergencyChordState,
     virtual_terminal_chord: &mut VirtualTerminalChordState,
+    keyboard_coverage: &mut PhysicalKeyboardCoverage,
     shortcuts: Option<&mut WmShortcutRouter>,
     pointer: &mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
@@ -175,6 +179,7 @@ fn route_input_events(
         client_keys,
         emergency_chord,
         virtual_terminal_chord,
+        keyboard_coverage,
         shortcuts,
         pointer,
         pointer_routing_enabled,
@@ -203,6 +208,7 @@ fn route_input_events_with_pointer_focus(
     client_keys: &mut SessionClientKeyState,
     emergency_chord: &mut EmergencyChordState,
     virtual_terminal_chord: &mut VirtualTerminalChordState,
+    keyboard_coverage: &mut PhysicalKeyboardCoverage,
     mut shortcuts: Option<&mut WmShortcutRouter>,
     pointer: &mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
@@ -288,6 +294,7 @@ fn route_input_events_with_pointer_focus(
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
                 report.keys_observed = report.keys_observed.saturating_add(1);
+                keyboard_coverage.observe_key(keycode, pressed);
                 if !pressed {
                     let _ = key_repeat.release(event.seat, event.device, keycode);
                 }
@@ -295,6 +302,7 @@ fn route_input_events_with_pointer_focus(
                     VirtualTerminalChordAction::Pass => {}
                     VirtualTerminalChordAction::Consume => continue,
                     VirtualTerminalChordAction::Activate(terminal) => {
+                        keyboard_coverage.observe_virtual_terminal(terminal);
                         for modifier_keycode in virtual_terminal_chord
                             .pressed_modifier_keycodes()
                             .into_iter()

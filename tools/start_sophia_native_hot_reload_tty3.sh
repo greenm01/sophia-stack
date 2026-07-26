@@ -9,14 +9,18 @@ NEXT_CONFIG="$PROOF_DIR/wm.next"
 SESSION_LOG="${XDG_STATE_HOME:-${HOME}/.local/state}/sophia/native-session/session.log"
 SEQUENCE_LOG="$PROOF_DIR/sequence.log"
 START_MARKER="$PROOF_DIR/start.marker"
+source "$ROOT_DIR/tools/config/proof_helpers.sh"
 
 mkdir -p "$PROOF_DIR"
 chmod 700 "$PROOF_DIR"
 
 write_wm_config() {
     local path=$1
-    local width=$2
-    local extra=${3:-}
+    local ring_enabled=$2
+    local ring_width=$3
+    local frame_enabled=$4
+    local frame_width=$5
+    local extra=${6:-}
     {
         printf '%s\n' \
             '/- kdl-version 2' \
@@ -42,62 +46,73 @@ write_wm_config() {
             'binding action=3 keycode=28 modifiers="super"' \
             'binding action=4 keycode=16 modifiers="super+shift"' \
             'chrome {' \
-            "    focus-ring enabled=#true width=$width color=\"#70b7ff\"" \
-            '    frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"' \
+            "    focus-ring enabled=#$ring_enabled width=$ring_width color=\"#70b7ff\"" \
+            "    frame enabled=#$frame_enabled width=$frame_width focused-color=\"#70b7ff\" unfocused-color=\"#303030\"" \
             '}'
         [[ -z "$extra" ]] || printf '%s\n' "$extra"
     } >"$path"
     chmod 600 "$path"
 }
 
-wait_for_log() {
-    local pattern=$1
-    local timeout_seconds=${2:-30}
-    local deadline=$((SECONDS + timeout_seconds))
-    while (( SECONDS < deadline )); do
-        if [[ -f "$SESSION_LOG" && "$SESSION_LOG" -nt "$START_MARKER" ]] &&
-            grep -Eq "$pattern" "$SESSION_LOG" 2>/dev/null; then
-            return 0
-        fi
-        sleep 0.1
-    done
-    printf 'FAILED waiting for: %s\n' "$pattern" >>"$SEQUENCE_LOG"
-    return 1
-}
-
-write_wm_config "$WM_CONFIG" 2
+write_wm_config "$WM_CONFIG" true 2 false 0
 : >"$SEQUENCE_LOG"
 chmod 600 "$SEQUENCE_LOG"
 : >"$START_MARKER"
+printf 'commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)" >>"$SEQUENCE_LOG"
 
 (
-    wait_for_log '^sophia_live_session_startup schema=2 status=ready ' 180 || exit 1
-    printf '%s\n' 'phase=baseline focus_ring_width=2' >>"$SEQUENCE_LOG"
-    sleep 5
-
-    write_wm_config "$NEXT_CONFIG" 6
-    mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_live_wm_policy schema=2 status=applied generation=2 .*focus_ring_width=6 .*clearance=6$' ||
+    sophia_proof_wait_for_log '^sophia_live_session_startup schema=2 status=ready ' 180 || exit 1
+    sophia_proof_wait_for_log '^sophia_live_wm schema=1 status=layout_committed .* surfaces=2 .* outcome=Committed$' 180 ||
         exit 1
-    printf '%s\n' 'phase=valid_applied generation=2 focus_ring_width=6' >>"$SEQUENCE_LOG"
-    sleep 5
+    sophia_proof_wait_for_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=2$' ||
+        exit 1
+    printf '%s\n' 'phase=ring_baseline focus_ring_width=2 frame_width=0' >>"$SEQUENCE_LOG"
 
-    write_wm_config "$NEXT_CONFIG" 9 'unknown-node #true'
+    baseline="$(sophia_proof_log_lines)"
+    write_wm_config "$NEXT_CONFIG" true 6 false 0
     mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_wm_config_reload schema=2 status=rejected reason=parse ' || exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_wm_policy schema=2 status=applied generation=2 .*focus_ring_width=6 .*frame_width=0 clearance=6$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6$' "$baseline" ||
+        exit 1
+    printf '%s\n' 'phase=ring_wide generation=2 focus_ring_width=6 frame_width=0' >>"$SEQUENCE_LOG"
+
+    baseline="$(sophia_proof_log_lines)"
+    write_wm_config "$NEXT_CONFIG" true 9 false 0 'unknown-node #true'
+    mv -f "$NEXT_CONFIG" "$WM_CONFIG"
+    sophia_proof_wait_for_new_log '^sophia_wm_config_reload schema=2 status=rejected reason=parse ' "$baseline" ||
+        exit 1
     printf '%s\n' 'phase=invalid_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
-    sleep 5
 
+    baseline="$(sophia_proof_log_lines)"
     rm -f "$WM_CONFIG"
-    wait_for_log '^sophia_wm_config_reload schema=2 status=rejected reason=read ' || exit 1
-    printf '%s\n' 'phase=deletion_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
-    sleep 3
-
-    write_wm_config "$NEXT_CONFIG" 4
-    mv -f "$NEXT_CONFIG" "$WM_CONFIG"
-    wait_for_log '^sophia_live_wm_policy schema=2 status=applied generation=3 .*focus_ring_width=4 .*clearance=4$' ||
+    sophia_proof_wait_for_new_log '^sophia_wm_config_reload schema=2 status=rejected reason=read ' "$baseline" ||
         exit 1
-    printf '%s\n' 'phase=recreated_applied generation=3 focus_ring_width=4' >>"$SEQUENCE_LOG"
+    printf '%s\n' 'phase=deletion_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
+
+    baseline="$(sophia_proof_log_lines)"
+    write_wm_config "$NEXT_CONFIG" false 0 true 4
+    mv -f "$NEXT_CONFIG" "$WM_CONFIG"
+    sophia_proof_wait_for_new_log '^sophia_live_wm_policy schema=2 status=applied generation=3 .*focus_ring_width=0 .*frame_width=4 clearance=4$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4$' "$baseline" ||
+        exit 1
+    printf '%s\n' 'phase=frame_only generation=3 focus_ring_width=0 frame_width=4' >>"$SEQUENCE_LOG"
+
+    baseline="$(sophia_proof_log_lines)"
+    write_wm_config "$NEXT_CONFIG" true 2 true 6
+    mv -f "$NEXT_CONFIG" "$WM_CONFIG"
+    sophia_proof_wait_for_new_log '^sophia_live_wm_policy schema=2 status=applied generation=4 .*focus_ring_width=2 .*frame_width=6 clearance=6$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=12 clearance=6$' "$baseline" ||
+        exit 1
+    printf '%s\n' 'phase=combined generation=4 focus_ring_width=2 frame_width=6' >>"$SEQUENCE_LOG"
 ) &
 sequence_pid=$!
 
@@ -116,11 +131,13 @@ trap cleanup_sequence EXIT
 
 printf '%s\n' \
     'Native WM hot-reload proof:' \
-    '  1. Wait five seconds after Kitty appears; the focus ring changes from 2px to 6px.' \
-    '  2. It must remain 6px through the invalid-edit and deletion phases.' \
-    '  3. It then changes to 4px after the configuration is recreated.' \
-    '  4. During every phase, use Super+Enter and verify the new Kitty is interactive.' \
-    '  5. Press Super+Shift+Q for normal logout after the final 4px ring appears.' \
+    '  1. After Kitty appears, press Super+Enter once and wait for the second prompt.' \
+    '  2. Confirm the 2px ring changes atomically to 6px without covering content.' \
+    '  3. It must remain 6px through the invalid-edit and deletion phases.' \
+    '  4. Confirm frame-only mode: both windows have 4px frames and only one focused color.' \
+    '  5. Confirm combined mode: both have 6px frames and the focused window has a 2px ring.' \
+    '  6. Focus both windows and type in each; no content, pointer, or keyboard may be lost.' \
+    '  7. Press Super+Shift+Q for normal logout after combined mode appears.' \
     "Evidence: $SESSION_LOG" \
     "Sequence: $SEQUENCE_LOG"
 

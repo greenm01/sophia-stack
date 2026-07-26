@@ -28,6 +28,7 @@ macro_rules! drain_physical_input {
                     client_keys: &mut client_keys,
                     emergency_chord: &mut emergency_chord,
                     virtual_terminal_chord: &mut virtual_terminal_chord,
+                    keyboard_coverage: &mut keyboard_coverage,
                     pointer: &mut pointer,
                     pointer_routing_enabled: !config.expect_physical_pointer
                         || pointer_checksum.is_some(),

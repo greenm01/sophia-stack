@@ -76,6 +76,7 @@
                     &mut client_keys,
                     &mut emergency_chord,
                     &mut virtual_terminal_chord,
+                    &mut keyboard_coverage,
                     None,
                     &mut pointer,
                     false,

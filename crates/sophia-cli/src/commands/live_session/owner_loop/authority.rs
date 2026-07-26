@@ -385,6 +385,19 @@
                         ring.primitives,
                     );
                 }
+                if let Some(chrome) = runtime.take_chrome_set_observation() {
+                    println!(
+                        "sophia_live_compositor_chrome_set schema=1 status=composed generation={} eligible_surfaces={} frames={} focused_frames={} unfocused_frames={} focus_rings={} primitives={} clearance={}",
+                        chrome.generation,
+                        chrome.eligible_surfaces,
+                        chrome.frames,
+                        chrome.focused_frames,
+                        chrome.unfocused_frames,
+                        chrome.focus_rings,
+                        chrome.primitives,
+                        chrome.clearance,
+                    );
+                }
                 if composed {
                     metrics.max_compose = metrics.max_compose.max(compose_elapsed);
                     metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);

@@ -15,6 +15,7 @@ for mutation in \
     'status=started id=statusbar source=startup' \
     'status=reduced outputs=2 changed=2 rejected=0 active_reservations=1' \
     'status=applied output=2 ' \
+    'eligible_surfaces=1 frames=1 focused_frames=1 unfocused_frames=0 focus_rings=1 primitives=8 clearance=4' \
     'status=target_routed role=client_positioned kind=button' \
     'status=target_routed role=client_positioned kind=axis' \
     'workspace=2 ' \

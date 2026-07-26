@@ -3,6 +3,24 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: Physical Promotion Is A Commit-Pinned Ledger
+
+Milestone 9 previously depended on several correct but independently retained
+physical captures. That could not prove that normal, stress, chrome, status-bar,
+VT, and emergency behavior all belonged to one candidate build. The promotion
+driver now keys an append-only evidence directory by the full Git commit,
+refuses a dirty tree, selects one ordered gate per invocation, archives the
+source logs before verification, and advances only when the gate-specific
+fail-closed verifier succeeds. Failed evidence is retained but never counted.
+
+The same evidence boundary stays data-oriented and privacy preserving. Engine
+reduces a compositor display list to aggregate frame/ring/primitive counts and
+clearance rather than exposing surface identities. Physical keyboard coverage
+reduces to 21 shifted printable positions and 12 VT targets without logging
+typed characters. Protocol-specific authorities remain unaware of compositor
+chrome, and the xmonad compatibility bridge explicitly reports that it did not
+negotiate native chrome policy.
+
 ## 2026-07-26: Chrome Uses Stable Allocation Clearance
 
 The first focused-border prototype painted four inside-edge solids over the

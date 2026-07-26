@@ -1,6 +1,6 @@
 use sophia_cli::session_keyboard::{
-    SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
-    VirtualTerminalChordAction, VirtualTerminalChordState,
+    PhysicalKeyboardCoverage, SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState,
+    SessionClientPressedKey, VirtualTerminalChordAction, VirtualTerminalChordState,
 };
 use sophia_protocol::{DeviceId, SeatId, SurfaceId};
 
@@ -58,6 +58,28 @@ fn active_vt_chord_exposes_modifier_keys_that_need_synthetic_release() {
         chord.pressed_modifier_keycodes(),
         [Some(29), None, None, Some(100)]
     );
+}
+
+#[test]
+fn physical_coverage_reduces_shifted_positions_and_virtual_terminals() {
+    let mut coverage = PhysicalKeyboardCoverage::default();
+    coverage.observe_key(42, true);
+    for keycode in [
+        41, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 26, 27, 43, 39, 40, 51, 52, 53,
+    ] {
+        coverage.observe_key(keycode, true);
+        coverage.observe_key(keycode, false);
+    }
+    coverage.observe_key(42, false);
+    for terminal in 1..=12 {
+        coverage.observe_virtual_terminal(terminal);
+    }
+
+    let snapshot = coverage.snapshot();
+    assert_eq!(snapshot.shifted_positions, 21);
+    assert_eq!(snapshot.shifted_positions_required, 21);
+    assert_eq!(snapshot.virtual_terminals, 12);
+    assert_eq!(snapshot.virtual_terminals_required, 12);
 }
 
 #[test]

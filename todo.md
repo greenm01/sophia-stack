@@ -49,6 +49,10 @@ stealing Kitty focus, workspace and repeated VT round-trips preserved the
 scene, 50 mixed composition lifetimes balanced with zero replacement, and
 teardown was clean. Held-repeat, clipboard, post-last-window pointer, and the
 broader interaction sequence remain in the normal xmonad gate.
+Milestone 9 now has one commit-pinned promotion ledger:
+`tools/sophia_m9_promotion.sh next` selects the next strict physical gate,
+archives its immutable evidence, runs the matching verifier, and refuses a
+dirty worktree or evidence from another commit.
 
 ## Daily-Driver Promotion Contract
 
@@ -155,7 +159,9 @@ Promotion now follows the gates below in order.
   service pass.
 - [ ] Re-run the xmobar, four-Kitty, and normal xmonad gates from the same
   frame-lifecycle commit with no latency, ordering, or resource regression.
-  Xmobar and four-Kitty now pass; the complete normal xmonad gate remains.
+  Historical xmobar and four-Kitty captures pass; the commit-pinned promotion
+  ledger requires fresh native-chrome, xmobar, three four-Kitty, and normal
+  captures from one candidate commit.
 
 ### 9.2 Complete physical xmonad workflow
 
@@ -231,7 +237,7 @@ Promotion now follows the gates below in order.
   follow-up regression keeps each edge axis latched during perpendicular
   motion so one physical contact produces one reduced entry rather than a
   stream of duplicate observations.
-- [ ] Prove an unmodified primary-button press on an unfocused visible window
+- [x] Prove an unmodified primary-button press on an unfocused visible window
   commits WM-selected focus before client delivery; require the following
   keyboard input and ordered button release to reach that target, while hidden
   surfaces remain unselectable. WM API v4, the blind xmonad focus bridge, and
@@ -276,7 +282,10 @@ Promotion now follows the gates below in order.
   TTY2/TTY3 round-trip, with keyboard and pointer restored.
 - [ ] Validate full pc105 US shifted punctuation and libseat-backed
   Ctrl-Alt-F1 through Ctrl-Alt-F12 suspend/resume while `K_OFF` is active.
-- [ ] After physical geometry stability, add a minimal Engine-owned focused
+  The guided runner and privacy-preserving verifier now count all 21 shifted
+  printable positions and all 12 VT targets without retaining typed content;
+  the physical promotion capture remains.
+- [x] After physical geometry stability, add a minimal Engine-owned focused
   surface border through the renderer-neutral compositor display list. Derive
   its bounds and damage from the same committed surface/focus snapshot, keep
   the blind WM and X frontend unaware of chrome, and verify it across focus,
@@ -300,7 +309,9 @@ Promotion now follows the gates below in order.
   fail-safe `full` repaint plans under generic rectangle-count and coverage
   policy. The QEMU focus proof correlates compositor damage, combined output
   damage, and the matching safe repaint decision from one retired frame.
-  Destination-buffer age/history, partial redraw, and KMS damage-clip
+  A reduced chrome-set observation now counts eligible surfaces, focused and
+  unfocused frames, rings, primitives, and clearance without exposing client
+  identity. Destination-buffer age/history, partial redraw, and KMS damage-clip
   consumption remain later performance work.
   The two-output QEMU xmonad gate proves that a click-drag focus commit is
   followed by a rendered four-primitive border on the same opaque surface
@@ -325,7 +336,7 @@ Promotion now follows the gates below in order.
   composition and exclude them from the blind WM's managed-node stream.
 - [x] Add optional unmodified xmobar discovery and supervised startup to the
   xmonad TTY launcher, with a deterministic Sophia-owned local config.
-- [ ] Physically prove that xmobar renders above managed Kitty windows,
+- [ ] Re-prove that xmobar renders above managed Kitty windows,
   continues updating, accepts pointer events, and does not steal keyboard
   focus across launch, resize, workspace, and VT round-trips.
   The first physical run exposed a mixed-scene ordering bug: the flattened CPU
@@ -343,6 +354,9 @@ Promotion now follows the gates below in order.
   The follow-up physical run committed 10 empty focusless projections and 26
   focused restorations with zero focused-border compositions during any empty
   interval, zero pointer-policy suppressions, and clean teardown.
+  The refreshed schema-2 verifier additionally requires exactly one decorated
+  managed Kitty and proves the client-positioned bar is excluded from both
+  frame and focus-ring composition.
 - [x] Decode bounded `_NET_WM_STRUT_PARTIAL` and legacy `_NET_WM_STRUT` values
   entirely inside the X
   frontend and reduce them to protocol-neutral edge/span reservations tied to
@@ -435,6 +449,8 @@ consecutive passing runs.
 - [ ] Complete the physical schema-2 proof for ring-only, frame-only, and
   combined chrome. Require an atomic 2→6 width transition with no content
   occlusion, partial geometry, focus resize, bar decoration, or input loss.
+  Reduced aggregate evidence and fail-closed fixtures now cover each policy,
+  resize, and composition boundary; physical capture remains.
 - [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.
@@ -442,12 +458,15 @@ consecutive passing runs.
   supervised live transport without requiring an existing binding to trigger
   a request; update bindings, action policy, workspace policy, and active
   chrome as one idle-boundary transaction.
-- [ ] Add a guarded physical hot-reload proof: valid live edit, invalid edit
+- [x] Add guarded physical hot-reload proof tooling: valid live edit, invalid
+  edit
   retaining last-known-good state, restart-required edit with no partial
   apply, atomic replacement, deletion/recreation, and external-WM native
-  config isolation. The native-WM valid/invalid/delete/recreate runner is
-  `tools/start_sophia_native_hot_reload_tty3.sh`; its physical capture plus
-  core pending-restart and external-WM-isolation evidence remain.
+  config isolation. The native-WM runner is
+  `tools/start_sophia_native_hot_reload_tty3.sh`; the external-xmonad core
+  runner is `tools/start_sophia_xmonad_config_reload_tty3.sh`. Both have
+  ordered sequence logs and negative-fixture verifiers. Their commit-pinned
+  physical captures remain.
 - [ ] Promote one immutable, versioned release and greetd entry that uses no
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.

@@ -167,6 +167,7 @@ fn run_session_loop(
     let mut client_key_release_barrier = BTreeSet::new();
     let mut emergency_chord = EmergencyChordState::armed();
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     if native_scanout.is_some() {

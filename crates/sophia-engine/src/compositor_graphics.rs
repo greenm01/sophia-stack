@@ -4,6 +4,9 @@ use crate::{HeadlessOutput, OutputFrameDamageSnapshot, output_frame_damage};
 #[path = "compositor_graphics/chrome_layout.rs"]
 mod chrome_layout;
 pub use chrome_layout::*;
+#[path = "compositor_graphics/chrome_summary.rs"]
+mod chrome_summary;
+pub use chrome_summary::*;
 
 pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 1_024;
 pub const MAX_OUTPUT_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;

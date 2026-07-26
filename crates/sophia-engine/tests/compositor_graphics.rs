@@ -1,9 +1,10 @@
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId, HeadlessOutput,
-    OutputFramePresentationError, OutputFramePresentationState, OutputFullRepaintReason,
-    OutputRepaintPlan, OutputRepaintPolicy, SurfaceChromeRole, SurfaceChromeStyle,
-    compositor_border_bands, compositor_display_list_damage, output_frame_damage_snapshot,
-    plan_output_repaint, surface_chrome_display_list,
+    CompositorDisplayCommand, CompositorDisplayListError, CompositorNodeId, FocusRingStyle,
+    HeadlessOutput, OutputFramePresentationError, OutputFramePresentationState,
+    OutputFullRepaintReason, OutputRepaintPlan, OutputRepaintPolicy, SurfaceChromeRole,
+    SurfaceChromeStyle, SurfaceFrameStyle, compositor_border_bands, compositor_chrome_summary,
+    compositor_display_list_damage, output_frame_damage_snapshot, plan_output_repaint,
+    surface_chrome_display_list,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
@@ -118,6 +119,49 @@ fn focused_ring_is_outside_content_and_inserted_before_its_surface() {
             },
         ]
     );
+}
+
+#[test]
+fn chrome_summary_reduces_frame_and_ring_roles_without_client_identity() {
+    let output = OutputId::from_raw(1);
+    let first = SurfaceId::new(1, 1);
+    let second = SurfaceId::new(2, 1);
+    let geometry = Rect {
+        x: 8,
+        y: 8,
+        width: 80,
+        height: 60,
+    };
+    let style = SurfaceChromeStyle {
+        focus_ring: FocusRingStyle {
+            width: 2,
+            ..FocusRingStyle::default()
+        },
+        frame: SurfaceFrameStyle {
+            width: 6,
+            ..SurfaceFrameStyle::default()
+        },
+    };
+    let list = surface_chrome_display_list(
+        output,
+        &[first, second],
+        &[
+            committed(first, geometry, 1),
+            committed(second, Rect { x: 108, ..geometry }, 1),
+        ],
+        Some(second),
+        style,
+    )
+    .unwrap();
+
+    let summary = compositor_chrome_summary(&list, Some(second));
+    assert_eq!(summary.frames, 2);
+    assert_eq!(summary.focused_frames, 1);
+    assert_eq!(summary.unfocused_frames, 1);
+    assert_eq!(summary.focus_rings, 1);
+    assert_eq!(summary.primitives, 12);
+    assert_eq!(summary.clearance, 6);
+    assert_ne!(summary.generation, 0);
 }
 
 #[test]

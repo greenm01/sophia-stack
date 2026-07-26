@@ -16,7 +16,7 @@ use super::{
     successful_primary_exit_ends_session, synchronous_modeset_record,
     take_settled_input_delivery_wait,
 };
-use sophia_cli::session_keyboard::SessionClientKeyState;
+use sophia_cli::session_keyboard::{PhysicalKeyboardCoverage, SessionClientKeyState};
 use sophia_engine::{
     InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
     pointer_offset_for_geometry,
@@ -286,6 +286,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -302,6 +303,7 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         Some(&mut shortcuts),
         &mut pointer,
         false,
@@ -353,6 +355,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     pointer.center_on_primary_output(Size {
         width: 2560,
@@ -374,6 +377,7 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         true,
@@ -483,6 +487,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut next_delivery = 1;
     let report = route_input_events(
         events,
@@ -497,6 +502,7 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         true,
@@ -570,6 +576,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
     let mut client_keys = SessionClientKeyState::default();
     let mut emergency = super::EmergencyChordState::awaiting_arm();
     let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut next_delivery = 1;
 
@@ -586,6 +593,7 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         &mut client_keys,
         &mut emergency,
         &mut virtual_terminal,
+        &mut keyboard_coverage,
         None,
         &mut pointer,
         false,

@@ -624,6 +624,14 @@
         repeat_metrics.cancelled,
         repeat_metrics.seat_capacity_exhausted,
     );
+    let keyboard_coverage = keyboard_coverage.snapshot();
+    println!(
+        "sophia_live_keyboard_coverage schema=1 status=complete shifted_positions={} shifted_positions_required={} virtual_terminals={} virtual_terminals_required={} content=redacted",
+        keyboard_coverage.shifted_positions,
+        keyboard_coverage.shifted_positions_required,
+        keyboard_coverage.virtual_terminals,
+        keyboard_coverage.virtual_terminals_required,
+    );
     if client_keys.pending_len() != 0
         || !client_key_release_barrier.is_empty()
         || key_repeat.active_seats() != 0
