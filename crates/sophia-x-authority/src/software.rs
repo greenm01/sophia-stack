@@ -179,6 +179,55 @@ impl XSoftwareBufferStore {
         finish_immutable_update(buffer, handle, replaced, Some(destination))
     }
 
+    pub fn image_region(&self, drawable: XResourceId, region: Rect) -> Option<Vec<u8>> {
+        let width = usize::try_from(region.width).ok()?;
+        let height = usize::try_from(region.height).ok()?;
+        let byte_len = width.checked_mul(height)?.checked_mul(4)?;
+        if width == 0 || height == 0 || byte_len > X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
+            return None;
+        }
+        let mut image = vec![0; byte_len];
+        let Some(buffer) = self.buffers.get(&drawable) else {
+            return Some(image);
+        };
+        let source_width = usize::try_from(buffer.size.width).ok()?;
+        let source_height = usize::try_from(buffer.size.height).ok()?;
+        let source_stride = usize::try_from(buffer.stride).ok()?;
+        let destination_stride = width.checked_mul(4)?;
+        for row in 0..height {
+            let source_y = region
+                .y
+                .checked_add(i32::try_from(row).ok()?)
+                .and_then(|y| usize::try_from(y).ok());
+            let Some(source_y) = source_y.filter(|y| *y < source_height) else {
+                continue;
+            };
+            for column in 0..width {
+                let source_x = region
+                    .x
+                    .checked_add(i32::try_from(column).ok()?)
+                    .and_then(|x| usize::try_from(x).ok());
+                let Some(source_x) = source_x.filter(|x| *x < source_width) else {
+                    continue;
+                };
+                let source_offset = source_y
+                    .checked_mul(source_stride)?
+                    .checked_add(source_x.checked_mul(4)?)?;
+                let destination_offset = row
+                    .checked_mul(destination_stride)?
+                    .checked_add(column.checked_mul(4)?)?;
+                image
+                    .get_mut(destination_offset..destination_offset.checked_add(4)?)?
+                    .copy_from_slice(
+                        buffer
+                            .bytes
+                            .get(source_offset..source_offset.checked_add(4)?)?,
+                    );
+            }
+        }
+        Some(image)
+    }
+
     pub fn draw_lines(
         &mut self,
         drawable: XResourceId,

@@ -368,7 +368,11 @@ fn dispatch_core_resource_request(
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::CreatePixmap {
-                    pixmap, drawable, ..
+                    pixmap,
+                    drawable,
+                    width,
+                    height,
+                    ..
                 } => {
                     let outputs =
                         if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
@@ -379,7 +383,15 @@ fn dispatch_core_resource_request(
                                 u32::try_from(drawable.local.raw()).unwrap_or(0),
                             ))]
                         } else if let Err(error) =
-                            runtime.create_pixmap(context.namespace, pixmap, u64::from(context.sequence))
+                            runtime.create_pixmap(
+                                context.namespace,
+                                pixmap,
+                                sophia_protocol::Size {
+                                    width: i32::from(width),
+                                    height: i32::from(height),
+                                },
+                                u64::from(context.sequence),
+                            )
                         {
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,

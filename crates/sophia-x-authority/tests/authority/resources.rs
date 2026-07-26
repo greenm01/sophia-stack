@@ -301,7 +301,15 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
         );
     }
     runtime
-        .create_pixmap(namespace, XResourceId::new(0x0020_0002, 1), 1)
+        .create_pixmap(
+            namespace,
+            XResourceId::new(0x0020_0002, 1),
+            Size {
+                width: 16,
+                height: 16,
+            },
+            1,
+        )
         .unwrap();
     runtime
         .open_font(namespace, XResourceId::new(0x0020_0003, 1), 1)
@@ -516,4 +524,82 @@ fn cpu_buffer_submissions_are_immutable_and_keep_generation_order() {
     let resized = materialized.get(&replacement.handle()).unwrap();
     assert_eq!(resized.size.width, 120);
     assert_eq!(resized.size.height, 70);
+}
+
+#[test]
+fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
+    let namespace = NamespaceId::from_raw(20);
+    let window = XResourceId::new(0x64, 1);
+    let pixmap = XResourceId::new(0x65, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(24),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface: SurfaceId::new(20, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime
+        .create_pixmap(
+            namespace,
+            pixmap,
+            Size {
+                width: 4,
+                height: 4,
+            },
+            1,
+        )
+        .unwrap();
+
+    let image = vec![0x7f; 4 * 4 * 4];
+    let upload = runtime.apply_put_image(
+        TransactionId::from_raw(25),
+        namespace,
+        pixmap,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        }),
+        Some(&image),
+    );
+    assert_eq!(upload.outcome, XAuthorityResponseOutcome::Accepted);
+    assert!(upload.transactions.is_empty());
+    assert!(runtime.take_cpu_buffer_update().is_none());
+
+    let copy = runtime.apply_copy_area_with_gc(
+        TransactionId::from_raw(26),
+        namespace,
+        pixmap,
+        window,
+        0,
+        0,
+        2,
+        2,
+        4,
+        4,
+        &XGraphicsContextValues::default(),
+    );
+    assert_eq!(copy.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(copy.transactions.len(), 1);
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) =
+        runtime.take_cpu_buffer_update().expect("window copy update")
+    else {
+        panic!("first window copy must replace its CPU buffer");
+    };
+    assert_eq!(snapshot.drawable, window);
+    assert!(snapshot.bytes.iter().any(|byte| *byte == 0x7f));
 }

@@ -182,6 +182,27 @@ Promotion now follows the gates below in order.
 - [ ] Run emergency recovery separately from the same commit and require
   bounded input flush, KMS cleanup, exact TTY restoration, and usable greetd.
 
+### 9.3 Unmodified status-bar compatibility
+
+- [x] Preserve core `CWOverrideRedirect` state through create/change,
+  `GetWindowAttributes`, and lifecycle events.
+- [x] Reduce override-redirect windows to the protocol-neutral
+  `ClientPositioned` presentation role. Keep their client geometry in Engine
+  composition and exclude them from the blind WM's managed-node stream.
+- [x] Add optional unmodified xmobar discovery and supervised startup to the
+  xmonad TTY launcher, with a deterministic Sophia-owned local config.
+- [ ] Physically prove that xmobar renders above managed Kitty windows,
+  continues updating, accepts pointer events, and does not steal keyboard
+  focus across launch, resize, workspace, and VT round-trips.
+- [ ] Reduce `_NET_WM_STRUT_PARTIAL` into protocol-neutral output reservations
+  so managed layout uses the remaining work area without exposing X atoms or
+  dock metadata to xmonad.
+- [x] Retain a bounded real-xmobar request trace proving override-redirect
+  lifecycle, MIT-SHM pixmap upload/readback, copy-to-window pixels, and no X
+  protocol errors.
+- [ ] Retain a guarded physical xmobar regression from the same commit as the
+  status-bar work-area implementation.
+
 Milestone 9 exits only when the automated resize regression and both physical
 normal/emergency captures pass from the same committed release.
 

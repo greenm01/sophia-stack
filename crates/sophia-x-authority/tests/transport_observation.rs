@@ -14,6 +14,7 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
         },
         sequence: 1,
         major_opcode: 42,
+        minor_opcode: 0,
         request_stage: X11ObservedRequestStage::Other,
         failure: None,
         result: XDispatchResult {

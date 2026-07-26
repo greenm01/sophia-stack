@@ -350,7 +350,9 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
     drop(stream);
     let _ = std::fs::remove_file(&socket_path);
     server.join().unwrap();
-    let batch = receiver.try_recv().unwrap();
+    let batch = std::iter::from_fn(|| receiver.try_recv().ok())
+        .find(|batch| !batch.transactions.is_empty())
+        .expect("present transaction batch");
     assert_eq!(batch.client.map(XServerFrontendClientId::raw), Some(1));
     assert_eq!(batch.transaction, TransactionId::from_raw(2));
     assert_eq!(batch.transactions.len(), 1);
@@ -371,6 +373,7 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
         client: None,
         transaction: TransactionId::from_raw(3),
         transactions: Vec::new(),
+        surface_presentations: Vec::new(),
         removed_surfaces: vec![surface],
         cpu_buffer_updates: Vec::new(),
         dma_buf_registrations: Vec::new(),
@@ -526,13 +529,16 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         let batch = transaction_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        if batch.transactions.is_empty() {
+        if batch.transactions.is_empty() && !batch.protocol_errors.is_empty() {
             assert_eq!(batch.protocol_errors.len(), 1);
             assert_eq!(
                 batch.protocol_errors[0].code,
                 XErrorCode::BadAccess.wire_code()
             );
             observed_protocol_error = true;
+            continue;
+        }
+        if batch.transactions.is_empty() {
             continue;
         }
         if routes.len() < 2 {

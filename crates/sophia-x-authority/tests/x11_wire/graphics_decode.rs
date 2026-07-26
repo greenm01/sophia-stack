@@ -623,6 +623,31 @@ fn x11_core_decoder_captures_mit_shm_requests() {
         }
     );
 
+    let get = decode_x11_core_request(
+        context(namespace, 531, XByteOrder::LittleEndian),
+        &mit_shm_get_image_request(
+            XByteOrder::LittleEndian,
+            0x220701,
+            0x440001,
+            128,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        get,
+        XWireRequest::ShmGetImage {
+            drawable: XResourceId::new(0x220701, 1),
+            x: 3,
+            y: 5,
+            width: 32,
+            height: 24,
+            plane_mask: u32::MAX,
+            format: 2,
+            segment: XResourceId::new(0x440001, 1),
+            offset: 128,
+        }
+    );
+
     let put = decode_x11_core_request(
         context(namespace, 532, XByteOrder::LittleEndian),
         &mit_shm_put_image_request(XByteOrder::LittleEndian, 0x220701, 0x220702, 0x440001, 128),

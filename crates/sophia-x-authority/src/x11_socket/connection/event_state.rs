@@ -17,6 +17,7 @@ fn x11_core_event_selection_update(
             window,
             event_mask,
             do_not_propagate_mask,
+            ..
         } => Some((*window, *event_mask, *do_not_propagate_mask)),
         _ => None,
     }

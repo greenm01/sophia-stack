@@ -53,6 +53,7 @@ pub struct X11DispatchObservation {
     pub resource_id_range: XWireClientResourceRange,
     pub sequence: u16,
     pub major_opcode: u8,
+    pub minor_opcode: u16,
     pub request_stage: X11ObservedRequestStage,
     pub failure: Option<X11ObservedDispatchFailure>,
     pub result: XDispatchResult,

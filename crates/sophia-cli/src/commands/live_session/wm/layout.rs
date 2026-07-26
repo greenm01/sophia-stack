@@ -18,6 +18,7 @@ struct PersistentLiveLayout {
     cpu_buffer_sizes: BTreeMap<u64, Size>,
     resize: ResizeRollbackCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
+    presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
     pending: Option<PendingLiveWmLayout>,
@@ -40,6 +41,26 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> Vec<SurfaceId> {
         self.client_routes.observe(batch);
+        for presentation in &batch.surface_presentations {
+            self.presentation_roles
+                .insert(presentation.surface, presentation.role);
+            if let Some(layer) = self.layers.get_mut(&presentation.surface)
+                && presentation.role
+                    == sophia_protocol::SurfacePresentationRole::ClientPositioned
+            {
+                layer.geometry = presentation.geometry;
+            }
+            match presentation.role {
+                sophia_protocol::SurfacePresentationRole::PolicyManaged => {
+                    if self.layers.contains_key(&presentation.surface) {
+                        self.unmanaged_surfaces.insert(presentation.surface);
+                    }
+                }
+                sophia_protocol::SurfacePresentationRole::ClientPositioned => {
+                    self.unmanaged_surfaces.remove(&presentation.surface);
+                }
+            }
+        }
         for registration in &batch.dma_buf_registrations {
             self.dma_buf_sizes
                 .insert(registration.descriptor.handle, registration.descriptor.size);
@@ -99,6 +120,11 @@ impl PersistentLiveLayout {
                 .record_committed(transaction.surface, observed_size);
             let observed_layer = match self.layers.get_mut(&transaction.surface) {
                 Some(layer) => {
+                    if self.presentation_roles.get(&transaction.surface)
+                        == Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
+                    {
+                        layer.geometry = transaction.target_geometry;
+                    }
                     layer.source = transaction.target_buffer;
                     layer.damage = transaction.damage.clone();
                     layer.generation = transaction.previous_committed_generation.saturating_add(1);
@@ -106,19 +132,29 @@ impl PersistentLiveLayout {
                 }
                 None => {
                     new_surfaces.push(transaction.surface);
-                    self.unmanaged_surfaces.insert(transaction.surface);
+                    let policy_managed = self.presentation_roles.get(&transaction.surface)
+                        != Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned);
+                    if policy_managed {
+                        self.unmanaged_surfaces.insert(transaction.surface);
+                    }
                     let mut geometry = transaction.target_geometry;
-                    if self.stage_new_surfaces_offset {
+                    if policy_managed && self.stage_new_surfaces_offset {
                         geometry.x = geometry.x.saturating_add(80);
                         geometry.y = geometry.y.saturating_add(60);
-                    } else if let Some(output) = self.center_first_surface_in.take() {
+                    } else if policy_managed
+                        && let Some(output) = self.center_first_surface_in.take()
+                    {
                         geometry = center_geometry_without_scaling(geometry, output);
                     }
                     let layer = LayerSnapshot {
                         surface: transaction.surface,
                         authority_local_id: None,
                         namespace: None,
-                        stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
+                        stack_rank: if policy_managed {
+                            u32::try_from(index).unwrap_or(u32::MAX - 1)
+                        } else {
+                            u32::MAX
+                        },
                         geometry,
                         source: transaction.target_buffer,
                         damage: transaction.damage.clone(),
@@ -160,6 +196,8 @@ impl PersistentLiveLayout {
         }
         self.unmanaged_surfaces
             .retain(|surface| !removed_surfaces.contains(surface));
+        self.presentation_roles
+            .retain(|surface, _| !removed_surfaces.contains(surface));
         if self
             .focus_to_apply
             .is_some_and(|(_, surface)| removed_surfaces.contains(&surface))
@@ -193,6 +231,19 @@ impl PersistentLiveLayout {
                     && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
             })
             .copied()
+    }
+
+    fn is_client_positioned(&self, surface: SurfaceId) -> bool {
+        self.presentation_roles.get(&surface)
+            == Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
+    }
+
+    fn top_client_positioned_surface(&self) -> Option<SurfaceId> {
+        self.layers
+            .values()
+            .filter(|layer| self.is_client_positioned(layer.surface))
+            .max_by_key(|layer| (layer.stack_rank, layer.surface))
+            .map(|layer| layer.surface)
     }
 
     fn stage(
@@ -503,6 +554,7 @@ fn wm_update_coordinator_batch(
         client: None,
         transaction,
         transactions: Vec::new(),
+        surface_presentations: Vec::new(),
         removed_surfaces: Vec::new(),
         cpu_buffer_updates: Vec::new(),
         dma_buf_registrations: Vec::new(),

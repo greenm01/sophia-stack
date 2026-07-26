@@ -149,6 +149,7 @@ fn decode_change_window_attributes(
     }
     let mut event_mask = None;
     let mut do_not_propagate_mask = None;
+    let mut override_redirect = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -159,6 +160,7 @@ fn decode_change_window_attributes(
             .u32(&bytes[value_cursor..value_cursor + 4]);
         value_cursor += 4;
         match bit {
+            9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
             _ => {}
@@ -166,6 +168,7 @@ fn decode_change_window_attributes(
     }
     Ok(XWireRequest::ChangeWindowAttributes {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        override_redirect,
         event_mask,
         do_not_propagate_mask,
     })
@@ -191,6 +194,7 @@ fn decode_create_window(
     let mut event_mask = None;
     let mut do_not_propagate_mask = None;
     let mut colormap = None;
+    let mut override_redirect = false;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
             continue;
@@ -201,6 +205,7 @@ fn decode_create_window(
         value_cursor += 4;
         match bit {
             1 => background_pixel = Some(value),
+            9 => override_redirect = value != 0,
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
             13 => colormap = Some(XResourceId::new(u64::from(value), 1)),
@@ -235,6 +240,7 @@ fn decode_create_window(
         visual: context.byte_order.u32(&bytes[24..28]),
         colormap,
         background_pixel,
+        override_redirect,
         event_mask,
         do_not_propagate_mask,
     })
@@ -277,4 +283,3 @@ fn decode_map_subwindows(
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
     })
 }
-

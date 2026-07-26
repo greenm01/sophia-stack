@@ -27,6 +27,71 @@ fn x11_dispatch_reports_root_input_focus_for_minimal_server() {
 }
 
 #[test]
+fn override_redirect_window_is_reported_as_client_positioned() {
+    let namespace = NamespaceId::from_raw(45);
+    let window = 0x220901;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 540, XByteOrder::LittleEndian),
+        &create_window_override_redirect_request(
+            XByteOrder::LittleEndian,
+            window,
+            0,
+            0,
+            1920,
+            24,
+        ),
+    )
+    .unwrap();
+    let created = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        created.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.presentation == SurfacePresentationRole::ClientPositioned
+    ));
+    assert!(matches!(
+        created.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::ConfigureNotify {
+            override_redirect: true,
+            ..
+        })]
+    ));
+    let observed = XAuthorityObservedTransactionBatch::from_dispatch_result(&created).unwrap();
+    assert!(matches!(
+        observed.surface_presentations.as_slice(),
+        [presentation]
+            if presentation.role == SurfacePresentationRole::ClientPositioned
+                && presentation.geometry.width == 1920
+                && presentation.geometry.height == 24
+    ));
+
+    let attributes = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 3),
+        XWireRequest::GetWindowAttributes {
+            window: XResourceId::new(u64::from(window), 1),
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        attributes.outputs.as_slice(),
+        [XClientOutput::Reply(XClientReply::GetWindowAttributes {
+            override_redirect: true,
+            ..
+        })]
+    ));
+}
+
+#[test]
 fn x11_dispatch_reports_core_modifier_mapping() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();
@@ -701,4 +766,3 @@ fn standard_present_pixmap_reduces_dri3_pixmap_to_dmabuf_transaction() {
     assert_eq!(response.transactions[0].damage.rects[0].width, 64);
     assert_eq!(response.transactions[0].damage.rects[0].height, 48);
 }
-

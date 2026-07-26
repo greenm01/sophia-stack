@@ -670,24 +670,32 @@ fn outputs_from_authority_response(
     match kind {
         XAuthorityRequestKind::CreateWindow {
             window, geometry, ..
-        } => vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
-            sequence: context.sequence,
-            event: *window,
-            window: *window,
-            above_sibling: None,
-            x: clamp_i16(geometry.x),
-            y: clamp_i16(geometry.y),
-            width: clamp_u16(geometry.width),
-            height: clamp_u16(geometry.height),
-            border_width: 0,
-            override_redirect: false,
-        })],
+        } => {
+            let override_redirect = response.surfaces.first().is_some_and(|surface| {
+                surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
+            });
+            vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
+                sequence: context.sequence,
+                event: *window,
+                window: *window,
+                above_sibling: None,
+                x: clamp_i16(geometry.x),
+                y: clamp_i16(geometry.y),
+                width: clamp_u16(geometry.width),
+                height: clamp_u16(geometry.height),
+                border_width: 0,
+                override_redirect,
+            })]
+        }
         XAuthorityRequestKind::MapWindow { window, .. } => {
+            let override_redirect = response.surfaces.first().is_some_and(|surface| {
+                surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
+            });
             let mut outputs = vec![XClientOutput::Event(XClientEvent::MapNotify {
                 sequence: context.sequence,
                 event: *window,
                 window: *window,
-                override_redirect: false,
+                override_redirect,
             })];
             outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
                 sequence: context.sequence,

@@ -97,12 +97,13 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
         .unwrap();
 
     let mut initial_batches = Vec::new();
-    for _ in 0..2 {
-        initial_batches.push(
-            transaction_receiver
-                .recv_timeout(Duration::from_secs(1))
-                .unwrap(),
-        );
+    while initial_batches.len() < 2 {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if !batch.transactions.is_empty() {
+            initial_batches.push(batch);
+        }
     }
     let first_client = initial_batches
         .iter()
@@ -260,4 +261,3 @@ fn routed_service_retains_revocation_requested_before_admission_attaches() {
     assert_eq!(revoked[0].client_id, ClientAdmissionId::from_raw(1));
     std::fs::remove_file(&socket_path).unwrap();
 }
-

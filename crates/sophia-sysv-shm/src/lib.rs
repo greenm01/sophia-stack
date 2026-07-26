@@ -1,7 +1,7 @@
 //! Narrow safe adapter for copying bytes from an existing SysV SHM segment.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReadError {
+pub enum AccessError {
     InvalidId,
     MissingSegment,
     RangeOverflow,
@@ -10,33 +10,36 @@ pub enum ReadError {
     DetachFailed,
 }
 
-impl core::fmt::Display for ReadError {
+impl core::fmt::Display for AccessError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(formatter, "{self:?}")
     }
 }
 
-impl std::error::Error for ReadError {}
+impl std::error::Error for AccessError {}
+
+pub type ReadError = AccessError;
+pub type WriteError = AccessError;
 
 pub fn copy_bytes(shmid: u32, offset: usize, len: usize) -> Result<Vec<u8>, ReadError> {
-    let shmid = libc::c_int::try_from(shmid).map_err(|_| ReadError::InvalidId)?;
-    let end = offset.checked_add(len).ok_or(ReadError::RangeOverflow)?;
+    let shmid = libc::c_int::try_from(shmid).map_err(|_| AccessError::InvalidId)?;
+    let end = offset.checked_add(len).ok_or(AccessError::RangeOverflow)?;
     let mut metadata = core::mem::MaybeUninit::<libc::shmid_ds>::zeroed();
     // SAFETY: metadata points to writable storage for `shmctl(IPC_STAT)`.
     if unsafe { libc::shmctl(shmid, libc::IPC_STAT, metadata.as_mut_ptr()) } != 0 {
-        return Err(ReadError::MissingSegment);
+        return Err(AccessError::MissingSegment);
     }
     // SAFETY: successful IPC_STAT initialized the complete `shmid_ds` value.
     let metadata = unsafe { metadata.assume_init() };
     if end > metadata.shm_segsz {
-        return Err(ReadError::OutOfBounds);
+        return Err(AccessError::OutOfBounds);
     }
 
     // SAFETY: a null address lets the kernel choose the mapping; SHM_RDONLY
     // prevents this adapter from mutating client-owned memory.
     let address = unsafe { libc::shmat(shmid, core::ptr::null(), libc::SHM_RDONLY) };
     if address == (-1_isize) as *mut libc::c_void {
-        return Err(ReadError::AttachFailed);
+        return Err(AccessError::AttachFailed);
     }
     // SAFETY: IPC_STAT established that offset..end lies inside the mapped
     // segment, and the mapping remains attached for the duration of the copy.
@@ -44,7 +47,44 @@ pub fn copy_bytes(shmid: u32, offset: usize, len: usize) -> Result<Vec<u8>, Read
         unsafe { core::slice::from_raw_parts((address as *const u8).add(offset), len).to_vec() };
     // SAFETY: address is exactly the live mapping returned by shmat above.
     if unsafe { libc::shmdt(address) } != 0 {
-        return Err(ReadError::DetachFailed);
+        return Err(AccessError::DetachFailed);
     }
     Ok(bytes)
+}
+
+pub fn write_bytes(shmid: u32, offset: usize, bytes: &[u8]) -> Result<(), WriteError> {
+    let shmid = libc::c_int::try_from(shmid).map_err(|_| AccessError::InvalidId)?;
+    let end = offset
+        .checked_add(bytes.len())
+        .ok_or(AccessError::RangeOverflow)?;
+    let mut metadata = core::mem::MaybeUninit::<libc::shmid_ds>::zeroed();
+    // SAFETY: metadata points to writable storage for `shmctl(IPC_STAT)`.
+    if unsafe { libc::shmctl(shmid, libc::IPC_STAT, metadata.as_mut_ptr()) } != 0 {
+        return Err(AccessError::MissingSegment);
+    }
+    // SAFETY: successful IPC_STAT initialized the complete `shmid_ds` value.
+    let metadata = unsafe { metadata.assume_init() };
+    if end > metadata.shm_segsz {
+        return Err(AccessError::OutOfBounds);
+    }
+
+    // SAFETY: a null address lets the kernel choose a writable mapping.
+    let address = unsafe { libc::shmat(shmid, core::ptr::null(), 0) };
+    if address == (-1_isize) as *mut libc::c_void {
+        return Err(AccessError::AttachFailed);
+    }
+    // SAFETY: IPC_STAT established that offset..end lies inside the writable
+    // mapping, which remains attached for the duration of the copy.
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            (address as *mut u8).add(offset),
+            bytes.len(),
+        );
+    }
+    // SAFETY: address is exactly the live mapping returned by shmat above.
+    if unsafe { libc::shmdt(address) } != 0 {
+        return Err(AccessError::DetachFailed);
+    }
+    Ok(())
 }

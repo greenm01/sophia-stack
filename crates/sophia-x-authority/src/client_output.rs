@@ -328,6 +328,12 @@ pub enum XClientReply {
         shared_pixmaps: bool,
         pixmap_format: u8,
     },
+    ShmGetImage {
+        sequence: u16,
+        depth: u8,
+        visual: u32,
+        size: u32,
+    },
     Dri3QueryVersion {
         sequence: u16,
         major_version: u32,

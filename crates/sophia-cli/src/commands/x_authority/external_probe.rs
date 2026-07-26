@@ -87,8 +87,8 @@ fn run_x_authority_external_probe_smoke(
                 }
                 if trace.failure.is_some() {
                     let _ = sender.try_send(ExternalProbeObservation::Error(format!(
-                        "parse_error:major={}",
-                        trace.major_opcode
+                        "parse_error:major={}:minor={}",
+                        trace.major_opcode, trace.minor_opcode
                     )));
                 }
                 for output in &trace.result.outputs {

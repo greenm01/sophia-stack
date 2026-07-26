@@ -3,11 +3,17 @@ impl XAuthorityRuntime {
          &mut self,
          namespace: NamespaceId,
          pixmap: crate::XResourceId,
+         size: Size,
          generation: u64,
      ) -> Result<(), XAuthorityRuntimeError> {
+         if size.width <= 0 || size.height <= 0 {
+             return Err(XAuthorityRuntimeError::InvalidResource);
+         }
          self.resources
              .insert(pixmap, XResourceKind::Pixmap, namespace, generation)
-             .map_err(Into::into)
+             .map_err(XAuthorityRuntimeError::from)?;
+         self.pixmap_sizes.insert(pixmap, size);
+         Ok(())
      }
  
      pub fn free_pixmap(
@@ -18,6 +24,8 @@ impl XAuthorityRuntime {
          self.resources
              .lookup(namespace, pixmap, XResourceKind::Pixmap)?;
          self.resources.remove(pixmap);
+         self.pixmap_sizes.remove(&pixmap);
+         self.software_buffers.remove(pixmap);
          Ok(self
              .dri3_pixmaps
              .remove(&pixmap)
@@ -33,6 +41,18 @@ impl XAuthorityRuntime {
              .lookup(namespace, pixmap, XResourceKind::Pixmap)
              .map(|_| ())
              .map_err(Into::into)
+     }
+
+     pub fn pixmap_size(
+         &self,
+         namespace: NamespaceId,
+         pixmap: crate::XResourceId,
+     ) -> Result<Size, XAuthorityRuntimeError> {
+         self.validate_pixmap_access(namespace, pixmap)?;
+         self.pixmap_sizes
+             .get(&pixmap)
+             .copied()
+             .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
  
      #[allow(clippy::too_many_arguments)]
@@ -79,7 +99,7 @@ impl XAuthorityRuntime {
          if u64::from(stride).saturating_mul(u64::from(height)) > u64::from(size_bytes) {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
-         self.create_pixmap(namespace, pixmap, generation)?;
+         self.create_pixmap(namespace, pixmap, descriptor.size, generation)?;
          self.next_dma_buf_handle = handle.saturating_add(1).max(1);
          self.dri3_pixmaps.insert(pixmap, descriptor);
          Ok(descriptor)
@@ -130,7 +150,7 @@ impl XAuthorityRuntime {
          descriptor
              .validate()
              .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
-         self.create_pixmap(namespace, pixmap, generation)?;
+         self.create_pixmap(namespace, pixmap, descriptor.size, generation)?;
          self.next_dma_buf_handle = handle.saturating_add(1).max(1);
          self.dri3_pixmaps.insert(pixmap, descriptor);
          Ok(descriptor)

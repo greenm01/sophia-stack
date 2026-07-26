@@ -145,6 +145,27 @@ fn create_window_background_request(
     out
 }
 
+fn create_window_override_redirect_request(
+    byte_order: XByteOrder,
+    window: u32,
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+) -> Vec<u8> {
+    let mut out = create_window_request(byte_order, window, x, y, width, height);
+    out[2..4].copy_from_slice(&match byte_order {
+        XByteOrder::LittleEndian => 9u16.to_le_bytes(),
+        XByteOrder::BigEndian => 9u16.to_be_bytes(),
+    });
+    out[28..32].copy_from_slice(&match byte_order {
+        XByteOrder::LittleEndian => (1u32 << 9).to_le_bytes(),
+        XByteOrder::BigEndian => (1u32 << 9).to_be_bytes(),
+    });
+    push_u32(&mut out, byte_order, 1);
+    out
+}
+
 fn resource_request(byte_order: XByteOrder, opcode: u8, id: u32) -> Vec<u8> {
     let mut out = vec![opcode, 0];
     push_u16(&mut out, byte_order, 2);
@@ -191,6 +212,19 @@ fn change_window_attributes_request(byte_order: XByteOrder, window: u32) -> Vec<
     push_u16(&mut out, byte_order, 3);
     push_u32(&mut out, byte_order, window);
     push_u32(&mut out, byte_order, 0);
+    out
+}
+
+fn change_window_override_redirect_request(
+    byte_order: XByteOrder,
+    window: u32,
+    override_redirect: bool,
+) -> Vec<u8> {
+    let mut out = vec![2, 0];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, window);
+    push_u32(&mut out, byte_order, 1 << 9);
+    push_u32(&mut out, byte_order, u32::from(override_redirect));
     out
 }
 

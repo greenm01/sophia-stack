@@ -11,6 +11,7 @@ fn dispatch_shm_request(
             | XWireRequest::ShmDetach { .. }
             | XWireRequest::ShmCreatePixmap { .. }
             | XWireRequest::ShmPutImage { .. }
+            | XWireRequest::ShmGetImage { .. }
     ) {
         return Unhandled(request);
     }
@@ -95,7 +96,15 @@ fn dispatch_shm_request(
                                 .ok_or(crate::XAuthorityRuntimeError::InvalidResource)
                         })
                         .and_then(|()| {
-                            runtime.create_pixmap(context.namespace, pixmap, u64::from(context.sequence))
+                            runtime.create_pixmap(
+                                context.namespace,
+                                pixmap,
+                                sophia_protocol::Size {
+                                    width: i32::from(width),
+                                    height: i32::from(height),
+                                },
+                                u64::from(context.sequence),
+                            )
                         });
                     let outputs = result
                         .err()
@@ -149,25 +158,6 @@ fn dispatch_shm_request(
                             metadata_candidates: Vec::new(),
                         });
                     }
-                    if runtime
-                        .validate_pixmap_access(context.namespace, drawable)
-                        .is_ok()
-                    {
-                        let outputs = send_event
-                            .then_some(XClientOutput::Event(XClientEvent::ShmCompletion {
-                                sequence: context.sequence,
-                                drawable,
-                                segment,
-                                offset,
-                            }))
-                            .into_iter()
-                            .collect();
-                        return Handled(XDispatchResult {
-                            response: Some(XAuthorityResponsePacket::accepted(transaction)),
-                            outputs,
-                            metadata_candidates: Vec::new(),
-                        });
-                    }
                     let damage = Region::single(Rect {
                         x: i32::from(dst_x),
                         y: i32::from(dst_y),
@@ -217,6 +207,76 @@ fn dispatch_shm_request(
                     };
                     XDispatchResult {
                         response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::ShmGetImage {
+                    drawable,
+                    x,
+                    y,
+                    width,
+                    height,
+                    format,
+                    segment,
+                    offset,
+                    ..
+                } => {
+                    let image_len = usize::from(width)
+                        .checked_mul(usize::from(height))
+                        .and_then(|pixels| pixels.checked_mul(4))
+                        .filter(|len| *len <= crate::X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES);
+                    let result = runtime
+                        .validate_drawable_access(context.namespace, drawable)
+                        .and_then(|()| {
+                            runtime.validate_shm_segment_access(context.namespace, segment)
+                        })
+                        .and_then(|()| {
+                            (format == 2)
+                                .then_some(())
+                                .ok_or(XAuthorityRuntimeError::InvalidResource)
+                        })
+                        .and_then(|()| {
+                            image_len.ok_or(XAuthorityRuntimeError::InvalidResource)?;
+                            let shmid =
+                                runtime.shm_segment_shmid(context.namespace, segment)?;
+                            let image = runtime.drawable_image_region(
+                                context.namespace,
+                                drawable,
+                                Rect {
+                                    x: i32::from(x),
+                                    y: i32::from(y),
+                                    width: i32::from(width),
+                                    height: i32::from(height),
+                                },
+                            )?;
+                            sophia_sysv_shm::write_bytes(
+                                shmid,
+                                usize::try_from(offset)
+                                    .map_err(|_| XAuthorityRuntimeError::InvalidResource)?,
+                                &image,
+                            )
+                            .map_err(|_| XAuthorityRuntimeError::InvalidResource)
+                        });
+                    let outputs = match result {
+                        Ok(()) => {
+                            let (depth, visual, _) = runtime.window_visual(drawable);
+                            vec![XClientOutput::Reply(XClientReply::ShmGetImage {
+                                sequence: context.sequence,
+                                depth,
+                                visual,
+                                size: u32::try_from(image_len.unwrap_or(0)).unwrap_or(u32::MAX),
+                            })]
+                        }
+                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            u32::try_from(drawable.local.raw()).unwrap_or(0),
+                        ))],
+                    };
+                    XDispatchResult {
+                        response: None,
                         outputs,
                         metadata_candidates: Vec::new(),
                     }

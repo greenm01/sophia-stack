@@ -332,11 +332,29 @@ impl XAuthorityRuntime {
          &mut self,
          transaction: TransactionId,
          namespace: NamespaceId,
-         window: crate::XResourceId,
+         drawable: crate::XResourceId,
          damage: Region,
          data: Option<&[u8]>,
      ) -> XAuthorityResponsePacket {
-         let Some(record) = self.windows.get(window) else {
+         if let Err(error) = self.validate_drawable_access(namespace, drawable) {
+             return XAuthorityResponsePacket::rejected(transaction, error);
+         }
+         if let Ok(size) = self.pixmap_size(namespace, drawable) {
+             let wrote_image = data.and_then(|data| {
+                 damage
+                     .rects
+                     .first()
+                     .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
+             });
+             if wrote_image.is_none() {
+                 return XAuthorityResponsePacket::rejected(
+                     transaction,
+                     XAuthorityRuntimeError::InvalidResource,
+                 );
+             }
+             return XAuthorityResponsePacket::accepted(transaction);
+         }
+         let Some(record) = self.windows.get(drawable) else {
              return XAuthorityResponsePacket::rejected(
                  transaction,
                  XAuthorityRuntimeError::UnknownResource,
@@ -351,11 +369,11 @@ impl XAuthorityRuntime {
                  damage
                      .rects
                      .first()
-                     .and_then(|rect| self.software_buffers.put_image(window, size, *rect, data))
+                     .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
              })
              .or_else(|| {
                  self.software_buffers.paint_damage(
-                     window,
+                     drawable,
                      size,
                      &damage.rects,
                      &XGraphicsContextValues::default(),
@@ -372,12 +390,24 @@ impl XAuthorityRuntime {
          self.finish_drawing_update(XDrawingUpdate::shm_put_image(
              transaction,
              namespace,
-             window,
+             drawable,
              handle,
              damage,
              record.generation,
              250,
          ))
+     }
+
+     pub fn drawable_image_region(
+         &self,
+         namespace: NamespaceId,
+         drawable: crate::XResourceId,
+         region: Rect,
+     ) -> Result<Vec<u8>, XAuthorityRuntimeError> {
+         self.validate_drawable_access(namespace, drawable)?;
+         self.software_buffers
+             .image_region(drawable, region)
+             .ok_or(XAuthorityRuntimeError::InvalidResource)
      }
  
      pub(crate) fn apply_text_draw(

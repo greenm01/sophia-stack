@@ -23,6 +23,7 @@ impl SurfaceSnapshot {
             local_id: AuthorityLocalId::from(self.window),
             surface: self.surface,
             namespace: self.namespace,
+            presentation: SurfacePresentationRole::PolicyManaged,
             mapped: self.mapped,
             geometry: self.geometry,
             constraints: SurfaceConstraints {

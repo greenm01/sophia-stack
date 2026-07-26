@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use sophia_protocol::{
     AuthorityKind, AuthoritySurface, NamespaceId, Rect, SurfaceConstraints, SurfaceId,
+    SurfacePresentationRole,
 };
 
 use crate::{XAuthorityAccessError, XMapState, XResourceId};
@@ -11,6 +12,7 @@ pub struct XWindowRecord {
     pub id: XResourceId,
     pub surface: SurfaceId,
     pub namespace: NamespaceId,
+    pub override_redirect: bool,
     pub map_state: XMapState,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -24,6 +26,11 @@ impl XWindowRecord {
             local_id: self.id.local,
             surface: self.surface,
             namespace: Some(self.namespace),
+            presentation: if self.override_redirect {
+                SurfacePresentationRole::ClientPositioned
+            } else {
+                SurfacePresentationRole::PolicyManaged
+            },
             mapped: self.map_state == XMapState::Mapped,
             geometry: self.geometry,
             constraints: self.constraints,
@@ -100,6 +107,7 @@ impl XWindowTable {
                     id,
                     surface,
                     namespace,
+                    override_redirect: false,
                     map_state: XMapState::Unmapped,
                     geometry,
                     constraints,
@@ -164,6 +172,19 @@ impl XWindowTable {
 
     pub fn get(&self, id: XResourceId) -> Option<&XWindowRecord> {
         self.windows.get(&id)
+    }
+
+    pub fn set_override_redirect(
+        &mut self,
+        id: XResourceId,
+        override_redirect: bool,
+    ) -> Result<AuthoritySurface, XAuthorityAccessError> {
+        let record = self
+            .windows
+            .get_mut(&id)
+            .ok_or(XAuthorityAccessError::UnknownResource)?;
+        record.override_redirect = override_redirect;
+        Ok(record.authority_surface())
     }
 
     pub fn advance_generation(

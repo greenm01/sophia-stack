@@ -43,6 +43,27 @@ fn mit_shm_attach_request(
     out
 }
 
+fn mit_shm_get_image_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    segment: u32,
+    offset: u32,
+) -> Vec<u8> {
+    let mut out = vec![X_MIT_SHM_MAJOR_OPCODE, X_MIT_SHM_GET_IMAGE_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 8);
+    push_u32(&mut out, byte_order, drawable);
+    push_i16(&mut out, byte_order, 3);
+    push_i16(&mut out, byte_order, 5);
+    push_u16(&mut out, byte_order, 32);
+    push_u16(&mut out, byte_order, 24);
+    push_u32(&mut out, byte_order, u32::MAX);
+    out.push(2);
+    out.extend_from_slice(&[0; 3]);
+    push_u32(&mut out, byte_order, segment);
+    push_u32(&mut out, byte_order, offset);
+    out
+}
+
 fn mit_shm_detach_request(byte_order: XByteOrder, segment: u32) -> Vec<u8> {
     let mut out = vec![X_MIT_SHM_MAJOR_OPCODE, X_MIT_SHM_DETACH_MINOR_OPCODE];
     push_u16(&mut out, byte_order, 2);

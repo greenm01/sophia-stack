@@ -20,10 +20,18 @@ pub struct AuthoritySurface {
     pub local_id: AuthorityLocalId,
     pub surface: SurfaceId,
     pub namespace: Option<NamespaceId>,
+    pub presentation: SurfacePresentationRole,
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
     pub generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SurfacePresentationRole {
+    #[default]
+    PolicyManaged,
+    ClientPositioned,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

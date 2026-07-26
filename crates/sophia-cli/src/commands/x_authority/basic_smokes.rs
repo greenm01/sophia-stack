@@ -368,6 +368,41 @@ fn run_x_authority_external_probe_smoke_spec(
     })
 }
 
+fn run_x_authority_xmobar_smoke()
+-> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let command = match std::env::var_os("SOPHIA_XMOBAR_BIN") {
+        Some(path) => std::path::PathBuf::from(path),
+        None => resolve_external_probe_binary("xmobar", "xmobar")?,
+    };
+    if !command.is_file() {
+        return Err(format!("xmobar smoke executable does not exist: {}", command.display()).into());
+    }
+    let config = std::env::var_os("SOPHIA_XMOBAR_CONFIG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir()?.join("tools/fixtures/xmobar_sophia.config"));
+    if !config.is_file() {
+        return Err(format!("xmobar smoke config does not exist: {}", config.display()).into());
+    }
+    let config = config
+        .to_str()
+        .ok_or("xmobar smoke config path is not valid UTF-8")?;
+    let (display, socket_path) = temp_xauthority_display(7_850)?;
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "xmobar",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &[config],
+        display,
+        socket_path,
+        namespace: NamespaceId::from_raw(62),
+        require_transactions: true,
+        pixel_proof: ExternalProbePixelProof::Nonzero,
+        allow_proof_kill_without_transactions: false,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: None,
+    })
+}
+
 struct ExternalProbeRenderDeviceProvider {
     device: std::fs::File,
 }

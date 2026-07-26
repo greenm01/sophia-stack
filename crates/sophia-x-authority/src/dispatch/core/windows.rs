@@ -26,6 +26,7 @@ fn dispatch_core_window_request(
                 XWireRequest::CreateWindow {
                     packet,
                     background_pixel,
+                    override_redirect,
                     depth,
                     visual,
                     colormap,
@@ -33,10 +34,18 @@ fn dispatch_core_window_request(
                 } => {
                     let kind = packet.kind.clone();
                     let namespace = packet.namespace;
-                    let response = runtime.apply(packet);
+                    let mut response = runtime.apply(packet);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
                     {
+                        if let Ok(surface) = runtime.set_window_override_redirect(
+                            namespace,
+                            *window,
+                            override_redirect,
+                        ) {
+                            response.surfaces.clear();
+                            response.surfaces.push(surface);
+                        }
                         let _ = runtime.set_window_background_pixel(
                             namespace,
                             *window,
@@ -92,20 +101,48 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ChangeWindowAttributes { window, .. } => {
-                    let outputs =
-                        if let Err(error) = runtime.validate_drawable_access(context.namespace, window) {
-                            vec![XClientOutput::Error(x_error_from_runtime(
+                XWireRequest::ChangeWindowAttributes {
+                    window,
+                    override_redirect,
+                    ..
+                } => {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    let outputs = if let Err(error) =
+                        runtime.validate_drawable_access(context.namespace, window)
+                    {
+                        response = XAuthorityResponsePacket::rejected(transaction, error);
+                        vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
                                 u32::try_from(window.local.raw()).unwrap_or(0),
                             ))]
-                        } else {
-                            Vec::new()
-                        };
+                    } else if let Some(override_redirect) = override_redirect {
+                        match runtime.set_window_override_redirect(
+                            context.namespace,
+                            window,
+                            override_redirect,
+                        ) {
+                            Ok(surface) => {
+                                response.surfaces.push(surface);
+                                Vec::new()
+                            }
+                            Err(error) => {
+                                response = XAuthorityResponsePacket::rejected(transaction, error);
+                                vec![XClientOutput::Error(x_error_from_runtime(
+                                    error,
+                                    context.sequence,
+                                    context.major_opcode,
+                                    u32::try_from(window.local.raw()).unwrap_or(0),
+                                ))]
+                            }
+                        }
+                    } else {
+                        Vec::new()
+                    };
                     XDispatchResult {
-                        response: None,
+                        response: override_redirect.map(|_| response),
                         outputs,
                         metadata_candidates: Vec::new(),
                     }
@@ -128,12 +165,15 @@ fn dispatch_core_window_request(
                         ))
                     } else {
                         let (_, visual, colormap) = runtime.window_visual(window);
+                        let override_redirect = runtime
+                            .window_override_redirect(context.namespace, window)
+                            .unwrap_or(false);
                         XClientOutput::Reply(XClientReply::GetWindowAttributes {
                             sequence: context.sequence,
                             visual,
                             colormap,
                             map_state: 2,
-                            override_redirect: false,
+                            override_redirect,
                         })
                     };
                     XDispatchResult {
@@ -214,12 +254,15 @@ fn dispatch_core_window_request(
                                     let window = XResourceId {
                                         local: surface.local_id,
                                     };
+                                    let override_redirect =
+                                        surface.presentation
+                                            == sophia_protocol::SurfacePresentationRole::ClientPositioned;
                                     vec![
                                         XClientOutput::Event(XClientEvent::MapNotify {
                                             sequence: context.sequence,
                                             event: window,
                                             window,
-                                            override_redirect: false,
+                                            override_redirect,
                                         }),
                                         XClientOutput::Event(XClientEvent::VisibilityNotify {
                                             sequence: context.sequence,
@@ -297,7 +340,11 @@ fn dispatch_core_window_request(
                         ))]
                     } else {
                         match runtime.window_geometry(context.namespace, window) {
-                            Ok(geometry) => vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
+                            Ok(geometry) => {
+                                let override_redirect = runtime
+                                    .window_override_redirect(context.namespace, window)
+                                    .unwrap_or(false);
+                                vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
                                 sequence: context.sequence,
                                 event: window,
                                 window,
@@ -307,8 +354,9 @@ fn dispatch_core_window_request(
                                 width: clamp_u16(geometry.width),
                                 height: clamp_u16(geometry.height),
                                 border_width: 0,
-                                override_redirect: false,
-                            })],
+                                override_redirect,
+                            })]
+                            }
                             Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,

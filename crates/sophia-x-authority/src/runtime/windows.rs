@@ -82,6 +82,32 @@ impl XAuthorityRuntime {
              .map(|record| record.geometry)
              .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
+
+     pub fn window_override_redirect(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<bool, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         self.windows
+             .get(window)
+             .map(|record| record.override_redirect)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)
+     }
+
+     pub fn set_window_override_redirect(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         override_redirect: bool,
+     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         self.windows
+             .set_override_redirect(window, override_redirect)
+             .map_err(Into::into)
+     }
  
      pub fn set_window_visual(
          &mut self,

@@ -68,10 +68,13 @@ install -m 755 tools/record_sophia_firefox_physical_run.sh \
 install -m 755 tools/verify_sophia_firefox_physical_runs.sh \
     "$artifact/bin/sophia-verify-firefox-runs"
 install -m 755 tools/run_sophia_xmonad_session.sh \
-    tools/resolve_sophia_xmonad.sh "$artifact/tools/"
+    tools/resolve_sophia_xmonad.sh \
+    tools/resolve_sophia_xmobar.sh "$artifact/tools/"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
 install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"
+install -m 644 tools/fixtures/xmobar_sophia.config \
+    "$artifact/tools/fixtures/xmobar_sophia.config"
 
 printf '%s\n' \
     '[Desktop Entry]' \

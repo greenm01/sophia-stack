@@ -109,8 +109,17 @@ else
 fi
 
 xmonad_bin=""
+xmobar_bin=""
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     xmonad_bin="$("$ROOT_DIR/tools/resolve_sophia_xmonad.sh")"
+    if [[ "${SOPHIA_ENABLE_XMOBAR:-auto}" != false ]]; then
+        xmobar_bin="$("$ROOT_DIR/tools/resolve_sophia_xmobar.sh" || true)"
+        if [[ "${SOPHIA_ENABLE_XMOBAR:-auto}" == true && -z "$xmobar_bin" ]]; then
+            echo "Xmobar was requested but no executable was found." >&2
+            echo "Build ~/src/xmobar or set SOPHIA_XMOBAR_BIN." >&2
+            exit 1
+        fi
+    fi
 fi
 
 cd "$ROOT_DIR"
@@ -299,6 +308,19 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         --wm-process-arg=--profile=xmonad
         --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
     )
+    if [[ -n "$xmobar_bin" ]]; then
+        xmobar_config="${SOPHIA_XMOBAR_CONFIG:-$ROOT_DIR/tools/fixtures/xmobar_sophia.config}"
+        [[ -f "$xmobar_config" ]] || {
+            echo "Xmobar configuration does not exist: $xmobar_config" >&2
+            exit 1
+        }
+        session_args+=(
+            "--session-app=statusbar=$xmobar_bin"
+            "--session-app-arg=statusbar=$xmobar_config"
+            --session-start=statusbar
+        )
+        echo "Xmobar status bar enabled: $xmobar_bin"
+    fi
     firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
     if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then
         session_args+=(

@@ -4,7 +4,8 @@ use sophia_protocol::{
     NamespaceId, NamespacePortalCapability, NamespaceProfile, OutputId, OutputTopologyEntry,
     OutputTopologySnapshot, Point, PortalBrokerRequestPacket, PortalDecision, PortalGrant,
     PortalGrantState, PortalRequest, PortalTransfer, PortalTransferKind, Rect, Region,
-    RoutedInputRequest, SeatId, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    RoutedInputRequest, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePresentationRole,
+    TransactionId,
 };
 use sophia_x_authority::*;
 include!("x11_wire/transport_events.rs");

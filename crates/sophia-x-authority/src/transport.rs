@@ -3,7 +3,9 @@ use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
-use sophia_protocol::{SurfaceId, SurfaceTransaction, TransactionId};
+use sophia_protocol::{
+    Rect, SurfaceId, SurfacePresentationRole, SurfaceTransaction, TransactionId,
+};
 
 use crate::{
     X11DispatchObservation, XAuthorityCpuBufferUpdate, XClientOutput, XDispatchResult,
@@ -27,6 +29,14 @@ pub struct XAuthorityProtocolErrorObservation {
 pub struct XAuthorityMetadataObservation {
     pub property_name: String,
     pub byte_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthoritySurfacePresentationObservation {
+    pub surface: SurfaceId,
+    pub role: SurfacePresentationRole,
+    pub mapped: bool,
+    pub geometry: Rect,
 }
 
 fn is_expected_client_probe_error(error: &crate::XClientError) -> bool {
@@ -105,6 +115,9 @@ pub struct XAuthorityObservedTransactionBatch {
     pub client: Option<XServerFrontendClientId>,
     pub transaction: TransactionId,
     pub transactions: Vec<SurfaceTransaction>,
+    /// Protocol-neutral presentation facts reduced from authority-private
+    /// window attributes. Raw X11 object IDs remain inside the frontend.
+    pub surface_presentations: Vec<XAuthoritySurfacePresentationObservation>,
     /// Frontend-confirmed surface lifetimes that ended in this batch.
     pub removed_surfaces: Vec<SurfaceId>,
     pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
@@ -126,7 +139,10 @@ pub struct XAuthorityObservedTransactionBatch {
 impl XAuthorityObservedTransactionBatch {
     pub fn from_dispatch_result(result: &XDispatchResult) -> Option<Self> {
         let response = result.response.as_ref()?;
-        if response.transactions.is_empty() && response.removed_surfaces.is_empty() {
+        if response.transactions.is_empty()
+            && response.surfaces.is_empty()
+            && response.removed_surfaces.is_empty()
+        {
             return None;
         }
 
@@ -134,6 +150,16 @@ impl XAuthorityObservedTransactionBatch {
             client: None,
             transaction: response.transaction,
             transactions: response.transactions.clone(),
+            surface_presentations: response
+                .surfaces
+                .iter()
+                .map(|surface| XAuthoritySurfacePresentationObservation {
+                    surface: surface.surface,
+                    role: surface.presentation,
+                    mapped: surface.mapped,
+                    geometry: surface.geometry,
+                })
+                .collect(),
             removed_surfaces: response.removed_surfaces.clone(),
             cpu_buffer_updates: Vec::new(),
             dma_buf_registrations: Vec::new(),
@@ -211,10 +237,25 @@ impl XAuthorityObservedTransactionBatch {
         let transactions = response
             .map(|response| response.transactions.clone())
             .unwrap_or_default();
+        let surface_presentations = response
+            .map(|response| {
+                response
+                    .surfaces
+                    .iter()
+                    .map(|surface| XAuthoritySurfacePresentationObservation {
+                        surface: surface.surface,
+                        role: surface.presentation,
+                        mapped: surface.mapped,
+                        geometry: surface.geometry,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let removed_surfaces = response
             .map(|response| response.removed_surfaces.clone())
             .unwrap_or_default();
         if transactions.is_empty()
+            && surface_presentations.is_empty()
             && removed_surfaces.is_empty()
             && dma_buf_registrations.is_empty()
             && fence_registrations.is_empty()
@@ -236,6 +277,7 @@ impl XAuthorityObservedTransactionBatch {
                 |response| response.transaction,
             ),
             transactions,
+            surface_presentations,
             removed_surfaces,
             cpu_buffer_updates: trace.cpu_buffer_update.clone().into_iter().collect(),
             dma_buf_registrations,

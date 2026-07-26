@@ -189,6 +189,7 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
         attributes,
         XWireRequest::ChangeWindowAttributes {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            override_redirect: None,
             event_mask: None,
             do_not_propagate_mask: None,
         }
@@ -211,6 +212,47 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
             count: 4,
         }
     );
+}
+
+#[test]
+fn x11_core_decoder_preserves_override_redirect_attributes() {
+    let namespace = NamespaceId::from_raw(41);
+    let create = decode_x11_core_request(
+        context(namespace, 508, XByteOrder::LittleEndian),
+        &create_window_override_redirect_request(
+            XByteOrder::LittleEndian,
+            0x220011,
+            0,
+            0,
+            800,
+            24,
+        ),
+    )
+    .unwrap();
+    assert!(matches!(
+        create,
+        XWireRequest::CreateWindow {
+            override_redirect: true,
+            ..
+        }
+    ));
+
+    let change = decode_x11_core_request(
+        context(namespace, 509, XByteOrder::LittleEndian),
+        &change_window_override_redirect_request(
+            XByteOrder::LittleEndian,
+            0x220011,
+            false,
+        ),
+    )
+    .unwrap();
+    assert!(matches!(
+        change,
+        XWireRequest::ChangeWindowAttributes {
+            override_redirect: Some(false),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -706,4 +748,3 @@ fn x11_core_decoder_preserves_change_gc_mask_and_values_in_both_byte_orders() {
         assert_eq!(values.clip_x_origin, 7);
     }
 }
-

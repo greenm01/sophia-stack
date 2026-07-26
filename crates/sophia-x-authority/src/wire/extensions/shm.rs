@@ -60,6 +60,25 @@ fn decode_mit_shm(
                 offset: context.byte_order.u32(&bytes[36..40]),
             })
         }
+        X_MIT_SHM_GET_IMAGE_MINOR_OPCODE => {
+            require_exact_len(
+                X_MIT_SHM_MAJOR_OPCODE,
+                X_MIT_SHM_GET_IMAGE_REQ_LEN,
+                bytes.len(),
+            )?;
+            validate_wire_image_format(bytes[20])?;
+            Ok(XWireRequest::ShmGetImage {
+                drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                x: context.byte_order.i16(&bytes[8..10]),
+                y: context.byte_order.i16(&bytes[10..12]),
+                width: context.byte_order.u16(&bytes[12..14]),
+                height: context.byte_order.u16(&bytes[14..16]),
+                plane_mask: context.byte_order.u32(&bytes[16..20]),
+                format: bytes[20],
+                segment: XResourceId::new(u64::from(context.byte_order.u32(&bytes[24..28])), 1),
+                offset: context.byte_order.u32(&bytes[28..32]),
+            })
+        }
         X_MIT_SHM_CREATE_PIXMAP_MINOR_OPCODE => {
             require_exact_len(
                 X_MIT_SHM_MAJOR_OPCODE,
@@ -81,4 +100,3 @@ fn decode_mit_shm(
         _ => Err(XWireParseError::UnknownOpcode(bytes[0])),
     }
 }
-

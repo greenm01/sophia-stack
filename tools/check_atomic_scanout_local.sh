@@ -32,6 +32,7 @@ bash -n tools/atomic_scanout_hardware_status.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
+bash -n tools/resolve_sophia_xmobar.sh
 bash -n tools/start_sophia_tty3.sh tools/start_sophia_kitty_tty3.sh tools/start_sophia_xmonad_tty3.sh
 bash -n tools/start_sophia_xmonad_input_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_emergency_tty3.sh
@@ -58,6 +59,7 @@ tools/check_installed_session_lifecycle_verifier.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh
+grep -Fq -- '--session-start=statusbar' tools/run_sophia_xmonad_session.sh
 grep -Fq 'SOPHIA_TTY_PROFILE=kitty' tools/run_sophia_kitty_session.sh
 grep -Fq 'DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-app-arg=terminal=NONE' tools/run_sophia_xmonad_session.sh

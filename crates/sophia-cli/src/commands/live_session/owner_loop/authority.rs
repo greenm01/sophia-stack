@@ -85,6 +85,7 @@
                     }
                 }
                 let has_engine_work = !batch.transactions.is_empty()
+                    || !batch.surface_presentations.is_empty()
                     || !batch.removed_surfaces.is_empty()
                     || !batch.cpu_buffer_updates.is_empty()
                     || !batch.dma_buf_registrations.is_empty()
@@ -265,7 +266,9 @@
                 let runtime = runtime
                     .as_mut()
                     .expect("persistent backend runtime was initialized above");
-                let raised_surface = focus.focused_surface(seat);
+                let raised_surface = layout
+                    .top_client_positioned_surface()
+                    .or_else(|| focus.focused_surface(seat));
                 let updates = batch
                     .cpu_buffer_updates
                     .iter()
@@ -278,11 +281,15 @@
                 };
                 let mut presentation_layout = Vec::with_capacity(layout.layers.len());
                 for layer in layout.layers.values() {
-                    let visible = match wm_session.as_ref() {
+                    let visible = if layout.is_client_positioned(layer.surface) {
+                        true
+                    } else {
+                        match wm_session.as_ref() {
                         Some(wm) => {
                             wm.surface_visible_on_output(layer.surface, output.id)?
                         }
                         None => true,
+                        }
                     };
                     if visible {
                         presentation_layout.push(layer.clone());

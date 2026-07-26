@@ -287,6 +287,13 @@ fn encode_authority_surface(surface: &AuthoritySurface, out: &mut Vec<u8>) {
     encode_authority_local_id(surface.local_id, out);
     encode_surface_id(surface.surface, out);
     encode_optional_namespace_id(surface.namespace, out);
+    push_u16(
+        out,
+        match surface.presentation {
+            sophia_protocol::SurfacePresentationRole::PolicyManaged => 1,
+            sophia_protocol::SurfacePresentationRole::ClientPositioned => 2,
+        },
+    );
     encode_bool(surface.mapped, out);
     encode_rect(surface.geometry, out);
     encode_constraints(surface.constraints, out);
@@ -299,6 +306,16 @@ fn decode_authority_surface(cursor: &mut Cursor<'_>) -> Result<AuthoritySurface,
         local_id: decode_authority_local_id(cursor)?,
         surface: decode_surface_id(cursor)?,
         namespace: decode_optional_namespace_id(cursor)?,
+        presentation: match cursor.u16()? {
+            1 => sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            2 => sophia_protocol::SurfacePresentationRole::ClientPositioned,
+            value => {
+                return Err(IpcCodecError::InvalidEnum {
+                    field: "surface_presentation_role",
+                    value: u32::from(value),
+                });
+            }
+        },
         mapped: decode_bool(cursor)?,
         geometry: decode_rect(cursor)?,
         constraints: decode_constraints(cursor)?,
