@@ -190,6 +190,15 @@ count other than 300. QEMU does not claim VRR because virtio-gpu does not expose
 the physical property contract. Keep the physical TTY proof for the AMD
 multi-connector/VRR gates and operator-typed input evidence.
 
+The `xmonad-m7` scenario additionally waits for two visible managed surfaces,
+uses Super-J to establish keyboard focus away from the master tile, then sends
+one primary-button drag from the virtio mouse into that unfocused tile. Its
+verifier requires pointer focus request, Engine focus commit, X11 focus
+acknowledgment, retained press/motion/release delivery, and a following
+virtio-keyboard event routed to that same opaque surface, in that order. It
+also rejects a press/release-only gesture, a dropped handoff, or missing
+post-focus keyboard delivery.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

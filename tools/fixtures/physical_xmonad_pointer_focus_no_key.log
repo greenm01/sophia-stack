@@ -2,4 +2,3 @@ sophia_live_wm schema=3 status=focus_requested source=pointer surface=2
 sophia_live_wm schema=1 status=focus_committed transaction=8 target=surface
 sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
 sophia_live_session_pointer schema=5 status=focus_handoff_released surface=2 count=3
-sophia_live_session_pointer schema=6 status=focused_key_routed surface=2

@@ -462,7 +462,8 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     for _ in $(seq 1 800); do
         if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
             && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
-            && grep -q '^sophia_live_wm schema=1 status=layout_committed ' "$EVIDENCE_FILE"; then
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$EVIDENCE_FILE"; then
             ready=true
             break
         fi
@@ -473,7 +474,40 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=readiness_timeout" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
-    chords=("meta_l+j" "meta_l+k" "meta_l+spc" "meta_l+2" "meta_l+shift+1")
+
+    focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    send_chord_and_wait meta_l+j '^sophia_live_wm schema=1 status=physical_action_committed action=' focus-before-pointer
+    if ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_setup_focus_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    pointer_request_baseline="$(evidence_count '^sophia_live_wm schema=3 status=focus_requested source=pointer surface=')"
+    pointer_release_baseline="$(evidence_count '^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=')"
+    if ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" drag -4096 0 96 24 left; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_focus_drag_send" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_xmonad_pointer schema=1 status=sent source=qmp device=virtio-mouse action=focus_drag anchor=left_edge drag=96x24 commands=4" | tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_live_wm schema=3 status=focus_requested source=pointer surface=' "$pointer_request_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_focus_request_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    if ! wait_for_new_evidence '^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=' "$pointer_release_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_focus_release_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    pointer_key_baseline="$(evidence_count '^sophia_live_session_pointer schema=6 status=focused_key_routed surface=')"
+    if ! "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" --no-return z; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=qmp_pointer_focus_key_send" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_xmonad_pointer schema=2 status=sent source=qmp device=virtio-keyboard action=focused_key_probe events=2" | tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_live_session_pointer schema=6 status=focused_key_routed surface=' "$pointer_key_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=pointer_focus_key_timeout" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    chords=("meta_l+k" "meta_l+spc" "meta_l+2" "meta_l+shift+1")
     for chord in "${chords[@]}"; do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
         echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$chord" | tee -a "$EVIDENCE_FILE"

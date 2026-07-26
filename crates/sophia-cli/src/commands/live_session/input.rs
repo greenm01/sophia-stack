@@ -4,6 +4,7 @@ struct PhysicalInputRouteReport {
     wm_actions: Vec<WmActionId>,
     keys_observed: usize,
     keys_suppressed_no_focus: usize,
+    key_targets: Vec<SurfaceId>,
     pointer_buttons_observed: usize,
     pointer_buttons_routed: usize,
     pointer_button_targets: Vec<SurfaceId>,
@@ -317,6 +318,7 @@ fn route_input_events_with_pointer_focus(
         keys_observed: 0,
         keys_suppressed_no_focus: 0,
         keys_routed: 0,
+        key_targets: Vec::new(),
         pointer_events: 0,
         pointer_buttons_observed: 0,
         pointer_axes_observed: 0,
@@ -443,6 +445,7 @@ fn route_input_events_with_pointer_focus(
                                 false,
                             )?;
                             report.keys_routed = report.keys_routed.saturating_add(1);
+                            report.key_targets.push(target_surface);
                             report.virtual_terminal_modifier_releases = report
                                 .virtual_terminal_modifier_releases
                                 .saturating_add(1);
@@ -568,6 +571,7 @@ fn route_input_events_with_pointer_focus(
                     }
                 }
                 report.keys_routed = report.keys_routed.saturating_add(1);
+                report.key_targets.push(target_surface);
                 report.deliveries.push(delivery);
             }
             kind @ (sophia_protocol::InputEventKind::PointerMotion

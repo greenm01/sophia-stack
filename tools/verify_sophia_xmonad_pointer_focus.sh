@@ -63,10 +63,24 @@ release_record="$(
     fail "ordered press/release input was not delivered after focus applied"
 release_line="${release_record%%:*}"
 
+key_record="$(
+    awk -v minimum="$release_line" -v surface="$surface" '
+        NR > minimum &&
+        $0 == "sophia_live_session_pointer schema=6 status=focused_key_routed surface=" surface {
+            print NR ":" $0
+            exit
+        }
+    ' "$SESSION_LOG"
+)"
+[[ -n "$key_record" ]] ||
+    fail "keyboard input did not route to the pointer-selected surface"
+key_line="${key_record%%:*}"
+
 (( request_line < commit_line
     && commit_line < applied_line
-    && applied_line < release_line )) ||
-    fail "focus request, commit, frontend acknowledgment, and input release are out of order"
+    && applied_line < release_line
+    && release_line < key_line )) ||
+    fail "focus request, commit, frontend acknowledgment, input release, and keyboard delivery are out of order"
 
 echo \
-    "xmonad pointer-focus verification passed: surface=$surface request_line=$request_line commit_line=$commit_line applied_line=$applied_line release_line=$release_line"
+    "xmonad pointer-focus verification passed: surface=$surface request_line=$request_line commit_line=$commit_line applied_line=$applied_line release_line=$release_line key_line=$key_line"

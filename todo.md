@@ -198,11 +198,12 @@ Promotion now follows the gates below in order.
   surfaces remain unselectable. WM API v4, the blind xmonad focus bridge, and
   the bounded Engine press/motion/release handoff now have deterministic
   coverage. A fail-closed physical evidence verifier requires request, Engine
-  commit, frontend acknowledgment, and retained input release in order;
-  physical confirmation remains. The unattended two-output xmonad gate now
-  also completes startup, ordered WM response rebasing, bridge restart,
-  action-window launch/close, empty-workspace logout, and native drain with
-  zero stale responses or protocol errors.
+  commit, frontend acknowledgment, retained input release, and a following key
+  routed to the selected surface in order; physical confirmation remains. The
+  unattended two-output xmonad gate now performs that complete click-drag/key
+  sequence through virtio input and also completes startup, ordered WM response
+  rebasing, bridge restart, action-window launch/close, empty-workspace logout,
+  and native drain with zero stale responses or protocol errors.
 - [x] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
   With the active 14-pixel top reservation, the physical capture produced one

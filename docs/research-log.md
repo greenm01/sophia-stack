@@ -77,6 +77,22 @@ peak remains independently required by committed-layout evidence; bounded
 completion now proves clean external-WM lifecycle without requiring closed or
 hidden windows to remain in the shutdown frame.
 
+The unattended M7 workflow now exercises the pointer-focus barrier itself
+through the existing virtio mouse. After two xterm surfaces settle, a keyboard
+focus action selects the non-master tile, relative motion clamps the pointer to
+the unfocused master tile, and QMP emits primary press, drag motion, and
+release. The run recorded `FocusRequested` for the other opaque surface,
+committed and acknowledged that focus, released all three retained pointer
+records only afterward, and routed a following ordinary key to the same
+surface. The final ledger contained two routed buttons, four routed pointer
+events, zero stale WM responses, zero protocol errors, and no pending input.
+
+The shared physical verifier now requires that following keyboard record as
+well as request, Engine commit, X frontend acknowledgment, and retained
+press/motion/release order. QEMU proves the complete software and virtual-input
+path reproducibly; the real libinput device, physical DRM, and operator
+interaction remain the final promotion evidence.
+
 ## 2026-07-26: Pending Pixels Must Not Replace WM Geometry
 
 The latest normal xmonad capture exposed a temporal geometry defect that the

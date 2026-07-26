@@ -29,6 +29,16 @@ expect_failure degraded_wm
 sed '/status=restarted /d' "$fixture" >"$tmp"
 expect_failure missing_restart
 
+sed '/sophia_qemu_xmonad_pointer /d' "$fixture" >"$tmp"
+expect_failure missing_pointer_gesture
+
+sed 's/status=focus_handoff_released surface=2 count=3/status=focus_handoff_released surface=2 count=2/' \
+    "$fixture" >"$tmp"
+expect_failure missing_drag_motion
+
+sed '/status=focused_key_routed /d' "$fixture" >"$tmp"
+expect_failure missing_pointer_selected_key
+
 cp "$fixture" "$tmp"
 printf '%s\n' 'sophia_qemu_guest schema=1 status=failed reason=test' >>"$tmp"
 expect_failure guest_failure

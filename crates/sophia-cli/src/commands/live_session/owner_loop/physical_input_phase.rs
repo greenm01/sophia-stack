@@ -68,6 +68,18 @@ macro_rules! drain_physical_input {
                     "sophia_live_session_pointer schema=5 status=focus_handoff_released surface={} count={count}",
                     surface.index(),
                 );
+                input_observations.pointer_focus_target = Some(surface);
+                input_observations.pointer_focus_key_routed = false;
+            }
+            if !input_observations.pointer_focus_key_routed
+                && let Some(surface) = input_observations.pointer_focus_target
+                && report.key_targets.contains(&surface)
+            {
+                println!(
+                    "sophia_live_session_pointer schema=6 status=focused_key_routed surface={}",
+                    surface.index(),
+                );
+                input_observations.pointer_focus_key_routed = true;
             }
             input_delivery.events_expected = input_delivery
                 .events_expected

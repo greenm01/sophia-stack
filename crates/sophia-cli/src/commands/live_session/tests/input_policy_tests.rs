@@ -171,6 +171,83 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
 }
 
 #[test]
+fn routed_keyboard_report_retains_the_opaque_focus_target() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(41, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry,
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::single(geometry),
+    }];
+    let mut focus = InputFocusState::new();
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+    let events = vec![InputEventPacket {
+        serial: 1,
+        seat,
+        device: DeviceId::from_raw(1),
+        time_msec: 1,
+        kind: InputEventKind::Key {
+            keycode: 30,
+            pressed: true,
+        },
+        global_position: None,
+        target_surface: None,
+        local_position: None,
+    }];
+    let (input_sender, input_receiver) = sync_channel(1);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
+    let mut client_keys = SessionClientKeyState::default();
+    let mut emergency = super::super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut pointer = SessionPointerPlacement::default();
+    let mut next_delivery = 1;
+
+    let report = route_input_events(
+        events,
+        &focus,
+        &committed,
+        &[],
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        None,
+        &mut pointer,
+        false,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        0,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.keys_routed, 1);
+    assert_eq!(report.key_targets, [surface]);
+    assert_eq!(
+        input_receiver.try_recv().unwrap().request.target_surface,
+        surface
+    );
+}
+
+#[test]
 fn stable_focused_gpu_frame_proves_post_input_pixels() {
     let input_surface = SurfaceId::new(41, 1);
     assert!(stable_gpu_frame_proves_post_input_pixels(
