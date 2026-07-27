@@ -1,6 +1,50 @@
 use crate::prelude::*;
 use sophia_protocol::SurfaceConstraints;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LayoutConstraintError {
+    InvalidBounds,
+    InvalidConstraints { surface: SurfaceId },
+    ExtentExceedsBounds { surface: SurfaceId, size: Size },
+    GeometryOverflow { surface: SurfaceId },
+}
+
+impl fmt::Display for LayoutConstraintError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidBounds => formatter.write_str("layout constraint bounds are empty"),
+            Self::InvalidConstraints { surface } => write!(
+                formatter,
+                "surface {}:{} declared invalid layout constraints",
+                surface.index(),
+                surface.generation(),
+            ),
+            Self::ExtentExceedsBounds { surface, size } => write!(
+                formatter,
+                "surface {}:{} constrained extent {}x{} exceeds output bounds",
+                surface.index(),
+                surface.generation(),
+                size.width,
+                size.height,
+            ),
+            Self::GeometryOverflow { surface } => write!(
+                formatter,
+                "surface {}:{} constrained geometry overflowed",
+                surface.index(),
+                surface.generation(),
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LayoutConstraintError {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayoutConstraintReconciliation {
+    pub transaction: LayoutTransaction,
+    pub adjusted_surfaces: Vec<SurfaceId>,
+}
+
 /// Protocol-neutral configure request produced while recovering an abandoned
 /// layout epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +118,88 @@ impl Default for LayoutEpochCoordinator {
 }
 
 impl LayoutEpochCoordinator {
+    /// Reconciles a blind-WM proposal with Engine-owned content constraints
+    /// before any client configure is emitted.
+    pub fn reconcile_transaction(
+        &self,
+        transaction: &LayoutTransaction,
+        bounds: Rect,
+    ) -> Result<LayoutConstraintReconciliation, LayoutConstraintError> {
+        if bounds.is_empty() {
+            return Err(LayoutConstraintError::InvalidBounds);
+        }
+        let bounds_right = bounds
+            .x
+            .checked_add(bounds.width)
+            .ok_or(LayoutConstraintError::InvalidBounds)?;
+        let bounds_bottom = bounds
+            .y
+            .checked_add(bounds.height)
+            .ok_or(LayoutConstraintError::InvalidBounds)?;
+        let mut transaction = transaction.clone();
+        let mut adjusted = BTreeSet::new();
+
+        for request in &mut transaction.requested_sizes {
+            let reconciled = self.constrained_size(request.surface, request.size, bounds)?;
+            if reconciled != request.size {
+                request.size = reconciled;
+                adjusted.insert(request.surface);
+            }
+        }
+
+        for placement in &mut transaction.render_positions {
+            let proposed = Size {
+                width: placement.geometry.width,
+                height: placement.geometry.height,
+            };
+            let reconciled = self.constrained_size(placement.surface, proposed, bounds)?;
+            let max_x = bounds_right.checked_sub(reconciled.width).ok_or(
+                LayoutConstraintError::GeometryOverflow {
+                    surface: placement.surface,
+                },
+            )?;
+            let max_y = bounds_bottom.checked_sub(reconciled.height).ok_or(
+                LayoutConstraintError::GeometryOverflow {
+                    surface: placement.surface,
+                },
+            )?;
+            let geometry = Rect {
+                x: placement.geometry.x.clamp(bounds.x, max_x),
+                y: placement.geometry.y.clamp(bounds.y, max_y),
+                width: reconciled.width,
+                height: reconciled.height,
+            };
+            if geometry != placement.geometry {
+                placement.geometry = geometry;
+                adjusted.insert(placement.surface);
+            }
+
+            if let Some(request) = transaction
+                .requested_sizes
+                .iter_mut()
+                .find(|request| request.surface == placement.surface)
+            {
+                if request.size != reconciled {
+                    request.size = reconciled;
+                    adjusted.insert(placement.surface);
+                }
+            } else if self.committed_size(placement.surface) != Some(reconciled) {
+                transaction
+                    .requested_sizes
+                    .push(sophia_protocol::SurfaceSizeRequest {
+                        surface: placement.surface,
+                        size: reconciled,
+                    });
+                adjusted.insert(placement.surface);
+            }
+        }
+
+        Ok(LayoutConstraintReconciliation {
+            transaction,
+            adjusted_surfaces: adjusted.into_iter().collect(),
+        })
+    }
+
     pub fn committed_size(&self, surface: SurfaceId) -> Option<Size> {
         self.committed_sizes.get(&surface).copied()
     }
@@ -249,5 +375,39 @@ impl LayoutEpochCoordinator {
 
     pub fn rollback_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
         self.rollback_sizes.keys().copied()
+    }
+
+    fn constrained_size(
+        &self,
+        surface: SurfaceId,
+        proposed: Size,
+        bounds: Rect,
+    ) -> Result<Size, LayoutConstraintError> {
+        let constraints = self.effective_constraints(surface);
+        let minimum = constraints.min_size.unwrap_or(Size {
+            width: 1,
+            height: 1,
+        });
+        let maximum = constraints.max_size.unwrap_or(Size {
+            width: bounds.width,
+            height: bounds.height,
+        });
+        if minimum.width <= 0
+            || minimum.height <= 0
+            || maximum.width <= 0
+            || maximum.height <= 0
+            || minimum.width > maximum.width
+            || minimum.height > maximum.height
+        {
+            return Err(LayoutConstraintError::InvalidConstraints { surface });
+        }
+        let size = Size {
+            width: proposed.width.clamp(minimum.width, maximum.width),
+            height: proposed.height.clamp(minimum.height, maximum.height),
+        };
+        if size.width > bounds.width || size.height > bounds.height {
+            return Err(LayoutConstraintError::ExtentExceedsBounds { surface, size });
+        }
+        Ok(size)
     }
 }

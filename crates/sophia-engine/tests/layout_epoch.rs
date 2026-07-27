@@ -1,5 +1,8 @@
 use sophia_engine::{LayoutEpochCoordinator, SurfaceAdmissionState};
-use sophia_protocol::{Size, SurfaceConstraints, SurfaceId};
+use sophia_protocol::{
+    LayoutTransaction, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
+    SurfaceSizeRequest, TransactionId, Transform,
+};
 
 fn size(width: i32, height: i32) -> Size {
     Size { width, height }
@@ -114,4 +117,188 @@ fn invalid_recovery_request_does_not_partially_publish_constraints() {
     );
     assert_eq!(coordinator.recovery_extent(safe), None);
     assert!(coordinator.rollback_surfaces().next().is_none());
+}
+
+#[test]
+fn fixed_content_extent_is_reconciled_before_client_configure() {
+    let terminal = SurfaceId::new(14, 1);
+    let fixed = SurfaceId::new(15, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(terminal, size(2556, 1422));
+    coordinator.record_committed(fixed, size(500, 500));
+    coordinator.set_declared_constraints(
+        fixed,
+        SurfaceConstraints {
+            min_size: Some(size(500, 500)),
+            max_size: Some(size(500, 500)),
+        },
+    );
+    let transaction = layout_transaction([
+        (
+            terminal,
+            Rect {
+                x: 2,
+                y: 16,
+                width: 1276,
+                height: 1422,
+            },
+        ),
+        (
+            fixed,
+            Rect {
+                x: 1282,
+                y: 16,
+                width: 1276,
+                height: 1422,
+            },
+        ),
+    ]);
+
+    let reconciled = coordinator
+        .reconcile_transaction(
+            &transaction,
+            Rect {
+                x: 0,
+                y: 14,
+                width: 2560,
+                height: 1426,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(reconciled.adjusted_surfaces, vec![fixed]);
+    assert_eq!(
+        reconciled
+            .transaction
+            .render_positions
+            .iter()
+            .find(|placement| placement.surface == fixed)
+            .unwrap()
+            .geometry,
+        Rect {
+            x: 1282,
+            y: 16,
+            width: 500,
+            height: 500,
+        }
+    );
+    assert_eq!(
+        reconciled
+            .transaction
+            .requested_sizes
+            .iter()
+            .find(|request| request.surface == fixed)
+            .unwrap()
+            .size,
+        size(500, 500),
+    );
+}
+
+#[test]
+fn minimum_extent_is_repositioned_inside_output_bounds() {
+    let surface = SurfaceId::new(16, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_declared_constraints(
+        surface,
+        SurfaceConstraints {
+            min_size: Some(size(640, 480)),
+            max_size: None,
+        },
+    );
+    let transaction = layout_transaction([(
+        surface,
+        Rect {
+            x: 900,
+            y: 700,
+            width: 100,
+            height: 100,
+        },
+    )]);
+
+    let reconciled = coordinator
+        .reconcile_transaction(
+            &transaction,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        reconciled.transaction.render_positions[0].geometry,
+        Rect {
+            x: 640,
+            y: 240,
+            width: 640,
+            height: 480,
+        }
+    );
+}
+
+#[test]
+fn constraint_larger_than_output_is_rejected() {
+    let surface = SurfaceId::new(17, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_declared_constraints(
+        surface,
+        SurfaceConstraints {
+            min_size: Some(size(1920, 1080)),
+            max_size: None,
+        },
+    );
+    let transaction = layout_transaction([(
+        surface,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        },
+    )]);
+
+    assert!(
+        coordinator
+            .reconcile_transaction(
+                &transaction,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .is_err()
+    );
+}
+
+fn layout_transaction<const N: usize>(placements: [(SurfaceId, Rect); N]) -> LayoutTransaction {
+    LayoutTransaction {
+        transaction: TransactionId::from_raw(90),
+        requested_sizes: placements
+            .iter()
+            .map(|(surface, geometry)| SurfaceSizeRequest {
+                surface: *surface,
+                size: Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            })
+            .collect(),
+        focus: None,
+        render_positions: placements
+            .into_iter()
+            .enumerate()
+            .map(|(z_index, (surface, geometry))| SurfacePlacement {
+                surface,
+                geometry,
+                z_index: i32::try_from(z_index).unwrap(),
+                crop: None,
+                transform: Transform::IDENTITY,
+            })
+            .collect(),
+        timeout_msec: 500,
+    }
 }

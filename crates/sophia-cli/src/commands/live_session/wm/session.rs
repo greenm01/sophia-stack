@@ -689,6 +689,17 @@ impl LiveWmSession {
             &plan.layout,
             self.candidate_chrome_style(),
         )?;
+        let reconciliation = layout
+            .layout_epochs
+            .reconcile_transaction(&transaction, bounds)?;
+        let transaction = reconciliation.transaction;
+        if !reconciliation.adjusted_surfaces.is_empty() {
+            println!(
+                "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={}",
+                transaction.transaction.raw(),
+                reconciliation.adjusted_surfaces.len(),
+            );
+        }
         validate_live_wm_transaction(&transaction, layout, bounds)?;
         let mut proposed = layout.layers.values().cloned().collect::<Vec<_>>();
         let engine = HeadlessEngine::new(output);

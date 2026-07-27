@@ -4561,3 +4561,21 @@ acknowledgement ordering.
   The dedicated proof launcher now enables redacted X11 and Present tracing so
   the next run can distinguish client-side exit, rejected Present validation,
   and feedback delivery without adding application-specific engine policy.
+
+## 2026-07-26: declared constraints must fence blind-WM proposals before configure
+
+- The traced fixed-extent run completed cleanly and proved that all Present
+  rejection paths emitted Complete/Skip, Idle, and actual xshmfence signals.
+  Vkcube registered three DMA-BUF images and six fences but stopped submitting
+  after Sophia initially configured its fixed 500x500 surface as a 1276x1422
+  tile and later recovered it.
+- `WM_NORMAL_HINTS` is advisory and xmonad's default tiled layout does not
+  enforce it. Treating an external WM proposal as authoritative client size
+  therefore lets WM policy violate application constraints.
+- `LayoutEpochCoordinator` now reconciles content geometry and configure sizes
+  against Engine-owned declared constraints before control delivery. Placement
+  remains WM-selected, but constrained extents are clamped and kept inside the
+  output work area. Impossible constraints are rejected explicitly.
+- This is protocol-neutral Engine policy: it applies to every WM bridge and
+  fixed/min/max constrained surface, with no Vulkan, vkcube, or xmonad identity
+  in the decision.

@@ -158,6 +158,11 @@ Promotion now follows the gates below in order.
   extents, publish temporary exact-size constraints for one bounded blind-WM
   replan, and translate those constraints through generic ICCCM size hints in
   the legacy bridge without application identity.
+- [x] Reconcile blind-WM proposals against Engine-owned declared content
+  constraints before client configure delivery. Preserve WM placement, clamp
+  min/max extents inside the work area, and reject impossible constraints so a
+  WM that treats ICCCM hints as advisory cannot destabilize an application
+  swapchain before recovery begins.
 - [ ] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
   existing desktop to remain responsive, the cube to become visible through
   bounded fixed-extent recovery, and normal shutdown with no stale Present,
