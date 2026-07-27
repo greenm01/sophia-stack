@@ -3,7 +3,9 @@ use crate::{
     LiveProductionPresentDisposition,
 };
 use sophia_engine::PreparedSurfaceCommit;
-use sophia_protocol::{LayerSnapshot, Rect, SurfaceId, TransactionId};
+use sophia_protocol::{
+    BufferSource, LayerSnapshot, Rect, SurfaceId, SurfaceTransaction, TransactionId,
+};
 use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
 use std::error::Error;
@@ -14,6 +16,7 @@ use std::time::{Duration, Instant};
 pub struct LiveProductionQueuedPresent {
     pub submission: LivePresentationSubmission,
     pub surface: sophia_protocol::SurfaceId,
+    pub candidate: SurfaceTransaction,
     pub cpu_layers: Arc<[LiveCpuPresentationLayer]>,
     pub target: Rect,
     pub surface_clip: Rect,
@@ -88,15 +91,6 @@ impl LiveProductionPresentScheduler {
             let surface = submission.surface;
             let x_offset = submission.x_offset;
             let y_offset = submission.y_offset;
-            let transaction = batch
-                .transactions
-                .iter()
-                .find(|transaction| transaction.surface == surface)
-                .ok_or("Present submission has no matching Engine transaction")?;
-            let geometry = presentation_layout
-                .iter()
-                .find(|layer| layer.surface == surface)
-                .map_or(transaction.target_geometry, |layer| layer.geometry);
             let submission = LivePresentationSubmission {
                 transaction: submission.transaction,
                 buffer: submission.buffer,
@@ -105,9 +99,34 @@ impl LiveProductionPresentScheduler {
             };
             resources.begin(submission)?;
             if reject_for_layout {
+                self.controlled_rejections = self.controlled_rejections.saturating_add(1);
                 superseded.push(submission.transaction);
                 continue;
             }
+            let mut candidates = batch.transactions.iter().filter(|transaction| {
+                transaction.surface == surface
+                    && transaction.transaction == submission.transaction
+                    && transaction.target_buffer
+                        == (BufferSource::DmaBuf {
+                            handle: submission.buffer.raw(),
+                        })
+            });
+            let Some(candidate) = candidates.next() else {
+                self.controlled_rejections = self.controlled_rejections.saturating_add(1);
+                superseded.push(submission.transaction);
+                continue;
+            };
+            if candidates.next().is_some() {
+                self.controlled_rejections = self.controlled_rejections.saturating_add(1);
+                superseded.push(submission.transaction);
+                continue;
+            }
+            let mut candidate = candidate.clone();
+            let geometry = presentation_layout
+                .iter()
+                .find(|layer| layer.surface == surface)
+                .map_or(candidate.target_geometry, |layer| layer.geometry);
+            candidate.target_geometry = geometry;
             let acquire_delay =
                 if !self.first_acquire_delay_applied && self.first_acquire_delay.is_some() {
                     self.first_acquire_delay_applied = true;
@@ -127,9 +146,11 @@ impl LiveProductionPresentScheduler {
                 }
                 self.queued = retained;
             }
+            let timeout_msec = candidate.timeout_msec.clamp(100, 2_000);
             self.queued.push_back(LiveProductionQueuedPresent {
                 submission,
                 surface,
+                candidate,
                 cpu_layers: Arc::clone(&cpu_layers),
                 target: Rect {
                     x: geometry.x.saturating_add(i32::from(x_offset)),
@@ -140,8 +161,7 @@ impl LiveProductionPresentScheduler {
                 deferred_by_layout,
                 x_offset,
                 y_offset,
-                deadline: not_before
-                    + Duration::from_millis(u64::from(transaction.timeout_msec.clamp(100, 2_000))),
+                deadline: not_before + Duration::from_millis(u64::from(timeout_msec)),
                 not_before,
             });
         }
@@ -159,6 +179,7 @@ impl LiveProductionPresentScheduler {
                 ..geometry
             };
             queued.surface_clip = geometry;
+            queued.candidate.target_geometry = geometry;
         }
     }
 

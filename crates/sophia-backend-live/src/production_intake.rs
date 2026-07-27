@@ -1,5 +1,6 @@
 use sophia_protocol::{
-    BufferHandle, DmaBufDescriptor, FenceHandle, SurfaceId, SurfaceTransaction, TransactionId,
+    BufferHandle, DmaBufDescriptor, FenceHandle, LayerSnapshot, SurfaceId, SurfaceTransaction,
+    TransactionId,
 };
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
@@ -51,7 +52,7 @@ pub struct LiveProductionAuthorityBatch {
 #[derive(Clone, Debug)]
 pub struct LiveProductionPreparedAuthorityBatch {
     pub authority_commits: Vec<sophia_protocol::TransactionCommit>,
-    pub active_transactions: Vec<SurfaceTransaction>,
+    pub layer_templates: Vec<LayerSnapshot>,
 }
 
 #[derive(Clone, Debug)]

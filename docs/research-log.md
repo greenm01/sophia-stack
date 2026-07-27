@@ -3,6 +3,35 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-27: Present Requests Are Not Persistent Scene State
+
+The first physical run after truthful deferred admission reached
+`frontend_admitted`, but every Kitty Present was rejected before rendering.
+The live visual runtime had stored xmobar and Kitty as historical
+`SurfaceTransaction` values, cloned the entire table for each Present, and
+asked Engine to prepare it under Kitty's newest transaction ID. Engine
+correctly rejected mixed batches such as expected transaction 403 with actual
+transaction 198. Kitty never entered committed state or focus, and the startup
+watchdog exited at `stage=not_focused`; KMS and protocol transport remained
+healthy.
+
+Xserver's Present implementation keeps each queued request's window, pixmap,
+serial, fences, and timing separate from persistent window state. Niri likewise
+uses client transactions as readiness blockers and builds output render
+elements from current compositor state. Sophia retains its stronger
+`PreparedSurfaceCommit` contract but applies the same ownership lesson: a
+queued Present owns exactly one matching surface transaction, while unrelated
+surfaces come from Engine's committed baseline.
+
+The production coordinator now prepares one Present candidate and rebases only
+its causal Engine generation. Backend input and compositor projections derive
+from committed state rather than pending transactions, and page-flip retirement
+promotes the candidate before successful feedback. The Present hot path no
+longer clones and validates every historical scene transaction. Mixed
+xmobar/Kitty identity, malformed-candidate rejection, generation preservation,
+and exact retirement are covered by offline regressions; physical startup
+reproof remains open.
+
 ## 2026-07-26: X Hierarchy Defines the WM Admission Boundary
 
 The first physical pre-pixel-admission candidate still exited with
@@ -4677,3 +4706,23 @@ acknowledgement ordering.
   suite passed. Physical xmonad/vkcube verification remains open.
 - The contemporaneous elogind diagnostic was unrelated. Session 193 was the
   valid online greetd `_greeter` session on tty7, not a stale Sophia session.
+
+## 2026-07-27: recovery epochs must preserve admission ownership
+
+- The first physical run after exact queued-Present ownership reached healthy
+  KMS output and committed Kitty's recovery layout, but retired zero Kitty
+  Presents and exited through the eight-second `not_focused` startup watchdog.
+  This was a bounded session failure, not a renderer or kernel crash.
+- The initial layout epoch timed out after the frontend had acknowledged
+  admission, leaving the surface correctly in `AwaitingPixels`. The retry
+  epoch staged and committed the retained pixels, but classified only a fresh
+  `PolicyPending` surface as admission-owned. It therefore left both the
+  transaction and its Present submission permanently in pre-admission
+  quarantine.
+- Surface-control staging now treats `ControlPending` and `AwaitingPixels` as
+  continuing phases of the same admission. A retry may deliver the necessary
+  configure, but its atomic commit also marks the surface managed and releases
+  the retained transaction and Present exactly once.
+- An all-feature regression reproduces an acknowledged admission entering a
+  recovery transaction and requires the retry's finalization set, managed
+  transition, transaction release, and Present release.

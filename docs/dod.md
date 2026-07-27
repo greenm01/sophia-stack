@@ -355,6 +355,14 @@ committed visual state. This keeps atomic rendering fail-closed for slow or
 misbehaving apps: old geometry and old buffers remain visible until a complete,
 validated transaction can advance on the presentation boundary.
 
+The gate owns only the transactions changed by that atomic handoff. Stable
+scene surfaces come from `CommittedSurfaceState`; they must not be copied from
+a historical transaction table and relabelled with the newest presentation ID.
+A queued Present therefore owns its exact `SurfaceTransaction`, and its
+prepared candidate overlays that transaction onto the committed baseline.
+Hit-testing and routed-input snapshots continue to use the committed baseline
+until page-flip retirement promotes the candidate.
+
 ### LayoutEpochState
 
 A layout epoch records surfaces that must produce damage before an atomic layout

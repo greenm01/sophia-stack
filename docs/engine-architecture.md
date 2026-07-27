@@ -125,6 +125,12 @@ placement, stacking, focus, Engine-owned chrome, output association, and
 damage-relevant generations. State changes become visible atomically. Rendering
 must not observe a partially applied surface or WM transaction.
 
+Pending authority transactions are not persistent scene records. A queued
+presentation retains its exact surface candidate, while the committed scene
+retains protocol-neutral geometry, buffer, damage, and generation. Preparing a
+presentation joins that one candidate to the committed baseline; it does not
+relabel or recommit unrelated surfaces under the presentation transaction.
+
 For decorated managed surfaces, visual state retains the WM-owned outer
 allocation and Engine-derived client-content geometry as one committed fact.
 The chrome clearance is stable across focus changes. A style-width reload that
@@ -144,6 +150,11 @@ protocol state. Its output-scoped service reducer observes one immutable
 record per output and emits named retirement or submission effects. The live
 backend executes those effects and reobserves native state; it does not infer
 scheduling policy from aggregate readiness booleans.
+
+The presentation queue, prepared Engine candidate, and submitted output frame
+are separate lifetimes. Page-flip retirement is the only transition that
+promotes a prepared candidate into committed visual and input state and permits
+successful protocol feedback.
 
 ### Render Planning
 

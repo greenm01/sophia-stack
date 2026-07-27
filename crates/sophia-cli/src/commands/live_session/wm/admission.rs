@@ -1,4 +1,61 @@
+struct LiveSurfaceControlStage {
+    admission_owned: bool,
+    command: Option<XAuthorityControlCommand>,
+}
+
 impl PersistentLiveLayout {
+    fn stage_surface_control(
+        &mut self,
+        transaction: TransactionId,
+        surface: SurfaceId,
+        geometry: Rect,
+        size: Size,
+    ) -> Result<LiveSurfaceControlStage, Box<dyn std::error::Error>> {
+        use sophia_engine::SurfacePresentationAdmissionState::{
+            AwaitingPixels, ControlPending, Inactive, Managed, PolicyPending,
+        };
+
+        let stage = match self.admissions.state(surface) {
+            PolicyPending => {
+                if !self
+                    .admissions
+                    .begin_control(surface, transaction, geometry)
+                {
+                    return Err("Engine rejected live WM admission transition".into());
+                }
+                LiveSurfaceControlStage {
+                    admission_owned: true,
+                    command: Some(XAuthorityControlCommand::AdmitSurface {
+                        transaction,
+                        surface,
+                        geometry,
+                    }),
+                }
+            }
+            ControlPending { .. } => LiveSurfaceControlStage {
+                admission_owned: true,
+                command: None,
+            },
+            AwaitingPixels { .. } => LiveSurfaceControlStage {
+                admission_owned: true,
+                command: Some(XAuthorityControlCommand::ConfigureSurface {
+                    transaction,
+                    surface,
+                    size,
+                }),
+            },
+            Inactive | Managed => LiveSurfaceControlStage {
+                admission_owned: false,
+                command: Some(XAuthorityControlCommand::ConfigureSurface {
+                    transaction,
+                    surface,
+                    size,
+                }),
+            },
+        };
+        Ok(stage)
+    }
+
     fn observe_pre_admission_present_submissions(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,

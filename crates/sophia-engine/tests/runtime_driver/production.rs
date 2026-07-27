@@ -160,8 +160,7 @@ fn production_coordinator_applies_prepared_present_to_its_owned_snapshot() {
         1,
     );
     transaction.previous_committed_generation = 99;
-    let prepared =
-        coordinator.prepare_full_state_present(TransactionId::from_raw(205), &[transaction]);
+    let prepared = coordinator.prepare_present_transaction(&transaction);
 
     let commit = coordinator.apply_prepared_surface_commit(prepared);
 
@@ -170,6 +169,71 @@ fn production_coordinator_applies_prepared_present_to_its_owned_snapshot() {
     assert_eq!(
         coordinator.committed_surfaces()[0].buffer,
         BufferSource::DmaBuf { handle: 77 }
+    );
+}
+
+#[test]
+fn present_candidate_preserves_unrelated_committed_surface_identity() {
+    let engine = HeadlessEngine::default();
+    let bar = engine.committed_state_from_layer(&test_layer(1, 0, 0, Region::empty()));
+    let bar_generation = bar.committed_generation;
+    let kitty_surface = SurfaceId::new(2, 1);
+    let kitty_transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(403),
+        authority: AuthorityKind::SophiaX,
+        surface: kitty_surface,
+        namespace: None,
+        target_geometry: Rect {
+            x: 0,
+            y: 14,
+            width: 1280,
+            height: 1426,
+        },
+        target_buffer: BufferSource::DmaBuf { handle: 77 },
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 1426,
+        }),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 99,
+    };
+    let mut coordinator =
+        ProductionSessionCoordinator::new(engine).with_committed_surfaces(vec![bar.clone()]);
+
+    let prepared = coordinator.prepare_present_transaction(&kitty_transaction);
+
+    assert!(prepared.is_ready());
+    assert_eq!(prepared.commit().applied_surfaces, [kitty_surface]);
+    assert_eq!(
+        prepared
+            .candidate()
+            .iter()
+            .find(|state| state.surface == bar.surface)
+            .map(|state| state.committed_generation),
+        Some(bar_generation)
+    );
+    assert_eq!(coordinator.committed_surfaces(), [bar.clone()]);
+    let commit = coordinator.apply_prepared_surface_commit(prepared);
+    assert_eq!(commit.outcome, TransactionOutcome::Committed);
+    assert_eq!(coordinator.committed_surfaces().len(), 2);
+    assert_eq!(
+        coordinator
+            .committed_surfaces()
+            .iter()
+            .find(|state| state.surface == bar.surface)
+            .map(|state| state.committed_generation),
+        Some(bar_generation)
+    );
+    assert_eq!(
+        coordinator
+            .committed_surfaces()
+            .iter()
+            .find(|state| state.surface == kitty_surface)
+            .map(|state| state.committed_generation),
+        Some(1)
     );
 }
 
@@ -215,10 +279,7 @@ fn production_coordinator_settles_a_stale_prepared_retirement_without_replacing_
         250,
         1,
     );
-    let prepared = coordinator.prepare_full_state_present(
-        TransactionId::from_raw(207),
-        std::slice::from_ref(&transaction),
-    );
+    let prepared = coordinator.prepare_present_transaction(&transaction);
     coordinator.replace_committed_surfaces(Vec::new());
     let mut settled = None;
 

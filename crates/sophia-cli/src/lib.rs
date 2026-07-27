@@ -2,7 +2,6 @@ pub mod backend_args;
 pub mod backend_evidence;
 pub mod emergency_input;
 pub mod input_proof;
-pub mod presentation_transaction;
 pub mod resize_transaction;
 pub mod session_actions;
 pub mod session_control;

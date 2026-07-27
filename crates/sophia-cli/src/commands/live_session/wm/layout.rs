@@ -394,45 +394,32 @@ impl PersistentLiveLayout {
         }
         let mut admission_surfaces = BTreeSet::new();
         for (surface, size) in &proposal.requested_sizes {
+            let geometry = proposal
+                .layers
+                .iter()
+                .find(|layer| layer.surface == *surface)
+                .map(|layer| layer.geometry)
+                .ok_or("live WM configure has no planned geometry")?;
+            let stage =
+                self.stage_surface_control(proposal.transaction, *surface, geometry, *size)?;
+            if stage.admission_owned {
+                admission_surfaces.insert(*surface);
+            }
+            let Some(command) = stage.command else {
+                continue;
+            };
             let client = self
                 .client_routes
                 .client_for_surface(*surface)
                 .ok_or("live WM configure has no X11 client route for its surface")?;
-            let command = if matches!(
-                self.admissions.state(*surface),
-                sophia_engine::SurfacePresentationAdmissionState::PolicyPending
-            ) {
-                let geometry = proposal
-                    .layers
-                    .iter()
-                    .find(|layer| layer.surface == *surface)
-                    .map(|layer| layer.geometry)
-                    .ok_or("live WM admission has no planned geometry")?;
-                if !self
-                    .admissions
-                    .begin_control(*surface, proposal.transaction, geometry)
-                {
-                    return Err("Engine rejected live WM admission transition".into());
-                }
-                admission_surfaces.insert(*surface);
-                XAuthorityControlCommand::AdmitSurface {
-                    transaction: proposal.transaction,
-                    surface: *surface,
-                    geometry,
-                }
-            } else {
-                XAuthorityControlCommand::ConfigureSurface {
-                    transaction: proposal.transaction,
-                    surface: *surface,
-                    size: *size,
-                }
-            };
-            session_controls.enqueue(XAuthorityClientControlCommand {
-                client,
-                command,
-            }, Instant::now()).map_err(|error| {
-                format!("failed to queue WM configure control: {error:?}")
-            })?;
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand { client, command },
+                    Instant::now(),
+                )
+                .map_err(|error| {
+                    format!("failed to queue WM configure control: {error:?}")
+                })?;
         }
         let ready = proposal
             .requested_sizes

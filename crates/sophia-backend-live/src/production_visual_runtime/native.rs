@@ -158,7 +158,7 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         selected_output: OutputId,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
-        let transactions = self.layers.values().cloned().collect::<Vec<_>>();
+        let layer_templates = self.compositor_layer_templates();
         let index = self
             .outputs
             .output_index(selected_output)
@@ -184,7 +184,7 @@ impl LiveProductionVisualRuntime {
         native_scanout.run_tick(
             index,
             &mut output.runtime,
-            compositor_tick_input(&transactions, 0, Vec::new(), None),
+            compositor_tick_input(&layer_templates, 0, Vec::new(), None),
         )
     }
 
@@ -265,6 +265,7 @@ impl LiveProductionVisualRuntime {
             );
             return Ok(None);
         }
+        self.rebuild_input_layers();
         let source_size = Size {
             width: i32::try_from(submitted.displayed_layer.frame.width).unwrap_or(i32::MAX),
             height: i32::try_from(submitted.displayed_layer.frame.height).unwrap_or(i32::MAX),

@@ -182,6 +182,18 @@ Promotion now follows the gates below in order.
   wrong-size buffers without contaminating visible layers, and keep unrelated
   surfaces eligible. Retain bounded queue storage with one shared immutable
   authority batch.
+- [x] Separate queued Present ownership from persistent scene projection.
+  Each queued submission now retains its exact surface transaction; Engine
+  preparation overlays only that candidate on committed visual state, while
+  unrelated CPU/GPU surfaces preserve their generations and transaction
+  identity. Input projection is rebuilt from committed state after synchronous
+  commit or page-flip retirement. The mixed-scene regression reproduces xmobar
+  transaction 198 beside Kitty Present 403 and rejects malformed candidate
+  pairings without terminating the session.
+- [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
+  committed runtime surfaces, a focused and interactive Kitty, successful
+  Present retirement, zero mismatched-transaction warnings, and clean teardown
+  before returning to the `vkcube` recovery proof.
 - [ ] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
   existing desktop to remain responsive, the cube to become visible through
   pre-pixel admission (using bounded fixed-extent recovery only if the client

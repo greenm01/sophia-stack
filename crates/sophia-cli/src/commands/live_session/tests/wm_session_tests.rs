@@ -7,7 +7,7 @@ use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
     SurfaceConstraints, TransactionCommit, TransactionId, TransactionOutcome, WorkspaceId,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     LayerSnapshot {
@@ -412,8 +412,141 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
 }
 
 #[test]
-fn pre_admission_present_queue_fails_closed_at_its_fixed_capacity() {
+fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     let surface = SurfaceId::new(7, 1);
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    let geometry = Rect {
+        x: 10,
+        y: 15,
+        width: 640,
+        height: 480,
+    };
+    let pixel_transaction = TransactionId::from_raw(20);
+    let buffer = sophia_protocol::BufferHandle::from_raw(21);
+    let pixels = SurfaceTransaction {
+        transaction: pixel_transaction,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        },
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: geometry.width,
+            height: geometry.height,
+        }),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let intent = sophia_protocol::SurfacePresentationIntent {
+        surface,
+        kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+        role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    };
+    let mut observed =
+        crate::commands::live_session::wm_update_coordinator_batch(pixel_transaction);
+    observed.client = Some(client);
+    observed.presentation_intents.push(intent);
+    observed.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface,
+            role: intent.role,
+            mapped: false,
+            geometry,
+            constraints: intent.constraints,
+            generation: intent.generation,
+        },
+    );
+    observed.transactions.push(pixels);
+    observed
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: pixel_transaction,
+            surface,
+            buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&observed);
+    let original_admission = TransactionId::from_raw(22);
+    assert!(
+        layout
+            .admissions
+            .begin_control(surface, original_admission, geometry)
+    );
+    assert!(
+        layout
+            .admissions
+            .acknowledge_control(surface, original_admission)
+    );
+    let recovery_transaction = TransactionId::from_raw(23);
+    let proposal = LiveWmProposal {
+        transaction: recovery_transaction,
+        layers: layout.planning_layers(),
+        requested_sizes: BTreeMap::from([(
+            surface,
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        )]),
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: recovery_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: None,
+        effects: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+    assert_eq!(
+        layout
+            .pending
+            .as_ref()
+            .map(|pending| &pending.admission_surfaces),
+        Some(&BTreeSet::from([surface]))
+    );
+    assert!(layout.resolve_pending().is_some());
+    assert_eq!(
+        layout.admissions.state(surface),
+        sophia_engine::SurfacePresentationAdmissionState::Managed
+    );
+    let empty =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(24));
+    let projected = layout.projected_batch(&empty);
+    assert_eq!(projected.transactions.len(), 1);
+    assert_eq!(projected.transactions[0].transaction, pixel_transaction);
+    assert_eq!(projected.present_submissions.len(), 1);
+    assert_eq!(
+        projected.present_submissions[0].transaction,
+        pixel_transaction
+    );
+}
+
+#[test]
+fn pre_admission_present_queue_fails_closed_at_its_fixed_capacity() {
+    let surface = SurfaceId::new(8, 1);
     let geometry = Rect {
         x: 0,
         y: 0,

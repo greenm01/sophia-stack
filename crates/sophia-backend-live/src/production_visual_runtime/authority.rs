@@ -82,21 +82,16 @@ impl LiveProductionVisualRuntime {
         transactions: &[SurfaceTransaction],
         removed_surfaces: &[SurfaceId],
     ) -> Result<LiveProductionPreparedAuthorityBatch, Box<dyn std::error::Error>> {
-        self.layers
-            .retain(|surface, _| !removed_surfaces.contains(surface));
-        for transaction in transactions {
-            self.layers.insert(transaction.surface, transaction.clone());
-        }
-        self.rebuild_input_layers();
+        self.observe_surface_metadata(transactions, removed_surfaces);
         let intake = AuthorityTransactionIntake::new(transaction_id, transactions.to_vec())
             .with_surface_removals(removed_surfaces.to_vec());
-        let active_transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let authority_commits = self
             .production
             .commit_authority_batches(std::slice::from_ref(&intake));
+        self.rebuild_input_layers();
         Ok(LiveProductionPreparedAuthorityBatch {
             authority_commits,
-            active_transactions,
+            layer_templates: self.compositor_layer_templates(),
         })
     }
 
@@ -124,7 +119,7 @@ impl LiveProductionVisualRuntime {
                     .assembly_mut()
                     .replace_committed_surfaces(committed.to_vec());
                 let input = compositor_tick_input(
-                    &prepared.active_transactions,
+                    &prepared.layer_templates,
                     event_count,
                     prepared.authority_commits.clone(),
                     wm_update.clone(),
@@ -177,33 +172,6 @@ impl LiveProductionVisualRuntime {
 
     pub fn committed_surfaces(&self) -> &[CommittedSurfaceState] {
         self.production.committed_surfaces()
-    }
-
-    pub(super) fn rebuild_input_layers(&mut self) {
-        self.input_layers.clear();
-        self.input_layers
-            .extend(
-                self.presentation_order
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, surface)| {
-                        let transaction = self.layers.get(surface)?;
-                        Some(LayerSnapshot {
-                            surface: transaction.surface,
-                            authority_local_id: None,
-                            namespace: transaction.namespace,
-                            stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
-                            geometry: transaction.target_geometry,
-                            source: transaction.target_buffer,
-                            damage: transaction.damage.clone(),
-                            opacity: 1.0,
-                            crop: None,
-                            transform: Transform::IDENTITY,
-                            generation: transaction.previous_committed_generation,
-                            resize_sync: ResizeSyncCapability::ImplicitOnly,
-                        })
-                    }),
-            );
     }
 
     pub fn input_layers(&self) -> &[LayerSnapshot] {

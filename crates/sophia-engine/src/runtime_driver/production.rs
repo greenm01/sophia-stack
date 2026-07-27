@@ -1,29 +1,5 @@
 use crate::{AuthorityTransactionIntake, HeadlessEngine, PreparedSurfaceCommit};
-use sophia_protocol::{
-    CommittedSurfaceState, SurfaceTransaction, TransactionCommit, TransactionId,
-};
-
-/// Rebase a complete presentation snapshot onto the Engine visual generation.
-///
-/// Skipped asynchronous presentations deliberately do not advance Engine state. A later
-/// full-state frame may therefore carry an authority-local generation ahead of the last
-/// visible generation; only its causal generation is rebased before normal validation.
-pub fn rebase_full_state_present_transactions(
-    transactions: &[SurfaceTransaction],
-    committed: &[CommittedSurfaceState],
-) -> Vec<SurfaceTransaction> {
-    transactions
-        .iter()
-        .cloned()
-        .map(|mut transaction| {
-            transaction.previous_committed_generation = committed
-                .iter()
-                .find(|state| state.surface == transaction.surface)
-                .map_or(0, |state| state.committed_generation);
-            transaction
-        })
-        .collect()
-}
+use sophia_protocol::{CommittedSurfaceState, SurfaceTransaction, TransactionCommit};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProductionSessionPhase {
@@ -156,15 +132,26 @@ impl ProductionSessionCoordinator {
             .collect()
     }
 
-    pub fn prepare_full_state_present(
+    /// Prepares one queued presentation candidate against the last visible Engine state.
+    ///
+    /// The queued Present owns its exact transaction. Unrelated committed surfaces enter the
+    /// immutable candidate through `PreparedSurfaceCommit`; they must never be relabelled or
+    /// recommitted under this Present's transaction identity.
+    pub fn prepare_present_transaction(
         &self,
-        transaction: TransactionId,
-        transactions: &[SurfaceTransaction],
+        transaction: &SurfaceTransaction,
     ) -> PreparedSurfaceCommit {
-        let rebased =
-            rebase_full_state_present_transactions(transactions, &self.committed_surfaces);
-        self.engine
-            .prepare_surface_transactions(transaction, &rebased, &self.committed_surfaces)
+        let mut rebased = transaction.clone();
+        rebased.previous_committed_generation = self
+            .committed_surfaces
+            .iter()
+            .find(|state| state.surface == rebased.surface)
+            .map_or(0, |state| state.committed_generation);
+        self.engine.prepare_surface_transactions(
+            rebased.transaction,
+            std::slice::from_ref(&rebased),
+            &self.committed_surfaces,
+        )
     }
 
     pub fn apply_prepared_surface_commit(

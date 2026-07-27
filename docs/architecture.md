@@ -170,8 +170,8 @@ Engine commit/preparation, composition, Present scheduling, KMS
 submission/retirement, cleanup, and reduced feedback sequencing. Production X
 polls one backend service entry point; backend-live decides retirement, queued
 Present scheduling, and pending native submission order and returns a reduced
-tick. `runtime_driver` owns CPU cycle order, full-state Present rebasing and
-preparation, the prepared retirement commit-before-feedback gate, and dynamic
+tick. `runtime_driver` owns CPU cycle order, per-submission Present preparation
+against committed visual state, the prepared retirement commit-before-feedback gate, and dynamic
 asynchronous KMS phase order from reduced observations. Backend-live executes
 requested retire, Present-schedule, and pending-submit phases; it is not a
 second phase coordinator. The production session-loop architecture target and
@@ -203,6 +203,14 @@ last committed geometry-plus-pixels state, and retire native resources exactly
 once. No failure path may infer presentation from client traffic or send
 feedback before backend retirement.
 
+Each queued Present owns exactly one matching `SurfaceTransaction`. Persistent
+scene state is the Engine's committed snapshot, not a table of historical
+transactions. Preparation rebases only the queued surface's causal generation;
+unrelated surfaces enter the immutable frame through the committed baseline and
+retain their own generations and transaction history. Input and focus
+projection advance from committed state after the matching retirement, never
+from a pending Present candidate.
+
 Layout changes use a separate Engine-owned epoch coordinator. It joins opaque
 WM size proposals to authority-observed content extents and keeps declared
 surface constraints separate from temporary recovery constraints. A timed-out
@@ -218,7 +226,10 @@ Admission is a state machine beside, not inside, committed visual state:
 records never contain a synthetic buffer and never enter the committed scene.
 An admission control acknowledgement proves only that protocol configure/map
 effects were delivered; visual admission still waits for a concrete buffer at
-the accepted content extent.
+the accepted content extent. A layout timeout does not reset that lifecycle:
+retry epochs retain `ControlPending` or `AwaitingPixels` surfaces in their
+admission-finalization set, and only the eventual matching visual commit may
+release quarantined pixels and Present feedback.
 
 For X11, the protocol authority derives this boundary from its window tree.
 Only a non-override-redirect direct child of the X root is policy-managed.
