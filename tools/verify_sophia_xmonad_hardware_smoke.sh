@@ -62,8 +62,28 @@ for record in \
         fail "missing VT lifecycle record: $record"
 done
 for output in 1 2; do
-    grep -Eq "^sophia_live_native_page_flip schema=1 status=retired output=${output} " \
-        "$SESSION_LOG" || fail "physical output $output did not retire"
+    output_completion="$(
+        grep -E "^sophia_live_output schema=1 status=complete output=${output} " \
+            "$SESSION_LOG" | tail -n 1 || true
+    )"
+    [[ -n "$output_completion" ]] ||
+        fail "physical output $output has no completion record"
+    submissions="$(field "$output_completion" submissions)" ||
+        fail "physical output $output lacks submission count"
+    retirements="$(field "$output_completion" retirements)" ||
+        fail "physical output $output lacks retirement count"
+    callbacks="$(field "$output_completion" callbacks)" ||
+        fail "physical output $output lacks callback count"
+    nonzero_exports="$(field "$output_completion" nonzero_exports)" ||
+        fail "physical output $output lacks nonzero-export count"
+    for value in "$submissions" "$retirements" "$callbacks" "$nonzero_exports"; do
+        [[ "$value" =~ ^[0-9]+$ ]] ||
+            fail "physical output $output has a nonnumeric completion count"
+    done
+    ((submissions == retirements + 1 && callbacks == retirements)) ||
+        fail "physical output $output did not retain exactly one displayed buffer"
+    ((nonzero_exports > 0)) ||
+        fail "physical output $output never displayed nonzero content"
 done
 
 grep -Eq '^sophia_live_wm schema=1 status=session_action_committed .* action=Logout$' \

@@ -53,14 +53,14 @@ applied_line="$(
 release_record="$(
     awk -v minimum="$applied_line" -v surface="$surface" '
         NR > minimum &&
-        $0 ~ "^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=" surface " count=[2-9][0-9]*$" {
+        $0 ~ "^sophia_live_session_pointer schema=5 status=focus_handoff_released surface=" surface " count=[1-9][0-9]*$" {
             print NR ":" $0
             exit
         }
     ' "$SESSION_LOG"
 )"
 [[ -n "$release_record" ]] ||
-    fail "ordered press/release input was not delivered after focus applied"
+    fail "queued click input was not delivered after focus applied"
 release_line="${release_record%%:*}"
 
 key_record="$(

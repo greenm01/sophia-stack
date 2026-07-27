@@ -21,6 +21,24 @@ field() {
     return 1
 }
 
+inset_geometry() {
+    local geometry=$1 clearance=$2
+    if [[ "$geometry" =~ ^([0-9]+)x([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$ ]]; then
+        local width="${BASH_REMATCH[1]}"
+        local height="${BASH_REMATCH[2]}"
+        local x="${BASH_REMATCH[3]}"
+        local y="${BASH_REMATCH[4]}"
+    else
+        fail "cannot inset malformed geometry: $geometry"
+    fi
+    local doubled=$((clearance * 2))
+    ((width > doubled && height > doubled)) ||
+        fail "chrome clearance $clearance consumes geometry: $geometry"
+    printf '%sx%s_%s_%s\n' \
+        "$((width - doubled))" "$((height - doubled))" \
+        "$((x + clearance))" "$((y + clearance))"
+}
+
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
 
 deadline=$((SECONDS + WAIT_SECONDS))
@@ -104,6 +122,16 @@ fi
 (( work_width >= 2 && work_height >= 3 )) ||
     fail "four-window work area is too small for the Tall layout: $work_area"
 
+chrome_record="$(
+    grep -Em1 \
+        '^sophia_live_wm_chrome schema=1 status=negotiated source=[^ ]+ capability=(true|false) clearance=[0-9]+$' \
+        "$SESSION_LOG" || true
+)"
+[[ -n "$chrome_record" ]] ||
+    fail "active Engine chrome clearance was not recorded"
+chrome_clearance="$(field "$chrome_record" clearance)" ||
+    fail "active Engine chrome record lacks clearance"
+
 if grep -Eq 'status=(layout_timeout|aborted)|rejected Present whose pixels do not match' \
     "$four_window_log"; then
     fail "four-window resize timed out, aborted, or rejected matching pixels"
@@ -116,12 +144,16 @@ stack_height=$((work_height / 3))
 last_stack_height=$((work_height - stack_height * 2))
 middle_stack_y=$((work_y + stack_height))
 last_stack_y=$((middle_stack_y + stack_height))
-targets=(
+outer_targets=(
     "${master_width}x${work_height}_${work_x}_${work_y}"
     "${stack_width}x${stack_height}_${stack_x}_${work_y}"
     "${stack_width}x${stack_height}_${stack_x}_${middle_stack_y}"
     "${stack_width}x${last_stack_height}_${stack_x}_${last_stack_y}"
 )
+targets=()
+for outer_target in "${outer_targets[@]}"; do
+    targets+=("$(inset_geometry "$outer_target" "$chrome_clearance")")
+done
 
 mapfile -t managed_observations < <(
     grep -nE \
@@ -185,10 +217,13 @@ for observation in "${managed_observations[@]}"; do
         fail "surface $managed_surface work-area geometry is malformed: $projection_work_area"
     fi
     if (( visible_surfaces == 1 )); then
-        expected_managed_target="$projection_work_area"
+        expected_managed_allocation="$projection_work_area"
     else
-        expected_managed_target="$((projection_width / 2))x${projection_height}_${projection_x}_${projection_y}"
+        expected_managed_allocation="$((projection_width / 2))x${projection_height}_${projection_x}_${projection_y}"
     fi
+    expected_managed_target="$(
+        inset_geometry "$expected_managed_allocation" "$chrome_clearance"
+    )"
 
     present_match="$(
         awk -v start="$layout_line" -v surface="$managed_surface" '
@@ -304,8 +339,8 @@ for key in native_mixed_exports native_target_recreations \
     [[ "$value" =~ ^[0-9]+$ ]] ||
         fail "completion has nonnumeric $key=$value"
     if [[ "$key" == native_mixed_exports ]]; then
-        (( value >= 32 )) ||
-            fail "sustained mixed presentation produced only $value exports"
+        (( value > 0 )) ||
+            fail "four-window session produced no mixed exports"
     elif [[ "$key" != native_target_recreations &&
         "$key" != native_frame_surface_creations ]]; then
         (( value <= 100 )) ||

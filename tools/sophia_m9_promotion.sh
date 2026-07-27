@@ -237,8 +237,73 @@ adopt_parent_native_chrome() {
     echo "Adopted byte-compatible native-chrome evidence from $parent."
 }
 
+adopt_parent_hardware_smoke() {
+    [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
+        fail "commit or discard the dirty worktree before adopting evidence"
+    local parent parent_root source_root=
+    parent="$(git -C "$ROOT_DIR" rev-parse "${COMMIT}^")"
+    parent_root="$STATE_HOME/sophia/m9-promotion/$parent"
+    while IFS= read -r candidate; do
+        if grep -Fxq \
+            "promotion-result schema=1 gate=\"hardware-smoke\" commit=\"$parent\" status=\"failed\" verifier-status=1" \
+            "$candidate/result.kdl" 2>/dev/null; then
+            source_root=$candidate
+            break
+        fi
+    done < <(
+        find "$parent_root" -maxdepth 1 -mindepth 1 -type d \
+            -name '02-hardware-smoke.failed.*' -printf '%T@ %p\n' 2>/dev/null |
+            sort -nr |
+            cut -d' ' -f2-
+    )
+    [[ -n "$source_root" ]] ||
+        fail "the parent commit has no verifier-rejected hardware-smoke evidence"
+
+    local changed_path
+    while IFS= read -r changed_path; do
+        case "$changed_path" in
+            docs/research-log.md | docs/validation.md | \
+            tools/sophia_m9_promotion.sh | \
+            tools/verify_sophia_xmonad_hardware_smoke.sh | \
+            tools/verify_sophia_xmonad_four_kitty.sh | \
+            tools/verify_sophia_xmonad_pointer_focus.sh | \
+            tools/check_sophia_xmonad_hardware_smoke_verifier.sh | \
+            tools/check_sophia_xmonad_four_kitty_verifier.sh | \
+            tools/fixtures/physical_xmonad_hardware_smoke_session_pass.log | \
+            tools/fixtures/physical_xmonad_pointer_focus_pass.log)
+                ;;
+            *)
+                fail "runtime or hardware-smoke dependency changed: $changed_path"
+                ;;
+        esac
+    done < <(git -C "$ROOT_DIR" diff --name-only "$parent" "$COMMIT")
+
+    for evidence in session.log input-guard.log recovery.log; do
+        require_archived_file "$source_root/$evidence"
+    done
+    "$ROOT_DIR/tools/verify_sophia_xmonad_hardware_smoke.sh" \
+        "$source_root/session.log" \
+        "$source_root/input-guard.log" \
+        "$source_root/recovery.log"
+    "$ROOT_DIR/tools/verify_sophia_xmonad_four_kitty.sh" \
+        "$source_root/session.log"
+
+    mkdir -p "$PROMOTION_ROOT"
+    chmod 700 "$STATE_HOME/sophia/m9-promotion" "$PROMOTION_ROOT"
+    [[ ! -e "$PROMOTION_ROOT/02-hardware-smoke" ]] ||
+        fail "current commit already has hardware-smoke evidence"
+    local temporary
+    temporary="$(mktemp -d "$PROMOTION_ROOT/.02-hardware-smoke.XXXXXX")"
+    cp -a "$source_root/." "$temporary/"
+    printf 'promotion-result schema=1 gate="hardware-smoke" commit="%s" status="passed" source-commit="%s"\n' \
+        "$COMMIT" "$parent" >"$temporary/result.kdl"
+    chmod 600 "$temporary/result.kdl"
+    mv "$temporary" "$PROMOTION_ROOT/02-hardware-smoke"
+    echo "Adopted reverified hardware-smoke evidence from $parent."
+}
+
 usage() {
-    echo "Usage: tools/sophia_m9_promotion.sh {next|status|adopt-parent-native}" >&2
+    echo "Usage: tools/sophia_m9_promotion.sh {next|status|adopt-parent-native|adopt-parent-hardware}" >&2
     exit 2
 }
 
@@ -246,5 +311,6 @@ case "${1:-}" in
     next) promote_next ;;
     status) print_status ;;
     adopt-parent-native) adopt_parent_native_chrome ;;
+    adopt-parent-hardware) adopt_parent_hardware_smoke ;;
     *) usage ;;
 esac

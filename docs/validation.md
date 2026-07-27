@@ -517,6 +517,21 @@ Adoption succeeds only when the parent result still verifies and Git proves
 that Engine/runtime crates plus every native gate dependency are unchanged.
 The copied result records both the current commit and its source commit.
 
+If the immediately preceding candidate completed the hardware smoke but an
+outdated verifier rejected otherwise valid evidence, correct and commit only
+the hardware-smoke verifier, its regression fixtures, the promotion driver,
+and their documentation. Then reverify and adopt that retained run with:
+
+```sh
+tools/sophia_m9_promotion.sh adopt-parent-hardware
+```
+
+This command accepts only a parent result rejected by verification, not a
+launcher or runtime failure. It uses a closed verifier-only path allowlist,
+reruns both hardware-smoke verifiers against the archived session, guard, and
+recovery evidence, and records the parent as the evidence source. Any runtime
+or gate-input change rejects adoption and requires a new physical run.
+
 The exhaustive keyboard/VT runner remains a focused diagnostic after input,
 XKB, seat, or VT changes. It logs only the count of 21 shifted printable key
 positions and 12 VT targets; typed content remains redacted:

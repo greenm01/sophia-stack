@@ -16,7 +16,8 @@ sophia_live_session_vt schema=4 status=requested target=2
 sophia_live_seat schema=1 status=suspended
 sophia_live_seat schema=1 status=active source=resume
 sophia_live_native_page_flip schema=1 status=retired output=1 submission=8
-sophia_live_native_page_flip schema=1 status=retired output=2 submission=9
+sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=8 retirements=7 callbacks=7 nonzero_exports=4
+sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=1 retirements=0 callbacks=0 nonzero_exports=1
 sophia_live_wm schema=1 status=session_action_committed transaction=6 action=Logout
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
