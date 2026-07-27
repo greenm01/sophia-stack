@@ -96,6 +96,7 @@ impl CursorUpdateState {
 struct InputDeliveryPhase<'a> {
     receiver: &'a Receiver<XAuthorityClientInputDelivery>,
     state: &'a mut InputDeliveryState,
+    client_key_release_barrier: &'a mut BTreeSet<XAuthorityInputDeliveryId>,
     proof_started_at: &'a mut Option<Instant>,
     post_input_deadline: &'a mut Option<Instant>,
 }
@@ -106,6 +107,7 @@ impl InputDeliveryPhase<'_> {
             if !self.state.pending.remove(&delivery.delivery) {
                 continue;
             }
+            self.client_key_release_barrier.remove(&delivery.delivery);
             match delivery.outcome {
                 XAuthorityInputDeliveryOutcome::Flushed => {
                     self.state.events_flushed = self.state.events_flushed.saturating_add(1);

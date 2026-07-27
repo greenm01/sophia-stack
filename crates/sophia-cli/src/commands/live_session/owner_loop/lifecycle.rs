@@ -9,6 +9,7 @@
                 InputDeliveryPhase {
                     receiver: input_delivery_receiver,
                     state: &mut input_delivery,
+                    client_key_release_barrier: &mut client_key_release_barrier,
                     proof_started_at: &mut input_proof_started_at,
                     post_input_deadline: &mut post_input_deadline,
                 }
@@ -377,6 +378,7 @@
         InputDeliveryPhase {
             receiver: input_delivery_receiver,
             state: &mut input_delivery,
+            client_key_release_barrier: &mut client_key_release_barrier,
             proof_started_at: &mut input_proof_started_at,
             post_input_deadline: &mut post_input_deadline,
         }

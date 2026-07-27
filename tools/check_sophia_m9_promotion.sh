@@ -19,5 +19,28 @@ if gate_launcher_status_accepted 04-emergency 1; then
     echo "promotion accepted a generic emergency launcher failure" >&2
     exit 1
 fi
+for path in \
+    crates/sophia-cli/src/commands/live_session/owner_loop_state.rs \
+    crates/sophia-cli/src/commands/live_session/owner_loop/lifecycle.rs \
+    crates/sophia-cli/src/commands/live_session/tests/input_policy_tests.rs \
+    docs/research-log.md \
+    docs/validation.md \
+    tools/sophia_m9_promotion.sh \
+    tools/check_sophia_m9_promotion.sh; do
+    pre_emergency_adoption_path_allowed "$path" || {
+        echo "promotion rejected allowed pre-emergency path: $path" >&2
+        exit 1
+    }
+done
+for path in \
+    crates/sophia-cli/src/commands/live_session/input.rs \
+    crates/sophia-engine/src/lib.rs \
+    tools/start_sophia_xmonad_emergency_tty3.sh \
+    tools/verify_sophia_xmonad_emergency_tty3.sh; do
+    if pre_emergency_adoption_path_allowed "$path"; then
+        echo "promotion accepted non-adoptable path: $path" >&2
+        exit 1
+    fi
+done
 
 echo "Milestone 9 promotion gate-policy checks passed"

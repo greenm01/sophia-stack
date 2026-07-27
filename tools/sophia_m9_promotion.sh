@@ -25,7 +25,9 @@ gate_label() {
 }
 
 gate_passed() {
-    local gate=$1 result="$PROMOTION_ROOT/$gate/result.kdl"
+    local gate result
+    gate=$1
+    result="$PROMOTION_ROOT/$gate/result.kdl"
     [[ -s "$result" ]] &&
         grep -Eq "^promotion-result schema=1 gate=\"$(gate_label "$gate")\" commit=\"$COMMIT\" status=\"passed\"( source-commit=\"[0-9a-f]{40}\")?$" \
             "$result"
@@ -307,8 +309,69 @@ adopt_parent_hardware_smoke() {
     echo "Adopted reverified hardware-smoke evidence from $parent."
 }
 
+pre_emergency_adoption_path_allowed() {
+    case "$1" in
+        crates/sophia-cli/src/commands/live_session/owner_loop_state.rs | \
+        crates/sophia-cli/src/commands/live_session/owner_loop/lifecycle.rs | \
+        crates/sophia-cli/src/commands/live_session/tests/input_policy_tests.rs | \
+        docs/research-log.md | docs/validation.md | \
+        tools/sophia_m9_promotion.sh | tools/check_sophia_m9_promotion.sh)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+adopt_parent_pre_emergency() {
+    [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
+        fail "commit or discard the dirty worktree before adopting evidence"
+    gate_passed 00-qemu-semantic ||
+        fail "run the current commit's unattended QEMU semantic gate before adoption"
+
+    local parent parent_root
+    parent="$(git -C "$ROOT_DIR" rev-parse "${COMMIT}^")"
+    parent_root="$STATE_HOME/sophia/m9-promotion/$parent"
+    local changed_path
+    while IFS= read -r changed_path; do
+        pre_emergency_adoption_path_allowed "$changed_path" ||
+            fail "non-emergency runtime or gate dependency changed: $changed_path"
+    done < <(git -C "$ROOT_DIR" diff --name-only "$parent" "$COMMIT")
+
+    local gate source_root
+    for gate in 01-native-chrome 02-hardware-smoke 03-xmobar; do
+        source_root="$parent_root/$gate"
+        grep -Eq \
+            "^promotion-result schema=1 gate=\"$(gate_label "$gate")\" commit=\"$parent\" status=\"passed\"( source-commit=\"[0-9a-f]{40}\")?$" \
+            "$source_root/result.kdl" 2>/dev/null ||
+            fail "the parent commit has no passing $(gate_label "$gate") evidence"
+        verify_gate "$gate" "$source_root"
+        [[ ! -e "$PROMOTION_ROOT/$gate" ]] ||
+            fail "current commit already has $(gate_label "$gate") evidence"
+    done
+
+    local staging destination
+    staging="$(mktemp -d "$PROMOTION_ROOT/.pre-emergency-adoption.XXXXXX")"
+    chmod 700 "$staging"
+    for gate in 01-native-chrome 02-hardware-smoke 03-xmobar; do
+        source_root="$parent_root/$gate"
+        destination="$staging/$gate"
+        mkdir "$destination"
+        cp -a "$source_root/." "$destination/"
+        printf 'promotion-result schema=1 gate="%s" commit="%s" status="passed" source-commit="%s"\n' \
+            "$(gate_label "$gate")" "$COMMIT" "$parent" >"$destination/result.kdl"
+        chmod 600 "$destination/result.kdl"
+    done
+    for gate in 01-native-chrome 02-hardware-smoke 03-xmobar; do
+        mv "$staging/$gate" "$PROMOTION_ROOT/$gate"
+    done
+    rmdir "$staging"
+    echo "Adopted reverified native, hardware-smoke, and xmobar evidence from $parent."
+}
+
 usage() {
-    echo "Usage: tools/sophia_m9_promotion.sh {next|status|adopt-parent-native|adopt-parent-hardware}" >&2
+    echo "Usage: tools/sophia_m9_promotion.sh {next|status|adopt-parent-native|adopt-parent-hardware|adopt-parent-pre-emergency}" >&2
     exit 2
 }
 
@@ -317,5 +380,6 @@ case "${1:-}" in
     status) print_status ;;
     adopt-parent-native) adopt_parent_native_chrome ;;
     adopt-parent-hardware) adopt_parent_hardware_smoke ;;
+    adopt-parent-pre-emergency) adopt_parent_pre_emergency ;;
     *) usage ;;
 esac

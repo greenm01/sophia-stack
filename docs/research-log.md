@@ -3,6 +3,24 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-27: Delivery Acknowledgement Retires Both Input Ledgers
+
+The second emergency capture proved that both synthetic modifier releases
+reached the frontend: all 547 expected input deliveries flushed, the pressed
+key ledger reached zero, repeat was inactive, and Engine/native teardown was
+clean. Completion still failed because the two release IDs remained in a
+separate control-ordering barrier. Normal loops eventually pruned that set
+during another control-service pass; emergency completion exits immediately
+after the input-delivery reducer settles and exposed the split ownership.
+
+Input-delivery acknowledgement now atomically retires an ID from both the
+general pending set and the client-key release barrier. A focused reducer test
+locks that invariant. The pre-emergency physical gates on the parent candidate
+remain valid for this isolated bookkeeping correction. After the new commit
+runs its unattended semantic gate, a closed-path adoption command reverifies
+the parent native, hardware-smoke, and xmobar evidence and records provenance.
+It cannot adopt emergency evidence or accept broader runtime changes.
+
 ## 2026-07-26: Emergency Shutdown Owns Routed-Key Drain
 
 The first commit-pinned emergency gate triggered both the live owner and the

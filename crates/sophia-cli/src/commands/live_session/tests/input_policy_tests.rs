@@ -1,6 +1,44 @@
+use super::super::{InputDeliveryPhase, InputDeliveryState};
 use super::*;
 use sophia_engine::InputFocusDecision;
 use sophia_protocol::TransactionId;
+use sophia_x_authority::{
+    XAuthorityClientInputDelivery, XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome,
+};
+use std::collections::BTreeSet;
+
+#[test]
+fn flushed_input_delivery_retires_its_client_key_release_barrier() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(7);
+    let mut state = InputDeliveryState::default();
+    state.pending.insert(delivery);
+    state.events_expected = 1;
+    let mut release_barrier = BTreeSet::from([delivery]);
+    let (sender, receiver) = sync_channel(1);
+    sender
+        .send(XAuthorityClientInputDelivery {
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::Flushed,
+        })
+        .unwrap();
+    let mut proof_started_at = None;
+    let mut post_input_deadline = None;
+
+    InputDeliveryPhase {
+        receiver: &receiver,
+        state: &mut state,
+        client_key_release_barrier: &mut release_barrier,
+        proof_started_at: &mut proof_started_at,
+        post_input_deadline: &mut post_input_deadline,
+    }
+    .drain()
+    .unwrap();
+
+    assert!(state.pending.is_empty());
+    assert!(release_barrier.is_empty());
+    assert_eq!(state.events_flushed, 1);
+}
 
 #[test]
 fn emergency_chord_flushes_routed_modifiers_before_shutdown() {

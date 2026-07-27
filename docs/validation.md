@@ -538,6 +538,21 @@ reruns both hardware-smoke verifiers against the archived session, guard, and
 recovery evidence, and records the parent as the evidence source. Any runtime
 or gate-input change rejects adoption and requires a new physical run.
 
+If the first four gates pass and emergency recovery then exposes a defect
+confined to acknowledgement-barrier retirement, commit that narrow fix and
+run the new commit's unattended semantic gate. The already-passing physical
+evidence can then be reverified and adopted with:
+
+```sh
+tools/sophia_m9_promotion.sh adopt-parent-pre-emergency
+```
+
+This exception accepts only the owner-loop delivery reducer, its focused test,
+and promotion documentation/tooling. It rejects renderer, frontend, WM,
+launcher, verifier, input-routing, and general runtime changes. Native,
+hardware-smoke, and xmobar evidence is reverified before source-commit results
+are written. Emergency evidence is never adopted.
+
 The exhaustive keyboard/VT runner remains a focused diagnostic after input,
 XKB, seat, or VT changes. It logs only the count of 21 shifted printable key
 positions and 12 VT targets; typed content remains redacted:
