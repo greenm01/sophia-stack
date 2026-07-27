@@ -15,7 +15,10 @@ struct PendingLiveWmLayout {
 struct LiveAuthorityLayoutObservation {
     new_surfaces: Vec<SurfaceId>,
     output_reservations_changed: bool,
+    admission_present_overflowed: bool,
 }
+
+const PRE_ADMISSION_PRESENT_CAPACITY: usize = 256;
 
 #[derive(Default)]
 struct PersistentLiveLayout {
@@ -27,6 +30,12 @@ struct PersistentLiveLayout {
     layout_epochs: LayoutEpochCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+    presentation_mapped: BTreeMap<SurfaceId, bool>,
+    pre_admission_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
+    released_admission_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
+    pre_admission_present_submissions: VecDeque<sophia_x_authority::XAuthorityPresentSubmission>,
+    released_admission_present_submissions:
+        VecDeque<sophia_x_authority::XAuthorityPresentSubmission>,
     output_reservations: sophia_engine::SurfaceOutputReservationState,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
@@ -50,12 +59,15 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> LiveAuthorityLayoutObservation {
         let mut output_reservations_changed = false;
+        let mut admission_present_overflowed = false;
         let mut new_surfaces = BTreeSet::new();
         self.client_routes.observe(batch);
         self.observe_presentation_intents(batch, &mut new_surfaces);
         for presentation in &batch.surface_presentations {
             self.presentation_roles
                 .insert(presentation.surface, presentation.role);
+            self.presentation_mapped
+                .insert(presentation.surface, presentation.mapped);
             self.layout_epochs
                 .set_declared_constraints(presentation.surface, presentation.constraints);
             output_reservations_changed |= self.output_reservations.observe_presentation(
@@ -101,21 +113,17 @@ impl PersistentLiveLayout {
         for handle in &batch.released_dma_bufs {
             self.dma_buf_sizes.remove(handle);
         }
+        admission_present_overflowed |= self.observe_pre_admission_present_submissions(batch);
         for surface in &batch.removed_surfaces {
             output_reservations_changed |= self.output_reservations.remove_surface(*surface);
         }
         self.remove_surfaces(&batch.removed_surfaces);
         for (index, transaction) in batch.transactions.iter().enumerate() {
-            let geometry_size = Size {
-                width: transaction.target_geometry.width,
-                height: transaction.target_geometry.height,
-            };
-            let pixel_size = live_transaction_pixel_size(
-                transaction.target_buffer,
+            let observed_size = live_transaction_observed_size(
+                transaction,
                 &self.dma_buf_sizes,
                 &self.cpu_buffer_sizes,
             );
-            let observed_size = pixel_size.unwrap_or(geometry_size);
             if !self
                 .layout_epochs
                 .accept_observation(transaction.surface, observed_size)
@@ -128,7 +136,7 @@ impl PersistentLiveLayout {
                 pending.requested_sizes.contains_key(&transaction.surface)
             });
             let staged_for_resize = self.pending.as_ref().is_some_and(|pending| {
-                pending.requested_sizes.get(&transaction.surface) == pixel_size.as_ref()
+                pending.requested_sizes.get(&transaction.surface) == Some(&observed_size)
             });
             if resize_owned {
                 if staged_for_resize {
@@ -147,6 +155,11 @@ impl PersistentLiveLayout {
                             transaction.previous_committed_generation.saturating_add(1);
                     }
                 }
+                continue;
+            }
+            if self.surface_requires_admission(transaction.surface) {
+                self.pre_admission_transactions
+                    .insert(transaction.surface, transaction.clone());
                 continue;
             }
             self.layout_epochs
@@ -215,6 +228,7 @@ impl PersistentLiveLayout {
         LiveAuthorityLayoutObservation {
             new_surfaces: new_surfaces.into_iter().collect(),
             output_reservations_changed,
+            admission_present_overflowed,
         }
     }
 
@@ -256,6 +270,15 @@ impl PersistentLiveLayout {
             .retain(|surface| !removed_surfaces.contains(surface));
         self.presentation_roles
             .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.presentation_mapped
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.pre_admission_transactions
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.released_admission_transactions
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        for surface in removed_surfaces {
+            self.remove_admission_present_submissions(*surface);
+        }
         if self
             .focus_to_apply
             .is_some_and(|(_, surface)| removed_surfaces.contains(&surface))
@@ -294,6 +317,16 @@ impl PersistentLiveLayout {
     fn is_client_positioned(&self, surface: SurfaceId) -> bool {
         self.presentation_roles.get(&surface)
             == Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
+    }
+
+    fn surface_requires_admission(&self, surface: SurfaceId) -> bool {
+        self.presentation_roles.get(&surface)
+            == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
+            && self.presentation_mapped.get(&surface) == Some(&false)
+            && !matches!(
+                self.admissions.state(surface),
+                sophia_engine::SurfacePresentationAdmissionState::Managed
+            )
     }
 
     fn top_client_positioned_surface(&self) -> Option<SurfaceId> {
@@ -335,6 +368,30 @@ impl PersistentLiveLayout {
                     sophia_engine::SurfacePresentationAdmissionState::PolicyPending
                 ) || self.layout_epochs.committed_size(*surface) != Some(*size))
         });
+        let mut staged_transactions = BTreeMap::new();
+        for (surface, size) in &proposal.requested_sizes {
+            let Some(transaction) = self.pre_admission_transactions.get(surface) else {
+                continue;
+            };
+            if live_transaction_observed_size(
+                transaction,
+                &self.dma_buf_sizes,
+                &self.cpu_buffer_sizes,
+            ) != *size
+            {
+                continue;
+            }
+            staged_transactions.insert(*surface, transaction.clone());
+            if let Some(layer) = proposal
+                .layers
+                .iter_mut()
+                .find(|layer| layer.surface == *surface)
+            {
+                layer.source = transaction.target_buffer;
+                layer.damage = transaction.damage.clone();
+                layer.generation = transaction.previous_committed_generation.saturating_add(1);
+            }
+        }
         let mut admission_surfaces = BTreeSet::new();
         for (surface, size) in &proposal.requested_sizes {
             let client = self
@@ -395,7 +452,7 @@ impl PersistentLiveLayout {
             deadline: Instant::now() + proposal.timeout,
             update: proposal.update,
             moved_surfaces: proposal.moved_surfaces,
-            staged_transactions: BTreeMap::new(),
+            staged_transactions,
             admission_surfaces,
             source: proposal.source,
             effects: proposal.effects,
@@ -422,14 +479,14 @@ impl PersistentLiveLayout {
             let staged_matches = pending
                 .staged_transactions
                 .get(surface)
-                .and_then(|transaction| {
-                    live_transaction_pixel_size(
-                        transaction.target_buffer,
+                .is_some_and(|transaction| {
+                    live_transaction_observed_size(
+                        transaction,
                         &self.dma_buf_sizes,
                         &self.cpu_buffer_sizes,
                     )
-                })
-                == Some(*size);
+                        == *size
+                });
             let retained_matches = self.layout_epochs.committed_size(*surface) == Some(*size)
                 && pending
                     .layers
@@ -531,6 +588,9 @@ impl PersistentLiveLayout {
             self.unmanaged_surfaces.remove(surface);
             self.admission_retries.remove(surface);
             self.layout_epochs.remove(*surface);
+            self.pre_admission_transactions.remove(surface);
+            self.released_admission_transactions.remove(surface);
+            self.remove_admission_present_submissions(*surface);
         }
         let resize_state = pending
             .requested_sizes
@@ -605,7 +665,19 @@ impl PersistentLiveLayout {
         for surface in &pending.admission_surfaces {
             self.admissions.mark_managed(*surface);
             self.planning_surfaces.remove(surface);
+            let transaction = pending
+                .staged_transactions
+                .get(surface)
+                .cloned()
+                .or_else(|| self.pre_admission_transactions.get(surface).cloned());
+            if let Some(mut transaction) = transaction {
+                transaction.previous_committed_generation = 0;
+                self.released_admission_transactions
+                    .insert(*surface, transaction);
+            }
+            self.pre_admission_transactions.remove(surface);
         }
+        self.release_admission_present_submissions(&pending.admission_surfaces);
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
                 if let Some(size) = live_transaction_pixel_size(
@@ -664,12 +736,32 @@ impl PersistentLiveLayout {
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
     ) -> XAuthorityObservedTransactionBatch {
-        // Resize quarantine controls geometry and presentation, not authority
-        // intake. Dropping a drawing transaction here would break the X
-        // authority's per-surface generation chain permanently. Preserve each
-        // transaction and buffer update in order, but pin its geometry to the
-        // last layout decision until a coherent proposal commits.
-        project_authority_batch_onto_layout(batch.clone(), &self.layers)
+        // Layout projection preserves normal authority generation order.
+        // Unmapped managed surfaces are the exception: their latest drawing
+        // transaction remains in the bounded admission quarantine until it is
+        // released once at generation zero and the accepted geometry.
+        let mut projected = project_authority_batch_onto_layout(batch.clone(), &self.layers);
+        projected
+            .transactions
+            .retain(|transaction| !self.surface_requires_admission(transaction.surface));
+        for (surface, mut transaction) in
+            std::mem::take(&mut self.released_admission_transactions)
+        {
+            if let Some(layer) = self.layers.get(&surface) {
+                transaction.target_geometry = layer.geometry;
+            }
+            if let Some(observed) = projected
+                .transactions
+                .iter_mut()
+                .find(|observed| observed.surface == surface)
+            {
+                *observed = transaction;
+            } else {
+                projected.transactions.push(transaction);
+            }
+        }
+        self.project_admission_present_submissions(&mut projected);
+        projected
     }
 
 }
@@ -689,6 +781,18 @@ fn live_transaction_pixel_size(
         sophia_protocol::BufferSource::None
         | sophia_protocol::BufferSource::XPixmap { .. } => None,
     }
+}
+
+fn live_transaction_observed_size(
+    transaction: &SurfaceTransaction,
+    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: &BTreeMap<u64, Size>,
+) -> Size {
+    live_transaction_pixel_size(transaction.target_buffer, dma_buf_sizes, cpu_buffer_sizes)
+        .unwrap_or(Size {
+            width: transaction.target_geometry.width,
+            height: transaction.target_geometry.height,
+        })
 }
 
 fn wm_update_coordinator_batch(

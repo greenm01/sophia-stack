@@ -167,7 +167,16 @@ Promotion now follows the gates below in order.
   policy-managed X window unmapped after `MapWindow`, let Engine and the blind
   WM plan from passive geometry/constraint facts, then atomically configure and
   map it through a transaction-keyed `AdmitSurface` control. Require matching
-  concrete pixels before the surface becomes committed visual state.
+  concrete pixels before the surface becomes committed visual state. Preserve
+  the X parent tree so `MapSubwindows` maps only direct client-positioned
+  descendants and cannot consume a later root-child admission; quarantine
+  pre-map drawing outside renderer intake, reduce descendant software drawing
+  into the toplevel presentation surface, and release it with any bounded
+  queued Present submissions exactly once at the accepted geometry.
+- [x] Report real X window lifecycle through `GetWindowAttributes`: created
+  and policy-pending windows are unmapped, admitted windows are viewable.
+  Retain a real-Kitty deferred-map probe that requires a presentation intent,
+  delivered admission, continued Present feedback, focus, and routed text.
 - [x] Replace the session-wide layout/Present barrier with per-submission
   dispositions. Stage only submissions owned by the pending epoch, reject known
   wrong-size buffers without contaminating visible layers, and keep unrelated
@@ -577,6 +586,11 @@ references rather than Sophia runtime components.
   workloads against separate XLibre+xmonad and mature Wayland-compositor
   sessions on the same hardware. Comparative results are diagnostic; Sophia's
   absolute correctness and latency gates remain authoritative.
+- [ ] Replace full immutable CPU presentation replacement for stable
+  software-rendered X toplevels with lease-safe damage generations or
+  copy-on-write backing. Preserve child-to-toplevel composition, bounded
+  storage, historical-handle immutability, and exact admission extents while
+  measuring xterm redraw latency and copied bytes.
 
 Milestone 13 exits with bounded warmed resource counts, no steady-state
 allocation growth, refresh-relative latency evidence, and no change to

@@ -25,6 +25,7 @@ fn dispatch_core_window_request(
     Handled(match request {
                 XWireRequest::CreateWindow {
                     packet,
+                    parent,
                     background_pixel,
                     override_redirect,
                     depth,
@@ -34,7 +35,24 @@ fn dispatch_core_window_request(
                 } => {
                     let kind = packet.kind.clone();
                     let namespace = packet.namespace;
-                    let mut response = runtime.apply(packet);
+                    let transaction = packet.transaction;
+                    let parent_access = if parent.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
+                        Ok(())
+                    } else {
+                        runtime.validate_window_access(namespace, parent)
+                    };
+                    let mut response = match parent_access {
+                        Ok(()) => runtime.apply(packet),
+                        Err(error) => XAuthorityResponsePacket::rejected(transaction, error),
+                    };
+                    if response.outcome == XAuthorityResponseOutcome::Accepted
+                        && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
+                    {
+                        if let Err(error) = runtime.set_window_parent(namespace, *window, parent) {
+                            let _ = runtime.destroy_window(namespace, *window);
+                            response = XAuthorityResponsePacket::rejected(transaction, error);
+                        }
+                    }
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
                     {
@@ -168,11 +186,14 @@ fn dispatch_core_window_request(
                         let override_redirect = runtime
                             .window_override_redirect(context.namespace, window)
                             .unwrap_or(false);
+                        let map_state = runtime
+                            .window_map_state(context.namespace, window)
+                            .map_or(0, x11_map_state);
                         XClientOutput::Reply(XClientReply::GetWindowAttributes {
                             sequence: context.sequence,
                             visual,
                             colormap,
-                            map_state: 2,
+                            map_state,
                             override_redirect,
                         })
                     };
@@ -207,15 +228,25 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ReparentWindow { window, parent, .. } => {
+                XWireRequest::ReparentWindow {
+                    window,
+                    parent,
+                    x,
+                    y,
+                } => {
                     let result = runtime
-                        .validate_window_access(context.namespace, window)
+                        .set_window_parent(context.namespace, window, parent)
                         .and_then(|()| {
-                            if parent.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-                                Ok(())
-                            } else {
-                                runtime.validate_window_access(context.namespace, parent)
-                            }
+                            runtime.configure_window_geometry(
+                                context.namespace,
+                                window,
+                                XWindowGeometryUpdate {
+                                    x: Some(x),
+                                    y: Some(y),
+                                    generation: u64::from(context.sequence),
+                                    ..XWindowGeometryUpdate::default()
+                                },
+                            )
                         });
                     let outputs = result
                         .err()
@@ -236,20 +267,19 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::MapSubwindows { window } => {
-                    let outputs = if let Err(error) =
-                        runtime.validate_drawable_access(context.namespace, window)
-                    {
-                        vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
-                    } else {
-                        match runtime.map_namespace_windows(context.namespace, u64::from(context.sequence))
-                        {
-                            Ok(surfaces) => surfaces
-                                .into_iter()
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    let outputs = match runtime.map_direct_subwindows(
+                        context.namespace,
+                        window,
+                        u64::from(context.sequence),
+                    ) {
+                        Ok(surfaces) => {
+                            response.surfaces = surfaces;
+                            response
+                                .surfaces
+                                .iter()
+                                .filter(|surface| surface.mapped)
                                 .flat_map(|surface| {
                                     let window = XResourceId {
                                         local: surface.local_id,
@@ -280,17 +310,20 @@ fn dispatch_core_window_request(
                                         }),
                                     ]
                                 })
-                                .collect(),
-                            Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                                .collect()
+                        }
+                        Err(error) => {
+                            response = XAuthorityResponsePacket::rejected(transaction, error);
+                            vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
                                 u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))],
+                            ))]
                         }
                     };
                     XDispatchResult {
-                        response: None,
+                        response: Some(response),
                         outputs,
                         metadata_candidates: Vec::new(),
                     }
@@ -444,28 +477,26 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::QueryTree { window } => {
-                    let output = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-                        XClientOutput::Reply(XClientReply::QueryTree {
-                            sequence: context.sequence,
-                            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-                            parent: XResourceId::NONE,
-                            children: Vec::new(),
-                        })
-                    } else if let Err(error) = runtime.validate_window_access(context.namespace, window) {
-                        XClientOutput::Error(x_error_from_runtime(
+                    let output =
+                        match runtime.window_parent_and_children(context.namespace, window) {
+                            Ok((parent, children)) => {
+                                XClientOutput::Reply(XClientReply::QueryTree {
+                                    sequence: context.sequence,
+                                    root: XResourceId::new(
+                                        u64::from(X_SETUP_DEFAULT_ROOT),
+                                        1,
+                                    ),
+                                    parent,
+                                    children,
+                                })
+                            }
+                            Err(error) => XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
                             u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
-                    } else {
-                        XClientOutput::Reply(XClientReply::QueryTree {
-                            sequence: context.sequence,
-                            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-                            parent: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-                            children: Vec::new(),
-                        })
-                    };
+                        )),
+                        };
                     XDispatchResult {
                         response: None,
                         outputs: vec![output],
@@ -474,4 +505,11 @@ fn dispatch_core_window_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     })
+}
+
+fn x11_map_state(state: crate::XMapState) -> u8 {
+    match state {
+        crate::XMapState::Unmapped | crate::XMapState::PolicyPending => 0,
+        crate::XMapState::Mapped => 2,
+    }
 }

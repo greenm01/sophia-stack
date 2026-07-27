@@ -107,10 +107,25 @@ fn create_window_request(
     width: u16,
     height: u16,
 ) -> Vec<u8> {
+    create_window_request_with_parent(
+        byte_order, window, 0x20, x, y, width, height,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_window_request_with_parent(
+    byte_order: XByteOrder,
+    window: u32,
+    parent: u32,
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+) -> Vec<u8> {
     let mut out = vec![1, 24];
     push_u16(&mut out, byte_order, 8);
     push_u32(&mut out, byte_order, window);
-    push_u32(&mut out, byte_order, 0x20);
+    push_u32(&mut out, byte_order, parent);
     push_i16(&mut out, byte_order, x);
     push_i16(&mut out, byte_order, y);
     push_u16(&mut out, byte_order, width);

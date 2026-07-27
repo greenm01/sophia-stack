@@ -287,12 +287,14 @@ impl XAuthorityRuntime {
             XAuthorityRequestKind::MapWindow { window, generation } => {
                 self.resources
                     .lookup(request.namespace, *window, XResourceKind::Window)?;
-                let override_redirect = self
+                let role = self
                     .windows
                     .get(*window)
                     .ok_or(XAuthorityRuntimeError::UnknownResource)?
-                    .override_redirect;
-                let event = if override_redirect || !self.defer_policy_maps {
+                    .presentation_role();
+                let event = if role == sophia_protocol::SurfacePresentationRole::ClientPositioned
+                    || !self.defer_policy_maps
+                {
                     XWindowLifecycleEvent::Mapped {
                         id: *window,
                         generation: *generation,

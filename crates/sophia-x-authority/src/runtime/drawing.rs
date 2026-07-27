@@ -513,8 +513,60 @@ impl XAuthorityRuntime {
          ))
      }
  
-     fn finish_drawing_update(&mut self, update: XDrawingUpdate) -> XAuthorityResponsePacket {
+     fn finish_drawing_update(&mut self, mut update: XDrawingUpdate) -> XAuthorityResponsePacket {
          let transaction_id = update.transaction;
+         let source_window = update.target_window;
+         if matches!(update.buffer, sophia_protocol::BufferSource::CpuBuffer { .. }) {
+             let (presentation_window, offset_x, offset_y) =
+                 match self.windows.presentation_root_and_offset(source_window) {
+                     Ok(presentation) => presentation,
+                     Err(error) => {
+                         return XAuthorityResponsePacket::rejected(transaction_id, error.into());
+                     }
+                 };
+             let Some(presentation_record) = self.windows.get(presentation_window) else {
+                 return XAuthorityResponsePacket::rejected(
+                     transaction_id,
+                     XAuthorityRuntimeError::UnknownResource,
+                 );
+             };
+             let presentation_size = Size {
+                 width: presentation_record.geometry.width,
+                 height: presentation_record.geometry.height,
+             };
+             update.previous_committed_generation = presentation_record.generation;
+             let Some(presentation_update) = self.software_buffers.present_window_damage(
+                 presentation_window,
+                 presentation_size,
+                 source_window,
+                 offset_x,
+                 offset_y,
+                 &update.damage.rects,
+             ) else {
+                 return XAuthorityResponsePacket::rejected(
+                     transaction_id,
+                     XAuthorityRuntimeError::InvalidResource,
+                 );
+             };
+             update.target_window = presentation_window;
+             update.buffer = sophia_protocol::BufferSource::CpuBuffer {
+                 handle: presentation_update.handle(),
+             };
+             update.damage = Region {
+                 rects: update
+                     .damage
+                     .rects
+                     .iter()
+                     .map(|rect| Rect {
+                         x: rect.x.saturating_add(offset_x),
+                         y: rect.y.saturating_add(offset_y),
+                         width: rect.width,
+                         height: rect.height,
+                     })
+                     .collect(),
+             };
+             self.last_cpu_buffer_update = Some(presentation_update);
+         }
          let window = update.target_window;
          let previous_generation = update.previous_committed_generation;
          let transaction = match surface_transaction_from_drawing_update(&self.windows, update) {

@@ -30,8 +30,10 @@ fn run_x_authority_kitty_input_smoke()
     let control_sender = broker.control_sender();
     let protocol_router = broker.protocol_router();
     let (service_sender, service_receiver) = sync_channel(1);
+    let defer_policy_map = std::env::var_os("SOPHIA_KITTY_SMOKE_DEFER_POLICY_MAP").is_some();
     let config = XServerFrontendConfig::new(&socket_path, NamespaceId::from_raw(63))?
-        .with_render_device_provider(provider);
+        .with_render_device_provider(provider)
+        .with_policy_map_deferred(defer_policy_map);
     let server = std::thread::spawn(move || {
         run_x_server_frontend_routed_until_stopped(
             config,
@@ -77,6 +79,7 @@ fn run_x_authority_kitty_input_smoke()
         let presentation_started = Instant::now();
         let mut pending_present_feedback = None;
         let mut present_fences = BTreeMap::new();
+        let mut admission_delivered = false;
         while std::time::Instant::now() < deadline
             && (client.is_none() || surface.is_none() || present_before_input < 2)
         {
@@ -92,6 +95,51 @@ fn run_x_authority_kitty_input_smoke()
             };
             if let Some(candidate) = batch.client {
                 client = Some(candidate);
+            }
+            if defer_policy_map {
+                for presentation in &batch.surface_presentations {
+                    eprintln!(
+                        "sophia_kitty_input_smoke schema=1 stage=surface_observed surface={} role={:?} mapped={}",
+                        presentation.surface.index(),
+                        presentation.role,
+                        presentation.mapped,
+                    );
+                }
+            }
+            for intent in &batch.presentation_intents {
+                if !defer_policy_map
+                    || admission_delivered
+                    || intent.kind
+                        != sophia_protocol::SurfacePresentationIntentKind::Request
+                {
+                    continue;
+                }
+                let admitted_client =
+                    client.ok_or("deferred Kitty map intent omitted its routed client")?;
+                let admission_transaction = TransactionId::from_raw(9_000_000);
+                control_sender.send(XAuthorityClientControlCommand {
+                    client: admitted_client,
+                    command: XAuthorityControlCommand::AdmitSurface {
+                        transaction: admission_transaction,
+                        surface: intent.surface,
+                        geometry: intent.geometry,
+                    },
+                })?;
+                let acknowledgement =
+                    control_ack_receiver.recv_timeout(Duration::from_secs(2))?;
+                if acknowledgement.client != admitted_client
+                    || acknowledgement.acknowledgement.transaction != admission_transaction
+                    || acknowledgement.acknowledgement.surface != intent.surface
+                    || acknowledgement.acknowledgement.outcome
+                        != XAuthorityControlOutcome::Delivered
+                {
+                    return Err("deferred Kitty map admission was not delivered".into());
+                }
+                admission_delivered = true;
+                eprintln!(
+                    "sophia_kitty_input_smoke schema=1 stage=map_admitted surface={}",
+                    intent.surface.index(),
+                );
             }
             for registration in batch.fence_registrations {
                 present_fences.insert(registration.handle, registration.fd);
@@ -122,6 +170,9 @@ fn run_x_authority_kitty_input_smoke()
         }
         let client = client.ok_or("Kitty input smoke observed no routed X11 client")?;
         let surface = surface.ok_or("Kitty input smoke observed no mapped surface")?;
+        if defer_policy_map && !admission_delivered {
+            return Err("Kitty input smoke observed no deferred map intent".into());
+        }
         let keymap = run_xkbcommon_x11_probe(&display)?;
         let keymap_text = String::from_utf8_lossy(&keymap.stdout);
         eprintln!(

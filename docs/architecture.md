@@ -220,6 +220,29 @@ An admission control acknowledgement proves only that protocol configure/map
 effects were delivered; visual admission still waits for a concrete buffer at
 the accepted content extent.
 
+For X11, the protocol authority derives this boundary from its window tree.
+Only a non-override-redirect direct child of the X root is policy-managed.
+Descendants and override-redirect windows are client-positioned.
+`MapSubwindows` applies only to the requested window's direct children; it must
+not admit the requested parent or unrelated namespace windows. Parent links,
+map state, and tree queries remain X authority facts and do not cross the blind
+WM boundary.
+
+Software drawing to an X descendant is translated and accumulated into its
+root child's immutable presentation buffer. Engine receives the toplevel
+Sophia surface and translated damage, not a separate WM node for every X child.
+The accumulated extent derives from concrete child buffers and never grows
+merely because policy configured a larger toplevel.
+
+Pixels observed before managed admission remain authority evidence, not visual
+truth. The session retains one latest transaction per pending surface in a
+bounded quarantine, excludes it from renderer intake, and releases it at the
+accepted geometry only when the admission state and concrete extent agree.
+Present submissions for the same surface remain in a fixed-capacity queue and
+cross the scheduler boundary with that transaction; overflow is terminal and
+fail-closed. These cold-path tables do not add buffers to the passive Engine
+admission record.
+
 Present scheduling is classified per submission. A buffer matching the pending
 layout epoch is staged with that epoch, a known wrong-size buffer is rejected,
 and submissions for unrelated surfaces remain immediately eligible. A layout

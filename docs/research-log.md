@@ -3,6 +3,49 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: X Hierarchy Defines the WM Admission Boundary
+
+The first physical pre-pixel-admission candidate still exited with
+`stage=not_focused`: native scanout and page flips remained healthy, but the WM
+never received a manage request. A retained real-xterm authority trace exposed
+the exact ordering. xterm issues `MapSubwindows` for descendants of its
+toplevel, then issues `MapWindow` for the toplevel itself. Sophia had discarded
+the requested parent at `CreateWindow` and implemented `MapSubwindows` as
+"map every window in this namespace." That prematurely moved the toplevel out
+of its deferred state, so the later real map request could not emit the
+presentation intent required by Engine and the blind WM.
+
+The authority window table now owns parent links as passive X protocol state.
+`QueryTree` projects that state, reparenting validates cycles, and
+`MapSubwindows` affects only direct children. A non-override-redirect root
+child is a policy-managed toplevel; descendants and override-redirect windows
+are client-positioned. Deferred map policy therefore applies only at the X
+root boundary. The retained wire regression reproduces xterm's real opcode
+sequence and proves that mapping a child does not admit its parent, while the
+following toplevel `MapWindow` emits exactly one managed presentation request.
+
+Core software drawing follows the same tree reduction. Descendant buffers stay
+X-authority resources, while their translated damage is accumulated into one
+immutable toplevel presentation buffer and one Sophia surface generation.
+The concrete presentation extent grows only with observed descendant coverage
+and is capped by the toplevel geometry; a configure alone therefore cannot
+manufacture a full-size buffer that would satisfy admission. This gives xterm's
+shell/content window split one visual identity without leaking X children into
+the WM.
+
+The audit also closed a visual-boundary gap. Drawing to an unmapped managed
+window is valid X11 traffic, but it is not permission to enter Sophia's
+committed scene. The live layout now keeps at most one latest pre-admission
+transaction per surface in a bounded data table. It records the safe extent
+for planning and recovery, excludes the transaction from renderer intake, and
+releases it exactly once—rebased to the first Engine visual generation and the
+accepted WM geometry—after frontend admission is acknowledged and matching
+pixels are ready. Withdrawal, removal, and terminal timeout erase the retained
+record. Early Present submissions follow the same boundary in a fixed
+256-record queue; overflow fails the session closed instead of leaking a GPU
+submission or growing memory without bound. No client identity or X resource
+enters Engine or WM policy.
+
 ## 2026-07-26: Managed X11 Mapping Requires Pre-Pixel Admission
 
 The repeated blank `vkcube` frame was an ordering defect, not evidence that the
@@ -4613,3 +4656,24 @@ acknowledgement ordering.
 - This is protocol-neutral Engine policy: it applies to every WM bridge and
   fixed/min/max constrained surface, with no Vulkan, vkcube, or xmonad identity
   in the decision.
+
+## 2026-07-27: truthful X map state is required before deferred admission
+
+- A guarded xmonad run started Kitty and xmobar, but no managed surface became
+  focused. Super-Enter queued another launch immediately before the startup
+  watchdog exited at `stage=not_focused`.
+- The isolated real-Kitty authority probe reproduced the failure without DRM,
+  a WM, or a display manager. Sophia observed Kitty's created
+  `PolicyManaged` windows and Present buffers, but no map intent.
+- `GetWindowAttributes` had always reported every known window as viewable.
+  Kitty trusted that reply and omitted `MapWindow`, so the new deferred
+  admission protocol had no lifecycle edge from which to emit its request.
+- X authority now derives the reply from its stored `XMapState`: created and
+  policy-pending windows report unmapped, and only admitted/mapped windows
+  report viewable. The real-Kitty probe has a deferred mode that requires one
+  map intent, one delivered `AdmitSurface`, continuing Present feedback,
+  delivered focus, and consumed routed text.
+- The corrected probe passed end to end, and the full offline all-feature
+  suite passed. Physical xmonad/vkcube verification remains open.
+- The contemporaneous elogind diagnostic was unrelated. Session 193 was the
+  valid online greetd `_greeter` session on tty7, not a stale Sophia session.

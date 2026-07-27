@@ -84,11 +84,121 @@ impl XAuthorityCpuBufferUpdate {
 pub(crate) struct XSoftwareBufferStore {
     next_handle: u64,
     buffers: BTreeMap<XResourceId, XAuthorityCpuBufferSnapshot>,
+    presentations: BTreeMap<XResourceId, XAuthorityCpuBufferSnapshot>,
 }
 
 impl XSoftwareBufferStore {
     pub fn remove(&mut self, drawable: XResourceId) -> Option<XAuthorityCpuBufferSnapshot> {
+        self.presentations.remove(&drawable);
         self.buffers.remove(&drawable)
+    }
+
+    pub fn present_window_damage(
+        &mut self,
+        presentation: XResourceId,
+        presentation_size: Size,
+        source: XResourceId,
+        source_offset_x: i32,
+        source_offset_y: i32,
+        damage: &[Rect],
+    ) -> Option<XAuthorityCpuBufferUpdate> {
+        let source = self.buffers.get(&source)?.clone();
+        if presentation_size.width <= 0 || presentation_size.height <= 0 {
+            return None;
+        }
+        let source_extent = Size {
+            width: source_offset_x
+                .saturating_add(source.size.width)
+                .clamp(1, presentation_size.width),
+            height: source_offset_y
+                .saturating_add(source.size.height)
+                .clamp(1, presentation_size.height),
+        };
+        let desired_size = if source.drawable == presentation {
+            presentation_size
+        } else {
+            self.presentations
+                .get(&presentation)
+                .map(|buffer| Size {
+                    width: buffer
+                        .size
+                        .width
+                        .max(source_extent.width)
+                        .min(presentation_size.width),
+                    height: buffer
+                        .size
+                        .height
+                        .max(source_extent.height)
+                        .min(presentation_size.height),
+                })
+                .unwrap_or(source_extent)
+        };
+        let replace = self
+            .presentations
+            .get(&presentation)
+            .is_none_or(|buffer| buffer.size != desired_size);
+        if replace {
+            let previous = self.presentations.get(&presentation).cloned();
+            let width = usize::try_from(desired_size.width).ok()?;
+            let height = usize::try_from(desired_size.height).ok()?;
+            let stride = width.checked_mul(4)?;
+            let byte_len = stride.checked_mul(height)?;
+            if width == 0 || height == 0 || byte_len > X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
+                return None;
+            }
+            let handle = self.allocate_handle();
+            let generation = self
+                .presentations
+                .get(&presentation)
+                .map_or(0, |buffer| buffer.generation);
+            self.presentations.insert(
+                presentation,
+                XAuthorityCpuBufferSnapshot {
+                    handle,
+                    drawable: presentation,
+                    size: desired_size,
+                    stride: u32::try_from(stride).ok()?,
+                    format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
+                    generation,
+                    bytes: vec![0; byte_len],
+                },
+            );
+            if let Some(previous) = previous
+                && let Some(buffer) = self.presentations.get_mut(&presentation)
+            {
+                copy_buffer_region(
+                    &previous,
+                    buffer,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: previous.size.width,
+                        height: previous.size.height,
+                    },
+                    0,
+                    0,
+                );
+            }
+        }
+        let presentation_buffer = self.presentations.get_mut(&presentation)?;
+        for rect in damage {
+            copy_buffer_region(
+                &source,
+                presentation_buffer,
+                *rect,
+                source_offset_x,
+                source_offset_y,
+            );
+        }
+        presentation_buffer.generation = presentation_buffer.generation.checked_add(1)?;
+        if !replace {
+            let handle = self.next_handle.max(1);
+            self.next_handle = handle.saturating_add(1).max(1);
+            presentation_buffer.handle = handle;
+        }
+        Some(XAuthorityCpuBufferUpdate::Replace(
+            presentation_buffer.clone(),
+        ))
     }
 
     pub fn paint_damage(
@@ -341,6 +451,73 @@ impl XSoftwareBufferStore {
         let handle = self.next_handle.max(1);
         self.next_handle = handle.saturating_add(1).max(1);
         handle
+    }
+}
+
+fn copy_buffer_region(
+    source: &XAuthorityCpuBufferSnapshot,
+    destination: &mut XAuthorityCpuBufferSnapshot,
+    source_rect: Rect,
+    destination_x: i32,
+    destination_y: i32,
+) {
+    let Some((mut left, mut top, right, bottom)) = clipped_bounds(source.size, source_rect) else {
+        return;
+    };
+    let mut target_x = destination_x.saturating_add(i32::try_from(left).unwrap_or(i32::MAX));
+    let mut target_y = destination_y.saturating_add(i32::try_from(top).unwrap_or(i32::MAX));
+    if target_x < 0 {
+        left =
+            left.saturating_add(usize::try_from(target_x.saturating_neg()).unwrap_or(usize::MAX));
+        target_x = 0;
+    }
+    if target_y < 0 {
+        top = top.saturating_add(usize::try_from(target_y.saturating_neg()).unwrap_or(usize::MAX));
+        target_y = 0;
+    }
+    let Ok(target_x) = usize::try_from(target_x) else {
+        return;
+    };
+    let Ok(target_y) = usize::try_from(target_y) else {
+        return;
+    };
+    let Ok(destination_width) = usize::try_from(destination.size.width) else {
+        return;
+    };
+    let Ok(destination_height) = usize::try_from(destination.size.height) else {
+        return;
+    };
+    let width = right
+        .saturating_sub(left)
+        .min(destination_width.saturating_sub(target_x));
+    let height = bottom
+        .saturating_sub(top)
+        .min(destination_height.saturating_sub(target_y));
+    let byte_width = width.saturating_mul(4);
+    let source_stride = usize::try_from(source.stride).unwrap_or(0);
+    let destination_stride = usize::try_from(destination.stride).unwrap_or(0);
+    for row in 0..height {
+        let source_offset = top
+            .saturating_add(row)
+            .saturating_mul(source_stride)
+            .saturating_add(left.saturating_mul(4));
+        let destination_offset = target_y
+            .saturating_add(row)
+            .saturating_mul(destination_stride)
+            .saturating_add(target_x.saturating_mul(4));
+        let Some(source_row) = source
+            .bytes
+            .get(source_offset..source_offset.saturating_add(byte_width))
+        else {
+            return;
+        };
+        let Some(destination_row) = destination
+            .bytes
+            .get_mut(destination_offset..destination_offset.saturating_add(byte_width))
+        else {
+            return;
+        };
+        destination_row.copy_from_slice(source_row);
     }
 }
 

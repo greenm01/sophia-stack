@@ -431,6 +431,27 @@ The phases are:
   visual state still waits for a matching concrete buffer;
 - `Managed`: matching geometry and pixels committed atomically.
 
+The X authority classifies only non-override-redirect root children as
+policy-managed toplevels. Parent links and direct-child queries stay in its
+protocol table. Mapping descendants is client-positioned lifecycle work and
+cannot transition the parent or an unrelated root child.
+
+The authority reduces software child-window drawing into a toplevel
+presentation buffer keyed by the root child's X record. Child geometry
+translates damage; the resulting Sophia transaction carries only the
+toplevel's opaque surface ID. Its concrete extent grows from observed backing
+storage and is capped by the toplevel, so configured geometry is never confused
+with ready pixels.
+
+Pre-admission drawing is reduced into a bounded side table keyed by
+`SurfaceId`, with at most one latest transaction per surface. It may update the
+safe observed extent, but it cannot enter the committed layer table or renderer
+intake. The matching admission commit moves that transaction across the visual
+boundary once, at the accepted geometry and rebased Engine generation.
+Associated Present submissions use a 256-entry FIFO and are released with the
+transaction. Capacity exhaustion is an explicit terminal error, never an
+unbounded allocation or an immediate GPU submission.
+
 Withdraw and removal transitions erase the passive facts idempotently. A
 terminal timeout withdraws the still-pending protocol window rather than
 mapping a blank surface. Planning may derive a bufferless temporary layout node

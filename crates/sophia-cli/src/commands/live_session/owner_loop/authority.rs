@@ -127,6 +127,9 @@
                     }
                 }
                 let layout_observation = layout.observe_authority_batch(&batch);
+                if layout_observation.admission_present_overflowed {
+                    return Err("pre-admission Present queue capacity exceeded".into());
+                }
                 if layout_observation.output_reservations_changed
                     && let Some(wm_session) = wm_session.as_mut()
                 {

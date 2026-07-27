@@ -10,6 +10,7 @@ use crate::{XAuthorityAccessError, XMapState, XResourceId};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XWindowRecord {
     pub id: XResourceId,
+    pub parent: XResourceId,
     pub surface: SurfaceId,
     pub namespace: NamespaceId,
     pub override_redirect: bool,
@@ -20,17 +21,22 @@ pub struct XWindowRecord {
 }
 
 impl XWindowRecord {
+    pub fn presentation_role(&self) -> SurfacePresentationRole {
+        let is_root_child = self.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT);
+        if self.override_redirect || !is_root_child {
+            SurfacePresentationRole::ClientPositioned
+        } else {
+            SurfacePresentationRole::PolicyManaged
+        }
+    }
+
     pub fn authority_surface(&self) -> AuthoritySurface {
         AuthoritySurface {
             authority: AuthorityKind::SophiaX,
             local_id: self.id.local,
             surface: self.surface,
             namespace: Some(self.namespace),
-            presentation: if self.override_redirect {
-                SurfacePresentationRole::ClientPositioned
-            } else {
-                SurfacePresentationRole::PolicyManaged
-            },
+            presentation: self.presentation_role(),
             mapped: self.map_state == XMapState::Mapped,
             geometry: self.geometry,
             constraints: self.constraints,
@@ -109,6 +115,7 @@ impl XWindowTable {
 
                 let record = XWindowRecord {
                     id,
+                    parent: XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
                     surface,
                     namespace,
                     override_redirect: false,
@@ -186,6 +193,12 @@ impl XWindowTable {
             }
             XWindowLifecycleEvent::Destroyed { id } => {
                 self.windows.remove(&id);
+                let root = XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
+                for record in self.windows.values_mut() {
+                    if record.parent == id {
+                        record.parent = root;
+                    }
+                }
                 Ok(None)
             }
         }
@@ -219,6 +232,57 @@ impl XWindowTable {
             .ok_or(XAuthorityAccessError::UnknownResource)?;
         record.constraints = constraints;
         Ok(record.authority_surface())
+    }
+
+    pub fn set_parent(
+        &mut self,
+        id: XResourceId,
+        parent: XResourceId,
+    ) -> Result<(), XAuthorityAccessError> {
+        if id == parent {
+            return Err(XAuthorityAccessError::InvalidResource);
+        }
+        let mut ancestor = parent;
+        while let Some(record) = self.windows.get(&ancestor) {
+            if record.parent == id {
+                return Err(XAuthorityAccessError::InvalidResource);
+            }
+            ancestor = record.parent;
+        }
+        self.windows
+            .get_mut(&id)
+            .ok_or(XAuthorityAccessError::UnknownResource)?
+            .parent = parent;
+        Ok(())
+    }
+
+    pub fn direct_children(&self, namespace: NamespaceId, parent: XResourceId) -> Vec<XResourceId> {
+        self.windows
+            .values()
+            .filter(|record| record.namespace == namespace && record.parent == parent)
+            .map(|record| record.id)
+            .collect()
+    }
+
+    pub fn presentation_root_and_offset(
+        &self,
+        id: XResourceId,
+    ) -> Result<(XResourceId, i32, i32), XAuthorityAccessError> {
+        let mut current = id;
+        let mut x = 0i32;
+        let mut y = 0i32;
+        loop {
+            let record = self
+                .windows
+                .get(&current)
+                .ok_or(XAuthorityAccessError::UnknownResource)?;
+            if record.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+                return Ok((current, x, y));
+            }
+            x = x.saturating_add(record.geometry.x);
+            y = y.saturating_add(record.geometry.y);
+            current = record.parent;
+        }
     }
 
     pub fn advance_generation(

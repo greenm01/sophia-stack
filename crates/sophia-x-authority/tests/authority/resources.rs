@@ -539,6 +539,108 @@ fn cpu_buffer_submissions_are_immutable_and_keep_generation_order() {
 }
 
 #[test]
+fn descendant_software_drawing_reduces_to_its_toplevel_surface() {
+    let namespace = NamespaceId::from_raw(20);
+    let toplevel = XResourceId::new(0x70, 1);
+    let child = XResourceId::new(0x71, 1);
+    let toplevel_surface = SurfaceId::new(20, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    for (transaction, window, surface, geometry) in [
+        (
+            30,
+            toplevel,
+            toplevel_surface,
+            Rect {
+                x: 40,
+                y: 50,
+                width: 100,
+                height: 80,
+            },
+        ),
+        (
+            31,
+            child,
+            SurfaceId::new(21, 1),
+            Rect {
+                x: 5,
+                y: 7,
+                width: 90,
+                height: 60,
+            },
+        ),
+    ] {
+        runtime.apply(XAuthorityRequestPacket {
+            transaction: TransactionId::from_raw(transaction),
+            namespace,
+            kind: XAuthorityRequestKind::CreateWindow {
+                window,
+                surface,
+                geometry,
+                constraints: SurfaceConstraints {
+                    min_size: None,
+                    max_size: None,
+                },
+                generation: 1,
+            },
+        });
+    }
+    runtime
+        .set_window_parent(namespace, child, toplevel)
+        .unwrap();
+
+    let response = runtime.apply_core_draw(
+        TransactionId::from_raw(32),
+        namespace,
+        child,
+        Region::single(Rect {
+            x: 1,
+            y: 2,
+            width: 3,
+            height: 4,
+        }),
+    );
+    let update = runtime.take_cpu_buffer_update().unwrap();
+
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(response.transactions[0].surface, toplevel_surface);
+    assert_eq!(
+        response.transactions[0].target_geometry,
+        Rect {
+            x: 40,
+            y: 50,
+            width: 100,
+            height: 80,
+        }
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 6,
+            y: 9,
+            width: 3,
+            height: 4,
+        })
+    );
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) = update else {
+        panic!("presentation composition must preserve immutable replacements");
+    };
+    assert_eq!(snapshot.drawable, toplevel);
+    assert_eq!(
+        snapshot.size,
+        Size {
+            width: 95,
+            height: 67,
+        }
+    );
+    assert_eq!(
+        response.transactions[0].target_buffer,
+        BufferSource::CpuBuffer {
+            handle: snapshot.handle
+        }
+    );
+}
+
+#[test]
 fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
     let namespace = NamespaceId::from_raw(20);
     let window = XResourceId::new(0x64, 1);

@@ -20,6 +20,7 @@ include!("x11_wire/resources_frontend.rs");
 include!("x11_wire/admission_frontend.rs");
 include!("x11_wire/clipboard_frontend.rs");
 include!("x11_wire/socket_observation.rs");
+include!("x11_wire/map_hierarchy.rs");
 include!("x11_wire/output_reservation_socket.rs");
 include!("x11_wire/routed_service.rs");
 include!("x11_wire/support_requests.rs");

@@ -275,8 +275,9 @@ impl XAuthorityObservedTransactionBatch {
             .iter()
             .filter_map(|surface| {
                 let kind = match trace.major_opcode {
-                    8 if surface.role == SurfacePresentationRole::PolicyManaged
-                        && !surface.mapped =>
+                    8 | 9
+                        if surface.role == SurfacePresentationRole::PolicyManaged
+                            && !surface.mapped =>
                     {
                         SurfacePresentationIntentKind::Request
                     }

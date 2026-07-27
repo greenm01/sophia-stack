@@ -86,6 +86,106 @@ fn override_redirect_window_is_reported_as_client_positioned() {
         attributes.outputs.as_slice(),
         [XClientOutput::Reply(XClientReply::GetWindowAttributes {
             override_redirect: true,
+            map_state: 0,
+            ..
+        })]
+    ));
+}
+
+#[test]
+fn x11_dispatch_reports_window_lifecycle_map_state() {
+    let namespace = NamespaceId::from_raw(45);
+    let window = XResourceId::new(0x220902, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(1),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface: SurfaceId::new(0x220902, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 480,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    };
+    assert_eq!(
+        runtime.apply(create).outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+
+    let attributes = |runtime: &mut XAuthorityRuntime,
+                      atoms: &mut XAtomTable,
+                      properties: &mut XPropertyTable| {
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, 2, XByteOrder::LittleEndian, 3),
+            XWireRequest::GetWindowAttributes { window },
+            runtime,
+            atoms,
+            properties,
+        )
+    };
+    assert!(matches!(
+        attributes(&mut runtime, &mut atoms, &mut properties)
+            .outputs
+            .as_slice(),
+        [XClientOutput::Reply(XClientReply::GetWindowAttributes {
+            map_state: 0,
+            ..
+        })]
+    ));
+
+    runtime.set_policy_map_deferred(true);
+    assert_eq!(
+        runtime
+            .apply(XAuthorityRequestPacket {
+                transaction: TransactionId::from_raw(2),
+                namespace,
+                kind: XAuthorityRequestKind::MapWindow {
+                    window,
+                    generation: 2,
+                },
+            })
+            .outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+    assert!(matches!(
+        attributes(&mut runtime, &mut atoms, &mut properties)
+            .outputs
+            .as_slice(),
+        [XClientOutput::Reply(XClientReply::GetWindowAttributes {
+            map_state: 0,
+            ..
+        })]
+    ));
+
+    runtime
+        .admit_window_from_engine(
+            namespace,
+            window,
+            Rect {
+                x: 10,
+                y: 20,
+                width: 640,
+                height: 480,
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        attributes(&mut runtime, &mut atoms, &mut properties)
+            .outputs
+            .as_slice(),
+        [XClientOutput::Reply(XClientReply::GetWindowAttributes {
+            map_state: 2,
             ..
         })]
     ));

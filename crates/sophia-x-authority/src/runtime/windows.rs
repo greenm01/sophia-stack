@@ -121,6 +121,42 @@ impl XAuthorityRuntime {
              .set_constraints(window, constraints)
              .map_err(Into::into)
      }
+
+     pub fn set_window_parent(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         parent: crate::XResourceId,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         if parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             self.resources
+                 .lookup(namespace, parent, XResourceKind::Window)?;
+         }
+         self.windows.set_parent(window, parent).map_err(Into::into)
+     }
+
+     pub fn window_parent_and_children(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<(crate::XResourceId, Vec<crate::XResourceId>), XAuthorityRuntimeError> {
+         if window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             return Ok((
+                 crate::XResourceId::NONE,
+                 self.windows.direct_children(namespace, window),
+             ));
+         }
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         let parent = self
+             .windows
+             .get(window)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?
+             .parent;
+         Ok((parent, self.windows.direct_children(namespace, window)))
+     }
  
      pub fn set_window_visual(
          &mut self,
@@ -139,6 +175,19 @@ impl XAuthorityRuntime {
              crate::X_SETUP_DEFAULT_VISUAL,
              crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_COLORMAP), 1),
          ))
+     }
+
+     pub fn window_map_state(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<crate::XMapState, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         self.windows
+             .get(window)
+             .map(|record| record.map_state)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
  
      pub fn create_glx_context(
@@ -480,17 +529,38 @@ impl XAuthorityRuntime {
          Ok(was_active)
      }
  
-     pub fn map_namespace_windows(
+     pub fn map_direct_subwindows(
          &mut self,
          namespace: NamespaceId,
+         parent: crate::XResourceId,
          generation: u64,
      ) -> Result<Vec<AuthoritySurface>, XAuthorityRuntimeError> {
+         if parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             self.resources
+                 .lookup(namespace, parent, XResourceKind::Window)?;
+         }
          let mut surfaces = Vec::new();
-         for window in self.windows.ids_for_namespace(namespace) {
-             if let Some(surface) = self.windows.apply(XWindowLifecycleEvent::Mapped {
-                 id: window,
-                 generation,
-             })? {
+         for window in self.windows.direct_children(namespace, parent) {
+             let role = self
+                 .windows
+                 .get(window)
+                 .ok_or(XAuthorityRuntimeError::UnknownResource)?
+                 .presentation_role();
+             let event = if role
+                 == sophia_protocol::SurfacePresentationRole::ClientPositioned
+                 || !self.defer_policy_maps
+             {
+                 XWindowLifecycleEvent::Mapped {
+                     id: window,
+                     generation,
+                 }
+             } else {
+                 XWindowLifecycleEvent::PolicyPending {
+                     id: window,
+                     generation,
+                 }
+             };
+             if let Some(surface) = self.windows.apply(event)? {
                  surfaces.push(surface);
              }
          }

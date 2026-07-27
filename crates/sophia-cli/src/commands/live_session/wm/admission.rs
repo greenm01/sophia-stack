@@ -1,4 +1,59 @@
 impl PersistentLiveLayout {
+    fn observe_pre_admission_present_submissions(
+        &mut self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> bool {
+        let mut overflowed = false;
+        for submission in &batch.present_submissions {
+            if !self.surface_requires_admission(submission.surface) {
+                continue;
+            }
+            if self.pre_admission_present_submissions.len() >= PRE_ADMISSION_PRESENT_CAPACITY {
+                overflowed = true;
+            } else {
+                self.pre_admission_present_submissions
+                    .push_back(*submission);
+            }
+        }
+        overflowed
+    }
+
+    fn release_admission_present_submissions(&mut self, surfaces: &BTreeSet<SurfaceId>) {
+        let mut retained = VecDeque::with_capacity(self.pre_admission_present_submissions.len());
+        while let Some(submission) = self.pre_admission_present_submissions.pop_front() {
+            if surfaces.contains(&submission.surface) {
+                self.released_admission_present_submissions
+                    .push_back(submission);
+            } else {
+                retained.push_back(submission);
+            }
+        }
+        self.pre_admission_present_submissions = retained;
+    }
+
+    fn project_admission_present_submissions(
+        &mut self,
+        projected: &mut XAuthorityObservedTransactionBatch,
+    ) {
+        projected.present_submissions.retain(|submission| {
+            !self
+                .pre_admission_present_submissions
+                .iter()
+                .chain(self.released_admission_present_submissions.iter())
+                .any(|retained| retained.transaction == submission.transaction)
+        });
+        projected
+            .present_submissions
+            .extend(self.released_admission_present_submissions.drain(..));
+    }
+
+    fn remove_admission_present_submissions(&mut self, surface: SurfaceId) {
+        self.pre_admission_present_submissions
+            .retain(|submission| submission.surface != surface);
+        self.released_admission_present_submissions
+            .retain(|submission| submission.surface != surface);
+    }
+
     fn observe_presentation_intents(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
@@ -25,6 +80,9 @@ impl PersistentLiveLayout {
                 sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
                     self.planning_surfaces.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
+                    self.pre_admission_transactions.remove(&intent.surface);
+                    self.released_admission_transactions.remove(&intent.surface);
+                    self.remove_admission_present_submissions(intent.surface);
                 }
             }
         }
