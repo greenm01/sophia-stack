@@ -373,7 +373,7 @@ impl LiveWmSession {
         let request = WmRequestPacket {
             transaction: self.mint_transaction()?,
             kind: WmRequestKind::ManageSurface(WmManageSurface {
-                node: live_layout_node(node, workspace),
+                node: live_layout_node(node, workspace, &layout.layout_epochs),
                 output: output.id,
                 workspace,
                 bounds,
@@ -415,7 +415,7 @@ impl LiveWmSession {
                     .values()
                     .filter_map(|layer| {
                         (self.workspace_state.surface_workspace(layer.surface) == Some(workspace))
-                            .then(|| live_layout_node(layer, workspace))
+                            .then(|| live_layout_node(layer, workspace, &layout.layout_epochs))
                     })
                     .collect(),
             }),
@@ -468,7 +468,8 @@ impl LiveWmSession {
             .values()
             .filter_map(|layer| {
                 let workspace = self.workspace_state.surface_workspace(layer.surface)?;
-                (workspace == output_state.workspace).then(|| live_layout_node(layer, workspace))
+                (workspace == output_state.workspace)
+                    .then(|| live_layout_node(layer, workspace, &layout.layout_epochs))
             })
             .collect();
         let request = WmRequestPacket {

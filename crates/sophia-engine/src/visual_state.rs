@@ -110,7 +110,7 @@ pub enum SurfaceTransactionCommitReadiness {
 pub enum SurfaceTimeoutPolicy {
     #[default]
     PreserveCommitted,
-    DegradeToPending,
+    ReplanAtCommittedExtent,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,9 +119,10 @@ pub enum SlowClientVisualDecision {
         surface: SurfaceId,
         committed: Option<CommittedSurfaceState>,
     },
-    DegradeToPending {
+    ReplanAtCommittedExtent {
         surface: SurfaceId,
-        degraded: CommittedSurfaceState,
+        committed: Option<CommittedSurfaceState>,
+        extent: Option<Size>,
     },
     NotTimedOut {
         surface: SurfaceId,
@@ -228,18 +229,18 @@ impl SurfaceVisualStateTable {
                     committed: self.committed(transaction.surface).cloned(),
                 }
             }
-            SurfaceTimeoutPolicy::DegradeToPending => SlowClientVisualDecision::DegradeToPending {
-                surface: transaction.surface,
-                degraded: CommittedSurfaceState {
+            SurfaceTimeoutPolicy::ReplanAtCommittedExtent => {
+                let committed = self.committed(transaction.surface).cloned();
+                let extent = committed.as_ref().map(|state| Size {
+                    width: state.geometry.width,
+                    height: state.geometry.height,
+                });
+                SlowClientVisualDecision::ReplanAtCommittedExtent {
                     surface: transaction.surface,
-                    committed_generation: transaction
-                        .previous_committed_generation
-                        .saturating_add(1),
-                    geometry: transaction.target_geometry,
-                    buffer: transaction.target_buffer,
-                    damage: transaction.damage.clone(),
-                },
-            },
+                    committed,
+                    extent,
+                }
+            }
         }
     }
 

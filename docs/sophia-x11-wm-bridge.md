@@ -193,7 +193,10 @@ The xmonad-only proof command is `xmonad-smoke`. The script uses
 real xmonad `ConfigureWindow` requests and translates them into two bounded
 Sophia `RenderSurface` commands in the matching transaction. On the reference
 checkout, the baseline result is two 640 by 720 tiles within a 1280 by 720
-synthetic root. Set `SOPHIA_X11_WM_TRACE=1` to print core request opcodes during
+synthetic root. The same smoke then changes one existing opaque node to an
+exact 500 by 500 constraint, requires a new private synthetic window, and
+proves unmodified xmonad returns that floating placement through standard size
+hints. Set `SOPHIA_X11_WM_TRACE=1` to print core request opcodes during
 compatibility work; the trace contains no client metadata because none is
 served.
 
@@ -213,7 +216,9 @@ For `ManageSurface`:
 3. Create or update a fake top-level window record with the node's geometry,
    capabilities, state, workspace, generation, and synthetic XID.
 4. Emit a fake `MapRequest` or equivalent lifecycle event to the legacy WM.
-5. Answer metadata/property queries with generic placeholders.
+5. Answer metadata queries with generic placeholders. Translate only opaque
+   capability facts needed by the WM, including standard ICCCM size hints
+   derived from `SurfaceConstraints`.
 
 For `RelayoutWorkspace`:
 
@@ -223,6 +228,12 @@ For `RelayoutWorkspace`:
    recompute layout.
 4. Wait for resulting legacy WM requests and translate them back to Sophia
    commands.
+
+If a node's manage-time constraint profile changes, the bridge destroys and
+recreates only its private synthetic window before the next `MapRequest`.
+This makes an unmodified legacy WM reevaluate standard `WM_NORMAL_HINTS`.
+The profile contains only minimum/maximum size facts and never client XIDs,
+namespaces, titles, classes, PIDs, or application identity.
 
 The request bounds are already Engine-reduced managed work areas. The bridge
 does not parse client struts, identify bars or docks, or subtract geometry

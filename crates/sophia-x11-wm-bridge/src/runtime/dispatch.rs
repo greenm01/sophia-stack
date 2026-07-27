@@ -86,12 +86,13 @@ fn apply_server_command(
             state.root = bounds;
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, bounds)?;
         }
-        ServerCommand::Map(window, geometry) => {
+        ServerCommand::Map(window, geometry, manage_profile) => {
             state.windows.insert(
                 window.raw(),
                 WindowState {
                     geometry,
                     mapped: false,
+                    manage_profile,
                 },
             );
             let mut event = vec![20, 0];
@@ -200,8 +201,8 @@ fn dispatch_request(
         16 => reply_intern_atom(stream, state, detail != 0, body)?,
         17 => reply_atom_name(stream, state, read_u32(body, 0))?,
         18 | 19 => {}
-        20 => reply_empty_property(stream, state.sequence)?,
-        21 => reply_list_properties(stream, state.sequence)?,
+        20 => reply_window_property(stream, state, body)?,
+        21 => reply_list_properties(stream, state, read_u32(body, 0))?,
         22 => {}
         23 => reply_u32(stream, state.sequence, 0, 0)?,
         25 | 28 | 29 | 30 | 32 | 35 | 36 | 37 | 39 | 41 => {}

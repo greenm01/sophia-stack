@@ -489,7 +489,7 @@ fn slow_client_timeout_preserves_committed_state_by_default() {
 }
 
 #[test]
-fn slow_client_timeout_degrades_only_when_policy_explicitly_allows_it() {
+fn slow_client_timeout_replans_without_admitting_pending_pixels() {
     let engine = HeadlessEngine::default();
     let old_layer = test_layer(0, 0, 0, Region::empty());
     let committed = engine.committed_state_from_layer(&old_layer);
@@ -504,24 +504,29 @@ fn slow_client_timeout_degrades_only_when_policy_explicitly_allows_it() {
     timed_out.target_geometry.width = 701;
     timed_out.target_buffer = BufferSource::DmaBuf { handle: 701 };
 
-    let SlowClientVisualDecision::DegradeToPending { surface, degraded } =
-        table.slow_client_timeout_decision(&timed_out, SurfaceTimeoutPolicy::DegradeToPending)
+    let SlowClientVisualDecision::ReplanAtCommittedExtent {
+        surface,
+        committed: preserved,
+        extent,
+    } = table
+        .slow_client_timeout_decision(&timed_out, SurfaceTimeoutPolicy::ReplanAtCommittedExtent)
     else {
-        panic!("expected explicit degrade decision");
+        panic!("expected explicit replan decision");
     };
 
     assert_eq!(surface, old_layer.surface);
-    assert_eq!(degraded.surface, old_layer.surface);
+    assert_eq!(preserved, Some(committed.clone()));
     assert_eq!(
-        degraded.committed_generation,
-        committed.committed_generation + 1
+        extent,
+        Some(Size {
+            width: committed.geometry.width,
+            height: committed.geometry.height,
+        })
     );
-    assert_eq!(degraded.geometry.width, 701);
-    assert_eq!(degraded.buffer, BufferSource::DmaBuf { handle: 701 });
     assert_eq!(
         table.committed(old_layer.surface),
         Some(&committed),
-        "degrade decision is an artifact until caller commits it explicitly"
+        "replan decision must not admit pending pixels"
     );
 }
 
@@ -540,7 +545,7 @@ fn slow_client_timeout_decision_ignores_non_timeout_transactions() {
     );
 
     assert_eq!(
-        table.slow_client_timeout_decision(&ready, SurfaceTimeoutPolicy::DegradeToPending),
+        table.slow_client_timeout_decision(&ready, SurfaceTimeoutPolicy::ReplanAtCommittedExtent,),
         SlowClientVisualDecision::NotTimedOut {
             surface: old_layer.surface,
             readiness: SurfaceTransactionCommitReadiness::Ready

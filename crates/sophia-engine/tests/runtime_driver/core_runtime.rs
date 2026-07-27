@@ -145,20 +145,13 @@ fn slow_client_visual_decisions_map_to_count_only_runtime_observation() {
             surface: surface_a,
             committed: None,
         },
-        SlowClientVisualDecision::DegradeToPending {
+        SlowClientVisualDecision::ReplanAtCommittedExtent {
             surface: surface_b,
-            degraded: CommittedSurfaceState {
-                surface: surface_b,
-                committed_generation: 3,
-                geometry: Rect {
-                    x: 0,
-                    y: 0,
-                    width: 100,
-                    height: 100,
-                },
-                buffer: BufferSource::CpuBuffer { handle: 99 },
-                damage: Region::empty(),
-            },
+            committed: None,
+            extent: Some(Size {
+                width: 100,
+                height: 100,
+            }),
         },
         SlowClientVisualDecision::NotTimedOut {
             surface: SurfaceId::new(3, 1),
@@ -434,4 +427,3 @@ fn live_runtime_driver_adapter_builds_from_nonblocking_intake_values() {
         }
     );
 }
-

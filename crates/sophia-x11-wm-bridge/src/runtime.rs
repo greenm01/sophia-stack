@@ -24,9 +24,10 @@ use sophia_protocol::{
 use sophia_x_authority::{XByteOrder, serve_x11_setup_socket_client_with_root_size};
 
 use crate::{
-    BridgeEngineUpdate, LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID, SyntheticXEvent,
-    SyntheticXWindowId, X11WmBridgeError, X11WmBridgeState, XMONAD_ACTION_FOCUS_NEXT,
-    XMONAD_ACTION_FOCUS_PREVIOUS, XMONAD_ACTION_NEXT_LAYOUT, translate_xmonad_profile_action,
+    BridgeEngineUpdate, LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID,
+    SyntheticManageProfile, SyntheticXEvent, SyntheticXWindowId, X11WmBridgeError,
+    X11WmBridgeState, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
+    XMONAD_ACTION_NEXT_LAYOUT, translate_xmonad_profile_action,
 };
 
 const FIRST_DYNAMIC_ATOM: u32 = 256;
@@ -64,7 +65,7 @@ impl From<X11WmBridgeError> for BridgeRuntimeError {
 #[derive(Clone, Debug)]
 enum ServerCommand {
     Root(Rect),
-    Map(SyntheticXWindowId, Rect),
+    Map(SyntheticXWindowId, Rect, SyntheticManageProfile),
     Configure(SyntheticXWindowId, Rect),
     Unmap(SyntheticXWindowId),
     Destroy(SyntheticXWindowId),

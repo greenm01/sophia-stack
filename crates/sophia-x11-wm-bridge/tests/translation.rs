@@ -255,3 +255,90 @@ fn focus_request_preserves_the_existing_blind_synthetic_topology() {
     assert!(update.events.is_empty());
     assert_eq!(bridge.synthetic_window(target), Some(window));
 }
+
+#[test]
+fn exact_constraint_change_remanages_the_synthetic_window_without_metadata() {
+    let transaction = TransactionId::from_raw(90);
+    let surface = SurfaceId::new(40, 1);
+    let mut bridge = X11WmBridgeState::new();
+    let initial = WmRequestPacket {
+        transaction,
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            nodes: vec![node(40)],
+        }),
+    };
+    bridge.apply_engine_request(&initial).unwrap();
+    let old_window = bridge.synthetic_window(surface).unwrap();
+
+    let mut fixed = node(40);
+    fixed.capabilities.resizable = false;
+    fixed.constraints = SurfaceConstraints {
+        min_size: Some(Size {
+            width: 500,
+            height: 500,
+        }),
+        max_size: Some(Size {
+            width: 500,
+            height: 500,
+        }),
+    };
+    let recovery = WmRequestPacket {
+        transaction: TransactionId::from_raw(91),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            nodes: vec![fixed],
+        }),
+    };
+    let update = bridge.apply_engine_request(&recovery).unwrap();
+    let new_window = bridge.synthetic_window(surface).unwrap();
+
+    assert_ne!(new_window, old_window);
+    assert!(
+        update
+            .events
+            .contains(&SyntheticXEvent::DestroyNotify { window: old_window })
+    );
+    assert!(
+        update
+            .events
+            .contains(&SyntheticXEvent::MapRequest { window: new_window })
+    );
+    assert_eq!(
+        bridge
+            .synthetic_manage_profile(new_window)
+            .unwrap()
+            .constraints,
+        Some(SurfaceConstraints {
+            min_size: Some(Size {
+                width: 500,
+                height: 500,
+            }),
+            max_size: Some(Size {
+                width: 500,
+                height: 500,
+            }),
+        })
+    );
+    let hints = bridge
+        .synthetic_manage_profile(new_window)
+        .unwrap()
+        .icccm_normal_hints()
+        .unwrap();
+    assert_eq!(hints[0], (1 << 4) | (1 << 5));
+    assert_eq!(&hints[5..9], &[500, 500, 500, 500]);
+}

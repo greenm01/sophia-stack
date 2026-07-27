@@ -225,10 +225,53 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let recovery_extent = sophia_protocol::Size {
+        width: 500,
+        height: 500,
+    };
+    let recovery_geometry = Rect {
+        x: 80,
+        y: 60,
+        width: recovery_extent.width,
+        height: recovery_extent.height,
+    };
+    let mut recovery_node = node(12, workspace, recovery_geometry);
+    recovery_node.capabilities.resizable = false;
+    recovery_node.constraints = SurfaceConstraints {
+        min_size: Some(recovery_extent),
+        max_size: Some(recovery_extent),
+    };
+    let recovery = runtime.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(5),
+        kind: WmRequestKind::ManageSurface(WmManageSurface {
+            output: OutputId::from_raw(1),
+            workspace,
+            bounds,
+            node: recovery_node,
+        }),
+    })?;
+    let recovery_placements = response_placements(&recovery);
+    if !recovery_placements.contains(&(12, recovery_geometry))
+        || !recovery.commands.iter().any(|command| {
+            matches!(
+                command,
+                WmCommand::ConfigureSurface(request)
+                    if request.surface == SurfaceId::new(12, 1)
+                        && request.size == recovery_extent
+            )
+        })
+    {
+        return Err(format!(
+            "xmonad did not apply the generic fixed-extent recovery profile: commands={:?}",
+            recovery.commands
+        )
+        .into());
+    }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} focus_transaction={} master={:?} stack_top={:?} stack_bottom={:?}",
+        "real-xmonad-sequential-three-window-smoke: pass transaction={} focus_transaction={} recovery_transaction={} master={:?} stack_top={:?} stack_bottom={:?} recovery={recovery_geometry:?}",
         response.transaction.raw(),
         focus.transaction.raw(),
+        recovery.transaction.raw(),
         actual[0].1,
         actual[1].1,
         actual[2].1,

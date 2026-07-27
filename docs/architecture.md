@@ -196,6 +196,22 @@ last committed geometry-plus-pixels state, and retire native resources exactly
 once. No failure path may infer presentation from client traffic or send
 feedback before backend retirement.
 
+Layout changes use a separate Engine-owned epoch coordinator. It joins opaque
+WM size proposals to authority-observed content extents and keeps declared
+surface constraints separate from temporary recovery constraints. A timed-out
+epoch preserves the complete committed scene. If a surface has safe content at
+another extent, Engine may publish `min_size == max_size == safe_extent` and
+`resizable = false` for one bounded blind-WM replan. Engine supplies no
+position, floating decision, client identity, or protocol object. Late pixels
+from the abandoned extent remain fenced until the authority returns to the
+safe content extent.
+
+The legacy-X11 WM bridge translates those same generic constraints into
+synthetic ICCCM `WM_NORMAL_HINTS`. A manage-time constraint-profile change
+replaces the private synthetic window so an unmodified legacy WM reevaluates
+its ordinary size-hint policy. Native WMs consume the same WM API facts without
+the ICCCM translation.
+
 There is no compatibility-only committed-snapshot production adapter. Every
 active client path enters through authority transactions. XLibre and Wayland
 remain historical evidence and cannot become alternate production loops.

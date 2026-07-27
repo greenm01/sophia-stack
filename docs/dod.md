@@ -376,10 +376,21 @@ Fields should describe:
 - pending surface IDs
 - start timestamp
 - timeout policy
+- committed content extent per affected surface
+- declared and temporary effective constraints
+- unmanaged, pending-layout, or managed admission state
+- bounded recovery-attempt state
 
 X Damage events retire pending surfaces from the epoch in the prototype path.
 Native authority commits should retire pending surfaces by explicit readiness
 instead.
+
+Timeout recovery is a replan, not a degraded visual commit. A
+`ReplanAtCommittedExtent` decision retains the last `CommittedSurfaceState` and
+publishes an exact safe extent as a temporary capability fact. It must never
+construct committed state from a timed-out pending transaction. The external
+WM remains responsible for placement and may choose to float the constrained
+node.
 
 Resize behavior samples are derived from the same epoch state. They should
 record elapsed time, timeout policy, completion, timeout status, and remaining

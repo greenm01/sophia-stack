@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
-    LayoutNodeSnapshot, Rect, Size, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
-    Transform, WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmCommand,
-    WmHello, WmModifierMask, WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction,
-    WmSessionDescriptor, WorkspaceId,
+    LayoutNodeSnapshot, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
+    SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION, WmActionId,
+    WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask, WmRequestKind,
+    WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor, WorkspaceId,
 };
 
 #[cfg(unix)]
@@ -139,6 +139,43 @@ pub enum SyntheticXEvent {
     DestroyNotify {
         window: SyntheticXWindowId,
     },
+}
+
+/// Metadata-free manage-time facts exposed to a legacy WM through standard
+/// synthetic X11 properties.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SyntheticManageProfile {
+    pub constraints: Option<SurfaceConstraints>,
+}
+
+impl SyntheticManageProfile {
+    fn from_node(node: &LayoutNodeSnapshot) -> Self {
+        let constrained = !node.capabilities.resizable
+            || node.constraints.min_size.is_some()
+            || node.constraints.max_size.is_some();
+        Self {
+            constraints: constrained.then_some(node.constraints),
+        }
+    }
+
+    pub fn icccm_normal_hints(self) -> Option<[u32; 18]> {
+        const P_MIN_SIZE: u32 = 1 << 4;
+        const P_MAX_SIZE: u32 = 1 << 5;
+
+        let constraints = self.constraints?;
+        let mut hints = [0_u32; 18];
+        if let Some(minimum) = constraints.min_size {
+            hints[0] |= P_MIN_SIZE;
+            hints[5] = minimum.width.max(0) as u32;
+            hints[6] = minimum.height.max(0) as u32;
+        }
+        if let Some(maximum) = constraints.max_size {
+            hints[0] |= P_MAX_SIZE;
+            hints[7] = maximum.width.max(0) as u32;
+            hints[8] = maximum.height.max(0) as u32;
+        }
+        Some(hints)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -295,6 +332,15 @@ impl X11WmBridgeState {
 
     pub fn synthetic_geometry(&self, window: SyntheticXWindowId) -> Option<Rect> {
         self.window_to_node.get(&window).map(|node| node.geometry)
+    }
+
+    pub fn synthetic_manage_profile(
+        &self,
+        window: SyntheticXWindowId,
+    ) -> Option<SyntheticManageProfile> {
+        self.window_to_node
+            .get(&window)
+            .map(SyntheticManageProfile::from_node)
     }
 
     pub fn apply_engine_request(
@@ -463,6 +509,22 @@ impl X11WmBridgeState {
     ) -> Result<(), X11WmBridgeError> {
         let geometry = node.geometry;
         let workspace = node.workspace;
+        if let Some(previous_window) = self.surface_to_window.get(&node.surface).copied()
+            && self
+                .window_to_node
+                .get(&previous_window)
+                .is_some_and(|previous| {
+                    SyntheticManageProfile::from_node(previous)
+                        != SyntheticManageProfile::from_node(&node)
+                })
+        {
+            self.surface_to_window.remove(&node.surface);
+            self.window_to_node.remove(&previous_window);
+            self.mapped_windows.remove(&previous_window);
+            events.push(SyntheticXEvent::DestroyNotify {
+                window: previous_window,
+            });
+        }
         let (window, _) = self.upsert_node(node)?;
         if self.active_workspace == Some(workspace) {
             if self.mapped_windows.insert(window) {

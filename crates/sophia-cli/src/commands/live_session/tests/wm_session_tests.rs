@@ -69,7 +69,11 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
     let request = sophia_protocol::WmRequestPacket {
         transaction: sophia_protocol::TransactionId::from_raw(2),
         kind: sophia_protocol::WmRequestKind::ManageSurface(sophia_protocol::WmManageSurface {
-            node: live_layout_node(&test_layer(queued, bounds), workspace),
+            node: live_layout_node(
+                &test_layer(queued, bounds),
+                workspace,
+                &sophia_engine::LayoutEpochCoordinator::default(),
+            ),
             output,
             workspace,
             bounds,

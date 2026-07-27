@@ -21,7 +21,7 @@ struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
     dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
     cpu_buffer_sizes: BTreeMap<u64, Size>,
-    resize: ResizeRollbackCoordinator,
+    layout_epochs: LayoutEpochCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     output_reservations: sophia_engine::SurfaceOutputReservationState,
@@ -51,6 +51,8 @@ impl PersistentLiveLayout {
         for presentation in &batch.surface_presentations {
             self.presentation_roles
                 .insert(presentation.surface, presentation.role);
+            self.layout_epochs
+                .set_declared_constraints(presentation.surface, presentation.constraints);
             output_reservations_changed |= self.output_reservations.observe_presentation(
                 presentation.surface,
                 presentation.role,
@@ -111,7 +113,7 @@ impl PersistentLiveLayout {
             );
             let observed_size = pixel_size.unwrap_or(geometry_size);
             if !self
-                .resize
+                .layout_epochs
                 .accept_observation(transaction.surface, observed_size)
             {
                 continue;
@@ -135,7 +137,7 @@ impl PersistentLiveLayout {
                 }
                 continue;
             }
-            self.resize
+            self.layout_epochs
                 .record_committed(transaction.surface, observed_size);
             let observed_layer = match self.layers.get_mut(&transaction.surface) {
                 Some(layer) => {
@@ -155,6 +157,10 @@ impl PersistentLiveLayout {
                         != Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned);
                     if policy_managed {
                         self.unmanaged_surfaces.insert(transaction.surface);
+                        self.layout_epochs.set_admission(
+                            transaction.surface,
+                            sophia_engine::SurfaceAdmissionState::Unmanaged,
+                        );
                     }
                     let mut geometry = transaction.target_geometry;
                     if policy_managed && self.stage_new_surfaces_offset {
@@ -223,7 +229,7 @@ impl PersistentLiveLayout {
         self.layers
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
-            self.resize.remove(*surface);
+            self.layout_epochs.remove(*surface);
             self.admission_retries.remove(surface);
         }
         self.unmanaged_surfaces
@@ -253,7 +259,7 @@ impl PersistentLiveLayout {
     }
 
     fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
-        if self.resize.rollback_surfaces().next().is_some() {
+        if self.layout_epochs.rollback_surfaces().next().is_some() {
             return None;
         }
         self.unmanaged_surfaces
@@ -291,8 +297,8 @@ impl PersistentLiveLayout {
             return Ok(None);
         }
         for (surface, size) in &proposal.requested_sizes {
-            if !self.resize.request_allowed(*surface, *size)
-                && let Some(committed) = self.resize.committed_size(*surface)
+            if !self.layout_epochs.request_allowed(*surface, *size)
+                && let Some(committed) = self.layout_epochs.committed_size(*surface)
                 && let Some(layer) = proposal
                     .layers
                     .iter_mut()
@@ -303,8 +309,8 @@ impl PersistentLiveLayout {
             }
         }
         proposal.requested_sizes.retain(|surface, size| {
-            self.resize.committed_size(*surface) != Some(*size)
-                && self.resize.request_allowed(*surface, *size)
+            self.layout_epochs.committed_size(*surface) != Some(*size)
+                && self.layout_epochs.request_allowed(*surface, *size)
         });
         for (surface, size) in &proposal.requested_sizes {
             let client = self
@@ -325,7 +331,7 @@ impl PersistentLiveLayout {
         let ready = proposal
             .requested_sizes
             .iter()
-            .all(|(surface, size)| self.resize.committed_size(*surface) == Some(*size));
+            .all(|(surface, size)| self.layout_epochs.committed_size(*surface) == Some(*size));
         if ready {
             return Ok(Some(self.commit_proposal(proposal)));
         }
@@ -397,11 +403,12 @@ impl PersistentLiveLayout {
             .map(|layer| layer.surface)
             .filter(|surface| self.unmanaged_surfaces.contains(surface))
             .collect::<Vec<_>>();
-        let rollback = self.resize.begin_rollback(
+        let rollback = self.layout_epochs.begin_recovery(
             pending
                 .requested_sizes
                 .iter()
                 .map(|(surface, size)| (*surface, *size)),
+            admission_surfaces.iter().copied(),
         )?;
         let rollback_transaction = rollback
             .first()
@@ -429,7 +436,10 @@ impl PersistentLiveLayout {
             .requested_sizes
             .iter()
             .map(|(surface, expected)| {
-                let observed = self.resize.committed_size(*surface).unwrap_or(Size {
+                let observed = self
+                    .layout_epochs
+                    .committed_size(*surface)
+                    .unwrap_or(Size {
                     width: 0,
                     height: 0,
                 });
@@ -495,7 +505,8 @@ impl PersistentLiveLayout {
                     &self.dma_buf_sizes,
                     &self.cpu_buffer_sizes,
                 ) {
-                    self.resize.record_committed(transaction.surface, size);
+                    self.layout_epochs
+                        .record_committed(transaction.surface, size);
                 }
             }
         }
@@ -512,6 +523,12 @@ impl PersistentLiveLayout {
         });
         self.admission_retries
             .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
+        for surface in self.layers.keys().copied() {
+            if !self.unmanaged_surfaces.contains(&surface) {
+                self.layout_epochs
+                    .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+            }
+        }
         if let Some(surface) = pending.focus {
             self.focus_to_apply = Some((pending.transaction, surface));
         }
@@ -609,17 +626,20 @@ fn center_geometry_without_scaling(mut geometry: Rect, output: Size) -> Rect {
     geometry
 }
 
-fn live_layout_node(layer: &LayerSnapshot, workspace: WorkspaceId) -> LayoutNodeSnapshot {
+fn live_layout_node(
+    layer: &LayerSnapshot,
+    workspace: WorkspaceId,
+    coordinator: &LayoutEpochCoordinator,
+) -> LayoutNodeSnapshot {
+    let mut capabilities = LayoutNodeCapabilities::STANDARD_TOPLEVEL;
+    capabilities.resizable = coordinator.surface_resizable(layer.surface);
     LayoutNodeSnapshot {
         surface: layer.surface,
         workspace,
         kind: LayoutNodeKind::Toplevel,
-        capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+        capabilities,
         state: LayoutNodeState::NORMAL,
-        constraints: SurfaceConstraints {
-            min_size: None,
-            max_size: None,
-        },
+        constraints: coordinator.effective_constraints(layer.surface),
         geometry: layer.geometry,
         generation: layer.generation,
     }

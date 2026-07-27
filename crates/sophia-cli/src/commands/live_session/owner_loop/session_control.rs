@@ -37,6 +37,18 @@ macro_rules! service_session_controls {
                     "sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control"
                 );
             }
+            if completion.key.kind == XAuthorityControlKind::ConfigureSurface
+                && layout.layout_epochs.acknowledge_recovery_configure(
+                    completion.key.transaction,
+                    completion.key.surface,
+                )
+            {
+                println!(
+                    "sophia_live_resize_epoch schema=1 status=recovery_configure_acknowledged transaction={} surface={}",
+                    completion.key.transaction.raw(),
+                    completion.key.surface.index(),
+                );
+            }
         }
     }};
 }

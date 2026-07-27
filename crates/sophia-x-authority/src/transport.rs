@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
 use sophia_protocol::{
-    Rect, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
-    TransactionId,
+    Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole,
+    SurfaceTransaction, TransactionId,
 };
 
 use crate::{
@@ -38,6 +38,7 @@ pub struct XAuthoritySurfacePresentationObservation {
     pub role: SurfacePresentationRole,
     pub mapped: bool,
     pub geometry: Rect,
+    pub constraints: SurfaceConstraints,
 }
 
 fn is_expected_client_probe_error(error: &crate::XClientError) -> bool {
@@ -162,6 +163,7 @@ impl XAuthorityObservedTransactionBatch {
                     role: surface.presentation,
                     mapped: surface.mapped,
                     geometry: surface.geometry,
+                    constraints: surface.constraints,
                 })
                 .collect(),
             removed_surfaces: response.removed_surfaces.clone(),
@@ -253,6 +255,7 @@ impl XAuthorityObservedTransactionBatch {
                         role: surface.presentation,
                         mapped: surface.mapped,
                         geometry: surface.geometry,
+                        constraints: surface.constraints,
                     })
                     .collect::<Vec<_>>()
             })

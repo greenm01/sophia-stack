@@ -208,6 +208,9 @@ fn send_engine_update(
                     bridge
                         .synthetic_geometry(window)
                         .ok_or_else(|| BridgeRuntimeError::new("synthetic map has no geometry"))?,
+                    bridge.synthetic_manage_profile(window).ok_or_else(|| {
+                        BridgeRuntimeError::new("synthetic map has no manage profile")
+                    })?,
                 )
             }
             SyntheticXEvent::ConfigureNotify { window, geometry } => {
@@ -228,6 +231,7 @@ fn send_engine_update(
 struct WindowState {
     geometry: Rect,
     mapped: bool,
+    manage_profile: SyntheticManageProfile,
 }
 
 struct XServerState {
@@ -243,12 +247,20 @@ struct XServerState {
 
 impl XServerState {
     fn new(root: Rect) -> Self {
+        let atoms_by_name = BTreeMap::from([
+            (b"WM_NORMAL_HINTS".to_vec(), 40),
+            (b"WM_SIZE_HINTS".to_vec(), 41),
+        ]);
+        let atom_names = atoms_by_name
+            .iter()
+            .map(|(name, atom)| (*atom, name.clone()))
+            .collect();
         Self {
             sequence: 0,
             root,
             windows: BTreeMap::new(),
-            atoms_by_name: BTreeMap::new(),
-            atom_names: BTreeMap::new(),
+            atoms_by_name,
+            atom_names,
             next_atom: FIRST_DYNAMIC_ATOM,
             input_focus: SYNTHETIC_ROOT_XID,
             key_grabs: BTreeSet::new(),

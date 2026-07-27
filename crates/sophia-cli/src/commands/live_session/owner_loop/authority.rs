@@ -160,7 +160,7 @@
                 if !resize_proof_complete
                     && let Some((transaction, surface, size)) = resize_proof
                     && layout.pending.is_none()
-                    && layout.resize.committed_size(surface) == Some(size)
+                    && layout.layout_epochs.committed_size(surface) == Some(size)
                 {
                     println!(
                         "sophia_live_resize schema=1 status=committed transaction={} surface={} width={} height={} configure_delivered=true pixels=true",

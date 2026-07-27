@@ -31,7 +31,12 @@ pub fn runtime_observation_from_slow_client_visual_decisions(
         .count();
     let degraded_count = decisions
         .iter()
-        .filter(|decision| matches!(decision, SlowClientVisualDecision::DegradeToPending { .. }))
+        .filter(|decision| {
+            matches!(
+                decision,
+                SlowClientVisualDecision::ReplanAtCommittedExtent { .. }
+            )
+        })
         .count();
     let timeout_count = preserved_count.saturating_add(degraded_count);
 

@@ -153,6 +153,16 @@ Promotion now follows the gates below in order.
   page-flip settlement, displayed-buffer replacement, cleanup retry, and
   duplicate-retirement rejection. Each case remains an isolated reducer or
   fake-device test; no native handles or application policy enter Engine.
+- [x] Move non-cooperative resize/admission recovery into a protocol-neutral
+  Engine layout-epoch coordinator. Preserve safe pixels, fence abandoned
+  extents, publish temporary exact-size constraints for one bounded blind-WM
+  replan, and translate those constraints through generic ICCCM size hints in
+  the legacy bridge without application identity.
+- [ ] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
+  existing desktop to remain responsive, the cube to become visible through
+  bounded fixed-extent recovery, and normal shutdown with no stale Present,
+  control, input, or native-resource debt. Use
+  `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run.
 - [x] Replace the transient aggregate async-service booleans with one
   Engine-owned, output-scoped frame-service reducer. Backend-live must execute
   only named native effects, reobserve after each effect, and remain bounded

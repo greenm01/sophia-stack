@@ -133,8 +133,78 @@ fn reply_empty_property(stream: &mut UnixStream, sequence: u16) -> Result<(), Br
     write_packet(stream, &reply)
 }
 
-fn reply_list_properties(stream: &mut UnixStream, sequence: u16) -> Result<(), BridgeRuntimeError> {
-    reply_simple(stream, sequence, 0)
+fn reply_window_property(
+    stream: &mut UnixStream,
+    state: &XServerState,
+    body: &[u8],
+) -> Result<(), BridgeRuntimeError> {
+    const WM_NORMAL_HINTS: u32 = 40;
+    const WM_SIZE_HINTS: u32 = 41;
+
+    let window = read_u32(body, 0);
+    let property = read_u32(body, 4);
+    let requested_type = read_u32(body, 8);
+    let offset = usize::try_from(read_u32(body, 12)).unwrap_or(usize::MAX);
+    let length = usize::try_from(read_u32(body, 16)).unwrap_or(usize::MAX);
+    let Some(hints) = state
+        .windows
+        .get(&window)
+        .and_then(|window| window.manage_profile.icccm_normal_hints())
+    else {
+        return reply_empty_property(stream, state.sequence);
+    };
+    if property != WM_NORMAL_HINTS {
+        return reply_empty_property(stream, state.sequence);
+    }
+    if requested_type != 0 && requested_type != WM_SIZE_HINTS {
+        let mut reply = vec![1, 0];
+        push_u16(&mut reply, state.sequence);
+        push_u32(&mut reply, 0);
+        push_u32(&mut reply, WM_SIZE_HINTS);
+        reply.resize(32, 0);
+        return write_packet(stream, &reply);
+    }
+
+    let start = offset.min(hints.len());
+    let end = start.saturating_add(length).min(hints.len());
+    let values = &hints[start..end];
+    let bytes_after = (hints.len() - end) * std::mem::size_of::<u32>();
+    let mut reply = vec![1, 32];
+    push_u16(&mut reply, state.sequence);
+    push_u32(&mut reply, values.len() as u32);
+    push_u32(&mut reply, WM_SIZE_HINTS);
+    push_u32(&mut reply, bytes_after as u32);
+    push_u32(&mut reply, values.len() as u32);
+    reply.resize(32, 0);
+    for value in values {
+        push_u32(&mut reply, *value);
+    }
+    write_packet(stream, &reply)
+}
+
+fn reply_list_properties(
+    stream: &mut UnixStream,
+    state: &XServerState,
+    window: u32,
+) -> Result<(), BridgeRuntimeError> {
+    let properties = if state
+        .windows
+        .get(&window)
+        .is_some_and(|window| window.manage_profile.constraints.is_some())
+    {
+        vec![40_u32]
+    } else {
+        Vec::new()
+    };
+    let mut reply = vec![1, 0];
+    push_u16(&mut reply, state.sequence);
+    push_u32(&mut reply, properties.len() as u32);
+    push_u16(&mut reply, properties.len() as u16);
+    reply.resize(32, 0);
+    for property in properties {
+        push_u32(&mut reply, property);
+    }
+    write_packet(stream, &reply)
 }
 
 fn reply_query_pointer(

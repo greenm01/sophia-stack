@@ -9,9 +9,8 @@ use sophia_backend_live::{
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
-    PendingLayoutGeometryAuthority, ResizeRollbackCoordinator,
-    merge_unrequested_layout_observation, present_pixels_conflict_with_requested_sizes,
-    project_authority_batch_onto_layout,
+    PendingLayoutGeometryAuthority, merge_unrequested_layout_observation,
+    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
 };
 use sophia_cli::session_actions::{
     SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome,
@@ -26,8 +25,8 @@ use sophia_cli::session_startup::{
 };
 use sophia_engine::{
     FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
-    KeyRepeatTarget, NonBlockingInputPoller, PointerFocusHandoffState, WmPolicyApplyOutcome,
-    WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
+    KeyRepeatTarget, LayoutEpochCoordinator, NonBlockingInputPoller, PointerFocusHandoffState,
+    WmPolicyApplyOutcome, WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
