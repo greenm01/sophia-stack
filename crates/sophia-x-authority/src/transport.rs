@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
 use sophia_protocol::{
-    Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole,
-    SurfaceTransaction, TransactionId,
+    Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations, SurfacePresentationIntent,
+    SurfacePresentationIntentKind, SurfacePresentationRole, SurfaceTransaction, TransactionId,
 };
 
 use crate::{
@@ -39,6 +39,7 @@ pub struct XAuthoritySurfacePresentationObservation {
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
+    pub generation: u64,
 }
 
 fn is_expected_client_probe_error(error: &crate::XClientError) -> bool {
@@ -120,6 +121,10 @@ pub struct XAuthorityObservedTransactionBatch {
     /// Protocol-neutral presentation facts reduced from authority-private
     /// window attributes. Raw X11 object IDs remain inside the frontend.
     pub surface_presentations: Vec<XAuthoritySurfacePresentationObservation>,
+    /// Lifecycle edges for policy admission. These are distinct from the
+    /// current-state snapshots above so duplicate observations cannot be
+    /// mistaken for new presentation requests.
+    pub presentation_intents: Vec<SurfacePresentationIntent>,
     /// Frontend-confirmed surface lifetimes that ended in this batch.
     pub removed_surfaces: Vec<SurfaceId>,
     /// Complete output-reservation snapshots for surfaces changed by this
@@ -164,8 +169,10 @@ impl XAuthorityObservedTransactionBatch {
                     mapped: surface.mapped,
                     geometry: surface.geometry,
                     constraints: surface.constraints,
+                    generation: surface.generation,
                 })
                 .collect(),
+            presentation_intents: Vec::new(),
             removed_surfaces: response.removed_surfaces.clone(),
             surface_output_reservations: Vec::new(),
             cpu_buffer_updates: Vec::new(),
@@ -256,6 +263,7 @@ impl XAuthorityObservedTransactionBatch {
                         mapped: surface.mapped,
                         geometry: surface.geometry,
                         constraints: surface.constraints,
+                        generation: surface.generation,
                     })
                     .collect::<Vec<_>>()
             })
@@ -263,8 +271,31 @@ impl XAuthorityObservedTransactionBatch {
         let removed_surfaces = response
             .map(|response| response.removed_surfaces.clone())
             .unwrap_or_default();
+        let presentation_intents = surface_presentations
+            .iter()
+            .filter_map(|surface| {
+                let kind = match trace.major_opcode {
+                    8 if surface.role == SurfacePresentationRole::PolicyManaged
+                        && !surface.mapped =>
+                    {
+                        SurfacePresentationIntentKind::Request
+                    }
+                    10 => SurfacePresentationIntentKind::Withdraw,
+                    _ => return None,
+                };
+                Some(SurfacePresentationIntent {
+                    surface: surface.surface,
+                    kind,
+                    role: surface.role,
+                    geometry: surface.geometry,
+                    constraints: surface.constraints,
+                    generation: surface.generation,
+                })
+            })
+            .collect::<Vec<_>>();
         if transactions.is_empty()
             && surface_presentations.is_empty()
+            && presentation_intents.is_empty()
             && removed_surfaces.is_empty()
             && dma_buf_registrations.is_empty()
             && fence_registrations.is_empty()
@@ -288,6 +319,7 @@ impl XAuthorityObservedTransactionBatch {
             ),
             transactions,
             surface_presentations,
+            presentation_intents,
             removed_surfaces,
             surface_output_reservations: trace.surface_output_reservations.clone(),
             cpu_buffer_updates: trace.cpu_buffer_update.clone().into_iter().collect(),
@@ -327,6 +359,9 @@ impl XAuthorityClientSurfaceRoutes {
         };
         for transaction in &batch.transactions {
             self.clients.insert(transaction.surface, client);
+        }
+        for intent in &batch.presentation_intents {
+            self.clients.insert(intent.surface, client);
         }
     }
 

@@ -30,7 +30,8 @@ impl LiveProductionVisualRuntime {
     pub fn diagnostics(&self) -> LiveProductionVisualDiagnostics {
         LiveProductionVisualDiagnostics {
             present_queued: self.present_scheduler.has_queued(),
-            present_scheduling_blocked: self.present_scheduling_blocked,
+            present_scheduling_blocked: self.present_scheduler.has_layout_deferred()
+                && !self.present_scheduler.has_eligible(),
             live_sources: self.presentation_feedback.resources().source_count(),
             live_fences: self.presentation_feedback.resources().fence_count(),
             live_presentations: self.presentation_feedback.resources().presentation_count(),

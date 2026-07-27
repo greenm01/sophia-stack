@@ -120,6 +120,7 @@ impl XPresentSessionObserver {
 
 fn production_authority_batch(
     batch: &XAuthorityObservedTransactionBatch,
+    layout: &PersistentLiveLayout,
 ) -> LiveProductionAuthorityBatch {
     LiveProductionAuthorityBatch {
         transaction: batch.transaction,
@@ -153,6 +154,8 @@ fn production_authority_batch(
                 y_offset: submission.y_offset,
                 acquire_fence: submission.acquire_fence,
                 idle_fence: submission.idle_fence,
+                layout_disposition: layout
+                    .present_layout_disposition(submission.surface, submission.buffer),
             })
             .collect(),
         released_dma_bufs: batch.released_dma_bufs.clone(),

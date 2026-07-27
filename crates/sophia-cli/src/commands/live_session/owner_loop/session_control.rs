@@ -61,6 +61,18 @@ macro_rules! service_session_controls {
                     completion.key.surface.index(),
                 );
             }
+            if completion.key.kind == XAuthorityControlKind::AdmitSurface
+                && layout.acknowledge_admission_control(
+                    completion.key.transaction,
+                    completion.key.surface,
+                )
+            {
+                println!(
+                    "sophia_live_surface_admission schema=1 status=frontend_admitted transaction={} surface={}",
+                    completion.key.transaction.raw(),
+                    completion.key.surface.index(),
+                );
+            }
         }
     }};
 }

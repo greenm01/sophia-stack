@@ -3,14 +3,48 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: Managed X11 Mapping Requires Pre-Pixel Admission
+
+The repeated blank `vkcube` frame was an ordering defect, not evidence that the
+application required a hard-coded floating or fixed-size rule. The live X
+frontend fulfilled `MapWindow` immediately and emitted `MapNotify`/`Expose`
+before the blind WM had an opaque node to manage. Sophia could create that node
+only after observing a pixel-backed transaction, while the application was
+already reconfiguring its swapchain from the initial 500-by-500 window to the
+tiled allocation. The latest trace registered buffers and fences but retired no
+cube Present at the accepted layout.
+
+X server map-redirection semantics supplied the useful reference model: keep a
+policy-managed window unmapped while policy decides its geometry, then configure
+and map it as one admitted transition. Sophia implements that invariant through
+its own protocol-neutral boundaries. The frontend emits
+`SurfacePresentationIntent`; Engine retains passive admission facts; the WM
+plans an opaque bufferless node; and `AdmitSurface` configures and maps only
+after proposal validation. Matching authority pixels, not the control
+acknowledgement, establish committed visual truth. No X server code or
+application-specific fact enters Sophia.
+
+The same audit found an overly broad Present barrier. Any pending layout had
+blocked every queued Present, including unrelated stable surfaces. Each
+submission now carries an immutable disposition: immediate, staged for one
+layout epoch, or rejected for a known size mismatch. The bounded scheduler can
+continue unrelated work, shares one immutable CPU-layer batch, and releases
+staged submissions when the epoch resolves. Wrong-size pending pixels update
+only the safe-observation record and cannot leak into the visible layer table.
+
+Reducer, wire, admission, WM pre-pixel planning, and mixed Present scheduling
+tests cover the new ordering. Default `vkcube --wsi xcb` remains the physical
+AMDGPU proof; until that retained run succeeds, the roadmap item stays open.
+
 ## 2026-07-26: Resize Timeout Recovery Is An Engine Replan
 
 Launching a non-cooperative Vulkan top-level exposed an architectural failure,
-not an application quirk. Xmonad proposed a tiled epoch, existing clients and
-the new surface did not all publish the exact requested extents before the
-deadline, and the CLI compensated back to old sizes. The new surface therefore
-never reached a committed layout. Preselecting its startup dimensions did not
-fix the joined multi-surface epoch and would have encoded application policy.
+not an application quirk. This recovery model remains valid, but the later
+pre-map admission audit above supersedes it as the root-cause diagnosis for the
+blank initial `vkcube` window. Xmonad proposed a tiled epoch, existing clients
+and the new surface did not all publish the exact requested extents before the
+deadline, and the CLI compensated back to old sizes. Preselecting startup
+dimensions would still have encoded application policy.
 
 Resize/admission recovery now belongs to a protocol-neutral Engine coordinator.
 It retains safe authority content extents, fences pixels from abandoned sizes,

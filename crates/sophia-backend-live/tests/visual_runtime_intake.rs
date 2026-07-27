@@ -219,14 +219,3 @@ fn visibility_change_forces_a_frame_unless_a_retained_gpu_projection_is_queued()
     assert!(reduce_live_production_frame_defer(true, false, false));
     assert!(!reduce_live_production_frame_defer(false, false, false));
 }
-
-#[test]
-fn resize_epoch_hold_persists_across_native_service_boundaries() {
-    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
-
-    runtime.set_present_scheduling_blocked(true);
-    assert!(runtime.diagnostics().present_scheduling_blocked);
-
-    runtime.set_present_scheduling_blocked(false);
-    assert!(!runtime.diagnostics().present_scheduling_blocked);
-}

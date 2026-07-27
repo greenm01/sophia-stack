@@ -36,6 +36,22 @@ fn timed_out_admission_replans_at_the_safe_content_extent() {
 }
 
 #[test]
+fn admission_recovery_can_use_complete_uncommitted_authority_pixels() {
+    let surface = SurfaceId::new(18, 1);
+    let safe = size(500, 500);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_safe_observation(surface, safe);
+
+    let configures = coordinator
+        .begin_recovery([(surface, size(1276, 1422))], [surface])
+        .unwrap();
+
+    assert_eq!(coordinator.committed_size(surface), None);
+    assert_eq!(coordinator.safe_size(surface), Some(safe));
+    assert_eq!(configures[0].size, safe);
+}
+
+#[test]
 fn recovery_preserves_declared_constraints_and_can_be_cleared() {
     let surface = SurfaceId::new(8, 1);
     let declared = SurfaceConstraints {

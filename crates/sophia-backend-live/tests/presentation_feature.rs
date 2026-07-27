@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuComposedFrame, LivePresentCompletionMode,
     LivePresentFeedbackError, LivePresentProtocolFeedback, LivePresentationResourceSession,
-    LivePresentationSubmission, LiveProductionAuthorityBatch,
+    LivePresentationSubmission, LiveProductionAuthorityBatch, LiveProductionPresentDisposition,
     LiveProductionPresentFeedbackCoordinator, LiveProductionPresentGate,
     LiveProductionPresentScheduler, LiveProductionPresentSubmission, LiveResourceReleaseStatus,
     LiveRetainedDmaBufLayer, compose_full_state_mixed_frame, try_clone_mixed_frame,
@@ -583,10 +583,22 @@ fn scheduler_batch(
             y_offset: 0,
             acquire_fence: None,
             idle_fence: None,
+            layout_disposition: LiveProductionPresentDisposition::Immediate,
         }],
         released_dma_bufs: Vec::new(),
         released_fences: Vec::new(),
     }
+}
+
+fn scheduler_batch_with_disposition(
+    transaction: TransactionId,
+    surface: SurfaceId,
+    handle: BufferHandle,
+    disposition: LiveProductionPresentDisposition,
+) -> LiveProductionAuthorityBatch {
+    let mut batch = scheduler_batch(transaction, surface, handle);
+    batch.present_submissions[0].layout_disposition = disposition;
+    batch
 }
 
 #[test]
@@ -609,8 +621,6 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
             &scheduler_batch(transaction, surface, handle),
             &[],
             Vec::new(),
-            false,
-            false,
             &mut resources,
             now,
         )
@@ -649,15 +659,7 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_batch(
-            &batch,
-            &[],
-            Vec::new(),
-            false,
-            false,
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_batch(&batch, &[], Vec::new(), &mut resources, Instant::now())
         .unwrap();
     let geometry = Rect {
         x: 1280,
@@ -678,7 +680,6 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
             ..geometry
         }
     );
-    assert_eq!(queued.transactions[0].target_geometry, geometry);
 }
 
 #[test]
@@ -720,21 +721,12 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
     let mut scheduler = LiveProductionPresentScheduler::default();
 
     scheduler
-        .enqueue_batch(
-            &batch,
-            &layout,
-            Vec::new(),
-            false,
-            false,
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_batch(&batch, &layout, Vec::new(), &mut resources, Instant::now())
         .unwrap();
 
     let queued = scheduler.front().unwrap();
     assert_eq!(queued.target, geometry);
     assert_eq!(queued.surface_clip, geometry);
-    assert_eq!(queued.transactions[0].target_geometry, geometry);
 }
 
 #[test]
@@ -757,19 +749,20 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
             &scheduler_batch(retained_transaction, surface, retained_handle),
             &[],
             Vec::new(),
-            false,
-            false,
             &mut resources,
             Instant::now(),
         )
         .unwrap();
+    let mut deferred_batch = scheduler_batch(deferred_transaction, surface, deferred_handle);
+    deferred_batch.present_submissions[0].layout_disposition =
+        LiveProductionPresentDisposition::StageLayout {
+            epoch: TransactionId::from_raw(1),
+        };
     scheduler
         .enqueue_batch(
-            &scheduler_batch(deferred_transaction, surface, deferred_handle),
+            &deferred_batch,
             &[],
             Vec::new(),
-            true,
-            false,
             &mut resources,
             Instant::now(),
         )
@@ -788,6 +781,52 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
 }
 
 #[test]
+fn unrelated_present_remains_eligible_while_layout_surface_is_staged() {
+    let staged_handle = BufferHandle::from_raw(62);
+    let immediate_handle = BufferHandle::from_raw(63);
+    let staged_transaction = TransactionId::from_raw(64);
+    let immediate_transaction = TransactionId::from_raw(65);
+    let staged_surface = SurfaceId::new(66, 1);
+    let immediate_surface = SurfaceId::new(67, 1);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(staged_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(immediate_handle), vec![fd()])
+        .unwrap();
+    let staged = scheduler_batch_with_disposition(
+        staged_transaction,
+        staged_surface,
+        staged_handle,
+        LiveProductionPresentDisposition::StageLayout {
+            epoch: TransactionId::from_raw(1),
+        },
+    );
+    let immediate = scheduler_batch(immediate_transaction, immediate_surface, immediate_handle);
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_batch(&staged, &[], Vec::new(), &mut resources, Instant::now())
+        .unwrap();
+    scheduler
+        .enqueue_batch(&immediate, &[], Vec::new(), &mut resources, Instant::now())
+        .unwrap();
+
+    assert!(scheduler.has_layout_deferred());
+    assert!(scheduler.has_eligible());
+    assert_eq!(
+        scheduler.poll_gate(&mut resources, Instant::now()).unwrap(),
+        LiveProductionPresentGate::Ready(immediate_transaction)
+    );
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(immediate_transaction)
+    );
+}
+
+#[test]
 fn layout_epoch_keeps_only_the_newest_present_per_surface() {
     let first_handle = BufferHandle::from_raw(67);
     let second_handle = BufferHandle::from_raw(68);
@@ -802,24 +841,33 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
         .register_source(descriptor(second_handle), vec![fd()])
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
+    let epoch = TransactionId::from_raw(1);
+    let first_batch = scheduler_batch_with_disposition(
+        first_transaction,
+        surface,
+        first_handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
+    let second_batch = scheduler_batch_with_disposition(
+        second_transaction,
+        surface,
+        second_handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
     let first_superseded = scheduler
         .enqueue_batch(
-            &scheduler_batch(first_transaction, surface, first_handle),
+            &first_batch,
             &[],
             Vec::new(),
-            true,
-            false,
             &mut resources,
             Instant::now(),
         )
         .unwrap();
     let second_superseded = scheduler
         .enqueue_batch(
-            &scheduler_batch(second_transaction, surface, second_handle),
+            &second_batch,
             &[],
             Vec::new(),
-            true,
-            false,
             &mut resources,
             Instant::now(),
         )
@@ -854,25 +902,34 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
         .register_source(descriptor(rejected_handle), vec![fd()])
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
+    let epoch = TransactionId::from_raw(2);
+    let matching_batch = scheduler_batch_with_disposition(
+        matching_transaction,
+        surface,
+        matching_handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
     scheduler
         .enqueue_batch(
-            &scheduler_batch(matching_transaction, surface, matching_handle),
+            &matching_batch,
             &[],
             Vec::new(),
-            true,
-            false,
             &mut resources,
             Instant::now(),
         )
         .unwrap();
 
+    let rejected_batch = scheduler_batch_with_disposition(
+        rejected_transaction,
+        surface,
+        rejected_handle,
+        LiveProductionPresentDisposition::RejectLayoutMismatch,
+    );
     let rejected = scheduler
         .enqueue_batch(
-            &scheduler_batch(rejected_transaction, surface, rejected_handle),
+            &rejected_batch,
             &[],
             Vec::new(),
-            true,
-            true,
             &mut resources,
             Instant::now(),
         )

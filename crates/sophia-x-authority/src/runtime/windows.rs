@@ -108,6 +108,19 @@ impl XAuthorityRuntime {
              .set_override_redirect(window, override_redirect)
              .map_err(Into::into)
      }
+
+     pub fn set_window_constraints(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         constraints: sophia_protocol::SurfaceConstraints,
+     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         self.windows
+             .set_constraints(window, constraints)
+             .map_err(Into::into)
+     }
  
      pub fn set_window_visual(
          &mut self,
@@ -401,6 +414,70 @@ impl XAuthorityRuntime {
              height: size.height,
              ..current
          })
+     }
+
+     pub fn admit_window_from_engine(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         geometry: Rect,
+     ) -> Result<Rect, XAuthorityRuntimeError> {
+         if geometry.is_empty()
+             || geometry.width > i32::from(u16::MAX)
+             || geometry.height > i32::from(u16::MAX)
+             || geometry.x < i32::from(i16::MIN)
+             || geometry.x > i32::from(i16::MAX)
+             || geometry.y < i32::from(i16::MIN)
+             || geometry.y > i32::from(i16::MAX)
+         {
+             return Err(XAuthorityRuntimeError::InvalidResource);
+         }
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         let record = self
+             .windows
+             .get(window)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         if record.map_state != crate::XMapState::PolicyPending {
+             return Err(XAuthorityRuntimeError::InvalidResource);
+         }
+         let generation = record.generation;
+         self.configure_window_geometry(
+             namespace,
+             window,
+             XWindowGeometryUpdate {
+                 x: Some(i16::try_from(geometry.x).expect("validated above")),
+                 y: Some(i16::try_from(geometry.y).expect("validated above")),
+                 width: Some(u16::try_from(geometry.width).expect("validated above")),
+                 height: Some(u16::try_from(geometry.height).expect("validated above")),
+                 generation,
+             },
+         )?;
+         self.windows.apply(XWindowLifecycleEvent::Mapped {
+             id: window,
+             generation,
+         })?;
+         Ok(geometry)
+     }
+
+    pub fn unmap_window(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+     ) -> Result<bool, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         let record = self
+             .windows
+             .get(window)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         let was_active = record.map_state != crate::XMapState::Unmapped;
+         let generation = record.generation;
+         self.windows.apply(XWindowLifecycleEvent::Unmapped {
+             id: window,
+             generation,
+         })?;
+         Ok(was_active)
      }
  
      pub fn map_namespace_windows(

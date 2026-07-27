@@ -24,6 +24,7 @@ pub struct XServerFrontendConfig {
     max_concurrent_clients: NonZeroUsize,
     output_topology: sophia_protocol::OutputTopologySnapshot,
     xkb_config: crate::XkbRmlvoConfig,
+    defer_policy_maps: bool,
 }
 
 impl core::fmt::Debug for XServerFrontendConfig {
@@ -41,6 +42,7 @@ impl core::fmt::Debug for XServerFrontendConfig {
             .field("max_concurrent_clients", &self.max_concurrent_clients)
             .field("output_topology", &self.output_topology)
             .field("xkb_config", &self.xkb_config)
+            .field("defer_policy_maps", &self.defer_policy_maps)
             .finish()
     }
 }
@@ -85,6 +87,7 @@ impl XServerFrontendConfig {
             max_concurrent_clients: DEFAULT_MAX_CONCURRENT_CLIENTS,
             output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
             xkb_config: crate::XkbRmlvoConfig::default(),
+            defer_policy_maps: false,
         })
     }
 
@@ -145,6 +148,15 @@ impl XServerFrontendConfig {
 
     pub const fn xkb_config(&self) -> &crate::XkbRmlvoConfig {
         &self.xkb_config
+    }
+
+    pub fn with_policy_map_deferred(mut self, deferred: bool) -> Self {
+        self.defer_policy_maps = deferred;
+        self
+    }
+
+    pub const fn policy_map_deferred(&self) -> bool {
+        self.defer_policy_maps
     }
 
     pub fn socket_path(&self) -> &Path {

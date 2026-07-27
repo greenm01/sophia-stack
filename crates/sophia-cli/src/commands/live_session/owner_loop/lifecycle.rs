@@ -467,7 +467,9 @@
             }
         }
         if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
-            runtime.set_present_scheduling_blocked(layout.pending.is_some());
+            if layout.pending.is_none() {
+                runtime.release_layout_deferred_presentations();
+            }
             let service = runtime.service_native(native_scanout)?;
             if let Some(retired) = service.retired_present {
                 let stable = runtime.stable_present(native_scanout, retired.transaction);

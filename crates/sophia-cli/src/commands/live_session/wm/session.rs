@@ -8,9 +8,10 @@ impl LiveWmLayoutFingerprint {
         Self(
             layout
                 .layers
-                .values()
-                .filter(|layer| state.surface_workspace(layer.surface).is_some())
-                .map(|layer| layer.surface)
+                .keys()
+                .chain(layout.planning_surfaces.keys())
+                .copied()
+                .filter(|surface| state.surface_workspace(*surface).is_some())
                 .collect(),
         )
     }
@@ -18,7 +19,7 @@ impl LiveWmLayoutFingerprint {
     fn still_matches(&self, layout: &PersistentLiveLayout) -> bool {
         self.0
             .iter()
-            .all(|surface| layout.layers.contains_key(surface))
+            .all(|surface| layout.knows_surface(*surface))
     }
 }
 
@@ -354,9 +355,8 @@ impl LiveWmSession {
         if self.has_request_source(LiveWmProposalSource::Manage(surface)) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        let node = layout
-            .layers
-            .get(&surface)
+        let facts = layout
+            .layout_facts(surface)
             .ok_or("new WM surface is missing from live layout")?;
         let workspace = self
             .workspace_state
@@ -373,8 +373,8 @@ impl LiveWmSession {
         let request = WmRequestPacket {
             transaction: self.mint_transaction()?,
             kind: WmRequestKind::ManageSurface(WmManageSurface {
-                node: live_layout_node(
-                    node,
+                node: live_layout_node_from_facts(
+                    facts,
                     workspace,
                     &layout.layout_epochs,
                     self.candidate_chrome_style(),
@@ -701,7 +701,7 @@ impl LiveWmSession {
             );
         }
         validate_live_wm_transaction(&transaction, layout, bounds)?;
-        let mut proposed = layout.layers.values().cloned().collect::<Vec<_>>();
+        let mut proposed = layout.planning_layers();
         let engine = HeadlessEngine::new(output);
         let commit = engine.commit_layout_transaction(&transaction, &mut proposed);
         if commit.outcome != TransactionOutcome::Committed {

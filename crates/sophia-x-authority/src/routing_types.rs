@@ -1,6 +1,8 @@
 use std::sync::mpsc::SyncSender;
 
-use sophia_protocol::{ClientAdmissionId, RoutedInputRequest, Size, SurfaceId, TransactionId};
+use sophia_protocol::{
+    ClientAdmissionId, Rect, RoutedInputRequest, Size, SurfaceId, TransactionId,
+};
 
 use crate::{XAuthorityOutputUpdateOutcome, XResourceId, XServerFrontendClientId};
 
@@ -101,6 +103,11 @@ pub struct XAuthorityClientInputDelivery {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityControlCommand {
+    AdmitSurface {
+        transaction: TransactionId,
+        surface: SurfaceId,
+        geometry: Rect,
+    },
     ConfigureSurface {
         transaction: TransactionId,
         surface: SurfaceId,
@@ -118,41 +125,53 @@ pub enum XAuthorityControlCommand {
         transaction: TransactionId,
         surface: SurfaceId,
     },
+    WithdrawSurface {
+        transaction: TransactionId,
+        surface: SurfaceId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum XAuthorityControlKind {
+    AdmitSurface,
     ConfigureSurface,
     FocusSurface,
     ClearFocus,
     CloseSurface,
+    WithdrawSurface,
 }
 
 impl XAuthorityControlCommand {
     pub const fn kind(self) -> XAuthorityControlKind {
         match self {
+            Self::AdmitSurface { .. } => XAuthorityControlKind::AdmitSurface,
             Self::ConfigureSurface { .. } => XAuthorityControlKind::ConfigureSurface,
             Self::FocusSurface { .. } => XAuthorityControlKind::FocusSurface,
             Self::ClearFocus { .. } => XAuthorityControlKind::ClearFocus,
             Self::CloseSurface { .. } => XAuthorityControlKind::CloseSurface,
+            Self::WithdrawSurface { .. } => XAuthorityControlKind::WithdrawSurface,
         }
     }
 
     pub const fn transaction(self) -> TransactionId {
         match self {
-            Self::ConfigureSurface { transaction, .. }
+            Self::AdmitSurface { transaction, .. }
+            | Self::ConfigureSurface { transaction, .. }
             | Self::FocusSurface { transaction, .. }
             | Self::ClearFocus { transaction, .. }
-            | Self::CloseSurface { transaction, .. } => transaction,
+            | Self::CloseSurface { transaction, .. }
+            | Self::WithdrawSurface { transaction, .. } => transaction,
         }
     }
 
     pub const fn surface(self) -> SurfaceId {
         match self {
-            Self::ConfigureSurface { surface, .. }
+            Self::AdmitSurface { surface, .. }
+            | Self::ConfigureSurface { surface, .. }
             | Self::FocusSurface { surface, .. }
             | Self::ClearFocus { surface, .. }
-            | Self::CloseSurface { surface, .. } => surface,
+            | Self::CloseSurface { surface, .. }
+            | Self::WithdrawSurface { surface, .. } => surface,
         }
     }
 }

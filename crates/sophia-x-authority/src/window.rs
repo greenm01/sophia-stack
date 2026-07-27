@@ -53,6 +53,10 @@ pub enum XWindowLifecycleEvent {
         id: XResourceId,
         generation: u64,
     },
+    PolicyPending {
+        id: XResourceId,
+        generation: u64,
+    },
     Unmapped {
         id: XResourceId,
         generation: u64,
@@ -126,7 +130,21 @@ impl XWindowTable {
                     .windows
                     .get_mut(&id)
                     .ok_or(XAuthorityAccessError::UnknownResource)?;
+                if record.map_state == XMapState::Mapped {
+                    return Ok(None);
+                }
                 record.map_state = XMapState::Mapped;
+                Ok(Some(record.authority_surface()))
+            }
+            XWindowLifecycleEvent::PolicyPending { id, generation: _ } => {
+                let record = self
+                    .windows
+                    .get_mut(&id)
+                    .ok_or(XAuthorityAccessError::UnknownResource)?;
+                if record.map_state != XMapState::Unmapped {
+                    return Ok(None);
+                }
+                record.map_state = XMapState::PolicyPending;
                 Ok(Some(record.authority_surface()))
             }
             XWindowLifecycleEvent::Unmapped { id, generation: _ } => {
@@ -134,6 +152,9 @@ impl XWindowTable {
                     .windows
                     .get_mut(&id)
                     .ok_or(XAuthorityAccessError::UnknownResource)?;
+                if record.map_state == XMapState::Unmapped {
+                    return Ok(None);
+                }
                 record.map_state = XMapState::Unmapped;
                 Ok(Some(record.authority_surface()))
             }
@@ -184,6 +205,19 @@ impl XWindowTable {
             .get_mut(&id)
             .ok_or(XAuthorityAccessError::UnknownResource)?;
         record.override_redirect = override_redirect;
+        Ok(record.authority_surface())
+    }
+
+    pub fn set_constraints(
+        &mut self,
+        id: XResourceId,
+        constraints: SurfaceConstraints,
+    ) -> Result<AuthoritySurface, XAuthorityAccessError> {
+        let record = self
+            .windows
+            .get_mut(&id)
+            .ok_or(XAuthorityAccessError::UnknownResource)?;
+        record.constraints = constraints;
         Ok(record.authority_surface())
     }
 

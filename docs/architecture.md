@@ -109,6 +109,13 @@ or layout policy.
   modifier state before emitting core and selected XI2 events. Live topology
   updates produce mask-selected RandR notifications, and surface resize keeps
   new geometry quarantined until matching pixels commit.
+- A policy-managed X11 `MapWindow` first emits a protocol-neutral
+  `SurfacePresentationIntent`; it does not make the window client-visible.
+  Engine and the blind WM can therefore plan from geometry, constraints, role,
+  and generation before any pixel buffer exists. After Engine accepts the
+  proposal, one `AdmitSurface` control configures and maps the X window, and
+  matching authority pixels complete the atomic visual commit. Override-redirect
+  and standalone frontend paths retain their ordinary immediate-map behavior.
 - `sophia-portal` has deterministic reducers for clipboard, drag-and-drop, file
   handoff, screen capture, URI open, and notifications. Owner-only bounded
   broker IPC, policy-provider IPC, expiry/revocation lifecycle, and the first
@@ -205,6 +212,20 @@ another extent, Engine may publish `min_size == max_size == safe_extent` and
 position, floating decision, client identity, or protocol object. Late pixels
 from the abandoned extent remain fenced until the authority returns to the
 safe content extent.
+
+Admission is a state machine beside, not inside, committed visual state:
+`PolicyPending`, `ControlPending`, `AwaitingPixels`, then `Managed`. Planning
+records never contain a synthetic buffer and never enter the committed scene.
+An admission control acknowledgement proves only that protocol configure/map
+effects were delivered; visual admission still waits for a concrete buffer at
+the accepted content extent.
+
+Present scheduling is classified per submission. A buffer matching the pending
+layout epoch is staged with that epoch, a known wrong-size buffer is rejected,
+and submissions for unrelated surfaces remain immediately eligible. A layout
+epoch must not become a session-wide Present barrier. The scheduler shares one
+immutable authority batch and retains only bounded submission records rather
+than cloning the full batch per queued Present.
 
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and

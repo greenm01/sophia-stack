@@ -86,6 +86,7 @@
                 }
                 let has_engine_work = !batch.transactions.is_empty()
                     || !batch.surface_presentations.is_empty()
+                    || !batch.presentation_intents.is_empty()
                     || !batch.removed_surfaces.is_empty()
                     || !batch.surface_output_reservations.is_empty()
                     || !batch.cpu_buffer_updates.is_empty()
@@ -258,10 +259,8 @@
                         "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
                     );
                 }
-                let reject_present_for_layout =
-                    layout.present_pixels_conflict_with_pending_layout(&batch);
                 let batch = layout.projected_batch(&batch);
-                let production_batch = production_authority_batch(&batch);
+                let production_batch = production_authority_batch(&batch, &layout);
                 if runtime.is_none() {
                     runtime = Some(
                         LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut(), None)?
@@ -281,6 +280,9 @@
                 let runtime = runtime
                     .as_mut()
                     .expect("persistent backend runtime was initialized above");
+                if layout.pending.is_none() {
+                    runtime.release_layout_deferred_presentations();
+                }
                 let raised_surface = layout
                     .top_client_positioned_surface()
                     .or_else(|| focus.focused_surface(seat));
@@ -328,8 +330,6 @@
                                 focused_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
-                                defer_present: layout.pending.is_some(),
-                                reject_present_for_layout,
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -357,8 +357,6 @@
                                 focused_surface,
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
-                                defer_present: layout.pending.is_some(),
-                                reject_present_for_layout,
                                 output_descriptors: &outputs,
                                 native_scanout: if defer_cpu_frame {
                                     None
@@ -608,7 +606,9 @@
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())
                 {
-                    runtime.set_present_scheduling_blocked(layout.pending.is_some());
+                    if layout.pending.is_none() {
+                        runtime.release_layout_deferred_presentations();
+                    }
                     let service = runtime.service_native(native_scanout)?;
                     if let Some(retired) = service.retired_present {
                         let stable = runtime.stable_present(native_scanout, retired.transaction);

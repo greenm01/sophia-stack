@@ -1,8 +1,10 @@
 use super::*;
 use crate::commands::live_session::{
-    LiveWmLayoutFingerprint, PersistentLiveLayout, live_layout_node, planning_state_for_response,
+    LiveWmLayoutFingerprint, PersistentLiveLayout, live_layout_node, live_layout_node_from_facts,
+    planning_state_for_response,
 };
 use sophia_engine::WmWorkspaceState;
+use sophia_protocol::{SurfaceConstraints, TransactionId, WorkspaceId};
 
 fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     LayerSnapshot {
@@ -147,5 +149,52 @@ fn recovery_content_extent_crosses_wm_boundary_as_outer_allocation() {
             width: outer.width,
             height: outer.height,
         }
+    );
+}
+
+#[test]
+fn presentation_request_produces_a_wm_node_before_pixels_exist() {
+    let surface = SurfaceId::new(4, 1);
+    let geometry = Rect {
+        x: 80,
+        y: 60,
+        width: 500,
+        height: 500,
+    };
+    let intent = sophia_protocol::SurfacePresentationIntent {
+        surface,
+        kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+        role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    };
+    let mut batch =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(10));
+    batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    batch.presentation_intents.push(intent);
+    let mut layout = PersistentLiveLayout::default();
+
+    let observation = layout.observe_authority_batch(&batch);
+
+    assert_eq!(observation.new_surfaces, vec![surface]);
+    assert_eq!(layout.next_unmanaged_surface(), Some(surface));
+    assert!(layout.layers.is_empty());
+    assert_eq!(layout.planning_layers()[0].source, BufferSource::None);
+    let chrome = sophia_engine::SurfaceChromeStyle::default();
+    let node = live_layout_node_from_facts(
+        layout.layout_facts(surface).unwrap(),
+        WorkspaceId::from_raw(1),
+        &layout.layout_epochs,
+        chrome,
+    )
+    .unwrap();
+    assert_eq!(node.surface, surface);
+    assert_eq!(
+        node.geometry,
+        sophia_engine::outer_surface_geometry(geometry, chrome).unwrap()
     );
 }

@@ -7,6 +7,7 @@ struct PendingLiveWmLayout {
     update: WmTransactionUpdate,
     moved_surfaces: usize,
     staged_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
+    admission_surfaces: BTreeSet<SurfaceId>,
     source: Option<LiveWmProposalSource>,
     effects: Option<LiveWmCommitEffects>,
 }
@@ -19,6 +20,8 @@ struct LiveAuthorityLayoutObservation {
 #[derive(Default)]
 struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
+    planning_surfaces: BTreeMap<SurfaceId, sophia_engine::SurfaceLayoutFacts>,
+    admissions: sophia_engine::SurfaceAdmissionTable,
     dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
     cpu_buffer_sizes: BTreeMap<u64, Size>,
     layout_epochs: LayoutEpochCoordinator,
@@ -47,7 +50,9 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> LiveAuthorityLayoutObservation {
         let mut output_reservations_changed = false;
+        let mut new_surfaces = BTreeSet::new();
         self.client_routes.observe(batch);
+        self.observe_presentation_intents(batch, &mut new_surfaces);
         for presentation in &batch.surface_presentations {
             self.presentation_roles
                 .insert(presentation.surface, presentation.role);
@@ -66,7 +71,7 @@ impl PersistentLiveLayout {
             }
             match presentation.role {
                 sophia_protocol::SurfacePresentationRole::PolicyManaged => {
-                    if self.layers.contains_key(&presentation.surface) {
+                    if presentation.mapped && self.layers.contains_key(&presentation.surface) {
                         self.unmanaged_surfaces.insert(presentation.surface);
                     }
                 }
@@ -100,7 +105,6 @@ impl PersistentLiveLayout {
             output_reservations_changed |= self.output_reservations.remove_surface(*surface);
         }
         self.remove_surfaces(&batch.removed_surfaces);
-        let mut new_surfaces = Vec::new();
         for (index, transaction) in batch.transactions.iter().enumerate() {
             let geometry_size = Size {
                 width: transaction.target_geometry.width,
@@ -118,22 +122,30 @@ impl PersistentLiveLayout {
             {
                 continue;
             }
+            self.layout_epochs
+                .record_safe_observation(transaction.surface, observed_size);
+            let resize_owned = self.pending.as_ref().is_some_and(|pending| {
+                pending.requested_sizes.contains_key(&transaction.surface)
+            });
             let staged_for_resize = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.get(&transaction.surface) == pixel_size.as_ref()
             });
-            if staged_for_resize {
-                let pending = self.pending.as_mut().expect("checked above");
-                pending
-                    .staged_transactions
-                    .insert(transaction.surface, transaction.clone());
-                if let Some(layer) = pending
-                    .layers
-                    .iter_mut()
-                    .find(|layer| layer.surface == transaction.surface)
-                {
-                    layer.source = transaction.target_buffer;
-                    layer.damage = transaction.damage.clone();
-                    layer.generation = transaction.previous_committed_generation.saturating_add(1);
+            if resize_owned {
+                if staged_for_resize {
+                    let pending = self.pending.as_mut().expect("checked above");
+                    pending
+                        .staged_transactions
+                        .insert(transaction.surface, transaction.clone());
+                    if let Some(layer) = pending
+                        .layers
+                        .iter_mut()
+                        .find(|layer| layer.surface == transaction.surface)
+                    {
+                        layer.source = transaction.target_buffer;
+                        layer.damage = transaction.damage.clone();
+                        layer.generation =
+                            transaction.previous_committed_generation.saturating_add(1);
+                    }
                 }
                 continue;
             }
@@ -152,10 +164,15 @@ impl PersistentLiveLayout {
                     layer.clone()
                 }
                 None => {
-                    new_surfaces.push(transaction.surface);
+                    new_surfaces.insert(transaction.surface);
                     let policy_managed = self.presentation_roles.get(&transaction.surface)
                         != Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned);
-                    if policy_managed {
+                    if policy_managed
+                        && matches!(
+                            self.admissions.state(transaction.surface),
+                            sophia_engine::SurfacePresentationAdmissionState::PolicyPending
+                        )
+                    {
                         self.unmanaged_surfaces.insert(transaction.surface);
                         self.layout_epochs.set_admission(
                             transaction.surface,
@@ -196,7 +213,7 @@ impl PersistentLiveLayout {
             self.merge_unrequested_observation_into_pending(observed_layer);
         }
         LiveAuthorityLayoutObservation {
-            new_surfaces,
+            new_surfaces: new_surfaces.into_iter().collect(),
             output_reservations_changed,
         }
     }
@@ -228,8 +245,11 @@ impl PersistentLiveLayout {
         }
         self.layers
             .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.planning_surfaces
+            .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
             self.layout_epochs.remove(*surface);
+            self.admissions.remove(*surface);
             self.admission_retries.remove(surface);
         }
         self.unmanaged_surfaces
@@ -265,7 +285,7 @@ impl PersistentLiveLayout {
         self.unmanaged_surfaces
             .iter()
             .find(|surface| {
-                self.layers.contains_key(surface)
+                self.knows_surface(**surface)
                     && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
             })
             .copied()
@@ -309,21 +329,50 @@ impl PersistentLiveLayout {
             }
         }
         proposal.requested_sizes.retain(|surface, size| {
-            self.layout_epochs.committed_size(*surface) != Some(*size)
-                && self.layout_epochs.request_allowed(*surface, *size)
+            self.layout_epochs.request_allowed(*surface, *size)
+                && (matches!(
+                    self.admissions.state(*surface),
+                    sophia_engine::SurfacePresentationAdmissionState::PolicyPending
+                ) || self.layout_epochs.committed_size(*surface) != Some(*size))
         });
+        let mut admission_surfaces = BTreeSet::new();
         for (surface, size) in &proposal.requested_sizes {
             let client = self
                 .client_routes
                 .client_for_surface(*surface)
                 .ok_or("live WM configure has no X11 client route for its surface")?;
-            session_controls.enqueue(XAuthorityClientControlCommand {
-                client,
-                command: XAuthorityControlCommand::ConfigureSurface {
+            let command = if matches!(
+                self.admissions.state(*surface),
+                sophia_engine::SurfacePresentationAdmissionState::PolicyPending
+            ) {
+                let geometry = proposal
+                    .layers
+                    .iter()
+                    .find(|layer| layer.surface == *surface)
+                    .map(|layer| layer.geometry)
+                    .ok_or("live WM admission has no planned geometry")?;
+                if !self
+                    .admissions
+                    .begin_control(*surface, proposal.transaction, geometry)
+                {
+                    return Err("Engine rejected live WM admission transition".into());
+                }
+                admission_surfaces.insert(*surface);
+                XAuthorityControlCommand::AdmitSurface {
+                    transaction: proposal.transaction,
+                    surface: *surface,
+                    geometry,
+                }
+            } else {
+                XAuthorityControlCommand::ConfigureSurface {
                     transaction: proposal.transaction,
                     surface: *surface,
                     size: *size,
-                },
+                }
+            };
+            session_controls.enqueue(XAuthorityClientControlCommand {
+                client,
+                command,
             }, Instant::now()).map_err(|error| {
                 format!("failed to queue WM configure control: {error:?}")
             })?;
@@ -331,7 +380,10 @@ impl PersistentLiveLayout {
         let ready = proposal
             .requested_sizes
             .iter()
-            .all(|(surface, size)| self.layout_epochs.committed_size(*surface) == Some(*size));
+            .all(|(surface, size)| {
+                self.layout_epochs.committed_size(*surface) == Some(*size)
+                    && !admission_surfaces.contains(surface)
+            });
         if ready {
             return Ok(Some(self.commit_proposal(proposal)));
         }
@@ -344,6 +396,7 @@ impl PersistentLiveLayout {
             update: proposal.update,
             moved_surfaces: proposal.moved_surfaces,
             staged_transactions: BTreeMap::new(),
+            admission_surfaces,
             source: proposal.source,
             effects: proposal.effects,
         });
@@ -366,7 +419,7 @@ impl PersistentLiveLayout {
     fn resolve_pending(&mut self) -> Option<LiveWmCommitResult> {
         let pending = self.pending.as_ref()?;
         let ready = pending.requested_sizes.iter().all(|(surface, size)| {
-            pending
+            let staged_matches = pending
                 .staged_transactions
                 .get(surface)
                 .and_then(|transaction| {
@@ -376,7 +429,20 @@ impl PersistentLiveLayout {
                         &self.cpu_buffer_sizes,
                     )
                 })
-                == Some(*size)
+                == Some(*size);
+            let retained_matches = self.layout_epochs.committed_size(*surface) == Some(*size)
+                && pending
+                    .layers
+                    .iter()
+                    .find(|layer| layer.surface == *surface)
+                    .is_some_and(|layer| layer.source != BufferSource::None);
+            let admission_ready = !pending.admission_surfaces.contains(surface)
+                || matches!(
+                    self.admissions.state(*surface),
+                    sophia_engine::SurfacePresentationAdmissionState::AwaitingPixels { .. }
+                        | sophia_engine::SurfacePresentationAdmissionState::Managed
+                );
+            (staged_matches || retained_matches) && admission_ready
         });
         if !ready {
             return None;
@@ -403,12 +469,21 @@ impl PersistentLiveLayout {
             .map(|layer| layer.surface)
             .filter(|surface| self.unmanaged_surfaces.contains(surface))
             .collect::<Vec<_>>();
+        let terminal_admissions = admission_surfaces
+            .iter()
+            .copied()
+            .filter(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) >= 1)
+            .collect::<BTreeSet<_>>();
         let rollback = self.layout_epochs.begin_recovery(
             pending
                 .requested_sizes
                 .iter()
+                .filter(|(surface, _)| !terminal_admissions.contains(surface))
                 .map(|(surface, size)| (*surface, *size)),
-            admission_surfaces.iter().copied(),
+            admission_surfaces
+                .iter()
+                .copied()
+                .filter(|surface| !terminal_admissions.contains(surface)),
         )?;
         let rollback_transaction = rollback
             .first()
@@ -431,6 +506,31 @@ impl PersistentLiveLayout {
             }, Instant::now()).map_err(|error| {
                 format!("failed to queue WM rollback control: {error:?}")
             })?;
+        }
+        for surface in &terminal_admissions {
+            let client = self
+                .client_routes
+                .client_for_surface(*surface)
+                .ok_or("live WM withdrawal has no X11 client route")?;
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand {
+                        client,
+                        command: XAuthorityControlCommand::WithdrawSurface {
+                            transaction: pending.transaction,
+                            surface: *surface,
+                        },
+                    },
+                    Instant::now(),
+                )
+                .map_err(|error| {
+                    format!("failed to queue terminal WM admission withdrawal: {error:?}")
+                })?;
+            self.admissions.remove(*surface);
+            self.planning_surfaces.remove(surface);
+            self.unmanaged_surfaces.remove(surface);
+            self.admission_retries.remove(surface);
+            self.layout_epochs.remove(*surface);
         }
         let resize_state = pending
             .requested_sizes
@@ -457,7 +557,10 @@ impl PersistentLiveLayout {
             pending.requested_sizes.len(),
             resize_state,
         );
-        for surface in admission_surfaces {
+        for surface in admission_surfaces
+            .into_iter()
+            .filter(|surface| !terminal_admissions.contains(surface))
+        {
             let attempts = self.admission_retries.entry(surface).or_default();
             *attempts = attempts.saturating_add(1);
         }
@@ -490,6 +593,7 @@ impl PersistentLiveLayout {
             update: proposal.update,
             moved_surfaces: proposal.moved_surfaces,
             staged_transactions: BTreeMap::new(),
+            admission_surfaces: BTreeSet::new(),
             source: proposal.source,
             effects: proposal.effects,
         };
@@ -498,6 +602,10 @@ impl PersistentLiveLayout {
 
     fn commit_pending(&mut self, pending: PendingLiveWmLayout) -> LiveWmCommitResult {
         let matched_surfaces = pending.staged_transactions.len();
+        for surface in &pending.admission_surfaces {
+            self.admissions.mark_managed(*surface);
+            self.planning_surfaces.remove(surface);
+        }
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
                 if let Some(size) = live_transaction_pixel_size(
@@ -564,19 +672,6 @@ impl PersistentLiveLayout {
         project_authority_batch_onto_layout(batch.clone(), &self.layers)
     }
 
-    fn present_pixels_conflict_with_pending_layout(
-        &self,
-        batch: &XAuthorityObservedTransactionBatch,
-    ) -> bool {
-        let Some(pending) = self.pending.as_ref() else {
-            return false;
-        };
-        present_pixels_conflict_with_requested_sizes(
-            &pending.requested_sizes,
-            &self.dma_buf_sizes,
-            batch,
-        )
-    }
 }
 
 fn live_transaction_pixel_size(
@@ -604,6 +699,7 @@ fn wm_update_coordinator_batch(
         transaction,
         transactions: Vec::new(),
         surface_presentations: Vec::new(),
+        presentation_intents: Vec::new(),
         removed_surfaces: Vec::new(),
         surface_output_reservations: Vec::new(),
         cpu_buffer_updates: Vec::new(),
@@ -626,36 +722,13 @@ fn center_geometry_without_scaling(mut geometry: Rect, output: Size) -> Rect {
     geometry
 }
 
-fn live_layout_node(
-    layer: &LayerSnapshot,
-    workspace: WorkspaceId,
-    coordinator: &LayoutEpochCoordinator,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
-    let mut capabilities = LayoutNodeCapabilities::STANDARD_TOPLEVEL;
-    capabilities.resizable = coordinator.surface_resizable(layer.surface);
-    Ok(LayoutNodeSnapshot {
-        surface: layer.surface,
-        workspace,
-        kind: LayoutNodeKind::Toplevel,
-        capabilities,
-        state: LayoutNodeState::NORMAL,
-        constraints: sophia_engine::outer_surface_constraints(
-            coordinator.effective_constraints(layer.surface),
-            chrome,
-        )?,
-        geometry: sophia_engine::outer_surface_geometry(layer.geometry, chrome)?,
-        generation: layer.generation,
-    })
-}
-
 fn validate_live_wm_transaction(
     transaction: &sophia_protocol::LayoutTransaction,
     layout: &PersistentLiveLayout,
     bounds: Rect,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for placement in &transaction.render_positions {
-        let known = layout.layers.contains_key(&placement.surface);
+        let known = layout.knows_surface(placement.surface);
         let empty = placement.geometry.is_empty();
         let within = rect_is_within(bounds, placement.geometry);
         if !known || empty || !within {
@@ -667,7 +740,7 @@ fn validate_live_wm_transaction(
         }
     }
     for request in &transaction.requested_sizes {
-        if !layout.layers.contains_key(&request.surface)
+        if !layout.knows_surface(request.surface)
             || request.size.width <= 0
             || request.size.height <= 0
             || request.size.width > i32::from(u16::MAX)
@@ -678,7 +751,7 @@ fn validate_live_wm_transaction(
     }
     if transaction
         .focus
-        .is_some_and(|surface| !layout.layers.contains_key(&surface))
+        .is_some_and(|surface| !layout.knows_surface(surface))
     {
         return Err("live WM returned an unknown focus surface".into());
     }

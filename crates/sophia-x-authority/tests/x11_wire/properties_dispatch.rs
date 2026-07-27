@@ -948,3 +948,38 @@ fn x11_client_event_encoders_emit_32_byte_records() {
     assert_eq!(button[1], 1);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &button[2..4]), 13);
 }
+
+#[test]
+fn icccm_normal_hints_reduce_to_protocol_neutral_minimum_and_maximum() {
+    let namespace = NamespaceId::from_raw(45);
+    let atoms = XAtomTable::new();
+    let mut values = [0_u32; 18];
+    values[0] = (1 << 4) | (1 << 5);
+    values[5] = 320;
+    values[6] = 200;
+    values[7] = 1920;
+    values[8] = 1080;
+    let record = XPropertyRecord {
+        namespace,
+        window: XResourceId::new(0x220010, 1),
+        property: 40,
+        property_type: 41,
+        format: 32,
+        bytes: values.into_iter().flat_map(u32::to_le_bytes).collect(),
+        generation: 1,
+    };
+
+    assert_eq!(
+        decode_x_size_hints(&record, &atoms, XByteOrder::LittleEndian),
+        Some(Ok(SurfaceConstraints {
+            min_size: Some(Size {
+                width: 320,
+                height: 200,
+            }),
+            max_size: Some(Size {
+                width: 1920,
+                height: 1080,
+            }),
+        }))
+    );
+}

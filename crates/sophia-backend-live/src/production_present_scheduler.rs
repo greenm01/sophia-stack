@@ -1,19 +1,20 @@
 use crate::{
     LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityBatch,
+    LiveProductionPresentDisposition,
 };
 use sophia_engine::PreparedSurfaceCommit;
-use sophia_protocol::{LayerSnapshot, Rect, SurfaceId, SurfaceTransaction, TransactionId};
+use sophia_protocol::{LayerSnapshot, Rect, SurfaceId, TransactionId};
 use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
 use std::error::Error;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub struct LiveProductionQueuedPresent {
     pub submission: LivePresentationSubmission,
     pub surface: sophia_protocol::SurfaceId,
-    pub transactions: Vec<SurfaceTransaction>,
-    pub cpu_layers: Vec<LiveCpuPresentationLayer>,
+    pub cpu_layers: Arc<[LiveCpuPresentationLayer]>,
     pub target: Rect,
     pub surface_clip: Rect,
     deferred_by_layout: bool,
@@ -70,13 +71,20 @@ impl LiveProductionPresentScheduler {
         batch: &LiveProductionAuthorityBatch,
         presentation_layout: &[LayerSnapshot],
         cpu_layers: Vec<LiveCpuPresentationLayer>,
-        deferred_by_layout: bool,
-        reject_for_layout: bool,
         resources: &mut LivePresentationResourceSession,
         now: Instant,
     ) -> Result<Vec<TransactionId>, Box<dyn Error>> {
         let mut superseded = Vec::new();
+        let cpu_layers: Arc<[LiveCpuPresentationLayer]> = cpu_layers.into();
         for submission in &batch.present_submissions {
+            let deferred_by_layout = matches!(
+                submission.layout_disposition,
+                LiveProductionPresentDisposition::StageLayout { .. }
+            );
+            let reject_for_layout = matches!(
+                submission.layout_disposition,
+                LiveProductionPresentDisposition::RejectLayoutMismatch
+            );
             let surface = submission.surface;
             let x_offset = submission.x_offset;
             let y_offset = submission.y_offset;
@@ -89,12 +97,6 @@ impl LiveProductionPresentScheduler {
                 .iter()
                 .find(|layer| layer.surface == surface)
                 .map_or(transaction.target_geometry, |layer| layer.geometry);
-            let mut transactions = batch.transactions.clone();
-            for transaction in &mut transactions {
-                if transaction.surface == surface {
-                    transaction.target_geometry = geometry;
-                }
-            }
             let submission = LivePresentationSubmission {
                 transaction: submission.transaction,
                 buffer: submission.buffer,
@@ -128,8 +130,7 @@ impl LiveProductionPresentScheduler {
             self.queued.push_back(LiveProductionQueuedPresent {
                 submission,
                 surface,
-                transactions,
-                cpu_layers: cpu_layers.clone(),
+                cpu_layers: Arc::clone(&cpu_layers),
                 target: Rect {
                     x: geometry.x.saturating_add(i32::from(x_offset)),
                     y: geometry.y.saturating_add(i32::from(y_offset)),
@@ -158,11 +159,6 @@ impl LiveProductionPresentScheduler {
                 ..geometry
             };
             queued.surface_clip = geometry;
-            for transaction in &mut queued.transactions {
-                if transaction.surface == surface {
-                    transaction.target_geometry = geometry;
-                }
-            }
         }
     }
 
@@ -174,9 +170,24 @@ impl LiveProductionPresentScheduler {
         if self.submitted.is_some() {
             return Ok(LiveProductionPresentGate::SubmittedInFlight);
         }
-        let Some(queued) = self.queued.front() else {
+        let Some(eligible) = self
+            .queued
+            .iter()
+            .position(|queued| !queued.deferred_by_layout)
+        else {
             return Ok(LiveProductionPresentGate::Idle);
         };
+        if eligible != 0 {
+            let queued = self
+                .queued
+                .remove(eligible)
+                .expect("eligible queued Present index exists");
+            self.queued.push_front(queued);
+        }
+        let queued = self
+            .queued
+            .front()
+            .expect("eligible Present was moved to the queue front");
         let transaction = queued.submission.transaction;
         if now < queued.not_before {
             self.acquire_waits = self.acquire_waits.saturating_add(1);
@@ -217,6 +228,20 @@ impl LiveProductionPresentScheduler {
 
     pub fn has_queued(&self) -> bool {
         !self.queued.is_empty()
+    }
+
+    pub fn has_eligible(&self) -> bool {
+        self.queued.iter().any(|queued| !queued.deferred_by_layout)
+    }
+
+    pub fn has_layout_deferred(&self) -> bool {
+        self.queued.iter().any(|queued| queued.deferred_by_layout)
+    }
+
+    pub fn release_layout_deferred(&mut self) {
+        for queued in &mut self.queued {
+            queued.deferred_by_layout = false;
+        }
     }
 
     pub fn take_diagnose_first_mixed_export(&mut self) -> bool {

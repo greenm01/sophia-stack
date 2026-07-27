@@ -77,6 +77,97 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
 }
 
 #[cfg(unix)]
+fn x11_surface_geometry_records(
+    byte_order: XByteOrder,
+    event_sequence: u16,
+    client: XServerFrontendClientId,
+    window: XResourceId,
+    geometry: Rect,
+    admit: bool,
+    protocol_routing: Option<&XServerFrontendRouteRegistry>,
+) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    let width = u16::try_from(geometry.width)
+        .map_err(|_| X11SetupSocketError::new("X11 control geometry width is invalid"))?;
+    let height = u16::try_from(geometry.height)
+        .map_err(|_| X11SetupSocketError::new("X11 control geometry height is invalid"))?;
+    let present_event_ids = protocol_routing
+        .map(|routing| routing.present_configure_event_ids(client, window))
+        .transpose()
+        .map_err(|error| {
+            X11SetupSocketError::new(format!(
+                "failed to resolve Present ConfigureNotify subscriptions: {error}"
+            ))
+        })?
+        .unwrap_or_default();
+    let mut records =
+        Vec::with_capacity(present_event_ids.len() + if admit { 4 } else { 2 });
+    records.push(encode_x_client_event(
+        byte_order,
+        XClientEvent::ConfigureNotify {
+            sequence: event_sequence,
+            event: window,
+            window,
+            above_sibling: None,
+            x: clamp_engine_i16(geometry.x),
+            y: clamp_engine_i16(geometry.y),
+            width,
+            height,
+            border_width: 0,
+            override_redirect: false,
+        },
+    ));
+    records.extend(present_event_ids.into_iter().map(|event_id| {
+        encode_x_client_event(
+            byte_order,
+            XClientEvent::PresentConfigureNotify {
+                sequence: event_sequence,
+                event_id,
+                window,
+                x: clamp_engine_i16(geometry.x),
+                y: clamp_engine_i16(geometry.y),
+                width,
+                height,
+                pixmap_width: width,
+                pixmap_height: height,
+                pixmap_flags: 0,
+            },
+        )
+    }));
+    if admit {
+        records.push(encode_x_client_event(
+            byte_order,
+            XClientEvent::MapNotify {
+                sequence: event_sequence,
+                event: window,
+                window,
+                override_redirect: false,
+            },
+        ));
+        records.push(encode_x_client_event(
+            byte_order,
+            XClientEvent::VisibilityNotify {
+                sequence: event_sequence,
+                window,
+                state: 0,
+            },
+        ));
+    }
+    records.push(encode_x_client_event(
+        byte_order,
+        XClientEvent::Expose {
+            sequence: event_sequence,
+            window,
+            x: 0,
+            y: 0,
+            width,
+            height,
+            count: 0,
+        },
+    ));
+    Ok(records)
+}
+
+#[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 fn spawn_x11_control_writer(
     stream: Arc<Mutex<UnixStream>>,
@@ -149,6 +240,44 @@ fn spawn_x11_control_writer(
 
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {
+                XAuthorityControlCommand::AdmitSurface { geometry, .. } => {
+                    let geometry = match runtime
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
+                        })?
+                        .admit_window_from_engine(namespace, window, geometry)
+                    {
+                        Ok(geometry) => geometry,
+                        Err(_) => {
+                            channels.send_ack(
+                                client,
+                                XAuthorityControlAck {
+                                    kind,
+                                    transaction,
+                                    surface,
+                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                },
+                            )?;
+                            continue;
+                        }
+                    };
+                    core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .observe_mapped(window);
+                    x11_surface_geometry_records(
+                        byte_order,
+                        event_sequence,
+                        client,
+                        window,
+                        geometry,
+                        true,
+                        protocol_routing.as_ref(),
+                    )?
+                }
                 XAuthorityControlCommand::ConfigureSurface { size, .. } => {
                     if size.width <= 0
                         || size.height <= 0
@@ -187,64 +316,15 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
-                    let width = u16::try_from(geometry.width).expect("validated above");
-                    let height = u16::try_from(geometry.height).expect("validated above");
-                    let present_event_ids = protocol_routing
-                        .as_ref()
-                        .map(|routing| routing.present_configure_event_ids(client, window))
-                        .transpose()
-                        .map_err(|error| {
-                            X11SetupSocketError::new(format!(
-                                "failed to resolve Present ConfigureNotify subscriptions: {error}"
-                            ))
-                        })?
-                        .unwrap_or_default();
-                    let mut records = Vec::with_capacity(present_event_ids.len() + 2);
-                    records.push(encode_x_client_event(
-                            byte_order,
-                            XClientEvent::ConfigureNotify {
-                                sequence: event_sequence,
-                                event: window,
-                                window,
-                                above_sibling: None,
-                                x: clamp_engine_i16(geometry.x),
-                                y: clamp_engine_i16(geometry.y),
-                                width,
-                                height,
-                                border_width: 0,
-                                override_redirect: false,
-                            },
-                        ));
-                    records.extend(present_event_ids.into_iter().map(|event_id| {
-                        encode_x_client_event(
-                            byte_order,
-                            XClientEvent::PresentConfigureNotify {
-                                sequence: event_sequence,
-                                event_id,
-                                window,
-                                x: clamp_engine_i16(geometry.x),
-                                y: clamp_engine_i16(geometry.y),
-                                width,
-                                height,
-                                pixmap_width: width,
-                                pixmap_height: height,
-                                pixmap_flags: 0,
-                            },
-                        )
-                    }));
-                    records.push(encode_x_client_event(
-                            byte_order,
-                            XClientEvent::Expose {
-                                sequence: event_sequence,
-                                window,
-                                x: 0,
-                                y: 0,
-                                width,
-                                height,
-                                count: 0,
-                            },
-                        ));
-                    records
+                    x11_surface_geometry_records(
+                        byte_order,
+                        event_sequence,
+                        client,
+                        window,
+                        geometry,
+                        false,
+                        protocol_routing.as_ref(),
+                    )?
                 }
                 XAuthorityControlCommand::CloseSurface { .. } => {
                     let atoms = atoms
@@ -411,6 +491,48 @@ fn spawn_x11_control_writer(
                                 mode: 0,
                             },
                         )]
+                    }
+                }
+                XAuthorityControlCommand::WithdrawSurface { .. } => {
+                    let was_active = match runtime
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
+                        })?
+                        .unmap_window(namespace, window)
+                    {
+                        Ok(was_active) => was_active,
+                        Err(_) => {
+                            channels.send_ack(
+                                client,
+                                XAuthorityControlAck {
+                                    kind,
+                                    transaction,
+                                    surface,
+                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                },
+                            )?;
+                            continue;
+                        }
+                    };
+                    core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .observe_unmapped(window);
+                    if was_active {
+                        vec![encode_x_client_event(
+                            byte_order,
+                            XClientEvent::UnmapNotify {
+                                sequence: event_sequence,
+                                event: window,
+                                window,
+                                from_configure: false,
+                            },
+                        )]
+                    } else {
+                        Vec::new()
                     }
                 }
             };

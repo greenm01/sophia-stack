@@ -18,6 +18,13 @@ pub struct LiveProductionFenceRegistration {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionPresentDisposition {
+    Immediate,
+    StageLayout { epoch: TransactionId },
+    RejectLayoutMismatch,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveProductionPresentSubmission {
     pub transaction: TransactionId,
     pub surface: SurfaceId,
@@ -26,6 +33,7 @@ pub struct LiveProductionPresentSubmission {
     pub y_offset: i16,
     pub acquire_fence: Option<FenceHandle>,
     pub idle_fence: Option<FenceHandle>,
+    pub layout_disposition: LiveProductionPresentDisposition,
 }
 
 #[derive(Clone, Debug)]

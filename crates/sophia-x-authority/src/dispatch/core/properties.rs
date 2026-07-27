@@ -76,6 +76,15 @@ fn dispatch_core_property_request(
                         ),
                         Ok(()) => match properties.apply_change(context.namespace, change.clone()) {
                             Ok(record) => {
+                                if let Some(Ok(constraints)) =
+                                    decode_x_size_hints(&record, atoms, context.byte_order)
+                                {
+                                    let _ = runtime.set_window_constraints(
+                                        context.namespace,
+                                        record.window,
+                                        constraints,
+                                    );
+                                }
                                 let candidate = metadata_property_candidate(&record, atoms);
                                 (
                                     XClientOutput::Event(XClientEvent::PropertyNotify {
@@ -122,6 +131,16 @@ fn dispatch_core_property_request(
                         Ok(()) => properties
                             .remove(context.namespace, window, property)
                             .map(|_| {
+                                if atoms.name(property) == Some("WM_NORMAL_HINTS") {
+                                    let _ = runtime.set_window_constraints(
+                                        context.namespace,
+                                        window,
+                                        sophia_protocol::SurfaceConstraints {
+                                            min_size: None,
+                                            max_size: None,
+                                        },
+                                    );
+                                }
                                 XClientOutput::Event(XClientEvent::PropertyNotify {
                                     sequence: context.sequence,
                                     window,

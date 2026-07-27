@@ -7,8 +7,8 @@ use crate::{
     XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XErrorCode,
     XMetadataPropertyCandidate, XPropertyError, XPropertyTable, XRandrModeInfo, XRandrMonitorInfo,
     XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError, XWireRequest, XXiDeviceClass,
-    XXiDeviceInfo, encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
-    x_error_from_wire_parse, x_selection_failure_event,
+    XXiDeviceInfo, decode_x_size_hints, encode_x_client_output, metadata_property_candidate,
+    x_error_from_runtime, x_error_from_wire_parse, x_selection_failure_event,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
@@ -691,6 +691,13 @@ fn outputs_from_authority_response(
             let override_redirect = response.surfaces.first().is_some_and(|surface| {
                 surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
             });
+            if response
+                .surfaces
+                .first()
+                .is_some_and(|surface| !surface.mapped)
+            {
+                return Vec::new();
+            }
             let mut outputs = vec![XClientOutput::Event(XClientEvent::MapNotify {
                 sequence: context.sequence,
                 event: *window,

@@ -10,8 +10,8 @@ impl LiveProductionVisualRuntime {
         }
     }
 
-    pub fn set_present_scheduling_blocked(&mut self, blocked: bool) {
-        self.present_scheduling_blocked = blocked;
+    pub fn release_layout_deferred_presentations(&mut self) {
+        self.present_scheduler.release_layout_deferred();
     }
 
     pub fn abort_queued_presentations(&mut self) -> usize {

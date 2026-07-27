@@ -10,7 +10,7 @@ use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
     PendingLayoutGeometryAuthority, merge_unrequested_layout_observation,
-    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
+    project_authority_batch_onto_layout,
 };
 use sophia_cli::session_actions::{
     SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome,
@@ -246,6 +246,7 @@ pub(crate) fn run_persistent_xterm_session(
             .with_setup_authorization(XServerFrontendSetupAuthorization::MitMagicCookie(
                 xauthority_cookie,
             ))
+            .with_policy_map_deferred(true)
             .with_admission_policy(admission_policy);
     if !config.software_client_rendering
         && let Some(native_scanout) = native_scanout.as_ref()

@@ -377,8 +377,9 @@ Fields should describe:
 - start timestamp
 - timeout policy
 - committed content extent per affected surface
+- latest complete authority-observed safe extent per affected surface
 - declared and temporary effective constraints
-- unmanaged, pending-layout, or managed admission state
+- resize participation state: unmanaged, pending-layout, or managed
 - bounded recovery-attempt state
 
 X Damage events retire pending surfaces from the epoch in the prototype path.
@@ -391,6 +392,11 @@ publishes an exact safe extent as a temporary capability fact. It must never
 construct committed state from a timed-out pending transaction. The external
 WM remains responsible for placement and may choose to float the constrained
 node.
+
+The safe extent is an authority observation, not committed visual truth. It may
+come from a complete quarantined buffer that was never displayed. The epoch
+coordinator can use that extent to form a bounded recovery request without
+claiming that its pixels reached the scene.
 
 Safe extents and declared constraints remain client-content values inside
 authority and visual-state records. WM snapshots carry outer allocation values.
@@ -406,6 +412,29 @@ For the prototype, epochs should be created only for surfaces marked
 `ResizeSyncCapability::ExplicitSync`. Timed-out epochs may be expired by the
 engine, which returns the pending surfaces as a bounded timeout report for the
 bridge or authority to score.
+
+### SurfacePresentationAdmissionState
+
+Surface admission tracks policy-managed presentation before a surface has
+pixels. Its passive records contain only an opaque surface ID, presentation
+role, client-content geometry, generic size constraints, and generation.
+Protocol object IDs, application identity, titles, classes, and buffers do not
+enter the admission table.
+
+The phases are:
+
+- `PolicyPending`: the frontend observed map intent while the protocol window
+  remains unmapped;
+- `ControlPending`: Engine accepted a WM proposal and issued one transaction-
+  keyed configure/map control;
+- `AwaitingPixels`: the frontend acknowledged that protocol control, while
+  visual state still waits for a matching concrete buffer;
+- `Managed`: matching geometry and pixels committed atomically.
+
+Withdraw and removal transitions erase the passive facts idempotently. A
+terminal timeout withdraws the still-pending protocol window rather than
+mapping a blank surface. Planning may derive a bufferless temporary layout node
+from these facts, but that node is never inserted into committed visual state.
 
 Slow-client timeout reporting must remain aggregate at runtime boundaries.
 Counts for preserved and explicitly degraded timeouts are acceptable. Raw

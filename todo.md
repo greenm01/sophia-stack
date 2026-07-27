@@ -163,9 +163,20 @@ Promotion now follows the gates below in order.
   min/max extents inside the work area, and reject impossible constraints so a
   WM that treats ICCCM hints as advisory cannot destabilize an application
   swapchain before recovery begins.
+- [x] Add protocol-neutral pre-pixel presentation admission. Keep a
+  policy-managed X window unmapped after `MapWindow`, let Engine and the blind
+  WM plan from passive geometry/constraint facts, then atomically configure and
+  map it through a transaction-keyed `AdmitSurface` control. Require matching
+  concrete pixels before the surface becomes committed visual state.
+- [x] Replace the session-wide layout/Present barrier with per-submission
+  dispositions. Stage only submissions owned by the pending epoch, reject known
+  wrong-size buffers without contaminating visible layers, and keep unrelated
+  surfaces eligible. Retain bounded queue storage with one shared immutable
+  authority batch.
 - [ ] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
   existing desktop to remain responsive, the cube to become visible through
-  bounded fixed-extent recovery, and normal shutdown with no stale Present,
+  pre-pixel admission (using bounded fixed-extent recovery only if the client
+  misses the accepted resize), and normal shutdown with no stale Present,
   control, input, or native-resource debt. Use
   `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run.
 - [x] Replace the transient aggregate async-service booleans with one

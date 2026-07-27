@@ -104,6 +104,14 @@ impl X11CoreSocketServerState {
         self.render_device_provider.is_some()
     }
 
+    fn set_policy_map_deferred(&self, deferred: bool) -> Result<(), X11SetupSocketError> {
+        self.runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .set_policy_map_deferred(deferred);
+        Ok(())
+    }
+
     pub fn with_output_topology(
         output_topology: sophia_protocol::OutputTopologySnapshot,
     ) -> Result<Self, X11SetupSocketError> {

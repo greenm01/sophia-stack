@@ -29,6 +29,7 @@ impl XServerFrontend {
             config.xkb_config(),
         )?
         .with_optional_render_device_provider(config.render_device_provider());
+        state.set_policy_map_deferred(config.policy_map_deferred())?;
         let (worker_completion_sender, worker_completions) = std::sync::mpsc::channel();
         let (worker_admission_event_sender, worker_admission_events) = std::sync::mpsc::channel();
         Ok(Self {

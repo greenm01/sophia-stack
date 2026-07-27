@@ -546,7 +546,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         if let Some((window, sibling, mode)) = hierarchy_restack {
                             selections.restack(window, sibling, mode);
                         }
-                        if let Some(window) = mapped_window {
+                        if let Some(window) = mapped_window
+                            && output.response.as_ref().is_some_and(|response| {
+                                response.surfaces.iter().any(|surface| surface.mapped)
+                            })
+                        {
                             selections.observe_mapped(window);
                         }
                         if let Some(window) = unmapped_window {

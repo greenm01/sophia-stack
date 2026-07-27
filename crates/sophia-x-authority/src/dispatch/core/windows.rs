@@ -296,17 +296,18 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::UnmapWindow { window } => {
-                    let outputs =
-                        if let Err(error) = runtime.validate_window_access(context.namespace, window) {
+                    let outputs = if let Err(error) =
+                        runtime.unmap_window(context.namespace, window)
+                    {
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
                                 u32::try_from(window.local.raw()).unwrap_or(0),
                             ))]
-                        } else {
-                            Vec::new()
-                        };
+                    } else {
+                        Vec::new()
+                    };
                     XDispatchResult {
                         response: None,
                         outputs,

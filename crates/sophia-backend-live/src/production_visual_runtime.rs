@@ -2,7 +2,7 @@ use crate::*;
 use sophia_engine::*;
 use sophia_protocol::*;
 use sophia_renderer_live::*;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 mod authority;
@@ -71,7 +71,6 @@ pub struct LiveProductionVisualRuntime {
     last_chrome_set_observation: Option<LiveChromeSetObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
-    present_scheduling_blocked: bool,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -84,8 +83,6 @@ pub struct LiveProductionCycleRequest<'a> {
     pub focused_surface: Option<SurfaceId>,
     pub cursor_presentation: LiveProductionCursorPresentation,
     pub defer_frame: bool,
-    pub defer_present: bool,
-    pub reject_present_for_layout: bool,
     pub output_descriptors: &'a [sophia_engine::HeadlessOutput],
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub wm_update: Option<WmTransactionUpdate>,
@@ -136,7 +133,6 @@ impl LiveProductionVisualRuntime {
             last_chrome_set_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
-            present_scheduling_blocked: false,
         })
     }
 
@@ -206,15 +202,12 @@ impl LiveProductionVisualRuntime {
             focused_surface,
             cursor_presentation,
             defer_frame,
-            defer_present,
-            reject_present_for_layout: _,
             output_descriptors,
             mut native_scanout,
             wm_update,
             presentation_layout,
             chrome_surfaces,
         } = request;
-        self.present_scheduling_blocked = defer_present;
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
@@ -370,15 +363,12 @@ impl LiveProductionVisualRuntime {
             focused_surface,
             cursor_presentation,
             defer_frame,
-            defer_present,
-            reject_present_for_layout,
             output_descriptors,
             mut native_scanout,
             wm_update,
             presentation_layout,
             chrome_surfaces,
         } = request;
-        self.present_scheduling_blocked = defer_present;
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         self.set_chrome_surfaces(chrome_surfaces);
@@ -428,8 +418,6 @@ impl LiveProductionVisualRuntime {
             native_frames,
             cpu_layers,
             wm_update,
-            defer_present,
-            reject_present_for_layout,
         )?;
         Ok((
             LiveProductionCpuSubmission {
@@ -486,8 +474,6 @@ impl LiveProductionVisualRuntime {
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         wm_update: Option<WmTransactionUpdate>,
-        defer_present: bool,
-        reject_present_for_layout: bool,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         self.presentation_feedback
             .observe_authority_resources(batch)?;
@@ -499,8 +485,6 @@ impl LiveProductionVisualRuntime {
                 batch,
                 presentation_layout,
                 cpu_layers,
-                defer_present,
-                reject_present_for_layout,
                 self.presentation_feedback.resources_mut(),
                 Instant::now(),
             )?;
@@ -509,11 +493,25 @@ impl LiveProductionVisualRuntime {
             }
             self.layers
                 .retain(|surface, _| !batch.removed_surfaces.contains(surface));
+            let rejected_surfaces = batch
+                .present_submissions
+                .iter()
+                .filter_map(|submission| {
+                    matches!(
+                        submission.layout_disposition,
+                        crate::LiveProductionPresentDisposition::RejectLayoutMismatch
+                    )
+                    .then_some(submission.surface)
+                })
+                .collect::<BTreeSet<_>>();
             for transaction in &batch.transactions {
+                if rejected_surfaces.contains(&transaction.surface) {
+                    continue;
+                }
                 self.layers.insert(transaction.surface, transaction.clone());
             }
             self.rebuild_input_layers();
-            if defer_present {
+            if !self.present_scheduler.has_eligible() {
                 return self.run_observation_tick();
             }
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
@@ -564,9 +562,10 @@ impl LiveProductionVisualRuntime {
             return self.run_observation_tick();
         }
 
+        let transactions = self.layers.values().cloned().collect::<Vec<_>>();
         let prepared = self
             .production
-            .prepare_full_state_present(transaction, &queued.transactions);
+            .prepare_full_state_present(transaction, &transactions);
         if !prepared.is_ready() {
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction, 0, 0);

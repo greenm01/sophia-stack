@@ -23,6 +23,16 @@ fn control(
 ) -> XAuthorityClientControlCommand {
     let transaction = TransactionId::from_raw(transaction);
     let command = match kind {
+        XAuthorityControlKind::AdmitSurface => XAuthorityControlCommand::AdmitSurface {
+            transaction,
+            surface,
+            geometry: sophia_protocol::Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+        },
         XAuthorityControlKind::ConfigureSurface => XAuthorityControlCommand::ConfigureSurface {
             transaction,
             surface,
@@ -40,6 +50,10 @@ fn control(
             surface,
         },
         XAuthorityControlKind::CloseSurface => XAuthorityControlCommand::CloseSurface {
+            transaction,
+            surface,
+        },
+        XAuthorityControlKind::WithdrawSurface => XAuthorityControlCommand::WithdrawSurface {
             transaction,
             surface,
         },

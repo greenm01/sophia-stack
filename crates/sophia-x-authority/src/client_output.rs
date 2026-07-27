@@ -27,6 +27,7 @@ const X_FOCUS_IN: u8 = 9;
 const X_FOCUS_OUT: u8 = 10;
 const X_EXPOSE: u8 = 12;
 const X_VISIBILITY_NOTIFY: u8 = 15;
+const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
 const X_CONFIGURE_NOTIFY: u8 = 22;
 const X_PROPERTY_NOTIFY: u8 = 28;
@@ -139,6 +140,12 @@ pub enum XClientEvent {
         event: XResourceId,
         window: XResourceId,
         override_redirect: bool,
+    },
+    UnmapNotify {
+        sequence: u16,
+        event: XResourceId,
+        window: XResourceId,
+        from_configure: bool,
     },
     ConfigureNotify {
         sequence: u16,

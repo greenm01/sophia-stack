@@ -95,6 +95,7 @@ impl SurfaceConstraintState {
 #[derive(Debug)]
 pub struct LayoutEpochCoordinator {
     committed_sizes: BTreeMap<SurfaceId, Size>,
+    safe_sizes: BTreeMap<SurfaceId, Size>,
     rollback_sizes: BTreeMap<SurfaceId, Size>,
     rollback_transactions: BTreeMap<SurfaceId, TransactionId>,
     rejected_sizes: BTreeMap<SurfaceId, Size>,
@@ -107,6 +108,7 @@ impl Default for LayoutEpochCoordinator {
     fn default() -> Self {
         Self {
             committed_sizes: BTreeMap::new(),
+            safe_sizes: BTreeMap::new(),
             rollback_sizes: BTreeMap::new(),
             rollback_transactions: BTreeMap::new(),
             rejected_sizes: BTreeMap::new(),
@@ -206,9 +208,20 @@ impl LayoutEpochCoordinator {
 
     pub fn record_committed(&mut self, surface: SurfaceId, size: Size) {
         self.committed_sizes.insert(surface, size);
+        self.safe_sizes.insert(surface, size);
         if self.rejected_sizes.get(&surface) == Some(&size) {
             self.rejected_sizes.remove(&surface);
         }
+    }
+
+    /// Records a complete authority buffer extent without claiming that its
+    /// pixels have entered committed visual state.
+    pub fn record_safe_observation(&mut self, surface: SurfaceId, size: Size) {
+        self.safe_sizes.insert(surface, size);
+    }
+
+    pub fn safe_size(&self, surface: SurfaceId) -> Option<Size> {
+        self.safe_sizes.get(&surface).copied()
     }
 
     pub fn request_allowed(&self, surface: SurfaceId, size: Size) -> bool {
@@ -236,7 +249,7 @@ impl LayoutEpochCoordinator {
         let fixed = fixed_surfaces
             .into_iter()
             .map(|surface| {
-                self.committed_size(surface)
+                self.safe_size(surface)
                     .map(|extent| (surface, extent))
                     .ok_or("layout recovery surface has no safe content extent")
             })
@@ -244,7 +257,7 @@ impl LayoutEpochCoordinator {
         let sizes = requests
             .into_iter()
             .map(|(surface, rejected)| {
-                self.committed_size(surface)
+                self.safe_size(surface)
                     .map(|size| (surface, rejected, size))
                     .ok_or("layout recovery surface has no committed authority size")
             })
@@ -362,6 +375,7 @@ impl LayoutEpochCoordinator {
 
     pub fn remove(&mut self, surface: SurfaceId) {
         self.committed_sizes.remove(&surface);
+        self.safe_sizes.remove(&surface);
         self.rollback_sizes.remove(&surface);
         self.rollback_transactions.remove(&surface);
         self.rejected_sizes.remove(&surface);

@@ -75,6 +75,7 @@ pub struct XAuthorityRuntime {
     last_cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
+    defer_policy_maps: bool,
     xkb_keymap: crate::XkbKeymapSnapshot,
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
 }
@@ -106,6 +107,7 @@ impl Default for XAuthorityRuntime {
             last_cpu_buffer_update: None,
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
+            defer_policy_maps: false,
             xkb_keymap: crate::XkbKeymapSnapshot::new(&crate::XkbRmlvoConfig::default())
                 .expect("the deterministic default XKB keymap must compile"),
             input_authority: Arc::new(Mutex::new(crate::XInputAuthorityState::default())),
@@ -129,6 +131,10 @@ impl XAuthorityRuntime {
 
     pub const fn xkb_keymap(&self) -> &crate::XkbKeymapSnapshot {
         &self.xkb_keymap
+    }
+
+    pub fn set_policy_map_deferred(&mut self, deferred: bool) {
+        self.defer_policy_maps = deferred;
     }
 
     pub fn input_authority_mut(&self) -> MutexGuard<'_, crate::XInputAuthorityState> {
@@ -281,10 +287,23 @@ impl XAuthorityRuntime {
             XAuthorityRequestKind::MapWindow { window, generation } => {
                 self.resources
                     .lookup(request.namespace, *window, XResourceKind::Window)?;
-                if let Some(surface) = self.windows.apply(XWindowLifecycleEvent::Mapped {
-                    id: *window,
-                    generation: *generation,
-                })? {
+                let override_redirect = self
+                    .windows
+                    .get(*window)
+                    .ok_or(XAuthorityRuntimeError::UnknownResource)?
+                    .override_redirect;
+                let event = if override_redirect || !self.defer_policy_maps {
+                    XWindowLifecycleEvent::Mapped {
+                        id: *window,
+                        generation: *generation,
+                    }
+                } else {
+                    XWindowLifecycleEvent::PolicyPending {
+                        id: *window,
+                        generation: *generation,
+                    }
+                };
+                if let Some(surface) = self.windows.apply(event)? {
                     response.surfaces.push(surface);
                 }
             }

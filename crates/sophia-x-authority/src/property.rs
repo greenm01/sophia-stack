@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use sophia_protocol::{AxisSpan, NamespaceId, OutputEdge, OutputReservation, Rect};
+use sophia_protocol::{
+    AxisSpan, NamespaceId, OutputEdge, OutputReservation, Rect, Size, SurfaceConstraints,
+};
 
 use crate::{
     X_ATOM_CARDINAL, X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, XAtom, XAtomTable,
@@ -95,6 +97,69 @@ pub enum XOutputReservationDecodeError {
     InvalidFormat,
     InvalidLength,
     ValueOutOfRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XSizeHintsDecodeError {
+    InvalidType,
+    InvalidFormat,
+    InvalidLength,
+    InvalidExtent,
+    InvalidBounds,
+}
+
+pub fn decode_x_size_hints(
+    record: &XPropertyRecord,
+    atoms: &XAtomTable,
+    byte_order: XByteOrder,
+) -> Option<Result<SurfaceConstraints, XSizeHintsDecodeError>> {
+    if atoms.name(record.property) != Some("WM_NORMAL_HINTS") {
+        return None;
+    }
+    if atoms.name(record.property_type) != Some("WM_SIZE_HINTS") {
+        return Some(Err(XSizeHintsDecodeError::InvalidType));
+    }
+    if record.format != 32 {
+        return Some(Err(XSizeHintsDecodeError::InvalidFormat));
+    }
+    if record.bytes.len() < 9 * 4 {
+        return Some(Err(XSizeHintsDecodeError::InvalidLength));
+    }
+    let value = |index: usize| byte_order.u32(&record.bytes[index * 4..index * 4 + 4]) as i32;
+    let flags = value(0) as u32;
+    let extent = |width_index: usize, height_index: usize| {
+        let size = Size {
+            width: value(width_index),
+            height: value(height_index),
+        };
+        (size.width > 0 && size.height > 0)
+            .then_some(size)
+            .ok_or(XSizeHintsDecodeError::InvalidExtent)
+    };
+    const P_MIN_SIZE: u32 = 1 << 4;
+    const P_MAX_SIZE: u32 = 1 << 5;
+    let min_size = if flags & P_MIN_SIZE != 0 {
+        match extent(5, 6) {
+            Ok(size) => Some(size),
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        None
+    };
+    let max_size = if flags & P_MAX_SIZE != 0 {
+        match extent(7, 8) {
+            Ok(size) => Some(size),
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        None
+    };
+    if matches!((min_size, max_size), (Some(minimum), Some(maximum))
+        if minimum.width > maximum.width || minimum.height > maximum.height)
+    {
+        return Some(Err(XSizeHintsDecodeError::InvalidBounds));
+    }
+    Some(Ok(SurfaceConstraints { min_size, max_size }))
 }
 
 pub fn decode_x_output_reservations(

@@ -48,6 +48,7 @@ mod output;
 mod render;
 mod runtime_driver;
 mod session;
+mod surface_admission;
 mod visual_state;
 mod wm;
 
@@ -66,6 +67,7 @@ pub use output::*;
 pub use render::*;
 pub use runtime_driver::*;
 pub use session::*;
+pub use surface_admission::*;
 pub use visual_state::*;
 pub use wm::*;
 
