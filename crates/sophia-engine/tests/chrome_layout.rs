@@ -1,11 +1,12 @@
 use sophia_engine::{
     ChromeLayoutError, CompositorNodeId, FocusRingStyle, SurfaceChromeRole, SurfaceChromeStyle,
     SurfaceFrameStyle, apply_surface_chrome_clearance, compositor_border_bands,
-    surface_chrome_display_list, surface_chrome_display_list_for_surfaces,
+    outer_surface_constraints, outer_surface_geometry, surface_chrome_display_list,
+    surface_chrome_display_list_for_surfaces,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, LayoutTransaction, OutputId, Rect, Region, Size,
-    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform,
+    SurfaceConstraints, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform,
 };
 
 #[test]
@@ -177,6 +178,78 @@ fn clearance_rejects_allocations_that_cannot_preserve_client_content() {
     assert_eq!(
         apply_surface_chrome_clearance(&transaction, style),
         Err(ChromeLayoutError::AllocationTooSmall)
+    );
+}
+
+#[test]
+fn content_constraints_round_trip_through_outer_chrome_allocation() {
+    let style = SurfaceChromeStyle {
+        frame: SurfaceFrameStyle {
+            width: 2,
+            ..SurfaceFrameStyle::default()
+        },
+        ..SurfaceChromeStyle::default()
+    };
+    let content = Size {
+        width: 500,
+        height: 500,
+    };
+    let outer = outer_surface_constraints(
+        SurfaceConstraints {
+            min_size: Some(content),
+            max_size: Some(content),
+        },
+        style,
+    )
+    .unwrap();
+
+    assert_eq!(
+        outer,
+        SurfaceConstraints {
+            min_size: Some(Size {
+                width: 504,
+                height: 504,
+            }),
+            max_size: Some(Size {
+                width: 504,
+                height: 504,
+            }),
+        }
+    );
+    let transaction = LayoutTransaction {
+        transaction: TransactionId::from_raw(2),
+        requested_sizes: vec![SurfaceSizeRequest {
+            surface: SurfaceId::new(2, 1),
+            size: outer.min_size.unwrap(),
+        }],
+        focus: None,
+        render_positions: Vec::new(),
+        timeout_msec: 300,
+    };
+    assert_eq!(
+        apply_surface_chrome_clearance(&transaction, style)
+            .unwrap()
+            .requested_sizes[0]
+            .size,
+        content
+    );
+    assert_eq!(
+        outer_surface_geometry(
+            Rect {
+                x: 2,
+                y: 2,
+                width: 500,
+                height: 500,
+            },
+            style,
+        )
+        .unwrap(),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 504,
+            height: 504,
+        }
     );
 }
 

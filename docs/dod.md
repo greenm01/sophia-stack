@@ -392,6 +392,11 @@ construct committed state from a timed-out pending transaction. The external
 WM remains responsible for placement and may choose to float the constrained
 node.
 
+Safe extents and declared constraints remain client-content values inside
+authority and visual-state records. WM snapshots carry outer allocation values.
+Both directions use the shared Engine chrome geometry conversion; adapters and
+compatibility bridges must not add or subtract clearance independently.
+
 Resize behavior samples are derived from the same epoch state. They should
 record elapsed time, timeout policy, completion, timeout status, and remaining
 pending surfaces so slow clients can be measured without reaching into renderer

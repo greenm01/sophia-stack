@@ -35,6 +35,15 @@ remanaged the private synthetic window, proving the ICCCM path without client
 metadata. Physical authority/presentation admission remains the open roadmap
 gate.
 
+The first physical run then found one remaining unit-boundary error. Recovery
+retained a 500-by-500 client buffer but sent 500-by-500 as the WM's outer
+constraint. The active two-pixel clearance correctly inset that allocation to
+a 496-by-496 client configure, which the application did not satisfy. Engine
+now owns the inverse conversion as well: committed geometry and content
+constraints become 504-by-504 outer facts before the WM boundary, and the
+existing inset returns exactly 500-by-500 to the authority. Focus ring/frame
+width is therefore handled generically rather than encoded in recovery policy.
+
 ## 2026-07-27: Delivery Acknowledgement Retires Both Input Ledgers
 
 The second emergency capture proved that both synthetic modifier releases

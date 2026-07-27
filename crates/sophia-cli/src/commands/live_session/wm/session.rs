@@ -373,7 +373,12 @@ impl LiveWmSession {
         let request = WmRequestPacket {
             transaction: self.mint_transaction()?,
             kind: WmRequestKind::ManageSurface(WmManageSurface {
-                node: live_layout_node(node, workspace, &layout.layout_epochs),
+                node: live_layout_node(
+                    node,
+                    workspace,
+                    &layout.layout_epochs,
+                    self.candidate_chrome_style(),
+                )?,
                 output: output.id,
                 workspace,
                 bounds,
@@ -413,11 +418,18 @@ impl LiveWmSession {
                 nodes: layout
                     .layers
                     .values()
-                    .filter_map(|layer| {
-                        (self.workspace_state.surface_workspace(layer.surface) == Some(workspace))
-                            .then(|| live_layout_node(layer, workspace, &layout.layout_epochs))
+                    .filter(|layer| {
+                        self.workspace_state.surface_workspace(layer.surface) == Some(workspace)
                     })
-                    .collect(),
+                    .map(|layer| {
+                        live_layout_node(
+                            layer,
+                            workspace,
+                            &layout.layout_epochs,
+                            self.candidate_chrome_style(),
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
             }),
         };
         self.enqueue_request(LiveWmQueuedRequest {
@@ -468,10 +480,17 @@ impl LiveWmSession {
             .values()
             .filter_map(|layer| {
                 let workspace = self.workspace_state.surface_workspace(layer.surface)?;
-                (workspace == output_state.workspace)
-                    .then(|| live_layout_node(layer, workspace, &layout.layout_epochs))
+                (workspace == output_state.workspace).then_some((layer, workspace))
             })
-            .collect();
+            .map(|(layer, workspace)| {
+                live_layout_node(
+                    layer,
+                    workspace,
+                    &layout.layout_epochs,
+                    self.candidate_chrome_style(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let request = WmRequestPacket {
             transaction: self.mint_transaction()?,
             kind: WmRequestKind::ActionActivated(WmActionActivation {

@@ -73,7 +73,9 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
                 &test_layer(queued, bounds),
                 workspace,
                 &sophia_engine::LayoutEpochCoordinator::default(),
-            ),
+                sophia_engine::SurfaceChromeStyle::default(),
+            )
+            .unwrap(),
             output,
             workspace,
             bounds,
@@ -83,4 +85,67 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
     let rebased = planning_state_for_response(&current, &request).unwrap();
     assert_eq!(rebased.surface_workspace(first), Some(workspace));
     assert_eq!(rebased.surface_workspace(queued), Some(workspace));
+}
+
+#[test]
+fn recovery_content_extent_crosses_wm_boundary_as_outer_allocation() {
+    let surface = SurfaceId::new(3, 1);
+    let workspace = sophia_protocol::WorkspaceId::from_raw(1);
+    let content = Size {
+        width: 500,
+        height: 500,
+    };
+    let mut epochs = sophia_engine::LayoutEpochCoordinator::default();
+    epochs.record_committed(surface, content);
+    epochs
+        .begin_recovery(
+            [(
+                surface,
+                Size {
+                    width: 1276,
+                    height: 1422,
+                },
+            )],
+            [surface],
+        )
+        .unwrap();
+    let style = sophia_engine::SurfaceChromeStyle {
+        frame: sophia_engine::SurfaceFrameStyle {
+            width: 2,
+            ..sophia_engine::SurfaceFrameStyle::default()
+        },
+        ..sophia_engine::SurfaceChromeStyle::default()
+    };
+
+    let node = live_layout_node(
+        &test_layer(
+            surface,
+            Rect {
+                x: 2,
+                y: 2,
+                width: content.width,
+                height: content.height,
+            },
+        ),
+        workspace,
+        &epochs,
+        style,
+    )
+    .unwrap();
+
+    let outer = Size {
+        width: 504,
+        height: 504,
+    };
+    assert_eq!(node.constraints.min_size, Some(outer));
+    assert_eq!(node.constraints.max_size, Some(outer));
+    assert_eq!(
+        node.geometry,
+        Rect {
+            x: 0,
+            y: 0,
+            width: outer.width,
+            height: outer.height,
+        }
+    );
 }

@@ -206,6 +206,13 @@ position, floating decision, client identity, or protocol object. Late pixels
 from the abandoned extent remain fenced until the authority returns to the
 safe content extent.
 
+Authority and committed surface extents are client-content geometry. Before a
+layout node crosses the WM boundary, Engine converts both geometry and
+constraints to outer allocations using the active chrome clearance. The
+matching WM response is inset through the inverse operation exactly once.
+Chrome therefore cannot turn an exact recovery constraint into a smaller
+client configure.
+
 The legacy-X11 WM bridge translates those same generic constraints into
 synthetic ICCCM `WM_NORMAL_HINTS`. A manage-time constraint-profile change
 replaces the private synthetic window so an unmodified legacy WM reevaluates

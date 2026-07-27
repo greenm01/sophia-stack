@@ -630,19 +630,23 @@ fn live_layout_node(
     layer: &LayerSnapshot,
     workspace: WorkspaceId,
     coordinator: &LayoutEpochCoordinator,
-) -> LayoutNodeSnapshot {
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
     let mut capabilities = LayoutNodeCapabilities::STANDARD_TOPLEVEL;
     capabilities.resizable = coordinator.surface_resizable(layer.surface);
-    LayoutNodeSnapshot {
+    Ok(LayoutNodeSnapshot {
         surface: layer.surface,
         workspace,
         kind: LayoutNodeKind::Toplevel,
         capabilities,
         state: LayoutNodeState::NORMAL,
-        constraints: coordinator.effective_constraints(layer.surface),
-        geometry: layer.geometry,
+        constraints: sophia_engine::outer_surface_constraints(
+            coordinator.effective_constraints(layer.surface),
+            chrome,
+        )?,
+        geometry: sophia_engine::outer_surface_geometry(layer.geometry, chrome)?,
         generation: layer.generation,
-    }
+    })
 }
 
 fn validate_live_wm_transaction(
