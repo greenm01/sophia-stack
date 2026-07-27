@@ -4545,3 +4545,19 @@ worker accepts the intervening policy frame, the WM holds the request, and the
 response follows the applied acknowledgement. Socket integration coverage
 exercises atomic file replacement, generation delivery, request deferral, and
 acknowledgement ordering.
+## 2026-07-26: fixed-extent Vulkan smoke exposed a stale-control teardown race
+
+- Physical `vkcube --wsi xcb` evidence advanced far enough to create and frame
+  the fixed-extent surface, then the session exited with
+  `X11 route targets unknown client 3`.
+- The final records show a pointer focus request for the new surface followed
+  by the fatal route error. The client worker had disconnected between the
+  Engine focus decision and the bounded control-broker delivery.
+- A disappearing application is normal frontend lifecycle, not an X authority
+  failure. The broker now returns a distinct `ClientGone` control acknowledgement
+  for that race, and the live owner retires that stale target without ending
+  the graphical session. Backpressure and registry corruption remain fatal.
+- The physical run also created a blank frame without a vkcube presentation.
+  The dedicated proof launcher now enables redacted X11 and Present tracing so
+  the next run can distinguish client-side exit, rejected Present validation,
+  and feedback delivery without adding application-specific engine policy.

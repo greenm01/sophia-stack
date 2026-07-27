@@ -166,6 +166,7 @@ pub struct XAuthorityClientControlCommand {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityControlOutcome {
     Delivered,
+    ClientGone,
     UnknownSurface,
     InvalidSize,
     AuthorityRejected,

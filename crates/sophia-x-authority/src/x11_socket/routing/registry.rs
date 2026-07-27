@@ -857,14 +857,45 @@ impl XServerFrontendRouteRegistry {
         self.route_to_client(route.client, sender, route.command)
     }
 
+    fn acknowledge_stale_control(
+        &self,
+        route: XAuthorityClientControlCommand,
+    ) -> Result<(), XServerFrontendRouteError> {
+        match self
+            .acknowledgement_sender
+            .try_send(XAuthorityClientControlAck {
+                client: route.client,
+                acknowledgement: XAuthorityControlAck {
+                    kind: route.command.kind(),
+                    transaction: route.command.transaction(),
+                    surface: route.command.surface(),
+                    outcome: XAuthorityControlOutcome::ClientGone,
+                },
+            }) {
+            Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(()),
+            Err(TrySendError::Full(_)) => {
+                Err(XServerFrontendRouteError::ClientQueueFull {
+                    client: route.client,
+                })
+            }
+        }
+    }
+
     fn route_protocol(
         &self,
         client: XServerFrontendClientId,
         event: XClientEvent,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = self.client_senders(client)?.protocol;
+        let sender = match self.client_senders(client) {
+            Ok(senders) => senders.protocol,
+            Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
+            Err(error) => return Err(error),
+        };
         match self.route_to_client(client, sender, event) {
-            Err(XServerFrontendRouteError::ClientQueueDisconnected { .. }) => Ok(()),
+            Err(
+                XServerFrontendRouteError::UnknownClient { .. }
+                | XServerFrontendRouteError::ClientQueueDisconnected { .. },
+            ) => Ok(()),
             result => result,
         }
     }

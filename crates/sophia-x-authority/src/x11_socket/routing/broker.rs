@@ -4,8 +4,9 @@
 /// Engine code sends client-addressed input and control values to the bounded
 /// ingress queues, then its session loop calls [`Self::route_pending`] to move
 /// them into the registered worker's private queues. The broker never
-/// broadcasts a route and fails closed when its target has disappeared or is
-/// backpressured.
+/// broadcasts a route. Routes whose client disappeared after Engine selection
+/// are retired with a negative acknowledgement; queue backpressure and
+/// registry corruption remain service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
@@ -212,7 +213,16 @@ impl XServerFrontendRouteBroker {
             }
             match self.control_receiver.try_recv() {
                 Ok(route) => {
-                    self.registry.route_control(route)?;
+                    match self.registry.route_control(route) {
+                        Ok(()) => {}
+                        Err(
+                            XServerFrontendRouteError::UnknownClient { .. }
+                            | XServerFrontendRouteError::ClientQueueDisconnected { .. },
+                        ) => {
+                            self.registry.acknowledge_stale_control(route)?;
+                        }
+                        Err(error) => return Err(error),
+                    }
                     routed = routed.saturating_add(1);
                     progressed = true;
                 }

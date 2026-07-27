@@ -249,6 +249,34 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
         ))
     );
     assert_eq!(queue.metrics().rejected, 1);
+    assert!(
+        completions[0]
+            .failure
+            .is_some_and(|failure| !failure.is_stale_target())
+    );
+
+    let gone = control(1, 2, surface(2), XAuthorityControlKind::FocusSurface);
+    queue.enqueue(gone, now).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    let _ = commands.recv().unwrap();
+    let mut disconnected = acknowledgement(gone);
+    disconnected.acknowledgement.outcome = XAuthorityControlOutcome::ClientGone;
+    acknowledgements.send(disconnected).unwrap();
+    queue
+        .service(
+            &sender,
+            &receiver,
+            now + Duration::from_millis(1),
+            &mut completions,
+        )
+        .unwrap();
+    assert!(
+        completions[1]
+            .failure
+            .is_some_and(SessionControlFailure::is_stale_target)
+    );
 }
 
 #[test]

@@ -56,6 +56,14 @@ pub enum SessionControlFailure {
     Disconnected,
 }
 
+impl SessionControlFailure {
+    /// Returns true when an acknowledged command lost its target during the
+    /// bounded Engine-to-frontend handoff.
+    pub const fn is_stale_target(self) -> bool {
+        matches!(self, Self::Rejected(XAuthorityControlOutcome::ClientGone))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionControlCompletion {
     pub key: SessionControlKey,

@@ -15,6 +15,18 @@ macro_rules! service_session_controls {
             .map_err(|error| format!("session control service failed: {error:?}"))?;
         for completion in session_control_completions.drain(..) {
             if let Some(failure) = completion.failure {
+                if failure.is_stale_target() {
+                    if applied_client_focus == Some(completion.key.surface) {
+                        applied_client_focus = None;
+                    }
+                    println!(
+                        "sophia_live_session_control schema=1 status=stale_target_retired kind={:?} transaction={} surface={}",
+                        completion.key.kind,
+                        completion.key.transaction.raw(),
+                        completion.key.surface.index(),
+                    );
+                    continue;
+                }
                 return Err(format!(
                     "X Authority control {:?} failed for surface {:?}: {failure:?}",
                     completion.key.kind, completion.key.surface

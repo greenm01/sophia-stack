@@ -1,6 +1,7 @@
 #![cfg(all(test, unix))]
 
 use super::*;
+use crate::XAuthorityControlKind;
 use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;
 
@@ -471,6 +472,40 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             delivery,
             outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
         }
+    );
+}
+
+#[test]
+fn route_broker_retires_control_after_client_disconnect() {
+    let client = XServerFrontendClientId(13);
+    let surface = SurfaceId::new(14, 1);
+    let transaction = TransactionId::from_raw(15);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(1).unwrap());
+    let (registration, _channels) = broker.registry.register_client(client).unwrap();
+    drop(registration);
+    broker
+        .control_sender()
+        .send(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction,
+                surface,
+            },
+        })
+        .unwrap();
+
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        broker.recv_control_ack_timeout(Duration::from_millis(10)),
+        Ok(XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::FocusSurface,
+                transaction,
+                surface,
+                outcome: XAuthorityControlOutcome::ClientGone,
+            },
+        })
     );
 }
 
