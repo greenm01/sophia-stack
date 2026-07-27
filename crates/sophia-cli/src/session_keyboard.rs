@@ -80,6 +80,11 @@ impl SessionClientKeyState {
         );
     }
 
+    pub fn copy_all_keys(&self, destination: &mut Vec<SessionClientPressedKey>) {
+        destination.clear();
+        destination.extend(self.pressed.iter().copied());
+    }
+
     pub fn record_synthetic_release(&mut self, key: SessionClientPressedKey) {
         if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
             self.pressed.swap_remove(index);

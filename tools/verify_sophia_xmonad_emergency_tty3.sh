@@ -38,9 +38,17 @@ require_eq() {
 require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
 require_file "$RECOVERY_LOG"
+if grep -Eqi '(^Error:|panicked at|status=(failed|degraded)([[:space:]]|$))' \
+    "$SESSION_LOG"; then
+    fail "session contains an error, panic, failure, or degradation"
+fi
 
 require_line '^sophia_live_session_input_pipeline schema=1 status=emergency_exit$' \
     "$SESSION_LOG" "the live owner did not observe the emergency chord"
+require_line '^sophia_live_session_keys schema=1 status=released reason=emergency scope=all count=[1-9][0-9]*$' \
+    "$SESSION_LOG" "emergency shutdown did not release routed client keys"
+require_line '^sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 .*repeat_active_seats=0 .*repeat_capacity_exhausted=0$' \
+    "$SESSION_LOG" "emergency shutdown did not drain client key state"
 require_line '^sophia_live_session_health schema=1 status=clean .*pending_input=0 .*wm_degraded=false$' \
     "$SESSION_LOG" "the live owner did not finish with clean session state"
 

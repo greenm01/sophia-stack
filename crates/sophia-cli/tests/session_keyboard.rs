@@ -105,6 +105,21 @@ fn client_key_state_drains_one_surface_without_touching_another() {
 }
 
 #[test]
+fn client_key_state_copies_all_surfaces_for_session_shutdown() {
+    let mut state = SessionClientKeyState::default();
+    let first = pressed_key(1, 29);
+    let second = pressed_key(2, 56);
+    state.record_routed(first, true).unwrap();
+    state.record_routed(second, true).unwrap();
+
+    let mut snapshot = Vec::new();
+    state.copy_all_keys(&mut snapshot);
+
+    assert_eq!(snapshot, [first, second]);
+    assert_eq!(state.pending_len(), 2);
+}
+
+#[test]
 fn client_key_state_suppresses_orphan_release_and_is_bounded() {
     let mut state = SessionClientKeyState::default();
     let orphan = pressed_key(1, 30);

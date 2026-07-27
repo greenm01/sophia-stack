@@ -3,6 +3,123 @@ use sophia_engine::InputFocusDecision;
 use sophia_protocol::TransactionId;
 
 #[test]
+fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(41, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry,
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::single(geometry),
+    }];
+    let mut focus = InputFocusState::new();
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+    let events = [29, 56, 14]
+        .into_iter()
+        .enumerate()
+        .map(|(index, keycode)| InputEventPacket {
+            serial: u64::try_from(index + 1).unwrap(),
+            seat,
+            device: DeviceId::from_raw(1),
+            time_msec: u64::try_from(index + 1).unwrap(),
+            kind: InputEventKind::Key {
+                keycode,
+                pressed: true,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        })
+        .collect();
+    let (input_sender, input_receiver) = sync_channel(8);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = test_key_repeat_parts();
+    let mut client_keys = SessionClientKeyState::default();
+    let mut emergency = super::super::EmergencyChordState::armed();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
+    let mut pointer = SessionPointerPlacement::default();
+    let mut next_delivery = 1;
+
+    let report = route_input_events(
+        events,
+        &focus,
+        &committed,
+        &[],
+        &XAuthorityClientSurfaceRoutes::default(),
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        &mut keyboard_coverage,
+        None,
+        &mut pointer,
+        false,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        3,
+        None,
+    )
+    .unwrap();
+    let routed_presses = input_receiver.try_iter().collect::<Vec<_>>();
+
+    assert!(report.emergency_exit);
+    assert_eq!(report.keys_routed, 2);
+    assert_eq!(routed_presses.len(), 2);
+    assert_eq!(client_keys.pending_len(), 2);
+
+    let mut scratch = Vec::new();
+    let mut deliveries = Vec::new();
+    let released = flush_all_client_pressed_keys(
+        &mut client_keys,
+        &mut scratch,
+        &mut deliveries,
+        &input_sender,
+        &mut modifiers,
+        &mut next_delivery,
+        4,
+    )
+    .unwrap();
+    let routed_releases = input_receiver
+        .try_iter()
+        .map(|input| input.request.kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(released, 2);
+    assert_eq!(deliveries.len(), 2);
+    assert_eq!(client_keys.pending_len(), 0);
+    assert_eq!(modifiers.modifier_mask(), 0);
+    assert_eq!(
+        routed_releases,
+        [
+            InputEventKind::Key {
+                keycode: 29,
+                pressed: false,
+            },
+            InputEventKind::Key {
+                keycode: 56,
+                pressed: false,
+            },
+        ]
+    );
+}
+
+#[test]
 fn client_positioned_primary_press_bypasses_managed_focus_handoff() {
     let surface = SurfaceId::new(41, 1);
     let press = InputEventKind::PointerButton {

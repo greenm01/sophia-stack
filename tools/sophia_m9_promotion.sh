@@ -126,6 +126,11 @@ run_gate() {
     esac
 }
 
+gate_launcher_status_accepted() {
+    local gate=$1 status=$2
+    ((status == 0)) || [[ "$gate" == 04-emergency && "$status" == 130 ]]
+}
+
 archive_gate_sequence() {
     local gate=$1 destination=$2 source=
     case "$gate" in
@@ -181,7 +186,7 @@ promote_next() {
         archive_gate_sequence "$gate" "$temporary"
     fi
 
-    if ((run_status != 0)); then
+    if ! gate_launcher_status_accepted "$gate" "$run_status"; then
         printf 'promotion-result schema=1 gate="%s" commit="%s" status="failed" launcher-status=%d\n' \
             "$(gate_label "$gate")" "$COMMIT" "$run_status" >"$temporary/result.kdl"
         mv "$temporary" "$PROMOTION_ROOT/${gate}.failed.$(date +%s).$$"

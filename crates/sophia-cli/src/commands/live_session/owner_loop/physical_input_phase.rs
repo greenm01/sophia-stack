@@ -264,6 +264,7 @@ macro_rules! drain_physical_input {
                 println!("sophia_live_session_input_pipeline schema=1 status=emergency_exit");
                 std::io::stdout().flush()?;
                 emergency_exit_requested = true;
+                flush_all_client_keys!("emergency");
                 let requested_at = Instant::now();
                 input_delivery.wait_started_at = Some(requested_at);
                 input_delivery.source = Some("emergency");

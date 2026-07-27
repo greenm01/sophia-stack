@@ -151,6 +151,31 @@ macro_rules! service_core_config_reload {
     }};
 }
 
+macro_rules! track_client_key_flush {
+    ($released:expr, $reason:expr, $scope_field:literal, $scope_value:expr) => {{
+        let released = $released;
+        input_delivery.events_expected = input_delivery
+            .events_expected
+            .saturating_add(client_key_deliveries.len());
+        input_delivery
+            .pending
+            .extend(client_key_deliveries.iter().copied());
+        client_key_release_barrier.extend(client_key_deliveries.iter().copied());
+        if released != 0 {
+            println!(
+                concat!(
+                    "sophia_live_session_keys schema=1 status=released reason={} ",
+                    $scope_field,
+                    "={} count={}"
+                ),
+                $reason,
+                $scope_value,
+                released,
+            );
+        }
+    }};
+}
+
 macro_rules! flush_client_keys {
     ($surface:expr, $reason:expr) => {{
         let surface = $surface;
@@ -165,20 +190,23 @@ macro_rules! flush_client_keys {
             &mut input_delivery.next,
             u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         )?;
-        input_delivery.events_expected = input_delivery
-            .events_expected
-            .saturating_add(client_key_deliveries.len());
-        input_delivery
-            .pending
-            .extend(client_key_deliveries.iter().copied());
-        client_key_release_barrier.extend(client_key_deliveries.iter().copied());
-        if released != 0 {
-            println!(
-                "sophia_live_session_keys schema=1 status=released reason={} surface={} count={released}",
-                $reason,
-                surface.index(),
-            );
-        }
+        track_client_key_flush!(released, $reason, "surface", surface.index());
+    }};
+}
+
+macro_rules! flush_all_client_keys {
+    ($reason:expr) => {{
+        key_repeat.cancel_seat(seat);
+        let released = flush_all_client_pressed_keys(
+            &mut client_keys,
+            &mut client_key_scratch,
+            &mut client_key_deliveries,
+            input_sender,
+            &mut modifiers,
+            &mut input_delivery.next,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        )?;
+        track_client_key_flush!(released, $reason, "scope", "all");
     }};
 }
 

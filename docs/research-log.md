@@ -3,6 +3,30 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-26: Emergency Shutdown Owns Routed-Key Drain
+
+The first commit-pinned emergency gate triggered both the live owner and the
+independent guard, drained native presentation, restored the TTY, and returned
+control, but the inner session failed its final key-ledger invariant. Ctrl and
+Alt had already been routed to the focused client before Backspace completed
+the emergency chord. The loop waited for existing authority deliveries but
+did not synthesize releases for those two routed presses, leaving the client
+ledger nonempty at completion.
+
+Emergency shutdown now snapshots the complete bounded pressed-key ledger,
+cancels active repeat, routes releases through the normal X authority path,
+and adds those delivery IDs to the existing acknowledgement barrier. This is
+session-wide input ownership, not Kitty, xmonad, or chord-specific client
+policy. Surface-scoped focus and logout flushes share the same release reducer.
+
+The run also exposed an outer-control-plane mismatch. The independent guard
+intentionally exits its launcher with status 130 after recovery, while the
+promotion driver previously rejected every nonzero launcher status before
+running the emergency verifier. Gate policy now admits 130 only for emergency
+evidence. The verifier remains authoritative: it requires the inner session
+to exit zero with drained key, control, native, and Present state plus exact
+TTY restoration.
+
 ## 2026-07-26: Physical Evidence Exposed Verifier Assumptions
 
 The first short hardware-smoke promotion run was healthy but its verifiers

@@ -495,6 +495,12 @@ recovery. Those remain physical. Conversely, the physical gates do not ask the
 operator to manually replay deterministic clipboard, workspace, application,
 and protocol state machines already exercised by QEMU.
 
+The emergency guard intentionally returns launcher status 130 after taking
+control. The promotion driver accepts that status only for the emergency gate,
+then requires the archived session to have drained routed client keys and
+native state, exited successfully, and restored the originating TTY. Status
+130 alone never satisfies the gate.
+
 Inspect progress from any text terminal with:
 
 ```sh

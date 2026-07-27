@@ -772,6 +772,49 @@ fn flush_client_pressed_keys(
     time_msec: u64,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     client_keys.copy_surface_keys(surface, scratch);
+    flush_copied_client_pressed_keys(
+        client_keys,
+        scratch,
+        deliveries,
+        input_sender,
+        modifiers,
+        next_input_delivery,
+        time_msec,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn flush_all_client_pressed_keys(
+    client_keys: &mut SessionClientKeyState,
+    scratch: &mut Vec<SessionClientPressedKey>,
+    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    modifiers: &mut XCoreKeyboardMapper,
+    next_input_delivery: &mut u64,
+    time_msec: u64,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    client_keys.copy_all_keys(scratch);
+    flush_copied_client_pressed_keys(
+        client_keys,
+        scratch,
+        deliveries,
+        input_sender,
+        modifiers,
+        next_input_delivery,
+        time_msec,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn flush_copied_client_pressed_keys(
+    client_keys: &mut SessionClientKeyState,
+    scratch: &[SessionClientPressedKey],
+    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
+    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    modifiers: &mut XCoreKeyboardMapper,
+    next_input_delivery: &mut u64,
+    time_msec: u64,
+) -> Result<usize, Box<dyn std::error::Error>> {
     deliveries.clear();
     for key in scratch.iter().copied() {
         let Some((_x_keycode, _state)) = modifiers.map_evdev_key(key.keycode, false) else {
