@@ -268,11 +268,13 @@ resources, begins presentation ownership, then applies release. These cold-path
 records do not add buffers to the passive Engine admission table.
 
 Present scheduling is classified per submission. A buffer matching the pending
-layout epoch is staged with that epoch, a known wrong-size buffer is rejected,
-and submissions for unrelated surfaces remain immediately eligible. A layout
-epoch must not become a session-wide Present barrier. The scheduler shares one
-immutable authority batch and retains only bounded submission records rather
-than cloning the full batch per queued Present.
+layout epoch is staged with that epoch. A known wrong-size buffer for an
+already-managed surface is rejected, while a complete pre-admission Present is
+retained as recovery evidence at its natural extent. Submissions for unrelated
+surfaces remain immediately eligible. A layout epoch must not become a
+session-wide Present barrier. The scheduler shares one immutable authority
+batch and retains only bounded submission records rather than cloning the full
+batch per queued Present.
 
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and
@@ -286,6 +288,72 @@ synthetic ICCCM `WM_NORMAL_HINTS`. A manage-time constraint-profile change
 replaces the private synthetic window so an unmodified legacy WM reevaluates
 its ordinary size-hint policy. Native WMs consume the same WM API facts without
 the ICCCM translation.
+
+### Configure, Visual-Candidate, And Rendering State
+
+Sophia follows river's separation between scheduled policy, client configure,
+and rendering state, adapted to Sophia's stronger authority boundary. A WM
+proposal is not a buffer, a delivered configure is not a commit, and an
+authority-observed buffer is not rendered merely because its extent is known.
+
+```text
+                    opaque constraints and geometry
+              ┌────────────────────────────────────────┐
+              ▼                                        │
+       ┌────────────┐   control   ┌────────────┐        │
+       │ requested  │────────────▶│ configured │        │
+       │ WM extent  │             │ client     │        │
+       └────────────┘             └─────┬──────┘        │
+              ▲                        │ authority       │
+              │ timeout/replan         │ observation     │
+              │                        ▼                 │
+       ┌──────┴──────┐           ┌────────────┐         │
+       │ exact safe  │◀──────────│ candidate  │         │
+       │ constraint  │ evidence  │ quarantined│         │
+       └─────────────┘           └─────┬──────┘         │
+                                      │ Engine prepare  │
+                                      ▼                 │
+                                ┌────────────┐           │
+                                │ committed  │           │
+                                │ visual     │           │
+                                └─────┬──────┘           │
+                                      │ KMS page flip    │
+                                      ▼                 │
+                                ┌────────────┐           │
+                                │ rendered   │───────────┘
+                                │ and focused│
+                                └────────────┘
+```
+
+The Engine reduces complete authority observations into one passive
+`SafeSurfaceObservation` per surface. The record carries extent, evidence
+class, source transaction, and Engine observation sequence. During admission,
+a complete presented buffer outranks an accumulated software-backing snapshot
+regardless of arrival order. This prevents a policy-sized background clear
+from replacing the natural extent and transaction of a client frame. Within
+one evidence class the newest observation wins. After admission, normal
+committed ordering resumes.
+
+This reducer does not make the Engine understand X11. The X authority owns the
+meaning and order of Present, core drawing, SHM drawing, clears, and backing
+storage. It lowers complete Present/XPixmap buffers as presented-buffer
+evidence and its accumulated software image as backing-snapshot evidence.
+Xserver is the reference for the longer-term content rule: those operations
+form one ordered logical window stream rather than unrelated whole-window
+owners.
+
+Niri supplies a compatible policy precedent, not Sophia's transaction model:
+fixed client constraints can cause a window to open floating. Sophia publishes
+generic exact constraints through the blind WM API; an unmodified legacy WM
+may float the constrained node through ordinary ICCCM behavior. Engine never
+selects a floating position or inspects application identity.
+
+Admission quarantine follows the same order. The selected complete Present
+supersedes older groups whose content it fully covers; older Presents receive
+Skip/Idle settlement and older backing-only groups are discarded. Newer groups
+remain fenced until the selected page flip retires, then drain in original
+authority order. Removal, timeout, and disconnect settle the same bounded
+records without resource debt.
 
 There is no compatibility-only committed-snapshot production adapter. Every
 active client path enters through authority transactions. XLibre and Wayland

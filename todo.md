@@ -212,6 +212,14 @@ Promotion now follows the gates below in order.
   transaction rather than accepting retained committed-size history. Keep
   bufferless geometry, chrome, and focus outside visible projection; bounded
   timeout withdraws a client that never supplies matching pixels.
+- [x] Replace scalar safe-size overwrite and reverse admission lookup with an
+  evidence-ranked visual candidate. Retain source transaction, extent,
+  evidence class, and Engine observation sequence; prefer complete Present
+  buffers over accumulated backing snapshots during admission in either
+  arrival order. Select only that exact transaction, settle older covered
+  groups, fence newer groups until retirement, and require candidate evidence
+  in the physical verifier. The regression reproduces a 500-by-500 Present
+  followed by the 1276-by-1422 blank backing snapshot from the failed run.
 - [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown
@@ -222,6 +230,11 @@ Promotion now follows the gates below in order.
   misses the accepted resize), and normal shutdown with no stale Present,
   control, input, or native-resource debt. Use
   `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run.
+- [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
+  Present, SHM, clear, and core-drawing operations as one bounded ordered
+  logical-window content stream. Follow Xserver's copy/clip semantics without
+  GPU readback, keep river-style configured/rendering state separate, and
+  preserve one hot-path representation for future protocol authorities.
 - [x] Replace the transient aggregate async-service booleans with one
   Engine-owned, output-scoped frame-service reducer. Backend-live must execute
   only named native effects, reobserve after each effect, and remain bounded

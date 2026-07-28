@@ -1,4 +1,4 @@
-use sophia_engine::{LayoutEpochCoordinator, SurfaceAdmissionState};
+use sophia_engine::{LayoutEpochCoordinator, SurfaceAdmissionState, SurfaceVisualEvidence};
 use sophia_protocol::{
     LayoutTransaction, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
     SurfaceSizeRequest, TransactionId, Transform,
@@ -40,7 +40,12 @@ fn admission_recovery_can_use_complete_uncommitted_authority_pixels() {
     let surface = SurfaceId::new(18, 1);
     let safe = size(500, 500);
     let mut coordinator = LayoutEpochCoordinator::default();
-    coordinator.record_safe_observation(surface, safe);
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(17),
+        safe,
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
 
     let configures = coordinator
         .begin_recovery([(surface, size(1276, 1422))], [surface])
@@ -49,6 +54,81 @@ fn admission_recovery_can_use_complete_uncommitted_authority_pixels() {
     assert_eq!(coordinator.committed_size(surface), None);
     assert_eq!(coordinator.safe_size(surface), Some(safe));
     assert_eq!(configures[0].size, safe);
+}
+
+#[test]
+fn presented_buffer_outlives_later_backing_snapshot_during_admission() {
+    let surface = SurfaceId::new(19, 1);
+    let present = TransactionId::from_raw(20);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_admission(surface, SurfaceAdmissionState::Unmanaged);
+    coordinator.record_safe_observation(
+        surface,
+        present,
+        size(500, 500),
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(21),
+        size(1276, 1422),
+        SurfaceVisualEvidence::BackingSnapshot,
+    );
+
+    assert_eq!(
+        coordinator.safe_observation(surface),
+        Some(sophia_engine::SafeSurfaceObservation {
+            transaction: Some(present),
+            extent: size(500, 500),
+            evidence: SurfaceVisualEvidence::PresentedBuffer,
+            sequence: 1,
+        })
+    );
+}
+
+#[test]
+fn presented_buffer_replaces_earlier_backing_snapshot_during_admission() {
+    let surface = SurfaceId::new(20, 1);
+    let present = TransactionId::from_raw(22);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(21),
+        size(1276, 1422),
+        SurfaceVisualEvidence::BackingSnapshot,
+    );
+    coordinator.record_safe_observation(
+        surface,
+        present,
+        size(500, 500),
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
+
+    let observation = coordinator.safe_observation(surface).unwrap();
+    assert_eq!(observation.transaction, Some(present));
+    assert_eq!(observation.extent, size(500, 500));
+    assert_eq!(observation.evidence, SurfaceVisualEvidence::PresentedBuffer);
+}
+
+#[test]
+fn managed_surface_accepts_the_latest_complete_observation() {
+    let surface = SurfaceId::new(21, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(23),
+        size(500, 500),
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
+    coordinator.set_admission(surface, SurfaceAdmissionState::Managed);
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(24),
+        size(640, 480),
+        SurfaceVisualEvidence::BackingSnapshot,
+    );
+
+    assert_eq!(coordinator.safe_size(surface), Some(size(640, 480)));
 }
 
 #[test]

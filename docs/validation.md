@@ -171,8 +171,12 @@ tools/verify_sophia_xmonad_vkcube_recovery.sh
 
 The verifier joins every armed visual admission to the same surface and
 transaction at both Engine admission completion and native page-flip
-retirement. It also requires bounded clean teardown and rejects malformed,
-overflowed, mismatched, or degraded intake.
+retirement. Before the admission may arm, the same transaction must appear as
+an Engine-selected `PresentedBuffer` visual candidate with a concrete natural
+extent. This rejects the historical failure where a later tile-sized software
+backing clear replaced the Vulkan frame as recovery evidence. The verifier also
+requires bounded clean teardown and rejects malformed, overflowed, mismatched,
+or degraded intake.
 
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,

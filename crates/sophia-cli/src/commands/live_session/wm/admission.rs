@@ -8,6 +8,7 @@ struct LiveAdmissionAuthorityGroup {
     transaction: TransactionId,
     transactions: Vec<SurfaceTransaction>,
     present_submissions: Vec<sophia_x_authority::XAuthorityPresentSubmission>,
+    superseded: bool,
 }
 
 impl LiveAdmissionAuthorityGroup {
@@ -161,6 +162,7 @@ impl PersistentLiveLayout {
             transaction: batch.transaction,
             transactions,
             present_submissions,
+            superseded: false,
         };
         group.validate()?;
         if self.pre_admission_groups.len() >= PRE_ADMISSION_GROUP_CAPACITY {
@@ -174,9 +176,22 @@ impl PersistentLiveLayout {
         &mut self,
         selected_transactions: &BTreeMap<SurfaceId, TransactionId>,
     ) {
+        let selected_positions = selected_transactions
+            .iter()
+            .filter_map(|(surface, transaction)| {
+                self.pre_admission_groups
+                    .iter()
+                    .position(|group| group.transaction == *transaction)
+                    .map(|position| (*surface, position))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut retained = VecDeque::with_capacity(self.pre_admission_groups.len());
         let mut committed_generations = BTreeMap::<SurfaceId, u64>::new();
-        while let Some(mut group) = self.pre_admission_groups.pop_front() {
+        for position in 0..self.pre_admission_groups.len() {
+            let mut group = self
+                .pre_admission_groups
+                .pop_front()
+                .expect("pre-admission group position exists");
             let touched = group
                 .transactions
                 .iter()
@@ -188,11 +203,11 @@ impl PersistentLiveLayout {
                         .map(|submission| submission.surface),
                 )
                 .collect::<BTreeSet<_>>();
-            if !touched.is_empty()
+            let selected = !touched.is_empty()
                 && touched.iter().all(|surface| {
                     selected_transactions.get(surface) == Some(&group.transaction)
-                })
-            {
+                });
+            if selected {
                 for surface in &touched {
                     if let Some(layer) = self.layers.get(surface) {
                         group.reproject_surface(*surface, layer.geometry);
@@ -206,9 +221,73 @@ impl PersistentLiveLayout {
                     *generation = generation.saturating_add(1);
                 }
                 self.released_admission_groups.push_back(group);
-            } else {
-                retained.push_back(group);
+                continue;
             }
+            let covered_by_later_present = !touched.is_empty()
+                && touched.iter().all(|surface| {
+                    selected_positions
+                        .get(surface)
+                        .is_some_and(|selected_position| position < *selected_position)
+                        && self
+                            .layout_epochs
+                            .safe_observation(*surface)
+                            .is_some_and(|observation| {
+                                observation.evidence
+                                    == sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+                            })
+                });
+            if covered_by_later_present {
+                if !group.present_submissions.is_empty() {
+                    group.superseded = true;
+                    self.released_admission_groups.push_back(group);
+                }
+                continue;
+            }
+            retained.push_back(group);
+        }
+        self.pre_admission_groups = retained;
+    }
+
+    fn release_managed_admission_groups(&mut self) {
+        let mut retained = VecDeque::with_capacity(self.pre_admission_groups.len());
+        let mut committed_generations = self
+            .layers
+            .iter()
+            .map(|(surface, layer)| (*surface, layer.generation))
+            .collect::<BTreeMap<_, _>>();
+        while let Some(mut group) = self.pre_admission_groups.pop_front() {
+            let touched = group
+                .transactions
+                .iter()
+                .map(|transaction| transaction.surface)
+                .chain(
+                    group
+                        .present_submissions
+                        .iter()
+                        .map(|submission| submission.surface),
+                )
+                .collect::<BTreeSet<_>>();
+            if touched.is_empty()
+                || touched
+                    .iter()
+                    .any(|surface| self.surface_requires_admission(*surface))
+            {
+                retained.push_back(group);
+                continue;
+            }
+            for surface in &touched {
+                if let Some(layer) = self.layers.get(surface) {
+                    group.reproject_surface(*surface, layer.geometry);
+                }
+            }
+            for transaction in &mut group.transactions {
+                let generation = committed_generations
+                    .entry(transaction.surface)
+                    .or_insert(0);
+                transaction.previous_committed_generation = *generation;
+                *generation = generation.saturating_add(1);
+            }
+            self.released_admission_groups.push_back(group);
         }
         self.pre_admission_groups = retained;
     }
@@ -265,6 +344,7 @@ impl PersistentLiveLayout {
         self.admission_retries.remove(&surface);
         self.layout_epochs
             .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+        self.release_managed_admission_groups();
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
             && expected == visual_transaction
         {
@@ -283,14 +363,6 @@ impl PersistentLiveLayout {
             .retain(|group| !group.contains_surface(surface));
         self.released_admission_groups
             .retain(|group| !group.contains_surface(surface));
-    }
-
-    fn latest_pre_admission_transaction(&self, surface: SurfaceId) -> Option<&SurfaceTransaction> {
-        self.pre_admission_groups
-            .iter()
-            .rev()
-            .flat_map(|group| group.transactions.iter().rev())
-            .find(|transaction| transaction.surface == surface)
     }
 
     fn observe_presentation_intents(

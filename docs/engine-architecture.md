@@ -131,6 +131,15 @@ retains protocol-neutral geometry, buffer, damage, and generation. Preparing a
 presentation joins that one candidate to the committed baseline; it does not
 relabel or recommit unrelated surfaces under the presentation transaction.
 
+Layout recovery also keeps candidate evidence separate from committed state.
+The epoch domain reduces complete authority observations into a passive record
+of source transaction, natural extent, evidence class, and observation
+sequence. During admission, a complete presented buffer outranks an accumulated
+backing snapshot. The record can constrain a blind-WM replan, but only its exact
+transaction may supply admission pixels and only retirement may promote it.
+The complete state diagram is in
+[Configure, Visual-Candidate, And Rendering State](architecture.md#configure-visual-candidate-and-rendering-state).
+
 For decorated managed surfaces, visual state retains the WM-owned outer
 allocation and Engine-derived client-content geometry as one committed fact.
 The chrome clearance is stable across focus changes. A style-width reload that

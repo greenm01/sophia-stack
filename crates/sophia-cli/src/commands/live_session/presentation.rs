@@ -160,6 +160,11 @@ fn production_authority_batch(
                 .present_submissions
                 .iter()
                 .map(|submission| {
+                    let layout_disposition = if released.superseded {
+                        sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
+                    } else {
+                        layout.present_layout_disposition(submission.surface, submission.buffer)
+                    };
                     sophia_backend_live::LiveProductionPresentSubmission {
                         transaction: submission.transaction,
                         surface: submission.surface,
@@ -168,8 +173,7 @@ fn production_authority_batch(
                         y_offset: submission.y_offset,
                         acquire_fence: submission.acquire_fence,
                         idle_fence: submission.idle_fence,
-                        layout_disposition: layout
-                            .present_layout_disposition(submission.surface, submission.buffer),
+                        layout_disposition,
                     }
                 }),
         );

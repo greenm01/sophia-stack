@@ -141,8 +141,23 @@ impl PersistentLiveLayout {
             {
                 continue;
             }
-            self.layout_epochs
-                .record_safe_observation(transaction.surface, observed_size);
+            let visual_evidence = live_transaction_visual_evidence(transaction);
+            let candidate_selected = self.layout_epochs.record_safe_observation(
+                transaction.surface,
+                transaction.transaction,
+                observed_size,
+                visual_evidence,
+            );
+            if candidate_selected && self.surface_requires_admission(transaction.surface) {
+                println!(
+                    "sophia_live_visual_candidate schema=1 status=selected transaction={} surface={} width={} height={} evidence={:?}",
+                    transaction.transaction.raw(),
+                    transaction.surface.index(),
+                    observed_size.width,
+                    observed_size.height,
+                    visual_evidence,
+                );
+            }
             let resize_owned = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.contains_key(&transaction.surface)
             });
@@ -150,7 +165,14 @@ impl PersistentLiveLayout {
                 pending.requested_sizes.get(&transaction.surface) == Some(&observed_size)
             });
             if resize_owned {
-                if staged_for_resize {
+                let selected_for_admission = !self.surface_requires_admission(transaction.surface)
+                    || self
+                        .layout_epochs
+                        .safe_observation(transaction.surface)
+                        .is_some_and(|selected| {
+                            selected.transaction == Some(transaction.transaction)
+                        });
+                if staged_for_resize && selected_for_admission {
                     let pending = self.pending.as_mut().expect("checked above");
                     pending
                         .staged_transactions
@@ -385,17 +407,10 @@ impl PersistentLiveLayout {
         });
         let mut staged_transactions = BTreeMap::new();
         for (surface, size) in &proposal.requested_sizes {
-            let Some(transaction) = self.latest_pre_admission_transaction(*surface) else {
+            let Some(transaction) = self.selected_pre_admission_transaction(*surface, *size)
+            else {
                 continue;
             };
-            if live_transaction_observed_size(
-                transaction,
-                &self.dma_buf_sizes,
-                &self.cpu_buffer_sizes,
-            ) != *size
-            {
-                continue;
-            }
             staged_transactions.insert(*surface, transaction.clone());
             if let Some(layer) = proposal
                 .layers
@@ -834,35 +849,6 @@ impl PersistentLiveLayout {
         )
     }
 
-}
-
-fn live_transaction_pixel_size(
-    source: sophia_protocol::BufferSource,
-    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
-    cpu_buffer_sizes: &BTreeMap<u64, Size>,
-) -> Option<Size> {
-    match source {
-        sophia_protocol::BufferSource::DmaBuf { handle } => {
-            dma_buf_sizes.get(&sophia_protocol::BufferHandle::from_raw(handle)).copied()
-        }
-        sophia_protocol::BufferSource::CpuBuffer { handle } => {
-            cpu_buffer_sizes.get(&handle).copied()
-        }
-        sophia_protocol::BufferSource::None
-        | sophia_protocol::BufferSource::XPixmap { .. } => None,
-    }
-}
-
-fn live_transaction_observed_size(
-    transaction: &SurfaceTransaction,
-    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
-    cpu_buffer_sizes: &BTreeMap<u64, Size>,
-) -> Size {
-    live_transaction_pixel_size(transaction.target_buffer, dma_buf_sizes, cpu_buffer_sizes)
-        .unwrap_or(Size {
-            width: transaction.target_geometry.width,
-            height: transaction.target_geometry.height,
-        })
 }
 
 fn wm_update_coordinator_batch(

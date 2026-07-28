@@ -50,6 +50,10 @@ for record in "${armed[@]}"; do
     surface="$(field "$record" surface)" ||
         fail "armed admission lacks a surface"
     grep -Eq \
+        "^sophia_live_visual_candidate schema=1 status=selected transaction=${transaction} surface=${surface} width=[0-9]+ height=[0-9]+ evidence=PresentedBuffer$" \
+        "$SESSION_LOG" ||
+        fail "surface $surface transaction $transaction was not selected from presented-buffer evidence"
+    grep -Eq \
         "^sophia_live_visual_admission schema=1 status=presented transaction=${transaction} surface=${surface}$" \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction never completed visual admission"

@@ -63,6 +63,26 @@ pub enum SurfaceAdmissionState {
     Managed,
 }
 
+/// Protocol-neutral quality of a complete authority-side visual observation.
+///
+/// A backing snapshot is sufficient for software-only clients. A presented
+/// buffer is stronger admission evidence because it is the client's complete
+/// frame rather than an authority-maintained backing image.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SurfaceVisualEvidence {
+    BackingSnapshot,
+    PresentedBuffer,
+}
+
+/// Latest safe visual extent selected by the Engine's evidence reducer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SafeSurfaceObservation {
+    pub transaction: Option<TransactionId>,
+    pub extent: Size,
+    pub evidence: SurfaceVisualEvidence,
+    pub sequence: u64,
+}
+
 /// Declared and temporary constraints are stored separately so recovery never
 /// mutates application truth.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,12 +115,13 @@ impl SurfaceConstraintState {
 #[derive(Debug)]
 pub struct LayoutEpochCoordinator {
     committed_sizes: BTreeMap<SurfaceId, Size>,
-    safe_sizes: BTreeMap<SurfaceId, Size>,
+    safe_observations: BTreeMap<SurfaceId, SafeSurfaceObservation>,
     rollback_sizes: BTreeMap<SurfaceId, Size>,
     rollback_transactions: BTreeMap<SurfaceId, TransactionId>,
     rejected_sizes: BTreeMap<SurfaceId, Size>,
     constraints: BTreeMap<SurfaceId, SurfaceConstraintState>,
     admission: BTreeMap<SurfaceId, SurfaceAdmissionState>,
+    next_observation_sequence: u64,
     next_transaction: u64,
 }
 
@@ -108,12 +129,13 @@ impl Default for LayoutEpochCoordinator {
     fn default() -> Self {
         Self {
             committed_sizes: BTreeMap::new(),
-            safe_sizes: BTreeMap::new(),
+            safe_observations: BTreeMap::new(),
             rollback_sizes: BTreeMap::new(),
             rollback_transactions: BTreeMap::new(),
             rejected_sizes: BTreeMap::new(),
             constraints: BTreeMap::new(),
             admission: BTreeMap::new(),
+            next_observation_sequence: 1,
             next_transaction: 1 << 63,
         }
     }
@@ -208,7 +230,12 @@ impl LayoutEpochCoordinator {
 
     pub fn record_committed(&mut self, surface: SurfaceId, size: Size) {
         self.committed_sizes.insert(surface, size);
-        self.safe_sizes.insert(surface, size);
+        let _ = self.reduce_safe_observation(
+            surface,
+            None,
+            size,
+            SurfaceVisualEvidence::BackingSnapshot,
+        );
         if self.rejected_sizes.get(&surface) == Some(&size) {
             self.rejected_sizes.remove(&surface);
         }
@@ -216,12 +243,52 @@ impl LayoutEpochCoordinator {
 
     /// Records a complete authority buffer extent without claiming that its
     /// pixels have entered committed visual state.
-    pub fn record_safe_observation(&mut self, surface: SurfaceId, size: Size) {
-        self.safe_sizes.insert(surface, size);
+    pub fn record_safe_observation(
+        &mut self,
+        surface: SurfaceId,
+        transaction: TransactionId,
+        extent: Size,
+        evidence: SurfaceVisualEvidence,
+    ) -> bool {
+        self.reduce_safe_observation(surface, Some(transaction), extent, evidence)
+    }
+
+    fn reduce_safe_observation(
+        &mut self,
+        surface: SurfaceId,
+        transaction: Option<TransactionId>,
+        extent: Size,
+        evidence: SurfaceVisualEvidence,
+    ) -> bool {
+        let sequence = self.next_observation_sequence;
+        self.next_observation_sequence = self.next_observation_sequence.saturating_add(1);
+        let candidate = SafeSurfaceObservation {
+            transaction,
+            extent,
+            evidence,
+            sequence,
+        };
+        let admission_pending = self.admission(surface) != SurfaceAdmissionState::Managed;
+        let replace = self.safe_observations.get(&surface).is_none_or(|current| {
+            if admission_pending {
+                candidate.evidence >= current.evidence
+            } else {
+                candidate.sequence > current.sequence
+            }
+        });
+        if replace {
+            self.safe_observations.insert(surface, candidate);
+        }
+        replace
     }
 
     pub fn safe_size(&self, surface: SurfaceId) -> Option<Size> {
-        self.safe_sizes.get(&surface).copied()
+        self.safe_observation(surface)
+            .map(|observation| observation.extent)
+    }
+
+    pub fn safe_observation(&self, surface: SurfaceId) -> Option<SafeSurfaceObservation> {
+        self.safe_observations.get(&surface).copied()
     }
 
     pub fn request_allowed(&self, surface: SurfaceId, size: Size) -> bool {
@@ -375,7 +442,7 @@ impl LayoutEpochCoordinator {
 
     pub fn remove(&mut self, surface: SurfaceId) {
         self.committed_sizes.remove(&surface);
-        self.safe_sizes.remove(&surface);
+        self.safe_observations.remove(&surface);
         self.rollback_sizes.remove(&surface);
         self.rollback_transactions.remove(&surface);
         self.rejected_sizes.remove(&surface);

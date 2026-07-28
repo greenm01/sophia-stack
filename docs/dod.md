@@ -394,7 +394,9 @@ Fields should describe:
 - start timestamp
 - timeout policy
 - committed content extent per affected surface
-- latest complete authority-observed safe extent per affected surface
+- one evidence-ranked `SafeSurfaceObservation` per affected surface:
+  source transaction, content extent, evidence class, and Engine observation
+  sequence
 - declared and temporary effective constraints
 - resize participation state: unmanaged, pending-layout, or managed
 - bounded recovery-attempt state
@@ -411,9 +413,13 @@ WM remains responsible for placement and may choose to float the constrained
 node.
 
 The safe extent is an authority observation, not committed visual truth. It may
-come from a complete quarantined buffer that was never displayed. The epoch
-coordinator can use that extent to form a bounded recovery request without
-claiming that its pixels reached the scene.
+come from a complete quarantined buffer that was never displayed. During
+admission, a complete presented buffer outranks an accumulated backing
+snapshot, and equal evidence is ordered by the Engine-assigned observation
+sequence. A later policy-sized clear therefore cannot replace a retained client
+frame as recovery truth. Once managed, ordinary newest-complete-observation
+ordering resumes. The epoch coordinator can use the selected extent to form a
+bounded recovery request without claiming that its pixels reached the scene.
 
 Safe extents and declared constraints remain client-content values inside
 authority and visual-state records. WM snapshots carry outer allocation values.
@@ -467,8 +473,8 @@ Pre-admission drawing is reduced into a bounded FIFO of transaction-homogeneous
 groups. Each group retains its original `TransactionId`, surface transactions,
 and associated Present submissions; it may update safe observed extents, but
 it cannot enter the committed layer table or renderer intake. The matching
-admission commit moves complete groups across the visual boundary once, in
-order, at accepted geometry and sequentially rebased Engine generations.
+admission commit moves the evidence-selected complete group across the visual
+boundary once, at accepted geometry and a rebased Engine generation.
 Each DMA-BUF surface transaction has exactly one matching Present submission
 with the same surface and buffer, and every Present has exactly one matching
 DMA-BUF transaction. Partial groups are never split or relabelled. Buffer and
@@ -477,6 +483,14 @@ references them; renderer ownership begins before release is observed. The
 FIFO holds at most 256 groups; capacity exhaustion or a mismatched member is an
 explicit terminal error, never an unbounded allocation or an immediate GPU
 submission.
+
+A selected complete presented buffer covers older admission groups for that
+surface. Older Present groups cross intake only for explicit Skip/Idle
+settlement; older backing-only groups are discarded without entering committed
+state. Groups newer than the selected candidate remain quarantined through its
+page-flip retirement and then drain in original order with rebased generations.
+This keeps resource lifetime and client feedback exact without allowing an
+unselected blank snapshot to become visual truth.
 
 Recovery keeps layout history and visual readiness as separate facts. A safe
 or committed extent may constrain the blind WM's next proposal, but
