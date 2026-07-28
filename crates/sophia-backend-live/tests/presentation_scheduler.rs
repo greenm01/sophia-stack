@@ -245,6 +245,20 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
 }
 
 #[test]
+fn dma_buf_authority_group_without_matching_present_fails_closed() {
+    let transaction = TransactionId::from_raw(501);
+    let surface = SurfaceId::new(502, 1);
+    let handle = BufferHandle::from_raw(503);
+    let mut batch = scheduler_batch(transaction, surface, handle);
+    batch.groups[0].present_submissions.clear();
+
+    assert_eq!(
+        batch.validate(),
+        Err("production DMA-BUF transactions and Presents are not exact pairs")
+    );
+}
+
+#[test]
 fn mismatched_present_candidate_is_a_controlled_rejection() {
     let handle = BufferHandle::from_raw(407);
     let transaction = TransactionId::from_raw(408);

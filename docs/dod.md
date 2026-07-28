@@ -446,7 +446,10 @@ The phases are:
   keyed configure/map control;
 - `AwaitingPixels`: the frontend acknowledged that protocol control, while
   visual state still waits for a matching concrete buffer;
-- `Managed`: matching geometry and pixels committed atomically.
+- `AwaitingRetirement`: an exact DMA-BUF surface/transaction/buffer Present
+  group owns the candidate, while visual focus and managed state wait for its
+  page-flip retirement;
+- `Managed`: matching geometry and pixels retired atomically.
 
 The X authority classifies only non-override-redirect root children as
 policy-managed toplevels. Parent links and direct-child queries stay in its
@@ -466,9 +469,14 @@ and associated Present submissions; it may update safe observed extents, but
 it cannot enter the committed layer table or renderer intake. The matching
 admission commit moves complete groups across the visual boundary once, in
 order, at accepted geometry and sequentially rebased Engine generations.
-Partial groups are never split or relabelled. The FIFO holds at most 256 groups;
-capacity exhaustion or a mismatched member is an explicit terminal error,
-never an unbounded allocation or an immediate GPU submission.
+Each DMA-BUF surface transaction has exactly one matching Present submission
+with the same surface and buffer, and every Present has exactly one matching
+DMA-BUF transaction. Partial groups are never split or relabelled. Buffer and
+fence releases remain deferred while any quarantined or just-released group
+references them; renderer ownership begins before release is observed. The
+FIFO holds at most 256 groups; capacity exhaustion or a mismatched member is an
+explicit terminal error, never an unbounded allocation or an immediate GPU
+submission.
 
 Withdraw and removal transitions erase the passive facts idempotently. A
 terminal timeout withdraws the still-pending protocol window rather than

@@ -1,6 +1,8 @@
 use super::{AuthorityKind, AuthorityLocalId};
 use crate::geometry::{Rect, Region, Size, Transform};
-use crate::ids::{NamespaceId, OutputId, SurfaceId, TransactionId, WorkspaceId, XWindowId};
+use crate::ids::{
+    BufferHandle, NamespaceId, OutputId, SurfaceId, TransactionId, WorkspaceId, XWindowId,
+};
 
 mod authority_surface;
 mod layout;

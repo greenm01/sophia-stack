@@ -221,7 +221,7 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_buffer: BufferSource::XPixmap { pixmap: 0x900 },
+        target_buffer: BufferSource::DmaBuf { handle: 44 },
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -310,7 +310,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
             y: 0,
             ..geometry
         },
-        target_buffer: BufferSource::XPixmap { pixmap: 0x901 },
+        target_buffer: BufferSource::DmaBuf { handle: 45 },
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -408,7 +408,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     );
     assert_eq!(
         layout.layers[&surface].source,
-        BufferSource::XPixmap { pixmap: 0x901 }
+        BufferSource::DmaBuf { handle: 45 }
     );
     assert!(layout.pre_admission_groups.is_empty());
     assert!(layout.released_admission_groups.is_empty());
@@ -424,13 +424,13 @@ fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
         width: 640,
         height: 480,
     };
-    let transaction = |transaction, surface, handle| SurfaceTransaction {
+    let transaction = |transaction, surface, target_buffer| SurfaceTransaction {
         transaction,
         authority: sophia_protocol::AuthorityKind::SophiaX,
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_buffer: BufferSource::CpuBuffer { handle },
+        target_buffer,
         damage: Region::single(geometry),
         readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -440,12 +440,18 @@ fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
     let admitted_transaction = TransactionId::from_raw(858);
     let mut current =
         crate::commands::live_session::wm_update_coordinator_batch(current_transaction);
-    current
-        .transactions
-        .push(transaction(current_transaction, current_surface, 367));
+    current.transactions.push(transaction(
+        current_transaction,
+        current_surface,
+        BufferSource::CpuBuffer { handle: 367 },
+    ));
     let released = [crate::commands::live_session::LiveAdmissionAuthorityGroup {
         transaction: admitted_transaction,
-        transactions: vec![transaction(admitted_transaction, admitted_surface, 858)],
+        transactions: vec![transaction(
+            admitted_transaction,
+            admitted_surface,
+            BufferSource::DmaBuf { handle: 858 },
+        )],
         present_submissions: vec![sophia_x_authority::XAuthorityPresentSubmission {
             transaction: admitted_transaction,
             surface: admitted_surface,
@@ -556,7 +562,10 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: intent.role,
-            mapped: false,
+            // Admission is an engine lifecycle, not a mutable X mapped-bit
+            // predicate. Pixels must remain quarantined even if X already
+            // reports the window mapped.
+            mapped: true,
             geometry,
             constraints: intent.constraints,
             generation: intent.generation,
@@ -574,6 +583,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
             acquire_fence: None,
             idle_fence: None,
         });
+    observed.released_dma_bufs.push(buffer);
     let mut layout = PersistentLiveLayout::default();
     layout.observe_authority_batch(&observed);
     let original_admission = TransactionId::from_raw(22);
@@ -625,8 +635,13 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     assert!(layout.resolve_pending().is_some());
     assert_eq!(
         layout.admissions.state(surface),
-        sophia_engine::SurfacePresentationAdmissionState::Managed
+        sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction: original_admission,
+            visual_transaction: pixel_transaction,
+            geometry,
+        }
     );
+    assert_eq!(layout.focus_to_apply, None);
     let empty =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(24));
     let (projected, released) = layout.projected_batch(&empty);
@@ -640,6 +655,16 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         released[0].present_submissions[0].transaction,
         pixel_transaction
     );
+    assert!(projected.released_dma_bufs.is_empty());
+    let (projected, released) = layout.projected_batch(&empty);
+    assert!(released.is_empty());
+    assert_eq!(projected.released_dma_bufs, vec![buffer]);
+    assert!(layout.complete_admission_retirement(surface, pixel_transaction));
+    assert_eq!(
+        layout.admissions.state(surface),
+        sophia_engine::SurfacePresentationAdmissionState::Managed
+    );
+    assert_eq!(layout.focus_to_apply, Some((recovery_transaction, surface)));
 }
 
 #[test]
@@ -666,6 +691,19 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
             generation: 1,
         },
     );
+    batch
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
     let mut layout = PersistentLiveLayout::default();
     let first_observation = layout.observe_authority_batch(&batch);
     assert!(!first_observation.admission_group_overflowed);
@@ -674,6 +712,20 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
     for index in 0..=crate::commands::live_session::PRE_ADMISSION_GROUP_CAPACITY {
         let transaction = TransactionId::from_raw(u64::try_from(index + 21).unwrap());
         let mut present = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+        present.transactions.push(SurfaceTransaction {
+            transaction,
+            authority: sophia_protocol::AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: geometry,
+            target_buffer: BufferSource::DmaBuf {
+                handle: transaction.raw(),
+            },
+            damage: Region::single(geometry),
+            readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: 0,
+        });
         present
             .present_submissions
             .push(sophia_x_authority::XAuthorityPresentSubmission {

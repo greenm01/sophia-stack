@@ -472,6 +472,7 @@
             }
             let service = runtime.service_native(native_scanout)?;
             if let Some(retired) = service.retired_present {
+                layout.complete_admission_retirement(retired.surface, retired.transaction);
                 let stable = runtime.stable_present(native_scanout, retired.transaction);
                 retired_present_surfaces.insert(retired.surface, retired.transaction);
                 if stable {

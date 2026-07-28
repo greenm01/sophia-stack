@@ -14,6 +14,52 @@ pub struct SurfaceTransaction {
     pub previous_committed_generation: u64,
 }
 
+/// Passive identity joining one DMA-BUF surface transaction to its Present.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DmaBufPresentKey {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub buffer: BufferHandle,
+}
+
+/// Returns true when DMA-BUF transactions and Presents form exact pairs.
+///
+/// Non-DMA-BUF transactions do not participate. This cold-path validator is
+/// shared by protocol frontends and production intake so neither boundary can
+/// silently weaken atomic visual ownership.
+pub fn dma_buf_present_pairs_are_exact(
+    transactions: &[SurfaceTransaction],
+    presents: &[DmaBufPresentKey],
+) -> bool {
+    transactions.iter().all(|transaction| {
+        let BufferSource::DmaBuf { handle } = transaction.target_buffer else {
+            return true;
+        };
+        presents
+            .iter()
+            .filter(|present| {
+                present.transaction == transaction.transaction
+                    && present.surface == transaction.surface
+                    && present.buffer.raw() == handle
+            })
+            .count()
+            == 1
+    }) && presents.iter().all(|present| {
+        transactions
+            .iter()
+            .filter(|transaction| {
+                transaction.transaction == present.transaction
+                    && transaction.surface == present.surface
+                    && transaction.target_buffer
+                        == BufferSource::DmaBuf {
+                            handle: present.buffer.raw(),
+                        }
+            })
+            .count()
+            == 1
+    })
+}
+
 impl SurfaceTransaction {
     pub fn from_layer_snapshot(
         transaction: TransactionId,

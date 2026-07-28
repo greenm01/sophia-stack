@@ -67,3 +67,39 @@ fn withdrawal_cancels_pending_facts_and_late_acknowledgements() {
     assert_eq!(table.facts(surface), None);
     assert!(!table.acknowledge_control(surface, transaction));
 }
+
+#[test]
+fn dma_buf_admission_becomes_managed_only_after_exact_visual_retirement() {
+    let surface = SurfaceId::new(9, 1);
+    let admission = TransactionId::from_raw(44);
+    let visual = TransactionId::from_raw(45);
+    let intent = request(surface);
+    let mut table = SurfaceAdmissionTable::default();
+
+    table.observe_intent(intent);
+    assert!(table.begin_control(surface, admission, intent.geometry));
+    assert!(table.acknowledge_control(surface, admission));
+    assert!(table.begin_retirement(surface, visual));
+    assert_eq!(
+        table.state(surface),
+        SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction: admission,
+            visual_transaction: visual,
+            geometry: intent.geometry,
+        }
+    );
+    assert!(!table.complete_retirement(surface, TransactionId::from_raw(46)));
+    assert_eq!(
+        table.state(surface),
+        SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction: admission,
+            visual_transaction: visual,
+            geometry: intent.geometry,
+        }
+    );
+    assert!(table.complete_retirement(surface, visual));
+    assert_eq!(
+        table.state(surface),
+        SurfacePresentationAdmissionState::Managed
+    );
+}

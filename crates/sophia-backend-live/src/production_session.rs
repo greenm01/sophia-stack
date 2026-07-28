@@ -272,6 +272,15 @@ impl LiveProductionPresentFeedbackCoordinator {
         &mut self,
         batch: &crate::LiveProductionAuthorityBatch,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.observe_authority_resource_registrations(batch)?;
+        self.observe_authority_resource_releases(batch);
+        Ok(())
+    }
+
+    pub fn observe_authority_resource_registrations(
+        &mut self,
+        batch: &crate::LiveProductionAuthorityBatch,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         for registration in &batch.dma_buf_registrations {
             let plane_fds = registration
                 .plane_fds
@@ -288,13 +297,19 @@ impl LiveProductionPresentFeedbackCoordinator {
                 registration.fd.as_ref().try_clone()?,
             )?;
         }
+        Ok(())
+    }
+
+    pub fn observe_authority_resource_releases(
+        &mut self,
+        batch: &crate::LiveProductionAuthorityBatch,
+    ) {
         for handle in &batch.released_dma_bufs {
             let _ = self.resources.release_source(*handle);
         }
         for handle in &batch.released_fences {
             let _ = self.resources.release_fence(*handle);
         }
-        Ok(())
     }
 
     pub fn complete_flip(

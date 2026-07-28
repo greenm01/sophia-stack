@@ -223,14 +223,18 @@ from the abandoned extent remain fenced until the authority returns to the
 safe content extent.
 
 Admission is a state machine beside, not inside, committed visual state:
-`PolicyPending`, `ControlPending`, `AwaitingPixels`, then `Managed`. Planning
-records never contain a synthetic buffer and never enter the committed scene.
+`PolicyPending`, `ControlPending`, `AwaitingPixels`, `AwaitingRetirement`, then
+`Managed`. Planning records never contain a synthetic buffer and never enter
+the committed scene.
 An admission control acknowledgement proves only that protocol configure/map
 effects were delivered; visual admission still waits for a concrete buffer at
-the accepted content extent. A layout timeout does not reset that lifecycle:
+the accepted content extent. DMA-BUF admission selects one exact
+surface/transaction/buffer Present group and remains unfocusable until its
+page flip retires. A layout timeout does not reset that lifecycle:
 retry epochs retain `ControlPending` or `AwaitingPixels` surfaces in their
-admission-finalization set, and only the eventual matching visual commit may
-release quarantined pixels and Present feedback.
+admission-finalization set; an `AwaitingRetirement` surface is already owned by
+its exact visual candidate and cannot be replanned. Only the eventual matching
+visual retirement may release quarantined pixels and Present feedback.
 
 For X11, the protocol authority derives this boundary from its window tree.
 Only a non-override-redirect direct child of the X root is policy-managed.
@@ -253,8 +257,11 @@ accepted geometry only when the admission state and concrete extent agree.
 Transactions and Present submissions retain their causal ID across that
 boundary; they are never injected into or relabelled as the frontend envelope
 that happens to trigger release. Overflow or mixed identity is terminal and
-fail-closed. These cold-path records do not add buffers to the passive Engine
-admission table.
+fail-closed. A DMA-BUF surface transaction and Present submission have exact
+one-to-one surface/buffer cardinality. Their buffer and fence release facts stay
+deferred while quarantine references them, and backend intake registers the
+resources, begins presentation ownership, then applies release. These cold-path
+records do not add buffers to the passive Engine admission table.
 
 Present scheduling is classified per submission. A buffer matching the pending
 layout epoch is staged with that epoch, a known wrong-size buffer is rejected,

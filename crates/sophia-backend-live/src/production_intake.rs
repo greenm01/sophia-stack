@@ -76,6 +76,18 @@ impl LiveProductionAuthorityGroup {
         {
             return Err("production authority group contains a mismatched Present submission");
         }
+        let present_keys = self
+            .present_submissions
+            .iter()
+            .map(|submission| sophia_protocol::DmaBufPresentKey {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                buffer: submission.buffer,
+            })
+            .collect::<Vec<_>>();
+        if !sophia_protocol::dma_buf_present_pairs_are_exact(&self.transactions, &present_keys) {
+            return Err("production DMA-BUF transactions and Presents are not exact pairs");
+        }
         Ok(())
     }
 }

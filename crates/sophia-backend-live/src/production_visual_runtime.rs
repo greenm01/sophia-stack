@@ -242,7 +242,7 @@ impl LiveProductionVisualRuntime {
         };
         batch.validate()?;
         self.presentation_feedback
-            .observe_authority_resources(batch)?;
+            .observe_authority_resource_registrations(batch)?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
         self.release_removed_presentations(&removed_surfaces);
         let rebased_groups =
@@ -276,6 +276,8 @@ impl LiveProductionVisualRuntime {
                     .with_surface_removals(group.removed_surfaces.clone())
             })
             .collect::<Vec<_>>();
+        self.presentation_feedback
+            .observe_authority_resource_releases(batch);
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
         let event_count = batch.transaction_count();
@@ -402,7 +404,10 @@ impl LiveProductionVisualRuntime {
                 )?
                 .clone()
         };
-        let native_frames = if defer_frame {
+        // A Present-bearing authority group owns the next native visual
+        // candidate. Do not queue a retained CPU frame ahead of it: that can
+        // expose new layout/chrome around old or absent client pixels.
+        let native_frames = if defer_frame || batch.has_present_submissions() {
             None
         } else {
             native_scanout
@@ -479,7 +484,7 @@ impl LiveProductionVisualRuntime {
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         batch.validate()?;
         self.presentation_feedback
-            .observe_authority_resources(batch)?;
+            .observe_authority_resource_registrations(batch)?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
         self.release_removed_presentations(&removed_surfaces);
         self.displayed_surfaces
@@ -503,6 +508,8 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
+        self.presentation_feedback
+            .observe_authority_resource_releases(batch);
         if has_present_submissions && !authority_groups.is_empty() {
             let prepared = self.prepare_authority_groups(&authority_groups)?;
             let _ = self.run_prepared_authority_transactions(

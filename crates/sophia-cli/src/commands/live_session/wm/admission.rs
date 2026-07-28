@@ -29,6 +29,18 @@ impl LiveAdmissionAuthorityGroup {
         {
             return Err("pre-admission authority group contains a mismatched Present");
         }
+        let present_keys = self
+            .present_submissions
+            .iter()
+            .map(|submission| sophia_protocol::DmaBufPresentKey {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                buffer: submission.buffer,
+            })
+            .collect::<Vec<_>>();
+        if !sophia_protocol::dma_buf_present_pairs_are_exact(&self.transactions, &present_keys) {
+            return Err("pre-admission DMA-BUF transactions and Presents are not exact pairs");
+        }
         Ok(())
     }
 
@@ -49,6 +61,19 @@ impl LiveAdmissionAuthorityGroup {
             }
         }
     }
+
+    fn dma_bufs(&self) -> impl Iterator<Item = sophia_protocol::BufferHandle> + '_ {
+        self.present_submissions
+            .iter()
+            .map(|submission| submission.buffer)
+    }
+
+    fn fences(&self) -> impl Iterator<Item = sophia_protocol::FenceHandle> + '_ {
+        self.present_submissions
+            .iter()
+            .flat_map(|submission| [submission.acquire_fence, submission.idle_fence])
+            .flatten()
+    }
 }
 
 impl PersistentLiveLayout {
@@ -60,7 +85,7 @@ impl PersistentLiveLayout {
         size: Size,
     ) -> Result<LiveSurfaceControlStage, Box<dyn std::error::Error>> {
         use sophia_engine::SurfacePresentationAdmissionState::{
-            AwaitingPixels, ControlPending, Inactive, Managed, PolicyPending,
+            AwaitingPixels, AwaitingRetirement, ControlPending, Inactive, Managed, PolicyPending,
         };
 
         let stage = match self.admissions.state(surface) {
@@ -84,7 +109,7 @@ impl PersistentLiveLayout {
                 admission_owned: true,
                 command: None,
             },
-            AwaitingPixels { .. } => LiveSurfaceControlStage {
+            AwaitingPixels { .. } | AwaitingRetirement { .. } => LiveSurfaceControlStage {
                 admission_owned: true,
                 command: Some(XAuthorityControlCommand::ConfigureSurface {
                     transaction,
@@ -136,7 +161,10 @@ impl PersistentLiveLayout {
         Ok(false)
     }
 
-    fn release_admission_groups(&mut self, surfaces: &BTreeSet<SurfaceId>) {
+    fn release_admission_groups(
+        &mut self,
+        selected_transactions: &BTreeMap<SurfaceId, TransactionId>,
+    ) {
         let mut retained = VecDeque::with_capacity(self.pre_admission_groups.len());
         let mut committed_generations = BTreeMap::<SurfaceId, u64>::new();
         while let Some(mut group) = self.pre_admission_groups.pop_front() {
@@ -151,7 +179,11 @@ impl PersistentLiveLayout {
                         .map(|submission| submission.surface),
                 )
                 .collect::<BTreeSet<_>>();
-            if !touched.is_empty() && touched.iter().all(|surface| surfaces.contains(surface)) {
+            if !touched.is_empty()
+                && touched.iter().all(|surface| {
+                    selected_transactions.get(surface) == Some(&group.transaction)
+                })
+            {
                 for surface in &touched {
                     if let Some(layer) = self.layers.get(surface) {
                         group.reproject_surface(*surface, layer.geometry);
@@ -170,6 +202,71 @@ impl PersistentLiveLayout {
             }
         }
         self.pre_admission_groups = retained;
+    }
+
+    fn admission_group_dma_bufs(&self) -> BTreeSet<sophia_protocol::BufferHandle> {
+        self.pre_admission_groups
+            .iter()
+            .chain(self.released_admission_groups.iter())
+            .flat_map(LiveAdmissionAuthorityGroup::dma_bufs)
+            .collect()
+    }
+
+    fn admission_group_fences(&self) -> BTreeSet<sophia_protocol::FenceHandle> {
+        self.pre_admission_groups
+            .iter()
+            .chain(self.released_admission_groups.iter())
+            .flat_map(LiveAdmissionAuthorityGroup::fences)
+            .collect()
+    }
+
+    fn admission_groups_reference_dma_buf(
+        &self,
+        handle: sophia_protocol::BufferHandle,
+    ) -> bool {
+        self.pre_admission_groups
+            .iter()
+            .chain(self.released_admission_groups.iter())
+            .any(|group| group.dma_bufs().any(|candidate| candidate == handle))
+    }
+
+    fn admission_groups_reference_fence(
+        &self,
+        handle: sophia_protocol::FenceHandle,
+    ) -> bool {
+        self.pre_admission_groups
+            .iter()
+            .chain(self.released_admission_groups.iter())
+            .any(|group| group.fences().any(|candidate| candidate == handle))
+    }
+
+    fn complete_admission_retirement(
+        &mut self,
+        surface: SurfaceId,
+        visual_transaction: TransactionId,
+    ) -> bool {
+        if !self
+            .admissions
+            .complete_retirement(surface, visual_transaction)
+        {
+            return false;
+        }
+        self.planning_surfaces.remove(&surface);
+        self.unmanaged_surfaces.remove(&surface);
+        self.admission_retries.remove(&surface);
+        self.layout_epochs
+            .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+        if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
+            && expected == visual_transaction
+        {
+            self.focus_to_apply = Some((wm_transaction, surface));
+        }
+        println!(
+            "sophia_live_visual_admission schema=1 status=presented transaction={} surface={}",
+            visual_transaction.raw(),
+            surface.index(),
+        );
+        true
     }
 
     fn remove_admission_groups(&mut self, surface: SurfaceId) {

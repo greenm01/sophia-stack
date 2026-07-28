@@ -15,7 +15,9 @@ printf '%s\n' \
     '  5. Press Super+Shift+Q for normal logout.' \
     '  6. The script enables redacted X11 and Present tracing. Inspect' \
     '     ~/.local/state/sophia/xmonad-session/session.log for one' \
-    '     surface_admission frontend_admitted record, layout_committed, and' \
-    '     a later Present flip. A bounded recovery is diagnostic, not required.'
+    '     visual-admission transaction and its exact Present retirement.' \
+    '  7. Back at the TTY, run:' \
+    '     tools/verify_sophia_xmonad_vkcube_recovery.sh' \
+    '     A bounded recovery is diagnostic, not required.'
 
 exec "$ROOT_DIR/tools/start_sophia_tty3.sh" "$@"

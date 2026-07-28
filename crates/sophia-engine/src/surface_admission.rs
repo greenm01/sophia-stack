@@ -39,6 +39,11 @@ pub enum SurfacePresentationAdmissionState {
         transaction: TransactionId,
         geometry: Rect,
     },
+    AwaitingRetirement {
+        admission_transaction: TransactionId,
+        visual_transaction: TransactionId,
+        geometry: Rect,
+    },
     Managed,
 }
 
@@ -119,6 +124,52 @@ impl SurfaceAdmissionTable {
             self.state(surface),
             SurfacePresentationAdmissionState::AwaitingPixels { .. }
         ) {
+            return false;
+        }
+        self.states
+            .insert(surface, SurfacePresentationAdmissionState::Managed);
+        true
+    }
+
+    pub fn begin_retirement(
+        &mut self,
+        surface: SurfaceId,
+        visual_transaction: TransactionId,
+    ) -> bool {
+        let SurfacePresentationAdmissionState::AwaitingPixels {
+            transaction: admission_transaction,
+            geometry,
+        } = self.state(surface)
+        else {
+            return false;
+        };
+        if !visual_transaction.is_valid() {
+            return false;
+        }
+        self.states.insert(
+            surface,
+            SurfacePresentationAdmissionState::AwaitingRetirement {
+                admission_transaction,
+                visual_transaction,
+                geometry,
+            },
+        );
+        true
+    }
+
+    pub fn complete_retirement(
+        &mut self,
+        surface: SurfaceId,
+        visual_transaction: TransactionId,
+    ) -> bool {
+        let SurfacePresentationAdmissionState::AwaitingRetirement {
+            visual_transaction: expected,
+            ..
+        } = self.state(surface)
+        else {
+            return false;
+        };
+        if visual_transaction != expected {
             return false;
         }
         self.states

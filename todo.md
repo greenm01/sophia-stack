@@ -199,6 +199,13 @@ Promotion now follows the gates below in order.
   `x-authority-vkcube-admission-smoke` now requires deferred map intent,
   delivered generic admission, continued DRI3 imports, and two exact
   Complete/Idle Present round trips.
+- [x] Gate DMA-BUF admission on exact page-flip retirement rather than X's
+  mutable mapped snapshot. Require one-to-one surface/transaction/buffer
+  pairing between the quarantined transaction and Present, defer focus until
+  that candidate retires, keep referenced DMA-BUF/fence releases behind
+  renderer ownership, and prevent retained CPU projection from overtaking a
+  Present-bearing visual candidate. Retain reduced `armed`/`presented`
+  diagnostics and an exact physical-log verifier.
 - [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown

@@ -161,6 +161,19 @@ It keeps policy-managed mapping deferred, delivers only the generic
 Present Complete/Idle round trips. This is a transport/admission regression;
 it does not replace visible native KMS proof.
 
+For the visible xmonad/KMS proof, run
+`tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch
+`vkcube --wsi xcb`, exit normally, then run:
+
+```sh
+tools/verify_sophia_xmonad_vkcube_recovery.sh
+```
+
+The verifier joins every armed visual admission to the same surface and
+transaction at both Engine admission completion and native page-flip
+retirement. It also requires bounded clean teardown and rejects malformed,
+overflowed, mismatched, or degraded intake.
+
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,
 two-layer, and clean-teardown gates. Its current retained result is 1,487 ms,

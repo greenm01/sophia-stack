@@ -28,10 +28,11 @@ struct PersistentLiveLayout {
     admissions: sophia_engine::SurfaceAdmissionTable,
     dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
     cpu_buffer_sizes: BTreeMap<u64, Size>,
+    deferred_dma_buf_releases: BTreeSet<sophia_protocol::BufferHandle>,
+    deferred_fence_releases: BTreeSet<sophia_protocol::FenceHandle>,
     layout_epochs: LayoutEpochCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
-    presentation_mapped: BTreeMap<SurfaceId, bool>,
     pre_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     released_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     output_reservations: sophia_engine::SurfaceOutputReservationState,
@@ -39,6 +40,7 @@ struct PersistentLiveLayout {
     admission_retries: BTreeMap<SurfaceId, u8>,
     pending: Option<PendingLiveWmLayout>,
     focus_to_apply: Option<(TransactionId, SurfaceId)>,
+    retirement_focus: BTreeMap<SurfaceId, (TransactionId, TransactionId)>,
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
 }
@@ -65,8 +67,6 @@ impl PersistentLiveLayout {
         for presentation in &batch.surface_presentations {
             self.presentation_roles
                 .insert(presentation.surface, presentation.role);
-            self.presentation_mapped
-                .insert(presentation.surface, presentation.mapped);
             self.layout_epochs
                 .set_declared_constraints(presentation.surface, presentation.constraints);
             output_reservations_changed |= self.output_reservations.observe_presentation(
@@ -109,12 +109,21 @@ impl PersistentLiveLayout {
                 }
             }
         }
-        for handle in &batch.released_dma_bufs {
-            self.dma_buf_sizes.remove(handle);
-        }
         match self.observe_pre_admission_groups(batch) {
             Ok(overflowed) => admission_group_overflowed |= overflowed,
             Err(_) => admission_group_invalid = true,
+        }
+        for handle in &batch.released_dma_bufs {
+            if self.admission_groups_reference_dma_buf(*handle) {
+                self.deferred_dma_buf_releases.insert(*handle);
+            } else {
+                self.dma_buf_sizes.remove(handle);
+            }
+        }
+        for handle in &batch.released_fences {
+            if self.admission_groups_reference_fence(*handle) {
+                self.deferred_fence_releases.insert(*handle);
+            }
         }
         for surface in &batch.removed_surfaces {
             output_reservations_changed |= self.output_reservations.remove_surface(*surface);
@@ -271,7 +280,7 @@ impl PersistentLiveLayout {
             .retain(|surface| !removed_surfaces.contains(surface));
         self.presentation_roles
             .retain(|surface, _| !removed_surfaces.contains(surface));
-        self.presentation_mapped
+        self.retirement_focus
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
             self.remove_admission_groups(*surface);
@@ -319,9 +328,10 @@ impl PersistentLiveLayout {
     fn surface_requires_admission(&self, surface: SurfaceId) -> bool {
         self.presentation_roles.get(&surface)
             == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
-            && self.presentation_mapped.get(&surface) == Some(&false)
             && !matches!(
                 self.admissions.state(surface),
+                sophia_engine::SurfacePresentationAdmissionState::Inactive
+                    |
                 sophia_engine::SurfacePresentationAdmissionState::Managed
             )
     }
@@ -645,8 +655,28 @@ impl PersistentLiveLayout {
     fn commit_pending(&mut self, pending: PendingLiveWmLayout) -> LiveWmCommitResult {
         let matched_surfaces = pending.staged_transactions.len();
         for surface in &pending.admission_surfaces {
-            self.admissions.mark_managed(*surface);
-            self.planning_surfaces.remove(surface);
+            let Some(transaction) = pending.staged_transactions.get(surface) else {
+                continue;
+            };
+            match transaction.target_buffer {
+                BufferSource::DmaBuf { .. } => {
+                    if self
+                        .admissions
+                        .begin_retirement(*surface, transaction.transaction)
+                    {
+                        println!(
+                            "sophia_live_visual_admission schema=1 status=armed transaction={} surface={}",
+                            transaction.transaction.raw(),
+                            surface.index(),
+                        );
+                    }
+                }
+                _ => {
+                    if self.admissions.mark_managed(*surface) {
+                        self.planning_surfaces.remove(surface);
+                    }
+                }
+            }
         }
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
@@ -665,7 +695,17 @@ impl PersistentLiveLayout {
             .into_iter()
             .map(|layer| (layer.surface, layer))
             .collect();
-        self.release_admission_groups(&pending.admission_surfaces);
+        let selected_admission_transactions = pending
+            .admission_surfaces
+            .iter()
+            .filter_map(|surface| {
+                pending
+                    .staged_transactions
+                    .get(surface)
+                    .map(|transaction| (*surface, transaction.transaction))
+            })
+            .collect();
+        self.release_admission_groups(&selected_admission_transactions);
         self.unmanaged_surfaces.retain(|surface| {
             self.layers.contains_key(surface)
                 && pending.effects.as_ref().is_none_or(|effects| {
@@ -675,13 +715,28 @@ impl PersistentLiveLayout {
         self.admission_retries
             .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
         for surface in self.layers.keys().copied() {
-            if !self.unmanaged_surfaces.contains(&surface) {
+            if !self.unmanaged_surfaces.contains(&surface)
+                && matches!(
+                    self.admissions.state(surface),
+                    sophia_engine::SurfacePresentationAdmissionState::Inactive
+                        | sophia_engine::SurfacePresentationAdmissionState::Managed
+                )
+            {
                 self.layout_epochs
                     .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
             }
         }
         if let Some(surface) = pending.focus {
-            self.focus_to_apply = Some((pending.transaction, surface));
+            match self.admissions.state(surface) {
+                sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
+                    visual_transaction,
+                    ..
+                } => {
+                    self.retirement_focus
+                        .insert(surface, (visual_transaction, pending.transaction));
+                }
+                _ => self.focus_to_apply = Some((pending.transaction, surface)),
+            }
         }
         println!(
             "sophia_live_wm schema=1 status=layout_committed transaction={} surfaces={} moved_surfaces={} configure_deliveries={} outcome={:?}",
@@ -727,6 +782,39 @@ impl PersistentLiveLayout {
         projected.present_submissions.retain(|submission| {
             !quarantined_transactions.contains(&submission.transaction)
         });
+        let referenced_dma_bufs = self.admission_group_dma_bufs();
+        let referenced_fences = self.admission_group_fences();
+        projected
+            .released_dma_bufs
+            .retain(|handle| !referenced_dma_bufs.contains(handle));
+        projected
+            .released_fences
+            .retain(|handle| !referenced_fences.contains(handle));
+        let releasable_dma_bufs = self
+            .deferred_dma_buf_releases
+            .iter()
+            .filter(|handle| !referenced_dma_bufs.contains(handle))
+            .copied()
+            .collect::<Vec<_>>();
+        for handle in releasable_dma_bufs {
+            self.deferred_dma_buf_releases.remove(&handle);
+            self.dma_buf_sizes.remove(&handle);
+            if !projected.released_dma_bufs.contains(&handle) {
+                projected.released_dma_bufs.push(handle);
+            }
+        }
+        let releasable_fences = self
+            .deferred_fence_releases
+            .iter()
+            .filter(|handle| !referenced_fences.contains(handle))
+            .copied()
+            .collect::<Vec<_>>();
+        for handle in releasable_fences {
+            self.deferred_fence_releases.remove(&handle);
+            if !projected.released_fences.contains(&handle) {
+                projected.released_fences.push(handle);
+            }
+        }
         (
             projected,
             self.released_admission_groups.drain(..).collect(),
