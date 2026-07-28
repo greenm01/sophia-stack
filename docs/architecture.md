@@ -230,7 +230,11 @@ An admission control acknowledgement proves only that protocol configure/map
 effects were delivered; visual admission still waits for a concrete buffer at
 the accepted content extent. DMA-BUF admission selects one exact
 surface/transaction/buffer Present group and remains unfocusable until its
-page flip retires. A layout timeout does not reset that lifecycle:
+page flip retires. A retained extent or previously committed size may guide a
+recovery proposal, but it cannot satisfy an admission surface's visual
+readiness: every admission-finalization proposal must own a newly staged
+concrete transaction for that surface. A layout timeout does not reset that
+lifecycle:
 retry epochs retain `ControlPending` or `AwaitingPixels` surfaces in their
 admission-finalization set; an `AwaitingRetirement` surface is already owned by
 its exact visual candidate and cannot be replanned. Only the eventual matching

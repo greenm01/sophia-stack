@@ -668,6 +668,101 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
 }
 
 #[test]
+fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() {
+    let surface = SurfaceId::new(70, 1);
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    let geometry = Rect {
+        x: 20,
+        y: 30,
+        width: 500,
+        height: 500,
+    };
+    let intent = sophia_protocol::SurfacePresentationIntent {
+        surface,
+        kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+        role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    };
+    let mut observed =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(70));
+    observed.client = Some(client);
+    observed.presentation_intents.push(intent);
+    observed.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface,
+            role: intent.role,
+            mapped: true,
+            geometry,
+            constraints: intent.constraints,
+            generation: intent.generation,
+        },
+    );
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&observed);
+    let admission_transaction = TransactionId::from_raw(71);
+    assert!(
+        layout
+            .admissions
+            .begin_control(surface, admission_transaction, geometry)
+    );
+    assert!(
+        layout
+            .admissions
+            .acknowledge_control(surface, admission_transaction)
+    );
+    let size = Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    layout.layout_epochs.record_committed(surface, size);
+    let recovery_transaction = TransactionId::from_raw(72);
+    let proposal = LiveWmProposal {
+        transaction: recovery_transaction,
+        layers: layout.planning_layers(),
+        requested_sizes: BTreeMap::new(),
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: recovery_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: None,
+        effects: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+    assert_eq!(controls.pending_len(), 1);
+    assert_eq!(
+        layout
+            .pending
+            .as_ref()
+            .map(|pending| &pending.admission_surfaces),
+        Some(&BTreeSet::from([surface]))
+    );
+    assert!(layout.resolve_pending().is_none());
+    assert!(layout.layers.is_empty());
+    assert_eq!(layout.focus_to_apply, None);
+    assert_eq!(
+        layout.admissions.state(surface),
+        sophia_engine::SurfacePresentationAdmissionState::AwaitingPixels {
+            transaction: admission_transaction,
+            geometry,
+        }
+    );
+}
+
+#[test]
 fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
     let surface = SurfaceId::new(8, 1);
     let geometry = Rect {

@@ -478,6 +478,15 @@ FIFO holds at most 256 groups; capacity exhaustion or a mismatched member is an
 explicit terminal error, never an unbounded allocation or an immediate GPU
 submission.
 
+Recovery keeps layout history and visual readiness as separate facts. A safe
+or committed extent may constrain the blind WM's next proposal, but
+`retained_matches` is never pixel evidence for a surface still owned by
+presentation admission. Such a surface is included in the proposal's
+admission-finalization set even when its geometry did not otherwise change,
+and the proposal cannot commit until an exact concrete transaction is staged.
+This prevents an unrelated resize or fixed-extent recovery from publishing a
+bufferless layer, border, or focus target.
+
 Withdraw and removal transitions erase the passive facts idempotently. A
 terminal timeout withdraws the still-pending protocol window rather than
 mapping a blank surface. Planning may derive a bufferless temporary layout node

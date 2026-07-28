@@ -356,6 +356,16 @@ impl PersistentLiveLayout {
             );
             return Ok(None);
         }
+        for layer in proposal
+            .layers
+            .iter()
+            .filter(|layer| self.surface_awaits_visual_candidate(layer.surface))
+        {
+            proposal.requested_sizes.entry(layer.surface).or_insert(Size {
+                width: layer.geometry.width,
+                height: layer.geometry.height,
+            });
+        }
         for (surface, size) in &proposal.requested_sizes {
             if !self.layout_epochs.request_allowed(*surface, *size)
                 && let Some(committed) = self.layout_epochs.committed_size(*surface)
@@ -369,11 +379,9 @@ impl PersistentLiveLayout {
             }
         }
         proposal.requested_sizes.retain(|surface, size| {
-            self.layout_epochs.request_allowed(*surface, *size)
-                && (matches!(
-                    self.admissions.state(*surface),
-                    sophia_engine::SurfacePresentationAdmissionState::PolicyPending
-                ) || self.layout_epochs.committed_size(*surface) != Some(*size))
+            self.surface_awaits_visual_candidate(*surface)
+                || (self.layout_epochs.request_allowed(*surface, *size)
+                    && self.layout_epochs.committed_size(*surface) != Some(*size))
         });
         let mut staged_transactions = BTreeMap::new();
         for (surface, size) in &proposal.requested_sizes {
@@ -493,7 +501,12 @@ impl PersistentLiveLayout {
                     sophia_engine::SurfacePresentationAdmissionState::AwaitingPixels { .. }
                         | sophia_engine::SurfacePresentationAdmissionState::Managed
                 );
-            (staged_matches || retained_matches) && admission_ready
+            let pixels_ready = if pending.admission_surfaces.contains(surface) {
+                staged_matches
+            } else {
+                staged_matches || retained_matches
+            };
+            pixels_ready && admission_ready
         });
         if !ready {
             return None;

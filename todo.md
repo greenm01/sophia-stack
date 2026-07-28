@@ -206,6 +206,12 @@ Promotion now follows the gates below in order.
   renderer ownership, and prevent retained CPU projection from overtaking a
   Present-bearing visual candidate. Retain reduced `armed`/`presented`
   diagnostics and an exact physical-log verifier.
+- [x] Close the fixed-extent recovery escape around visual admission. Include
+  every policy/control/pixel-pending layer in admission finalization even when
+  the blind WM did not change its size, and require an exact newly staged
+  transaction rather than accepting retained committed-size history. Keep
+  bufferless geometry, chrome, and focus outside visible projection; bounded
+  timeout withdraws a client that never supplies matching pixels.
 - [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown

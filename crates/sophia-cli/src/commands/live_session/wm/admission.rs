@@ -77,6 +77,15 @@ impl LiveAdmissionAuthorityGroup {
 }
 
 impl PersistentLiveLayout {
+    fn surface_awaits_visual_candidate(&self, surface: SurfaceId) -> bool {
+        matches!(
+            self.admissions.state(surface),
+            sophia_engine::SurfacePresentationAdmissionState::PolicyPending
+                | sophia_engine::SurfacePresentationAdmissionState::ControlPending { .. }
+                | sophia_engine::SurfacePresentationAdmissionState::AwaitingPixels { .. }
+        )
+    }
+
     fn stage_surface_control(
         &mut self,
         transaction: TransactionId,
