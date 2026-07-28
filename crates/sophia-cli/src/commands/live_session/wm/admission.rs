@@ -3,6 +3,54 @@ struct LiveSurfaceControlStage {
     command: Option<XAuthorityControlCommand>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LiveAdmissionAuthorityGroup {
+    transaction: TransactionId,
+    transactions: Vec<SurfaceTransaction>,
+    present_submissions: Vec<sophia_x_authority::XAuthorityPresentSubmission>,
+}
+
+impl LiveAdmissionAuthorityGroup {
+    fn validate(&self) -> Result<(), &'static str> {
+        if !self.transaction.is_valid() {
+            return Err("pre-admission authority group has an invalid transaction");
+        }
+        if self
+            .transactions
+            .iter()
+            .any(|transaction| transaction.transaction != self.transaction)
+        {
+            return Err("pre-admission authority group contains a mismatched transaction");
+        }
+        if self
+            .present_submissions
+            .iter()
+            .any(|submission| submission.transaction != self.transaction)
+        {
+            return Err("pre-admission authority group contains a mismatched Present");
+        }
+        Ok(())
+    }
+
+    fn contains_surface(&self, surface: SurfaceId) -> bool {
+        self.transactions
+            .iter()
+            .any(|transaction| transaction.surface == surface)
+            || self
+                .present_submissions
+                .iter()
+                .any(|submission| submission.surface == surface)
+    }
+
+    fn reproject_surface(&mut self, surface: SurfaceId, geometry: Rect) {
+        for transaction in &mut self.transactions {
+            if transaction.surface == surface {
+                transaction.target_geometry = geometry;
+            }
+        }
+    }
+}
+
 impl PersistentLiveLayout {
     fn stage_surface_control(
         &mut self,
@@ -56,59 +104,87 @@ impl PersistentLiveLayout {
         Ok(stage)
     }
 
-    fn observe_pre_admission_present_submissions(
+    fn observe_pre_admission_groups(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
-    ) -> bool {
-        let mut overflowed = false;
-        for submission in &batch.present_submissions {
-            if !self.surface_requires_admission(submission.surface) {
-                continue;
-            }
-            if self.pre_admission_present_submissions.len() >= PRE_ADMISSION_PRESENT_CAPACITY {
-                overflowed = true;
-            } else {
-                self.pre_admission_present_submissions
-                    .push_back(*submission);
-            }
-        }
-        overflowed
-    }
-
-    fn release_admission_present_submissions(&mut self, surfaces: &BTreeSet<SurfaceId>) {
-        let mut retained = VecDeque::with_capacity(self.pre_admission_present_submissions.len());
-        while let Some(submission) = self.pre_admission_present_submissions.pop_front() {
-            if surfaces.contains(&submission.surface) {
-                self.released_admission_present_submissions
-                    .push_back(submission);
-            } else {
-                retained.push_back(submission);
-            }
-        }
-        self.pre_admission_present_submissions = retained;
-    }
-
-    fn project_admission_present_submissions(
-        &mut self,
-        projected: &mut XAuthorityObservedTransactionBatch,
-    ) {
-        projected.present_submissions.retain(|submission| {
-            !self
-                .pre_admission_present_submissions
-                .iter()
-                .chain(self.released_admission_present_submissions.iter())
-                .any(|retained| retained.transaction == submission.transaction)
-        });
-        projected
+    ) -> Result<bool, &'static str> {
+        let transactions = batch
+            .transactions
+            .iter()
+            .filter(|transaction| self.surface_requires_admission(transaction.surface))
+            .cloned()
+            .collect::<Vec<_>>();
+        let present_submissions = batch
             .present_submissions
-            .extend(self.released_admission_present_submissions.drain(..));
+            .iter()
+            .filter(|submission| self.surface_requires_admission(submission.surface))
+            .copied()
+            .collect::<Vec<_>>();
+        if transactions.is_empty() && present_submissions.is_empty() {
+            return Ok(false);
+        }
+        let group = LiveAdmissionAuthorityGroup {
+            transaction: batch.transaction,
+            transactions,
+            present_submissions,
+        };
+        group.validate()?;
+        if self.pre_admission_groups.len() >= PRE_ADMISSION_GROUP_CAPACITY {
+            return Ok(true);
+        }
+        self.pre_admission_groups.push_back(group);
+        Ok(false)
     }
 
-    fn remove_admission_present_submissions(&mut self, surface: SurfaceId) {
-        self.pre_admission_present_submissions
-            .retain(|submission| submission.surface != surface);
-        self.released_admission_present_submissions
-            .retain(|submission| submission.surface != surface);
+    fn release_admission_groups(&mut self, surfaces: &BTreeSet<SurfaceId>) {
+        let mut retained = VecDeque::with_capacity(self.pre_admission_groups.len());
+        let mut committed_generations = BTreeMap::<SurfaceId, u64>::new();
+        while let Some(mut group) = self.pre_admission_groups.pop_front() {
+            let touched = group
+                .transactions
+                .iter()
+                .map(|transaction| transaction.surface)
+                .chain(
+                    group
+                        .present_submissions
+                        .iter()
+                        .map(|submission| submission.surface),
+                )
+                .collect::<BTreeSet<_>>();
+            if !touched.is_empty() && touched.iter().all(|surface| surfaces.contains(surface)) {
+                for surface in &touched {
+                    if let Some(layer) = self.layers.get(surface) {
+                        group.reproject_surface(*surface, layer.geometry);
+                    }
+                }
+                for transaction in &mut group.transactions {
+                    let generation = committed_generations
+                        .entry(transaction.surface)
+                        .or_insert(0);
+                    transaction.previous_committed_generation = *generation;
+                    *generation = generation.saturating_add(1);
+                }
+                self.released_admission_groups.push_back(group);
+            } else {
+                retained.push_back(group);
+            }
+        }
+        self.pre_admission_groups = retained;
+    }
+
+    fn remove_admission_groups(&mut self, surface: SurfaceId) {
+        self.pre_admission_groups
+            .retain(|group| !group.contains_surface(surface));
+        self.released_admission_groups
+            .retain(|group| !group.contains_surface(surface));
+    }
+
+    fn latest_pre_admission_transaction(&self, surface: SurfaceId) -> Option<&SurfaceTransaction> {
+        self.pre_admission_groups
+            .iter()
+            .rev()
+            .flat_map(|group| group.transactions.iter().rev())
+            .find(|transaction| transaction.surface == surface)
     }
 
     fn observe_presentation_intents(
@@ -137,9 +213,7 @@ impl PersistentLiveLayout {
                 sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
                     self.planning_surfaces.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
-                    self.pre_admission_transactions.remove(&intent.surface);
-                    self.released_admission_transactions.remove(&intent.surface);
-                    self.remove_admission_present_submissions(intent.surface);
+                    self.remove_admission_groups(intent.surface);
                 }
             }
         }

@@ -93,9 +93,7 @@ pub struct LiveProductionCycleRequest<'a> {
 }
 
 pub struct LiveAuthorityTransactionRun<'a> {
-    pub transaction_id: TransactionId,
-    pub transactions: &'a [SurfaceTransaction],
-    pub removed_surfaces: &'a [SurfaceId],
+    pub groups: &'a [LiveProductionAuthorityGroup],
     pub event_count: usize,
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub native_frames: Option<Vec<LiveProductionComposedFrame>>,
@@ -242,16 +240,18 @@ impl LiveProductionVisualRuntime {
         } else {
             false
         };
+        batch.validate()?;
         self.presentation_feedback
             .observe_authority_resources(batch)?;
-        self.release_removed_presentations(&batch.removed_surfaces);
-        let rebased_transactions = rebase_transactions_to_committed(
-            &batch.transactions,
-            self.production.committed_surfaces(),
-        );
-        self.observe_surface_metadata(&rebased_transactions, &batch.removed_surfaces);
+        let removed_surfaces = authority_batch_removed_surfaces(batch);
+        self.release_removed_presentations(&removed_surfaces);
+        let rebased_groups =
+            rebase_authority_groups_to_committed(batch, self.production.committed_surfaces());
+        for group in &rebased_groups {
+            self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
+        }
         self.displayed_surfaces
-            .retain(|surface, _| !batch.removed_surfaces.contains(surface));
+            .retain(|surface, _| !removed_surfaces.contains(surface));
         let preserve_gpu_scanout = native_scanout.is_some()
             && (retained_projection_queued
                 || (!presentation_order_changed
@@ -269,11 +269,16 @@ impl LiveProductionVisualRuntime {
         } else {
             native_scanout
         };
-        let intake = AuthorityTransactionIntake::new(batch.transaction, rebased_transactions)
-            .with_surface_removals(batch.removed_surfaces.clone());
+        let intakes = rebased_groups
+            .iter()
+            .map(|group| {
+                AuthorityTransactionIntake::new(group.transaction, group.transactions.clone())
+                    .with_surface_removals(group.removed_surfaces.clone())
+            })
+            .collect::<Vec<_>>();
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
-        let event_count = authority_transaction_count(&batch.transactions);
+        let event_count = batch.transaction_count();
         let surface_metadata = self.surface_metadata.clone();
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
@@ -336,7 +341,7 @@ impl LiveProductionVisualRuntime {
             },
         );
         let report = production
-            .run_cycle(std::slice::from_ref(&intake), &mut adapter)
+            .run_cycle(&intakes, &mut adapter)
             .map_err(|error| {
                 format!(
                     "production CPU cycle failed in phase {:?}: {}",
@@ -472,33 +477,54 @@ impl LiveProductionVisualRuntime {
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        batch.validate()?;
         self.presentation_feedback
             .observe_authority_resources(batch)?;
-        self.release_removed_presentations(&batch.removed_surfaces);
+        let removed_surfaces = authority_batch_removed_surfaces(batch);
+        self.release_removed_presentations(&removed_surfaces);
         self.displayed_surfaces
-            .retain(|surface, _| !batch.removed_surfaces.contains(surface));
-        if !batch.present_submissions.is_empty() {
-            let superseded = self.present_scheduler.enqueue_batch(
-                batch,
-                presentation_layout,
-                cpu_layers,
-                self.presentation_feedback.resources_mut(),
-                Instant::now(),
-            )?;
-            for transaction in superseded {
-                self.reject_gpu_presentation(transaction, 0, 0);
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        let mut authority_groups = Vec::new();
+        let mut has_present_submissions = false;
+        for group in &batch.groups {
+            if group.present_submissions.is_empty() {
+                authority_groups.push(group.clone());
+            } else {
+                has_present_submissions = true;
+                let superseded = self.present_scheduler.enqueue_group(
+                    group,
+                    presentation_layout,
+                    cpu_layers.clone(),
+                    self.presentation_feedback.resources_mut(),
+                    Instant::now(),
+                )?;
+                for transaction in superseded {
+                    self.reject_gpu_presentation(transaction, 0, 0);
+                }
             }
-            self.observe_surface_metadata(&batch.transactions, &batch.removed_surfaces);
+        }
+        if has_present_submissions && !authority_groups.is_empty() {
+            let prepared = self.prepare_authority_groups(&authority_groups)?;
+            let _ = self.run_prepared_authority_transactions(
+                prepared,
+                authority_transaction_count_for_groups(&authority_groups),
+                None,
+                None,
+                wm_update.clone(),
+            )?;
+        }
+        if has_present_submissions {
+            for group in &batch.groups {
+                self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
+            }
             if !self.present_scheduler.has_eligible() {
                 return self.run_observation_tick();
             }
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
         }
         self.run_authority_transactions(LiveAuthorityTransactionRun {
-            transaction_id: batch.transaction,
-            transactions: &batch.transactions,
-            removed_surfaces: &batch.removed_surfaces,
-            event_count: authority_transaction_count(&batch.transactions),
+            groups: &batch.groups,
+            event_count: batch.transaction_count(),
             native_scanout,
             native_frames,
             wm_update,
@@ -596,24 +622,35 @@ fn compositor_tick_input(
     }
 }
 
-fn authority_transaction_count(transactions: &[SurfaceTransaction]) -> usize {
-    transactions.len()
+fn authority_transaction_count_for_groups(groups: &[LiveProductionAuthorityGroup]) -> usize {
+    groups.iter().map(|group| group.transactions.len()).sum()
 }
 
-fn rebase_transactions_to_committed(
-    transactions: &[SurfaceTransaction],
+fn rebase_authority_groups_to_committed(
+    batch: &LiveProductionAuthorityBatch,
     committed: &[CommittedSurfaceState],
-) -> Vec<SurfaceTransaction> {
-    transactions
+) -> Vec<LiveProductionAuthorityGroup> {
+    batch
+        .groups
         .iter()
-        .cloned()
-        .map(|mut transaction| {
-            transaction.previous_committed_generation = committed
-                .iter()
-                .find(|state| state.surface == transaction.surface)
-                .map_or(0, |state| state.committed_generation);
-            transaction
+        .map(|group| {
+            let mut group = group.clone();
+            for transaction in &mut group.transactions {
+                transaction.previous_committed_generation = committed
+                    .iter()
+                    .find(|state| state.surface == transaction.surface)
+                    .map_or(0, |state| state.committed_generation);
+            }
+            group
         })
+        .collect()
+}
+
+fn authority_batch_removed_surfaces(batch: &LiveProductionAuthorityBatch) -> Vec<SurfaceId> {
+    batch
+        .groups
+        .iter()
+        .flat_map(|group| group.removed_surfaces.iter().copied())
         .collect()
 }
 

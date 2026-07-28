@@ -622,6 +622,14 @@ protocol does not require one. Instead the authority packages ready
 submissions, and removals into `XAuthorityObservedTransactionBatch` records and
 attempts a nonblocking send to the runtime-owned queue.
 
+The live backend converts each observation into a bounded production envelope
+whose ordered atomic groups preserve their originating `TransactionId`.
+Deferred admission can release an older group beside a new observation without
+combining their identities. DMA-BUF and fence registrations stay
+envelope-scoped because import can precede consumption; transactions,
+removals, and Present submissions stay group-scoped and fail validation if
+their IDs disagree.
+
 Backpressure is explicit. If the queue is full, the authority reports
 `Backpressure` and stops the socket helper rather than allocating an unbounded
 buffer or silently dropping visual facts. If the receiver has gone away, the

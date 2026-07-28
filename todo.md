@@ -190,6 +190,15 @@ Promotion now follows the gates below in order.
   commit or page-flip retirement. The mixed-scene regression reproduces xmobar
   transaction 198 beside Kitty Present 403 and rejects malformed candidate
   pairings without terminating the session.
+- [x] Preserve transaction identity across pre-pixel admission release.
+  Production intake now carries ordered atomic groups inside one bounded
+  resource envelope; quarantine retains complete homogeneous groups and
+  releases them once without relabelling them as the current frontend batch.
+  The retained regression reproduces ordinary transaction 367 beside released
+  vkcube transaction 858 and commits both independently. A routed
+  `x-authority-vkcube-admission-smoke` now requires deferred map intent,
+  delivered generic admission, continued DRI3 imports, and two exact
+  Complete/Idle Present round trips.
 - [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown

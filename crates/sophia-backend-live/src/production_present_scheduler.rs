@@ -1,5 +1,5 @@
 use crate::{
-    LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityBatch,
+    LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityGroup,
     LiveProductionPresentDisposition,
 };
 use sophia_engine::PreparedSurfaceCommit;
@@ -69,9 +69,9 @@ impl LiveProductionPresentScheduler {
         self
     }
 
-    pub fn enqueue_batch(
+    pub fn enqueue_group(
         &mut self,
-        batch: &LiveProductionAuthorityBatch,
+        group: &LiveProductionAuthorityGroup,
         presentation_layout: &[LayerSnapshot],
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         resources: &mut LivePresentationResourceSession,
@@ -79,7 +79,8 @@ impl LiveProductionPresentScheduler {
     ) -> Result<Vec<TransactionId>, Box<dyn Error>> {
         let mut superseded = Vec::new();
         let cpu_layers: Arc<[LiveCpuPresentationLayer]> = cpu_layers.into();
-        for submission in &batch.present_submissions {
+        group.validate()?;
+        for submission in &group.present_submissions {
             let deferred_by_layout = matches!(
                 submission.layout_disposition,
                 LiveProductionPresentDisposition::StageLayout { .. }
@@ -103,7 +104,7 @@ impl LiveProductionPresentScheduler {
                 superseded.push(submission.transaction);
                 continue;
             }
-            let mut candidates = batch.transactions.iter().filter(|transaction| {
+            let mut candidates = group.transactions.iter().filter(|transaction| {
                 transaction.surface == surface
                     && transaction.transaction == submission.transaction
                     && transaction.target_buffer

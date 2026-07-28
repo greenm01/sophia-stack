@@ -61,6 +61,23 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 
     if args
         .iter()
+        .any(|arg| arg == "x-authority-vkcube-admission-smoke")
+    {
+        let report = run_x_authority_vkcube_admission_smoke()?;
+        println!(
+            "x-authority-vkcube-admission-smoke display={} intent={} admission_delivered={} dma_bufs={} presents={} feedback={}",
+            report.display,
+            report.intent_observed,
+            report.admission_delivered,
+            report.dma_bufs,
+            report.presents,
+            report.feedback,
+        );
+        return Ok(true);
+    }
+
+    if args
+        .iter()
         .any(|arg| arg == "x-authority-xterm-two-client-smoke")
     {
         let report = run_x_authority_xterm_two_client_smoke()?;
@@ -230,6 +247,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 include!("x_authority/reports.rs");
 include!("x_authority/basic_smokes.rs");
 include!("x_authority/kitty_input_smoke.rs");
+include!("x_authority/vkcube_admission_smoke.rs");
 include!("x_authority/terminal_probe.rs");
 include!("x_authority/xterm.rs");
 include!("x_authority/external_probe.rs");

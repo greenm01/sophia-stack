@@ -363,6 +363,15 @@ prepared candidate overlays that transaction onto the committed baseline.
 Hit-testing and routed-input snapshots continue to use the committed baseline
 until page-flip retirement promotes the candidate.
 
+The live intake envelope may carry several ordered atomic transaction groups,
+for example when a quarantined admission becomes ready while an unrelated
+frontend batch arrives. Every group retains its own `TransactionId`; surface
+transactions, removals, and Present submissions are validated against that ID
+before Engine preparation. Native buffer and fence registrations remain on the
+bounded envelope because their protocol requests may precede the Present that
+consumes them. An envelope is batching, never authority to relabel one group's
+transactions with another group's ID.
+
 ### LayoutEpochState
 
 A layout epoch records surfaces that must produce damage before an atomic layout
@@ -451,14 +460,15 @@ toplevel's opaque surface ID. Its concrete extent grows from observed backing
 storage and is capped by the toplevel, so configured geometry is never confused
 with ready pixels.
 
-Pre-admission drawing is reduced into a bounded side table keyed by
-`SurfaceId`, with at most one latest transaction per surface. It may update the
-safe observed extent, but it cannot enter the committed layer table or renderer
-intake. The matching admission commit moves that transaction across the visual
-boundary once, at the accepted geometry and rebased Engine generation.
-Associated Present submissions use a 256-entry FIFO and are released with the
-transaction. Capacity exhaustion is an explicit terminal error, never an
-unbounded allocation or an immediate GPU submission.
+Pre-admission drawing is reduced into a bounded FIFO of transaction-homogeneous
+groups. Each group retains its original `TransactionId`, surface transactions,
+and associated Present submissions; it may update safe observed extents, but
+it cannot enter the committed layer table or renderer intake. The matching
+admission commit moves complete groups across the visual boundary once, in
+order, at accepted geometry and sequentially rebased Engine generations.
+Partial groups are never split or relabelled. The FIFO holds at most 256 groups;
+capacity exhaustion or a mismatched member is an explicit terminal error,
+never an unbounded allocation or an immediate GPU submission.
 
 Withdraw and removal transitions erase the passive facts idempotently. A
 terminal timeout withdraws the still-pending protocol window rather than

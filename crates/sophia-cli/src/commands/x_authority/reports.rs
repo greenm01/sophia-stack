@@ -138,6 +138,16 @@ struct XAuthorityKittyInputSmokeReport {
     text_match: bool,
 }
 
+#[derive(Clone, Debug)]
+struct XAuthorityVkcubeAdmissionSmokeReport {
+    display: String,
+    intent_observed: bool,
+    admission_delivered: bool,
+    dma_bufs: usize,
+    presents: usize,
+    feedback: usize,
+}
+
 impl Drop for XtermInputResultFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);

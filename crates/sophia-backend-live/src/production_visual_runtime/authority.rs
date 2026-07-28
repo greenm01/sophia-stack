@@ -95,6 +95,27 @@ impl LiveProductionVisualRuntime {
         })
     }
 
+    pub fn prepare_authority_groups(
+        &mut self,
+        groups: &[LiveProductionAuthorityGroup],
+    ) -> Result<LiveProductionPreparedAuthorityBatch, Box<dyn std::error::Error>> {
+        let mut intakes = Vec::with_capacity(groups.len());
+        for group in groups {
+            group.validate()?;
+            self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
+            intakes.push(
+                AuthorityTransactionIntake::new(group.transaction, group.transactions.clone())
+                    .with_surface_removals(group.removed_surfaces.clone()),
+            );
+        }
+        let authority_commits = self.production.commit_authority_batches(&intakes);
+        self.rebuild_input_layers();
+        Ok(LiveProductionPreparedAuthorityBatch {
+            authority_commits,
+            layer_templates: self.compositor_layer_templates(),
+        })
+    }
+
     pub fn run_prepared_authority_transactions(
         &mut self,
         prepared: LiveProductionPreparedAuthorityBatch,
@@ -151,16 +172,13 @@ impl LiveProductionVisualRuntime {
         run: LiveAuthorityTransactionRun<'_>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let LiveAuthorityTransactionRun {
-            transaction_id,
-            transactions,
-            removed_surfaces,
+            groups,
             event_count,
             native_scanout,
             native_frames,
             wm_update,
         } = run;
-        let prepared =
-            self.prepare_authority_transactions(transaction_id, transactions, removed_surfaces)?;
+        let prepared = self.prepare_authority_groups(groups)?;
         self.run_prepared_authority_transactions(
             prepared,
             event_count,

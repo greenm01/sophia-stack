@@ -149,6 +149,18 @@ layers plus zero live presentation resources. The full proof preauthorizes
 `sudo` and retains `kernel-before.log`, `kernel-after.log`, and environment
 identity beside the software and GPU session logs.
 
+After changing deferred admission or production transaction intake, run the
+real-client ordering preflight on a host with an openable DRM render node:
+
+```sh
+cargo run --offline -q -p sophia-cli -- x-authority-vkcube-admission-smoke
+```
+
+It keeps policy-managed mapping deferred, delivers only the generic
+`AdmitSurface` control, and requires continued DRI3 import plus two exact
+Present Complete/Idle round trips. This is a transport/admission regression;
+it does not replace visible native KMS proof.
+
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,
 two-layer, and clean-teardown gates. Its current retained result is 1,487 ms,

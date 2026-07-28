@@ -3,8 +3,7 @@ use super::prelude::*;
 use sophia_backend_live::{
     ClassicHardwareCursorUpdate, LiveProductionAuthorityBatch, LiveProductionCpuScene,
     LiveProductionCursorPresentation, LiveProductionCycleRequest, LiveProductionDmaBufRegistration,
-    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionPresentSubmission,
-    LiveProductionVisualRuntime,
+    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionVisualRuntime,
 };
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};

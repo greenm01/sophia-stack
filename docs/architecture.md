@@ -181,8 +181,9 @@ The production target is one protocol-neutral session coordinator in
 `sophia-engine::runtime_driver`. It owns the ordered visual state machine while
 calling narrow adapters that retain their existing authority:
 
-1. accept a bounded authority batch and transfer native registrations
-   immediately into renderer-private ownership;
+1. accept a bounded authority envelope, preserve its ordered atomic transaction
+   groups, and transfer native registrations immediately into renderer-private
+   ownership;
 2. validate, commit, or prepare transactions against Engine committed state;
 3. compose one immutable frame from the resulting Engine snapshot;
 4. ask the live backend to submit and retire that frame through KMS; and
@@ -246,13 +247,14 @@ The accumulated extent derives from concrete child buffers and never grows
 merely because policy configured a larger toplevel.
 
 Pixels observed before managed admission remain authority evidence, not visual
-truth. The session retains one latest transaction per pending surface in a
-bounded quarantine, excludes it from renderer intake, and releases it at the
+truth. The session retains ordered transaction-homogeneous groups in a bounded
+quarantine, excludes them from renderer intake, and releases complete groups at
 accepted geometry only when the admission state and concrete extent agree.
-Present submissions for the same surface remain in a fixed-capacity queue and
-cross the scheduler boundary with that transaction; overflow is terminal and
-fail-closed. These cold-path tables do not add buffers to the passive Engine
-admission record.
+Transactions and Present submissions retain their causal ID across that
+boundary; they are never injected into or relabelled as the frontend envelope
+that happens to trigger release. Overflow or mixed identity is terminal and
+fail-closed. These cold-path records do not add buffers to the passive Engine
+admission table.
 
 Present scheduling is classified per submission. A buffer matching the pending
 layout epoch is staged with that epoch, a known wrong-size buffer is rejected,

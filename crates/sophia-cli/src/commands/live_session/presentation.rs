@@ -120,12 +120,62 @@ impl XPresentSessionObserver {
 
 fn production_authority_batch(
     batch: &XAuthorityObservedTransactionBatch,
+    released_admission_groups: &[LiveAdmissionAuthorityGroup],
     layout: &PersistentLiveLayout,
 ) -> LiveProductionAuthorityBatch {
+    let mut groups = Vec::<sophia_backend_live::LiveProductionAuthorityGroup>::new();
+    for transaction in &batch.transactions {
+        let index = production_authority_group_index(&mut groups, transaction.transaction);
+        groups[index].transactions.push(transaction.clone());
+    }
+    if !batch.removed_surfaces.is_empty() {
+        let index = production_authority_group_index(&mut groups, batch.transaction);
+        groups[index]
+            .removed_surfaces
+            .extend(batch.removed_surfaces.iter().copied());
+    }
+    for submission in &batch.present_submissions {
+        let index = production_authority_group_index(&mut groups, submission.transaction);
+        groups[index].present_submissions.push(
+            sophia_backend_live::LiveProductionPresentSubmission {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                buffer: submission.buffer,
+                x_offset: submission.x_offset,
+                y_offset: submission.y_offset,
+                acquire_fence: submission.acquire_fence,
+                idle_fence: submission.idle_fence,
+                layout_disposition: layout
+                    .present_layout_disposition(submission.surface, submission.buffer),
+            },
+        );
+    }
+    for released in released_admission_groups {
+        let index = production_authority_group_index(&mut groups, released.transaction);
+        groups[index]
+            .transactions
+            .extend(released.transactions.iter().cloned());
+        groups[index].present_submissions.extend(
+            released
+                .present_submissions
+                .iter()
+                .map(|submission| {
+                    sophia_backend_live::LiveProductionPresentSubmission {
+                        transaction: submission.transaction,
+                        surface: submission.surface,
+                        buffer: submission.buffer,
+                        x_offset: submission.x_offset,
+                        y_offset: submission.y_offset,
+                        acquire_fence: submission.acquire_fence,
+                        idle_fence: submission.idle_fence,
+                        layout_disposition: layout
+                            .present_layout_disposition(submission.surface, submission.buffer),
+                    }
+                }),
+        );
+    }
     LiveProductionAuthorityBatch {
-        transaction: batch.transaction,
-        transactions: batch.transactions.clone(),
-        removed_surfaces: batch.removed_surfaces.clone(),
+        groups,
         dma_buf_registrations: batch
             .dma_buf_registrations
             .iter()
@@ -143,24 +193,28 @@ fn production_authority_batch(
                 fd: Arc::clone(&registration.fd),
             })
             .collect(),
-        present_submissions: batch
-            .present_submissions
-            .iter()
-            .map(|submission| LiveProductionPresentSubmission {
-                transaction: submission.transaction,
-                surface: submission.surface,
-                buffer: submission.buffer,
-                x_offset: submission.x_offset,
-                y_offset: submission.y_offset,
-                acquire_fence: submission.acquire_fence,
-                idle_fence: submission.idle_fence,
-                layout_disposition: layout
-                    .present_layout_disposition(submission.surface, submission.buffer),
-            })
-            .collect(),
         released_dma_bufs: batch.released_dma_bufs.clone(),
         released_fences: batch.released_fences.clone(),
     }
+}
+
+fn production_authority_group_index(
+    groups: &mut Vec<sophia_backend_live::LiveProductionAuthorityGroup>,
+    transaction: TransactionId,
+) -> usize {
+    if let Some(index) = groups
+        .iter()
+        .position(|group| group.transaction == transaction)
+    {
+        return index;
+    }
+    groups.push(sophia_backend_live::LiveProductionAuthorityGroup {
+        transaction,
+        transactions: Vec::new(),
+        removed_surfaces: Vec::new(),
+        present_submissions: Vec::new(),
+    });
+    groups.len() - 1
 }
 
 fn renderer_cpu_buffer_update(

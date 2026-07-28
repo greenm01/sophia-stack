@@ -127,8 +127,11 @@
                     }
                 }
                 let layout_observation = layout.observe_authority_batch(&batch);
-                if layout_observation.admission_present_overflowed {
-                    return Err("pre-admission Present queue capacity exceeded".into());
+                if layout_observation.admission_group_invalid {
+                    return Err("pre-admission authority group is not transaction-homogeneous".into());
+                }
+                if layout_observation.admission_group_overflowed {
+                    return Err("pre-admission authority-group capacity exceeded".into());
                 }
                 if layout_observation.output_reservations_changed
                     && let Some(wm_session) = wm_session.as_mut()
@@ -262,8 +265,9 @@
                         "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
                     );
                 }
-                let batch = layout.projected_batch(&batch);
-                let production_batch = production_authority_batch(&batch, &layout);
+                let (batch, released_admission_groups) = layout.projected_batch(&batch);
+                let production_batch =
+                    production_authority_batch(&batch, &released_admission_groups, &layout);
                 if runtime.is_none() {
                     runtime = Some(
                         LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut(), None)?
@@ -323,7 +327,7 @@
                     .map(|layer| layer.surface)
                     .collect::<Vec<_>>();
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
-                    if batch.present_submissions.is_empty() {
+                    if !production_batch.has_present_submissions() {
                         let (submission, committed_surfaces) =
                             runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,

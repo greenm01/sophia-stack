@@ -154,7 +154,8 @@ fn run_x_authority_kitty_input_smoke()
                 surface = Some(submission.surface);
                 present_before_input = present_before_input.saturating_add(1);
                 if present_before_input == 1 {
-                    route_kitty_smoke_present_feedback(
+                    route_external_present_feedback(
+                        "Kitty input smoke",
                         &protocol_router,
                         submission.transaction,
                         submission.idle_fence,
@@ -190,7 +191,8 @@ fn run_x_authority_kitty_input_smoke()
         let (transaction, idle_fence) = pending_present_feedback
             .take()
             .ok_or("Kitty input smoke omitted its second Present")?;
-        route_kitty_smoke_present_feedback(
+        route_external_present_feedback(
+            "Kitty input smoke",
             &protocol_router,
             transaction,
             idle_fence,
@@ -213,7 +215,8 @@ fn run_x_authority_kitty_input_smoke()
                     }
                     for submission in batch.present_submissions {
                         present_before_input = present_before_input.saturating_add(1);
-                        route_kitty_smoke_present_feedback(
+                        route_external_present_feedback(
+                            "Kitty input smoke",
                             &protocol_router,
                             submission.transaction,
                             submission.idle_fence,
@@ -266,7 +269,8 @@ fn run_x_authority_kitty_input_smoke()
                     for submission in batch.present_submissions {
                         focus_presents = focus_presents.saturating_add(1);
                         present_before_input = present_before_input.saturating_add(1);
-                        route_kitty_smoke_present_feedback(
+                        route_external_present_feedback(
+                            "Kitty input smoke",
                             &protocol_router,
                             submission.transaction,
                             submission.idle_fence,
@@ -320,7 +324,8 @@ fn run_x_authority_kitty_input_smoke()
                 }
                 for submission in batch.present_submissions {
                     present_after_input = present_after_input.saturating_add(1);
-                    route_kitty_smoke_present_feedback(
+                    route_external_present_feedback(
+                        "Kitty input smoke",
                         &protocol_router,
                         submission.transaction,
                         submission.idle_fence,
@@ -381,7 +386,8 @@ fn run_x_authority_kitty_input_smoke()
     })
 }
 
-fn route_kitty_smoke_present_feedback(
+fn route_external_present_feedback(
+    label: &str,
     router: &sophia_x_authority::XServerFrontendProtocolRouter,
     transaction: TransactionId,
     idle_fence: Option<sophia_protocol::FenceHandle>,
@@ -401,22 +407,22 @@ fn route_kitty_smoke_present_feedback(
     if let Some(handle) = idle_fence {
         let fence = present_fences
             .get(&handle)
-            .ok_or("Kitty input smoke omitted its registered idle fence")?;
+            .ok_or("external Present smoke omitted its registered idle fence")?;
         sophia_xshmfence::trigger(fence)?;
         eprintln!(
-            "sophia_kitty_input_smoke schema=1 stage=idle_fence_triggered transaction={} fence={}",
+            "sophia_external_present_smoke schema=1 label={label:?} stage=idle_fence_triggered transaction={} fence={}",
             transaction.raw(),
             handle.raw(),
         );
     }
     let idle = router.route_present_idle(transaction)?;
     eprintln!(
-        "sophia_kitty_input_smoke schema=1 stage=present_feedback transaction={} complete_routed={complete} idle_routed={idle}",
+        "sophia_external_present_smoke schema=1 label={label:?} stage=present_feedback transaction={} complete_routed={complete} idle_routed={idle}",
         transaction.raw(),
     );
     if !complete || !idle {
         return Err(format!(
-            "Kitty input smoke Present feedback was not routed: transaction={} complete={complete} idle={idle}",
+            "{label} Present feedback was not routed: transaction={} complete={complete} idle={idle}",
             transaction.raw(),
         )
         .into());
@@ -444,7 +450,8 @@ fn ensure_kitty_input_client_alive(
 }
 
 fn first_openable_render_node() -> Result<std::fs::File, Box<dyn std::error::Error>> {
-    let mut candidates = std::fs::read_dir("/dev/dri")?
+    let mut candidates = std::fs::read_dir("/dev/dri")
+        .map_err(|error| format!("cannot inspect DRM render nodes: {error}"))?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {

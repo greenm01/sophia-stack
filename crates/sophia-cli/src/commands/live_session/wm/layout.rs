@@ -15,10 +15,11 @@ struct PendingLiveWmLayout {
 struct LiveAuthorityLayoutObservation {
     new_surfaces: Vec<SurfaceId>,
     output_reservations_changed: bool,
-    admission_present_overflowed: bool,
+    admission_group_invalid: bool,
+    admission_group_overflowed: bool,
 }
 
-const PRE_ADMISSION_PRESENT_CAPACITY: usize = 256;
+const PRE_ADMISSION_GROUP_CAPACITY: usize = 256;
 
 #[derive(Default)]
 struct PersistentLiveLayout {
@@ -31,11 +32,8 @@ struct PersistentLiveLayout {
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     presentation_mapped: BTreeMap<SurfaceId, bool>,
-    pre_admission_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
-    released_admission_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
-    pre_admission_present_submissions: VecDeque<sophia_x_authority::XAuthorityPresentSubmission>,
-    released_admission_present_submissions:
-        VecDeque<sophia_x_authority::XAuthorityPresentSubmission>,
+    pre_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
+    released_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     output_reservations: sophia_engine::SurfaceOutputReservationState,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
@@ -59,7 +57,8 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> LiveAuthorityLayoutObservation {
         let mut output_reservations_changed = false;
-        let mut admission_present_overflowed = false;
+        let mut admission_group_invalid = false;
+        let mut admission_group_overflowed = false;
         let mut new_surfaces = BTreeSet::new();
         self.client_routes.observe(batch);
         self.observe_presentation_intents(batch, &mut new_surfaces);
@@ -113,7 +112,10 @@ impl PersistentLiveLayout {
         for handle in &batch.released_dma_bufs {
             self.dma_buf_sizes.remove(handle);
         }
-        admission_present_overflowed |= self.observe_pre_admission_present_submissions(batch);
+        match self.observe_pre_admission_groups(batch) {
+            Ok(overflowed) => admission_group_overflowed |= overflowed,
+            Err(_) => admission_group_invalid = true,
+        }
         for surface in &batch.removed_surfaces {
             output_reservations_changed |= self.output_reservations.remove_surface(*surface);
         }
@@ -158,8 +160,6 @@ impl PersistentLiveLayout {
                 continue;
             }
             if self.surface_requires_admission(transaction.surface) {
-                self.pre_admission_transactions
-                    .insert(transaction.surface, transaction.clone());
                 continue;
             }
             self.layout_epochs
@@ -228,7 +228,8 @@ impl PersistentLiveLayout {
         LiveAuthorityLayoutObservation {
             new_surfaces: new_surfaces.into_iter().collect(),
             output_reservations_changed,
-            admission_present_overflowed,
+            admission_group_invalid,
+            admission_group_overflowed,
         }
     }
 
@@ -272,12 +273,8 @@ impl PersistentLiveLayout {
             .retain(|surface, _| !removed_surfaces.contains(surface));
         self.presentation_mapped
             .retain(|surface, _| !removed_surfaces.contains(surface));
-        self.pre_admission_transactions
-            .retain(|surface, _| !removed_surfaces.contains(surface));
-        self.released_admission_transactions
-            .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
-            self.remove_admission_present_submissions(*surface);
+            self.remove_admission_groups(*surface);
         }
         if self
             .focus_to_apply
@@ -370,7 +367,7 @@ impl PersistentLiveLayout {
         });
         let mut staged_transactions = BTreeMap::new();
         for (surface, size) in &proposal.requested_sizes {
-            let Some(transaction) = self.pre_admission_transactions.get(surface) else {
+            let Some(transaction) = self.latest_pre_admission_transaction(*surface) else {
                 continue;
             };
             if live_transaction_observed_size(
@@ -575,9 +572,7 @@ impl PersistentLiveLayout {
             self.unmanaged_surfaces.remove(surface);
             self.admission_retries.remove(surface);
             self.layout_epochs.remove(*surface);
-            self.pre_admission_transactions.remove(surface);
-            self.released_admission_transactions.remove(surface);
-            self.remove_admission_present_submissions(*surface);
+            self.remove_admission_groups(*surface);
         }
         let resize_state = pending
             .requested_sizes
@@ -652,19 +647,7 @@ impl PersistentLiveLayout {
         for surface in &pending.admission_surfaces {
             self.admissions.mark_managed(*surface);
             self.planning_surfaces.remove(surface);
-            let transaction = pending
-                .staged_transactions
-                .get(surface)
-                .cloned()
-                .or_else(|| self.pre_admission_transactions.get(surface).cloned());
-            if let Some(mut transaction) = transaction {
-                transaction.previous_committed_generation = 0;
-                self.released_admission_transactions
-                    .insert(*surface, transaction);
-            }
-            self.pre_admission_transactions.remove(surface);
         }
-        self.release_admission_present_submissions(&pending.admission_surfaces);
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
                 if let Some(size) = live_transaction_pixel_size(
@@ -682,6 +665,7 @@ impl PersistentLiveLayout {
             .into_iter()
             .map(|layer| (layer.surface, layer))
             .collect();
+        self.release_admission_groups(&pending.admission_surfaces);
         self.unmanaged_surfaces.retain(|surface| {
             self.layers.contains_key(surface)
                 && pending.effects.as_ref().is_none_or(|effects| {
@@ -722,33 +706,31 @@ impl PersistentLiveLayout {
     fn projected_batch(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
-    ) -> XAuthorityObservedTransactionBatch {
+    ) -> (
+        XAuthorityObservedTransactionBatch,
+        Vec<LiveAdmissionAuthorityGroup>,
+    ) {
         // Layout projection preserves normal authority generation order.
         // Unmapped managed surfaces are the exception: their latest drawing
         // transaction remains in the bounded admission quarantine until it is
         // released once at generation zero and the accepted geometry.
+        let quarantined_transactions = self
+            .pre_admission_groups
+            .iter()
+            .chain(self.released_admission_groups.iter())
+            .map(|group| group.transaction)
+            .collect::<BTreeSet<_>>();
         let mut projected = project_authority_batch_onto_layout(batch.clone(), &self.layers);
-        projected
-            .transactions
-            .retain(|transaction| !self.surface_requires_admission(transaction.surface));
-        for (surface, mut transaction) in
-            std::mem::take(&mut self.released_admission_transactions)
-        {
-            if let Some(layer) = self.layers.get(&surface) {
-                transaction.target_geometry = layer.geometry;
-            }
-            if let Some(observed) = projected
-                .transactions
-                .iter_mut()
-                .find(|observed| observed.surface == surface)
-            {
-                *observed = transaction;
-            } else {
-                projected.transactions.push(transaction);
-            }
-        }
-        self.project_admission_present_submissions(&mut projected);
-        projected
+        projected.transactions.retain(|transaction| {
+            !quarantined_transactions.contains(&transaction.transaction)
+        });
+        projected.present_submissions.retain(|submission| {
+            !quarantined_transactions.contains(&submission.transaction)
+        });
+        (
+            projected,
+            self.released_admission_groups.drain(..).collect(),
+        )
     }
 
 }

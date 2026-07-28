@@ -270,18 +270,19 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
     let mut layout = PersistentLiveLayout::default();
 
     let observation = layout.observe_authority_batch(&batch);
-    let projected = layout.projected_batch(&batch);
+    let (projected, released) = layout.projected_batch(&batch);
 
     assert_eq!(observation.new_surfaces, vec![surface]);
     assert!(layout.layers.is_empty());
     assert_eq!(
-        layout.pre_admission_transactions.get(&surface),
+        layout.latest_pre_admission_transaction(surface),
         Some(&transaction)
     );
     assert!(projected.transactions.is_empty());
     assert!(projected.present_submissions.is_empty());
-    assert_eq!(layout.pre_admission_present_submissions.len(), 1);
-    assert!(!observation.admission_present_overflowed);
+    assert!(released.is_empty());
+    assert_eq!(layout.pre_admission_groups.len(), 1);
+    assert!(!observation.admission_group_overflowed);
     assert_eq!(layout.next_unmanaged_surface(), Some(surface));
 }
 
@@ -388,27 +389,121 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     assert_eq!(controls.pending_len(), 1);
     assert!(layout.acknowledge_admission_control(transaction, surface));
     assert!(layout.resolve_pending().is_some());
-    let empty =
-        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(14));
-    let projected = layout.projected_batch(&empty);
+    // Admission can resolve in the same owner iteration that still carries
+    // the original observation. The released group must replace, not
+    // duplicate, that observation at production intake.
+    let (projected, released) = layout.projected_batch(&observed);
 
-    assert_eq!(projected.transactions.len(), 1);
-    assert_eq!(projected.transactions[0].surface, surface);
-    assert_eq!(projected.transactions[0].target_geometry, geometry);
-    assert_eq!(projected.transactions[0].previous_committed_generation, 0);
-    assert_eq!(projected.present_submissions.len(), 1);
+    assert!(projected.transactions.is_empty());
+    assert!(projected.present_submissions.is_empty());
+    assert_eq!(released.len(), 1);
+    assert_eq!(released[0].transactions.len(), 1);
+    assert_eq!(released[0].transactions[0].surface, surface);
+    assert_eq!(released[0].transactions[0].target_geometry, geometry);
+    assert_eq!(released[0].transactions[0].previous_committed_generation, 0);
+    assert_eq!(released[0].present_submissions.len(), 1);
     assert_eq!(
-        projected.present_submissions[0].transaction,
+        released[0].present_submissions[0].transaction,
         TransactionId::from_raw(12)
     );
     assert_eq!(
         layout.layers[&surface].source,
         BufferSource::XPixmap { pixmap: 0x901 }
     );
-    assert!(layout.pre_admission_transactions.is_empty());
-    assert!(layout.released_admission_transactions.is_empty());
-    assert!(layout.pre_admission_present_submissions.is_empty());
-    assert!(layout.released_admission_present_submissions.is_empty());
+    assert!(layout.pre_admission_groups.is_empty());
+    assert!(layout.released_admission_groups.is_empty());
+}
+
+#[test]
+fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
+    let current_surface = SurfaceId::new(60, 1);
+    let admitted_surface = SurfaceId::new(61, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let transaction = |transaction, surface, handle| SurfaceTransaction {
+        transaction,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::CpuBuffer { handle },
+        damage: Region::single(geometry),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let current_transaction = TransactionId::from_raw(367);
+    let admitted_transaction = TransactionId::from_raw(858);
+    let mut current =
+        crate::commands::live_session::wm_update_coordinator_batch(current_transaction);
+    current
+        .transactions
+        .push(transaction(current_transaction, current_surface, 367));
+    let released = [crate::commands::live_session::LiveAdmissionAuthorityGroup {
+        transaction: admitted_transaction,
+        transactions: vec![transaction(admitted_transaction, admitted_surface, 858)],
+        present_submissions: vec![sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: admitted_transaction,
+            surface: admitted_surface,
+            buffer: sophia_protocol::BufferHandle::from_raw(858),
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        }],
+    }];
+    let production = crate::commands::live_session::production_authority_batch(
+        &current,
+        &released,
+        &PersistentLiveLayout::default(),
+    );
+
+    production.validate().unwrap();
+    assert_eq!(
+        production
+            .groups
+            .iter()
+            .map(|group| group.transaction)
+            .collect::<Vec<_>>(),
+        vec![current_transaction, admitted_transaction]
+    );
+    assert_eq!(
+        production.groups[0].transactions[0].transaction,
+        current_transaction
+    );
+    assert_eq!(
+        production.groups[1].transactions[0].transaction,
+        admitted_transaction
+    );
+    assert_eq!(
+        production.groups[1].present_submissions[0].transaction,
+        admitted_transaction
+    );
+
+    let output = sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: Size {
+            width: 640,
+            height: 480,
+        },
+        scale: 1,
+    };
+    let mut runtime =
+        sophia_backend_live::LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let prepared = runtime
+        .prepare_authority_groups(&production.groups)
+        .unwrap();
+    assert_eq!(prepared.authority_commits.len(), 2);
+    assert!(
+        prepared
+            .authority_commits
+            .iter()
+            .all(|commit| { commit.outcome == sophia_protocol::TransactionOutcome::Committed })
+    );
 }
 
 #[test]
@@ -534,18 +629,21 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     );
     let empty =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(24));
-    let projected = layout.projected_batch(&empty);
-    assert_eq!(projected.transactions.len(), 1);
-    assert_eq!(projected.transactions[0].transaction, pixel_transaction);
-    assert_eq!(projected.present_submissions.len(), 1);
+    let (projected, released) = layout.projected_batch(&empty);
+    assert!(projected.transactions.is_empty());
+    assert!(projected.present_submissions.is_empty());
+    assert_eq!(released.len(), 1);
+    assert_eq!(released[0].transactions.len(), 1);
+    assert_eq!(released[0].transactions[0].transaction, pixel_transaction);
+    assert_eq!(released[0].present_submissions.len(), 1);
     assert_eq!(
-        projected.present_submissions[0].transaction,
+        released[0].present_submissions[0].transaction,
         pixel_transaction
     );
 }
 
 #[test]
-fn pre_admission_present_queue_fails_closed_at_its_fixed_capacity() {
+fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
     let surface = SurfaceId::new(8, 1);
     let geometry = Rect {
         x: 0,
@@ -568,26 +666,93 @@ fn pre_admission_present_queue_fails_closed_at_its_fixed_capacity() {
             generation: 1,
         },
     );
-    batch.present_submissions.extend(
-        (0..=crate::commands::live_session::PRE_ADMISSION_PRESENT_CAPACITY).map(|index| {
-            sophia_x_authority::XAuthorityPresentSubmission {
-                transaction: TransactionId::from_raw(u64::try_from(index + 1).unwrap()),
+    let mut layout = PersistentLiveLayout::default();
+    let first_observation = layout.observe_authority_batch(&batch);
+    assert!(!first_observation.admission_group_overflowed);
+
+    let mut overflowed = false;
+    for index in 0..=crate::commands::live_session::PRE_ADMISSION_GROUP_CAPACITY {
+        let transaction = TransactionId::from_raw(u64::try_from(index + 21).unwrap());
+        let mut present = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+        present
+            .present_submissions
+            .push(sophia_x_authority::XAuthorityPresentSubmission {
+                transaction,
                 surface,
-                buffer: sophia_protocol::BufferHandle::from_raw(u64::try_from(index + 1).unwrap()),
+                buffer: sophia_protocol::BufferHandle::from_raw(transaction.raw()),
                 x_offset: 0,
                 y_offset: 0,
                 acquire_fence: None,
                 idle_fence: None,
-            }
-        }),
-    );
-    let mut layout = PersistentLiveLayout::default();
+            });
+        overflowed |= layout
+            .observe_authority_batch(&present)
+            .admission_group_overflowed;
+    }
 
-    let observation = layout.observe_authority_batch(&batch);
-
-    assert!(observation.admission_present_overflowed);
+    assert!(overflowed);
     assert_eq!(
-        layout.pre_admission_present_submissions.len(),
-        crate::commands::live_session::PRE_ADMISSION_PRESENT_CAPACITY
+        layout.pre_admission_groups.len(),
+        crate::commands::live_session::PRE_ADMISSION_GROUP_CAPACITY
     );
+}
+
+#[test]
+fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
+    let surface = SurfaceId::new(9, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 500,
+        height: 500,
+    };
+    let mut intent =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(30));
+    intent.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    intent.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            mapped: false,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    );
+    intent
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&intent);
+
+    let mut malformed =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(31));
+    malformed
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: TransactionId::from_raw(32),
+            surface,
+            buffer: sophia_protocol::BufferHandle::from_raw(1),
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+    let observation = layout.observe_authority_batch(&malformed);
+
+    assert!(observation.admission_group_invalid);
+    assert!(layout.pre_admission_groups.is_empty());
 }
