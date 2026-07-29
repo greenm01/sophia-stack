@@ -81,6 +81,7 @@ mod persistent_native_scanout {
         pub cpu_target_creations: usize,
         pub dmabuf_target_creations: usize,
         pub composition_target_creations: usize,
+        pub composition_target_reuses: usize,
         pub generation_replacements: usize,
         pub recovery_replacements: usize,
         pub uploads: usize,
@@ -832,6 +833,9 @@ mod persistent_native_scanout {
                     metrics.composition_target_creations = metrics
                         .composition_target_creations
                         .saturating_add(stats.composition_target_creations);
+                    metrics.composition_target_reuses = metrics
+                        .composition_target_reuses
+                        .saturating_add(stats.composition_target_reuses);
                     metrics.generation_replacements = metrics
                         .generation_replacements
                         .saturating_add(stats.generation_replacements);

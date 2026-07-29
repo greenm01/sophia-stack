@@ -107,6 +107,38 @@
                     metrics.cpu_buffer_updates = metrics
                         .cpu_buffer_updates
                         .saturating_add(batch.cpu_buffer_updates.len());
+                    metrics.cpu_buffer_replacements =
+                        metrics.cpu_buffer_replacements.saturating_add(
+                            batch
+                                .cpu_buffer_updates
+                                .iter()
+                                .filter(|update| update.is_replacement())
+                                .count(),
+                        );
+                    metrics.cpu_buffer_patch_updates =
+                        metrics.cpu_buffer_patch_updates.saturating_add(
+                            batch
+                                .cpu_buffer_updates
+                                .iter()
+                                .filter(|update| !update.is_replacement())
+                                .count(),
+                        );
+                    metrics.cpu_buffer_patch_rects =
+                        metrics.cpu_buffer_patch_rects.saturating_add(
+                            batch
+                                .cpu_buffer_updates
+                                .iter()
+                                .map(sophia_x_authority::XAuthorityCpuBufferUpdate::patch_rects)
+                                .sum::<usize>(),
+                        );
+                    metrics.cpu_buffer_payload_bytes =
+                        metrics.cpu_buffer_payload_bytes.saturating_add(
+                            batch
+                                .cpu_buffer_updates
+                                .iter()
+                                .map(sophia_x_authority::XAuthorityCpuBufferUpdate::payload_bytes)
+                                .sum::<usize>(),
+                        );
                     metrics.dma_buf_registrations_observed = metrics
                         .dma_buf_registrations_observed
                         .saturating_add(batch.dma_buf_registrations.len());

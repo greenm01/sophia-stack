@@ -10,7 +10,8 @@ use crate::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferRegistry, LiveCpuBufferSource,
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame,
     LiveCpuCompositionElementRef, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
-    LiveCpuCompositionReport, compose_live_cpu_display_list_frame, compose_live_cpu_frame,
+    LiveCpuCompositionReport, LiveCpuFrameMetricsMode,
+    compose_live_cpu_display_list_frame_with_metrics_reusing, compose_live_cpu_frame,
     compose_live_cpu_frame_ref_with_cursor,
 };
 
@@ -36,6 +37,9 @@ pub struct LiveProductionCpuScene {
     last_output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
     max_nonzero_pixel_bytes: usize,
     nonzero_frames: usize,
+    exact_pixel_proofs_remaining: usize,
+    exact_pixel_metric_frames: usize,
+    damage_scoped_metric_frames: usize,
 }
 
 impl LiveProductionCpuScene {
@@ -47,6 +51,9 @@ impl LiveProductionCpuScene {
             last_output_damage_snapshot: None,
             max_nonzero_pixel_bytes: 0,
             nonzero_frames: 0,
+            exact_pixel_proofs_remaining: 3,
+            exact_pixel_metric_frames: 0,
+            damage_scoped_metric_frames: 0,
         }
     }
 
@@ -171,11 +178,26 @@ impl LiveProductionCpuScene {
                 }
             }
         }
+        let metrics_mode = if self.exact_pixel_proofs_remaining == 0 {
+            self.damage_scoped_metric_frames = self.damage_scoped_metric_frames.saturating_add(1);
+            LiveCpuFrameMetricsMode::DamageScopedEvidence
+        } else {
+            self.exact_pixel_proofs_remaining = self.exact_pixel_proofs_remaining.saturating_sub(1);
+            self.exact_pixel_metric_frames = self.exact_pixel_metric_frames.saturating_add(1);
+            LiveCpuFrameMetricsMode::ExactPixels
+        };
+        let reusable_bytes = self.last_report.take().map(|report| report.frame.bytes);
         self.last_report = Some(
-            compose_live_cpu_display_list_frame(self.output_size, &elements, cursor_position)
-                .map_err(|error| {
-                    format!("persistent CPU display-list composition failed: {error:?}")
-                })?,
+            compose_live_cpu_display_list_frame_with_metrics_reusing(
+                self.output_size,
+                &elements,
+                cursor_position,
+                metrics_mode,
+                reusable_bytes,
+            )
+            .map_err(|error| {
+                format!("persistent CPU display-list composition failed: {error:?}")
+            })?,
         );
         let cursor_geometry = cursor_position.map(|position| Rect {
             x: position.x.floor() as i32,
@@ -271,6 +293,14 @@ impl LiveProductionCpuScene {
 
     pub fn nonzero_frames(&self) -> usize {
         self.nonzero_frames
+    }
+
+    pub fn exact_pixel_metric_frames(&self) -> usize {
+        self.exact_pixel_metric_frames
+    }
+
+    pub fn damage_scoped_metric_frames(&self) -> usize {
+        self.damage_scoped_metric_frames
     }
 
     pub fn buffer_checksum(&self) -> u64 {

@@ -6,7 +6,8 @@ use sophia_renderer_live::{
     DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferSourceRef,
     LiveCpuBufferUpdate, LiveCpuCompositionElementRef, LiveCpuCompositionLayer,
-    LiveCpuCompositionLayerRef, LiveProductionCpuScene, compose_live_cpu_display_list_frame,
+    LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode, LiveProductionCpuScene,
+    compose_live_cpu_display_list_frame, compose_live_cpu_display_list_frame_with_metrics_reusing,
     compose_live_cpu_frame, compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
 };
 
@@ -45,6 +46,39 @@ fn cpu_composition_blits_clipped_xrgb_layers() {
     assert_eq!(report.nonzero_pixel_bytes, 4);
     assert_ne!(report.checksum, 0);
     assert_eq!(&report.frame.bytes[32..36], &[0xff; 4]);
+}
+
+#[test]
+fn display_list_composition_reuses_uniquely_owned_frame_storage() {
+    let size = Size {
+        width: 4,
+        height: 4,
+    };
+    let reusable = Arc::new(vec![0xaa; 64]);
+    let allocation = reusable.as_ptr();
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing(
+        size,
+        &[LiveCpuCompositionElementRef::Solid {
+            geometry: Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            color: CompositorRgb8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+            },
+        }],
+        None,
+        LiveCpuFrameMetricsMode::DamageScopedEvidence,
+        Some(reusable),
+    )
+    .unwrap();
+
+    assert_eq!(report.frame.bytes.as_ptr(), allocation);
+    assert!(report.frame.bytes[..16].iter().all(|byte| *byte == 0));
 }
 
 #[test]
@@ -127,7 +161,7 @@ fn borrowed_fullscreen_composition_preserves_pixels_and_metrics() {
         }],
     )
     .unwrap();
-    assert_eq!(report.frame.bytes, pixels);
+    assert_eq!(report.frame.bytes.as_ref(), &pixels);
     assert_eq!(report.nonzero_pixel_bytes, 1280 * 720 * 4);
     assert_eq!(report.layers_composed, 1);
 }
@@ -345,3 +379,4 @@ fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
         Some(&display_list),
     );
 }
+use std::sync::Arc;

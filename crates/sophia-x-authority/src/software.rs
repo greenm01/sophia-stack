@@ -4,81 +4,16 @@ use sophia_protocol::{Rect, Size};
 
 use crate::{XGraphicsContextValues, XPoint, XResourceId};
 
+mod update;
+
+pub use update::{
+    X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
+    XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
+};
+use update::{packed_patch, packed_patch_region};
+
 pub const X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888: u32 = u32::from_le_bytes(*b"XR24");
 pub const X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES: usize = 64 * 1024 * 1024;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XAuthorityCpuBufferSnapshot {
-    pub handle: u64,
-    pub drawable: XResourceId,
-    pub size: Size,
-    pub stride: u32,
-    pub format: u32,
-    pub generation: u64,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XAuthorityCpuBufferPatch {
-    pub handle: u64,
-    pub drawable: XResourceId,
-    pub size: Size,
-    pub stride: u32,
-    pub format: u32,
-    pub generation: u64,
-    pub rect: Rect,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum XAuthorityCpuBufferUpdate {
-    Replace(XAuthorityCpuBufferSnapshot),
-    Patch(XAuthorityCpuBufferPatch),
-}
-
-impl XAuthorityCpuBufferUpdate {
-    pub const fn handle(&self) -> u64 {
-        match self {
-            Self::Replace(snapshot) => snapshot.handle,
-            Self::Patch(patch) => patch.handle,
-        }
-    }
-
-    pub const fn generation(&self) -> u64 {
-        match self {
-            Self::Replace(snapshot) => snapshot.generation,
-            Self::Patch(patch) => patch.generation,
-        }
-    }
-
-    pub fn apply_to(
-        &self,
-        buffers: &mut BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
-    ) -> Result<(), &'static str> {
-        match self {
-            Self::Replace(snapshot) => {
-                buffers.insert(snapshot.handle, snapshot.clone());
-                Ok(())
-            }
-            Self::Patch(patch) => {
-                let buffer = buffers
-                    .get_mut(&patch.handle)
-                    .ok_or("CPU buffer patch has no replacement base")?;
-                if buffer.drawable != patch.drawable
-                    || buffer.size != patch.size
-                    || buffer.stride != patch.stride
-                    || buffer.format != patch.format
-                    || patch.generation < buffer.generation
-                {
-                    return Err("CPU buffer patch metadata does not match its base");
-                }
-                apply_packed_patch(buffer, patch)?;
-                buffer.generation = patch.generation;
-                Ok(())
-            }
-        }
-    }
-}
 
 #[derive(Debug, Default)]
 pub(crate) struct XSoftwareBufferStore {
@@ -102,19 +37,22 @@ impl XSoftwareBufferStore {
         source_offset_y: i32,
         damage: &[Rect],
     ) -> Option<XAuthorityCpuBufferUpdate> {
-        let source = self.buffers.get(&source)?.clone();
+        let (source_drawable, source_size) = {
+            let source_buffer = self.buffers.get(&source)?;
+            (source_buffer.drawable, source_buffer.size)
+        };
         if presentation_size.width <= 0 || presentation_size.height <= 0 {
             return None;
         }
         let source_extent = Size {
             width: source_offset_x
-                .saturating_add(source.size.width)
+                .saturating_add(source_size.width)
                 .clamp(1, presentation_size.width),
             height: source_offset_y
-                .saturating_add(source.size.height)
+                .saturating_add(source_size.height)
                 .clamp(1, presentation_size.height),
         };
-        let desired_size = if source.drawable == presentation {
+        let desired_size = if source_drawable == presentation {
             presentation_size
         } else {
             self.presentations
@@ -180,24 +118,44 @@ impl XSoftwareBufferStore {
                 );
             }
         }
+        let source = self.buffers.get(&source)?;
         let presentation_buffer = self.presentations.get_mut(&presentation)?;
+        let mut presentation_damage = Vec::with_capacity(
+            damage
+                .len()
+                .min(X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS.saturating_add(1)),
+        );
         for rect in damage {
-            copy_buffer_region(
+            if let Some(rect) = copy_buffer_region(
                 &source,
                 presentation_buffer,
                 *rect,
                 source_offset_x,
                 source_offset_y,
-            );
+            ) {
+                presentation_damage.push(rect);
+            }
         }
         presentation_buffer.generation = presentation_buffer.generation.checked_add(1)?;
-        if !replace {
-            let handle = self.next_handle.max(1);
-            self.next_handle = handle.saturating_add(1).max(1);
-            presentation_buffer.handle = handle;
+        if replace || presentation_damage.len() > X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS {
+            return Some(XAuthorityCpuBufferUpdate::Replace(
+                presentation_buffer.clone(),
+            ));
         }
-        Some(XAuthorityCpuBufferUpdate::Replace(
-            presentation_buffer.clone(),
+        let patches = presentation_damage
+            .into_iter()
+            .map(|rect| packed_patch_region(presentation_buffer, rect))
+            .collect::<Option<Vec<_>>>()?;
+        Some(XAuthorityCpuBufferUpdate::PatchBatch(
+            XAuthorityCpuBufferPatchBatch {
+                handle: presentation_buffer.handle,
+                drawable: presentation_buffer.drawable,
+                size: presentation_buffer.size,
+                stride: presentation_buffer.stride,
+                format: presentation_buffer.format,
+                generation: presentation_buffer.generation,
+                patches,
+            },
         ))
     }
 
@@ -287,6 +245,25 @@ impl XSoftwareBufferStore {
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         copy_xrgb8888(buffer, destination, data);
         finish_immutable_update(buffer, handle, replaced, Some(destination))
+    }
+
+    pub fn ensure_image_backing(&mut self, drawable: XResourceId, size: Size) -> Option<()> {
+        let handle = self.allocate_handle();
+        self.ensure(drawable, size, handle).map(|_| ())
+    }
+
+    pub fn put_image_backing(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        destination: Rect,
+        data: &[u8],
+    ) -> Option<()> {
+        let handle = self.allocate_handle();
+        let (buffer, _) = self.ensure(drawable, size, handle)?;
+        copy_xrgb8888(buffer, destination, data);
+        buffer.generation = buffer.generation.checked_add(1)?;
+        Some(())
     }
 
     pub fn image_region(&self, drawable: XResourceId, region: Rect) -> Option<Vec<u8>> {
@@ -460,9 +437,9 @@ fn copy_buffer_region(
     source_rect: Rect,
     destination_x: i32,
     destination_y: i32,
-) {
+) -> Option<Rect> {
     let Some((mut left, mut top, right, bottom)) = clipped_bounds(source.size, source_rect) else {
-        return;
+        return None;
     };
     let mut target_x = destination_x.saturating_add(i32::try_from(left).unwrap_or(i32::MAX));
     let mut target_y = destination_y.saturating_add(i32::try_from(top).unwrap_or(i32::MAX));
@@ -476,16 +453,16 @@ fn copy_buffer_region(
         target_y = 0;
     }
     let Ok(target_x) = usize::try_from(target_x) else {
-        return;
+        return None;
     };
     let Ok(target_y) = usize::try_from(target_y) else {
-        return;
+        return None;
     };
     let Ok(destination_width) = usize::try_from(destination.size.width) else {
-        return;
+        return None;
     };
     let Ok(destination_height) = usize::try_from(destination.size.height) else {
-        return;
+        return None;
     };
     let width = right
         .saturating_sub(left)
@@ -509,16 +486,22 @@ fn copy_buffer_region(
             .bytes
             .get(source_offset..source_offset.saturating_add(byte_width))
         else {
-            return;
+            return None;
         };
         let Some(destination_row) = destination
             .bytes
             .get_mut(destination_offset..destination_offset.saturating_add(byte_width))
         else {
-            return;
+            return None;
         };
         destination_row.copy_from_slice(source_row);
     }
+    (width != 0 && height != 0).then_some(Rect {
+        x: i32::try_from(target_x).ok()?,
+        y: i32::try_from(target_y).ok()?,
+        width: i32::try_from(width).ok()?,
+        height: i32::try_from(height).ok()?,
+    })
 }
 
 fn finish_immutable_update(
@@ -876,75 +859,6 @@ fn apply_raster_function(source: u32, destination: u32, gc: &XGraphicsContextVal
     ((result & mask) | (destination & !mask)) & 0x00ff_ffff
 }
 
-fn packed_patch(
-    buffer: &XAuthorityCpuBufferSnapshot,
-    rect: Rect,
-) -> Option<XAuthorityCpuBufferPatch> {
-    let (left, top, right, bottom) = clipped_bounds(buffer.size, rect)?;
-    let width = right.saturating_sub(left);
-    let height = bottom.saturating_sub(top);
-    let row_bytes = width.checked_mul(4)?;
-    let source_stride = usize::try_from(buffer.stride).ok()?;
-    let mut bytes = Vec::with_capacity(row_bytes.checked_mul(height)?);
-    for y in top..bottom {
-        let offset = y
-            .checked_mul(source_stride)?
-            .checked_add(left.checked_mul(4)?)?;
-        bytes.extend_from_slice(buffer.bytes.get(offset..offset.checked_add(row_bytes)?)?);
-    }
-    Some(XAuthorityCpuBufferPatch {
-        handle: buffer.handle,
-        drawable: buffer.drawable,
-        size: buffer.size,
-        stride: buffer.stride,
-        format: buffer.format,
-        generation: buffer.generation,
-        rect: Rect {
-            x: i32::try_from(left).ok()?,
-            y: i32::try_from(top).ok()?,
-            width: i32::try_from(width).ok()?,
-            height: i32::try_from(height).ok()?,
-        },
-        bytes,
-    })
-}
-
-fn apply_packed_patch(
-    buffer: &mut XAuthorityCpuBufferSnapshot,
-    patch: &XAuthorityCpuBufferPatch,
-) -> Result<(), &'static str> {
-    let (left, top, right, bottom) =
-        clipped_bounds(buffer.size, patch.rect).ok_or("CPU buffer patch is empty")?;
-    if patch.rect.x != i32::try_from(left).unwrap_or(i32::MAX)
-        || patch.rect.y != i32::try_from(top).unwrap_or(i32::MAX)
-        || patch.rect.width != i32::try_from(right.saturating_sub(left)).unwrap_or(i32::MAX)
-        || patch.rect.height != i32::try_from(bottom.saturating_sub(top)).unwrap_or(i32::MAX)
-    {
-        return Err("CPU buffer patch lies outside its buffer");
-    }
-    let row_bytes = right.saturating_sub(left).saturating_mul(4);
-    let expected = row_bytes.saturating_mul(bottom.saturating_sub(top));
-    if patch.bytes.len() != expected {
-        return Err("CPU buffer patch byte length is invalid");
-    }
-    let target_stride = usize::try_from(buffer.stride).map_err(|_| "invalid target stride")?;
-    for (row, y) in (top..bottom).enumerate() {
-        let source_offset = row.saturating_mul(row_bytes);
-        let target_offset = y
-            .saturating_mul(target_stride)
-            .saturating_add(left.saturating_mul(4));
-        let source = patch
-            .bytes
-            .get(source_offset..source_offset.saturating_add(row_bytes))
-            .ok_or("CPU buffer patch source row is invalid")?;
-        let target = buffer
-            .bytes
-            .get_mut(target_offset..target_offset.saturating_add(row_bytes))
-            .ok_or("CPU buffer patch target row is invalid")?;
-        target.copy_from_slice(source);
-    }
-    Ok(())
-}
 pub(crate) struct XTextDraw<'a> {
     pub x: i16,
     pub baseline: i16,

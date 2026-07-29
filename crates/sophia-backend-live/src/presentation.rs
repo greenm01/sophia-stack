@@ -267,7 +267,8 @@ impl LivePresentationResourceSession {
                     stride: background.stride,
                     format: background.format,
                     generation: 0,
-                    bytes: background.bytes,
+                    bytes: std::sync::Arc::try_unwrap(background.bytes)
+                        .unwrap_or_else(|bytes| bytes.as_ref().clone()),
                 },
                 placement: LiveCompositionPlacement {
                     target: Rect {

@@ -260,10 +260,33 @@ Promotion now follows the gates below in order.
   logical-window content stream. Follow Xserver's copy/clip semantics without
   GPU readback, keep river-style configured/rendering state separate, and
   preserve one hot-path representation for future protocol authorities.
-- [ ] Optimize the proven software-Present fallback after correctness is
-  retained: keep bounded SHM mappings under authority ownership, snapshot only
-  valid/update damage, and avoid whole-pixmap copies. Preserve immutable
-  renderer handoff and never move SysV SHM or X resource identity into Engine.
+- [x] Optimize the proven software-Present fallback after correctness is
+  retained. X authority now owns bounded reusable read-only SysV mappings,
+  resolves XFixes valid/update regions with source clipping and fixed capacity,
+  copies only requested SHM rows, preserves the presentation handle across
+  same-size generations, and publishes one atomic immutable patch batch rather
+  than cloning a whole pixmap per Present. Renderer registries validate every
+  patch before mutation. CPU output storage is reference-counted and reused
+  when its previous lease has retired; exact pixel scans are limited to three
+  startup proofs, later frames use generation/damage evidence; same-stride GBM
+  writes borrow the composed pixels; and mixed native composition retains its
+  EGL/GBM target across frames. X resources and SysV identity remain authority
+  private, and neither Engine nor WM policy gained X-specific state.
+- [ ] Run the bounded 900-frame physical performance proof with
+  `tools/benchmark_sophia_vkcube_tty3.sh`. Retain the schema-1 report with
+  positive patch traffic, bounded replacement pressure, Present FPS and p95
+  cadence, CPU compose/upload maxima, clean retirement, and no visual
+  regression. Capture a same-machine Xorg reference and set
+  `SOPHIA_RENDER_BASELINE_FPS` plus `SOPHIA_RENDER_BASELINE_P95_MSEC`; require
+  at least 90% of its rate and no more than 1/0.90 of its p95 interval before
+  declaring the software fallback daily-driver performant.
+- [ ] If the measured software fallback remains outside that parity gate,
+  replace per-frame direct CPU GBM allocation with an output-scoped,
+  retirement-fed three-slot scanout pool. Slot state must be plain indexed data
+  (`Available`, `Rendering`, `Queued`, `Displayed`), recycle only after KMS
+  retirement, and retain bounded recovery. If upload bandwidth still dominates,
+  route eligible DRI3 buffers directly through the existing DMA-BUF path rather
+  than adding another application-specific fast path.
 - [x] Replace the transient aggregate async-service booleans with one
   Engine-owned, output-scoped frame-service reducer. Backend-live must execute
   only named native effects, reobserve after each effect, and remain bounded

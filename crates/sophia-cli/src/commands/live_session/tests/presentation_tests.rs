@@ -163,7 +163,7 @@ fn focused_surface_is_composed_above_an_overlapping_client() {
 
     assert_eq!(
         scene.compose(&committed, None, None).unwrap().frame.bytes,
-        secondary_pixels.to_vec()
+        secondary_pixels.to_vec().into()
     );
     assert_eq!(
         scene
@@ -171,7 +171,7 @@ fn focused_surface_is_composed_above_an_overlapping_client() {
             .unwrap()
             .frame
             .bytes,
-        focused_pixels.to_vec()
+        focused_pixels.to_vec().into()
     );
 }
 

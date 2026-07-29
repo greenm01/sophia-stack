@@ -154,6 +154,24 @@ fn dispatch_present_request(
                             metadata_candidates: Vec::new(),
                         });
                     }
+                    let valid_region = (valid_region != 0)
+                        .then(|| {
+                            runtime.xfixes_region_snapshot(
+                                context.namespace,
+                                XResourceId::new(u64::from(valid_region), 1),
+                            )
+                        })
+                        .transpose()
+                        .expect("validated Present valid region must remain available");
+                    let update_region = (update_region != 0)
+                        .then(|| {
+                            runtime.xfixes_region_snapshot(
+                                context.namespace,
+                                XResourceId::new(u64::from(update_region), 1),
+                            )
+                        })
+                        .transpose()
+                        .expect("validated Present update region must remain available");
                     let response = runtime.present_standard_pixmap(
                         transaction,
                         context.namespace,
@@ -161,6 +179,8 @@ fn dispatch_present_request(
                         pixmap,
                         x_offset,
                         y_offset,
+                        valid_region,
+                        update_region,
                     );
                     let outputs = match response.outcome {
                         XAuthorityResponseOutcome::Accepted => Vec::new(),

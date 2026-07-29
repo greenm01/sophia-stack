@@ -336,6 +336,16 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         --wm-process="$SOPHIA_NATIVE_WM_BIN"
         "--wm-process-arg=--wm-config=$standalone_wm_config"
     )
+    if [[ -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
+        [[ "$SOPHIA_STANDALONE_FRAME_COUNT" =~ ^[1-9][0-9]*$ ]] || {
+            echo "SOPHIA_STANDALONE_FRAME_COUNT must be a positive integer." >&2
+            exit 1
+        }
+        session_args+=(
+            --session-app-arg=standalone=--c
+            "--session-app-arg=standalone=$SOPHIA_STANDALONE_FRAME_COUNT"
+        )
+    fi
 else
     session_args+=(
         "--session-app=terminal=$terminal_bin"

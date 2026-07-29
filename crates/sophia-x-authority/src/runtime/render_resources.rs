@@ -8,6 +8,62 @@ fn software_pixmap_byte_len(size: Size) -> Option<usize> {
         .then_some(bytes)
 }
 
+const X_AUTHORITY_PRESENT_REGION_MAX_RECTS: usize = 2_048;
+
+fn clipped_present_rect(size: Size, rect: Rect) -> Option<Rect> {
+    let left = rect.x.max(0).min(size.width);
+    let top = rect.y.max(0).min(size.height);
+    let right = rect
+        .x
+        .saturating_add(rect.width)
+        .max(0)
+        .min(size.width);
+    let bottom = rect
+        .y
+        .saturating_add(rect.height)
+        .max(0)
+        .min(size.height);
+    (right > left && bottom > top).then_some(Rect {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left),
+        height: bottom.saturating_sub(top),
+    })
+}
+
+fn present_source_damage(size: Size, update: Option<&Region>) -> Option<Vec<Rect>> {
+    if update.is_some_and(|region| region.rects.len() > X_AUTHORITY_PRESENT_REGION_MAX_RECTS) {
+        return None;
+    }
+    Some(match update {
+        Some(region) => region
+            .rects
+            .iter()
+            .filter_map(|rect| clipped_present_rect(size, *rect))
+            .collect(),
+        None => vec![Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        }],
+    })
+}
+
+fn translated_present_damage(source: &[Rect], x_offset: i16, y_offset: i16) -> Region {
+    Region {
+        rects: source
+            .iter()
+            .map(|rect| Rect {
+                x: rect.x.saturating_add(i32::from(x_offset)),
+                y: rect.y.saturating_add(i32::from(y_offset)),
+                width: rect.width,
+                height: rect.height,
+            })
+            .collect(),
+    }
+}
+
 impl XAuthorityRuntime {
      pub fn create_pixmap(
          &mut self,
@@ -36,6 +92,8 @@ impl XAuthorityRuntime {
          self.resources.remove(pixmap);
          self.pixmap_sizes.remove(&pixmap);
          self.shm_pixmaps.remove(&pixmap);
+         self.shm_mappings
+             .retain(|_, mapping| mapping.strong_count() != 0);
          self.software_buffers.remove(pixmap);
          Ok(self
              .dri3_pixmaps
@@ -63,13 +121,29 @@ impl XAuthorityRuntime {
          if end > crate::X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
+         let mapping = self
+             .shm_mappings
+             .get(&shmid)
+             .and_then(Weak::upgrade)
+             .map_or_else(
+                 || {
+                     sophia_sysv_shm::ReadOnlyMapping::attach(shmid)
+                         .map(Arc::new)
+                         .map_err(|_| XAuthorityRuntimeError::InvalidResource)
+                 },
+                 Ok,
+             )?;
+         if end > mapping.len() {
+             return Err(XAuthorityRuntimeError::InvalidResource);
+         }
          self.create_pixmap(namespace, pixmap, size, generation)?;
+         self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
          self.shm_pixmaps.insert(
              pixmap,
              XShmPixmapBinding {
-                 shmid,
                  offset,
                  size,
+                 mapping,
              },
          );
          Ok(())
@@ -219,6 +293,8 @@ impl XAuthorityRuntime {
          pixmap: crate::XResourceId,
          x_offset: i16,
          y_offset: i16,
+         valid_region: Option<Region>,
+         update_region: Option<Region>,
      ) -> XAuthorityResponsePacket {
          let record = match self.windows.get(window) {
              Some(record) if record.namespace == namespace => record.clone(),
@@ -232,67 +308,87 @@ impl XAuthorityRuntime {
          if let Err(error) = self.validate_pixmap_access(namespace, pixmap) {
              return XAuthorityResponsePacket::rejected(transaction, error);
          }
+         if valid_region
+             .as_ref()
+             .is_some_and(|region| region.rects.len() > X_AUTHORITY_PRESENT_REGION_MAX_RECTS)
+         {
+             return XAuthorityResponsePacket::rejected(
+                 transaction,
+                 XAuthorityRuntimeError::InvalidResource,
+             );
+         }
+         let Some(pixmap_size) = self.pixmap_sizes.get(&pixmap).copied() else {
+             return XAuthorityResponsePacket::rejected(
+                 transaction,
+                 XAuthorityRuntimeError::UnknownResource,
+             );
+         };
+         let Some(source_damage) = present_source_damage(pixmap_size, update_region.as_ref()) else {
+             return XAuthorityResponsePacket::rejected(
+                 transaction,
+                 XAuthorityRuntimeError::InvalidResource,
+             );
+         };
+         let damage = translated_present_damage(&source_damage, x_offset, y_offset);
          let (buffer, damage) = if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap) {
              (
                  sophia_protocol::BufferSource::DmaBuf {
                      handle: descriptor.handle.raw(),
                  },
-                 Region::single(Rect {
-                     x: i32::from(x_offset),
-                     y: i32::from(y_offset),
-                     width: descriptor.size.width,
-                     height: descriptor.size.height,
-                 }),
+                 damage,
              )
          } else {
-             let Some(pixmap_size) = self.pixmap_sizes.get(&pixmap).copied() else {
-                 return XAuthorityResponsePacket::rejected(
-                     transaction,
-                     XAuthorityRuntimeError::UnknownResource,
-                 );
-             };
-             if let Some(binding) = self.shm_pixmaps.get(&pixmap).copied() {
-                 let Some(byte_len) = software_pixmap_byte_len(binding.size) else {
-                     return XAuthorityResponsePacket::rejected(
-                         transaction,
-                         XAuthorityRuntimeError::InvalidResource,
-                     );
-                 };
-                 let Some(bytes) = usize::try_from(binding.offset)
+             if let Some(binding) = self.shm_pixmaps.get(&pixmap).cloned() {
+                 let Some(stride) = usize::try_from(binding.size.width)
                      .ok()
-                     .and_then(|offset| {
-                         sophia_sysv_shm::copy_bytes(binding.shmid, offset, byte_len).ok()
-                     })
+                     .and_then(|width| width.checked_mul(4))
                  else {
                      return XAuthorityResponsePacket::rejected(
                          transaction,
                          XAuthorityRuntimeError::InvalidResource,
                      );
                  };
-                 let uploaded = self.software_buffers.put_image(
-                     pixmap,
-                     binding.size,
-                     Rect {
-                         x: 0,
-                         y: 0,
-                         width: binding.size.width,
-                         height: binding.size.height,
-                     },
-                     &bytes,
-                 );
-                 if uploaded.is_none() {
+                 if self
+                     .software_buffers
+                     .ensure_image_backing(pixmap, binding.size)
+                     .is_none()
+                 {
                      return XAuthorityResponsePacket::rejected(
                          transaction,
                          XAuthorityRuntimeError::InvalidResource,
                      );
                  }
+                 for rect in &source_damage {
+                     let packed = usize::try_from(binding.offset)
+                         .ok()
+                         .and_then(|offset| {
+                             let row_offset = usize::try_from(rect.x).ok()?.checked_mul(4)?;
+                             let row_bytes = usize::try_from(rect.width).ok()?.checked_mul(4)?;
+                             let rows = usize::try_from(rect.height).ok()?;
+                             let source_y = usize::try_from(rect.y).ok()?.checked_mul(stride)?;
+                             binding
+                                 .mapping
+                                 .copy_rows(
+                                     offset.checked_add(source_y)?,
+                                     stride,
+                                     row_offset,
+                                     row_bytes,
+                                     rows,
+                                 )
+                                 .ok()
+                         });
+                     if packed.as_ref().is_none_or(|bytes| {
+                         self.software_buffers
+                             .put_image_backing(pixmap, binding.size, *rect, bytes)
+                             .is_none()
+                     }) {
+                         return XAuthorityResponsePacket::rejected(
+                             transaction,
+                             XAuthorityRuntimeError::InvalidResource,
+                         );
+                     }
+                 }
              }
-             let source_damage = [Rect {
-                 x: 0,
-                 y: 0,
-                 width: pixmap_size.width,
-                 height: pixmap_size.height,
-             }];
              let Some(update) = self.software_buffers.present_window_damage(
                  window,
                  Size {
@@ -313,12 +409,7 @@ impl XAuthorityRuntime {
              self.last_cpu_buffer_update = Some(update);
              (
                  sophia_protocol::BufferSource::CpuBuffer { handle },
-                 Region::single(Rect {
-                     x: i32::from(x_offset),
-                     y: i32::from(y_offset),
-                     width: pixmap_size.width,
-                     height: pixmap_size.height,
-                 }),
+                 damage,
              )
          };
          self.finish_drawing_update(XDrawingUpdate::present_buffer(
@@ -378,6 +469,18 @@ impl XAuthorityRuntime {
              .lookup(namespace, region, XResourceKind::Region)
              .map(|_| ())
              .map_err(Into::into)
+     }
+
+     pub fn xfixes_region_snapshot(
+         &self,
+         namespace: NamespaceId,
+         region: crate::XResourceId,
+     ) -> Result<Region, XAuthorityRuntimeError> {
+         self.validate_xfixes_region_access(namespace, region)?;
+         self.xfixes_regions
+             .get(&region)
+             .cloned()
+             .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
  
      pub fn create_dri3_fence(

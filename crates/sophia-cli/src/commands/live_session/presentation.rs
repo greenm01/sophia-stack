@@ -275,6 +275,25 @@ fn renderer_cpu_buffer_update(
                 },
             )
         }
+        sophia_x_authority::XAuthorityCpuBufferUpdate::PatchBatch(batch) => {
+            sophia_backend_live::LiveCpuBufferUpdate::PatchBatch(
+                sophia_backend_live::LiveCpuBufferPatchBatch {
+                    handle: batch.handle,
+                    size: batch.size,
+                    stride: batch.stride,
+                    format: batch.format,
+                    generation: batch.generation,
+                    patches: batch
+                        .patches
+                        .iter()
+                        .map(|patch| sophia_backend_live::LiveCpuBufferPatchRegion {
+                            rect: patch.rect,
+                            bytes: patch.bytes.clone(),
+                        })
+                        .collect(),
+                },
+            )
+        }
     }
 }
 

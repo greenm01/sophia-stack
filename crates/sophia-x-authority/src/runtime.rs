@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use sophia_portal::ClipboardPortal;
 use sophia_protocol::{
@@ -49,11 +49,11 @@ pub struct XAuthorityClientResourceRelease {
     pub released_fences: Vec<sophia_protocol::FenceHandle>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 struct XShmPixmapBinding {
-    shmid: u32,
     offset: u32,
     size: Size,
+    mapping: Arc<sophia_sysv_shm::ReadOnlyMapping>,
 }
 
 #[derive(Debug)]
@@ -69,6 +69,7 @@ pub struct XAuthorityRuntime {
     software_buffers: XSoftwareBufferStore,
     pixmap_sizes: BTreeMap<crate::XResourceId, Size>,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
+    shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ReadOnlyMapping>>,
     dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
     next_dma_buf_handle: u64,
     dri3_fences: BTreeMap<crate::XResourceId, sophia_protocol::FenceHandle>,
@@ -102,6 +103,7 @@ impl Default for XAuthorityRuntime {
             software_buffers: Default::default(),
             pixmap_sizes: Default::default(),
             shm_pixmaps: Default::default(),
+            shm_mappings: Default::default(),
             dri3_pixmaps: Default::default(),
             next_dma_buf_handle: 1,
             dri3_fences: Default::default(),

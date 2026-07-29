@@ -107,6 +107,9 @@ impl PersistentLiveLayout {
                 sophia_x_authority::XAuthorityCpuBufferUpdate::Patch(patch) => {
                     self.cpu_buffer_sizes.insert(patch.handle, patch.size);
                 }
+                sophia_x_authority::XAuthorityCpuBufferUpdate::PatchBatch(batch) => {
+                    self.cpu_buffer_sizes.insert(batch.handle, batch.size);
+                }
             }
         }
         match self.observe_pre_admission_groups(batch) {

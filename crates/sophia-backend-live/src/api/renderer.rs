@@ -4,10 +4,11 @@ pub use sophia_renderer_live::{EglContextProbeStatus, EglPlatformStatus};
 pub use sophia_renderer_live::{EglDrawSmokeReport, EglDrawSmokeStatus};
 pub use sophia_renderer_live::{
     FakeGbmEglFrameTargetAllocator, LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
-    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferRegistry,
-    LiveCpuBufferRegistryError, LiveCpuBufferSource, LiveCpuBufferSourceRef, LiveCpuBufferUpdate,
-    LiveCpuComposedFrame, LiveCpuCompositionError, LiveCpuCompositionLayer,
-    LiveCpuCompositionLayerRef, LiveCpuCompositionReport, LiveGbmEglFrameTargetAllocationReport,
+    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferPatchBatch,
+    LiveCpuBufferPatchRegion, LiveCpuBufferRegistry, LiveCpuBufferRegistryError,
+    LiveCpuBufferSource, LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame,
+    LiveCpuCompositionError, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
+    LiveCpuCompositionReport, LiveGbmEglFrameTargetAllocationReport,
     LiveGbmEglFrameTargetAllocationRequest, LiveGbmEglFrameTargetAllocationStatus,
     LiveGbmEglFrameTargetAllocator, LiveGbmEglFrameTargetLifecycleReport,
     LiveGbmEglFrameTargetLifecycleStatus, LiveGbmEglFrameTargetRecord, LiveGbmEglFrameTargetStatus,

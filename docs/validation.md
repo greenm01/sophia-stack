@@ -194,6 +194,42 @@ success, or emergency exit cannot pass. The launcher knows that the validation
 client is `vkcube`; Engine, the X authority, and the natural layout reducer
 contain no application identity branches.
 
+To measure the software-Present path after correctness passes, run the bounded
+benchmark from the same dedicated tty:
+
+```sh
+tools/benchmark_sophia_vkcube_tty3.sh
+```
+
+It adds `vkcube --c 900`, exits with the startup application, and reports
+`sophia_rendering_performance schema=1`. The report derives FPS and p95 frame
+cadence from routed Present Flip timestamps rather than process wall time. It
+also joins the session's CPU replacement/patch counts, patch rectangles and
+payload bytes, exact-versus-damage-scoped metric counts, native composition
+target reuse, maximum CPU composition time, maximum native upload time, and
+retirement count. The raw report can be regenerated without another graphical
+run:
+
+```sh
+tools/report_sophia_rendering_performance.sh
+```
+
+For a controlled parity gate, obtain an Xorg reference on the same host,
+resolution, Vulkan provider, vkcube frame count, and present mode, then run:
+
+```sh
+SOPHIA_RENDER_BASELINE_FPS=60 \
+SOPHIA_RENDER_BASELINE_P95_MSEC=16.667 \
+tools/report_sophia_rendering_performance.sh
+```
+
+The default gate requires at least 90% of baseline FPS and permits at most
+`baseline_p95 / 0.90`. Override `SOPHIA_RENDER_MIN_BASELINE_RATIO` only when a
+documented milestone sets a different threshold. Never compare a hardware Xorg
+run to a Sophia Lavapipe run; provider mismatch measures Vulkan implementation,
+not the compositor pipeline. The reporter's offline mutation check is
+`tools/check_sophia_rendering_performance_reporter.sh`.
+
 For the visible xmonad/KMS proof, run
 `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch
 `vkcube --wsi xcb`, exit normally, then run:

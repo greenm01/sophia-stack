@@ -15,7 +15,7 @@ fn live_runtime_tick_native_gbm_rendered_scanout_fails_closed_when_render_device
         },
         stride: 1920 * 4,
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-        bytes: vec![7; 1920 * 1080 * 4],
+        bytes: vec![7; 1920 * 1080 * 4].into(),
     };
     exporter.set_pending_cpu_frame(frame);
     assert!(exporter.pending_cpu_frame());

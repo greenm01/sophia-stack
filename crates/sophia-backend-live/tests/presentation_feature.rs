@@ -73,7 +73,7 @@ fn backend_session_builds_mixed_cpu_gpu_frame_and_retires_exactly_once() {
         },
         stride: 512,
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-        bytes: vec![1; 128 * 96 * 4],
+        bytes: vec![1; 128 * 96 * 4].into(),
     };
 
     let frame = session

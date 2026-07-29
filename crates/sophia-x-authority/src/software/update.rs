@@ -1,0 +1,281 @@
+use std::collections::BTreeMap;
+
+use sophia_protocol::{Rect, Size};
+
+use crate::XResourceId;
+
+use super::clipped_bounds;
+
+pub const X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS: usize = 32;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityCpuBufferSnapshot {
+    pub handle: u64,
+    pub drawable: XResourceId,
+    pub size: Size,
+    pub stride: u32,
+    pub format: u32,
+    pub generation: u64,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityCpuBufferPatch {
+    pub handle: u64,
+    pub drawable: XResourceId,
+    pub size: Size,
+    pub stride: u32,
+    pub format: u32,
+    pub generation: u64,
+    pub rect: Rect,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityCpuBufferPatchRegion {
+    pub rect: Rect,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityCpuBufferPatchBatch {
+    pub handle: u64,
+    pub drawable: XResourceId,
+    pub size: Size,
+    pub stride: u32,
+    pub format: u32,
+    pub generation: u64,
+    pub patches: Vec<XAuthorityCpuBufferPatchRegion>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum XAuthorityCpuBufferUpdate {
+    Replace(XAuthorityCpuBufferSnapshot),
+    Patch(XAuthorityCpuBufferPatch),
+    PatchBatch(XAuthorityCpuBufferPatchBatch),
+}
+
+impl XAuthorityCpuBufferUpdate {
+    pub const fn handle(&self) -> u64 {
+        match self {
+            Self::Replace(snapshot) => snapshot.handle,
+            Self::Patch(patch) => patch.handle,
+            Self::PatchBatch(batch) => batch.handle,
+        }
+    }
+
+    pub const fn generation(&self) -> u64 {
+        match self {
+            Self::Replace(snapshot) => snapshot.generation,
+            Self::Patch(patch) => patch.generation,
+            Self::PatchBatch(batch) => batch.generation,
+        }
+    }
+
+    pub fn payload_bytes(&self) -> usize {
+        match self {
+            Self::Replace(snapshot) => snapshot.bytes.len(),
+            Self::Patch(patch) => patch.bytes.len(),
+            Self::PatchBatch(batch) => batch.patches.iter().fold(0usize, |total, patch| {
+                total.saturating_add(patch.bytes.len())
+            }),
+        }
+    }
+
+    pub fn patch_rects(&self) -> usize {
+        match self {
+            Self::Replace(_) => 0,
+            Self::Patch(_) => 1,
+            Self::PatchBatch(batch) => batch.patches.len(),
+        }
+    }
+
+    pub const fn is_replacement(&self) -> bool {
+        matches!(self, Self::Replace(_))
+    }
+
+    pub fn apply_to(
+        &self,
+        buffers: &mut BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
+    ) -> Result<(), &'static str> {
+        match self {
+            Self::Replace(snapshot) => {
+                buffers.insert(snapshot.handle, snapshot.clone());
+                Ok(())
+            }
+            Self::Patch(patch) => {
+                let buffer = buffers
+                    .get_mut(&patch.handle)
+                    .ok_or("CPU buffer patch has no replacement base")?;
+                if buffer.drawable != patch.drawable
+                    || buffer.size != patch.size
+                    || buffer.stride != patch.stride
+                    || buffer.format != patch.format
+                    || patch.generation < buffer.generation
+                {
+                    return Err("CPU buffer patch metadata does not match its base");
+                }
+                apply_packed_patch(buffer, patch)?;
+                buffer.generation = patch.generation;
+                Ok(())
+            }
+            Self::PatchBatch(batch) => {
+                let buffer = buffers
+                    .get_mut(&batch.handle)
+                    .ok_or("CPU buffer patch batch has no replacement base")?;
+                if buffer.drawable != batch.drawable
+                    || buffer.size != batch.size
+                    || buffer.stride != batch.stride
+                    || buffer.format != batch.format
+                    || batch.generation < buffer.generation
+                    || batch.patches.len() > X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS
+                {
+                    return Err("CPU buffer patch batch metadata does not match its base");
+                }
+                for patch in &batch.patches {
+                    validate_packed_patch_region(buffer, patch)?;
+                }
+                for patch in &batch.patches {
+                    apply_packed_patch_region(buffer, patch)?;
+                }
+                buffer.generation = batch.generation;
+                Ok(())
+            }
+        }
+    }
+}
+
+pub(super) fn packed_patch(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+) -> Option<XAuthorityCpuBufferPatch> {
+    let (left, top, right, bottom) = clipped_bounds(buffer.size, rect)?;
+    let width = right.saturating_sub(left);
+    let height = bottom.saturating_sub(top);
+    let row_bytes = width.checked_mul(4)?;
+    let source_stride = usize::try_from(buffer.stride).ok()?;
+    let mut bytes = Vec::with_capacity(row_bytes.checked_mul(height)?);
+    for y in top..bottom {
+        let offset = y
+            .checked_mul(source_stride)?
+            .checked_add(left.checked_mul(4)?)?;
+        bytes.extend_from_slice(buffer.bytes.get(offset..offset.checked_add(row_bytes)?)?);
+    }
+    Some(XAuthorityCpuBufferPatch {
+        handle: buffer.handle,
+        drawable: buffer.drawable,
+        size: buffer.size,
+        stride: buffer.stride,
+        format: buffer.format,
+        generation: buffer.generation,
+        rect: Rect {
+            x: i32::try_from(left).ok()?,
+            y: i32::try_from(top).ok()?,
+            width: i32::try_from(width).ok()?,
+            height: i32::try_from(height).ok()?,
+        },
+        bytes,
+    })
+}
+
+pub(super) fn packed_patch_region(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+) -> Option<XAuthorityCpuBufferPatchRegion> {
+    let patch = packed_patch(buffer, rect)?;
+    Some(XAuthorityCpuBufferPatchRegion {
+        rect: patch.rect,
+        bytes: patch.bytes,
+    })
+}
+
+fn apply_packed_patch(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    patch: &XAuthorityCpuBufferPatch,
+) -> Result<(), &'static str> {
+    let (left, top, right, bottom) =
+        clipped_bounds(buffer.size, patch.rect).ok_or("CPU buffer patch is empty")?;
+    if patch.rect.x != i32::try_from(left).unwrap_or(i32::MAX)
+        || patch.rect.y != i32::try_from(top).unwrap_or(i32::MAX)
+        || patch.rect.width != i32::try_from(right.saturating_sub(left)).unwrap_or(i32::MAX)
+        || patch.rect.height != i32::try_from(bottom.saturating_sub(top)).unwrap_or(i32::MAX)
+    {
+        return Err("CPU buffer patch lies outside its buffer");
+    }
+    let row_bytes = right.saturating_sub(left).saturating_mul(4);
+    let expected = row_bytes.saturating_mul(bottom.saturating_sub(top));
+    if patch.bytes.len() != expected {
+        return Err("CPU buffer patch byte length is invalid");
+    }
+    let target_stride = usize::try_from(buffer.stride).map_err(|_| "invalid target stride")?;
+    for (row, y) in (top..bottom).enumerate() {
+        let source_offset = row.saturating_mul(row_bytes);
+        let target_offset = y
+            .saturating_mul(target_stride)
+            .saturating_add(left.saturating_mul(4));
+        let source = patch
+            .bytes
+            .get(source_offset..source_offset.saturating_add(row_bytes))
+            .ok_or("CPU buffer patch source row is invalid")?;
+        let target = buffer
+            .bytes
+            .get_mut(target_offset..target_offset.saturating_add(row_bytes))
+            .ok_or("CPU buffer patch target row is invalid")?;
+        target.copy_from_slice(source);
+    }
+    Ok(())
+}
+
+fn validate_packed_patch_region(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    patch: &XAuthorityCpuBufferPatchRegion,
+) -> Result<(), &'static str> {
+    let (left, top, right, bottom) =
+        clipped_bounds(buffer.size, patch.rect).ok_or("CPU buffer patch is empty")?;
+    if patch.rect.x != i32::try_from(left).unwrap_or(i32::MAX)
+        || patch.rect.y != i32::try_from(top).unwrap_or(i32::MAX)
+        || patch.rect.width != i32::try_from(right.saturating_sub(left)).unwrap_or(i32::MAX)
+        || patch.rect.height != i32::try_from(bottom.saturating_sub(top)).unwrap_or(i32::MAX)
+    {
+        return Err("CPU buffer patch lies outside its buffer");
+    }
+    let expected = right
+        .saturating_sub(left)
+        .saturating_mul(4)
+        .saturating_mul(bottom.saturating_sub(top));
+    (patch.bytes.len() == expected)
+        .then_some(())
+        .ok_or("CPU buffer patch byte length is invalid")
+}
+
+fn apply_packed_patch_region(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    patch: &XAuthorityCpuBufferPatchRegion,
+) -> Result<(), &'static str> {
+    validate_packed_patch_region(buffer, patch)?;
+    let left = usize::try_from(patch.rect.x).map_err(|_| "CPU buffer patch x is invalid")?;
+    let top = usize::try_from(patch.rect.y).map_err(|_| "CPU buffer patch y is invalid")?;
+    let width =
+        usize::try_from(patch.rect.width).map_err(|_| "CPU buffer patch width is invalid")?;
+    let height =
+        usize::try_from(patch.rect.height).map_err(|_| "CPU buffer patch height is invalid")?;
+    let row_bytes = width.saturating_mul(4);
+    let target_stride = usize::try_from(buffer.stride).map_err(|_| "invalid target stride")?;
+    for row in 0..height {
+        let source_offset = row.saturating_mul(row_bytes);
+        let target_offset = top
+            .saturating_add(row)
+            .saturating_mul(target_stride)
+            .saturating_add(left.saturating_mul(4));
+        let source = patch
+            .bytes
+            .get(source_offset..source_offset.saturating_add(row_bytes))
+            .ok_or("CPU buffer patch source row is invalid")?;
+        let target = buffer
+            .bytes
+            .get_mut(target_offset..target_offset.saturating_add(row_bytes))
+            .ok_or("CPU buffer patch target row is invalid")?;
+        target.copy_from_slice(source);
+    }
+    Ok(())
+}

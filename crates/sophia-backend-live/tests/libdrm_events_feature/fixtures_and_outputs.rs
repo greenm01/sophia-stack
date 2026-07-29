@@ -316,7 +316,7 @@ fn pending_rendered_frame_is_a_latest_frame_wins_slot() {
         },
         stride: 8,
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-        bytes: vec![0; 16],
+        bytes: vec![0; 16].into(),
     });
     assert!(exporter.pending_cpu_frame());
 

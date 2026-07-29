@@ -2,7 +2,11 @@
     let SessionLoopMetrics {
         batches,
         transactions,
-        cpu_buffer_updates: _,
+        cpu_buffer_updates,
+        cpu_buffer_replacements,
+        cpu_buffer_patch_updates,
+        cpu_buffer_patch_rects,
+        cpu_buffer_payload_bytes,
         dma_buf_registrations_observed: _,
         fence_registrations_observed: _,
         present_submissions_observed: _,
@@ -252,15 +256,27 @@
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
     println!(
-        "sophia_live_native_resources schema=2 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} generation_replacements={} recovery_replacements={}",
+        "sophia_live_native_resources schema=3 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={}",
         native_resources.target_creations,
         native_resources.pipeline_creations,
         native_resources.frame_surface_creations,
         native_resources.cpu_target_creations,
         native_resources.dmabuf_target_creations,
         native_resources.composition_target_creations,
+        native_resources.composition_target_reuses,
         native_resources.generation_replacements,
         native_resources.recovery_replacements,
+    );
+    println!(
+        "sophia_live_rendering_efficiency schema=1 status=complete cpu_updates={} cpu_replacements={} cpu_patch_updates={} cpu_patch_rects={} cpu_payload_bytes={} exact_pixel_metric_frames={} damage_scoped_metric_frames={} composition_target_reuses={}",
+        cpu_buffer_updates,
+        cpu_buffer_replacements,
+        cpu_buffer_patch_updates,
+        cpu_buffer_patch_rects,
+        cpu_buffer_payload_bytes,
+        scene.exact_pixel_metric_frames(),
+        scene.damage_scoped_metric_frames(),
+        native_resources.composition_target_reuses,
     );
     println!(
         "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches}"

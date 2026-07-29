@@ -12,6 +12,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     stats: NativeGbmPersistentRenderStats,
     last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
     composition_pixel_proof_attempts: usize,
+    composition_target: Option<PersistentCompositionTarget>,
 }
 
 struct NativeRenderTarget {
@@ -19,6 +20,11 @@ struct NativeRenderTarget {
     height: u32,
     egl_context: khronos_egl::Context,
     pipeline: PersistentXrgb8888GlPipeline,
+}
+
+struct PersistentCompositionTarget {
+    target: NativeRenderTarget,
+    surface: std::sync::Arc<NativeFrameSurface>,
 }
 
 impl<T> NativeGbmRenderedScanoutContext<T>
@@ -73,6 +79,7 @@ where
             stats: NativeGbmPersistentRenderStats::default(),
             last_composition_pixel_metrics: None,
             composition_pixel_proof_attempts: 0,
+            composition_target: None,
         })
     }
 
@@ -292,6 +299,56 @@ where
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
         let reduced = reduced_gbm_scanout_modifiers(&preferred_modifiers);
         let mut last_detail = NativeGbmScanoutBufferExportDetail::EglConfigUnavailable;
+        if self
+            .composition_target
+            .as_ref()
+            .is_some_and(|persistent| {
+                persistent.target.width != frame.width
+                    || persistent.target.height != frame.height
+            })
+            && let Some(persistent) = self.composition_target.take()
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_native_render_target(persistent.target);
+        }
+        if let Some(persistent) = self.composition_target.as_mut() {
+            let capture_pixels = self.composition_pixel_proof_attempts < 3;
+            let render_started = Instant::now();
+            let rendered = render_native_target_composition(
+                &self.egl,
+                self.display,
+                &mut persistent.target,
+                persistent.surface.clone(),
+                frame,
+                capture_pixels,
+            );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            if capture_pixels {
+                self.composition_pixel_proof_attempts =
+                    self.composition_pixel_proof_attempts.saturating_add(1);
+            }
+            self.last_composition_pixel_metrics =
+                rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
+            match rendered {
+                Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
+                    self.stats.composition_target_reuses =
+                        self.stats.composition_target_reuses.saturating_add(1);
+                    return Ok(buffer);
+                }
+                Ok(_) => {
+                    last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
+                }
+                Err(detail) => {
+                    last_detail = preferred_scanout_failure_detail(last_detail, detail);
+                }
+            }
+            let persistent = self
+                .composition_target
+                .take()
+                .expect("persistent composition target checked above");
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_native_render_target(persistent.target);
+        }
         for candidate in rendered_scanout_candidates(&reduced) {
             let Some(config) = choose_scanout_config_for_format(
                 &self.egl,
@@ -322,7 +379,7 @@ where
                 &self.egl,
                 self.display,
                 &mut target,
-                surface,
+                surface.clone(),
                 frame,
                 capture_pixels,
             );
@@ -335,9 +392,10 @@ where
                 rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
-                    self.stats.target_recreations =
-                        self.stats.target_recreations.saturating_add(1);
-                    self.destroy_native_render_target(target);
+                    self.composition_target = Some(PersistentCompositionTarget {
+                        target,
+                        surface,
+                    });
                     return Ok(buffer);
                 }
                 Ok(_) => {
@@ -467,7 +525,7 @@ where
             return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
         }
         let upload = if target_stride == source_stride {
-            pixels.to_vec()
+            std::borrow::Cow::Borrowed(pixels)
         } else {
             let mut padded = vec![
                 0;
@@ -481,7 +539,7 @@ where
                 padded[target..target + source_stride]
                     .copy_from_slice(&pixels[source..source + source_stride]);
             }
-            padded
+            std::borrow::Cow::Owned(padded)
         };
         buffer
             .write(&upload)
@@ -598,6 +656,9 @@ where
     T: std::os::fd::AsFd,
 {
     fn drop(&mut self) {
+        if let Some(persistent) = self.composition_target.take() {
+            self.destroy_native_render_target(persistent.target);
+        }
         let _ = self.egl.terminate(self.display);
         trace_native_lifecycle("egl_display_terminated");
     }

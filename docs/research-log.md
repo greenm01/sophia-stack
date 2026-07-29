@@ -3,6 +3,42 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-28: Software Present Optimization Keeps Ownership Boundaries Intact
+
+The first correct standalone software-vkcube result retired 487 frames in
+17,755 ms, about 27.4 FPS. Its retained maxima identified two independent
+costs: CPU composition reached 17 ms and native upload reached 10 ms. The hot
+path also cloned the source pixmap, copied a full immutable snapshot across the
+authority boundary, allocated and checksummed a 2560-by-1440 output, cloned
+that output for reporting, copied it again before GBM write, and recreated
+mixed EGL/GBM render targets. Correct Present feedback had exposed throughput
+rather than another policy or lifecycle fault.
+
+The optimized path keeps the architectural boundaries unchanged. X authority
+retains a bounded read-only SysV mapping, resolves XFixes regions, copies only
+clipped update rows into its logical-window backing, and emits a fixed-capacity
+immutable patch batch with a stable handle and monotonic generation. Renderer
+intake prevalidates the complete batch before applying it, so malformed suffix
+data cannot expose a partially updated frame. Engine sees only ordinary buffer
+generations and damage; the WM remains blind to storage and protocol details.
+
+Output composition now owns reference-counted bytes, reclaims the allocation
+when no downstream lease remains, performs three exact startup pixel proofs,
+and then derives bounded evidence from display-list generations and geometry.
+The same-stride native CPU upload borrows those bytes instead of making another
+full-frame vector. Mixed CPU/DMA-BUF composition retains its native target and
+frame surface across same-size frames. Metrics expose replacement versus patch
+traffic, payload bytes, evidence mode, and target reuse so a physical result
+can prove that the intended path actually ran.
+
+`tools/benchmark_sophia_vkcube_tty3.sh` supplies a fixed 900-frame workload.
+`tools/report_sophia_rendering_performance.sh` computes FPS and p95 cadence from
+Present UST values and can enforce a same-provider Xorg parity gate. Physical
+results are pending. A retirement-fed three-slot CPU scanout pool is deliberately
+conditional: per-frame GBM allocation should be replaced only if the new
+measurements show it remains material, because recycling a scanout BO before
+KMS retirement would violate the existing ownership proof.
+
 ## 2026-07-28: Visible Vulkan Diagnosis Starts With One Natural-Size Client
 
 The first physical xmonad run after evidence-ranked admission produced no

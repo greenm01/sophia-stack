@@ -446,7 +446,7 @@ fn engine_size_control_updates_authority_geometry_without_consuming_client_gener
 }
 
 #[test]
-fn cpu_buffer_submissions_are_immutable_and_keep_generation_order() {
+fn cpu_buffer_submissions_use_stable_damage_generations_and_resize_replacement() {
     let namespace = NamespaceId::from_raw(19);
     let window = XResourceId::new(0x63, 1);
     let mut runtime = XAuthorityRuntime::new();
@@ -496,16 +496,23 @@ fn cpu_buffer_submissions_are_immutable_and_keep_generation_order() {
         }),
     );
     let second = runtime.take_cpu_buffer_update().unwrap();
-    assert!(matches!(second, XAuthorityCpuBufferUpdate::Replace(_)));
-    assert_ne!(second.handle(), first_handle);
+    assert!(matches!(
+        second,
+        XAuthorityCpuBufferUpdate::PatchBatch(_)
+    ));
+    assert_eq!(second.handle(), first_handle);
 
     let mut materialized = std::collections::BTreeMap::new();
     first.apply_to(&mut materialized).unwrap();
     let first_bytes = materialized.get(&first_handle).unwrap().bytes.clone();
+    assert_eq!(materialized.get(&first_handle).unwrap().generation, 1);
     second.apply_to(&mut materialized).unwrap();
-    assert_eq!(materialized.len(), 2);
-    assert_eq!(materialized.get(&first_handle).unwrap().bytes, first_bytes);
-    assert_eq!(materialized.get(&second.handle()).unwrap().generation, 2);
+    assert_eq!(materialized.len(), 1);
+    assert_eq!(materialized.get(&first_handle).unwrap().generation, 2);
+    assert_eq!(
+        materialized.get(&first_handle).unwrap().bytes.len(),
+        first_bytes.len()
+    );
 
     runtime
         .configure_window_size_from_engine(
@@ -781,6 +788,8 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
         pixmap,
         2,
         1,
+        None,
+        None,
     );
 
     assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
@@ -808,6 +817,94 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
             height: 4,
         })
     );
+
+    let changed = vec![0x6b; 4 * 4 * 4];
+    runtime.apply_put_image(
+        TransactionId::from_raw(30),
+        namespace,
+        pixmap,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        }),
+        Some(&changed),
+    );
+    let update_region = Region {
+        rects: vec![
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            Rect {
+                x: 3,
+                y: 3,
+                width: 1,
+                height: 1,
+            },
+        ],
+    };
+    let response = runtime.present_standard_pixmap(
+        TransactionId::from_raw(31),
+        namespace,
+        window,
+        pixmap,
+        2,
+        1,
+        None,
+        Some(update_region),
+    );
+    let XAuthorityCpuBufferUpdate::PatchBatch(batch) = runtime
+        .take_cpu_buffer_update()
+        .expect("later software Present must export damage patches")
+    else {
+        panic!("later software Present must retain the presentation handle");
+    };
+    assert_eq!(batch.handle, snapshot.handle);
+    assert_eq!(batch.generation, 2);
+    assert_eq!(
+        batch
+            .patches
+            .iter()
+            .map(|patch| patch.rect)
+            .collect::<Vec<_>>(),
+        vec![
+            Rect {
+                x: 2,
+                y: 1,
+                width: 1,
+                height: 1,
+            },
+            Rect {
+                x: 5,
+                y: 4,
+                width: 1,
+                height: 1,
+            },
+        ]
+    );
+    assert_eq!(response.transactions[0].damage.rects, batch.patches.iter().map(|patch| {
+        Rect {
+            x: patch.rect.x,
+            y: patch.rect.y,
+            width: patch.rect.width,
+            height: patch.rect.height,
+        }
+    }).collect::<Vec<_>>());
+    let mut materialized = std::collections::BTreeMap::new();
+    XAuthorityCpuBufferUpdate::Replace(snapshot.clone())
+        .apply_to(&mut materialized)
+        .unwrap();
+    XAuthorityCpuBufferUpdate::PatchBatch(batch)
+        .apply_to(&mut materialized)
+        .unwrap();
+    let materialized = materialized.get(&snapshot.handle).unwrap();
+    assert_eq!(materialized.generation, 2);
+    assert!(materialized.bytes.iter().any(|byte| *byte == 0x5a));
+    assert!(materialized.bytes.iter().any(|byte| *byte == 0x6b));
 }
 
 #[test]
@@ -854,6 +951,8 @@ fn software_present_rejects_pixmap_without_materialized_pixels() {
         pixmap,
         0,
         0,
+        None,
+        None,
     );
 
     assert_eq!(

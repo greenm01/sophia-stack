@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use sophia_engine::CompositorRgb8;
 use sophia_protocol::{Point, Rect, Size};
 
@@ -49,7 +51,7 @@ pub struct LiveCpuComposedFrame {
     pub size: Size,
     pub stride: u32,
     pub format: u32,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,6 +67,12 @@ pub struct LiveCpuCompositionReport {
 pub enum LiveCpuCompositionError {
     InvalidOutputSize,
     OutputTooLarge,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveCpuFrameMetricsMode {
+    ExactPixels,
+    DamageScopedEvidence,
 }
 
 pub fn compose_live_cpu_frame(
@@ -118,6 +126,36 @@ pub fn compose_live_cpu_display_list_frame(
     elements: &[LiveCpuCompositionElementRef<'_>],
     cursor_position: Option<Point>,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics(
+        output_size,
+        elements,
+        cursor_position,
+        LiveCpuFrameMetricsMode::ExactPixels,
+    )
+}
+
+pub fn compose_live_cpu_display_list_frame_with_metrics(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    metrics_mode: LiveCpuFrameMetricsMode,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics_reusing(
+        output_size,
+        elements,
+        cursor_position,
+        metrics_mode,
+        None,
+    )
+}
+
+pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    metrics_mode: LiveCpuFrameMetricsMode,
+    reusable_bytes: Option<Arc<Vec<u8>>>,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
     let width = usize::try_from(output_size.width)
         .ok()
         .filter(|width| *width > 0)
@@ -154,11 +192,19 @@ pub fn compose_live_cpu_display_list_frame(
         }
         _ => None,
     });
+    let mut frame_bytes = reusable_frame_bytes(reusable_bytes, byte_len);
+    let writable_bytes =
+        Arc::get_mut(&mut frame_bytes).expect("reusable frame bytes must have unique ownership");
+    if let Some(layer) = direct {
+        writable_bytes.copy_from_slice(layer.buffer.bytes);
+    } else {
+        writable_bytes.fill(0);
+    }
     let mut frame = LiveCpuComposedFrame {
         size: output_size,
         stride: frame_stride,
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-        bytes: direct.map_or_else(|| vec![0; byte_len], |layer| layer.buffer.bytes.to_vec()),
+        bytes: frame_bytes,
     };
     let mut layers_composed = 0usize;
     if direct.is_some() {
@@ -179,7 +225,12 @@ pub fn compose_live_cpu_display_list_frame(
     if let Some(position) = cursor_position {
         compose_software_cursor(&mut frame, position);
     }
-    let (nonzero_pixel_bytes, checksum) = cpu_frame_metrics(&frame.bytes);
+    let (nonzero_pixel_bytes, checksum) = match metrics_mode {
+        LiveCpuFrameMetricsMode::ExactPixels => cpu_frame_metrics(&frame.bytes),
+        LiveCpuFrameMetricsMode::DamageScopedEvidence => {
+            composition_evidence_metrics(output_size, elements, cursor_position)
+        }
+    };
     Ok(LiveCpuCompositionReport {
         frame,
         layers_input: elements.len(),
@@ -187,6 +238,73 @@ pub fn compose_live_cpu_display_list_frame(
         nonzero_pixel_bytes,
         checksum,
     })
+}
+
+fn reusable_frame_bytes(reusable_bytes: Option<Arc<Vec<u8>>>, byte_len: usize) -> Arc<Vec<u8>> {
+    match reusable_bytes {
+        Some(bytes) if bytes.len() == byte_len && Arc::strong_count(&bytes) == 1 => bytes,
+        _ => Arc::new(vec![0; byte_len]),
+    }
+}
+
+fn composition_evidence_metrics(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+) -> (usize, u64) {
+    let mut checksum = 0xcbf2_9ce4_8422_2325u64;
+    for value in [
+        u64::try_from(output_size.width).unwrap_or(u64::MAX),
+        u64::try_from(output_size.height).unwrap_or(u64::MAX),
+        u64::try_from(elements.len()).unwrap_or(u64::MAX),
+    ] {
+        checksum = evidence_hash(checksum, value);
+    }
+    let mut nonzero_evidence = 0usize;
+    for element in elements {
+        match element {
+            LiveCpuCompositionElementRef::Layer(layer) => {
+                for value in [
+                    layer.buffer.handle,
+                    layer.buffer.generation,
+                    u64::try_from(layer.geometry.x).unwrap_or(u64::MAX),
+                    u64::try_from(layer.geometry.y).unwrap_or(u64::MAX),
+                    u64::try_from(layer.geometry.width).unwrap_or(u64::MAX),
+                    u64::try_from(layer.geometry.height).unwrap_or(u64::MAX),
+                ] {
+                    checksum = evidence_hash(checksum, value);
+                }
+                nonzero_evidence = nonzero_evidence.saturating_add(usize::from(
+                    layer.buffer.bytes.iter().any(|byte| *byte != 0),
+                ));
+            }
+            LiveCpuCompositionElementRef::Solid { geometry, color } => {
+                for value in [
+                    u64::try_from(geometry.x).unwrap_or(u64::MAX),
+                    u64::try_from(geometry.y).unwrap_or(u64::MAX),
+                    u64::try_from(geometry.width).unwrap_or(u64::MAX),
+                    u64::try_from(geometry.height).unwrap_or(u64::MAX),
+                    u64::from(color.red),
+                    u64::from(color.green),
+                    u64::from(color.blue),
+                ] {
+                    checksum = evidence_hash(checksum, value);
+                }
+                nonzero_evidence =
+                    nonzero_evidence.saturating_add(usize::from(!geometry.is_empty()));
+            }
+        }
+    }
+    if let Some(position) = cursor_position {
+        checksum = evidence_hash(checksum, position.x.to_bits());
+        checksum = evidence_hash(checksum, position.y.to_bits());
+        nonzero_evidence = nonzero_evidence.saturating_add(1);
+    }
+    (nonzero_evidence, checksum)
+}
+
+const fn evidence_hash(hash: u64, value: u64) -> u64 {
+    (hash ^ value).wrapping_mul(0x100_0000_01b3)
 }
 
 fn compose_solid_rect(
@@ -226,7 +344,9 @@ fn compose_solid_rect(
             .saturating_mul(stride)
             .saturating_add(start_x.saturating_mul(4));
         let row_end = row_start.saturating_add(width.saturating_mul(4));
-        let Some(row) = frame.bytes.get_mut(row_start..row_end) else {
+        let Some(row) =
+            Arc::get_mut(&mut frame.bytes).and_then(|bytes| bytes.get_mut(row_start..row_end))
+        else {
             return false;
         };
         for target in row.chunks_exact_mut(4) {
@@ -303,7 +423,9 @@ fn put_pixel(frame: &mut LiveCpuComposedFrame, x: i32, y: i32, pixel: [u8; 4]) {
     else {
         return;
     };
-    let Some(target) = frame.bytes.get_mut(offset..offset.saturating_add(4)) else {
+    let Some(target) = Arc::get_mut(&mut frame.bytes)
+        .and_then(|bytes| bytes.get_mut(offset..offset.saturating_add(4)))
+    else {
         return;
     };
     target.copy_from_slice(&pixel);
@@ -396,10 +518,9 @@ fn compose_layer(frame: &mut LiveCpuComposedFrame, layer: &LiveCpuCompositionLay
         else {
             continue;
         };
-        let Some(target) = frame
-            .bytes
-            .get_mut(target_offset..target_offset.saturating_add(row_bytes))
-        else {
+        let Some(target) = Arc::get_mut(&mut frame.bytes).and_then(|bytes| {
+            bytes.get_mut(target_offset..target_offset.saturating_add(row_bytes))
+        }) else {
             continue;
         };
         target.copy_from_slice(source);
