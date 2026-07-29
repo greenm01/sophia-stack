@@ -630,6 +630,92 @@ fn glx_fb_config_reply_uses_tagged_attribute_pairs() {
 }
 
 #[test]
+fn legacy_glx_context_uses_a_visual_and_normalizes_to_its_fbconfig() {
+    let byte_order = XByteOrder::LittleEndian;
+    let namespace = NamespaceId::from_raw(1);
+    let context_id = XResourceId::new(0x0020_000b, 1);
+    let mut request = vec![X_GLX_MAJOR_OPCODE, X_GLX_CREATE_CONTEXT_MINOR_OPCODE];
+    push_u16(&mut request, byte_order, 6);
+    push_u32(&mut request, byte_order, context_id.local.raw() as u32);
+    push_u32(&mut request, byte_order, X_SETUP_DEFAULT_VISUAL);
+    push_u32(&mut request, byte_order, 0);
+    push_u32(&mut request, byte_order, 0);
+    request.extend_from_slice(&[1, 0, 0, 0]);
+
+    let decoded =
+        decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap();
+    assert_eq!(
+        decoded,
+        XWireRequest::GlxCreateContext {
+            context: context_id,
+            config: XGlxContextConfig::Visual(X_SETUP_DEFAULT_VISUAL),
+            screen: 0,
+            share: None,
+            direct: true,
+        }
+    );
+
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let drawable = XResourceId::new(0x0020_000c, 1);
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(1),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window: drawable,
+            surface: SurfaceId::new(90, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 500,
+                height: 500,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 12, byte_order, X_GLX_MAJOR_OPCODE),
+        decoded,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(result.outputs.is_empty());
+    assert_eq!(runtime.glx_context(namespace, context_id), Ok((1, true)));
+
+    let mut make_current = vec![X_GLX_MAJOR_OPCODE, X_GLX_MAKE_CURRENT_MINOR_OPCODE];
+    push_u16(&mut make_current, byte_order, 4);
+    push_u32(&mut make_current, byte_order, drawable.local.raw() as u32);
+    push_u32(&mut make_current, byte_order, context_id.local.raw() as u32);
+    push_u32(&mut make_current, byte_order, 0);
+    let decoded =
+        decode_x11_core_request(context(namespace, 2, byte_order), &make_current).unwrap();
+    assert_eq!(
+        decoded,
+        XWireRequest::GlxMakeCurrent {
+            drawable: Some(drawable),
+            context: Some(context_id),
+            old_context_tag: 0,
+        }
+    );
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 13, byte_order, X_GLX_MAJOR_OPCODE),
+        decoded,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(byte_order)
+    .remove(0);
+    assert_eq!(read_u32(byte_order, &encoded[8..12]), 1);
+}
+
+#[test]
 fn kitty_glx_context_attribs_layout_decodes_the_28_byte_header() {
     let byte_order = XByteOrder::LittleEndian;
     let mut request = vec![
@@ -653,7 +739,7 @@ fn kitty_glx_context_attribs_layout_decodes_the_28_byte_header() {
             .unwrap(),
         XWireRequest::GlxCreateContext {
             context: XResourceId::new(0x0020_000b, 1),
-            fbconfig: 3,
+            config: XGlxContextConfig::FbConfig(3),
             screen: 0,
             share: None,
             direct: true,
@@ -697,6 +783,15 @@ fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
         read_u32(XByteOrder::LittleEndian, &encoded[blue + 4..blue + 8]),
         8
     );
+    let depth = pair(0, 15);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[depth..depth + 4]),
+        12
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[depth + 4..depth + 8]),
+        24
+    );
     let srgb = pair(2, 25);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &encoded[srgb..srgb + 4]),
@@ -705,6 +800,48 @@ fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &encoded[srgb + 4..srgb + 8]),
         1
+    );
+}
+
+#[test]
+fn legacy_glx_visual_catalog_has_rgba_double_buffer_and_depth() {
+    let namespace = NamespaceId::from_raw(1);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 12, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        XWireRequest::GlxGetVisualConfigs { screen: 0 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian)
+    .remove(0);
+
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[8..12]), 2);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[12..16]), 18);
+    let field = |config: usize, attribute: usize| 32 + (config * 18 + attribute) * 4;
+    assert_eq!(
+        read_u32(
+            XByteOrder::LittleEndian,
+            &encoded[field(0, 2)..field(0, 2) + 4]
+        ),
+        1
+    );
+    assert_eq!(
+        read_u32(
+            XByteOrder::LittleEndian,
+            &encoded[field(0, 11)..field(0, 11) + 4]
+        ),
+        1
+    );
+    assert_eq!(
+        read_u32(
+            XByteOrder::LittleEndian,
+            &encoded[field(0, 14)..field(0, 14) + 4]
+        ),
+        24
     );
 }
 

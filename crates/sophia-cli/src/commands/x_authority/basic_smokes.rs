@@ -475,6 +475,35 @@ fn run_x_authority_vkcube_smoke()
     })
 }
 
+fn run_x_authority_glxgears_smoke()
+-> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let command = resolve_external_probe_binary("glxgears", "glxgears")?;
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
+        device: first_openable_render_node()?,
+    });
+    let (display, socket_path) = temp_xauthority_display(6685)?;
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "glxgears",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &[
+            "-info",
+            "-swapinterval",
+            "1",
+            "-geometry",
+            "500x500",
+        ],
+        display,
+        socket_path,
+        namespace: NamespaceId::from_raw(59),
+        require_transactions: true,
+        pixel_proof: ExternalProbePixelProof::None,
+        allow_proof_kill_without_transactions: false,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+    })
+}
+
 fn run_x_authority_kitty_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("kitty", "kitty")?;

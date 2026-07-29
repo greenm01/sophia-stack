@@ -3,8 +3,12 @@ fn x11_observed_request_stage(request: &crate::XWireRequest) -> X11ObservedReque
         crate::XWireRequest::GlxQueryServerString { .. } => {
             X11ObservedRequestStage::GlxQueryServerString
         }
+        crate::XWireRequest::GlxGetVisualConfigs { .. } => {
+            X11ObservedRequestStage::GlxGetVisualConfigs
+        }
         crate::XWireRequest::GlxGetFbConfigs { .. } => X11ObservedRequestStage::GlxGetFbConfigs,
         crate::XWireRequest::GlxCreateContext { .. } => X11ObservedRequestStage::GlxCreateContext,
+        crate::XWireRequest::GlxMakeCurrent { .. } => X11ObservedRequestStage::GlxMakeCurrent,
         crate::XWireRequest::GlxCreateWindow { .. } => X11ObservedRequestStage::GlxCreateWindow,
         crate::XWireRequest::Dri3PixmapFromBuffers { .. } => {
             X11ObservedRequestStage::Dri3PixmapFromBuffers

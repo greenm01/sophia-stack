@@ -258,11 +258,36 @@ post-KMS `Flip`.
 If `glxgears` is installed, the Xserver runner also records a bounded mean-FPS
 sample as `role=compatibility_probe`. On Void Linux it is supplied by
 `mesa-demos`. This result establishes the reference Xserver's GLX/OpenGL
-cadence and exposes gross reference-path regressions. A paired bounded Sophia
-GLX proof remains a separate roadmap item; until that exists, this is not a
-Sophia result. It is not a renderer benchmark and never supplies Sophia's
-Vulkan parity threshold. Set
+cadence and exposes gross reference-path regressions. It is not a renderer
+benchmark and never supplies Sophia's Vulkan parity threshold. Set
 `SOPHIA_XSERVER_GLXGEARS=false` to skip it or `true` to require the binary.
+
+The paired Sophia-side compatibility proof is one command from the dedicated
+TTY:
+
+```sh
+tools/benchmark_sophia_glxgears_tty3.sh
+```
+
+It starts `glxgears` directly in the standalone natural-layout profile, without
+Kitty, xmonad, or xmobar. The default 500-by-500, swap-interval-one workload
+runs for 20 seconds and exits automatically. Before graphics takeover, a
+bounded external-client preflight must reach classic visual discovery, direct
+context creation, DRI3 import, and Present submission. Confirm
+that the centered window shows three smoothly rotating gears. The trailing
+`sophia_glxgears_performance` record reports the client's sampled FPS
+separately from Sophia's routed post-KMS Flip FPS and p95 interval. It also
+requires an identified GL renderer, positive DRI3/mixed-composition evidence,
+Present idle-fence progress, no submission or retirement failure, and clean
+resource drain. This remains a GLX compatibility diagnostic rather than a
+substitute for the fixed Vulkan acceptance workload.
+
+The session log must not contain a CPU submission between the first mixed
+Present retirement and its successor, nor an AMD `context is guilty` recovery.
+The first run that rendered only a flash of gears violated both invariants:
+stale CPU fallback blanked the composed output and the delayed predecessor idle
+fence deadlocked Mesa's next import. These are generic mixed-presentation
+lifecycle failures, not GLX workload failures.
 
 The raw reports and comparison can be regenerated without rerunning either
 graphical session:
@@ -277,6 +302,7 @@ Never compare a hardware Xserver run to a Sophia Lavapipe run; provider
 mismatch measures the Vulkan implementation, not the compositor pipeline. The
 comparison rejects that mismatch by hashing `vkcube`'s provider description.
 Offline regressions are
+`tools/check_sophia_glxgears_performance_reporter.sh`,
 `tools/check_sophia_rendering_performance_reporter.sh` and
 `tools/check_xserver_rendering_performance_reporter.sh`.
 

@@ -16,12 +16,12 @@ use sophia_engine::{
 };
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
-    DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
-    SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
+    DmaBufDescriptor, DmaBufPlaneDescriptor, FenceHandle, Rect, Region, Size, SurfaceId,
+    SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 use sophia_renderer_live::{
-    LiveCompositionPlacement, LiveOwnedMixedCompositionFrame, LiveOwnedMixedCompositionLayer,
-    LiveOwnedMultiPlaneDmaBufFrame,
+    LiveBufferState, LiveCompositionPlacement, LiveOwnedMixedCompositionFrame,
+    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
 };
 
 fn fd() -> OwnedFd {
@@ -431,6 +431,62 @@ fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
         [LivePresentProtocolFeedback::Idle { transaction }]
     );
     assert_eq!(coordinator.resources().presentation_count(), 0);
+}
+
+#[test]
+fn composited_successor_can_release_completed_source_before_its_own_flip() {
+    let first_handle = BufferHandle::from_raw(21);
+    let second_handle = BufferHandle::from_raw(22);
+    let first = TransactionId::from_raw(23);
+    let second = TransactionId::from_raw(24);
+    let idle_handle = FenceHandle::from_raw(25);
+    let idle_fence = sophia_xshmfence::allocate().unwrap();
+    let idle_query = idle_fence.try_clone().unwrap();
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    for handle in [first_handle, second_handle] {
+        coordinator
+            .resources_mut()
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    coordinator
+        .resources_mut()
+        .register_fence(idle_handle, false, idle_fence)
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction: first,
+            buffer: first_handle,
+            acquire_fence: None,
+            idle_fence: Some(idle_handle),
+        })
+        .unwrap();
+    coordinator.resources_mut().mark_submitted(first).unwrap();
+    coordinator.complete_flip_without_idle(first, 1, 2).unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction: second,
+            buffer: second_handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+
+    let released = coordinator.idle_displayed(first).unwrap();
+
+    assert_eq!(
+        released.feedback,
+        [LivePresentProtocolFeedback::Idle { transaction: first }]
+    );
+    assert!(released.idle_fence_triggered);
+    assert!(sophia_xshmfence::query(&idle_query).unwrap());
+    assert_eq!(
+        coordinator.resources().state(second),
+        Some(LiveBufferState::Ready)
+    );
+    assert_eq!(coordinator.resources().presentation_count(), 1);
 }
 
 #[test]

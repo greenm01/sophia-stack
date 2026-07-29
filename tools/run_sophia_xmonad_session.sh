@@ -294,10 +294,41 @@ echo "Press Ctrl-Alt-Backspace for local emergency recovery."
 echo "The outside control plane may also run tools/stop_sophia_${SESSION_PROFILE}_session.sh."
 terminal_bin=""
 standalone_bin=""
+standalone_workload=""
+glxgears_duration=""
+glxgears_width=""
+glxgears_height=""
 if [[ "$SESSION_PROFILE" == standalone ]]; then
-    standalone_bin="${SOPHIA_STANDALONE_APP_BIN:-$(command -v vkcube || true)}"
+    standalone_workload="${SOPHIA_STANDALONE_WORKLOAD:-vkcube}"
+    case "$standalone_workload" in
+        glxgears)
+            standalone_default_bin="$(command -v glxgears || true)"
+            standalone_requirement=glxgears
+            glxgears_duration="${SOPHIA_GLXGEARS_DURATION_SECONDS:-20}"
+            glxgears_width="${SOPHIA_GLXGEARS_WIDTH:-500}"
+            glxgears_height="${SOPHIA_GLXGEARS_HEIGHT:-500}"
+            [[ "$glxgears_duration" =~ ^[1-9][0-9]*$ ]] || {
+                echo "SOPHIA_GLXGEARS_DURATION_SECONDS must be a positive integer." >&2
+                exit 1
+            }
+            [[ "$glxgears_width" =~ ^[1-9][0-9]*$
+                && "$glxgears_height" =~ ^[1-9][0-9]*$ ]] || {
+                echo "SOPHIA_GLXGEARS_WIDTH and SOPHIA_GLXGEARS_HEIGHT must be positive integers." >&2
+                exit 1
+            }
+            ;;
+        vkcube)
+            standalone_default_bin="$(command -v vkcube || true)"
+            standalone_requirement=vkcube
+            ;;
+        *)
+            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears or vkcube." >&2
+            exit 1
+            ;;
+    esac
+    standalone_bin="${SOPHIA_STANDALONE_APP_BIN:-$standalone_default_bin}"
     if [[ -z "$standalone_bin" || ! -x "$standalone_bin" ]]; then
-        echo "The standalone proof requires vkcube; set SOPHIA_STANDALONE_APP_BIN to override it." >&2
+        echo "The standalone $standalone_workload proof requires $standalone_requirement; set SOPHIA_STANDALONE_APP_BIN to override it." >&2
         exit 1
     fi
 else
@@ -329,14 +360,22 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     session_args+=(
         --no-config
         "--session-app=standalone=$standalone_bin"
-        --session-app-arg=standalone=--wsi
-        --session-app-arg=standalone=xcb
         --session-start=standalone
         --exit-when-startup-exits
         --wm-process="$SOPHIA_NATIVE_WM_BIN"
         "--wm-process-arg=--wm-config=$standalone_wm_config"
     )
+    if [[ "$standalone_workload" == vkcube ]]; then
+        session_args+=(
+            --session-app-arg=standalone=--wsi
+            --session-app-arg=standalone=xcb
+        )
+    fi
     if [[ -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
+        [[ "$standalone_workload" == vkcube ]] || {
+            echo "SOPHIA_STANDALONE_FRAME_COUNT is valid only for the vkcube workload." >&2
+            exit 1
+        }
         [[ "$SOPHIA_STANDALONE_FRAME_COUNT" =~ ^[1-9][0-9]*$ ]] || {
             echo "SOPHIA_STANDALONE_FRAME_COUNT must be a positive integer." >&2
             exit 1
@@ -441,10 +480,15 @@ session_command=(
     "${session_args[@]}"
 )
 if [[ "$SESSION_PROFILE" == standalone
+    && "$standalone_workload" == vkcube
     && -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
     printf 'sophia_rendering_benchmark schema=1 workload=vkcube-xcb requested_frames=%s surface_width=%s surface_height=%s vulkan_present_mode=%s\n' \
         "$SOPHIA_STANDALONE_FRAME_COUNT" "$standalone_width" "$standalone_height" \
         "$standalone_present_mode" >>"$SESSION_LOG"
+elif [[ "$SESSION_PROFILE" == standalone
+    && "$standalone_workload" == glxgears ]]; then
+    printf 'sophia_glxgears_benchmark schema=1 duration_seconds=%s surface_width=%s surface_height=%s swap_interval=1\n' \
+        "$glxgears_duration" "$glxgears_width" "$glxgears_height" >>"$SESSION_LOG"
 fi
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off

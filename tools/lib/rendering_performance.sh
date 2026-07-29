@@ -17,6 +17,11 @@ rendering_performance_cadence() {
 
     timestamp_count="$(wc -l <"$timestamps_file")"
     ((timestamp_count >= 3)) || return 1
+    awk '
+        NR == 1 { previous = $1; next }
+        $1 <= previous { exit 1 }
+        { previous = $1 }
+    ' "$timestamps_file" || return 1
 
     awk '
         NR == 1 { previous = $1; first = $1; next }

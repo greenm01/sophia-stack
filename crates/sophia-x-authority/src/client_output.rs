@@ -458,6 +458,10 @@ pub enum XClientReply {
         sequence: u16,
         direct: bool,
     },
+    GlxMakeCurrent {
+        sequence: u16,
+        context_tag: u32,
+    },
     GlxDrawableAttributes {
         sequence: u16,
         attributes: Vec<(u32, u32)>,

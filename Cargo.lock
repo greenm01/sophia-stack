@@ -503,6 +503,7 @@ dependencies = [
  "sophia-engine",
  "sophia-protocol",
  "sophia-renderer-live",
+ "sophia-xshmfence",
  "tracing",
 ]
 

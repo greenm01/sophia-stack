@@ -252,6 +252,10 @@ impl LiveProductionPresentScheduler {
         !self.queued.is_empty()
     }
 
+    pub fn has_submitted(&self) -> bool {
+        self.submitted.is_some()
+    }
+
     pub fn has_eligible(&self) -> bool {
         self.queued.iter().any(|queued| !queued.deferred_by_layout)
     }

@@ -12,6 +12,7 @@ fn dispatch_glx_request(
             | XWireRequest::GlxClientInfo
             | XWireRequest::GlxCreateContext { .. }
             | XWireRequest::GlxDestroyContext { .. }
+            | XWireRequest::GlxMakeCurrent { .. }
             | XWireRequest::GlxIsDirect { .. }
             | XWireRequest::GlxCreateWindow { .. }
             | XWireRequest::GlxDeleteWindow { .. }
@@ -76,19 +77,30 @@ fn dispatch_glx_request(
                 },
                 XWireRequest::GlxCreateContext {
                     context: id,
-                    fbconfig,
+                    config,
                     screen,
                     share,
                     direct,
                 } => {
+                    let fbconfig = match config {
+                        XGlxContextConfig::Visual(X_SETUP_DEFAULT_VISUAL) => Some(1),
+                        XGlxContextConfig::Visual(X_SETUP_ARGB_VISUAL) => Some(2),
+                        XGlxContextConfig::FbConfig(fbconfig @ 1..=3) => Some(fbconfig),
+                        XGlxContextConfig::Visual(_) | XGlxContextConfig::FbConfig(_) => None,
+                    };
                     let valid = screen == 0
-                        && (1..=3).contains(&fbconfig)
+                        && fbconfig.is_some()
                         && share.is_none_or(|share| {
                             runtime.glx_context(context.namespace, share).is_ok()
                         });
                     let outputs = if valid {
                         runtime
-                            .create_glx_context(context.namespace, id, fbconfig, direct)
+                            .create_glx_context(
+                                context.namespace,
+                                id,
+                                fbconfig.expect("validated GLX config"),
+                                direct,
+                            )
                             .err()
                             .map(|error| {
                                 XClientOutput::Error(x_error_from_runtime(
@@ -103,7 +115,10 @@ fn dispatch_glx_request(
                     } else {
                         vec![glx_bad_value(
                             &context,
-                            fbconfig,
+                            match config {
+                                XGlxContextConfig::Visual(visual) => visual,
+                                XGlxContextConfig::FbConfig(fbconfig) => fbconfig,
+                            },
                             crate::X_GLX_CREATE_CONTEXT_ATTRIBS_ARB_MINOR_OPCODE,
                         )]
                     };
@@ -127,6 +142,47 @@ fn dispatch_glx_request(
                         })
                         .into_iter()
                         .collect();
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::GlxMakeCurrent {
+                    drawable,
+                    context: context_id,
+                    old_context_tag,
+                } => {
+                    let valid_old_tag = matches!(old_context_tag, 0 | 1);
+                    let valid = match (drawable, context_id) {
+                        (None, None) => valid_old_tag,
+                        (Some(drawable), Some(context_id)) => {
+                            let context_record =
+                                runtime.glx_context(context.namespace, context_id);
+                            let drawable = runtime.glx_drawable(context.namespace, drawable);
+                            valid_old_tag
+                                && matches!(
+                                    (context_record, drawable),
+                                    (Ok((1, true)), Ok((_, 1)))
+                                        | (Ok((2 | 3, true)), Ok((_, 2 | 3)))
+                                )
+                        }
+                        (None, Some(_)) | (Some(_), None) => false,
+                    };
+                    let outputs = if valid {
+                        vec![XClientOutput::Reply(XClientReply::GlxMakeCurrent {
+                            sequence: context.sequence,
+                            context_tag: u32::from(context_id.is_some()),
+                        })]
+                    } else {
+                        vec![glx_bad_value(
+                            &context,
+                            context_id
+                                .or(drawable)
+                                .map_or(old_context_tag, |resource| resource.local.raw() as u32),
+                            crate::X_GLX_MAKE_CURRENT_MINOR_OPCODE,
+                        )]
+                    };
                     XDispatchResult {
                         response: None,
                         outputs,

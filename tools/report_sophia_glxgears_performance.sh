@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/rendering_performance.sh
+source "$ROOT_DIR/tools/lib/rendering_performance.sh"
+
+STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+LOG_DIR="${SOPHIA_STANDALONE_LOG_DIR:-$STATE_HOME/sophia/standalone-session}"
+SESSION_LOG="${1:-$LOG_DIR/session.log}"
+
+fail() {
+    echo "Sophia glxgears performance report failed: $*" >&2
+    exit 1
+}
+
+positive_field() {
+    local line="$1" key="$2" value
+    value="$(rendering_performance_field "$line" "$key")" ||
+        fail "completion lacks $key"
+    [[ "$value" =~ ^[0-9]+$ ]] || fail "$key is not an integer"
+    ((value > 0)) || fail "$key is not positive"
+    printf '%s\n' "$value"
+}
+
+[[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
+
+if grep -Eqi \
+    '(^Error:|panicked at|admission_group_(invalid|overflowed)|mismatched.transaction|status=(failed|degraded)([[:space:]]|$))' \
+    "$SESSION_LOG"; then
+    fail "session contains an error, invalid admission group, or degraded status"
+fi
+
+benchmark="$(
+    grep -E '^sophia_glxgears_benchmark schema=1 ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+[[ -n "$benchmark" ]] || fail "missing glxgears benchmark metadata"
+client="$(
+    grep -E '^sophia_glxgears_client schema=1 status=complete ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+[[ -n "$client" ]] || fail "missing bounded glxgears client completion"
+completion="$(
+    grep -E '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+[[ -n "$completion" ]] || fail "missing bounded Sophia session completion"
+grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
+    "$SESSION_LOG" || fail "session contains unexpected X11 protocol errors"
+grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
+    fail "session cleanup was not clean"
+
+for assignment in \
+    native_presentation=enabled \
+    native_submit_failures=0 \
+    native_retire_failures=0 \
+    native_in_flight=false \
+    native_cleanup_pending=false \
+    wm_policy=external \
+    wm_restarts=0 \
+    wm_degraded=false \
+    present_live_sources=0 \
+    present_live_fences=0 \
+    present_live_transactions=0; do
+    [[ " $completion " == *" $assignment "* ]] ||
+        fail "completion does not contain $assignment"
+done
+
+renderer_line="$(
+    grep -E '^GL_RENDERER[[:space:]]*=' "$SESSION_LOG" |
+        head -n 1 || true
+)"
+[[ -n "$renderer_line" ]] || fail "missing OpenGL renderer identity"
+renderer_identity="${renderer_line#*=}"
+renderer_identity="${renderer_identity#"${renderer_identity%%[![:space:]]*}"}"
+[[ -n "$renderer_identity" ]] || fail "OpenGL renderer identity is empty"
+renderer_sha256="$(printf '%s' "$renderer_identity" | sha256sum | awk '{print $1}')"
+
+output_repaint="$(
+    grep -E '^.*sophia_live_output_repaint schema=1 status=[^ ]+ output=1 mode=full ' \
+        "$SESSION_LOG" |
+        head -n 1 || true
+)"
+output_pixels="$(
+    rendering_performance_field "$output_repaint" pixels 2>/dev/null || true
+)"
+[[ "$output_pixels" =~ ^[1-9][0-9]*$ ]] ||
+    fail "missing positive output pixel count"
+
+TIMESTAMPS_FILE="$(mktemp)"
+INTERVALS_FILE="$(mktemp)"
+trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE" "$INTERVALS_FILE.fps"' EXIT
+
+awk '
+    /^sophia_live_session_present_feedback schema=1 kind=complete / &&
+        / routed=true / && / mode=Flip / {
+        for (field_index = 1; field_index <= NF; field_index++) {
+            if ($field_index ~ /^ust=[0-9]+$/) {
+                split($field_index, pair, "=")
+                print pair[2]
+            }
+        }
+    }
+' "$SESSION_LOG" >"$TIMESTAMPS_FILE"
+
+if ! read -r timestamp_count present_fps p95_msec < <(
+    rendering_performance_cadence "$TIMESTAMPS_FILE" "$INTERVALS_FILE"
+); then
+    fail "need at least three advancing routed Flip timestamps"
+fi
+
+duration_seconds="$(rendering_performance_field "$benchmark" duration_seconds)" ||
+    fail "benchmark metadata lacks duration_seconds"
+surface_width="$(rendering_performance_field "$benchmark" surface_width)" ||
+    fail "benchmark metadata lacks surface_width"
+surface_height="$(rendering_performance_field "$benchmark" surface_height)" ||
+    fail "benchmark metadata lacks surface_height"
+swap_interval="$(rendering_performance_field "$benchmark" swap_interval)" ||
+    fail "benchmark metadata lacks swap_interval"
+client_samples="$(rendering_performance_field "$client" samples)" ||
+    fail "client completion lacks samples"
+client_mean_fps="$(rendering_performance_field "$client" mean_fps)" ||
+    fail "client completion lacks mean_fps"
+client_duration="$(rendering_performance_field "$client" duration_seconds)" ||
+    fail "client completion lacks duration_seconds"
+client_timed_exit="$(rendering_performance_field "$client" timed_exit)" ||
+    fail "client completion lacks timed_exit"
+
+[[ "$duration_seconds" =~ ^[1-9][0-9]*$
+    && "$surface_width" =~ ^[1-9][0-9]*$
+    && "$surface_height" =~ ^[1-9][0-9]*$
+    && "$client_samples" =~ ^[1-9][0-9]*$ ]] ||
+    fail "benchmark dimensions, duration, and client samples must be positive"
+[[ "$swap_interval" == 1 ]] || fail "benchmark did not use swap interval 1"
+[[ "$client_duration" == "$duration_seconds" ]] ||
+    fail "client duration does not match benchmark metadata"
+[[ "$client_timed_exit" == true ]] || fail "client did not complete its bounded run"
+awk -v fps="$client_mean_fps" 'BEGIN { exit !(fps > 0) }' ||
+    fail "client mean FPS must be positive"
+
+native_retirements="$(positive_field "$completion" native_retirements)"
+native_nonzero_exports="$(positive_field "$completion" native_nonzero_exports)"
+native_mixed_exports="$(positive_field "$completion" native_mixed_exports)"
+present_complete_flip="$(positive_field "$completion" present_complete_flip)"
+present_idle="$(positive_field "$completion" present_idle)"
+present_idle_fence_triggers="$(
+    positive_field "$completion" present_idle_fence_triggers
+)"
+native_max_render_msec="$(
+    rendering_performance_field "$completion" native_max_render_msec
+)" || fail "completion lacks native_max_render_msec"
+native_max_upload_msec="$(
+    rendering_performance_field "$completion" native_max_upload_msec
+)" || fail "completion lacks native_max_upload_msec"
+native_max_submit_to_page_flip_msec="$(
+    rendering_performance_field "$completion" native_max_submit_to_page_flip_msec
+)" || fail "completion lacks native_max_submit_to_page_flip_msec"
+
+printf '%s\n' \
+    "sophia_glxgears_performance schema=1 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_flip=$present_complete_flip present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"

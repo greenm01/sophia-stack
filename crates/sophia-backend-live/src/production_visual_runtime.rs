@@ -268,13 +268,16 @@ impl LiveProductionVisualRuntime {
         }
         self.displayed_surfaces
             .retain(|surface, _| !removed_surfaces.contains(surface));
-        let preserve_gpu_scanout = native_scanout.is_some()
-            && (retained_projection_queued
-                || (!presentation_order_changed
-                    && live_production_committed_projection_requires_gpu_scanout(
-                        self.production.committed_surfaces(),
-                        &self.presentation_order,
-                    )));
+        let preserve_gpu_scanout = live_production_should_preserve_gpu_output(
+            native_scanout.is_some(),
+            self.present_scheduler.has_submitted(),
+            retained_projection_queued,
+            presentation_order_changed,
+            live_production_committed_projection_requires_gpu_scanout(
+                self.production.committed_surfaces(),
+                &self.presentation_order,
+            ),
+        );
         let defer_frame = reduce_live_production_frame_defer(
             defer_frame,
             visual_projection_changed,
@@ -786,4 +789,17 @@ pub const fn reduce_live_production_frame_defer(
     preserved_gpu_projection: bool,
 ) -> bool {
     preserved_gpu_projection || (requested_defer && !presentation_order_changed)
+}
+
+pub const fn live_production_should_preserve_gpu_output(
+    native_enabled: bool,
+    gpu_present_submitted: bool,
+    retained_projection_queued: bool,
+    presentation_order_changed: bool,
+    committed_projection_requires_gpu: bool,
+) -> bool {
+    native_enabled
+        && (gpu_present_submitted
+            || retained_projection_queued
+            || (!presentation_order_changed && committed_projection_requires_gpu))
 }

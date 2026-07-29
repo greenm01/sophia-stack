@@ -9,6 +9,7 @@ fn encode_glx_sync_reply(
             | XClientReply::GlxVisualConfigs { .. }
             | XClientReply::GlxFbConfigs { .. }
             | XClientReply::GlxIsDirect { .. }
+            | XClientReply::GlxMakeCurrent { .. }
             | XClientReply::GlxDrawableAttributes { .. }
             | XClientReply::SyncInitialize { .. }
             | XClientReply::SyncListSystemCounters { .. }
@@ -77,6 +78,15 @@ fn encode_glx_sync_reply(
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     out[8] = u8::from(direct);
+                    out
+                }
+                XClientReply::GlxMakeCurrent {
+                    sequence,
+                    context_tag,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u32(byte_order, &mut out[8..12], context_tag);
                     out
                 }
                 XClientReply::GlxDrawableAttributes {

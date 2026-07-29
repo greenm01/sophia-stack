@@ -228,6 +228,7 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
+        self.release_replaced_composited_source(queued_surface)?;
         native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
 
         let layer_templates = self.compositor_layer_templates();

@@ -11,8 +11,10 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum X11ObservedRequestStage {
     GlxQueryServerString,
+    GlxGetVisualConfigs,
     GlxGetFbConfigs,
     GlxCreateContext,
+    GlxMakeCurrent,
     GlxCreateWindow,
     Dri3PixmapFromBuffers,
     PresentPixmap,
@@ -26,8 +28,10 @@ impl X11ObservedRequestStage {
     pub const fn evidence_name(self) -> &'static str {
         match self {
             Self::GlxQueryServerString => "GLX:QueryServerString",
+            Self::GlxGetVisualConfigs => "GLX:GetVisualConfigs",
             Self::GlxGetFbConfigs => "GLX:GetFBConfigs",
             Self::GlxCreateContext => "GLX:CreateContext",
+            Self::GlxMakeCurrent => "GLX:MakeCurrent",
             Self::GlxCreateWindow => "GLX:CreateWindow",
             Self::Dri3PixmapFromBuffers => "DRI3:PixmapFromBuffers",
             Self::PresentPixmap => "PRESENT:Pixmap",

@@ -4,8 +4,8 @@ use sophia_backend_live::{
     LiveProductionCpuFrameQueueStatus, LiveProductionMixedLayerSource,
     LiveProductionNativeSuspendOutcome, LiveProductionScanoutContent, LiveProductionVisualRuntime,
     live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_frame_defer,
+    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_frame_defer,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -218,4 +218,20 @@ fn visibility_change_forces_a_frame_unless_a_retained_gpu_projection_is_queued()
     assert!(reduce_live_production_frame_defer(true, true, true));
     assert!(reduce_live_production_frame_defer(true, false, false));
     assert!(!reduce_live_production_frame_defer(false, false, false));
+}
+
+#[test]
+fn submitted_gpu_present_blocks_a_cpu_frame_from_superseding_it() {
+    assert!(live_production_should_preserve_gpu_output(
+        true, true, false, false, false,
+    ));
+    assert!(live_production_should_preserve_gpu_output(
+        true, true, false, true, false,
+    ));
+    assert!(!live_production_should_preserve_gpu_output(
+        false, true, false, false, false,
+    ));
+    assert!(!live_production_should_preserve_gpu_output(
+        true, false, false, false, false,
+    ));
 }

@@ -223,7 +223,11 @@ Required baseline:
 - DRI3/Present for GPU-backed buffer handoff;
 - RandR surface/output facts enough for clients to observe screen size;
 - bounded direct-Mesa GLX bootstrap for clients that render through the proven
-  DRI3/Present path.
+  DRI3/Present path. The catalog exposes depth-capable, double-buffered
+  TrueColor visuals and FBConfigs; both legacy visual-based and modern
+  FBConfig-based direct contexts normalize to the same bounded runtime records.
+  Direct MakeCurrent binds a validated context/drawable pair while actual
+  buffers continue through DRI3/Present.
 
 Deferred unless a real app requires them:
 
@@ -438,8 +442,9 @@ explicit and evidence-driven:
   deferred behind the bounded clipboard reference flow.
 - Render is not advertised. Sync advertises only version negotiation and the
   DRI3-fence teardown used by Mesa. GLX advertises only the captured
-  direct-Mesa bootstrap needed by Kitty: GLVND vendor selection, deterministic
-  visuals/FBConfigs, direct context/window lifecycle, and drawable attributes.
+  direct-Mesa bootstrap needed by current clients: GLVND vendor selection,
+  deterministic depth-capable visuals/FBConfigs, legacy and modern direct
+  context lifecycle, direct MakeCurrent, GLX windows, and drawable attributes.
   Indirect rendering and server-side GLX buffer submission remain deferred.
 - RandR provides Engine-derived observation and notifications, not general
   client-controlled mode management. MIT-SHM intentionally copies admitted

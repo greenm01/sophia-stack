@@ -303,10 +303,14 @@ Promotion now follows the gates below in order.
   Xserver `Copy` result is valid client-cadence evidence but may complete
   before compositor scanout; retain the path label and do not present it as a
   scanout-latency comparison.
-- [ ] Add a paired bounded `glxgears` proof under Sophia after Vulkan parity is
-  retained. Require direct GLX bootstrap, DRI3/Present submission, animation,
-  clean retirement, the same renderer provider under the reference Xserver,
-  and a separately reported cadence ratio. Keep it a compatibility diagnostic,
+- [ ] Retain the paired bounded `glxgears` physical proof under Sophia. The
+  generic standalone workload slot, bounded 500-by-500 swap-interval-one
+  runner, and fail-closed schema-1 reporter are implemented in
+  `tools/benchmark_sophia_glxgears_tty3.sh`. Require visible animation, direct
+  GLX bootstrap, positive DRI3/mixed-composition and Present idle-fence
+  progress, advancing post-KMS Flip cadence, clean retirement, and the same
+  renderer provider under the reference Xserver. Record client and
+  presentation cadence separately and keep this a compatibility diagnostic,
   not a substitute for the fixed Vulkan acceptance workload.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,

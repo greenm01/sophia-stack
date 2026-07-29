@@ -41,9 +41,34 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
             require_len(X_GLX_MAJOR_OPCODE, 16, bytes.len())?;
             Ok(XWireRequest::GlxClientInfo)
         }
+        X_GLX_CREATE_CONTEXT_MINOR_OPCODE => {
+            require_exact_len(X_GLX_MAJOR_OPCODE, 24, bytes.len())?;
+            let context_id = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(context_id)?;
+            let share = context.byte_order.u32(&bytes[16..20]);
+            Ok(XWireRequest::GlxCreateContext {
+                context: XResourceId::new(u64::from(context_id), 1),
+                config: XGlxContextConfig::Visual(context.byte_order.u32(&bytes[8..12])),
+                screen: context.byte_order.u32(&bytes[12..16]),
+                share: (share != 0).then(|| XResourceId::new(u64::from(share), 1)),
+                direct: bytes[20] != 0,
+            })
+        }
         X_GLX_DESTROY_CONTEXT_MINOR_OPCODE => {
             require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
             Ok(XWireRequest::GlxDestroyContext { context: id(4) })
+        }
+        X_GLX_MAKE_CURRENT_MINOR_OPCODE => {
+            require_exact_len(X_GLX_MAJOR_OPCODE, 16, bytes.len())?;
+            let drawable = context.byte_order.u32(&bytes[4..8]);
+            let context_id = context.byte_order.u32(&bytes[8..12]);
+            Ok(XWireRequest::GlxMakeCurrent {
+                drawable: (drawable != 0)
+                    .then(|| XResourceId::new(u64::from(drawable), 1)),
+                context: (context_id != 0)
+                    .then(|| XResourceId::new(u64::from(context_id), 1)),
+                old_context_tag: context.byte_order.u32(&bytes[12..16]),
+            })
         }
         X_GLX_IS_DIRECT_MINOR_OPCODE => {
             require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
@@ -56,7 +81,7 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
             let share = context.byte_order.u32(&bytes[20..24]);
             Ok(XWireRequest::GlxCreateContext {
                 context: XResourceId::new(u64::from(context_id), 1),
-                fbconfig: context.byte_order.u32(&bytes[8..12]),
+                config: XGlxContextConfig::FbConfig(context.byte_order.u32(&bytes[8..12])),
                 screen: context.byte_order.u32(&bytes[12..16]),
                 share: (share != 0).then(|| XResourceId::new(u64::from(share), 1)),
                 direct: bytes[24] != 0,
@@ -75,7 +100,7 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
             let share = context.byte_order.u32(&bytes[16..20]);
             Ok(XWireRequest::GlxCreateContext {
                 context: XResourceId::new(u64::from(context_id), 1),
-                fbconfig: context.byte_order.u32(&bytes[8..12]),
+                config: XGlxContextConfig::FbConfig(context.byte_order.u32(&bytes[8..12])),
                 screen: context.byte_order.u32(&bytes[12..16]),
                 share: (share != 0).then(|| XResourceId::new(u64::from(share), 1)),
                 direct: bytes[20] != 0,
@@ -109,4 +134,3 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
         other => Err(XWireParseError::UnknownOpcode(other)),
     }
 }
-

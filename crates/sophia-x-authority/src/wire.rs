@@ -69,6 +69,12 @@ impl XWireClientContext {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XGlxContextConfig {
+    Visual(u32),
+    FbConfig(u32),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XWireRequest {
     Authority(XAuthorityRequestPacket),
@@ -560,13 +566,18 @@ pub enum XWireRequest {
     GlxClientInfo,
     GlxCreateContext {
         context: XResourceId,
-        fbconfig: u32,
+        config: XGlxContextConfig,
         screen: u32,
         share: Option<XResourceId>,
         direct: bool,
     },
     GlxDestroyContext {
         context: XResourceId,
+    },
+    GlxMakeCurrent {
+        drawable: Option<XResourceId>,
+        context: Option<XResourceId>,
+        old_context_tag: u32,
     },
     GlxIsDirect {
         context: XResourceId,

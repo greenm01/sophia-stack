@@ -89,6 +89,27 @@ impl LiveProductionVisualRuntime {
         }
     }
 
+    pub(super) fn release_replaced_composited_source(
+        &mut self,
+        surface: SurfaceId,
+    ) -> Result<(), crate::LivePresentFeedbackError> {
+        let Some(transaction) = self
+            .displayed_surfaces
+            .remove(&surface)
+            .and_then(|displayed| displayed.retained_transaction)
+        else {
+            return Ok(());
+        };
+        let outcome = self.presentation_feedback.idle_displayed(transaction)?;
+        tracing::trace!(
+            surface = surface.index(),
+            transaction = transaction.raw(),
+            "released replaced composited Present source before successor import"
+        );
+        self.route_present_feedback(outcome);
+        Ok(())
+    }
+
     pub fn release_layout_deferred_presentations(&mut self) {
         self.present_scheduler.release_layout_deferred();
     }

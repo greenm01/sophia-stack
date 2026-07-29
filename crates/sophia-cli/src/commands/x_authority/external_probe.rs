@@ -266,21 +266,29 @@ fn run_x_authority_external_probe_smoke(
         .join(",");
     let details = details.into_iter().collect::<Vec<_>>().join(",");
 
-    if label == "kitty" {
-        for required in [
+    let required_graphics_stages: &[&str] = match label {
+        "kitty" => &[
             "GLX:QueryServerString",
             "GLX:GetFBConfigs",
             "GLX:CreateContext",
             "GLX:CreateWindow",
             "DRI3:PixmapFromBuffers",
             "PRESENT:Pixmap",
-        ] {
-            if !details.contains(required) {
-                return Err(format!(
-                    "kitty trace omitted required direct-GLX stage {required} for {display}: details={details}"
-                )
-                .into());
-            }
+        ],
+        "glxgears" => &[
+            "GLX:GetVisualConfigs",
+            "GLX:CreateContext",
+            "DRI3:PixmapFromBuffers",
+            "PRESENT:Pixmap",
+        ],
+        _ => &[],
+    };
+    for required in required_graphics_stages {
+        if !details.contains(required) {
+            return Err(format!(
+                "{label} trace omitted required direct-GLX stage {required} for {display}: details={details}"
+            )
+            .into());
         }
     }
 
