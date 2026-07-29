@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-}"
 case "$SESSION_PROFILE" in
-    kitty|native|xmonad) ;;
+    kitty|native|standalone|xmonad) ;;
     *)
-        echo "SOPHIA_TTY_PROFILE must be kitty, native, or xmonad." >&2
+        echo "SOPHIA_TTY_PROFILE must be kitty, native, standalone, or xmonad." >&2
         exit 1
         ;;
 esac
@@ -16,6 +16,8 @@ if [[ ! -t 0 || "$(tty)" != /dev/tty3 ]]; then
     echo "Switch to tty3 with Ctrl+Alt+F3, log in, then run:" >&2
     if [[ "$SESSION_PROFILE" == native ]]; then
         echo "  $ROOT_DIR/tools/start_sophia_native_hot_reload_tty3.sh" >&2
+    elif [[ "$SESSION_PROFILE" == standalone ]]; then
+        echo "  $ROOT_DIR/tools/start_sophia_vkcube_standalone_tty3.sh" >&2
     else
         echo "  $ROOT_DIR/tools/start_sophia_${SESSION_PROFILE}_tty3.sh" >&2
     fi
@@ -107,5 +109,6 @@ cd "$ROOT_DIR"
 case "$SESSION_PROFILE" in
     kitty) tools/run_sophia_kitty_session.sh "$@" ;;
     native) tools/run_sophia_xmonad_session.sh "$@" ;;
+    standalone) tools/run_sophia_xmonad_session.sh "$@" ;;
     xmonad) tools/run_sophia_xmonad_session.sh "$@" ;;
 esac

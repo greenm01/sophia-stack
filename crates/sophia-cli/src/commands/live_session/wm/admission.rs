@@ -8,6 +8,7 @@ struct LiveAdmissionAuthorityGroup {
     transaction: TransactionId,
     transactions: Vec<SurfaceTransaction>,
     present_submissions: Vec<sophia_x_authority::XAuthorityPresentSubmission>,
+    software_present_submissions: Vec<sophia_x_authority::XAuthoritySoftwarePresentSubmission>,
     superseded: bool,
 }
 
@@ -30,6 +31,13 @@ impl LiveAdmissionAuthorityGroup {
         {
             return Err("pre-admission authority group contains a mismatched Present");
         }
+        if self
+            .software_present_submissions
+            .iter()
+            .any(|submission| submission.transaction != self.transaction)
+        {
+            return Err("pre-admission authority group contains a mismatched software Present");
+        }
         let present_keys = self
             .present_submissions
             .iter()
@@ -42,6 +50,28 @@ impl LiveAdmissionAuthorityGroup {
         if !sophia_protocol::dma_buf_present_pairs_are_exact(&self.transactions, &present_keys) {
             return Err("pre-admission DMA-BUF transactions and Presents are not exact pairs");
         }
+        for (index, submission) in self.software_present_submissions.iter().enumerate() {
+            if self.software_present_submissions[..index]
+                .iter()
+                .any(|prior| prior.surface == submission.surface)
+            {
+                return Err("pre-admission authority group contains a duplicate software Present");
+            }
+            let matches = self
+                .transactions
+                .iter()
+                .filter(|transaction| {
+                    transaction.transaction == submission.transaction
+                        && transaction.surface == submission.surface
+                        && matches!(transaction.target_buffer, BufferSource::CpuBuffer { .. })
+                })
+                .count();
+            if matches != 1 {
+                return Err(
+                    "pre-admission CPU transactions and software Presents are not exact pairs",
+                );
+            }
+        }
         Ok(())
     }
 
@@ -51,6 +81,10 @@ impl LiveAdmissionAuthorityGroup {
             .any(|transaction| transaction.surface == surface)
             || self
                 .present_submissions
+                .iter()
+                .any(|submission| submission.surface == surface)
+            || self
+                .software_present_submissions
                 .iter()
                 .any(|submission| submission.surface == surface)
     }
@@ -73,6 +107,11 @@ impl LiveAdmissionAuthorityGroup {
         self.present_submissions
             .iter()
             .flat_map(|submission| [submission.acquire_fence, submission.idle_fence])
+            .chain(
+                self.software_present_submissions
+                    .iter()
+                    .flat_map(|submission| [submission.acquire_fence, submission.idle_fence]),
+            )
             .flatten()
     }
 }
@@ -155,13 +194,23 @@ impl PersistentLiveLayout {
             .filter(|submission| self.surface_requires_admission(submission.surface))
             .copied()
             .collect::<Vec<_>>();
-        if transactions.is_empty() && present_submissions.is_empty() {
+        let software_present_submissions = batch
+            .software_present_submissions
+            .iter()
+            .filter(|submission| self.surface_requires_admission(submission.surface))
+            .copied()
+            .collect::<Vec<_>>();
+        if transactions.is_empty()
+            && present_submissions.is_empty()
+            && software_present_submissions.is_empty()
+        {
             return Ok(false);
         }
         let group = LiveAdmissionAuthorityGroup {
             transaction: batch.transaction,
             transactions,
             present_submissions,
+            software_present_submissions,
             superseded: false,
         };
         group.validate()?;
@@ -202,6 +251,12 @@ impl PersistentLiveLayout {
                         .iter()
                         .map(|submission| submission.surface),
                 )
+                .chain(
+                    group
+                        .software_present_submissions
+                        .iter()
+                        .map(|submission| submission.surface),
+                )
                 .collect::<BTreeSet<_>>();
             let selected = !touched.is_empty()
                 && touched.iter().all(|surface| {
@@ -237,7 +292,9 @@ impl PersistentLiveLayout {
                             })
                 });
             if covered_by_later_present {
-                if !group.present_submissions.is_empty() {
+                if !group.present_submissions.is_empty()
+                    || !group.software_present_submissions.is_empty()
+                {
                     group.superseded = true;
                     self.released_admission_groups.push_back(group);
                 }
@@ -263,6 +320,12 @@ impl PersistentLiveLayout {
                 .chain(
                     group
                         .present_submissions
+                        .iter()
+                        .map(|submission| submission.surface),
+                )
+                .chain(
+                    group
+                        .software_present_submissions
                         .iter()
                         .map(|submission| submission.surface),
                 )

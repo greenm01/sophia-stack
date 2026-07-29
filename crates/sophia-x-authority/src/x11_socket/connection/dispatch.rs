@@ -233,6 +233,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 dri3_pixmap_import,
                 dri3_fence_import,
                 present_submission,
+                software_present_submission,
                 released_dma_bufs,
                 released_fences,
                 mut server_reply_fds,
@@ -662,6 +663,29 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 }),
                             })
                         });
+                    let software_present_submission = dispatch_succeeded
+                        .then_some(present_request)
+                        .flatten()
+                        .and_then(|(wait_fence, idle_fence, _, _)| {
+                            let response = output.response.as_ref()?;
+                            let transaction = response.transactions.first()?;
+                            if !matches!(
+                                transaction.target_buffer,
+                                sophia_protocol::BufferSource::CpuBuffer { .. }
+                            ) {
+                                return None;
+                            }
+                            Some(crate::XAuthoritySoftwarePresentSubmission {
+                                transaction: response.transaction,
+                                surface: transaction.surface,
+                                acquire_fence: wait_fence.and_then(|fence| {
+                                    runtime.dri3_fence_handle(namespace, fence).ok()
+                                }),
+                                idle_fence: idle_fence.and_then(|fence| {
+                                    runtime.dri3_fence_handle(namespace, fence).ok()
+                                }),
+                            })
+                        });
                     let mut server_reply_fds = Vec::new();
                     if dispatch_succeeded && dri3_open {
                         match state.open_render_device_fd() {
@@ -714,6 +738,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         dri3_pixmap_import,
                         dri3_fence_import,
                         present_submission,
+                        software_present_submission,
                         released_dma_buf.into_iter().collect::<Vec<_>>(),
                         released_fence.into_iter().collect::<Vec<_>>(),
                         server_reply_fds,
@@ -724,6 +749,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     parse_failed = true;
                     (
                         dispatch_x11_parse_error(dispatch_context, request_minor_code, error),
+                        None,
                         None,
                         None,
                         None,
@@ -799,6 +825,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 dri3_pixmap_import,
                 dri3_fence_import,
                 present_submission,
+                software_present_submission,
                 released_dma_bufs: released_dma_bufs.clone(),
                 released_fences: released_fences.clone(),
                 server_reply_fd_count: server_reply_fds.len(),
@@ -926,6 +953,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             dri3_pixmap_import: None,
             dri3_fence_import: None,
             present_submission: None,
+            software_present_submission: None,
             released_dma_bufs: release.released_dma_bufs,
             released_fences: release.released_fences,
             server_reply_fd_count: 0,

@@ -84,6 +84,7 @@ fn scheduler_batch(
                 idle_fence: None,
                 layout_disposition: LiveProductionPresentDisposition::Immediate,
             }],
+            software_present_submissions: Vec::new(),
         }],
         dma_buf_registrations: Vec::new(),
         fence_registrations: Vec::new(),
@@ -220,6 +221,7 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
             }],
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
         },
     );
     let mut resources = LivePresentationResourceSession::default();

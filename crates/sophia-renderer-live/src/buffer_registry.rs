@@ -73,7 +73,7 @@ struct LiveFenceSourceRegistration {
 
 #[derive(Debug)]
 struct LivePresentRegistration {
-    source: BufferHandle,
+    source: Option<BufferHandle>,
     acquire_fence: Option<FenceHandle>,
     idle_fence: Option<FenceHandle>,
     plane_fds: Vec<OwnedFd>,
@@ -427,25 +427,51 @@ impl LiveDmaBufPresentationRegistry {
         acquire_fence: Option<FenceHandle>,
         idle_fence: Option<FenceHandle>,
     ) -> Result<(), LiveBufferRegistryError> {
+        self.begin_present_with_optional_source(
+            transaction,
+            Some(handle),
+            acquire_fence,
+            idle_fence,
+        )
+    }
+
+    pub fn begin_software_present(
+        &mut self,
+        transaction: TransactionId,
+        acquire_fence: Option<FenceHandle>,
+        idle_fence: Option<FenceHandle>,
+    ) -> Result<(), LiveBufferRegistryError> {
+        self.begin_present_with_optional_source(transaction, None, acquire_fence, idle_fence)
+    }
+
+    fn begin_present_with_optional_source(
+        &mut self,
+        transaction: TransactionId,
+        handle: Option<BufferHandle>,
+        acquire_fence: Option<FenceHandle>,
+        idle_fence: Option<FenceHandle>,
+    ) -> Result<(), LiveBufferRegistryError> {
         if self.presentations.contains_key(&transaction) {
             return Err(LiveBufferRegistryError::DuplicatePresentation);
         }
         if self.presentations.len() >= self.limits.presentations {
             return Err(LiveBufferRegistryError::CapacityExceeded);
         }
-        let source = self
-            .sources
-            .get(&handle)
-            .ok_or(LiveBufferRegistryError::UnknownHandle)?;
-        if source.release_pending {
-            return Err(LiveBufferRegistryError::SourceReleasePending);
-        }
-        let plane_fds = source
-            .plane_fds
-            .iter()
-            .map(OwnedFd::try_clone)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| LiveBufferRegistryError::FdCloneFailed)?;
+        let plane_fds = handle.map_or(Ok(Vec::new()), |handle| {
+            let source = self
+                .sources
+                .get(&handle)
+                .ok_or(LiveBufferRegistryError::UnknownHandle)?;
+            if source.release_pending {
+                return Err(LiveBufferRegistryError::SourceReleasePending);
+            }
+            source
+                .plane_fds
+                .iter()
+                .map(OwnedFd::try_clone)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| LiveBufferRegistryError::FdCloneFailed)
+        })?;
         let acquire_fence_fd = acquire_fence
             .map(|fence| {
                 let fence = self
@@ -487,10 +513,12 @@ impl LiveDmaBufPresentationRegistry {
             .unwrap_or(true);
         let acquire_fence_fd = (!acquire_ready).then_some(acquire_fence_fd).flatten();
 
-        self.sources
-            .get_mut(&handle)
-            .expect("validated source must remain registered")
-            .references += 1;
+        if let Some(handle) = handle {
+            self.sources
+                .get_mut(&handle)
+                .expect("validated source must remain registered")
+                .references += 1;
+        }
         for fence in [acquire_fence, idle_fence].into_iter().flatten() {
             self.fences
                 .get_mut(&fence)
@@ -627,7 +655,7 @@ impl LiveDmaBufPresentationRegistry {
     pub fn source_for_presentation(&self, transaction: TransactionId) -> Option<BufferHandle> {
         self.presentations
             .get(&transaction)
-            .map(|presentation| presentation.source)
+            .and_then(|presentation| presentation.source)
     }
 
     pub fn source_count(&self) -> usize {
@@ -684,20 +712,26 @@ impl LiveDmaBufPresentationRegistry {
             Some(_) => LiveIdleFenceStatus::TriggerFailed,
         };
 
-        let source = BufferSource::DmaBuf {
-            handle: presentation.source.raw(),
-        };
-        let released_source = {
-            let registration = self
-                .sources
-                .get_mut(&presentation.source)
-                .expect("presentation source must remain registered");
-            registration.references = registration.references.saturating_sub(1);
-            registration.references == 0 && registration.release_pending
-        };
-        if released_source {
-            self.sources.remove(&presentation.source);
-        }
+        let (source, released_source) =
+            presentation
+                .source
+                .map_or((BufferSource::None, false), |handle| {
+                    let registration = self
+                        .sources
+                        .get_mut(&handle)
+                        .expect("presentation source must remain registered");
+                    registration.references = registration.references.saturating_sub(1);
+                    let released = registration.references == 0 && registration.release_pending;
+                    if released {
+                        self.sources.remove(&handle);
+                    }
+                    (
+                        BufferSource::DmaBuf {
+                            handle: handle.raw(),
+                        },
+                        released,
+                    )
+                });
 
         let mut released_fences = Vec::new();
         for fence in [presentation.acquire_fence, presentation.idle_fence]

@@ -69,6 +69,56 @@ mod tests {
     }
 
     #[test]
+    fn natural_policy_centers_without_requesting_a_resize() {
+        let workspace = WorkspaceId::from_raw(1);
+        let surface = SurfaceId::new(3, 1);
+        let mut natural = node(3, workspace);
+        natural.geometry.width = 500;
+        natural.geometry.height = 500;
+        let transaction = place_workspace_at_natural_size(
+            TransactionId::from_raw(12),
+            workspace,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            &[natural],
+            300,
+        );
+
+        assert!(transaction.requested_sizes.is_empty());
+        assert_eq!(transaction.focus, Some(surface));
+        assert_eq!(
+            transaction.render_positions[0].geometry,
+            Rect {
+                x: 390,
+                y: 110,
+                width: 500,
+                height: 500,
+            }
+        );
+    }
+
+    #[test]
+    fn standalone_policy_fixture_selects_natural_layout_and_logout() {
+        let snapshot = sophia_config::parse_wm_config(
+            include_bytes!("../../../tools/fixtures/standalone_sophia_wm.kdl"),
+            sophia_config::ConfigGeneration::INITIAL,
+        )
+        .expect("standalone WM fixture must remain valid");
+
+        assert_eq!(snapshot.layout, sophia_config::WmLayoutKind::Natural);
+        assert!(
+            snapshot
+                .actions
+                .iter()
+                .any(|action| { action.behavior == sophia_config::WmActionBehavior::Logout })
+        );
+    }
+
+    #[test]
     fn handles_manage_request_with_first_external_wm_sequence() {
         let workspace = WorkspaceId::from_raw(1);
         let surface = SurfaceId::new(3, 1);

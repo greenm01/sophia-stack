@@ -467,6 +467,7 @@ fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
             acquire_fence: None,
             idle_fence: None,
         }],
+        software_present_submissions: Vec::new(),
         superseded: false,
     }];
     let production = crate::commands::live_session::production_authority_batch(

@@ -161,6 +161,39 @@ It keeps policy-managed mapping deferred, delivers only the generic
 Present Complete/Idle round trips. This is a transport/admission regression;
 it does not replace visible native KMS proof.
 
+Before involving Kitty, xmonad, xmobar, or the X11 WM compatibility bridge, run
+the visible single-client isolation proof from tty3:
+
+```sh
+tools/start_sophia_vkcube_standalone_tty3.sh
+```
+
+Sophia launches default `vkcube --wsi xcb` directly. The external reference WM
+uses its generic `natural` layout policy: it receives only the opaque node,
+centers the node's natural allocation, and requests no policy resize. The
+ordinary policy-managed deferred admission, X11 Present, renderer, and KMS
+paths remain active. The launcher installs its checked-in KDL2 policy template
+into the owner-only runtime directory as mode `0600`, so config safety does not
+depend on repository checkout permissions. After visually confirming the
+spinning cube, use Super-Shift-Q for normal logout and run:
+
+```sh
+tools/verify_sophia_standalone_vkcube.sh
+```
+
+The verifier requires exactly one presented-frame admission candidate, its
+exact visual-admission completion, nonzero scanout pixels, normal logout, zero
+protocol/resource debt, and clean teardown. A DMA-BUF candidate must have its
+exact page-flip retirement. A software candidate must advance through at least
+three authority transactions and produce positive Present Complete, Idle, and
+idle-fence-trigger evidence, so a visible but frozen first frame cannot pass.
+Presented-frame evidence may use imported DMA-BUF storage or an immutable CPU
+snapshot materialized from a software/MIT-SHM Present request. An unresolved
+X pixmap, unrelated backing snapshot, blank bordered window, process-only
+success, or emergency exit cannot pass. The launcher knows that the validation
+client is `vkcube`; Engine, the X authority, and the natural layout reducer
+contain no application identity branches.
+
 For the visible xmonad/KMS proof, run
 `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch
 `vkcube --wsi xcb`, exit normally, then run:

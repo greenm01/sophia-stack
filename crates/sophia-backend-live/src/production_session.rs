@@ -253,6 +253,22 @@ pub enum LivePresentFeedbackError {
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+impl std::fmt::Display for LivePresentFeedbackError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownPresentation { transaction } => write!(
+                formatter,
+                "unknown live presentation transaction {}",
+                transaction.raw()
+            ),
+        }
+    }
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+impl std::error::Error for LivePresentFeedbackError {}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 #[derive(Debug, Default)]
 pub struct LiveProductionPresentFeedbackCoordinator {
     resources: crate::LivePresentationResourceSession,

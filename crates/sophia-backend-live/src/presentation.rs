@@ -193,6 +193,16 @@ impl LivePresentationResourceSession {
         )
     }
 
+    pub fn begin_software(
+        &mut self,
+        transaction: TransactionId,
+        acquire_fence: Option<FenceHandle>,
+        idle_fence: Option<FenceHandle>,
+    ) -> Result<(), LiveBufferRegistryError> {
+        self.registry
+            .begin_software_present(transaction, acquire_fence, idle_fence)
+    }
+
     pub fn poll_acquire_fence(
         &mut self,
         transaction: TransactionId,

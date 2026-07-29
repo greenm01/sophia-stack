@@ -85,6 +85,8 @@ fn dispatch_present_request(
                     target_crtc,
                     wait_fence,
                     idle_fence,
+                    x_offset,
+                    y_offset,
                     options,
                     divisor,
                     remainder,
@@ -152,8 +154,14 @@ fn dispatch_present_request(
                             metadata_candidates: Vec::new(),
                         });
                     }
-                    let response =
-                        runtime.present_standard_pixmap(transaction, context.namespace, window, pixmap);
+                    let response = runtime.present_standard_pixmap(
+                        transaction,
+                        context.namespace,
+                        window,
+                        pixmap,
+                        x_offset,
+                        y_offset,
+                    );
                     let outputs = match response.outcome {
                         XAuthorityResponseOutcome::Accepted => Vec::new(),
                         XAuthorityResponseOutcome::Rejected(error) => {

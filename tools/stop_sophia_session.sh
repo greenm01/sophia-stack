@@ -3,9 +3,9 @@ set -euo pipefail
 
 profile="${1:-}"
 case "$profile" in
-    kitty|native|xmonad) ;;
+    kitty|native|standalone|xmonad) ;;
     *)
-        echo "usage: tools/stop_sophia_session.sh kitty|native|xmonad" >&2
+        echo "usage: tools/stop_sophia_session.sh kitty|native|standalone|xmonad" >&2
         exit 2
         ;;
 esac

@@ -717,3 +717,149 @@ fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
     assert_eq!(snapshot.drawable, window);
     assert!(snapshot.bytes.iter().any(|byte| *byte == 0x7f));
 }
+
+#[test]
+fn software_present_materializes_pixmap_pixels_for_the_renderer() {
+    let namespace = NamespaceId::from_raw(21);
+    let window = XResourceId::new(0x66, 1);
+    let pixmap = XResourceId::new(0x67, 1);
+    let surface = SurfaceId::new(21, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(27),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime
+        .create_pixmap(
+            namespace,
+            pixmap,
+            Size {
+                width: 4,
+                height: 4,
+            },
+            1,
+        )
+        .unwrap();
+    let image = vec![0x5a; 4 * 4 * 4];
+    assert_eq!(
+        runtime
+            .apply_put_image(
+                TransactionId::from_raw(28),
+                namespace,
+                pixmap,
+                Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 4,
+                }),
+                Some(&image),
+            )
+            .outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+
+    let response = runtime.present_standard_pixmap(
+        TransactionId::from_raw(29),
+        namespace,
+        window,
+        pixmap,
+        2,
+        1,
+    );
+
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(response.transactions.len(), 1);
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime
+        .take_cpu_buffer_update()
+        .expect("software Present must export immutable pixels")
+    else {
+        panic!("first software Present must replace the presentation buffer");
+    };
+    assert_eq!(snapshot.drawable, window);
+    assert!(snapshot.bytes.iter().any(|byte| *byte == 0x5a));
+    assert_eq!(
+        response.transactions[0].target_buffer,
+        BufferSource::CpuBuffer {
+            handle: snapshot.handle
+        }
+    );
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 2,
+            y: 1,
+            width: 4,
+            height: 4,
+        })
+    );
+}
+
+#[test]
+fn software_present_rejects_pixmap_without_materialized_pixels() {
+    let namespace = NamespaceId::from_raw(22);
+    let window = XResourceId::new(0x68, 1);
+    let pixmap = XResourceId::new(0x69, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(30),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface: SurfaceId::new(22, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime
+        .create_pixmap(
+            namespace,
+            pixmap,
+            Size {
+                width: 4,
+                height: 4,
+            },
+            1,
+        )
+        .unwrap();
+
+    let response = runtime.present_standard_pixmap(
+        TransactionId::from_raw(31),
+        namespace,
+        window,
+        pixmap,
+        0,
+        0,
+    );
+
+    assert_eq!(
+        response.outcome,
+        XAuthorityResponseOutcome::Rejected(XAuthorityRuntimeError::InvalidResource)
+    );
+    assert!(response.transactions.is_empty());
+    assert!(runtime.take_cpu_buffer_update().is_none());
+}

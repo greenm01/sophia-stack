@@ -1,4 +1,9 @@
 use super::*;
+use crate::commands::live_session::{
+    LiveAdmissionAuthorityGroup, PersistentLiveLayout, production_authority_batch,
+    wm_update_coordinator_batch,
+};
+use sophia_protocol::TransactionId;
 
 fn layer_snapshots_from_committed(
     committed_surfaces: &[CommittedSurfaceState],
@@ -266,6 +271,7 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
         transactions: vec![transaction],
         removed_surfaces: Vec::new(),
         present_submissions: Vec::new(),
+        software_present_submissions: Vec::new(),
     };
     let report = runtime
         .run_authority_transactions(sophia_backend_live::LiveAuthorityTransactionRun {
@@ -292,4 +298,106 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
         assert_eq!(committed.len(), 1);
         assert_eq!(committed[0].committed_generation, 1);
     }
+}
+
+#[test]
+fn same_iteration_software_admission_release_replaces_original_observation() {
+    let transaction = TransactionId::from_raw(190);
+    let surface = SurfaceId::new(191, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 500,
+        height: 500,
+    };
+    let pixels = SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: 192 },
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let software_present = sophia_x_authority::XAuthoritySoftwarePresentSubmission {
+        transaction,
+        surface,
+        acquire_fence: None,
+        idle_fence: None,
+    };
+    let mut observed = wm_update_coordinator_batch(transaction);
+    observed.transactions.push(pixels.clone());
+    observed.software_present_submissions.push(software_present);
+    let mut layout = PersistentLiveLayout::default();
+    layout
+        .released_admission_groups
+        .push_back(LiveAdmissionAuthorityGroup {
+            transaction,
+            transactions: vec![pixels],
+            present_submissions: Vec::new(),
+            software_present_submissions: vec![software_present],
+            superseded: false,
+        });
+
+    let (projected, released) = layout.projected_batch(&observed);
+    let production = production_authority_batch(&projected, &released, &layout);
+
+    assert!(projected.transactions.is_empty());
+    assert!(projected.software_present_submissions.is_empty());
+    assert_eq!(released.len(), 1);
+    assert_eq!(production.groups.len(), 1);
+    assert_eq!(production.groups[0].transactions.len(), 1);
+    assert_eq!(production.groups[0].software_present_submissions.len(), 1);
+    production.validate().unwrap();
+}
+
+#[test]
+fn duplicate_software_present_fails_before_renderer_registration() {
+    let transaction = TransactionId::from_raw(193);
+    let surface = SurfaceId::new(194, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 1,
+    };
+    let pixels = SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: 195 },
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let submission = sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+        transaction,
+        surface,
+        acquire_fence: None,
+        idle_fence: None,
+    };
+    let batch = sophia_backend_live::LiveProductionAuthorityBatch {
+        groups: vec![sophia_backend_live::LiveProductionAuthorityGroup {
+            transaction,
+            transactions: vec![pixels],
+            removed_surfaces: Vec::new(),
+            present_submissions: Vec::new(),
+            software_present_submissions: vec![submission, submission],
+        }],
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+
+    assert_eq!(
+        batch.validate(),
+        Err("production authority group contains a duplicate software Present")
+    );
 }

@@ -13,10 +13,11 @@ REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
-if [[ "$SESSION_PROFILE" != xmonad
+if [[ "$SESSION_PROFILE" != standalone
+    && "$SESSION_PROFILE" != xmonad
     && "$SESSION_PROFILE" != native
     && "$SESSION_PROFILE" != kitty ]]; then
-    echo "SOPHIA_TTY_PROFILE must be xmonad, native, or kitty." >&2
+    echo "SOPHIA_TTY_PROFILE must be standalone, xmonad, native, or kitty." >&2
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
@@ -130,7 +131,7 @@ if [[ "$BUILD_SESSION" == true ]]; then
     cargo build --offline --release -p sophia-cli --features atomic-scanout-live
     if [[ "$SESSION_PROFILE" == xmonad ]]; then
         cargo build --offline --release -p sophia-x11-wm-bridge
-    elif [[ "$SESSION_PROFILE" == native ]]; then
+    elif [[ "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone ]]; then
         cargo build --offline --release -p sophia-wm-demo
     fi
     tools/atomic_scanout_preflight.sh
@@ -143,7 +144,8 @@ if [[ "$SESSION_PROFILE" == xmonad && ! -x "$SOPHIA_WM_BRIDGE_BIN" ]]; then
     echo "Sophia WM bridge is not executable: $SOPHIA_WM_BRIDGE_BIN" >&2
     exit 1
 fi
-if [[ "$SESSION_PROFILE" == native && ! -x "$SOPHIA_NATIVE_WM_BIN" ]]; then
+if [[ ( "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone )
+    && ! -x "$SOPHIA_NATIVE_WM_BIN" ]]; then
     echo "Sophia native WM is not executable: $SOPHIA_NATIVE_WM_BIN" >&2
     exit 1
 fi
@@ -273,7 +275,11 @@ done
 echo "Emergency input guard armed."
 lifecycle_phase complete input_guard
 
-if [[ "$SESSION_PROFILE" == xmonad ]]; then
+if [[ "$SESSION_PROFILE" == standalone ]]; then
+    echo "Starting Sophia's standalone natural-size application proof on $DISPLAY_NAME."
+    echo "No terminal, xmonad bridge, or status bar will run."
+    echo "Use Super+Shift+Q to log out after inspecting the application."
+elif [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Starting Sophia with experimental xmonad layout policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 elif [[ "$SESSION_PROFILE" == native ]]; then
@@ -286,10 +292,20 @@ else
 fi
 echo "Press Ctrl-Alt-Backspace for local emergency recovery."
 echo "The outside control plane may also run tools/stop_sophia_${SESSION_PROFILE}_session.sh."
-terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
-if [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
-    echo "The graphical session requires Kitty; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
-    exit 1
+terminal_bin=""
+standalone_bin=""
+if [[ "$SESSION_PROFILE" == standalone ]]; then
+    standalone_bin="${SOPHIA_STANDALONE_APP_BIN:-$(command -v vkcube || true)}"
+    if [[ -z "$standalone_bin" || ! -x "$standalone_bin" ]]; then
+        echo "The standalone proof requires vkcube; set SOPHIA_STANDALONE_APP_BIN to override it." >&2
+        exit 1
+    fi
+else
+    terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
+    if [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
+        echo "The graphical session requires Kitty; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
+        exit 1
+    fi
 fi
 [[ ! -f "$SESSION_LOG" ]] || mv -f "$SESSION_LOG" "$SESSION_LOG.previous"
 : >"$SESSION_LOG"
@@ -297,21 +313,43 @@ chmod 600 "$SESSION_LOG"
 session_args=(
     sophia-live-session
     --session-mode=normal
-    "--session-app=terminal=$terminal_bin"
-    --session-start=terminal
     --display="$DISPLAY_NAME"
     --native-scanout
     "${input_source_args[@]}"
-    --session-app-arg=terminal=--config
-    --session-app-arg=terminal=NONE
-    --session-app-arg=terminal=--override
-    --session-app-arg=terminal=linux_display_server=x11
-    --session-app-arg=terminal=--override
-    --session-app-arg=terminal=background_opacity=1
-    --session-app-arg=terminal=--title
-    "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
     --startup-ready-timeout-ms=8000
 )
+if [[ "$SESSION_PROFILE" == standalone ]]; then
+    standalone_wm_template="$ROOT_DIR/tools/fixtures/standalone_sophia_wm.kdl"
+    standalone_wm_config="$STATE_DIR/standalone-wm.kdl"
+    if [[ ! -f "$standalone_wm_template" ]]; then
+        echo "The standalone WM policy is missing: $standalone_wm_template" >&2
+        exit 1
+    fi
+    install -m 600 "$standalone_wm_template" "$standalone_wm_config"
+    session_args+=(
+        --no-config
+        "--session-app=standalone=$standalone_bin"
+        --session-app-arg=standalone=--wsi
+        --session-app-arg=standalone=xcb
+        --session-start=standalone
+        --exit-when-startup-exits
+        --wm-process="$SOPHIA_NATIVE_WM_BIN"
+        "--wm-process-arg=--wm-config=$standalone_wm_config"
+    )
+else
+    session_args+=(
+        "--session-app=terminal=$terminal_bin"
+        --session-start=terminal
+        --session-app-arg=terminal=--config
+        --session-app-arg=terminal=NONE
+        --session-app-arg=terminal=--override
+        --session-app-arg=terminal=linux_display_server=x11
+        --session-app-arg=terminal=--override
+        --session-app-arg=terminal=background_opacity=1
+        --session-app-arg=terminal=--title
+        "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
+    )
+fi
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     session_args+=(
         --session-action-app=terminal=terminal

@@ -118,6 +118,10 @@ pub struct XAuthorityObservedTransactionBatch {
     pub client: Option<XServerFrontendClientId>,
     pub transaction: TransactionId,
     pub transactions: Vec<SurfaceTransaction>,
+    /// Surfaces whose transaction was produced by a complete presentation
+    /// request. This preserves protocol-neutral visual evidence independently
+    /// of whether the frame storage is DMA-BUF or a materialized CPU snapshot.
+    pub presented_surfaces: Vec<SurfaceId>,
     /// Protocol-neutral presentation facts reduced from authority-private
     /// window attributes. Raw X11 object IDs remain inside the frontend.
     pub surface_presentations: Vec<XAuthoritySurfacePresentationObservation>,
@@ -134,6 +138,7 @@ pub struct XAuthorityObservedTransactionBatch {
     pub dma_buf_registrations: Vec<XAuthorityDmaBufRegistration>,
     pub fence_registrations: Vec<XAuthorityFenceRegistration>,
     pub present_submissions: Vec<crate::XAuthorityPresentSubmission>,
+    pub software_present_submissions: Vec<crate::XAuthoritySoftwarePresentSubmission>,
     pub released_dma_bufs: Vec<sophia_protocol::BufferHandle>,
     pub released_fences: Vec<sophia_protocol::FenceHandle>,
     /// Reduced protocol errors. Resource IDs and request payloads deliberately
@@ -160,6 +165,7 @@ impl XAuthorityObservedTransactionBatch {
             client: None,
             transaction: response.transaction,
             transactions: response.transactions.clone(),
+            presented_surfaces: Vec::new(),
             surface_presentations: response
                 .surfaces
                 .iter()
@@ -179,6 +185,7 @@ impl XAuthorityObservedTransactionBatch {
             dma_buf_registrations: Vec::new(),
             fence_registrations: Vec::new(),
             present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
             released_dma_bufs: Vec::new(),
             released_fences: Vec::new(),
             protocol_errors: Vec::new(),
@@ -238,6 +245,7 @@ impl XAuthorityObservedTransactionBatch {
             && dma_buf_registrations.is_empty()
             && fence_registrations.is_empty()
             && trace.present_submission.is_none()
+            && trace.software_present_submission.is_none()
             && trace.released_dma_bufs.is_empty()
             && trace.released_fences.is_empty()
             && trace.surface_output_reservations.is_empty()
@@ -294,6 +302,15 @@ impl XAuthorityObservedTransactionBatch {
                 })
             })
             .collect::<Vec<_>>();
+        let presented_surfaces =
+            if trace.request_stage == crate::X11ObservedRequestStage::PresentPixmap {
+                transactions
+                    .iter()
+                    .map(|transaction| transaction.surface)
+                    .collect()
+            } else {
+                Vec::new()
+            };
         if transactions.is_empty()
             && surface_presentations.is_empty()
             && presentation_intents.is_empty()
@@ -301,6 +318,7 @@ impl XAuthorityObservedTransactionBatch {
             && dma_buf_registrations.is_empty()
             && fence_registrations.is_empty()
             && trace.present_submission.is_none()
+            && trace.software_present_submission.is_none()
             && trace.released_dma_bufs.is_empty()
             && trace.released_fences.is_empty()
             && trace.surface_output_reservations.is_empty()
@@ -319,6 +337,7 @@ impl XAuthorityObservedTransactionBatch {
                 |response| response.transaction,
             ),
             transactions,
+            presented_surfaces,
             surface_presentations,
             presentation_intents,
             removed_surfaces,
@@ -327,6 +346,7 @@ impl XAuthorityObservedTransactionBatch {
             dma_buf_registrations,
             fence_registrations,
             present_submissions: trace.present_submission.into_iter().collect(),
+            software_present_submissions: trace.software_present_submission.into_iter().collect(),
             released_dma_bufs: trace.released_dma_bufs.to_vec(),
             released_fences: trace.released_fences.to_vec(),
             protocol_errors,

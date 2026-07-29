@@ -1,6 +1,85 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
+    pub(super) fn enqueue_software_presents(
+        &mut self,
+        groups: &[LiveProductionAuthorityGroup],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let submissions = groups
+            .iter()
+            .flat_map(|group| group.software_present_submissions.iter().copied())
+            .collect::<Vec<_>>();
+        if submissions.is_empty() {
+            return Ok(());
+        }
+        for submission in &submissions {
+            self.presentation_feedback.resources_mut().begin_software(
+                submission.transaction,
+                submission.acquire_fence,
+                submission.idle_fence,
+            )?;
+            if !self
+                .presentation_feedback
+                .resources_mut()
+                .poll_acquire_fence(submission.transaction)?
+            {
+                return Err("software Present acquire fence is not ready".into());
+            }
+        }
+        self.software_presents_waiting_submit.push_back(submissions);
+        Ok(())
+    }
+
+    pub(super) fn mark_software_present_frame_submitted(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(submissions) = self.software_presents_waiting_submit.pop_front() else {
+            return Ok(());
+        };
+        for submission in &submissions {
+            self.presentation_feedback
+                .resources_mut()
+                .mark_submitted(submission.transaction)?;
+        }
+        self.software_presents_submitted.push_back(submissions);
+        Ok(())
+    }
+
+    pub(super) fn settle_software_present_frame(
+        &mut self,
+        ust: u64,
+        msc: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(submissions) = self.software_presents_submitted.pop_front() else {
+            return Ok(());
+        };
+        for submission in submissions {
+            let outcome =
+                self.presentation_feedback
+                    .complete_flip(submission.transaction, ust, msc)?;
+            self.route_present_feedback(outcome);
+        }
+        Ok(())
+    }
+
+    pub(super) fn reject_software_presents(&mut self, ust: u64, msc: u64) {
+        let transactions = self
+            .software_presents_waiting_submit
+            .drain(..)
+            .chain(self.software_presents_submitted.drain(..))
+            .flatten()
+            .map(|submission| submission.transaction)
+            .collect::<Vec<_>>();
+        for transaction in transactions {
+            if let Ok(outcome) = self
+                .presentation_feedback
+                .reject_skip(transaction, ust, msc)
+            {
+                self.route_present_feedback(outcome);
+            }
+        }
+    }
+
     pub fn reject_gpu_presentation(&mut self, transaction: TransactionId, ust: u64, msc: u64) {
         if let Ok(outcome) = self
             .presentation_feedback
@@ -56,6 +135,7 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn shutdown_presentations(&mut self) -> crate::LivePresentationDisconnectReport {
+        self.reject_software_presents(0, 0);
         let queued = self.present_scheduler.drain_transactions();
         for transaction in queued {
             self.reject_gpu_presentation(transaction, 0, 0);

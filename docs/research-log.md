@@ -3,6 +3,31 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-28: Visible Vulkan Diagnosis Starts With One Natural-Size Client
+
+The first physical xmonad run after evidence-ranked admission produced no
+visible change: default vkcube still opened a blank bordered surface. Further
+changes made only inside the combined Kitty/xmonad path would not distinguish
+the X11 Present/rendering fault from compatibility-bridge layout behavior.
+
+Sophia now has a dedicated single-client production profile. It launches
+`vkcube --wsi xcb` directly, omits Kitty, xmonad, xmobar, and the X11 WM
+compatibility bridge, and uses the external reference WM's new generic
+`natural` layout policy. That policy sees only an opaque layout node, preserves
+its natural allocation, centers it within output bounds, and emits no policy
+resize. It is usable for any single-purpose session; neither its reducer nor
+Engine branches on vkcube identity.
+
+The profile deliberately retains policy-managed deferred mapping, the X
+authority's DRI3/Present stream, exact visual-candidate admission, renderer
+composition, and KMS page-flip retirement. It therefore draws a useful fault
+boundary: a blank standalone window localizes the defect below the xmonad
+bridge, while a visible cube localizes the remaining defect to full-desktop
+policy/configure integration. The strict verifier requires one
+PresentedBuffer candidate, exact armed/presented/retired identity, nonzero
+scanout pixels, normal logout, and zero live presentation resources. Physical
+evidence is pending.
+
 ## 2026-07-28: Admission Recovery Requires Evidence, Not Latest Extent
 
 The first physical run after staged-pixel recovery still produced the same
@@ -4851,3 +4876,65 @@ acknowledgement ordering.
 - An all-feature regression reproduces an acknowledged admission entering a
   recovery transaction and requires the retry's finalization set, managed
   transition, transaction release, and Present release.
+
+## 2026-07-28: standalone Vulkan isolated unresolved software Present
+
+- The first standalone `vkcube --wsi xcb` run passed natural-layout admission,
+  configure, and focus, then timed out at `no_visual_detail`. Vulkan selected
+  llvmpipe. Sophia selected a 500-by-500 `XPixmap` candidate while recording
+  zero DMA-BUF registrations and zero Present submissions, so no renderable
+  storage could reach composition or KMS.
+- A raw X pixmap is not a renderer buffer. The X authority now materializes
+  regular software pixmaps into immutable CPU snapshots at Present time. It
+  also retains MIT-SHM pixmap bindings and snapshots client-owned shared pixels
+  at the same transactional boundary; DRI3 remains the zero-copy path.
+- Unresolved pixmaps now fail closed instead of becoming false
+  `PresentedBuffer` evidence. Complete-presentation semantics travel as a
+  passive, protocol-neutral surface observation independent of CPU or DMA-BUF
+  storage, preserving the admission reducer's distinction between a submitted
+  frame and an accumulated backing image.
+- The whole-pixmap SHM copy is the bounded correctness fallback. Damage-scoped
+  persistent mappings remain an explicit post-proof optimization.
+
+## 2026-07-28: software Present feedback must follow composed KMS retirement
+
+- The first materialized software-Present run made the llvmpipe cube visible,
+  but it remained on its first frame. The log contained one authority visual
+  transaction and a retired nonzero CPU scanout, while Present Complete, Idle,
+  and idle-fence-trigger counts all remained zero. The client was correctly
+  waiting for permission to reuse its software pixmap.
+- Presentation lifetime is now independent of storage kind. A software
+  Present carries only its transaction, surface, and optional acquire/idle
+  fence handles across the passive authority and production records. It owns
+  no fabricated DMA-BUF handle.
+- The production runtime registers that lifetime beside the CPU transaction,
+  marks it submitted only when the composed primary frame reaches native KMS,
+  and emits Complete followed by Idle after the matching page-flip retirement.
+  Headless composition settles at its deterministic submission boundary.
+- Focused regressions require source-free presentation retirement, actual idle
+  fence signaling, authority-to-production observation preservation, and
+  Complete-before-Idle routing. The physical verifier now rejects a visible
+  but static software frame by requiring at least three authority frames and
+  positive Complete, Idle, and idle-fence evidence.
+
+## 2026-07-28: admission release must replace every storage form exactly once
+
+- The first physical run with software feedback failed immediately after
+  committing the initial CPU snapshot with `DuplicatePresentation`. The same
+  transaction reached production twice: admission projection removed the
+  quarantined surface transaction and DMA-BUF Present from the original
+  observation, but omitted the equivalent software-Present record. The
+  same-iteration admission release then appended its retained copy.
+- Projection now applies one quarantine predicate to CPU transactions,
+  DMA-BUF Presents, and software Presents. The released admission group is the
+  sole owner of the reprojected transaction and presentation lifetime.
+- Admission and production validation also reject duplicate software Presents
+  for one transaction/surface before renderer resource registration. Focused
+  regressions reproduce same-iteration replacement and the defensive failure
+  boundary.
+- The corrected physical standalone run passed its exact verifier. The
+  500-by-500 llvmpipe cube animated through 487 software-Present transactions
+  in 17,755 ms; all 487 produced native retirements, Complete, Idle, and
+  idle-fence triggers. Native submission and retirement failures remained
+  zero, all presentation resources drained, X protocol errors remained zero,
+  and the session completed normal cleanup.

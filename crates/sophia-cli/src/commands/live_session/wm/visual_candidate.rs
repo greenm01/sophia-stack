@@ -29,14 +29,18 @@ fn live_transaction_observed_size(
 
 fn live_transaction_visual_evidence(
     transaction: &SurfaceTransaction,
+    explicitly_presented: bool,
 ) -> sophia_engine::SurfaceVisualEvidence {
-    match transaction.target_buffer {
-        sophia_protocol::BufferSource::DmaBuf { .. }
-        | sophia_protocol::BufferSource::XPixmap { .. } => {
+    match (transaction.target_buffer, explicitly_presented) {
+        (_, true) | (sophia_protocol::BufferSource::DmaBuf { .. }, false) => {
             sophia_engine::SurfaceVisualEvidence::PresentedBuffer
         }
-        sophia_protocol::BufferSource::CpuBuffer { .. }
-        | sophia_protocol::BufferSource::None => {
+        (
+            sophia_protocol::BufferSource::XPixmap { .. }
+            | sophia_protocol::BufferSource::CpuBuffer { .. }
+            | sophia_protocol::BufferSource::None,
+            false,
+        ) => {
             sophia_engine::SurfaceVisualEvidence::BackingSnapshot
         }
     }

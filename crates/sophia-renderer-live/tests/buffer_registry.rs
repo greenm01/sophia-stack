@@ -184,6 +184,32 @@ fn reusable_dmabuf_source_survives_fenced_present_retirement() {
 }
 
 #[test]
+fn software_present_tracks_feedback_without_a_dmabuf_source() {
+    let transaction = TransactionId::from_raw(53);
+    let idle_fence_id = FenceHandle::from_raw(54);
+    let idle_fence = sophia_xshmfence::allocate().unwrap();
+    let idle_query = idle_fence.try_clone().unwrap();
+    let mut registry = LiveDmaBufPresentationRegistry::default();
+    registry
+        .register_fence(idle_fence_id, false, idle_fence)
+        .unwrap();
+
+    registry
+        .begin_software_present(transaction, None, Some(idle_fence_id))
+        .unwrap();
+    assert_eq!(registry.state(transaction), Some(LiveBufferState::Ready));
+    assert_eq!(registry.source_for_presentation(transaction), None);
+    registry.submit(transaction).unwrap();
+    let retirement = registry.retire_page_flip(transaction).unwrap();
+
+    assert_eq!(retirement.source, BufferSource::None);
+    assert!(!retirement.released_source);
+    assert_eq!(retirement.idle_fence, LiveIdleFenceStatus::Triggered);
+    assert!(sophia_xshmfence::query(&idle_query).unwrap());
+    assert_eq!(registry.presentation_count(), 0);
+}
+
+#[test]
 fn persistent_dmabuf_disconnect_releases_each_source_once() {
     let mut registry = LiveDmaBufPresentationRegistry::default();
     registry

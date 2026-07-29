@@ -15,6 +15,48 @@ fn rect(width: i32, height: i32) -> Rect {
 }
 
 #[test]
+fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(79),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(79, 1),
+        namespace: None,
+        target_geometry: rect(500, 500),
+        target_buffer: BufferSource::XPixmap { pixmap: 0x220001 },
+        damage: Region::single(rect(500, 500)),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+
+    assert_eq!(
+        live_transaction_visual_evidence(&transaction, false),
+        sophia_engine::SurfaceVisualEvidence::BackingSnapshot
+    );
+}
+
+#[test]
+fn presented_cpu_snapshot_is_complete_present_evidence() {
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(78),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(78, 1),
+        namespace: None,
+        target_geometry: rect(500, 500),
+        target_buffer: BufferSource::CpuBuffer { handle: 780 },
+        damage: Region::single(rect(500, 500)),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+
+    assert_eq!(
+        live_transaction_visual_evidence(&transaction, true),
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+    );
+}
+
+#[test]
 fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
     let surface = SurfaceId::new(81, 1);
     let initial = rect(500, 500);

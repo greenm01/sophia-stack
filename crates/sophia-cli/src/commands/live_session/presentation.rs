@@ -150,6 +150,17 @@ fn production_authority_batch(
             },
         );
     }
+    for submission in &batch.software_present_submissions {
+        let index = production_authority_group_index(&mut groups, submission.transaction);
+        groups[index].software_present_submissions.push(
+            sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                acquire_fence: submission.acquire_fence,
+                idle_fence: submission.idle_fence,
+            },
+        );
+    }
     for released in released_admission_groups {
         let index = production_authority_group_index(&mut groups, released.transaction);
         groups[index]
@@ -174,6 +185,19 @@ fn production_authority_batch(
                         acquire_fence: submission.acquire_fence,
                         idle_fence: submission.idle_fence,
                         layout_disposition,
+                    }
+                }),
+        );
+        groups[index].software_present_submissions.extend(
+            released
+                .software_present_submissions
+                .iter()
+                .map(|submission| {
+                    sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+                        transaction: submission.transaction,
+                        surface: submission.surface,
+                        acquire_fence: submission.acquire_fence,
+                        idle_fence: submission.idle_fence,
                     }
                 }),
         );
@@ -217,6 +241,7 @@ fn production_authority_group_index(
         transactions: Vec::new(),
         removed_surfaces: Vec::new(),
         present_submissions: Vec::new(),
+        software_present_submissions: Vec::new(),
     });
     groups.len() - 1
 }

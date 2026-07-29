@@ -29,6 +29,10 @@ const WM_SOCKET_FRAME_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WmConfigReloadEvent {
+    Ready {
+        generation: u64,
+        layout: sophia_config::WmLayoutKind,
+    },
     Candidate {
         generation: u64,
     },
@@ -47,6 +51,11 @@ pub enum WmConfigReloadEvent {
 impl fmt::Display for WmConfigReloadEvent {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Ready { generation, layout } => write!(
+                formatter,
+                "sophia_wm_demo schema=1 status=ready generation={generation} layout_policy={}",
+                layout.name()
+            ),
             Self::Candidate { generation } => write!(
                 formatter,
                 "sophia_wm_config_reload schema=2 status=candidate generation={generation}"
@@ -103,6 +112,10 @@ pub fn run_socket_server_with_config_observer(
     };
     let mut config = sophia_config::WmConfigState::load(&source)
         .map_err(|error| WmProcessError::new(format!("failed to load WM config: {error}")))?;
+    observe(WmConfigReloadEvent::Ready {
+        generation: config.active().generation.raw(),
+        layout: config.active().layout,
+    });
     let source_path = source.path.clone();
     let watcher = source
         .path

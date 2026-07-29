@@ -25,6 +25,18 @@ active compositor-chrome preference. It cannot change input admission,
 outputs, namespaces, executable registry entries, renderer or scanout policy,
 or Engine hard limits.
 
+Native layout selection currently accepts:
+
+- `layout "columns"` to divide the active work area among visible nodes and
+  request matching client sizes;
+- `layout "natural"` to preserve each node's current opaque allocation,
+  constrain it to the work area, center it, and issue no policy resize.
+
+`natural` is useful for single-purpose and diagnostic sessions but is not tied
+to an application identity. Both layouts consume the same metadata-blind node
+snapshot and remain subject to Engine constraint reconciliation and atomic
+admission.
+
 An external WM does not consume `wm.kdl`. It keeps its native configuration,
 such as `xmonad.hs`. Its compatibility bridge still crosses the same blind,
 versioned Sophia WM API. A WM never overrides or mutates `config.kdl`.

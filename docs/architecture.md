@@ -164,6 +164,29 @@ recovery, and exact resource retirement pass on retained hardware evidence.
 Milestone 5 application promotion uses the repeatable, unattended classic and
 confined QEMU session gate; machine-specific runs are compatibility diagnostics.
 
+The physical validation stack also has a single-client production profile. It
+launches one approved native-X application directly, uses the external
+reference WM's metadata-blind `natural` policy, and retains the normal deferred
+admission and native scanout path:
+
+```text
+ [single validation client]
+            │ X11 / DRI3 / Present
+            ▼
+ [Sophia X authority] ── opaque intent ──► [natural-size policy]
+            │                                  │ centered geometry
+            └──────── transaction facts ◄──────┘
+                            │
+                            ▼
+ [Engine admission] → [renderer] → [DRM/KMS retirement]
+```
+
+This is an isolation profile, not an alternate compositor architecture. The
+selected executable belongs only to session launch configuration. The policy
+sees no executable identity, Engine remains protocol-neutral, and a successful
+run exercises the same production transaction and scanout owners used by a
+full desktop.
+
 Renderer-live owns the CPU scene. Backend-live owns native scanout, the concrete
 per-output runtime set, and `LiveProductionVisualRuntime`, which contains
 Engine commit/preparation, composition, Present scheduling, KMS
@@ -336,8 +359,12 @@ committed ordering resumes.
 
 This reducer does not make the Engine understand X11. The X authority owns the
 meaning and order of Present, core drawing, SHM drawing, clears, and backing
-storage. It lowers complete Present/XPixmap buffers as presented-buffer
-evidence and its accumulated software image as backing-snapshot evidence.
+storage. A raw `XPixmap` is authority-local identity, not renderable evidence:
+the authority resolves DRI3 pixmaps to DMA-BUF storage and snapshots software
+or MIT-SHM pixmaps to immutable CPU storage before emitting the transaction.
+The observation batch separately marks surfaces produced by a complete
+presentation request, so presented-frame evidence does not depend on the
+storage type. Accumulated core/SHM drawing remains backing-snapshot evidence.
 Xserver is the reference for the longer-term content rule: those operations
 form one ordered logical window stream rather than unrelated whole-window
 owners.

@@ -49,6 +49,13 @@ pub struct XAuthorityClientResourceRelease {
     pub released_fences: Vec<sophia_protocol::FenceHandle>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct XShmPixmapBinding {
+    shmid: u32,
+    offset: u32,
+    size: Size,
+}
+
 #[derive(Debug)]
 pub struct XAuthorityRuntime {
     resources: XResourceTable,
@@ -61,6 +68,7 @@ pub struct XAuthorityRuntime {
     next_clipboard_proxy: u32,
     software_buffers: XSoftwareBufferStore,
     pixmap_sizes: BTreeMap<crate::XResourceId, Size>,
+    shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
     next_dma_buf_handle: u64,
     dri3_fences: BTreeMap<crate::XResourceId, sophia_protocol::FenceHandle>,
@@ -93,6 +101,7 @@ impl Default for XAuthorityRuntime {
             next_clipboard_proxy: 0,
             software_buffers: Default::default(),
             pixmap_sizes: Default::default(),
+            shm_pixmaps: Default::default(),
             dri3_pixmaps: Default::default(),
             next_dma_buf_handle: 1,
             dri3_fences: Default::default(),

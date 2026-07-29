@@ -37,6 +37,14 @@ pub struct LiveProductionPresentSubmission {
     pub layout_disposition: LiveProductionPresentDisposition,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionSoftwarePresentSubmission {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub acquire_fence: Option<FenceHandle>,
+    pub idle_fence: Option<FenceHandle>,
+}
+
 #[derive(Clone, Debug)]
 pub struct LiveProductionAuthorityBatch {
     /// Ordered atomic transaction groups carried by this bounded intake
@@ -55,6 +63,7 @@ pub struct LiveProductionAuthorityGroup {
     pub transactions: Vec<SurfaceTransaction>,
     pub removed_surfaces: Vec<SurfaceId>,
     pub present_submissions: Vec<LiveProductionPresentSubmission>,
+    pub software_present_submissions: Vec<LiveProductionSoftwarePresentSubmission>,
 }
 
 impl LiveProductionAuthorityGroup {
@@ -76,6 +85,15 @@ impl LiveProductionAuthorityGroup {
         {
             return Err("production authority group contains a mismatched Present submission");
         }
+        if self
+            .software_present_submissions
+            .iter()
+            .any(|submission| submission.transaction != self.transaction)
+        {
+            return Err(
+                "production authority group contains a mismatched software Present submission",
+            );
+        }
         let present_keys = self
             .present_submissions
             .iter()
@@ -87,6 +105,31 @@ impl LiveProductionAuthorityGroup {
             .collect::<Vec<_>>();
         if !sophia_protocol::dma_buf_present_pairs_are_exact(&self.transactions, &present_keys) {
             return Err("production DMA-BUF transactions and Presents are not exact pairs");
+        }
+        for (index, submission) in self.software_present_submissions.iter().enumerate() {
+            if self.software_present_submissions[..index]
+                .iter()
+                .any(|prior| prior.surface == submission.surface)
+            {
+                return Err("production authority group contains a duplicate software Present");
+            }
+            let matches = self
+                .transactions
+                .iter()
+                .filter(|transaction| {
+                    transaction.transaction == submission.transaction
+                        && transaction.surface == submission.surface
+                        && matches!(
+                            transaction.target_buffer,
+                            sophia_protocol::BufferSource::CpuBuffer { .. }
+                        )
+                })
+                .count();
+            if matches != 1 {
+                return Err(
+                    "production CPU transactions and software Presents are not exact pairs",
+                );
+            }
         }
         Ok(())
     }
@@ -107,7 +150,11 @@ impl LiveProductionAuthorityBatch {
             .sum()
     }
 
-    pub fn has_present_submissions(&self) -> bool {
+    /// Whether this batch needs the DMA-BUF Present composition path.
+    ///
+    /// Software Present remains a presentation semantically, but its
+    /// materialized CPU snapshot must enter the CPU production cycle.
+    pub fn has_dma_buf_present_submissions(&self) -> bool {
         self.groups
             .iter()
             .any(|group| !group.present_submissions.is_empty())

@@ -874,7 +874,7 @@
                 }
             }
             eprintln!(
-                "sophia_live_session_startup schema=3 status=failed stage={stage} elapsed_msec={} authority_batches={batches} transactions={transactions} layout_surfaces={} runtime_surfaces={runtime_surfaces} focus={} focus_control_ready={focused_client_ready} retired_present_surfaces={} dma_buf_registrations={dma_buf_registrations_observed} fence_registrations={fence_registrations_observed} present_submissions={present_submissions_observed} native_submissions={} native_submit_failures={} native_retirements={} native_callbacks={} native_state={} protocol_errors={protocol_error_count}",
+                "sophia_live_session_startup schema=3 status=failed stage={stage} elapsed_msec={} authority_batches={batches} transactions={transactions} cpu_buffer_updates={cpu_buffer_updates} cpu_compositions={cpu_compositions} layout_surfaces={} runtime_surfaces={runtime_surfaces} focus={} focus_control_ready={focused_client_ready} retired_present_surfaces={} dma_buf_registrations={dma_buf_registrations_observed} fence_registrations={fence_registrations_observed} present_submissions={present_submissions_observed} native_submissions={} native_submit_failures={} native_retirements={} native_callbacks={} native_state={} protocol_errors={protocol_error_count}",
                 started.elapsed().as_millis(),
                 layout.layers.len(),
                 focus.focused_surface(seat).is_some(),
@@ -895,8 +895,8 @@
                     || "none".to_owned(),
                     LiveProductionVisualRuntime::native_diagnostic
                 ),
-                batches = metrics.batches,
-                transactions = metrics.transactions,
+                batches = metrics.batches, transactions = metrics.transactions,
+                cpu_buffer_updates = metrics.cpu_buffer_updates, cpu_compositions = metrics.cpu_compositions,
                 runtime_surfaces = metrics.runtime_surfaces,
                 dma_buf_registrations_observed = metrics.dma_buf_registrations_observed,
                 fence_registrations_observed = metrics.fence_registrations_observed,

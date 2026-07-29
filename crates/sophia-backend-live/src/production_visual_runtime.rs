@@ -62,6 +62,8 @@ pub struct LiveProductionVisualRuntime {
     input_layers: Vec<LayerSnapshot>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
+    software_presents_waiting_submit: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
+    software_presents_submitted: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
     chrome_surfaces: Vec<SurfaceId>,
@@ -122,6 +124,8 @@ impl LiveProductionVisualRuntime {
             input_layers: Vec::new(),
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
+            software_presents_waiting_submit: VecDeque::new(),
+            software_presents_submitted: VecDeque::new(),
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
             chrome_surfaces: Vec::new(),
@@ -208,6 +212,7 @@ impl LiveProductionVisualRuntime {
             presentation_layout,
             chrome_surfaces,
         } = request;
+        let native_enabled = native_scanout.is_some();
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
@@ -247,6 +252,7 @@ impl LiveProductionVisualRuntime {
         self.release_removed_presentations(&removed_surfaces);
         let rebased_groups =
             rebase_authority_groups_to_committed(batch, self.production.committed_surfaces());
+        self.enqueue_software_presents(&rebased_groups)?;
         for group in &rebased_groups {
             self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
         }
@@ -350,6 +356,17 @@ impl LiveProductionVisualRuntime {
                     error.phase, error.source
                 )
             })?;
+        if report
+            .submission
+            .tick
+            .rendered_primary_plane_scanout_submit
+            .is_some()
+        {
+            self.mark_software_present_frame_submitted()?;
+        } else if !native_enabled && report.submission.composed {
+            self.mark_software_present_frame_submitted()?;
+            self.settle_software_present_frame(0, 0)?;
+        }
         if report.submission.composed {
             self.record_focus_ring_observation(&report.committed_surfaces, false)?;
         }
@@ -407,7 +424,7 @@ impl LiveProductionVisualRuntime {
         // A Present-bearing authority group owns the next native visual
         // candidate. Do not queue a retained CPU frame ahead of it: that can
         // expose new layout/chrome around old or absent client pixels.
-        let native_frames = if defer_frame || batch.has_present_submissions() {
+        let native_frames = if defer_frame || batch.has_dma_buf_present_submissions() {
             None
         } else {
             native_scanout

@@ -66,6 +66,10 @@ bash -n tools/start_sophia_xmonad_xmobar_tty3.sh \
     tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
 tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
 bash -n tools/start_sophia_xmonad_vkcube_recovery_tty3.sh
+bash -n tools/start_sophia_vkcube_standalone_tty3.sh \
+    tools/verify_sophia_standalone_vkcube.sh \
+    tools/check_sophia_standalone_vkcube_verifier.sh
+tools/check_sophia_standalone_vkcube_verifier.sh
 bash -n tools/verify_sophia_xmonad_xmobar.sh
 bash -n tools/check_sophia_xmonad_xmobar_verifier.sh
 tools/check_sophia_xmonad_xmobar_verifier.sh
@@ -93,7 +97,8 @@ bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh \
-    tools/stop_sophia_native_session.sh tools/stop_sophia_session.sh
+    tools/stop_sophia_native_session.sh tools/stop_sophia_standalone_session.sh \
+    tools/stop_sophia_session.sh
 bash -n tools/verify_sophia_xmonad_tty3.sh
 bash -n tools/check_sophia_xmonad_tty3_verifier.sh
 bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
@@ -119,6 +124,12 @@ grep -Fq 'linux_display_server=x11' tools/run_sophia_xmonad_session.sh
 grep -Fq 'background_opacity=1' tools/run_sophia_xmonad_session.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_DIAGNOSTIC=1' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--startup-ready-timeout-ms=8000' tools/run_sophia_xmonad_session.sh
+grep -Fq -- '--session-app=standalone=' tools/run_sophia_xmonad_session.sh
+grep -Fq 'layout "natural"' tools/fixtures/standalone_sophia_wm.kdl
+grep -Fq 'behavior="logout"' tools/fixtures/standalone_sophia_wm.kdl
+grep -Fq 'install -m 600 "$standalone_wm_template" "$standalone_wm_config"' \
+    tools/run_sophia_xmonad_session.sh
+grep -Fq 'standalone) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
 grep -Fq 'native) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh

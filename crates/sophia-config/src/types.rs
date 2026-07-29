@@ -275,6 +275,16 @@ pub struct WmBindingConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WmLayoutKind {
     Columns,
+    Natural,
+}
+
+impl WmLayoutKind {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Columns => "columns",
+            Self::Natural => "natural",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

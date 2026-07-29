@@ -96,7 +96,7 @@ fn dispatch_shm_request(
                                 .ok_or(crate::XAuthorityRuntimeError::InvalidResource)
                         })
                         .and_then(|()| {
-                            runtime.create_pixmap(
+                            runtime.create_shm_pixmap(
                                 context.namespace,
                                 pixmap,
                                 sophia_protocol::Size {
@@ -104,6 +104,8 @@ fn dispatch_shm_request(
                                     height: i32::from(height),
                                 },
                                 u64::from(context.sequence),
+                                segment,
+                                offset,
                             )
                         });
                     let outputs = result

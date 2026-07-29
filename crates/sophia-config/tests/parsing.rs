@@ -1,7 +1,7 @@
 use sophia_config::{
     COMPILED_CORE_CONFIG, COMPILED_WM_CONFIG, ConfigGeneration, ConfigParseError, CoreConfigDelta,
     CoreConfigState, FocusRingStyle, InputSourceConfig, ReloadDisposition, WmActionBehavior,
-    WmConfigState, parse_core_config, parse_wm_config,
+    WmConfigState, WmLayoutKind, parse_core_config, parse_wm_config,
 };
 
 const CORE: &str = r##"
@@ -83,6 +83,16 @@ fn parses_complete_native_wm_snapshot() {
         snapshot.actions[1].behavior,
         WmActionBehavior::ActivateWorkspace { workspace: 2 }
     );
+}
+
+#[test]
+fn parses_natural_wm_layout_policy() {
+    let source = WM.replace("layout \"columns\"", "layout \"natural\"");
+    let snapshot = parse_wm_config(source.as_bytes(), ConfigGeneration::INITIAL)
+        .expect("natural layout policy must be valid");
+
+    assert_eq!(snapshot.layout, WmLayoutKind::Natural);
+    assert_eq!(snapshot.layout.name(), "natural");
 }
 
 #[test]

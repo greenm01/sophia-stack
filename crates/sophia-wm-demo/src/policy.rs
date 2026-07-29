@@ -97,6 +97,65 @@ fn tile_workspace_with_timeout(
     }
 }
 
+pub fn place_workspace_at_natural_size(
+    transaction: TransactionId,
+    workspace: WorkspaceId,
+    bounds: Rect,
+    nodes: &[LayoutNodeSnapshot],
+    timeout_msec: u32,
+) -> LayoutTransaction {
+    let visible_nodes = nodes
+        .iter()
+        .filter(|node| node.workspace == workspace && node.state.visible)
+        .collect::<Vec<_>>();
+    if visible_nodes.is_empty() || bounds.is_empty() {
+        let mut transaction = empty_transaction(transaction);
+        transaction.timeout_msec = timeout_msec;
+        return transaction;
+    }
+
+    let mut render_positions = Vec::with_capacity(visible_nodes.len());
+    let mut focus = None;
+    for (index, node) in visible_nodes.iter().enumerate() {
+        let natural = clamp_size(
+            Size {
+                width: node.geometry.width,
+                height: node.geometry.height,
+            },
+            node.constraints.min_size,
+            node.constraints.max_size,
+        );
+        let size = Size {
+            width: natural.width.min(bounds.width).max(1),
+            height: natural.height.min(bounds.height).max(1),
+        };
+        let geometry = Rect {
+            x: bounds.x + bounds.width.saturating_sub(size.width) / 2,
+            y: bounds.y + bounds.height.saturating_sub(size.height) / 2,
+            width: size.width,
+            height: size.height,
+        };
+        if focus.is_none() && node.capabilities.focusable {
+            focus = Some(node.surface);
+        }
+        render_positions.push(SurfacePlacement {
+            surface: node.surface,
+            geometry,
+            z_index: i32::try_from(index).unwrap_or(i32::MAX),
+            crop: None,
+            transform: Transform::IDENTITY,
+        });
+    }
+
+    LayoutTransaction {
+        transaction,
+        requested_sizes: Vec::new(),
+        focus,
+        render_positions,
+        timeout_msec,
+    }
+}
+
 pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
     match request.kind {
         WmRequestKind::ManageSurface(manage) => {
@@ -173,23 +232,41 @@ pub fn handle_wm_request_with_config(
 ) -> WmResponsePacket {
     match request.kind {
         WmRequestKind::ManageSurface(manage) => {
-            let transaction = tile_workspace_with_timeout(
-                request.transaction,
-                manage.workspace,
-                manage.bounds,
-                &[manage.node],
-                config.timeout_msec,
-            );
+            let transaction = match config.layout {
+                sophia_config::WmLayoutKind::Columns => tile_workspace_with_timeout(
+                    request.transaction,
+                    manage.workspace,
+                    manage.bounds,
+                    &[manage.node],
+                    config.timeout_msec,
+                ),
+                sophia_config::WmLayoutKind::Natural => place_workspace_at_natural_size(
+                    request.transaction,
+                    manage.workspace,
+                    manage.bounds,
+                    &[manage.node],
+                    config.timeout_msec,
+                ),
+            };
             response_from_layout_transaction(transaction, Some(manage.workspace))
         }
         WmRequestKind::RelayoutWorkspace(relayout) => {
-            let transaction = tile_workspace_with_timeout(
-                request.transaction,
-                relayout.workspace,
-                relayout.bounds,
-                &relayout.nodes,
-                config.timeout_msec,
-            );
+            let transaction = match config.layout {
+                sophia_config::WmLayoutKind::Columns => tile_workspace_with_timeout(
+                    request.transaction,
+                    relayout.workspace,
+                    relayout.bounds,
+                    &relayout.nodes,
+                    config.timeout_msec,
+                ),
+                sophia_config::WmLayoutKind::Natural => place_workspace_at_natural_size(
+                    request.transaction,
+                    relayout.workspace,
+                    relayout.bounds,
+                    &relayout.nodes,
+                    config.timeout_msec,
+                ),
+            };
             response_from_layout_transaction(transaction, None)
         }
         WmRequestKind::SurfaceRemoved { .. } => WmResponsePacket {

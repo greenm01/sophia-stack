@@ -66,6 +66,7 @@ impl LiveProductionVisualRuntime {
             .present_scheduler
             .take_submitted()
             .map(|submitted| submitted.transaction);
+        self.reject_software_presents(0, 0);
         if let Some(transaction) = skipped_present {
             self.reject_gpu_presentation(transaction, 0, 0);
         }
@@ -181,11 +182,15 @@ impl LiveProductionVisualRuntime {
         {
             return Err("frame service selected an output that is not ready".into());
         }
-        native_scanout.run_tick(
+        let report = native_scanout.run_tick(
             index,
             &mut output.runtime,
             compositor_tick_input(&layer_templates, 0, Vec::new(), None),
-        )
+        )?;
+        if report.rendered_primary_plane_scanout_submit.is_some() {
+            self.mark_software_present_frame_submitted()?;
+        }
+        Ok(report)
     }
 
     pub fn retire_native_scanout(
@@ -238,6 +243,7 @@ impl LiveProductionVisualRuntime {
         msc: u64,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
         let Some(submitted) = self.present_scheduler.take_submitted() else {
+            self.settle_software_present_frame(ust, msc)?;
             return Ok(None);
         };
         let (production, presentation_feedback) =
@@ -258,6 +264,7 @@ impl LiveProductionVisualRuntime {
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);
         if completion.commit.outcome != TransactionOutcome::Committed {
+            self.settle_software_present_frame(ust, msc)?;
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),
                 outcome = ?completion.commit.outcome,
@@ -283,6 +290,7 @@ impl LiveProductionVisualRuntime {
         {
             self.route_present_feedback(outcome);
         }
+        self.settle_software_present_frame(ust, msc)?;
         Ok(Some(LiveProductionRetiredPresent {
             transaction: submitted.transaction,
             surface: submitted.surface,

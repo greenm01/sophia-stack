@@ -1,8 +1,12 @@
+use sophia_protocol::{
+    AuthorityKind, BufferSource, Rect, Region, SurfaceId, SurfaceTransaction,
+    SurfaceTransactionReadiness, TransactionId,
+};
 use sophia_x_authority::{
     X_ATOM_NONE, X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE, X_RANDR_MAJOR_OPCODE,
     X11DispatchObservation, X11ObservedRequestStage, XAuthorityObservedTransactionBatch,
-    XClientError, XClientOutput, XDispatchResult, XErrorCode, XServerFrontendClientId,
-    XWireClientResourceRange,
+    XAuthorityResponsePacket, XAuthoritySoftwarePresentSubmission, XClientError, XClientOutput,
+    XDispatchResult, XErrorCode, XServerFrontendClientId, XWireClientResourceRange,
 };
 
 fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
@@ -29,6 +33,7 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
         dri3_pixmap_import: None,
         dri3_fence_import: None,
         present_submission: None,
+        software_present_submission: None,
         released_dma_bufs: Vec::new(),
         released_fences: Vec::new(),
         server_reply_fd_count: 0,
@@ -129,4 +134,56 @@ fn only_atom_none_randr_output_property_errors_are_expected() {
     assert_eq!(batch.expected_protocol_errors.len(), 1);
     assert_eq!(batch.expected_protocol_errors[0].sequence, 1);
     assert_eq!(batch.protocol_errors.len(), 3);
+}
+
+#[test]
+fn present_request_preserves_complete_frame_evidence_for_cpu_storage() {
+    let transaction_id = TransactionId::from_raw(9);
+    let surface = SurfaceId::new(9, 1);
+    let mut trace = observation(Vec::new());
+    trace.request_stage = X11ObservedRequestStage::PresentPixmap;
+    let mut response = XAuthorityResponsePacket::accepted(transaction_id);
+    response.transactions.push(SurfaceTransaction {
+        transaction: transaction_id,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 500,
+            height: 500,
+        },
+        target_buffer: BufferSource::CpuBuffer { handle: 90 },
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 500,
+            height: 500,
+        }),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    });
+    trace.result.response = Some(response);
+    trace.software_present_submission = Some(XAuthoritySoftwarePresentSubmission {
+        transaction: transaction_id,
+        surface,
+        acquire_fence: None,
+        idle_fence: None,
+    });
+
+    let batch = XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace)
+        .expect("Present transaction produces an observation batch");
+
+    assert_eq!(batch.presented_surfaces, vec![surface]);
+    assert_eq!(
+        batch.software_present_submissions,
+        [XAuthoritySoftwarePresentSubmission {
+            transaction: transaction_id,
+            surface,
+            acquire_fence: None,
+            idle_fence: None,
+        }]
+    );
 }

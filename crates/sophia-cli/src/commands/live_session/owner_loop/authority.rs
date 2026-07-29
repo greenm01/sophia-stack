@@ -327,7 +327,7 @@
                     .map(|layer| layer.surface)
                     .collect::<Vec<_>>();
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
-                    if !production_batch.has_present_submissions() {
+                    if !production_batch.has_dma_buf_present_submissions() {
                         let (submission, committed_surfaces) =
                             runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,

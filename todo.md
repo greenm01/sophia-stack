@@ -220,6 +220,31 @@ Promotion now follows the gates below in order.
   groups, fence newer groups until retirement, and require candidate evidence
   in the physical verifier. The regression reproduces a 500-by-500 Present
   followed by the 1276-by-1422 blank backing snapshot from the failed run.
+- [x] Add a visible single-client Vulkan isolation profile before changing the
+  combined desktop again. Launch default `vkcube --wsi xcb` directly, omit
+  Kitty/xmonad/xmobar and the compatibility bridge, and use a generic
+  metadata-blind natural-size reference policy while retaining deferred
+  admission, Present, rendering, and native KMS. Require an exact offline
+  verifier for PresentedBuffer selection, retirement, nonzero pixels, and
+  resource-clean normal teardown.
+- [x] Re-run `tools/start_sophia_vkcube_standalone_tty3.sh` physically and
+  retain `tools/verify_sophia_standalone_vkcube.sh` evidence. The first run
+  isolated a blank frame below the WM bridge; after pixel materialization, the
+  second run exposed a visible but static first frame because software Present
+  never received Complete/Idle feedback. The first feedback-enabled rerun then
+  exposed duplicate same-iteration admission projection; the original software
+  observation and retained admission release both reached production. X
+  authority now snapshots regular and MIT-SHM pixmaps at Present time, emits no
+  unresolved pixmap as visual success, projects every storage form through one
+  exact admission owner, and carries source-free Present lifetime through
+  composed KMS retirement.
+  The verifier requires at least three software frames, nonzero CPU composition
+  and native export, Complete-before-Idle delivery, idle-fence triggers, and
+  clean teardown.
+  The retained physical result animated 487 software frames in 17,755 ms with
+  487 native retirements, Complete/Idle pairs, and idle-fence triggers; it had
+  zero native failures, protocol errors, or live presentation resources at
+  clean teardown.
 - [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown
@@ -235,6 +260,10 @@ Promotion now follows the gates below in order.
   logical-window content stream. Follow Xserver's copy/clip semantics without
   GPU readback, keep river-style configured/rendering state separate, and
   preserve one hot-path representation for future protocol authorities.
+- [ ] Optimize the proven software-Present fallback after correctness is
+  retained: keep bounded SHM mappings under authority ownership, snapshot only
+  valid/update damage, and avoid whole-pixmap copies. Preserve immutable
+  renderer handoff and never move SysV SHM or X resource identity into Engine.
 - [x] Replace the transient aggregate async-service booleans with one
   Engine-owned, output-scoped frame-service reducer. Backend-live must execute
   only named native effects, reobserve after each effect, and remain bounded

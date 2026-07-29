@@ -66,6 +66,7 @@ pub struct X11DispatchObservation {
     pub dri3_pixmap_import: Option<XAuthorityDri3PixmapImport>,
     pub dri3_fence_import: Option<XAuthorityDri3FenceImport>,
     pub present_submission: Option<XAuthorityPresentSubmission>,
+    pub software_present_submission: Option<XAuthoritySoftwarePresentSubmission>,
     pub released_dma_bufs: Vec<sophia_protocol::BufferHandle>,
     pub released_fences: Vec<sophia_protocol::FenceHandle>,
     pub server_reply_fd_count: usize,
@@ -91,6 +92,19 @@ pub struct XAuthorityPresentSubmission {
     pub buffer: sophia_protocol::BufferHandle,
     pub x_offset: i16,
     pub y_offset: i16,
+    pub acquire_fence: Option<sophia_protocol::FenceHandle>,
+    pub idle_fence: Option<sophia_protocol::FenceHandle>,
+}
+
+/// A complete software Present whose immutable pixels travel as a CPU buffer.
+///
+/// The renderer does not need an X pixmap or DMA-BUF identity, but the
+/// presentation lifecycle still owns acquire/idle fences and page-flip-paced
+/// Complete/Idle feedback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthoritySoftwarePresentSubmission {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
     pub acquire_fence: Option<sophia_protocol::FenceHandle>,
     pub idle_fence: Option<sophia_protocol::FenceHandle>,
 }

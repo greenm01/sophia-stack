@@ -141,7 +141,10 @@ impl PersistentLiveLayout {
             {
                 continue;
             }
-            let visual_evidence = live_transaction_visual_evidence(transaction);
+            let visual_evidence = live_transaction_visual_evidence(
+                transaction,
+                batch.presented_surfaces.contains(&transaction.surface),
+            );
             let candidate_selected = self.layout_epochs.record_safe_observation(
                 transaction.surface,
                 transaction.transaction,
@@ -699,6 +702,16 @@ impl PersistentLiveLayout {
                         );
                     }
                 }
+                BufferSource::CpuBuffer { .. } => {
+                    if self.admissions.mark_managed(*surface) {
+                        self.planning_surfaces.remove(surface);
+                        println!(
+                            "sophia_live_visual_admission schema=1 status=committed transaction={} surface={} source=cpu_snapshot",
+                            transaction.transaction.raw(),
+                            surface.index(),
+                        );
+                    }
+                }
                 _ => {
                     if self.admissions.mark_managed(*surface) {
                         self.planning_surfaces.remove(surface);
@@ -810,6 +823,9 @@ impl PersistentLiveLayout {
         projected.present_submissions.retain(|submission| {
             !quarantined_transactions.contains(&submission.transaction)
         });
+        projected.software_present_submissions.retain(|submission| {
+            !quarantined_transactions.contains(&submission.transaction)
+        });
         let referenced_dma_bufs = self.admission_group_dma_bufs();
         let referenced_fences = self.admission_group_fences();
         projected
@@ -858,6 +874,7 @@ fn wm_update_coordinator_batch(
         client: None,
         transaction,
         transactions: Vec::new(),
+        presented_surfaces: Vec::new(),
         surface_presentations: Vec::new(),
         presentation_intents: Vec::new(),
         removed_surfaces: Vec::new(),
@@ -866,6 +883,7 @@ fn wm_update_coordinator_batch(
         dma_buf_registrations: Vec::new(),
         fence_registrations: Vec::new(),
         present_submissions: Vec::new(),
+        software_present_submissions: Vec::new(),
         released_dma_bufs: Vec::new(),
         released_fences: Vec::new(),
         protocol_errors: Vec::new(),

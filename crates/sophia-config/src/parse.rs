@@ -188,6 +188,7 @@ pub fn parse_wm_config(
             exact_shape(node, 1, &[], false)?;
             match string_argument(node, 0, 1, 32)? {
                 "columns" => Ok(WmLayoutKind::Columns),
+                "natural" => Ok(WmLayoutKind::Natural),
                 other => schema_error(format!("unsupported native WM layout {other:?}")),
             }
         })

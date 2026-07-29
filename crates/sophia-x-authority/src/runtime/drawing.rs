@@ -516,7 +516,9 @@ impl XAuthorityRuntime {
      fn finish_drawing_update(&mut self, mut update: XDrawingUpdate) -> XAuthorityResponsePacket {
          let transaction_id = update.transaction;
          let source_window = update.target_window;
-         if matches!(update.buffer, sophia_protocol::BufferSource::CpuBuffer { .. }) {
+         if matches!(update.buffer, sophia_protocol::BufferSource::CpuBuffer { .. })
+             && update.kind != crate::XDrawingUpdateKind::PresentPixmap
+         {
              let (presentation_window, offset_x, offset_y) =
                  match self.windows.presentation_root_and_offset(source_window) {
                      Ok(presentation) => presentation,
