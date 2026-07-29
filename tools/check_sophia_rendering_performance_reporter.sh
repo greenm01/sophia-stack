@@ -7,6 +7,9 @@ FIXTURE="$ROOT_DIR/tools/fixtures/rendering_performance_pass.log"
 
 report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" status=pass "* ]]
+[[ "$report" == *" schema=2 "* ]]
+[[ "$report" == *" requested_frames=900 "* ]]
+[[ "$report" == *" surface_width=500 surface_height=500 "* ]]
 [[ "$report" == *" fps=59.999 "* ]]
 [[ "$report" == *" p95_frame_msec=16.667 "* ]]
 [[ "$report" == *" cpu_replacements=1 "* ]]

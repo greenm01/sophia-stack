@@ -217,8 +217,9 @@ benchmark from the same dedicated tty:
 tools/benchmark_sophia_vkcube_tty3.sh
 ```
 
-It adds `vkcube --c 900`, exits with the startup application, and reports
-`sophia_rendering_performance schema=1`. The report derives FPS and p95 frame
+It runs an explicit 500-by-500, 900-frame, FIFO `vkcube` workload, exits with
+the startup application, and reports `sophia_rendering_performance schema=2`.
+The report derives FPS and p95 frame
 cadence from routed Present Flip timestamps rather than process wall time. It
 also joins the session's CPU replacement/patch counts, patch rectangles and
 payload bytes, exact-versus-damage-scoped metric counts, native composition
@@ -230,21 +231,54 @@ run:
 tools/report_sophia_rendering_performance.sh
 ```
 
-For a controlled parity gate, obtain an Xorg reference on the same host,
-resolution, Vulkan provider, vkcube frame count, and present mode, then run:
+After greetd restores the normal Xorg or XLibre session, open a terminal in
+that session and run:
 
 ```sh
-SOPHIA_RENDER_BASELINE_FPS=60 \
-SOPHIA_RENDER_BASELINE_P95_MSEC=16.667 \
-tools/report_sophia_rendering_performance.sh
+tools/benchmark_xserver_graphics.sh
 ```
 
-The default gate requires at least 90% of baseline FPS and permits at most
-`baseline_p95 / 0.90`. Override `SOPHIA_RENDER_MIN_BASELINE_RATIO` only when a
-documented milestone sets a different threshold. Never compare a hardware Xorg
-run to a Sophia Lavapipe run; provider mismatch measures Vulkan implementation,
-not the compositor pipeline. The reporter's offline mutation check is
-`tools/check_sophia_rendering_performance_reporter.sh`.
+The Xserver runner compiles a bounded XCB observer, launches the identical
+`vkcube` command, and measures the server's Present Complete timestamps. It
+does not infer cadence from process wall time. The final comparison refuses
+different workload geometry, frame count, Vulkan present mode, Vulkan provider,
+or output pixel count. The default gate requires at least 90% of Xserver FPS
+and permits at most `xserver_p95 / 0.90`. Override
+`SOPHIA_RENDER_MIN_BASELINE_RATIO` only when a documented milestone sets a
+different threshold.
+
+The X Present completion path is an observed result, not a comparability input.
+An unredirected Xserver may report `Flip`; a composited desktop may report
+`Copy`. Both carry advancing FIFO UST/MSC cadence, but `Copy` can complete
+before the desktop compositor's eventual scanout. The comparison therefore
+labels unlike paths `comparability=cadence_only` and never promotes their p95
+ratio to an end-to-end scanout- or input-latency claim. Sophia's record remains
+post-KMS `Flip`.
+
+If `glxgears` is installed, the Xserver runner also records a bounded mean-FPS
+sample as `role=compatibility_probe`. On Void Linux it is supplied by
+`mesa-demos`. This result establishes the reference Xserver's GLX/OpenGL
+cadence and exposes gross reference-path regressions. A paired bounded Sophia
+GLX proof remains a separate roadmap item; until that exists, this is not a
+Sophia result. It is not a renderer benchmark and never supplies Sophia's
+Vulkan parity threshold. Set
+`SOPHIA_XSERVER_GLXGEARS=false` to skip it or `true` to require the binary.
+
+The raw reports and comparison can be regenerated without rerunning either
+graphical session:
+
+```sh
+tools/report_sophia_rendering_performance.sh
+tools/report_xserver_rendering_performance.sh
+tools/compare_sophia_xserver_rendering.sh
+```
+
+Never compare a hardware Xserver run to a Sophia Lavapipe run; provider
+mismatch measures the Vulkan implementation, not the compositor pipeline. The
+comparison rejects that mismatch by hashing `vkcube`'s provider description.
+Offline regressions are
+`tools/check_sophia_rendering_performance_reporter.sh` and
+`tools/check_xserver_rendering_performance_reporter.sh`.
 
 For the visible xmonad/KMS proof, run
 `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch

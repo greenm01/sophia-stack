@@ -341,9 +341,27 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             echo "SOPHIA_STANDALONE_FRAME_COUNT must be a positive integer." >&2
             exit 1
         }
+        standalone_width="${SOPHIA_STANDALONE_WIDTH:-500}"
+        standalone_height="${SOPHIA_STANDALONE_HEIGHT:-500}"
+        standalone_present_mode="${SOPHIA_STANDALONE_PRESENT_MODE:-2}"
+        [[ "$standalone_width" =~ ^[1-9][0-9]*$
+            && "$standalone_height" =~ ^[1-9][0-9]*$ ]] || {
+            echo "SOPHIA_STANDALONE_WIDTH and SOPHIA_STANDALONE_HEIGHT must be positive integers." >&2
+            exit 1
+        }
+        [[ "$standalone_present_mode" =~ ^[0-3]$ ]] || {
+            echo "SOPHIA_STANDALONE_PRESENT_MODE must be a Vulkan present mode from 0 through 3." >&2
+            exit 1
+        }
         session_args+=(
             --session-app-arg=standalone=--c
             "--session-app-arg=standalone=$SOPHIA_STANDALONE_FRAME_COUNT"
+            --session-app-arg=standalone=--width
+            "--session-app-arg=standalone=$standalone_width"
+            --session-app-arg=standalone=--height
+            "--session-app-arg=standalone=$standalone_height"
+            --session-app-arg=standalone=--present_mode
+            "--session-app-arg=standalone=$standalone_present_mode"
         )
     fi
 else
@@ -422,11 +440,17 @@ session_command=(
     "$SOPHIA_BIN"
     "${session_args[@]}"
 )
+if [[ "$SESSION_PROFILE" == standalone
+    && -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
+    printf 'sophia_rendering_benchmark schema=1 workload=vkcube-xcb requested_frames=%s surface_width=%s surface_height=%s vulkan_present_mode=%s\n' \
+        "$SOPHIA_STANDALONE_FRAME_COUNT" "$standalone_width" "$standalone_height" \
+        "$standalone_present_mode" >>"$SESSION_LOG"
+fi
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off
 stty raw -echo
 lifecycle_phase entering graphics_takeover
-setsid "${session_command[@]}" > >(tee "$SESSION_LOG") 2>&1 &
+setsid "${session_command[@]}" > >(tee -a "$SESSION_LOG") 2>&1 &
 session_pid=$!
 lifecycle_phase complete graphics_takeover
 lifecycle_phase entering session

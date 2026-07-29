@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/rendering_performance.sh
+source "$ROOT_DIR/tools/lib/rendering_performance.sh"
+
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 LOG_DIR="${SOPHIA_STANDALONE_LOG_DIR:-$STATE_HOME/sophia/standalone-session}"
 SESSION_LOG="${1:-$LOG_DIR/session.log}"
@@ -11,17 +15,6 @@ MIN_BASELINE_RATIO="${SOPHIA_RENDER_MIN_BASELINE_RATIO:-0.90}"
 fail() {
     echo "Sophia rendering performance report failed: $*" >&2
     exit 1
-}
-
-field() {
-    local line="$1" key="$2" token
-    for token in $line; do
-        if [[ "$token" == "$key="* ]]; then
-            printf '%s\n' "${token#*=}"
-            return 0
-        fi
-    done
-    return 1
 }
 
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
@@ -36,10 +29,27 @@ efficiency="$(
         tail -n 1
 )"
 [[ -n "$efficiency" ]] || fail "missing rendering-efficiency evidence"
+benchmark="$(
+    grep -E '^sophia_rendering_benchmark schema=1 ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+gpu_line="$(
+    grep -E '^Selected GPU [0-9]+: ' "$SESSION_LOG" |
+        head -n 1 || true
+)"
+[[ -n "$gpu_line" ]] || fail "missing selected Vulkan provider"
+gpu_identity="${gpu_line#*: }"
+gpu_sha256="$(printf '%s' "$gpu_identity" | sha256sum | awk '{print $1}')"
+output_repaint="$(
+    grep -E '^.*sophia_live_output_repaint schema=1 status=[^ ]+ output=1 mode=full ' \
+        "$SESSION_LOG" |
+        head -n 1 || true
+)"
+output_pixels="$(rendering_performance_field "$output_repaint" pixels 2>/dev/null || true)"
 
 TIMESTAMPS_FILE="$(mktemp)"
 INTERVALS_FILE="$(mktemp)"
-trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE"' EXIT
+trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE" "$INTERVALS_FILE.fps"' EXIT
 
 awk '
     /^sophia_live_session_present_feedback schema=1 kind=complete / &&
@@ -53,52 +63,40 @@ awk '
     }
 ' "$SESSION_LOG" >"$TIMESTAMPS_FILE"
 
-timestamp_count="$(wc -l <"$TIMESTAMPS_FILE")"
-((timestamp_count >= 3)) ||
-    fail "need at least three routed Flip timestamps, observed $timestamp_count"
+if ! read -r timestamp_count fps p95_msec < <(
+    rendering_performance_cadence "$TIMESTAMPS_FILE" "$INTERVALS_FILE"
+); then
+    fail "need at least three advancing routed Flip timestamps"
+fi
 
-awk '
-    NR == 1 { previous = $1; first = $1; next }
-    {
-        if ($1 > previous) {
-            print ($1 - previous) / 1000
-        }
-        previous = $1
-        last = $1
-    }
-    END {
-        if (last > first) {
-            printf "%.3f\n", (NR - 1) * 1000000 / (last - first) > "/dev/stderr"
-        }
-    }
-' "$TIMESTAMPS_FILE" 2>"$INTERVALS_FILE.fps" | sort -n >"$INTERVALS_FILE"
-
-fps="$(cat "$INTERVALS_FILE.fps")"
-rm -f "$INTERVALS_FILE.fps"
-[[ -n "$fps" ]] || fail "Present timestamps did not advance"
-interval_count="$(wc -l <"$INTERVALS_FILE")"
-((interval_count > 0)) || fail "Present timestamps contained no positive interval"
-p95_index="$(
-    awk -v count="$interval_count" 'BEGIN { print int((count * 95 + 99) / 100) }'
-)"
-p95_msec="$(sed -n "${p95_index}p" "$INTERVALS_FILE")"
-
-native_retirements="$(field "$completion" native_retirements)" ||
+native_retirements="$(rendering_performance_field "$completion" native_retirements)" ||
     fail "completion lacks native_retirements"
-native_max_upload_msec="$(field "$completion" native_max_upload_msec)" ||
+native_max_upload_msec="$(rendering_performance_field "$completion" native_max_upload_msec)" ||
     fail "completion lacks native_max_upload_msec"
-cpu_max_compose_msec="$(field "$completion" cpu_max_compose_msec)" ||
+cpu_max_compose_msec="$(rendering_performance_field "$completion" cpu_max_compose_msec)" ||
     fail "completion lacks cpu_max_compose_msec"
-cpu_replacements="$(field "$efficiency" cpu_replacements)" ||
+cpu_replacements="$(rendering_performance_field "$efficiency" cpu_replacements)" ||
     fail "efficiency evidence lacks cpu_replacements"
-cpu_patch_updates="$(field "$efficiency" cpu_patch_updates)" ||
+cpu_patch_updates="$(rendering_performance_field "$efficiency" cpu_patch_updates)" ||
     fail "efficiency evidence lacks cpu_patch_updates"
-cpu_patch_rects="$(field "$efficiency" cpu_patch_rects)" ||
+cpu_patch_rects="$(rendering_performance_field "$efficiency" cpu_patch_rects)" ||
     fail "efficiency evidence lacks cpu_patch_rects"
-cpu_payload_bytes="$(field "$efficiency" cpu_payload_bytes)" ||
+cpu_payload_bytes="$(rendering_performance_field "$efficiency" cpu_payload_bytes)" ||
     fail "efficiency evidence lacks cpu_payload_bytes"
-target_reuses="$(field "$efficiency" composition_target_reuses)" ||
+target_reuses="$(rendering_performance_field "$efficiency" composition_target_reuses)" ||
     fail "efficiency evidence lacks composition_target_reuses"
+requested_frames="$(
+    rendering_performance_field "$benchmark" requested_frames 2>/dev/null || true
+)"
+surface_width="$(
+    rendering_performance_field "$benchmark" surface_width 2>/dev/null || true
+)"
+surface_height="$(
+    rendering_performance_field "$benchmark" surface_height 2>/dev/null || true
+)"
+vulkan_present_mode="$(
+    rendering_performance_field "$benchmark" vulkan_present_mode 2>/dev/null || true
+)"
 
 status=pass
 if [[ -n "$BASELINE_FPS" ]]; then
@@ -114,6 +112,6 @@ if [[ -n "$BASELINE_P95_MSEC" ]]; then
 fi
 
 printf '%s\n' \
-    "sophia_rendering_performance schema=1 status=$status flip_samples=$timestamp_count fps=$fps p95_frame_msec=$p95_msec native_retirements=$native_retirements cpu_max_compose_msec=$cpu_max_compose_msec native_max_upload_msec=$native_max_upload_msec cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes composition_target_reuses=$target_reuses baseline_fps=${BASELINE_FPS:-none} baseline_p95_msec=${BASELINE_P95_MSEC:-none} min_baseline_ratio=$MIN_BASELINE_RATIO"
+    "sophia_rendering_performance schema=2 status=$status workload=vkcube-xcb requested_frames=${requested_frames:-unknown} surface_width=${surface_width:-unknown} surface_height=${surface_height:-unknown} vulkan_present_mode=${vulkan_present_mode:-unknown} x_present_path=Flip gpu_sha256=$gpu_sha256 output_pixels=${output_pixels:-unknown} present_samples=$timestamp_count flip_samples=$timestamp_count fps=$fps p95_frame_msec=$p95_msec native_retirements=$native_retirements cpu_max_compose_msec=$cpu_max_compose_msec native_max_upload_msec=$native_max_upload_msec cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes composition_target_reuses=$target_reuses baseline_fps=${BASELINE_FPS:-none} baseline_p95_msec=${BASELINE_P95_MSEC:-none} min_baseline_ratio=$MIN_BASELINE_RATIO"
 
 [[ "$status" == pass ]] || fail "observed cadence is below the configured baseline gate"

@@ -278,14 +278,36 @@ Promotion now follows the gates below in order.
   renderer-private CPU buffers through a bounded staged-handle snapshot until
   the exact transaction commits or is withdrawn, without making pre-admission
   pixels scene-visible.
-- [ ] Run the bounded 900-frame physical performance proof with
-  `tools/benchmark_sophia_vkcube_tty3.sh`. Retain the schema-1 report with
+- [x] Run the bounded 900-frame physical performance proof with
+  `tools/benchmark_sophia_vkcube_tty3.sh`. Retain the schema-2 report with
   positive patch traffic, bounded replacement pressure, Present FPS and p95
   cadence, CPU compose/upload maxima, clean retirement, and no visual
-  regression. Capture a same-machine Xorg reference and set
-  `SOPHIA_RENDER_BASELINE_FPS` plus `SOPHIA_RENDER_BASELINE_P95_MSEC`; require
-  at least 90% of its rate and no more than 1/0.90 of its p95 interval before
-  declaring the software fallback daily-driver performant.
+  regression. Capture a same-machine Xorg/XLibre reference with
+  `tools/benchmark_xserver_graphics.sh`; require at least 90% of its rate and
+  no more than 1/0.90 of its p95 interval before declaring the software
+  fallback daily-driver performant.
+  The paired tooling is complete: `tools/benchmark_xserver_graphics.sh`
+  observes real X Present completions for the identical fixed workload and
+  `tools/compare_sophia_xserver_rendering.sh` rejects provider, geometry,
+  frame-count, mode, and output mismatches. Its optional `glxgears` phase is a
+  separately labeled GLX compatibility/cadence probe and cannot satisfy or
+  fail the Vulkan parity threshold. Physical 900-frame Sophia and Xserver
+  captures passed on the same llvmpipe provider and 2560-by-1440 output:
+  Sophia measured 59.953 FPS and 17.155 ms p95; composited Xorg measured
+  59.950 FPS and 16.686 ms p95. The resulting rate ratio was 1.0001 and the
+  inverse-p95 ratio was 0.9727, both above the 0.90 gate. Sophia retired 898
+  observed frames with 6 ms maximum CPU composition, 3 ms maximum upload, and
+  no native submission failure.
+- [ ] After the cadence gate, obtain an unredirected Xorg/XLibre `Flip`
+  reference if end-to-end presentation-latency parity is needed. A composited
+  Xserver `Copy` result is valid client-cadence evidence but may complete
+  before compositor scanout; retain the path label and do not present it as a
+  scanout-latency comparison.
+- [ ] Add a paired bounded `glxgears` proof under Sophia after Vulkan parity is
+  retained. Require direct GLX bootstrap, DRI3/Present submission, animation,
+  clean retirement, the same renderer provider under the reference Xserver,
+  and a separately reported cadence ratio. Keep it a compatibility diagnostic,
+  not a substitute for the fixed Vulkan acceptance workload.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data

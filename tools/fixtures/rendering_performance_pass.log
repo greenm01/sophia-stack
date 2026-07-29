@@ -1,3 +1,6 @@
+sophia_rendering_benchmark schema=1 workload=vkcube-xcb requested_frames=900 surface_width=500 surface_height=500 vulkan_present_mode=2
+Selected GPU 0: llvmpipe (LLVM fixture), type: Cpu
+sophia_live_output_repaint schema=1 status=initial_presented output=1 mode=full rects=1 pixels=3686400
 sophia_live_session_present_feedback schema=1 kind=complete transaction=1 routed=true mode=Flip ust=1000000 msc=1
 sophia_live_session_present_feedback schema=1 kind=complete transaction=2 routed=true mode=Flip ust=1016667 msc=2
 sophia_live_session_present_feedback schema=1 kind=complete transaction=3 routed=true mode=Flip ust=1033334 msc=3
