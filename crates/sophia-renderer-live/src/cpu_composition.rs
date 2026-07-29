@@ -60,6 +60,8 @@ pub struct LiveCpuCompositionReport {
     pub layers_input: usize,
     pub layers_composed: usize,
     pub nonzero_pixel_bytes: usize,
+    /// Stable scheduling identity derived from immutable resource generations,
+    /// geometry, compositor primitives, and cursor state.
     pub checksum: u64,
 }
 
@@ -71,7 +73,10 @@ pub enum LiveCpuCompositionError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveCpuFrameMetricsMode {
+    /// Count exact output bytes while retaining the same scheduling identity
+    /// used by the damage-scoped mode.
     ExactPixels,
+    /// Use bounded source evidence for the nonzero-pixel proof.
     DamageScopedEvidence,
 }
 
@@ -225,11 +230,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
     if let Some(position) = cursor_position {
         compose_software_cursor(&mut frame, position);
     }
-    let (nonzero_pixel_bytes, checksum) = match metrics_mode {
-        LiveCpuFrameMetricsMode::ExactPixels => cpu_frame_metrics(&frame.bytes),
-        LiveCpuFrameMetricsMode::DamageScopedEvidence => {
-            composition_evidence_metrics(output_size, elements, cursor_position)
-        }
+    let (nonzero_evidence, checksum) =
+        composition_evidence_metrics(output_size, elements, cursor_position);
+    let nonzero_pixel_bytes = match metrics_mode {
+        LiveCpuFrameMetricsMode::ExactPixels => cpu_frame_metrics(&frame.bytes).0,
+        LiveCpuFrameMetricsMode::DamageScopedEvidence => nonzero_evidence,
     };
     Ok(LiveCpuCompositionReport {
         frame,

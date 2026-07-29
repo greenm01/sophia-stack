@@ -39,6 +39,26 @@ conditional: per-frame GBM allocation should be replaced only if the new
 measurements show it remains material, because recycling a scanout BO before
 KMS retirement would violate the existing ownership proof.
 
+The first bounded benchmark exposed a scheduling regression before it could
+collect performance data. Sophia selected the 500-by-500 PresentedBuffer and
+admitted its frontend surface, but submitted an unchanged empty CPU frame
+between output-baseline readiness and visual-admission commit. That page flip
+retired successfully; the visual transaction itself never committed, two
+layout epochs timed out, and the eight-second `no_surface` startup guard
+performed a clean shutdown. There was no panic, protocol error, native submit
+failure, or emergency recovery.
+
+The cause was an overloaded checksum contract. The first three compositions
+used an exact output-pixel checksum, while later compositions used bounded
+generation/damage evidence. Switching metric modes therefore changed the value
+for identical pixels, and native scheduling interpreted the proof-algorithm
+change as new content. Scheduling identity is now always derived from immutable
+buffer generations, geometry, compositor primitives, and cursor state; the
+metric mode changes only how nonzero output is counted. Regressions prove
+identical display lists retain one identity across the warm-up boundary and
+that an immutable generation change still advances it. A new physical
+benchmark result remains pending.
+
 ## 2026-07-28: Visible Vulkan Diagnosis Starts With One Natural-Size Client
 
 The first physical xmonad run after evidence-ranked admission produced no

@@ -82,6 +82,47 @@ fn display_list_composition_reuses_uniquely_owned_frame_storage() {
 }
 
 #[test]
+fn display_list_content_identity_is_stable_across_metric_modes() {
+    let size = Size {
+        width: 4,
+        height: 4,
+    };
+    let elements = [LiveCpuCompositionElementRef::Solid {
+        geometry: Rect {
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 2,
+        },
+        color: CompositorRgb8 {
+            red: 1,
+            green: 2,
+            blue: 3,
+        },
+    }];
+    let exact = compose_live_cpu_display_list_frame_with_metrics_reusing(
+        size,
+        &elements,
+        None,
+        LiveCpuFrameMetricsMode::ExactPixels,
+        None,
+    )
+    .unwrap();
+    let damage_scoped = compose_live_cpu_display_list_frame_with_metrics_reusing(
+        size,
+        &elements,
+        None,
+        LiveCpuFrameMetricsMode::DamageScopedEvidence,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(exact.checksum, damage_scoped.checksum);
+    assert_eq!(exact.nonzero_pixel_bytes, 16);
+    assert_eq!(damage_scoped.nonzero_pixel_bytes, 1);
+}
+
+#[test]
 fn cpu_display_list_preserves_solid_order_and_clips_to_output() {
     let size = Size {
         width: 3,
@@ -155,7 +196,7 @@ fn borrowed_fullscreen_composition_preserves_pixels_and_metrics() {
                 },
                 stride: 1280 * 4,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 2,
+                generation: 1,
                 bytes: &pixels,
             },
         }],
@@ -189,7 +230,7 @@ fn borrowed_composition_clips_negative_geometry_by_rows() {
                 },
                 stride: 16,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 1,
+                generation: 2,
                 bytes: &pixels,
             },
         }],
@@ -201,7 +242,7 @@ fn borrowed_composition_clips_negative_geometry_by_rows() {
 }
 
 #[test]
-fn cpu_composition_checksum_changes_with_a_single_byte() {
+fn cpu_composition_identity_changes_with_an_immutable_generation() {
     let size = Size {
         width: 2,
         height: 1,
@@ -223,7 +264,7 @@ fn cpu_composition_checksum_changes_with_a_single_byte() {
                 size,
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 1,
+                generation: 2,
                 bytes: &baseline,
             },
         }],
@@ -378,5 +419,33 @@ fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
             .map(|snapshot| &snapshot.compositor_display_list),
         Some(&display_list),
     );
+}
+
+#[test]
+fn production_scene_metric_warmup_does_not_schedule_unchanged_content() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        scale: 1,
+    };
+    let display_list = CompositorDisplayList::empty(output.id);
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    let mut checksums = Vec::new();
+
+    for _ in 0..4 {
+        checksums.push(
+            scene
+                .compose_display_list(output, &[], &display_list, None)
+                .unwrap()
+                .checksum,
+        );
+    }
+
+    assert!(checksums.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(scene.exact_pixel_metric_frames(), 3);
+    assert_eq!(scene.damage_scoped_metric_frames(), 1);
 }
 use std::sync::Arc;
