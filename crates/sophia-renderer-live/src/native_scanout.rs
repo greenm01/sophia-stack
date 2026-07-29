@@ -120,6 +120,25 @@ pub struct LiveOwnedMultiPlaneDmaBufFrame {
     pub planes: [Option<LiveOwnedDmaBufPlane>; 4],
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LiveRendererImageId(u64);
+
+impl LiveRendererImageId {
+    pub const INVALID: Self = Self(0);
+
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+
+    pub const fn is_valid(self) -> bool {
+        self.0 != 0
+    }
+}
+
 impl LiveOwnedMultiPlaneDmaBufFrame {
     pub fn try_clone(&self) -> std::io::Result<Self> {
         let mut planes = std::array::from_fn(|_| None);
@@ -158,6 +177,7 @@ pub enum LiveMixedCompositionLayer<'a> {
         placement: LiveCompositionPlacement,
     },
     DmaBuf {
+        image_id: LiveRendererImageId,
         frame: &'a LiveOwnedMultiPlaneDmaBufFrame,
         placement: LiveCompositionPlacement,
     },
@@ -174,6 +194,7 @@ pub enum LiveOwnedMixedCompositionLayer {
         placement: LiveCompositionPlacement,
     },
     DmaBuf {
+        image_id: LiveRendererImageId,
         frame: LiveOwnedMultiPlaneDmaBufFrame,
         placement: LiveCompositionPlacement,
     },
@@ -246,10 +267,21 @@ pub struct LiveNativePersistentRenderStats {
     pub generation_replacements: usize,
     pub recovery_replacements: usize,
     pub frame_uploads: usize,
+    pub import_cache: LiveNativeDmaBufImportCacheStats,
     pub max_target_create: std::time::Duration,
     pub max_frame_surface_create: std::time::Duration,
     pub max_render: std::time::Duration,
     pub max_upload: std::time::Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LiveNativeDmaBufImportCacheStats {
+    pub imports: usize,
+    pub hits: usize,
+    pub evictions: usize,
+    pub live_entries: usize,
+    pub descriptor_mismatches: usize,
+    pub capacity_rejections: usize,
 }
 
 impl<T> NativeGbmRenderedScanoutContext<T>
@@ -270,6 +302,14 @@ where
             generation_replacements: stats.generation_replacements,
             recovery_replacements: stats.recovery_replacements,
             frame_uploads: stats.frame_uploads,
+            import_cache: LiveNativeDmaBufImportCacheStats {
+                imports: stats.import_cache.imports,
+                hits: stats.import_cache.hits,
+                evictions: stats.import_cache.evictions,
+                live_entries: stats.import_cache.live_entries,
+                descriptor_mismatches: stats.import_cache.descriptor_mismatches,
+                capacity_rejections: stats.import_cache.capacity_rejections,
+            },
             max_target_create: stats.max_target_create,
             max_frame_surface_create: stats.max_frame_surface_create,
             max_render: stats.max_render,
@@ -286,9 +326,10 @@ where
     pub fn from_backend_device_result(
         device: std::io::Result<T>,
     ) -> NativeGbmRenderedScanoutContextReport<T> {
-        let report =
-            sophia_renderer_native_egl::NativeGbmRenderedScanoutContext::from_backend_device_result(
+        let report = sophia_renderer_native_egl::NativeGbmRenderedScanoutContext::
+            from_backend_device_result_with_import_cache_capacity(
                 device,
+                crate::LIVE_PRESENTATION_REGISTRY_CAPACITY,
             );
         NativeGbmRenderedScanoutContextReport {
             status: match report.status {
@@ -306,6 +347,25 @@ where
                 .context
                 .map(|inner| NativeGbmRenderedScanoutContext { inner }),
         }
+    }
+
+    pub fn evict_renderer_image(
+        &mut self,
+        image_id: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.inner
+            .evict_renderer_image(sophia_renderer_native_egl::NativeRendererImageId::from_raw(
+                image_id.raw(),
+            ))
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
+    pub fn clear_renderer_images(
+        &mut self,
+    ) -> Result<usize, LiveRendererScanoutBufferExportDetail> {
+        self.inner
+            .clear_renderer_images()
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
     }
 
     pub fn export_rendered_owned_scanout_buffer(
@@ -433,9 +493,14 @@ where
                         },
                     ))
                 }
-                LiveMixedCompositionLayer::DmaBuf { frame, placement } => {
+                LiveMixedCompositionLayer::DmaBuf {
+                    image_id,
+                    frame,
+                    placement,
+                } => {
                     validate_placement(*placement)?;
-                    if frame.width == 0
+                    if !image_id.is_valid()
+                        || frame.width == 0
                         || frame.height == 0
                         || frame.plane_count == 0
                         || usize::from(frame.plane_count) > frame.planes.len()
@@ -453,6 +518,9 @@ where
                     });
                     Ok(sophia_renderer_native_egl::NativeCompositionLayer::DmaBuf(
                         sophia_renderer_native_egl::NativeDmaBufCompositionLayer {
+                            image_id: sophia_renderer_native_egl::NativeRendererImageId::from_raw(
+                                image_id.raw(),
+                            ),
                             frame: sophia_renderer_native_egl::NativeMultiPlaneDmaBufFrame {
                                 width: frame.width,
                                 height: frame.height,
@@ -516,12 +584,15 @@ where
                         placement: *placement,
                     }
                 }
-                LiveOwnedMixedCompositionLayer::DmaBuf { frame, placement } => {
-                    LiveMixedCompositionLayer::DmaBuf {
-                        frame,
-                        placement: *placement,
-                    }
-                }
+                LiveOwnedMixedCompositionLayer::DmaBuf {
+                    image_id,
+                    frame,
+                    placement,
+                } => LiveMixedCompositionLayer::DmaBuf {
+                    image_id: *image_id,
+                    frame,
+                    placement: *placement,
+                },
                 LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                     LiveMixedCompositionLayer::Solid {
                         geometry: *geometry,
@@ -761,6 +832,15 @@ fn reduced_native_owned_scanout_buffer_export_detail(
         }
         sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor => {
             LiveRendererScanoutBufferExportDetail::InvalidBufferDescriptor
+        }
+        sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::InvalidRendererImageId => {
+            LiveRendererScanoutBufferExportDetail::InvalidRendererImageId
+        }
+        sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::DmaBufDescriptorMismatch => {
+            LiveRendererScanoutBufferExportDetail::DmaBufDescriptorMismatch
+        }
+        sophia_renderer_native_egl::NativeGbmScanoutBufferExportDetail::DmaBufImportCacheFull => {
+            LiveRendererScanoutBufferExportDetail::DmaBufImportCacheFull
         }
     }
 }

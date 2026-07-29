@@ -13,6 +13,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
     composition_pixel_proof_attempts: usize,
     composition_target: Option<PersistentCompositionTarget>,
+    import_cache_capacity: usize,
 }
 
 struct NativeRenderTarget {
@@ -25,7 +26,10 @@ struct NativeRenderTarget {
 struct PersistentCompositionTarget {
     target: NativeRenderTarget,
     surface: std::sync::Arc<NativeFrameSurface>,
+    import_cache: NativeDmaBufImportCache,
 }
+
+pub const DEFAULT_NATIVE_DMA_BUF_IMPORT_CACHE_CAPACITY: usize = 256;
 
 impl<T> NativeGbmRenderedScanoutContext<T>
 where
@@ -35,7 +39,7 @@ where
         device: std::io::Result<T>,
     ) -> NativeGbmRenderedScanoutContextReport<T> {
         match device {
-            Ok(device) => match Self::new(device) {
+            Ok(device) => match Self::new(device, DEFAULT_NATIVE_DMA_BUF_IMPORT_CACHE_CAPACITY) {
                 Ok(context) => NativeGbmRenderedScanoutContextReport {
                     status: NativeGbmRenderedScanoutContextStatus::Ready,
                     context: Some(context),
@@ -52,7 +56,32 @@ where
         }
     }
 
-    fn new(device: T) -> Result<Self, NativeGbmRenderedScanoutContextStatus> {
+    pub fn from_backend_device_result_with_import_cache_capacity(
+        device: std::io::Result<T>,
+        import_cache_capacity: usize,
+    ) -> NativeGbmRenderedScanoutContextReport<T> {
+        match device {
+            Ok(device) => match Self::new(device, import_cache_capacity) {
+                Ok(context) => NativeGbmRenderedScanoutContextReport {
+                    status: NativeGbmRenderedScanoutContextStatus::Ready,
+                    context: Some(context),
+                },
+                Err(status) => NativeGbmRenderedScanoutContextReport {
+                    status,
+                    context: None,
+                },
+            },
+            Err(_error) => NativeGbmRenderedScanoutContextReport {
+                status: NativeGbmRenderedScanoutContextStatus::Unavailable,
+                context: None,
+            },
+        }
+    }
+
+    fn new(
+        device: T,
+        import_cache_capacity: usize,
+    ) -> Result<Self, NativeGbmRenderedScanoutContextStatus> {
         use gbm::AsRaw as _;
 
         let gbm_device = gbm::Device::new(device)
@@ -80,6 +109,7 @@ where
             last_composition_pixel_metrics: None,
             composition_pixel_proof_attempts: 0,
             composition_target: None,
+            import_cache_capacity,
         })
     }
 
@@ -89,6 +119,75 @@ where
 
     pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
         self.last_composition_pixel_metrics
+    }
+
+    pub fn evict_renderer_image(
+        &mut self,
+        image_id: NativeRendererImageId,
+    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
+        let Some(persistent) = self.composition_target.as_mut() else {
+            return Ok(false);
+        };
+        let surface = persistent.surface.egl_surface();
+        self.egl
+            .make_current(
+                self.display,
+                Some(surface),
+                Some(surface),
+                Some(persistent.target.egl_context),
+            )
+            .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)?;
+        let result = persistent.import_cache.evict(
+            &self.egl,
+            self.display,
+            &persistent.target.pipeline,
+            image_id,
+        );
+        self.stats.import_cache = persistent.import_cache.stats();
+        let _ = self.egl.make_current(self.display, None, None, None);
+        if result.is_err()
+            && let Some(persistent) = self.composition_target.take()
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.recovery_replacements = self.stats.recovery_replacements.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+            return Ok(true);
+        }
+        result
+    }
+
+    pub fn clear_renderer_images(
+        &mut self,
+    ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
+        let Some(persistent) = self.composition_target.as_mut() else {
+            return Ok(0);
+        };
+        let surface = persistent.surface.egl_surface();
+        self.egl
+            .make_current(
+                self.display,
+                Some(surface),
+                Some(surface),
+                Some(persistent.target.egl_context),
+            )
+            .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)?;
+        let live_entries = persistent.import_cache.stats().live_entries;
+        let result = persistent.import_cache.clear(
+            &self.egl,
+            self.display,
+            &persistent.target.pipeline,
+        );
+        self.stats.import_cache = persistent.import_cache.stats();
+        let _ = self.egl.make_current(self.display, None, None, None);
+        if result.is_err()
+            && let Some(persistent) = self.composition_target.take()
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.stats.recovery_replacements = self.stats.recovery_replacements.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+            return Ok(live_entries);
+        }
+        result
     }
 
     pub fn export_rendered_owned_scanout_buffer(
@@ -309,7 +408,7 @@ where
             && let Some(persistent) = self.composition_target.take()
         {
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-            self.destroy_native_render_target(persistent.target);
+            self.destroy_persistent_composition_target(persistent);
         }
         if let Some(persistent) = self.composition_target.as_mut() {
             let capture_pixels = self.composition_pixel_proof_attempts < 3;
@@ -319,9 +418,11 @@ where
                 self.display,
                 &mut persistent.target,
                 persistent.surface.clone(),
+                &mut persistent.import_cache,
                 frame,
                 capture_pixels,
             );
+            self.stats.import_cache = persistent.import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
@@ -338,6 +439,9 @@ where
                 Ok(_) => {
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
+                Err(detail) if detail.import_cache_rejection() => {
+                    return Err(detail);
+                }
                 Err(detail) => {
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
@@ -347,7 +451,7 @@ where
                 .take()
                 .expect("persistent composition target checked above");
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-            self.destroy_native_render_target(persistent.target);
+            self.destroy_persistent_composition_target(persistent);
         }
         for candidate in rendered_scanout_candidates(&reduced) {
             let Some(config) = choose_scanout_config_for_format(
@@ -375,14 +479,20 @@ where
                 self.stats.composition_target_creations.saturating_add(1);
             let capture_pixels = self.composition_pixel_proof_attempts < 3;
             let render_started = Instant::now();
+            let mut import_cache = NativeDmaBufImportCache::with_capacity_and_stats(
+                self.import_cache_capacity,
+                self.stats.import_cache,
+            );
             let rendered = render_native_target_composition(
                 &self.egl,
                 self.display,
                 &mut target,
                 surface.clone(),
+                &mut import_cache,
                 frame,
                 capture_pixels,
             );
+            self.stats.import_cache = import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
@@ -395,15 +505,24 @@ where
                     self.composition_target = Some(PersistentCompositionTarget {
                         target,
                         surface,
+                        import_cache,
                     });
                     return Ok(buffer);
                 }
                 Ok(_) => {
-                    self.destroy_native_render_target(target);
+                    self.destroy_persistent_composition_target(PersistentCompositionTarget {
+                        target,
+                        surface,
+                        import_cache,
+                    });
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
                 Err(detail) => {
-                    self.destroy_native_render_target(target);
+                    self.destroy_persistent_composition_target(PersistentCompositionTarget {
+                        target,
+                        surface,
+                        import_cache,
+                    });
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
             }
@@ -649,6 +768,34 @@ where
         let _ = self.egl.destroy_context(self.display, target.egl_context);
         trace_native_lifecycle("egl_context_destroyed");
     }
+
+    fn destroy_persistent_composition_target(
+        &mut self,
+        mut persistent: PersistentCompositionTarget,
+    ) {
+        let surface = persistent.surface.egl_surface();
+        if self
+            .egl
+            .make_current(
+                self.display,
+                Some(surface),
+                Some(surface),
+                Some(persistent.target.egl_context),
+            )
+            .is_ok()
+        {
+            let _ = persistent.import_cache.clear(
+                &self.egl,
+                self.display,
+                &persistent.target.pipeline,
+            );
+            self.stats.import_cache = persistent.import_cache.stats();
+        } else {
+            persistent.import_cache.abandon(&self.egl, self.display);
+            self.stats.import_cache = persistent.import_cache.stats();
+        }
+        self.destroy_native_render_target(persistent.target);
+    }
 }
 
 impl<T> Drop for NativeGbmRenderedScanoutContext<T>
@@ -657,7 +804,7 @@ where
 {
     fn drop(&mut self) {
         if let Some(persistent) = self.composition_target.take() {
-            self.destroy_native_render_target(persistent.target);
+            self.destroy_persistent_composition_target(persistent);
         }
         let _ = self.egl.terminate(self.display);
         trace_native_lifecycle("egl_display_terminated");

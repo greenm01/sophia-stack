@@ -403,6 +403,7 @@ fn render_native_target_composition(
     display: khronos_egl::Display,
     target: &mut NativeRenderTarget,
     surface: std::sync::Arc<NativeFrameSurface>,
+    import_cache: &mut NativeDmaBufImportCache,
     frame: NativeCompositionFrame<'_>,
     capture_pixels: bool,
 ) -> Result<
@@ -484,7 +485,20 @@ fn render_native_target_composition(
             }
             NativeCompositionLayer::DmaBuf(layer) => {
                 trace_native_lifecycle("composition_dmabuf_layer_started");
-                let result = draw_composition_dmabuf_layer(egl, display, &target.pipeline, *layer);
+                let result = import_cache
+                    .texture(egl, display, &target.pipeline, *layer)
+                    .and_then(|texture| {
+                        target
+                            .pipeline
+                            .draw_texture_layer(
+                                texture,
+                                layer.target.into(),
+                                layer.clip.map(Into::into),
+                                layer.alpha,
+                                layer.frame.format == 0x3432_5241,
+                            )
+                            .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
+                    });
                 if result.is_ok() {
                     trace_native_lifecycle("composition_dmabuf_layer_finished");
                     if trace_pixels {
@@ -609,98 +623,6 @@ fn trace_composition_pixels(
             target.x,
             target.y,
         ),
-    }
-}
-
-fn draw_composition_dmabuf_layer(
-    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
-    display: khronos_egl::Display,
-    pipeline: &PersistentXrgb8888GlPipeline,
-    layer: NativeDmaBufCompositionLayer<'_>,
-) -> Result<(), NativeGbmScanoutBufferExportDetail> {
-    const EGL_LINUX_DMA_BUF_EXT: khronos_egl::Enum = 0x3270;
-    const EGL_WIDTH: khronos_egl::Attrib = 0x3057;
-    const EGL_HEIGHT: khronos_egl::Attrib = 0x3056;
-    const EGL_LINUX_DRM_FOURCC_EXT: khronos_egl::Attrib = 0x3271;
-    const PLANE_ATTRIBUTES: [[khronos_egl::Attrib; 5]; 4] = [
-        [0x3272, 0x3273, 0x3274, 0x3443, 0x3444],
-        [0x3275, 0x3276, 0x3277, 0x3445, 0x3446],
-        [0x3278, 0x3279, 0x327A, 0x3447, 0x3448],
-        [0x3440, 0x3441, 0x3442, 0x3449, 0x344A],
-    ];
-
-    let mut attributes = vec![
-        EGL_WIDTH,
-        layer.frame.width as khronos_egl::Attrib,
-        EGL_HEIGHT,
-        layer.frame.height as khronos_egl::Attrib,
-        EGL_LINUX_DRM_FOURCC_EXT,
-        layer.frame.format as khronos_egl::Attrib,
-    ];
-    for (index, keys) in PLANE_ATTRIBUTES
-        .iter()
-        .copied()
-        .enumerate()
-        .take(usize::from(layer.frame.plane_count))
-    {
-        let plane = layer.frame.planes[index]
-            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
-        attributes.extend_from_slice(&[
-            keys[0],
-            plane.fd.as_raw_fd() as khronos_egl::Attrib,
-            keys[1],
-            plane.offset as khronos_egl::Attrib,
-            keys[2],
-            plane.stride as khronos_egl::Attrib,
-        ]);
-        if layer.frame.modifier != u64::MAX {
-            attributes.extend_from_slice(&[
-                keys[3],
-                (layer.frame.modifier & u64::from(u32::MAX)) as khronos_egl::Attrib,
-                keys[4],
-                (layer.frame.modifier >> 32) as khronos_egl::Attrib,
-            ]);
-        }
-    }
-    attributes.push(khronos_egl::ATTRIB_NONE);
-    let no_context = unsafe { khronos_egl::Context::from_ptr(khronos_egl::NO_CONTEXT) };
-    let no_buffer = unsafe { khronos_egl::ClientBuffer::from_ptr(ptr::null_mut()) };
-    let image = egl
-        .create_image(
-            display,
-            no_context,
-            EGL_LINUX_DMA_BUF_EXT,
-            no_buffer,
-            &attributes,
-        )
-        .map_err(|_| NativeGbmScanoutBufferExportDetail::DmaBufImageCreateFailed)?;
-    let draw =
-        egl.get_proc_address("glEGLImageTargetTexture2DOES")
-            .ok_or(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed)
-            .map(|image_target| unsafe {
-                std::mem::transmute::<
-                    extern "system" fn(),
-                    unsafe extern "system" fn(u32, *const c_void),
-                >(image_target)
-            })
-            .and_then(|image_target| {
-                unsafe {
-                    pipeline.draw_egl_image_layer(
-                        image_target,
-                        image.as_ptr(),
-                        layer.target.into(),
-                        layer.clip.map(Into::into),
-                        layer.alpha,
-                        layer.frame.format == 0x3432_5241,
-                    )
-                }
-                .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
-            });
-    let destroyed = egl.destroy_image(display, image).is_ok();
-    match (draw, destroyed) {
-        (Ok(()), true) => Ok(()),
-        (Err(detail), _) => Err(detail),
-        (Ok(()), false) => Err(NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed),
     }
 }
 

@@ -89,8 +89,8 @@ impl LiveProductionVisualRuntime {
     pub(super) fn retained_mixed_frame(
         &self,
         cpu_layers: &[LiveCpuPresentationLayer],
-    ) -> Result<Option<(TransactionId, LiveOwnedMixedCompositionFrame)>, std::io::Error> {
-        let mut transaction = None;
+    ) -> Result<Option<LiveOwnedMixedCompositionFrame>, std::io::Error> {
+        let mut retained_client_image = false;
         let mut layers = Vec::with_capacity(self.displayed_surfaces.len().saturating_add(4));
         let committed = self.production.committed_surfaces();
         let display_list = self
@@ -108,8 +108,9 @@ impl LiveProductionVisualRuntime {
             match command {
                 CompositorDisplayCommand::Surface { surface } => {
                     if let Some(displayed) = self.displayed_surfaces.get(&surface) {
-                        transaction = transaction.or(displayed.retained_transaction);
+                        retained_client_image = true;
                         layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                            image_id: displayed.layer.image_id,
                             frame: displayed.layer.frame.try_clone()?,
                             placement: displayed.layer.placement,
                         });
@@ -139,14 +140,11 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
-        Ok(transaction.map(|transaction| {
-            (
-                transaction,
-                LiveOwnedMixedCompositionFrame {
-                    layers,
-                    output_damage_snapshot,
-                },
-            )
-        }))
+        Ok(
+            retained_client_image.then_some(LiveOwnedMixedCompositionFrame {
+                layers,
+                output_damage_snapshot,
+            }),
+        )
     }
 }

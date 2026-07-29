@@ -525,3 +525,32 @@ its referenced CPU handles and retires everything else. A CLI or renderer-local
 rejected or removed Engine transaction. Native KMS initialization waits for this
 first committed-state frame rather than requiring a speculative or blank visual
 bootstrap.
+
+## Generational DMA-BUF Import Residency
+
+Mixed composition assigns every admitted client buffer an opaque
+`LiveRendererImageId`. The ID is a renderer generation, not a protocol object
+or application identity. A composition layer carries that ID together with its
+DMA-BUF descriptor so a cold renderer context can import it without reaching
+back into an authority.
+
+Each native output context owns a fixed-capacity slot table derived from
+`LIVE_PRESENTATION_REGISTRY_CAPACITY`. A cold generation creates one EGLImage
+and one GL texture. Retained focus, chrome, workspace, and damage repaints draw
+that texture from the resident slot. Re-presenting the same generation with a
+different device/inode, extent, format, modifier, plane count, offset, or
+stride fails closed as a descriptor mismatch; a full table with no vacant slot
+also fails closed. The renderer never evicts a live generation to make room
+and never silently falls back to importing it again.
+
+Composition executes one frame-level completion barrier after all layers.
+When a successor frame has reached KMS retirement, the old imported image is
+evicted while its EGL context is current; only then may backend-live trigger
+the old idle fence and route Present Idle. Target recreation clears native
+residency before destroying the context and may re-import the still-leased
+displayed descriptor. Surface removal and normal shutdown clear renderer
+residency before releasing presentation resources.
+
+Import count, hit count, evictions, live entries, descriptor mismatches, and
+capacity rejections are reduced metrics. EGLImages, texture names, file
+descriptors, and descriptor identity remain private to the native renderer.

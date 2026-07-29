@@ -84,12 +84,15 @@ impl LiveProductionVisualRuntime {
             .layers
             .iter()
             .find_map(|layer| match layer {
-                LiveOwnedMixedCompositionLayer::DmaBuf { frame, placement } => {
-                    Some(LiveRetainedDmaBufLayer {
-                        frame: frame.try_clone().ok()?,
-                        placement: *placement,
-                    })
-                }
+                LiveOwnedMixedCompositionLayer::DmaBuf {
+                    image_id,
+                    frame,
+                    placement,
+                } => Some(LiveRetainedDmaBufLayer {
+                    image_id: *image_id,
+                    frame: frame.try_clone().ok()?,
+                    placement: *placement,
+                }),
                 LiveOwnedMixedCompositionLayer::Cpu { .. }
                 | LiveOwnedMixedCompositionLayer::Solid { .. } => None,
             })
@@ -175,6 +178,7 @@ impl LiveProductionVisualRuntime {
                         .get(&surface)
                         .ok_or("ordered retained DMA-BUF layer disappeared")?;
                     mixed.layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                        image_id: displayed.layer.image_id,
                         frame: displayed.layer.frame.try_clone()?,
                         placement: displayed.layer.placement,
                     });
@@ -228,7 +232,6 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
-        self.release_replaced_composited_source(queued_surface)?;
         native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
 
         let layer_templates = self.compositor_layer_templates();

@@ -252,8 +252,9 @@ An unredirected Xserver may report `Flip`; a composited desktop may report
 `Copy`. Both carry advancing FIFO UST/MSC cadence, but `Copy` can complete
 before the desktop compositor's eventual scanout. The comparison therefore
 labels unlike paths `comparability=cadence_only` and never promotes their p95
-ratio to an end-to-end scanout- or input-latency claim. Sophia's record remains
-post-KMS `Flip`.
+ratio to an end-to-end scanout- or input-latency claim. Sophia's mixed/CPU
+composition record is post-KMS `Copy`. `Flip` is reserved for a future frame
+that reaches direct scanout without composition.
 
 If `glxgears` is installed, the Xserver runner also records a bounded mean-FPS
 sample as `role=compatibility_probe`. On Void Linux it is supplied by
@@ -276,18 +277,21 @@ bounded external-client preflight must reach classic visual discovery, direct
 context creation, DRI3 import, and Present submission. Confirm
 that the centered window shows three smoothly rotating gears. The trailing
 `sophia_glxgears_performance` record reports the client's sampled FPS
-separately from Sophia's routed post-KMS Flip FPS and p95 interval. It also
+separately from Sophia's routed post-KMS Copy FPS and p95 interval. It also
 requires an identified GL renderer, positive DRI3/mixed-composition evidence,
-Present idle-fence progress, no submission or retirement failure, and clean
-resource drain. This remains a GLX compatibility diagnostic rather than a
-substitute for the fixed Vulkan acceptance workload.
+Present idle-fence progress, at least one retained-image cache hit, zero
+descriptor mismatch or cache-capacity rejection, no submission or retirement
+failure, and clean resource drain. This remains a GLX compatibility diagnostic
+rather than a substitute for the fixed Vulkan acceptance workload.
 
 The session log must not contain a CPU submission between the first mixed
-Present retirement and its successor, nor an AMD `context is guilty` recovery.
-The first run that rendered only a flash of gears violated both invariants:
-stale CPU fallback blanked the composed output and the delayed predecessor idle
-fence deadlocked Mesa's next import. These are generic mixed-presentation
-lifecycle failures, not GLX workload failures.
+Present retirement and its successor, a repeated cold import of one live image
+generation, nor an AMD `context is guilty` recovery. The first run that
+rendered only a flash of gears violated these invariants: stale CPU fallback
+blanked the composed output, and a focus repaint recreated the current
+DMA-BUF's EGLImage/texture. That second import blocked in `glFinish` until AMD
+recovered the guilty context. These are generic mixed-presentation lifecycle
+failures, not GLX workload failures.
 
 The raw reports and comparison can be regenerated without rerunning either
 graphical session:

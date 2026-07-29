@@ -1,6 +1,7 @@
 use std::os::fd::BorrowedFd;
 use std::time::Duration;
 
+use super::import_cache::{NativeDmaBufImportCacheStats, NativeRendererImageId};
 use crate::gl::GlCompositionRect;
 
 #[derive(Clone, Copy, Debug)]
@@ -91,6 +92,7 @@ pub struct NativeCpuCompositionLayer<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeDmaBufCompositionLayer<'a> {
+    pub image_id: NativeRendererImageId,
     pub frame: NativeMultiPlaneDmaBufFrame<'a>,
     pub target: NativeCompositionRect,
     pub clip: Option<NativeCompositionRect>,
@@ -130,6 +132,7 @@ pub struct NativeGbmPersistentRenderStats {
     pub generation_replacements: usize,
     pub recovery_replacements: usize,
     pub frame_uploads: usize,
+    pub import_cache: NativeDmaBufImportCacheStats,
     pub max_target_create: Duration,
     pub max_frame_surface_create: Duration,
     pub max_render: Duration,

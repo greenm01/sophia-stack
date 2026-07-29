@@ -348,7 +348,7 @@ fn hardware_cursor_mode_never_enters_cpu_composition() {
 #[test]
 fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
     let transaction = TransactionId::from_raw(41);
-    let displayed = Some(LiveProductionScanoutContent::Mixed {
+    let displayed = Some(LiveProductionScanoutContent::MixedPresent {
         transaction,
         nonzero_rgb_pixels: 1,
     });
@@ -366,7 +366,7 @@ fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
         transaction,
     ));
     assert!(!live_production_scanout_is_stable_present(
-        Some(LiveProductionScanoutContent::Mixed {
+        Some(LiveProductionScanoutContent::MixedPresent {
             transaction,
             nonzero_rgb_pixels: 0,
         }),
@@ -385,6 +385,14 @@ fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
         None,
         false,
         TransactionId::from_raw(42),
+    ));
+    assert!(!live_production_scanout_is_stable_present(
+        Some(LiveProductionScanoutContent::RetainedMixed {
+            nonzero_rgb_pixels: 1,
+        }),
+        None,
+        false,
+        transaction,
     ));
 }
 

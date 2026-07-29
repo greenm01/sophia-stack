@@ -202,8 +202,19 @@ pub enum LiveRendererScanoutBufferExportDetail {
     EglSwapBuffersFailed,
     FrontBufferLockFailed,
     InvalidBufferDescriptor,
+    InvalidRendererImageId,
+    DmaBufDescriptorMismatch,
+    DmaBufImportCacheFull,
     RetainedBufferMissing,
 }
+
+impl std::fmt::Display for LiveRendererScanoutBufferExportDetail {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "live renderer scanout export failed: {self:?}")
+    }
+}
+
+impl std::error::Error for LiveRendererScanoutBufferExportDetail {}
 
 impl LiveRendererScanoutBufferExportDetail {
     pub const fn from_status(status: LiveRendererScanoutBufferExportStatus) -> Self {

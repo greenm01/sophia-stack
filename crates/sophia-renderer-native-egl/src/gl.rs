@@ -4,9 +4,9 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use crate::NativeEglDrawSmokeStatus;
 #[cfg(feature = "gbm-platform")]
 use crate::{NativeCompositionPixelMetrics, native_composition_pixel_metrics};
+use crate::{NativeEglDrawSmokeStatus, NativeGbmScanoutBufferExportDetail};
 #[cfg(feature = "gbm-platform")]
 use std::cell::Cell;
 
@@ -440,19 +440,24 @@ impl PersistentXrgb8888GlPipeline {
         self.finish_composition()
     }
 
-    pub(crate) unsafe fn draw_egl_image_layer(
+    pub(crate) unsafe fn create_egl_image_texture(
         &self,
-        image_target: unsafe extern "system" fn(u32, *const c_void),
+        egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
         image: *const c_void,
-        target: GlCompositionRect,
-        clip: Option<GlCompositionRect>,
-        alpha: f32,
-        has_alpha: bool,
-    ) -> Result<(), NativeEglDrawSmokeStatus> {
+    ) -> Result<glow::NativeTexture, NativeGbmScanoutBufferExportDetail> {
+        let image_target = egl
+            .get_proc_address("glEGLImageTargetTexture2DOES")
+            .ok_or(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed)
+            .map(|image_target| unsafe {
+                std::mem::transmute::<
+                    extern "system" fn(),
+                    unsafe extern "system" fn(u32, *const c_void),
+                >(image_target)
+            })?;
         let texture = unsafe {
             self.gl
                 .create_texture()
-                .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?
+                .map_err(|_| NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed)?
         };
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
@@ -467,19 +472,34 @@ impl PersistentXrgb8888GlPipeline {
                     .tex_parameter_i32(glow::TEXTURE_2D, parameter, value as i32);
             }
             image_target(glow::TEXTURE_2D, image);
+            if self.gl.get_error() != glow::NO_ERROR {
+                self.gl.delete_texture(texture);
+                return Err(NativeGbmScanoutBufferExportDetail::DmaBufImageBindFailed);
+            }
         }
-        // The texture and its EGLImage sibling must remain alive until the GPU
-        // has finished sampling them. The single-image path already enforces
-        // this order; mixed composition must not defer its finish until after
-        // the caller destroys the EGLImage.
-        let draw = self
-            .draw_bound_texture(target, clip, alpha, has_alpha)
-            .and_then(|()| self.finish_composition());
+        Ok(texture)
+    }
+
+    pub(crate) fn draw_texture_layer(
+        &self,
+        texture: glow::NativeTexture,
+        target: GlCompositionRect,
+        clip: Option<GlCompositionRect>,
+        alpha: f32,
+        has_alpha: bool,
+    ) -> Result<(), NativeEglDrawSmokeStatus> {
+        unsafe {
+            self.gl.active_texture(glow::TEXTURE0);
+            self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+        }
+        self.draw_bound_texture(target, clip, alpha, has_alpha)
+    }
+
+    pub(crate) unsafe fn delete_texture(&self, texture: glow::NativeTexture) {
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
             self.gl.delete_texture(texture);
         }
-        draw
     }
 
     pub(crate) fn finish_composition(&self) -> Result<(), NativeEglDrawSmokeStatus> {

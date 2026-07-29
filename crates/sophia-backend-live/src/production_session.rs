@@ -221,6 +221,7 @@ impl LiveProductionPageFlipTracker {
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LivePresentCompletionMode {
+    Copy,
     Flip,
     Skip,
 }
@@ -328,7 +329,7 @@ impl LiveProductionPresentFeedbackCoordinator {
         }
     }
 
-    pub fn complete_flip(
+    pub fn complete_copy(
         &mut self,
         transaction: TransactionId,
         ust: u64,
@@ -342,12 +343,12 @@ impl LiveProductionPresentFeedbackCoordinator {
             transaction,
             ust,
             msc,
-            LivePresentCompletionMode::Flip,
+            LivePresentCompletionMode::Copy,
             retirement.idle_fence == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
         ))
     }
 
-    pub fn complete_flip_without_idle(
+    pub fn complete_copy_without_idle(
         &self,
         transaction: TransactionId,
         ust: u64,
@@ -360,7 +361,7 @@ impl LiveProductionPresentFeedbackCoordinator {
                 transaction,
                 ust,
                 msc,
-                mode: LivePresentCompletionMode::Flip,
+                mode: LivePresentCompletionMode::Copy,
             }],
             idle_fence_triggered: false,
         })

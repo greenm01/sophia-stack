@@ -26,7 +26,7 @@ field() {
 
 deadline=$((SECONDS + WAIT_SECONDS))
 while ! grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
-    ! grep -Eq '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG"; do
+    ! grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG"; do
     ((SECONDS < deadline)) || fail "session log is incomplete"
     sleep 0.1
 done

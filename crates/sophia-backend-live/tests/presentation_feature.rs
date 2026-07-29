@@ -21,7 +21,7 @@ use sophia_protocol::{
 };
 use sophia_renderer_live::{
     LiveBufferState, LiveCompositionPlacement, LiveOwnedMixedCompositionFrame,
-    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
+    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame, LiveRendererImageId,
 };
 
 fn fd() -> OwnedFd {
@@ -175,6 +175,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
     };
     let current = sophia_renderer_live::LiveOwnedMixedCompositionFrame {
         layers: vec![LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id: LiveRendererImageId::from_raw(1),
             frame: frame(),
             placement: placement(64),
         }],
@@ -184,12 +185,23 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
     let composed = compose_full_state_mixed_frame(
         current,
         vec![LiveRetainedDmaBufLayer {
+            image_id: LiveRendererImageId::from_raw(2),
             frame: frame(),
             placement: placement(0),
         }],
     );
 
     assert_eq!(composed.layers.len(), 2);
+    assert!(matches!(
+        &composed.layers[0],
+        LiveOwnedMixedCompositionLayer::DmaBuf { image_id, .. }
+            if *image_id == LiveRendererImageId::from_raw(2)
+    ));
+    assert!(matches!(
+        &composed.layers[1],
+        LiveOwnedMixedCompositionLayer::DmaBuf { image_id, .. }
+            if *image_id == LiveRendererImageId::from_raw(1)
+    ));
     let targets = composed
         .layers
         .iter()
@@ -305,6 +317,7 @@ fn retained_layer_clone_preserves_pixel_aligned_placement() {
         height: 48,
     };
     let layer = LiveRetainedDmaBufLayer {
+        image_id: LiveRendererImageId::from_raw(3),
         frame: LiveOwnedMultiPlaneDmaBufFrame {
             width: 128,
             height: 48,
@@ -332,6 +345,8 @@ fn retained_layer_clone_preserves_pixel_aligned_placement() {
 
     assert!(layer.has_unit_scale());
     let cloned = layer.try_clone().unwrap();
+
+    assert_eq!(cloned.image_id, LiveRendererImageId::from_raw(3));
     assert_eq!(cloned.frame.width, layer.frame.width);
     assert_eq!(cloned.placement.target, layer.placement.target);
     assert_eq!(cloned.placement.clip, layer.placement.clip);
@@ -366,7 +381,7 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
         LiveResourceReleaseStatus::Deferred
     );
 
-    let outcome = coordinator.complete_flip(transaction, 22, 33).unwrap();
+    let outcome = coordinator.complete_copy(transaction, 22, 33).unwrap();
     assert_eq!(
         outcome.feedback,
         [
@@ -374,7 +389,7 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
                 transaction,
                 ust: 22,
                 msc: 33,
-                mode: LivePresentCompletionMode::Flip,
+                mode: LivePresentCompletionMode::Copy,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ]
@@ -383,7 +398,7 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
     assert_eq!(coordinator.resources().source_count(), 0);
     assert_eq!(coordinator.resources().presentation_count(), 0);
     assert_eq!(
-        coordinator.complete_flip(transaction, 44, 55),
+        coordinator.complete_copy(transaction, 44, 55),
         Err(LivePresentFeedbackError::UnknownPresentation { transaction })
     );
 }
@@ -412,7 +427,7 @@ fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
         .unwrap();
 
     let completed = coordinator
-        .complete_flip_without_idle(transaction, 22, 23)
+        .complete_copy_without_idle(transaction, 22, 23)
         .unwrap();
     assert_eq!(
         completed.feedback,
@@ -420,7 +435,7 @@ fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
             transaction,
             ust: 22,
             msc: 23,
-            mode: LivePresentCompletionMode::Flip,
+            mode: LivePresentCompletionMode::Copy,
         }]
     );
     assert_eq!(coordinator.resources().presentation_count(), 1);
@@ -463,7 +478,7 @@ fn composited_successor_can_release_completed_source_before_its_own_flip() {
         })
         .unwrap();
     coordinator.resources_mut().mark_submitted(first).unwrap();
-    coordinator.complete_flip_without_idle(first, 1, 2).unwrap();
+    coordinator.complete_copy_without_idle(first, 1, 2).unwrap();
     coordinator
         .resources_mut()
         .begin(LivePresentationSubmission {
@@ -560,7 +575,7 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
 
     let report = production
         .settle_prepared_retirement(prepared, |commit| match commit.outcome {
-            TransactionOutcome::Committed => coordinator.complete_flip(transaction, 41, 42),
+            TransactionOutcome::Committed => coordinator.complete_copy(transaction, 41, 42),
             TransactionOutcome::RejectedStaleSurface
             | TransactionOutcome::RejectedInvalidSurface
             | TransactionOutcome::TimedOut => coordinator.reject_skip(transaction, 41, 42),

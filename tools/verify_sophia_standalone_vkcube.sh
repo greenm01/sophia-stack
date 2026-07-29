@@ -26,7 +26,7 @@ field() {
 
 deadline=$((SECONDS + WAIT_SECONDS))
 while ! grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
-    ! grep -Eq '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG"; do
+    ! grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG"; do
     ((SECONDS < deadline)) || fail "session log is incomplete"
     sleep 0.1
 done
@@ -65,7 +65,7 @@ height="$(field "$candidate" height)" || fail "visual candidate lacks height"
 ((width > 0 && height > 0)) || fail "visual candidate extent is empty"
 
 completion="$(
-    grep -E '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1
 )"
 mapfile -t armed < <(
@@ -91,12 +91,16 @@ elif ((${#armed[@]} == 0)); then
         '^sophia_live_session_startup schema=1 status=content_ready source=cpu_visual_detail$' \
         "$SESSION_LOG" || fail "software Present never produced CPU visual detail"
     for metric in cpu_nonzero_pixel_bytes cpu_nonzero_frames native_submissions \
-        native_retirements native_nonzero_exports present_complete_flip present_idle \
+        native_retirements native_nonzero_exports present_idle \
         present_idle_fence_triggers; do
         value="$(field "$completion" "$metric")" ||
             fail "completion does not contain $metric"
         ((value > 0)) || fail "software Present has no positive $metric evidence"
     done
+    presented="$(field "$completion" present_complete_copy 2>/dev/null ||
+        field "$completion" present_complete_flip)" ||
+        fail "completion does not contain a Present completion count"
+    ((presented > 0)) || fail "software Present has no positive completion evidence"
     authority_transactions="$(field "$completion" authority_transactions)" ||
         fail "completion does not contain authority_transactions"
     ((authority_transactions >= 3)) ||

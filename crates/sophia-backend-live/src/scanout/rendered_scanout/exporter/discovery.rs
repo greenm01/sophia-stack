@@ -159,6 +159,24 @@ where
         self.pending_frame.is_some()
     }
 
+    pub fn evict_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        self.context
+            .as_mut()
+            .map_or(Ok(false), |context| context.evict_renderer_image(image_id))
+    }
+
+    pub fn clear_renderer_images(
+        &mut self,
+    ) -> Result<usize, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        self.context.as_mut().map_or(
+            Ok(0),
+            sophia_renderer_live::NativeGbmRenderedScanoutContext::clear_renderer_images,
+        )
+    }
+
     pub const fn cpu_frame_export_attempts(&self) -> usize {
         self.cpu_frame_export_attempts
     }

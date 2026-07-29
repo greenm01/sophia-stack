@@ -27,6 +27,7 @@ pub struct LivePresentationSubmission {
 
 #[derive(Debug)]
 pub struct LiveRetainedDmaBufLayer {
+    pub image_id: sophia_renderer_live::LiveRendererImageId,
     pub frame: LiveOwnedMultiPlaneDmaBufFrame,
     pub placement: LiveCompositionPlacement,
 }
@@ -34,6 +35,7 @@ pub struct LiveRetainedDmaBufLayer {
 impl LiveRetainedDmaBufLayer {
     pub fn try_clone(&self) -> std::io::Result<Self> {
         Ok(Self {
+            image_id: self.image_id,
             frame: self.frame.try_clone()?,
             placement: self.placement,
         })
@@ -107,7 +109,12 @@ pub fn compose_full_state_mixed_frame(
 ) -> LiveOwnedMixedCompositionFrame {
     let current_layer = current.layers.pop();
     current.layers.extend(retained.into_iter().map(
-        |LiveRetainedDmaBufLayer { frame, placement }| LiveOwnedMixedCompositionLayer::DmaBuf {
+        |LiveRetainedDmaBufLayer {
+             image_id,
+             frame,
+             placement,
+         }| LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id,
             frame,
             placement,
         },
@@ -131,12 +138,15 @@ pub fn try_clone_mixed_frame(
                     placement: *placement,
                 })
             }
-            LiveOwnedMixedCompositionLayer::DmaBuf { frame, placement } => {
-                Ok(LiveOwnedMixedCompositionLayer::DmaBuf {
-                    frame: frame.try_clone()?,
-                    placement: *placement,
-                })
-            }
+            LiveOwnedMixedCompositionLayer::DmaBuf {
+                image_id,
+                frame,
+                placement,
+            } => Ok(LiveOwnedMixedCompositionLayer::DmaBuf {
+                image_id: *image_id,
+                frame: frame.try_clone()?,
+                placement: *placement,
+            }),
             LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {
                 Ok(LiveOwnedMixedCompositionLayer::Solid {
                     geometry: *geometry,
@@ -284,6 +294,7 @@ impl LivePresentationResourceSession {
             });
         }
         layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id: sophia_renderer_live::LiveRendererImageId::from_raw(transaction.raw()),
             frame: LiveOwnedMultiPlaneDmaBufFrame {
                 width: descriptor.size.width as u32,
                 height: descriptor.size.height as u32,

@@ -7,6 +7,7 @@ mod persistent_native_scanout {
     use std::time::{Duration, Instant};
 
     mod frame_damage;
+    mod renderer_images;
     mod state;
     use frame_damage::trace_presented_output_damage;
     pub use state::*;
@@ -85,6 +86,12 @@ mod persistent_native_scanout {
         pub generation_replacements: usize,
         pub recovery_replacements: usize,
         pub uploads: usize,
+        pub import_cache_imports: usize,
+        pub import_cache_hits: usize,
+        pub import_cache_evictions: usize,
+        pub import_cache_live_entries: usize,
+        pub import_cache_descriptor_mismatches: usize,
+        pub import_cache_capacity_rejections: usize,
         pub max_target_create: Duration,
         pub max_frame_surface_create: Duration,
         pub max_render: Duration,
@@ -389,9 +396,14 @@ mod persistent_native_scanout {
                     head.pending_content = None;
                 }
                 let queued_content = queued_content.map(|content| match content {
-                    LiveProductionScanoutContent::Mixed { transaction, .. } => {
-                        LiveProductionScanoutContent::Mixed {
+                    LiveProductionScanoutContent::MixedPresent { transaction, .. } => {
+                        LiveProductionScanoutContent::MixedPresent {
                             transaction,
+                            nonzero_rgb_pixels: head.exporter.composition_nonzero_rgb_pixels(),
+                        }
+                    }
+                    LiveProductionScanoutContent::RetainedMixed { .. } => {
+                        LiveProductionScanoutContent::RetainedMixed {
                             nonzero_rgb_pixels: head.exporter.composition_nonzero_rgb_pixels(),
                         }
                     }
@@ -434,10 +446,14 @@ mod persistent_native_scanout {
                         self.heads[index].submitted_content = queued_content;
                         if matches!(
                             queued_content,
-                            Some(LiveProductionScanoutContent::Mixed {
-                                nonzero_rgb_pixels: 1..,
-                                ..
-                            })
+                            Some(
+                                LiveProductionScanoutContent::MixedPresent {
+                                    nonzero_rgb_pixels: 1..,
+                                    ..
+                                } | LiveProductionScanoutContent::RetainedMixed {
+                                    nonzero_rgb_pixels: 1..,
+                                }
+                            )
                         ) {
                             self.nonzero_exports = self.nonzero_exports.saturating_add(1);
                             self.heads[index].nonzero_exports =
@@ -706,49 +722,6 @@ mod persistent_native_scanout {
             status
         }
 
-        pub fn queue_mixed_frame(
-            &mut self,
-            index: usize,
-            transaction: TransactionId,
-            frame: crate::LiveOwnedMixedCompositionFrame,
-        ) {
-            let head = &mut self.heads[index];
-            if let Some(superseded) = head.pending_content {
-                tracing::warn!(
-                    "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
-                    head.output.id.raw(),
-                    transaction.raw(),
-                );
-            }
-            head.pending_content = Some(LiveProductionScanoutContent::Mixed {
-                transaction,
-                nonzero_rgb_pixels: 0,
-            });
-            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-            head.exporter.set_pending_mixed_frame(frame);
-        }
-
-        pub fn diagnose_mixed_frame(
-            &mut self,
-            index: usize,
-            frame: crate::LiveOwnedMixedCompositionFrame,
-        ) -> (
-            crate::LiveRendererScanoutBufferExportStatus,
-            crate::LiveRendererScanoutBufferExportDetail,
-        ) {
-            use crate::LiveRenderedScanoutBufferExporter as _;
-
-            let head = &mut self.heads[index];
-            head.exporter.set_pending_mixed_frame(frame);
-            let export = head.exporter.export_rendered_scanout_buffer(
-                crate::LiveGbmEglFrameTargetRecord::new(head.output.size),
-            );
-            let status = export.status;
-            let detail = export.detail;
-            drop(export);
-            (status, detail)
-        }
-
         pub fn take_presentation_feedback(&mut self, output: OutputId) -> Option<(u64, u64)> {
             let retirement = self.production_page_flips.take_retirement(output)?;
             Some((retirement.retirement.ust, retirement.retirement.msc))
@@ -779,80 +752,13 @@ mod persistent_native_scanout {
             self.heads
                 .iter()
                 .find_map(|head| match head.presented_content {
-                    Some(LiveProductionScanoutContent::Mixed {
+                    Some(LiveProductionScanoutContent::MixedPresent {
                         transaction: presented,
                         nonzero_rgb_pixels,
                     }) if presented == transaction => Some(nonzero_rgb_pixels),
                     _ => None,
                 })
                 .unwrap_or(0)
-        }
-
-        pub fn export_attempts(&self) -> usize {
-            self.heads
-                .iter()
-                .map(|head| head.exporter.cpu_frame_export_attempts())
-                .chain(
-                    self.heads
-                        .iter()
-                        .map(|head| head.exporter.mixed_frame_export_attempts()),
-                )
-                .sum()
-        }
-
-        pub fn mixed_exports(&self) -> usize {
-            self.heads
-                .iter()
-                .map(|head| head.exporter.mixed_frame_exports())
-                .sum()
-        }
-
-        pub fn persistent_render_metrics(&self) -> LivePersistentRenderMetrics {
-            self.heads.iter().fold(
-                LivePersistentRenderMetrics::default(),
-                |mut metrics, head| {
-                    let stats = head.exporter.persistent_render_stats();
-                    metrics.target_creations = metrics
-                        .target_creations
-                        .saturating_add(stats.target_creations);
-                    metrics.target_recreations = metrics
-                        .target_recreations
-                        .saturating_add(stats.target_recreations);
-                    metrics.pipeline_creations = metrics
-                        .pipeline_creations
-                        .saturating_add(stats.gl_pipeline_creations);
-                    metrics.frame_surface_creations = metrics
-                        .frame_surface_creations
-                        .saturating_add(stats.frame_surface_creations);
-                    metrics.cpu_target_creations = metrics
-                        .cpu_target_creations
-                        .saturating_add(stats.cpu_target_creations);
-                    metrics.dmabuf_target_creations = metrics
-                        .dmabuf_target_creations
-                        .saturating_add(stats.dmabuf_target_creations);
-                    metrics.composition_target_creations = metrics
-                        .composition_target_creations
-                        .saturating_add(stats.composition_target_creations);
-                    metrics.composition_target_reuses = metrics
-                        .composition_target_reuses
-                        .saturating_add(stats.composition_target_reuses);
-                    metrics.generation_replacements = metrics
-                        .generation_replacements
-                        .saturating_add(stats.generation_replacements);
-                    metrics.recovery_replacements = metrics
-                        .recovery_replacements
-                        .saturating_add(stats.recovery_replacements);
-                    metrics.uploads = metrics.uploads.saturating_add(stats.frame_uploads);
-                    metrics.max_target_create =
-                        metrics.max_target_create.max(stats.max_target_create);
-                    metrics.max_frame_surface_create = metrics
-                        .max_frame_surface_create
-                        .max(stats.max_frame_surface_create);
-                    metrics.max_render = metrics.max_render.max(stats.max_render);
-                    metrics.max_upload = metrics.max_upload.max(stats.max_upload);
-                    metrics
-                },
-            )
         }
 
         pub fn poll_group_callbacks(

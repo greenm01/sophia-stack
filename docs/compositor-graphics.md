@@ -282,3 +282,9 @@ Sophia's version must remain subordinate to its own boundaries:
 The value of the reference is the shape of the solution: use the smallest
 native primitive that expresses recurring compositor content, cache expensive
 raster work, and compose everything through one frame model.
+
+Client texture residency follows the same rule. A retained compositor repaint
+references an opaque renderer-image generation and reuses the renderer-owned
+texture; it does not clone protocol state or recreate an EGLImage. This cache
+is generic scene infrastructure shared by client pixels and compositor chrome,
+not GLX-, X11-, WM-, or application-specific policy.

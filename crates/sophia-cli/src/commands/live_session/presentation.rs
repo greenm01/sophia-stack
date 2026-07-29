@@ -1,5 +1,6 @@
 struct XPresentSessionObserver {
     router: XServerFrontendProtocolRouter,
+    complete_copy: usize,
     complete_flip: usize,
     complete_skip: usize,
     idle: usize,
@@ -16,6 +17,7 @@ impl XPresentSessionObserver {
     fn new(router: XServerFrontendProtocolRouter) -> Self {
         Self {
             router,
+            complete_copy: 0,
             complete_flip: 0,
             complete_skip: 0,
             idle: 0,
@@ -42,6 +44,10 @@ impl XPresentSessionObserver {
                     mode,
                 } => {
                     let mode = match mode {
+                        sophia_backend_live::LivePresentCompletionMode::Copy => {
+                            self.complete_copy = self.complete_copy.saturating_add(1);
+                            XPresentCompletionMode::Copy
+                        }
                         sophia_backend_live::LivePresentCompletionMode::Flip => {
                             self.complete_flip = self.complete_flip.saturating_add(1);
                             XPresentCompletionMode::Flip

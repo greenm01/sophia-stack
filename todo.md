@@ -305,13 +305,22 @@ Promotion now follows the gates below in order.
   scanout-latency comparison.
 - [ ] Retain the paired bounded `glxgears` physical proof under Sophia. The
   generic standalone workload slot, bounded 500-by-500 swap-interval-one
-  runner, and fail-closed schema-1 reporter are implemented in
+  runner, and fail-closed schema-2 reporter are implemented in
   `tools/benchmark_sophia_glxgears_tty3.sh`. Require visible animation, direct
   GLX bootstrap, positive DRI3/mixed-composition and Present idle-fence
-  progress, advancing post-KMS Flip cadence, clean retirement, and the same
+  progress, advancing post-KMS Copy cadence, at least one retained-image cache
+  hit, zero descriptor mismatch/capacity rejection, clean retirement, and the same
   renderer provider under the reference Xserver. Record client and
   presentation cadence separately and keep this a compatibility diagnostic,
   not a substitute for the fixed Vulkan acceptance workload.
+- [x] Promote renderer-image residency from Milestone 13 into the GLX
+  correctness path. Mixed DMA-BUF layers now carry opaque image generations;
+  each native output context imports a generation once, validates descriptor
+  identity on every hit, reuses it for compositor-only repaints, and evicts the
+  predecessor before routing Idle. Capacity derives from the 256-presentation
+  bound, context reset clears residency, shutdown clears imports before
+  presentation teardown, and reduced metrics expose imports, hits, evictions,
+  mismatches, capacity rejection, and live debt.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data
@@ -702,9 +711,11 @@ references rather than Sophia runtime components.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only
   accumulated damage; fall back to a full repaint whenever history is
   incomplete.
-- [ ] Add a renderer-private, generation-keyed import cache whose capacity
+- [x] Add a renderer-private, generation-keyed import cache whose capacity
   derives from the live-registration bound and whose entries evict only with
-  zero frame and scanout leases.
+  zero frame and scanout leases. The correctness subset was promoted into
+  Milestone 9 for retained compositor repaints; direct-scanout lease accounting
+  remains part of the later direct-scanout item.
 - [ ] Keep one latest pending frame and one KMS submission in flight per
   output; prove input remains within half a refresh period at p99.
 - [ ] Move GL execution to one renderer worker per GPU only if pooled physical

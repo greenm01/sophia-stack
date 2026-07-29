@@ -56,7 +56,7 @@ impl LiveProductionVisualRuntime {
         for submission in submissions {
             let outcome =
                 self.presentation_feedback
-                    .complete_flip(submission.transaction, ust, msc)?;
+                    .complete_copy(submission.transaction, ust, msc)?;
             self.route_present_feedback(outcome);
         }
         Ok(())
@@ -89,27 +89,6 @@ impl LiveProductionVisualRuntime {
         }
     }
 
-    pub(super) fn release_replaced_composited_source(
-        &mut self,
-        surface: SurfaceId,
-    ) -> Result<(), crate::LivePresentFeedbackError> {
-        let Some(transaction) = self
-            .displayed_surfaces
-            .remove(&surface)
-            .and_then(|displayed| displayed.retained_transaction)
-        else {
-            return Ok(());
-        };
-        let outcome = self.presentation_feedback.idle_displayed(transaction)?;
-        tracing::trace!(
-            surface = surface.index(),
-            transaction = transaction.raw(),
-            "released replaced composited Present source before successor import"
-        );
-        self.route_present_feedback(outcome);
-        Ok(())
-    }
-
     pub fn release_layout_deferred_presentations(&mut self) {
         self.present_scheduler.release_layout_deferred();
     }
@@ -131,15 +110,24 @@ impl LiveProductionVisualRuntime {
         self.present_feedback.push_back(outcome);
     }
 
-    pub(super) fn release_removed_presentations(&mut self, removed_surfaces: &[SurfaceId]) {
+    pub(super) fn release_removed_presentations(
+        &mut self,
+        removed_surfaces: &[SurfaceId],
+        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) {
         for surface in removed_surfaces {
-            if let Some(transaction) = self
-                .displayed_surfaces
-                .remove(surface)
-                .and_then(|displayed| displayed.retained_transaction)
-                && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
-            {
-                self.route_present_feedback(outcome);
+            if let Some(displayed) = self.displayed_surfaces.remove(surface) {
+                let renderer_released = native_scanout.as_deref_mut().map_or(true, |native| {
+                    native
+                        .evict_renderer_image(displayed.layer.image_id)
+                        .is_ok()
+                });
+                if renderer_released
+                    && let Some(transaction) = displayed.retained_transaction
+                    && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
+                {
+                    self.route_present_feedback(outcome);
+                }
             }
         }
     }

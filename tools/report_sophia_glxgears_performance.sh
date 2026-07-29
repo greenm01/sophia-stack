@@ -42,7 +42,7 @@ client="$(
 )"
 [[ -n "$client" ]] || fail "missing bounded glxgears client completion"
 completion="$(
-    grep -E '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=16 status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$completion" ]] || fail "missing bounded Sophia session completion"
@@ -94,7 +94,7 @@ trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE" "$INTERVALS_FILE.fps"' EXIT
 
 awk '
     /^sophia_live_session_present_feedback schema=1 kind=complete / &&
-        / routed=true / && / mode=Flip / {
+        / routed=true / && / mode=Copy / {
         for (field_index = 1; field_index <= NF; field_index++) {
             if ($field_index ~ /^ust=[0-9]+$/) {
                 split($field_index, pair, "=")
@@ -107,7 +107,7 @@ awk '
 if ! read -r timestamp_count present_fps p95_msec < <(
     rendering_performance_cadence "$TIMESTAMPS_FILE" "$INTERVALS_FILE"
 ); then
-    fail "need at least three advancing routed Flip timestamps"
+    fail "need at least three advancing routed Copy timestamps"
 fi
 
 duration_seconds="$(rendering_performance_field "$benchmark" duration_seconds)" ||
@@ -142,7 +142,7 @@ awk -v fps="$client_mean_fps" 'BEGIN { exit !(fps > 0) }' ||
 native_retirements="$(positive_field "$completion" native_retirements)"
 native_nonzero_exports="$(positive_field "$completion" native_nonzero_exports)"
 native_mixed_exports="$(positive_field "$completion" native_mixed_exports)"
-present_complete_flip="$(positive_field "$completion" present_complete_flip)"
+present_complete_copy="$(positive_field "$completion" present_complete_copy)"
 present_idle="$(positive_field "$completion" present_idle)"
 present_idle_fence_triggers="$(
     positive_field "$completion" present_idle_fence_triggers
@@ -156,6 +156,19 @@ native_max_upload_msec="$(
 native_max_submit_to_page_flip_msec="$(
     rendering_performance_field "$completion" native_max_submit_to_page_flip_msec
 )" || fail "completion lacks native_max_submit_to_page_flip_msec"
+native_resources="$(
+    grep -E '^sophia_live_native_resources schema=4 status=complete ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+[[ -n "$native_resources" ]] || fail "missing native import-cache metrics"
+import_cache_hits="$(positive_field "$native_resources" import_cache_hits)"
+for assignment in \
+    import_cache_live_entries=0 \
+    import_cache_descriptor_mismatches=0 \
+    import_cache_capacity_rejections=0; do
+    [[ " $native_resources " == *" $assignment "* ]] ||
+        fail "native resource metrics do not contain $assignment"
+done
 
 printf '%s\n' \
-    "sophia_glxgears_performance schema=1 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_flip=$present_complete_flip present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"
+    "sophia_glxgears_performance schema=2 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"

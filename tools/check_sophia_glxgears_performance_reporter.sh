@@ -14,6 +14,8 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" present_fps=59.999 "* ]]
 [[ "$report" == *" p95_frame_msec=16.667 "* ]]
 [[ "$report" == *" native_mixed_exports=3 "* ]]
+[[ "$report" == *" present_complete_copy=3 "* ]]
+[[ "$report" == *" import_cache_hits=2 "* ]]
 
 grep -v '^GL_RENDERER' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
@@ -36,6 +38,19 @@ fi
 sed 's/native_submit_failures=0/native_submit_failures=1/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     echo "glxgears reporter accepted native submission failure" >&2
+    exit 1
+fi
+
+sed 's/import_cache_hits=2/import_cache_hits=0/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted missing retained-image cache hit" >&2
+    exit 1
+fi
+
+sed 's/import_cache_descriptor_mismatches=0/import_cache_descriptor_mismatches=1/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted a DMA-BUF descriptor mismatch" >&2
     exit 1
 fi
 

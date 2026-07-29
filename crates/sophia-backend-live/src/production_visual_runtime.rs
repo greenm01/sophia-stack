@@ -44,15 +44,14 @@ fn replace_displayed_surface(
     surface: SurfaceId,
     transaction: TransactionId,
     layer: LiveRetainedDmaBufLayer,
-) -> Option<TransactionId> {
-    let previous = displayed_surfaces.insert(
+) -> Option<LiveDisplayedSurface> {
+    displayed_surfaces.insert(
         surface,
         LiveDisplayedSurface {
             layer,
             retained_transaction: Some(transaction),
         },
-    );
-    previous.and_then(|displayed| displayed.retained_transaction)
+    )
 }
 
 pub struct LiveProductionVisualRuntime {
@@ -238,7 +237,7 @@ impl LiveProductionVisualRuntime {
                 native_scanout.as_deref_mut(),
                 self.retained_mixed_frame(&retained_cpu_layers)?,
             ) {
-                (Some(native_scanout), Some((transaction, frame))) => {
+                (Some(native_scanout), Some(frame)) => {
                     let primary = self
                         .outputs
                         .primary_output()
@@ -247,7 +246,7 @@ impl LiveProductionVisualRuntime {
                         .outputs
                         .output_index(primary)
                         .ok_or("persistent backend primary output was not registered")?;
-                    native_scanout.queue_mixed_frame(primary_index, transaction, frame);
+                    native_scanout.queue_retained_mixed_frame(primary_index, frame);
                     true
                 }
                 _ => false,
@@ -259,7 +258,7 @@ impl LiveProductionVisualRuntime {
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
-        self.release_removed_presentations(&removed_surfaces);
+        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
         let rebased_groups =
             rebase_authority_groups_to_committed(batch, self.production.committed_surfaces());
         self.enqueue_software_presents(&rebased_groups)?;
@@ -525,7 +524,7 @@ impl LiveProductionVisualRuntime {
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
-        self.release_removed_presentations(&removed_surfaces);
+        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
         self.displayed_surfaces
             .retain(|surface, _| !removed_surfaces.contains(surface));
         let mut authority_groups = Vec::new();

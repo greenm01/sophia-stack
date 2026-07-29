@@ -503,6 +503,15 @@ later requires a renderer worker, it consumes only immutable bounded frame
 commands and returns opaque rendered buffers; protocol and WM state remain on
 their existing owners.
 
+Client DMA-BUF imports are renderer-owned, generation-keyed resources. The
+renderer frame boundary carries only an opaque image generation plus the cold-import
+descriptor. The native output context imports once, reuses the resident texture
+for compositor-only repaints, validates the descriptor on every hit, and
+evicts the predecessor before backend-live releases its idle fence. Context
+reset clears native residency while the backend's still-live buffer lease
+allows a bounded re-import. Neither the X frontend nor the WM can observe or
+control the cache.
+
 Direct scanout and hardware planes are backend capabilities, not alternate
 authority paths. Engine first proves scene eligibility, the backend validates
 the exact format/modifier through an atomic test, and any rejection returns to

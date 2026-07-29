@@ -149,7 +149,7 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
 fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
     let checksum = 42;
     let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
-    let mixed = Some(LiveProductionScanoutContent::Mixed {
+    let mixed = Some(LiveProductionScanoutContent::MixedPresent {
         transaction: TransactionId::from_raw(9),
         nonzero_rgb_pixels: 1,
     });

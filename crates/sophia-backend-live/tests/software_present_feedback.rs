@@ -146,7 +146,7 @@ fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
                 transaction,
                 ust: 0,
                 msc: 0,
-                mode: LivePresentCompletionMode::Flip,
+                mode: LivePresentCompletionMode::Copy,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ]

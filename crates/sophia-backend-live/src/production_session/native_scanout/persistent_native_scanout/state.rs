@@ -5,8 +5,11 @@ pub enum LiveProductionScanoutContent {
     Cpu {
         checksum: u64,
     },
-    Mixed {
+    MixedPresent {
         transaction: TransactionId,
+        nonzero_rgb_pixels: usize,
+    },
+    RetainedMixed {
         nonzero_rgb_pixels: usize,
     },
 }
@@ -53,7 +56,7 @@ pub fn live_production_scanout_is_stable_present(
 ) -> bool {
     matches!(
         presented,
-        Some(LiveProductionScanoutContent::Mixed {
+        Some(LiveProductionScanoutContent::MixedPresent {
             transaction: presented_transaction,
             nonzero_rgb_pixels,
         }) if presented_transaction == transaction && nonzero_rgb_pixels > 0

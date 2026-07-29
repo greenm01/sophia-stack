@@ -77,6 +77,9 @@ pub enum NativeGbmScanoutBufferExportDetail {
     EglSwapBuffersFailed,
     FrontBufferLockFailed,
     InvalidBufferDescriptor,
+    InvalidRendererImageId,
+    DmaBufDescriptorMismatch,
+    DmaBufImportCacheFull,
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -106,7 +109,10 @@ impl NativeGbmScanoutBufferExportDetail {
             | Self::DmaBufImportFailed
             | Self::EglSwapBuffersFailed
             | Self::FrontBufferLockFailed
-            | Self::InvalidBufferDescriptor => NativeGbmScanoutBufferExportStatus::Degraded,
+            | Self::InvalidBufferDescriptor
+            | Self::InvalidRendererImageId
+            | Self::DmaBufDescriptorMismatch
+            | Self::DmaBufImportCacheFull => NativeGbmScanoutBufferExportStatus::Degraded,
         }
     }
 
@@ -120,6 +126,15 @@ impl NativeGbmScanoutBufferExportDetail {
                 | Self::CompositionDrawFailed
                 | Self::CompositionFinishFailed
                 | Self::EglImageDestroyFailed
+        )
+    }
+
+    pub const fn import_cache_rejection(self) -> bool {
+        matches!(
+            self,
+            Self::InvalidRendererImageId
+                | Self::DmaBufDescriptorMismatch
+                | Self::DmaBufImportCacheFull
         )
     }
 }

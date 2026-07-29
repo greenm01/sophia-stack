@@ -46,3 +46,19 @@ fn export_surface_failures_do_not_retry_the_one_shot_target() {
         assert!(!detail.render_target_retryable());
     }
 }
+
+#[test]
+fn import_cache_rejections_preserve_the_current_render_target() {
+    for detail in [
+        NativeGbmScanoutBufferExportDetail::InvalidRendererImageId,
+        NativeGbmScanoutBufferExportDetail::DmaBufDescriptorMismatch,
+        NativeGbmScanoutBufferExportDetail::DmaBufImportCacheFull,
+    ] {
+        assert!(detail.import_cache_rejection());
+        assert!(!detail.render_target_retryable());
+        assert_eq!(
+            detail.status(),
+            NativeGbmScanoutBufferExportStatus::Degraded
+        );
+    }
+}

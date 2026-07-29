@@ -88,7 +88,7 @@ awk '
     exit 1
 }
 
-grep -Eq '^sophia_live_session schema=15 status=bounded_complete .*native_mixed_exports=[1-9][0-9]* .*native_submit_failures=0 .*native_cleanup_pending=false' "$evidence"
+grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete .*native_mixed_exports=[1-9][0-9]* .*native_submit_failures=0 .*native_cleanup_pending=false' "$evidence"
 grep -q '^sophia_live_session_health schema=1 status=clean ' "$evidence"
 grep -q '^sophia_live_session_cleanup schema=1 status=clean ' "$evidence"
 

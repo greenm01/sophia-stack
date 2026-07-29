@@ -98,7 +98,7 @@ grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
     fail "session cleanup is missing"
 
 completion="$(
-    grep -E '^sophia_live_session schema=15 status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1
 )"
 [[ -n "$completion" ]] || fail "bounded completion is missing"

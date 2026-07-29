@@ -95,7 +95,7 @@ impl LiveProductionVisualRuntime {
             Some(native_scanout),
             Some(frames),
         )?;
-        if let Some((transaction, frame)) = self.retained_mixed_frame(&[])? {
+        if let Some(frame) = self.retained_mixed_frame(&[])? {
             let primary = self
                 .outputs
                 .primary_output()
@@ -104,7 +104,7 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .output_index(primary)
                 .ok_or("persistent backend primary output was not registered")?;
-            native_scanout.queue_mixed_frame(primary_index, transaction, frame);
+            native_scanout.queue_retained_mixed_frame(primary_index, frame);
         }
         Ok(())
     }
@@ -232,13 +232,14 @@ impl LiveProductionVisualRuntime {
         if self.outputs.primary_output() == Some(selected_output)
             && let Some((ust, msc)) = native_scanout.take_presentation_feedback(selected_output)
         {
-            return self.finalize_gpu_page_flip(ust, msc);
+            return self.finalize_gpu_page_flip(native_scanout, ust, msc);
         }
         Ok(None)
     }
 
     pub fn finalize_gpu_page_flip(
         &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
         ust: u64,
         msc: u64,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
@@ -252,7 +253,7 @@ impl LiveProductionVisualRuntime {
             production
                 .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
                     TransactionOutcome::Committed => presentation_feedback
-                        .complete_flip_without_idle(submitted.transaction, ust, msc),
+                        .complete_copy_without_idle(submitted.transaction, ust, msc),
                     TransactionOutcome::RejectedStaleSurface
                     | TransactionOutcome::RejectedInvalidSurface
                     | TransactionOutcome::TimedOut => {
@@ -279,16 +280,19 @@ impl LiveProductionVisualRuntime {
         };
         let target = submitted.displayed_layer.placement.target;
         let clip = submitted.displayed_layer.placement.clip;
-        let transaction_to_idle = replace_displayed_surface(
+        let replaced = replace_displayed_surface(
             &mut self.displayed_surfaces,
             submitted.surface,
             submitted.transaction,
             submitted.displayed_layer,
         );
-        if let Some(transaction) = transaction_to_idle
-            && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
-        {
-            self.route_present_feedback(outcome);
+        if let Some(replaced) = replaced {
+            native_scanout.evict_renderer_image(replaced.layer.image_id)?;
+            if let Some(transaction) = replaced.retained_transaction
+                && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
+            {
+                self.route_present_feedback(outcome);
+            }
         }
         self.settle_software_present_frame(ust, msc)?;
         Ok(Some(LiveProductionRetiredPresent {
