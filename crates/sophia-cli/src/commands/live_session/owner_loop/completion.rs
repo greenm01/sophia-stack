@@ -10,6 +10,7 @@
         dma_buf_registrations_observed: _,
         fence_registrations_observed: _,
         present_submissions_observed: _,
+        software_present_submissions_observed: _,
         cpu_compositions,
         coalesced_batches,
         backend_ticks,

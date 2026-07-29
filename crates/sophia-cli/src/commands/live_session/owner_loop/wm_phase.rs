@@ -20,4 +20,5 @@
                 Some(apply_wm_commit_result!(result, previous_focus));
         }
     }
+    service_layout_progress!("wm_stage");
 }

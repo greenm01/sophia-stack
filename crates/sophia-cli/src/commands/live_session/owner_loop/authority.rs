@@ -148,6 +148,9 @@
                     metrics.present_submissions_observed = metrics
                         .present_submissions_observed
                         .saturating_add(batch.present_submissions.len());
+                    metrics.software_present_submissions_observed = metrics
+                        .software_present_submissions_observed
+                        .saturating_add(batch.software_present_submissions.len());
                 }
                 let removed_surfaces = batch.removed_surfaces.clone();
                 if let Some(wm_session) = wm_session.as_mut() {
@@ -187,15 +190,8 @@
                         );
                     }
                 }
-                let previous_focus = focus.focused_surface(seat);
-                let mut wm_update = None;
-                if let Some(result) = layout.resolve_pending() {
-                    wm_update =
-                        Some(apply_wm_commit_result!(result, previous_focus));
-                }
-                if wm_update.is_none() {
-                    wm_update = pending_wm_update.take();
-                }
+                service_layout_progress!("authority");
+                let mut wm_update = pending_wm_update.take();
                 if !resize_proof_complete
                     && let Some((transaction, surface, size)) = resize_proof
                     && layout.pending.is_none()
@@ -297,6 +293,7 @@
                         "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
                     );
                 }
+                layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
                 let (batch, released_admission_groups) = layout.projected_batch(&batch);
                 let production_batch =
                     production_authority_batch(&batch, &released_admission_groups, &layout);
@@ -378,6 +375,7 @@
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,
+                                staged_cpu_buffer_handles: &staged_cpu_buffer_handles,
                             })?;
                         (
                             submission.tick,
@@ -405,6 +403,7 @@
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,
+                                staged_cpu_buffer_handles: &staged_cpu_buffer_handles,
                             })?;
                         (
                             submission.tick,

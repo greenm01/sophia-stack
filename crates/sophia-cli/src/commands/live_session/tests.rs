@@ -44,6 +44,7 @@ mod input_policy_tests;
 mod presentation_tests;
 mod startup_output_tests;
 mod visual_candidate_tests;
+mod wm_admission_tests;
 mod wm_session_tests;
 
 fn test_key_repeat_parts() -> (KeyRepeatState, XkbKeymapSnapshot) {

@@ -468,6 +468,22 @@ impl PersistentLiveLayout {
         self.admissions.acknowledge_control(surface, transaction)
     }
 
+    fn write_pending_cpu_buffer_handles(&self, handles: &mut Vec<u64>) {
+        handles.clear();
+        handles.extend(
+            self.pre_admission_groups
+                .iter()
+                .chain(self.released_admission_groups.iter())
+                .flat_map(|group| group.transactions.iter())
+                .filter_map(|transaction| match transaction.target_buffer {
+                    BufferSource::CpuBuffer { handle } => Some(handle),
+                    _ => None,
+                }),
+        );
+        handles.sort_unstable();
+        handles.dedup();
+    }
+
     fn knows_surface(&self, surface: SurfaceId) -> bool {
         self.layers.contains_key(&surface) || self.planning_surfaces.contains_key(&surface)
     }

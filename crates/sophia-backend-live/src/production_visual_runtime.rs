@@ -75,6 +75,7 @@ pub struct LiveProductionVisualRuntime {
     last_chrome_set_observation: Option<LiveChromeSetObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
+    cpu_buffer_residency: Vec<u64>,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -92,6 +93,7 @@ pub struct LiveProductionCycleRequest<'a> {
     pub wm_update: Option<WmTransactionUpdate>,
     pub presentation_layout: &'a [LayerSnapshot],
     pub chrome_surfaces: &'a [SurfaceId],
+    pub staged_cpu_buffer_handles: &'a [u64],
 }
 
 pub struct LiveAuthorityTransactionRun<'a> {
@@ -137,6 +139,7 @@ impl LiveProductionVisualRuntime {
             last_chrome_set_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
+            cpu_buffer_residency: Vec::with_capacity(16),
         })
     }
 
@@ -211,7 +214,14 @@ impl LiveProductionVisualRuntime {
             wm_update,
             presentation_layout,
             chrome_surfaces,
+            staged_cpu_buffer_handles,
         } = request;
+        write_cpu_buffer_residency(
+            &mut self.cpu_buffer_residency,
+            self.production.committed_surfaces(),
+            batch,
+            staged_cpu_buffer_handles,
+        );
         let native_enabled = native_scanout.is_some();
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
@@ -300,6 +310,7 @@ impl LiveProductionVisualRuntime {
             cursor_presentation.composition_position(),
             defer_frame,
             create_native_frames,
+            &self.cpu_buffer_residency,
             output_descriptors,
             move |_cycle,
                   committed: &[CommittedSurfaceState],
@@ -392,12 +403,20 @@ impl LiveProductionVisualRuntime {
             wm_update,
             presentation_layout,
             chrome_surfaces,
+            staged_cpu_buffer_handles,
         } = request;
+        write_cpu_buffer_residency(
+            &mut self.cpu_buffer_residency,
+            self.production.committed_surfaces(),
+            batch,
+            staged_cpu_buffer_handles,
+        );
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         self.set_chrome_surfaces(chrome_surfaces);
         let committed_surfaces = self.committed_surfaces().to_vec();
-        scene.apply_updates(updates, &committed_surfaces)?;
+        scene.apply_updates(updates)?;
+        scene.reconcile_buffer_residency(&self.cpu_buffer_residency);
         let compose_started = Instant::now();
         let composition = if defer_frame {
             scene
@@ -668,6 +687,32 @@ fn rebase_authority_groups_to_committed(
             group
         })
         .collect()
+}
+
+fn write_cpu_buffer_residency(
+    handles: &mut Vec<u64>,
+    committed: &[CommittedSurfaceState],
+    batch: &LiveProductionAuthorityBatch,
+    staged: &[u64],
+) {
+    handles.clear();
+    handles.extend(committed.iter().filter_map(|surface| match surface.buffer {
+        BufferSource::CpuBuffer { handle } => Some(handle),
+        _ => None,
+    }));
+    handles.extend(
+        batch
+            .groups
+            .iter()
+            .flat_map(|group| group.transactions.iter())
+            .filter_map(|transaction| match transaction.target_buffer {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            }),
+    );
+    handles.extend_from_slice(staged);
+    handles.sort_unstable();
+    handles.dedup();
 }
 
 fn authority_batch_removed_surfaces(batch: &LiveProductionAuthorityBatch) -> Vec<SurfaceId> {

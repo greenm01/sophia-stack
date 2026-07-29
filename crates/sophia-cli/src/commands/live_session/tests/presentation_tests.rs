@@ -99,28 +99,23 @@ fn terminal_readiness_is_scoped_to_the_focused_surface() {
         ),
     ];
     scene
-        .apply_updates(
-            [
-                sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(1, [0xff; 8])),
-                sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(
-                    2,
-                    [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff],
-                )),
-            ],
-            &committed,
-        )
+        .apply_updates([
+            sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(1, [0xff; 8])),
+            sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(
+                2,
+                [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff],
+            )),
+        ])
         .unwrap();
+    scene.reconcile_buffer_residency(&[1, 2]);
 
     assert!(!scene.surface_has_visual_detail(&committed, focused));
     assert!(scene.surface_has_visual_detail(&committed, secondary));
 
     scene
-        .apply_updates(
-            [sophia_backend_live::LiveCpuBufferUpdate::Replace(
-                test_cpu_buffer(1, [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff]),
-            )],
-            &committed,
-        )
+        .apply_updates([sophia_backend_live::LiveCpuBufferUpdate::Replace(
+            test_cpu_buffer(1, [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff]),
+        )])
         .unwrap();
     assert!(scene.surface_has_visual_detail(&committed, focused));
 }
@@ -146,20 +141,12 @@ fn focused_surface_is_composed_above_an_overlapping_client() {
     let focused_pixels = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
     let secondary_pixels = [0, 0, 0, 0xff, 0, 0, 0, 0xff];
     scene
-        .apply_updates(
-            [
-                sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(
-                    1,
-                    focused_pixels,
-                )),
-                sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(
-                    2,
-                    secondary_pixels,
-                )),
-            ],
-            &committed,
-        )
+        .apply_updates([
+            sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(1, focused_pixels)),
+            sophia_backend_live::LiveCpuBufferUpdate::Replace(test_cpu_buffer(2, secondary_pixels)),
+        ])
         .unwrap();
+    scene.reconcile_buffer_residency(&[1, 2]);
 
     assert_eq!(
         scene.compose(&committed, None, None).unwrap().frame.bytes,

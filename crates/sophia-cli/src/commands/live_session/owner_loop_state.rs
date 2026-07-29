@@ -10,6 +10,7 @@ struct SessionLoopMetrics {
     dma_buf_registrations_observed: usize,
     fence_registrations_observed: usize,
     present_submissions_observed: usize,
+    software_present_submissions_observed: usize,
     cpu_compositions: usize,
     coalesced_batches: usize,
     backend_ticks: usize,

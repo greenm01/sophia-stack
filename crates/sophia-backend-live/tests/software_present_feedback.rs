@@ -16,7 +16,7 @@ use sophia_renderer_live::{
 };
 
 #[test]
-fn headless_cpu_present_routes_complete_then_idle_without_a_dmabuf() {
+fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
     let size = Size {
         width: 2,
         height: 1,
@@ -80,10 +80,18 @@ fn headless_cpu_present_routes_complete_then_idle_without_a_dmabuf() {
     }];
     let mut scene = LiveProductionCpuScene::new(size);
     let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let staging_batch = LiveProductionAuthorityBatch {
+        groups: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let staged_handle = [72];
 
-    let (submission, committed) = runtime
+    runtime
         .run_cpu_production_cycle(LiveProductionCycleRequest {
-            batch: &batch,
+            batch: &staging_batch,
             scene: &mut scene,
             updates: vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
                 handle: 72,
@@ -91,8 +99,27 @@ fn headless_cpu_present_routes_complete_then_idle_without_a_dmabuf() {
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0xff; 8],
+                bytes: vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff],
             })],
+            raised_surface: None,
+            focused_surface: None,
+            cursor_presentation: LiveProductionCursorPresentation::Software(None),
+            defer_frame: false,
+            output_descriptors: &[output],
+            native_scanout: None,
+            wm_update: None,
+            presentation_layout: &[],
+            chrome_surfaces: &[],
+            staged_cpu_buffer_handles: &staged_handle,
+        })
+        .unwrap();
+    assert_eq!(scene.resident_buffer_count(), 1);
+
+    let (submission, committed) = runtime
+        .run_cpu_production_cycle(LiveProductionCycleRequest {
+            batch: &batch,
+            scene: &mut scene,
+            updates: Vec::new(),
             raised_surface: None,
             focused_surface: Some(surface),
             cursor_presentation: LiveProductionCursorPresentation::Software(None),
@@ -102,11 +129,13 @@ fn headless_cpu_present_routes_complete_then_idle_without_a_dmabuf() {
             wm_update: None,
             presentation_layout: &layout,
             chrome_surfaces: &[surface],
+            staged_cpu_buffer_handles: &[],
         })
         .unwrap();
 
     assert!(submission.composed);
     assert_eq!(committed.len(), 1);
+    assert!(scene.surface_has_visual_detail(&committed, surface));
     let mut outcomes = Vec::new();
     runtime.drain_present_feedback_into(&mut outcomes).unwrap();
     assert_eq!(outcomes.len(), 1);

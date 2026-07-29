@@ -59,6 +59,53 @@ identical display lists retain one identity across the warm-up boundary and
 that an immutable generation change still advances it. A new physical
 benchmark result remains pending.
 
+The first retest removed that false page flip but still reached `no_surface`.
+It exposed the underlying admission-order dependency more clearly. The
+PresentedBuffer candidate was selected before the blind WM staged its pending
+layout; the layout correctly retained that selected transaction, then
+`AdmitSurface` completed. Control completion advanced Engine from
+`ControlPending` to `AwaitingPixels`, but production resolved pending layout
+only while processing a later authority batch. The software client was already
+blocked waiting for Present feedback, so no later batch existed and the two
+sides deadlocked until the startup guard fired. In the historical successful
+run, the candidate happened to arrive after control completion and authority
+processing called the reducer immediately.
+
+The owner loop now runs one shared layout-progress service after every event
+class that can unlock a pending epoch. Admission-control acknowledgement
+advances only Engine admission state; authority observation, WM staging, and
+control completion all invoke the same idempotent reconciliation. A ready
+layout remains pending when the WM-update slot is occupied and commits after
+that slot drains rather than failing or overwriting the older update. Thus
+candidate-before-control and control-before-candidate converge without a
+synthetic authority wakeup or hidden commit side effect.
+
+That change advanced the next physical run through visual admission, layout,
+focus, and eight CPU compositions, then exposed a second ownership defect as
+`no_visual_detail`. Renderer CPU intake installed the quarantined snapshot and
+immediately reclaimed every buffer absent from Engine's committed surface
+snapshot. Absence was intentional before admission, so the later released
+transaction referenced a buffer the renderer had already discarded. The
+unchanged empty output correctly produced no new native submission.
+
+CPU update application and residency reclamation are now separate operations.
+The live layout emits a sorted, bounded handle snapshot for CPU buffers
+referenced by pre-admission or release-pending transaction groups. Backend-live
+joins those handles with committed surfaces and the current production batch;
+renderer-live retains exactly that complete root set. Staged pixels may reside
+in renderer-private storage but cannot become visible until their exact Engine
+transaction commits. Removal, withdrawal, supersession, or timeout drops the
+root and reclaims the buffer on the next cycle. This avoids another pixel copy
+and keeps X resources, application identity, and layout policy out of Engine
+and renderer state.
+
+The console's contemporaneous elogind message was not causal. Session 214 was a
+valid `_greeter` session on tty7 created after Sophia's clean tty recovery; the
+Sophia run had already acquired input devices, modeset both outputs, and
+executed for eight seconds. Its leader and `.ref` FIFO were live during
+diagnosis, and the runtime record later disappeared normally. The warning
+belongs to greetd/elogind handoff diagnostics, not rendering or admission.
+
 ## 2026-07-28: Visible Vulkan Diagnosis Starts With One Natural-Size Client
 
 The first physical xmonad run after evidence-ranked admission produced no

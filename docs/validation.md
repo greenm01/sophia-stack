@@ -194,6 +194,22 @@ success, or emergency exit cannot pass. The launcher knows that the validation
 client is `vkcube`; Engine, the X authority, and the natural layout reducer
 contain no application identity branches.
 
+The staged CPU-buffer regression deliberately separates the first immutable
+buffer update from the later released transaction. It must retain the
+renderer-private buffer while Engine has no committed surface, then compose
+visual detail and route Complete-before-Idle after release:
+
+```sh
+cargo test --offline -q -p sophia-backend-live --all-features \
+  --test software_present_feedback
+```
+
+Startup failure evidence reports staged and resident CPU-buffer counts,
+resident bytes, missing committed buffers, and software Present submissions.
+`layout_pending` identifies blocked convergence; `cpu_buffer_missing`
+identifies a broken renderer residency root. Do not increase the startup
+timeout to make either failure disappear.
+
 To measure the software-Present path after correctness passes, run the bounded
 benchmark from the same dedicated tty:
 

@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
     output_frame_damage_snapshot,
@@ -60,23 +58,40 @@ impl LiveProductionCpuScene {
     pub fn apply_updates(
         &mut self,
         updates: impl IntoIterator<Item = LiveCpuBufferUpdate>,
-        committed_surfaces: &[CommittedSurfaceState],
     ) -> Result<(), Box<dyn std::error::Error>> {
         for update in updates {
             self.buffers
                 .apply(update)
                 .map_err(|error| format!("renderer CPU buffer update failed: {error:?}"))?;
         }
-        let retained_handles = committed_surfaces
+        Ok(())
+    }
+
+    pub fn reconcile_buffer_residency(&mut self, retained_handles: &[u64]) {
+        self.buffers
+            .retain_handles(|handle| retained_handles.binary_search(&handle).is_ok());
+    }
+
+    pub fn resident_buffer_count(&self) -> usize {
+        self.buffers.len()
+    }
+
+    pub fn resident_buffer_bytes(&self) -> usize {
+        self.buffers.total_bytes()
+    }
+
+    pub fn missing_committed_buffer_count(
+        &self,
+        committed_surfaces: &[CommittedSurfaceState],
+    ) -> usize {
+        committed_surfaces
             .iter()
             .filter_map(|surface| match surface.buffer {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })
-            .collect::<BTreeSet<_>>();
-        self.buffers
-            .retain_handles(|handle| retained_handles.contains(&handle));
-        Ok(())
+            .filter(|handle| !self.buffers.contains(*handle))
+            .count()
     }
 
     pub fn compose(

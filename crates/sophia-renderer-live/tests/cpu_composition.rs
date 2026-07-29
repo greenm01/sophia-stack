@@ -362,18 +362,16 @@ fn production_scene_composes_only_the_visible_surface_order() {
     };
     let mut scene = LiveProductionCpuScene::new(size);
     scene
-        .apply_updates(
-            [LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
-                handle: 1,
-                size,
-                stride: 8,
-                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 1,
-                bytes: vec![0x55; 16],
-            })],
-            std::slice::from_ref(&committed),
-        )
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 1,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: vec![0x55; 16],
+        })])
         .unwrap();
+    scene.reconcile_buffer_residency(&[1]);
 
     let hidden = scene
         .compose_visible(std::slice::from_ref(&committed), &[], None, None)

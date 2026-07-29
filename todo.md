@@ -272,6 +272,12 @@ Promotion now follows the gates below in order.
   writes borrow the composed pixels; and mixed native composition retains its
   EGL/GBM target across frames. X resources and SysV identity remain authority
   private, and neither Engine nor WM policy gained X-specific state.
+- [x] Make optimized admission progress and CPU-buffer residency independent
+  of frontend timing. Service ready layouts after authority, policy, or control
+  transitions; defer rather than overwrite an occupied WM-update slot. Retain
+  renderer-private CPU buffers through a bounded staged-handle snapshot until
+  the exact transaction commits or is withdrawn, without making pre-admission
+  pixels scene-visible.
 - [ ] Run the bounded 900-frame physical performance proof with
   `tools/benchmark_sophia_vkcube_tty3.sh`. Retain the schema-1 report with
   positive patch traffic, bounded replacement pressure, Present FPS and p95

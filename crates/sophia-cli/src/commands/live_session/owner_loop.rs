@@ -95,6 +95,8 @@ fn run_session_loop(
         require_startup_focus.then_some(output.size),
     );
     let mut pending_wm_update = None;
+    let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
+    let mut layout_progress_deferred_reported = false;
     let mut committed_session_actions = VecDeque::new();
     let mut session_launches = SessionLaunchQueue::default();
     let mut launch_admission_started_at: Option<Instant> = None;

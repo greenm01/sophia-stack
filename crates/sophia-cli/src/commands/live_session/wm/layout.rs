@@ -19,6 +19,12 @@ struct LiveAuthorityLayoutObservation {
     admission_group_overflowed: bool,
 }
 
+enum LiveLayoutProgress {
+    Blocked,
+    DeferredReady,
+    Committed(LiveWmCommitResult),
+}
+
 const PRE_ADMISSION_GROUP_CAPACITY: usize = 256;
 
 #[derive(Default)]
@@ -497,8 +503,18 @@ impl PersistentLiveLayout {
     }
 
     fn resolve_pending(&mut self) -> Option<LiveWmCommitResult> {
-        let pending = self.pending.as_ref()?;
-        let ready = pending.requested_sizes.iter().all(|(surface, size)| {
+        if !self.pending_is_ready() {
+            return None;
+        }
+        let pending = self.pending.take().expect("checked above");
+        Some(self.commit_pending(pending))
+    }
+
+    fn pending_is_ready(&self) -> bool {
+        let Some(pending) = self.pending.as_ref() else {
+            return false;
+        };
+        pending.requested_sizes.iter().all(|(surface, size)| {
             let staged_matches = pending
                 .staged_transactions
                 .get(surface)
@@ -528,12 +544,7 @@ impl PersistentLiveLayout {
                 staged_matches || retained_matches
             };
             pixels_ready && admission_ready
-        });
-        if !ready {
-            return None;
-        }
-        let pending = self.pending.take().expect("checked above");
-        Some(self.commit_pending(pending))
+        })
     }
 
     fn expire_pending(
@@ -868,6 +879,23 @@ impl PersistentLiveLayout {
         )
     }
 
+}
+
+fn reconcile_live_layout_progress(
+    layout: &mut PersistentLiveLayout,
+    update_slot_available: bool,
+) -> LiveLayoutProgress {
+    if !layout.pending_is_ready() {
+        return LiveLayoutProgress::Blocked;
+    }
+    if !update_slot_available {
+        return LiveLayoutProgress::DeferredReady;
+    }
+    LiveLayoutProgress::Committed(
+        layout
+            .resolve_pending()
+            .expect("ready pending layout resolves when its output slot is available"),
+    )
 }
 
 fn wm_update_coordinator_batch(

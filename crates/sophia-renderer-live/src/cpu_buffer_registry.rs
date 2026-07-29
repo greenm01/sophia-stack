@@ -110,6 +110,20 @@ impl LiveCpuBufferRegistry {
         self.buffers.retain(|handle, _| retain(*handle));
     }
 
+    pub fn len(&self) -> usize {
+        self.buffers.len()
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.buffers.values().fold(0usize, |total, buffer| {
+            total.saturating_add(buffer.bytes.len())
+        })
+    }
+
+    pub fn contains(&self, handle: u64) -> bool {
+        self.buffers.contains_key(&handle)
+    }
+
     pub fn checksum(&self) -> u64 {
         self.buffers
             .values()

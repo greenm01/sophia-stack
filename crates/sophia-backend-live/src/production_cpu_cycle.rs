@@ -37,6 +37,7 @@ pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     cursor_position: Option<Point>,
     defer_frame: bool,
     create_native_frames: bool,
+    cpu_buffer_residency: &'layout [u64],
     output_descriptors: &'layout [HeadlessOutput],
     submit: Submit,
 }
@@ -53,6 +54,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         cursor_position: Option<Point>,
         defer_frame: bool,
         create_native_frames: bool,
+        cpu_buffer_residency: &'layout [u64],
         output_descriptors: &'layout [HeadlessOutput],
         submit: Submit,
     ) -> Self {
@@ -66,6 +68,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
             cursor_position,
             defer_frame,
             create_native_frames,
+            cpu_buffer_residency,
             output_descriptors,
             submit,
         }
@@ -94,7 +97,9 @@ where
         authority_commits: &[TransactionCommit],
     ) -> Result<Self::Frame, Self::Error> {
         self.scene
-            .apply_updates(self.updates.take().unwrap_or_default(), committed)?;
+            .apply_updates(self.updates.take().unwrap_or_default())?;
+        self.scene
+            .reconcile_buffer_residency(self.cpu_buffer_residency);
         let compose_started = Instant::now();
         let composition = if self.defer_frame {
             self.scene

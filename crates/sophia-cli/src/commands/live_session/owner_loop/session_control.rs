@@ -61,19 +61,21 @@ macro_rules! service_session_controls {
                     completion.key.surface.index(),
                 );
             }
-            if completion.key.kind == XAuthorityControlKind::AdmitSurface
-                && layout.acknowledge_admission_control(
+            if completion.key.kind == XAuthorityControlKind::AdmitSurface {
+                let acknowledged = layout.acknowledge_admission_control(
                     completion.key.transaction,
                     completion.key.surface,
-                )
-            {
-                println!(
-                    "sophia_live_surface_admission schema=1 status=frontend_admitted transaction={} surface={}",
-                    completion.key.transaction.raw(),
-                    completion.key.surface.index(),
                 );
+                if acknowledged {
+                    println!(
+                        "sophia_live_surface_admission schema=1 status=frontend_admitted transaction={} surface={}",
+                        completion.key.transaction.raw(),
+                        completion.key.surface.index(),
+                    );
+                }
             }
         }
+        service_layout_progress!("control");
     }};
 }
 
@@ -308,6 +310,38 @@ macro_rules! apply_wm_commit_result {
             );
         }
         owner_commit.update
+    }};
+}
+
+macro_rules! service_layout_progress {
+    ($trigger:literal) => {{
+        match reconcile_live_layout_progress(&mut layout, pending_wm_update.is_none()) {
+            LiveLayoutProgress::Committed(result) => {
+                let transaction = result.update.commit.transaction;
+                pending_wm_update = Some(apply_wm_commit_result!(
+                    result,
+                    focus.focused_surface(seat)
+                ));
+                layout_progress_deferred_reported = false;
+                println!(
+                    "sophia_live_layout_progress schema=1 status=committed trigger={} transaction={}",
+                    $trigger,
+                    transaction.raw(),
+                );
+            }
+            LiveLayoutProgress::DeferredReady => {
+                if !layout_progress_deferred_reported {
+                    println!(
+                        "sophia_live_layout_progress schema=1 status=deferred trigger={} reason=wm_update_pending",
+                        $trigger,
+                    );
+                    layout_progress_deferred_reported = true;
+                }
+            }
+            LiveLayoutProgress::Blocked => {
+                layout_progress_deferred_reported = false;
+            }
+        }
     }};
 }
 
