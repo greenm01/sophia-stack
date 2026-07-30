@@ -310,6 +310,9 @@ standalone_workload=""
 glxgears_duration=""
 glxgears_width=""
 glxgears_height=""
+xterm_duration=""
+xterm_width=""
+xterm_height=""
 if [[ "$SESSION_PROFILE" == standalone ]]; then
     standalone_workload="${SOPHIA_STANDALONE_WORKLOAD:-vkcube}"
     case "$standalone_workload" in
@@ -333,8 +336,24 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             standalone_default_bin="$(command -v vkcube || true)"
             standalone_requirement=vkcube
             ;;
+        xterm)
+            standalone_default_bin="$(command -v xterm || true)"
+            standalone_requirement=xterm
+            xterm_duration="${SOPHIA_XTERM_DURATION_SECONDS:-20}"
+            xterm_width="${SOPHIA_XTERM_WIDTH:-500}"
+            xterm_height="${SOPHIA_XTERM_HEIGHT:-500}"
+            [[ "$xterm_duration" =~ ^[1-9][0-9]*$ ]] || {
+                echo "SOPHIA_XTERM_DURATION_SECONDS must be a positive integer." >&2
+                exit 1
+            }
+            [[ "$xterm_width" =~ ^[1-9][0-9]*$
+                && "$xterm_height" =~ ^[1-9][0-9]*$ ]] || {
+                echo "SOPHIA_XTERM_WIDTH and SOPHIA_XTERM_HEIGHT must be positive integers." >&2
+                exit 1
+            }
+            ;;
         *)
-            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears or vkcube." >&2
+            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears, vkcube, or xterm." >&2
             exit 1
             ;;
     esac
@@ -501,6 +520,10 @@ elif [[ "$SESSION_PROFILE" == standalone
     && "$standalone_workload" == glxgears ]]; then
     printf 'sophia_glxgears_benchmark schema=1 duration_seconds=%s surface_width=%s surface_height=%s swap_interval=1\n' \
         "$glxgears_duration" "$glxgears_width" "$glxgears_height" >>"$SESSION_LOG"
+elif [[ "$SESSION_PROFILE" == standalone
+    && "$standalone_workload" == xterm ]]; then
+    printf 'sophia_terminal_benchmark schema=1 workload=xterm-cpu duration_seconds=%s surface_width=%s surface_height=%s\n' \
+        "$xterm_duration" "$xterm_width" "$xterm_height" >>"$SESSION_LOG"
 fi
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off

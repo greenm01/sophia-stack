@@ -627,6 +627,59 @@ Promotion now follows the gates below in order.
   composition target/pipeline/frame-surface lifetimes with zero replacement,
   and exited normally with clean TTY recovery.
 
+### 9.4 Rendering workload coverage
+
+The `vkcube` and `glxgears` proofs occupy the same workload cell: one
+fixed-size, always-animating window emitting a fresh full-frame DMA-BUF every
+vsync, measured for throughput/cadence. They prove the GPU DRI3 hot path twice
+and leave the workloads a daily driver actually lives in unmeasured. These
+items add the missing rendering-optimization proofs. Each keeps the existing
+launcher/probe/reporter/fixture/check pattern, a fail-closed schema report, and
+a same-hardware Xserver reference where an apples-to-apples one is definable.
+They are rendering-coverage evidence; only a named daily-driver failure
+promotes one to a hard M9 exit gate.
+
+- [ ] Terminal CPU-path throughput (in progress). Drive the SHM/software-Present
+  path with a bounded standalone `xterm` scrollback workload rather than a GPU
+  client. Require positive CPU patch traffic (`cpu_patch_updates>0`,
+  `cpu_payload_bytes>0`) proving the immutable patch-batch path rather than
+  whole-pixmap replacement, at least one `partial` `sophia_live_output_repaint`
+  proving damage-driven repaint rather than a full frame every present, bounded
+  `cpu_max_compose_msec`, zero unexpected X11 protocol errors, and clean
+  teardown. Follow-up: define an apples-to-apples Xserver xterm-redraw cadence
+  reference (Copy-based redraw has no clean per-frame flip) before claiming
+  CPU-path parity.
+- [ ] Input-to-photon latency. Inject input through the physical libinput
+  dwell/budget path and measure ingress to the exact presented frame that
+  reflects it. Close two known plumbing gaps first: the retirement `ust` is a
+  synthetic `presentation_started.elapsed()` value rather than the kernel
+  page-flip timestamp, and `--inject-text` bypasses the libinput queue-dwell
+  stage instead of anchoring the measurement at raw injection. Require the
+  full-chain latency and its per-stage breakdown (dwell, submit,
+  submit-to-page-flip) below one refresh period at p95.
+- [ ] Resize-under-render storm. Continuously relayout a rendering client using
+  the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
+  no admission staging offset after `layout_committed`, no wrong-size buffer
+  reaching scanout, no resize timeout, and bounded recovery with resources
+  retired exactly once.
+- [ ] Multi-producer concurrent present. Present N DMA-BUF clients beside one
+  CPU-composited bar and measure per-output frame-service fairness, import-cache
+  pressure and eviction, and single renderer-worker request latency under
+  contention.
+- [ ] Idle / partial-damage efficiency. Hold a mostly-static desktop and require
+  near-zero recomposition, a high import-cache hit rate, and no full-frame CPU
+  upload when nothing changed. This is the inverse of the always-animating
+  benchmarks and the only proof that exercises the import-cache hit path, since
+  every animation frame is a cache miss by construction.
+- [ ] Producer-overload / frame-drop discipline. Drive an unthrottled producer
+  above the refresh rate and prove one latest pending frame plus one KMS
+  submission in flight per output, bounded queue storage, no unbounded memory
+  growth, and no tearing.
+
+Tier 3 rendering coverage — atomic-test-gated direct-scanout bypass and
+multi-output cadence parity — is not new work here; it extends the existing
+Milestone 13 direct-scanout and multi-output-worker items.
+
 Milestone 9 exits only when the commit-pinned unattended semantic, native
 chrome, four-Kitty hardware, xmobar hardware, and emergency gates pass for one
 candidate commit.
@@ -778,10 +831,12 @@ references rather than Sophia runtime components.
 - [ ] Coalesce all outputs in the same DRM/render-device group onto one shared
   renderer worker before multi-output promotion. Preserve one latest pending
   request per output, bounded response demultiplexing, and explicit per-output
-  retirement tokens.
+  retirement tokens. Its multi-output cadence-parity proof is the 9.4 Tier 3
+  workload.
 - [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
   layer, followed by a hardware cursor plane; retain mixed composition as the
-  fail-closed fallback.
+  fail-closed fallback. Its direct-scanout-bypass proof is the 9.4 Tier 3
+  workload.
 - [ ] Compare identical Kitty, Firefox, resize, launch-burst, and soak
   workloads against separate XLibre+xmonad and mature Wayland-compositor
   sessions on the same hardware. Comparative results are diagnostic; Sophia's
