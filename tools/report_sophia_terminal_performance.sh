@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Terminal CPU-path throughput reporter. Reduces a bounded xterm standalone
-# session log to one fail-closed sophia_terminal_performance schema=1 line.
+# session log to one fail-closed sophia_terminal_performance schema=2 line.
 # Unlike the vkcube/glxgears reporters (GPU DRI3 flip path), this asserts the
 # software-Present (CPU) evidence: positive immutable patch-batch traffic,
 # damage-driven partial repaint, bounded CPU compose time, and clean teardown.
@@ -14,6 +14,7 @@ source "$ROOT_DIR/tools/lib/rendering_performance.sh"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 LOG_DIR="${SOPHIA_STANDALONE_LOG_DIR:-$STATE_HOME/sophia/standalone-session}"
 SESSION_LOG="${1:-$LOG_DIR/session.log}"
+COMPOSE_BUDGET_MSEC="${SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC:-25}"
 
 fail() {
     echo "Sophia terminal performance report failed: $*" >&2
@@ -38,6 +39,8 @@ nonnegative_field() {
 }
 
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
+[[ "$COMPOSE_BUDGET_MSEC" =~ ^[1-9][0-9]*$ ]] ||
+    fail "SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC must be a positive integer"
 
 if grep -Eqi \
     '(^Error:|panicked at|admission_group_(invalid|overflowed)|mismatched.transaction|status=(failed|degraded)([[:space:]]|$))' \
@@ -107,6 +110,8 @@ cpu_max_compose_msec="$(
 )" || fail "completion lacks cpu_max_compose_msec"
 [[ "$cpu_max_compose_msec" =~ ^[0-9]+$ ]] ||
     fail "cpu_max_compose_msec is not an integer"
+((cpu_max_compose_msec <= COMPOSE_BUDGET_MSEC)) ||
+    fail "CPU composition exceeded ${COMPOSE_BUDGET_MSEC}ms: ${cpu_max_compose_msec}ms"
 
 # Damage-driven repaint proof: at least one partial repaint, not a full frame
 # on every present.
@@ -139,4 +144,4 @@ fi
 native_retirements="$(positive_field "$completion" native_retirements)"
 
 printf '%s\n' \
-    "sophia_terminal_performance schema=1 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec"
+    "sophia_terminal_performance schema=2 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec"

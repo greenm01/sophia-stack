@@ -33,6 +33,11 @@ required a power reset. Recovered evidence from
   intent well under the cap. Default 500 → `82x38` cells → 496x498 px → 988 KB;
   the worst-case clamp (2048 px) stays at 16.7 MB. `SOPHIA_XTERM_WIDTH/HEIGHT`
   remain the reported pixel intent on the `sophia_terminal_benchmark` line.
+- **Fail-closed compose budget.** The terminal performance report is now schema
+  2 and rejects `cpu_max_compose_msec` above 25 ms, matching the established
+  CPU-composition gate used by the retained two-xterm and QEMU evidence. It
+  records `cpu_compose_budget_msec` beside the observed maximum; malformed or
+  zero overrides fail before evidence is accepted.
 - **Native path is not the lock cause.** Audit: CPU-layer GL textures are
   reallocated to the incoming layer size (`sophia-renderer-native-egl` `gl.rs`),
   but that layer *is* the ≤64 MiB software buffer (≤ ~4096², inside RDNA3's

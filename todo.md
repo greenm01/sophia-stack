@@ -657,7 +657,10 @@ promotes one to a hard M9 exit gate.
   was the downstream greetd/RDNA3 KMS re-take after that abnormal early exit.
   Reproduced deterministically offline via `x-authority-xterm-input-smoke`
   (no KMS). Fixed by converting px→cells against a pinned `6x13` font and
-  clamping under the cap. Native path audited and cleared as a lock cause.
+  clamping under the cap. The schema-2 performance reporter now fail-closes
+  above the established 25 ms CPU-composition budget and reports the applied
+  budget beside the observed maximum. Native path audited and cleared as a
+  lock cause.
   See `docs/research-log.md` 2026-07-30. Remaining: a cautious physical rerun
   of the fixed benchmark with `socklog` persistent logging active; do not
   blind-rerun the KMS launcher until then.

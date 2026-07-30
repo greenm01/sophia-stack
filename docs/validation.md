@@ -231,6 +231,40 @@ run:
 tools/report_sophia_rendering_performance.sh
 ```
 
+The terminal CPU-path workload is a separate bounded standalone proof:
+
+```sh
+tools/check_bounded_xterm_geometry.sh
+tools/check_sophia_terminal_performance_reporter.sh
+tools/benchmark_sophia_terminal_tty3.sh
+```
+
+Before the physical command, require `sudo sv status socklog-unix nanoklogd`
+to report both services running and confirm
+`/var/log/socklog/kernel/current` is nonempty. Run from a logged-in local TTY3,
+arm Ctrl-Alt-Backspace when prompted, and confirm the centered xterm scrolls
+continuously. The default 20-second, 500-by-500 pixel intent resolves against
+the pinned `6x13` font rather than being passed to xterm as character cells.
+The independent 30-second watchdog bounds the session.
+
+The trailing `sophia_terminal_performance schema=2` report requires positive
+immutable CPU patch traffic, damage-driven partial repaint, no unexpected X11
+or native failure, clean resource drain, and
+`cpu_max_compose_msec <= cpu_compose_budget_msec`. The default composition
+budget is 25 ms; `SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive
+integer and is reserved for a separately documented gate. The raw report can
+be regenerated from the retained standalone session log:
+
+```sh
+tools/report_sophia_terminal_performance.sh
+```
+
+If the machine locks or the report fails, retain the standalone session,
+launcher, input-guard, recovery, lifecycle, and protected kernel logs. Do not
+repeat the physical takeover until that evidence is diagnosed. This benchmark
+does not establish Xserver parity: Copy-based xterm redraw has no equivalent
+per-frame flip cadence yet.
+
 After greetd restores the normal Xorg or XLibre session, open a terminal in
 that session and run:
 
@@ -307,7 +341,8 @@ mismatch measures the Vulkan implementation, not the compositor pipeline. The
 comparison rejects that mismatch by hashing `vkcube`'s provider description.
 Offline regressions are
 `tools/check_sophia_glxgears_performance_reporter.sh`,
-`tools/check_sophia_rendering_performance_reporter.sh` and
+`tools/check_sophia_rendering_performance_reporter.sh`,
+`tools/check_sophia_terminal_performance_reporter.sh`, and
 `tools/check_xserver_rendering_performance_reporter.sh`.
 
 For the visible xmonad/KMS proof, run
