@@ -31,6 +31,8 @@ Completed evidence is archived in `research-log-archive.md`.
   `tools/run_sophia_input_latency_tty3.sh` collects 20 independent
   commit-pinned uinput/libinput samples, rejects any fallback/pending page-flip
   timestamps, and requires full-chain p95 below the configured refresh period.
+  `tools/setup_sophia_uinput.sh` installs the persistent Void/udev module,
+  device-node, and `input`-group policy required by that unprivileged runner.
   The code path and injector ABI self-test pass offline; physical p95 evidence
   is still required before closing the todo item.
 

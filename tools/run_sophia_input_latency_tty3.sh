@@ -62,9 +62,9 @@ fi
 [[ -t 0 && "$(tty)" == /dev/tty3 ]] ||
     fail "run this interactively from a logged-in local TTY3"
 [[ -e /dev/uinput ]] ||
-    fail "/dev/uinput is missing (load the uinput module before running)"
+    fail "/dev/uinput is missing (run tools/setup_sophia_uinput.sh first)"
 [[ -w /dev/uinput ]] ||
-    fail "/dev/uinput is not writable by the current user"
+    fail "/dev/uinput is not writable (run tools/setup_sophia_uinput.sh, then start a fresh login or run newgrp input)"
 [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
     fail "commit or discard the dirty worktree before collecting evidence"
 [[ ! -e "$FINAL" && ! -e "$PENDING" ]] ||
