@@ -12,7 +12,8 @@ set -euo pipefail
 DURATION_SECONDS="${SOPHIA_XTERM_DURATION_SECONDS:-20}"
 SURFACE_WIDTH="${SOPHIA_XTERM_WIDTH:-500}"
 SURFACE_HEIGHT="${SOPHIA_XTERM_HEIGHT:-500}"
-LINES_PER_ITERATION="${SOPHIA_XTERM_LINES:-200}"
+LINES_PER_ITERATION="${SOPHIA_XTERM_LINES:-8}"
+INTERVAL_MSEC="${SOPHIA_XTERM_INTERVAL_MSEC:-16}"
 XTERM_BIN="${SOPHIA_XTERM_BIN:-$(command -v xterm || true)}"
 
 fail() {
@@ -28,6 +29,10 @@ fail() {
     fail "surface height must be a positive integer"
 [[ "$LINES_PER_ITERATION" =~ ^[1-9][0-9]*$ ]] ||
     fail "lines per iteration must be a positive integer"
+[[ "$INTERVAL_MSEC" =~ ^[1-9][0-9]*$ ]] && ((INTERVAL_MSEC <= 1000)) ||
+    fail "iteration interval must be an integer from 1 through 1000 milliseconds"
+printf -v INTERVAL_SECONDS '%d.%03d' \
+    "$((INTERVAL_MSEC / 1000))" "$((INTERVAL_MSEC % 1000))"
 
 # SOPHIA_XTERM_WIDTH/HEIGHT are the intended *pixel* surface size (the session
 # reports them verbatim on the sophia_terminal_benchmark line). xterm's
@@ -63,10 +68,11 @@ XTERM_ROWS=$(((SURFACE_HEIGHT - 2 * XTERM_INTERNAL_BORDER) / XTERM_CELL_HEIGHT))
 if [[ -n "${SOPHIA_XTERM_PRINT_GEOMETRY:-}" ]]; then
     geometry_pixel_width=$((XTERM_COLS * XTERM_CELL_WIDTH + 2 * XTERM_INTERNAL_BORDER))
     geometry_pixel_height=$((XTERM_ROWS * XTERM_CELL_HEIGHT + 2 * XTERM_INTERNAL_BORDER))
-    printf 'sophia_xterm_geometry cols=%s rows=%s pixel_width=%s pixel_height=%s buffer_bytes=%s\n' \
+    printf 'sophia_xterm_geometry cols=%s rows=%s pixel_width=%s pixel_height=%s buffer_bytes=%s lines_per_iteration=%s interval_msec=%s\n' \
         "$XTERM_COLS" "$XTERM_ROWS" \
         "$geometry_pixel_width" "$geometry_pixel_height" \
-        "$((geometry_pixel_width * geometry_pixel_height * 4))"
+        "$((geometry_pixel_width * geometry_pixel_height * 4))" \
+        "$LINES_PER_ITERATION" "$INTERVAL_MSEC"
     exit 0
 fi
 
@@ -75,6 +81,7 @@ fi
 command -v timeout >/dev/null || fail "timeout is unavailable"
 command -v date >/dev/null || fail "date is unavailable"
 command -v seq >/dev/null || fail "seq is unavailable"
+command -v sleep >/dev/null || fail "sleep is unavailable"
 
 COUNT_FILE="$(mktemp)"
 INNER_SCRIPT="$(mktemp)"
@@ -82,16 +89,20 @@ trap 'rm -f "$COUNT_FILE" "$INNER_SCRIPT"' EXIT
 
 # The inner workload self-bounds to $1 seconds and records its scrollback
 # iteration count to $3 so the outer probe can report deterministic client
-# throughput even though xterm prints no cadence line of its own.
+# throughput even though xterm prints no cadence line of its own. Small,
+# regularly paced batches avoid turning one shell write into more ordered
+# visual facts than the bounded authority channel can preserve at once.
 cat >"$INNER_SCRIPT" <<'INNER'
 duration_seconds="$1"
 lines_per_iteration="$2"
 count_file="$3"
+interval_seconds="$4"
 iterations=0
 end_epoch=$(( $(date +%s) + duration_seconds ))
 while [ "$(date +%s)" -lt "$end_epoch" ]; do
     seq 1 "$lines_per_iteration"
     iterations=$(( iterations + 1 ))
+    sleep "$interval_seconds"
 done
 printf '%s\n' "$iterations" >"$count_file"
 INNER
@@ -107,7 +118,7 @@ timeout --signal=TERM "$safety_deadline" \
     -b "$XTERM_INTERNAL_BORDER" \
     -geometry "${XTERM_COLS}x${XTERM_ROWS}" \
     -e sh "$INNER_SCRIPT" \
-    "$DURATION_SECONDS" "$LINES_PER_ITERATION" "$COUNT_FILE"
+    "$DURATION_SECONDS" "$LINES_PER_ITERATION" "$COUNT_FILE" "$INTERVAL_SECONDS"
 client_status="${PIPESTATUS[0]}"
 set -e
 
@@ -128,5 +139,6 @@ fi
 
 lines=$(( iterations * LINES_PER_ITERATION ))
 
-printf 'sophia_xterm_client schema=1 status=complete duration_seconds=%s lines=%s iterations=%s timed_exit=%s\n' \
-    "$DURATION_SECONDS" "$lines" "$iterations" "$timed_exit"
+printf 'sophia_xterm_client schema=2 status=complete duration_seconds=%s lines_per_iteration=%s interval_msec=%s lines=%s iterations=%s timed_exit=%s\n' \
+    "$DURATION_SECONDS" "$LINES_PER_ITERATION" "$INTERVAL_MSEC" \
+    "$lines" "$iterations" "$timed_exit"

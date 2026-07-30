@@ -16,11 +16,13 @@ fail() {
 
 report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" status=pass "* ]] || fail "pass fixture did not pass"
-[[ "$report" == *" schema=2 "* ]] || fail "missing schema"
+[[ "$report" == *" schema=3 "* ]] || fail "missing schema"
 [[ "$report" == *" workload=xterm-cpu "* ]] || fail "missing workload"
 [[ "$report" == *" duration_seconds=20 "* ]] || fail "missing duration"
 [[ "$report" == *" surface_width=500 surface_height=500 "* ]] || fail "missing surface size"
-[[ "$report" == *" client_lines=120000 "* ]] || fail "missing client lines"
+[[ "$report" == *" lines_per_iteration=8 interval_msec=16 "* ]] ||
+    fail "missing paced workload"
+[[ "$report" == *" client_lines=9600 "* ]] || fail "missing client lines"
 [[ "$report" == *" cpu_patch_updates=539 "* ]] || fail "missing patch updates"
 [[ "$report" == *" cpu_payload_bytes=13271040 "* ]] || fail "missing payload bytes"
 [[ "$report" == *" cpu_max_compose_msec=4 "* ]] || fail "missing compose max"
@@ -54,6 +56,17 @@ fi
 sed 's/timed_exit=true/timed_exit=false/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted an unbounded client run"
+fi
+
+# Fails closed when the client did not run the benchmark's declared cadence.
+sed 's/interval_msec=16 lines=9600/interval_msec=17 lines=9600/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted mismatched client pacing"
+fi
+sed 's/lines=9600/lines=9601/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted inconsistent client line totals"
 fi
 
 # Fails closed when CPU composition exceeds the established hardware budget.

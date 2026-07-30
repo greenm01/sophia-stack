@@ -248,16 +248,18 @@ guard, recovery, performance report, and kernel-log delta under
 from a logged-in local TTY3, arm Ctrl-Alt-Backspace when prompted, and confirm
 the centered xterm scrolls continuously. The default 20-second, 500-by-500
 pixel intent resolves against the pinned `6x13` font rather than being passed
-to xterm as character cells. The independent 30-second watchdog bounds the
-session.
+to xterm as character cells. It emits eight lines every 16 ms, avoiding an
+unbounded producer burst while keeping the software-Present path continuously
+active. The independent 30-second watchdog bounds the session.
 
-The trailing `sophia_terminal_performance schema=2` report requires positive
+The trailing `sophia_terminal_performance schema=3` report requires positive
 immutable CPU patch traffic, damage-driven partial repaint, no unexpected X11
 or native failure, clean resource drain, and
 `cpu_max_compose_msec <= cpu_compose_budget_msec`. The default composition
 budget is 25 ms; `SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive
-integer and is reserved for a separately documented gate. The raw report can
-be regenerated from the retained standalone session log:
+integer and is reserved for a separately documented gate. The report also
+requires the client to reproduce the declared line-batch and interval metadata.
+The raw report can be regenerated from the retained standalone session log:
 
 ```sh
 tools/report_sophia_terminal_performance.sh

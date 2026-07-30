@@ -36,6 +36,20 @@ capture_session_artifacts() {
     copy_if_present /tmp/sophia-standalone-tty3-launch.log "$PENDING/launch.log"
 }
 
+run_finalized=false
+preserve_pending_on_exit() {
+    local original_status="$1"
+    if [[ "$run_finalized" != true && -d "$PENDING" ]]; then
+        capture_session_artifacts
+        if [[ ! -s "$PENDING/result.kdl" ]]; then
+            printf 'terminal-gate-result schema=1 status="interrupted" commit="%s" runner-status=%s failures="runner_interrupted"\n' \
+                "$COMMIT" "$original_status" >"$PENDING/result.kdl"
+            chmod 600 "$PENDING/result.kdl"
+        fi
+        echo "Incomplete evidence retained in $PENDING" >&2
+    fi
+}
+
 if [[ "${1:-}" == --help ]]; then
     cat <<EOF
 Usage: tools/run_sophia_terminal_gate_tty3.sh
@@ -61,6 +75,7 @@ chmod 700 "$STATE_HOME/sophia/rendering-benchmarks" \
     "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
+trap 'preserve_pending_on_exit $?' EXIT
 printf 'source_commit=%s\nrun_id=%s\nkernel_log=%s\n' \
     "$COMMIT" "$RUN_ID" "$KERNEL_LOG" >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
@@ -171,6 +186,7 @@ printf 'terminal-gate-result schema=1 status="%s" commit="%s" benchmark-status=%
 chmod 600 "$PENDING/result.kdl"
 
 mv "$PENDING" "$FINAL"
+run_finalized=true
 echo
 cat "$FINAL/result.kdl"
 [[ ! -s "$FINAL/performance.log" ]] || cat "$FINAL/performance.log"

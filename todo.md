@@ -657,15 +657,20 @@ promotes one to a hard M9 exit gate.
   was the downstream greetd/RDNA3 KMS re-take after that abnormal early exit.
   Reproduced deterministically offline via `x-authority-xterm-input-smoke`
   (no KMS). Fixed by converting px→cells against a pinned `6x13` font and
-  clamping under the cap. The schema-2 performance reporter now fail-closes
+  clamping under the cap. The schema-3 performance reporter now fail-closes
   above the established 25 ms CPU-composition budget and reports the applied
   budget beside the observed maximum. A commit-pinned TTY3 gate now refuses a
   dirty tree or inactive persistent logging and archives the report, session,
   guard, recovery, launcher, and exact kernel-log delta. Native path audited
   and cleared as a lock cause.
-  See `docs/research-log.md` 2026-07-30. Remaining: a cautious physical rerun
-  of the fixed benchmark with `socklog` persistent logging active; do not
-  blind-rerun the KMS launcher until then.
+  The first post-geometry-fix run then failed closed at transaction 650 because
+  the probe emitted unpaced 200-line bursts into the intentional 256-batch
+  authority queue. The X frontend stopped rather than dropping visual facts;
+  xterm exited 84, and TTY3/greetd restoration completed normally. The probe
+  now declares a fixed eight-line/16 ms cadence in schema-3 evidence, and the
+  runner preserves structured interrupted evidence. See
+  `docs/research-log.md` 2026-07-30. Remaining: one cautious physical rerun of
+  the paced benchmark with `socklog` active; do not blind-rerun KMS.
 - [ ] Input-to-photon latency. Inject input through the physical libinput
   dwell/budget path and measure ingress to the exact presented frame that
   reflects it. Close two known plumbing gaps first: the retirement `ust` is a

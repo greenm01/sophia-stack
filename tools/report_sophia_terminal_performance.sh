@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Terminal CPU-path throughput reporter. Reduces a bounded xterm standalone
-# session log to one fail-closed sophia_terminal_performance schema=2 line.
+# session log to one fail-closed sophia_terminal_performance schema=3 line.
 # Unlike the vkcube/glxgears reporters (GPU DRI3 flip path), this asserts the
 # software-Present (CPU) evidence: positive immutable patch-batch traffic,
 # damage-driven partial repaint, bounded CPU compose time, and clean teardown.
@@ -49,12 +49,12 @@ if grep -Eqi \
 fi
 
 benchmark="$(
-    grep -E '^sophia_terminal_benchmark schema=1 workload=xterm-cpu ' "$SESSION_LOG" |
+    grep -E '^sophia_terminal_benchmark schema=2 workload=xterm-cpu ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$benchmark" ]] || fail "missing terminal benchmark metadata"
 client="$(
-    grep -E '^sophia_xterm_client schema=1 status=complete ' "$SESSION_LOG" |
+    grep -E '^sophia_xterm_client schema=2 status=complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$client" ]] || fail "missing bounded xterm client completion"
@@ -86,11 +86,24 @@ done
 duration_seconds="$(positive_field "$benchmark" duration_seconds)"
 surface_width="$(positive_field "$benchmark" surface_width)"
 surface_height="$(positive_field "$benchmark" surface_height)"
+lines_per_iteration="$(positive_field "$benchmark" lines_per_iteration)"
+interval_msec="$(positive_field "$benchmark" interval_msec)"
+client_duration_seconds="$(positive_field "$client" duration_seconds)"
+client_lines_per_iteration="$(positive_field "$client" lines_per_iteration)"
+client_interval_msec="$(positive_field "$client" interval_msec)"
 client_lines="$(positive_field "$client" lines)"
 client_iterations="$(positive_field "$client" iterations)"
 client_timed_exit="$(rendering_performance_field "$client" timed_exit)" ||
     fail "client completion lacks timed_exit"
 [[ "$client_timed_exit" == true ]] || fail "xterm client did not complete its bounded window"
+[[ "$client_duration_seconds" == "$duration_seconds" ]] ||
+    fail "client duration does not match benchmark metadata"
+[[ "$client_lines_per_iteration" == "$lines_per_iteration" ]] ||
+    fail "client line batch does not match benchmark metadata"
+[[ "$client_interval_msec" == "$interval_msec" ]] ||
+    fail "client interval does not match benchmark metadata"
+((client_lines == client_iterations * lines_per_iteration)) ||
+    fail "client line total does not match iterations times line batch"
 
 # CPU software-Present evidence: the patch-batch path must have been exercised,
 # not whole-pixmap replacement every present.
@@ -144,4 +157,4 @@ fi
 native_retirements="$(positive_field "$completion" native_retirements)"
 
 printf '%s\n' \
-    "sophia_terminal_performance schema=2 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec"
+    "sophia_terminal_performance schema=3 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec"

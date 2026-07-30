@@ -1,5 +1,5 @@
-sophia_terminal_benchmark schema=1 workload=xterm-cpu duration_seconds=20 surface_width=500 surface_height=500
-sophia_xterm_client schema=1 status=complete duration_seconds=20 lines=120000 iterations=600 timed_exit=true
+sophia_terminal_benchmark schema=2 workload=xterm-cpu duration_seconds=20 surface_width=500 surface_height=500 lines_per_iteration=8 interval_msec=16
+sophia_xterm_client schema=2 status=complete duration_seconds=20 lines_per_iteration=8 interval_msec=16 lines=9600 iterations=1200 timed_exit=true
 sophia_live_output_repaint schema=1 status=initial_presented output=1 mode=full rects=1 pixels=3686400
 sophia_live_output_repaint schema=1 status=presented output=1 mode=partial rects=2 pixels=48000
 sophia_live_output_repaint schema=1 status=presented output=1 mode=partial rects=1 pixels=24000

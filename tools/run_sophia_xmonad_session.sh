@@ -313,6 +313,8 @@ glxgears_height=""
 xterm_duration=""
 xterm_width=""
 xterm_height=""
+xterm_lines=""
+xterm_interval_msec=""
 if [[ "$SESSION_PROFILE" == standalone ]]; then
     standalone_workload="${SOPHIA_STANDALONE_WORKLOAD:-vkcube}"
     case "$standalone_workload" in
@@ -342,6 +344,8 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             xterm_duration="${SOPHIA_XTERM_DURATION_SECONDS:-20}"
             xterm_width="${SOPHIA_XTERM_WIDTH:-500}"
             xterm_height="${SOPHIA_XTERM_HEIGHT:-500}"
+            xterm_lines="${SOPHIA_XTERM_LINES:-8}"
+            xterm_interval_msec="${SOPHIA_XTERM_INTERVAL_MSEC:-16}"
             [[ "$xterm_duration" =~ ^[1-9][0-9]*$ ]] || {
                 echo "SOPHIA_XTERM_DURATION_SECONDS must be a positive integer." >&2
                 exit 1
@@ -349,6 +353,15 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             [[ "$xterm_width" =~ ^[1-9][0-9]*$
                 && "$xterm_height" =~ ^[1-9][0-9]*$ ]] || {
                 echo "SOPHIA_XTERM_WIDTH and SOPHIA_XTERM_HEIGHT must be positive integers." >&2
+                exit 1
+            }
+            [[ "$xterm_lines" =~ ^[1-9][0-9]*$ ]] || {
+                echo "SOPHIA_XTERM_LINES must be a positive integer." >&2
+                exit 1
+            }
+            [[ "$xterm_interval_msec" =~ ^[1-9][0-9]*$
+                && "$xterm_interval_msec" -le 1000 ]] || {
+                echo "SOPHIA_XTERM_INTERVAL_MSEC must be an integer from 1 through 1000." >&2
                 exit 1
             }
             ;;
@@ -522,8 +535,9 @@ elif [[ "$SESSION_PROFILE" == standalone
         "$glxgears_duration" "$glxgears_width" "$glxgears_height" >>"$SESSION_LOG"
 elif [[ "$SESSION_PROFILE" == standalone
     && "$standalone_workload" == xterm ]]; then
-    printf 'sophia_terminal_benchmark schema=1 workload=xterm-cpu duration_seconds=%s surface_width=%s surface_height=%s\n' \
-        "$xterm_duration" "$xterm_width" "$xterm_height" >>"$SESSION_LOG"
+    printf 'sophia_terminal_benchmark schema=2 workload=xterm-cpu duration_seconds=%s surface_width=%s surface_height=%s lines_per_iteration=%s interval_msec=%s\n' \
+        "$xterm_duration" "$xterm_width" "$xterm_height" \
+        "$xterm_lines" "$xterm_interval_msec" >>"$SESSION_LOG"
 fi
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off

@@ -33,8 +33,8 @@ required a power reset. Recovered evidence from
   intent well under the cap. Default 500 → `82x38` cells → 496x498 px → 988 KB;
   the worst-case clamp (2048 px) stays at 16.7 MB. `SOPHIA_XTERM_WIDTH/HEIGHT`
   remain the reported pixel intent on the `sophia_terminal_benchmark` line.
-- **Fail-closed compose budget.** The terminal performance report is now schema
-  2 and rejects `cpu_max_compose_msec` above 25 ms, matching the established
+- **Fail-closed compose budget.** The terminal performance report rejects
+  `cpu_max_compose_msec` above 25 ms, matching the established
   CPU-composition gate used by the retained two-xterm and QEMU evidence. It
   records `cpu_compose_budget_msec` beside the observed maximum; malformed or
   zero overrides fail before evidence is accepted.
@@ -44,6 +44,24 @@ required a power reset. Recovered evidence from
   and archives the source commit, benchmark/report results, session/guard/TTY
   recovery, launcher handback, and the exact appended kernel-log bytes. A
   rotated log or new AMDGPU rejection/reset/timeout fails closed.
+- **First post-geometry-fix physical result: bounded transport overload.** The
+  run on commit `d7fbcff` passed offline preflight, armed the input guard,
+  acquired both outputs, completed the synchronous output baseline, and then
+  stopped the X frontend at transaction 650:
+  `X authority observed transaction channel is full`. The probe's tight loop
+  wrote 200 lines per iteration with no interval; a few bursts filled the
+  intentional 256-batch frontend-to-owner queue before ordered visual facts
+  could drain. X authority correctly refused to allocate or drop facts, xterm
+  exited 84, native suspend drained, and TTY3/greetd handback completed. This
+  is neither the prior geometry failure nor evidence for enlarging an
+  eventually finite queue.
+- **Paced workload decision.** The terminal probe now defaults to eight lines
+  every 16 ms and carries both values through schema-2 benchmark/client records
+  into the schema-3 performance report. The reporter rejects mismatched cadence
+  or inconsistent line totals. Zero and over-one-second intervals are invalid,
+  so an override cannot silently restore the unbounded producer. The gate
+  runner also leaves a structured `interrupted` result and copies available
+  session artifacts from its exit trap.
 - **Native path is not the lock cause.** Audit: CPU-layer GL textures are
   reallocated to the incoming layer size (`sophia-renderer-native-egl` `gl.rs`),
   but that layer *is* the ≤64 MiB software buffer (≤ ~4096², inside RDNA3's
