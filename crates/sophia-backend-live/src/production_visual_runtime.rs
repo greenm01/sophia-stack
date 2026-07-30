@@ -75,9 +75,11 @@ pub struct LiveProductionVisualRuntime {
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
     cpu_buffer_residency: Vec<u64>,
+    recent_cpu_buffer_updates: VecDeque<u64>,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
+const RECENT_CPU_BUFFER_UPDATE_CAPACITY: usize = 16;
 
 pub struct LiveProductionCycleRequest<'a> {
     pub batch: &'a LiveProductionAuthorityBatch,
@@ -139,6 +141,7 @@ impl LiveProductionVisualRuntime {
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
             cpu_buffer_residency: Vec::with_capacity(16),
+            recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
         })
     }
 
@@ -215,14 +218,15 @@ impl LiveProductionVisualRuntime {
             chrome_surfaces,
             staged_cpu_buffer_handles,
         } = request;
+        record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
             &mut self.cpu_buffer_residency,
             self.production.committed_surfaces(),
             batch,
             staged_cpu_buffer_handles,
+            &self.recent_cpu_buffer_updates,
         );
         retain_relevant_cpu_buffer_updates(scene, &mut updates, &self.cpu_buffer_residency);
-        extend_cpu_buffer_residency_with_updates(&mut self.cpu_buffer_residency, &updates);
         let native_enabled = native_scanout.is_some();
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
@@ -409,14 +413,15 @@ impl LiveProductionVisualRuntime {
             chrome_surfaces,
             staged_cpu_buffer_handles,
         } = request;
+        record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
             &mut self.cpu_buffer_residency,
             self.production.committed_surfaces(),
             batch,
             staged_cpu_buffer_handles,
+            &self.recent_cpu_buffer_updates,
         );
         retain_relevant_cpu_buffer_updates(scene, &mut updates, &self.cpu_buffer_residency);
-        extend_cpu_buffer_residency_with_updates(&mut self.cpu_buffer_residency, &updates);
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         self.set_chrome_surfaces(chrome_surfaces);
@@ -707,6 +712,7 @@ fn write_cpu_buffer_residency(
     committed: &[CommittedSurfaceState],
     batch: &LiveProductionAuthorityBatch,
     staged: &[u64],
+    recent_updates: &VecDeque<u64>,
 ) {
     handles.clear();
     handles.extend(committed.iter().filter_map(|surface| match surface.buffer {
@@ -724,8 +730,24 @@ fn write_cpu_buffer_residency(
             }),
     );
     handles.extend_from_slice(staged);
+    handles.extend(recent_updates);
     handles.sort_unstable();
     handles.dedup();
+}
+
+fn record_recent_cpu_buffer_updates(
+    recent: &mut VecDeque<u64>,
+    updates: &[crate::LiveCpuBufferUpdate],
+) {
+    for handle in updates.iter().map(crate::LiveCpuBufferUpdate::handle) {
+        if let Some(index) = recent.iter().position(|candidate| *candidate == handle) {
+            recent.remove(index);
+        }
+        recent.push_back(handle);
+    }
+    while recent.len() > RECENT_CPU_BUFFER_UPDATE_CAPACITY {
+        recent.pop_front();
+    }
 }
 
 fn retain_relevant_cpu_buffer_updates(
@@ -738,15 +760,6 @@ fn retain_relevant_cpu_buffer_updates(
             || scene.contains_buffer(update.handle())
             || rooted_handles.binary_search(&update.handle()).is_ok()
     });
-}
-
-fn extend_cpu_buffer_residency_with_updates(
-    handles: &mut Vec<u64>,
-    updates: &[crate::LiveCpuBufferUpdate],
-) {
-    handles.extend(updates.iter().map(crate::LiveCpuBufferUpdate::handle));
-    handles.sort_unstable();
-    handles.dedup();
 }
 
 fn authority_batch_removed_surfaces(batch: &LiveProductionAuthorityBatch) -> Vec<SurfaceId> {

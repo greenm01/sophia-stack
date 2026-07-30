@@ -199,9 +199,9 @@ The staged CPU-buffer regression deliberately separates the first immutable
 buffer update from the later released transaction. It must retain the
 renderer-private buffer while Engine has no committed surface, then compose
 visual detail and route Complete-before-Idle after release. It also separates
-an update-only replacement from a later patch, proves late unrooted patches
-are disposable, and requires post-reduction committed surfaces to retain a
-materialized renderer buffer:
+an update-only replacement from a later patch, bounds the recent update
+working set at 16 handles, and requires post-reduction committed surfaces to
+retain a materialized renderer buffer:
 
 ```sh
 cargo test --offline -q -p sophia-backend-live --all-features \

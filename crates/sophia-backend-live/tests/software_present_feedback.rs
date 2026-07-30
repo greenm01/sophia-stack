@@ -16,7 +16,7 @@ use sophia_renderer_live::{
 };
 
 #[test]
-fn current_cpu_updates_remain_rooted_and_late_unrooted_patches_are_discarded() {
+fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
     let size = Size {
         width: 2,
         height: 1,
@@ -91,28 +91,27 @@ fn current_cpu_updates_remain_rooted_and_late_unrooted_patches_are_discarded() {
     assert_eq!(scene.resident_buffer_count(), 1);
 
     run_update(&mut runtime, &mut scene, Vec::new()).unwrap();
-    assert_eq!(scene.resident_buffer_count(), 0);
+    assert_eq!(scene.resident_buffer_count(), 1);
 
-    run_update(
-        &mut runtime,
-        &mut scene,
-        vec![LiveCpuBufferUpdate::Patch(LiveCpuBufferPatch {
-            handle: 72,
-            size,
-            stride: 8,
-            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-            generation: 3,
-            rect: Rect {
-                x: 1,
-                y: 0,
-                width: 1,
-                height: 1,
-            },
-            bytes: vec![5, 6, 7, 8],
-        })],
-    )
-    .unwrap();
-    assert_eq!(scene.resident_buffer_count(), 0);
+    for handle in 100..116 {
+        run_update(
+            &mut runtime,
+            &mut scene,
+            vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle,
+                size,
+                stride: 8,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: vec![0; 8],
+            })],
+        )
+        .unwrap();
+    }
+    assert_eq!(scene.resident_buffer_count(), 16);
+
+    run_update(&mut runtime, &mut scene, Vec::new()).unwrap();
+    assert_eq!(scene.resident_buffer_count(), 16);
 }
 
 #[test]
