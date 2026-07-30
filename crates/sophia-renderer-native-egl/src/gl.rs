@@ -4,9 +4,12 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
+use crate::NativeEglDrawSmokeStatus;
 #[cfg(feature = "gbm-platform")]
-use crate::{NativeCompositionPixelMetrics, native_composition_pixel_metrics};
-use crate::{NativeEglDrawSmokeStatus, NativeGbmScanoutBufferExportDetail};
+use crate::{
+    NativeCompositionPixelMetrics, NativeGbmScanoutBufferExportDetail,
+    native_composition_pixel_metrics,
+};
 #[cfg(feature = "gbm-platform")]
 use std::cell::Cell;
 
