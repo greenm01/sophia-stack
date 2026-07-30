@@ -175,7 +175,11 @@ fn native_libdrm_page_flip_event_reducer_uses_private_crtc_routes() {
 
     assert_eq!(
         reduce_native_page_flip_event(&event, &mut routes),
-        Some(LibdrmNativePageFlipCallback::new(slot, 91))
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+            slot,
+            91,
+            std::time::Duration::from_millis(16),
+        ))
     );
     assert_eq!(
         reduce_native_page_flip_event(&event, &mut [LibdrmNativeCrtcRoute::new(other_crtc, slot)]),
@@ -186,11 +190,19 @@ fn native_libdrm_page_flip_event_reducer_uses_private_crtc_routes() {
     let mut initial_route = [LibdrmNativeCrtcRoute::new(crtc, slot)];
     assert_eq!(
         reduce_native_page_flip_event(&initial_event, &mut initial_route),
-        Some(LibdrmNativePageFlipCallback::new(slot, 1))
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+            slot,
+            1,
+            std::time::Duration::from_millis(16),
+        ))
     );
     assert_eq!(
         reduce_native_page_flip_event(&initial_event, &mut initial_route),
-        Some(LibdrmNativePageFlipCallback::new(slot, 2))
+        Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+            slot,
+            2,
+            std::time::Duration::from_millis(16),
+        ))
     );
 }
 
@@ -217,7 +229,11 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
             output: OutputId::from_raw(7),
         }]);
     let mut reader = FakeLibdrmNativePageFlipReader::new([
-        LibdrmNativePageFlipCallback::new(slot, 81),
+        LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+            slot,
+            81,
+            std::time::Duration::from_micros(123_456),
+        ),
         LibdrmNativePageFlipCallback::new(slot, 82),
     ]);
     let (sender, receiver) = mpsc::sync_channel(4);
@@ -251,6 +267,14 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
             output: OutputId::from_raw(7),
             frame_serial: 81,
         }
+    );
+    assert_eq!(
+        poller.drain_emitted_kernel_timestamps(),
+        vec![LibdrmKernelPageFlipTimestamp {
+            output: OutputId::from_raw(7),
+            frame_serial: 81,
+            ust_usec: 123_456,
+        }]
     );
 }
 

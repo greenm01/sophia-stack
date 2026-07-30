@@ -639,7 +639,7 @@ a same-hardware Xserver reference where an apples-to-apples one is definable.
 They are rendering-coverage evidence; only a named daily-driver failure
 promotes one to a hard M9 exit gate.
 
-- [ ] Terminal CPU-path throughput (in progress). Drive the SHM/software-Present
+- [x] Terminal CPU-path throughput. Drive the SHM/software-Present
   path with a bounded standalone `xterm` scrollback workload rather than a GPU
   client. Require positive CPU patch traffic (`cpu_patch_updates>0`,
   `cpu_payload_bytes>0`) proving the immutable patch-batch path rather than
@@ -676,15 +676,26 @@ promotes one to a hard M9 exit gate.
   `seq(1)` past the shell's wall-clock test and the outer safety timeout arrived
   before the final-only count write. The producer now has an independent timer,
   records completed bursts incrementally, and has a stalled-pty regression.
-  Remaining: one final cautious physical rerun of the controller-fixed benchmark
-  with `socklog` active; do not blind-rerun KMS.
+  Two controller-fixed physical runs on `4cb4f5f` then passed the schema-3
+  automated gate: 6,648 lines / 831 iterations, positive patch traffic,
+  partial repaint, zero authority drops or unexpected protocol/native
+  failures, 7 ms maximum CPU composition against the 25 ms budget, clean
+  kernel deltas, and clean TTY3/greetd handback. The retained runner records
+  remain `visual-confirmed=false` because the local prompt did not capture
+  `yes`; the operator separately observed the expected scrolling-number
+  surface and responsive pointer in the paced session. Do not rewrite the
+  immutable archive. The Sophia CPU-path evidence is complete; the Xserver
+  comparison remains a follow-up before any parity claim.
 - [ ] Input-to-photon latency. Inject input through the physical libinput
   dwell/budget path and measure ingress to the exact presented frame that
-  reflects it. Close two known plumbing gaps first: the retirement `ust` is a
-  synthetic `presentation_started.elapsed()` value rather than the kernel
-  page-flip timestamp, and `--inject-text` bypasses the libinput queue-dwell
-  stage instead of anchoring the measurement at raw injection. Require the
-  full-chain latency and its per-stage breakdown (dwell, submit,
+  reflects it. Kernel `PageFlipEvent::duration` now survives the private native
+  callback path into production retirement, with completion counters exposing
+  kernel timestamps, synthetic fallbacks, and pending correlations. The raw
+  ingress gap remains: `--inject-text` bypasses the libinput queue-dwell stage.
+  Add a bounded uinput-backed injector and per-sample correlation from the
+  libinput event timestamp through the exact submitted/presented frame. Require
+  positive kernel timestamp coverage, zero fallbacks/pending correlations, and
+  the full-chain latency plus its per-stage breakdown (dwell, submit,
   submit-to-page-flip) below one refresh period at p95.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require

@@ -7,6 +7,7 @@ pub struct NativeLibdrmPageFlipEventPoller {
     source: LibdrmNativePageFlipSource,
     routes: Vec<LibdrmNativeOutputRoute>,
     pending_callbacks: VecDeque<LibdrmNativePageFlipCallback>,
+    emitted_kernel_timestamps: VecDeque<LibdrmKernelPageFlipTimestamp>,
     last_read_loop: LibdrmNativeReadLoopReport,
 }
 
@@ -16,6 +17,7 @@ impl NativeLibdrmPageFlipEventPoller {
             source,
             routes: Vec::new(),
             pending_callbacks: VecDeque::new(),
+            emitted_kernel_timestamps: VecDeque::new(),
             last_read_loop: LibdrmNativeReadLoopReport::idle(),
         }
     }
@@ -107,6 +109,10 @@ impl NativeLibdrmPageFlipEventPoller {
         self.pending_callbacks.len()
     }
 
+    pub fn drain_emitted_kernel_timestamps(&mut self) -> Vec<LibdrmKernelPageFlipTimestamp> {
+        self.emitted_kernel_timestamps.drain(..).collect()
+    }
+
     pub fn route_count(&self) -> usize {
         self.routes.len()
     }
@@ -138,6 +144,20 @@ impl LibdrmPageFlipEventPoller for NativeLibdrmPageFlipEventPoller {
             .len()
             .saturating_sub(report.poll.callbacks.queued_remaining);
 
+        for native in pending.iter().take(processed_callbacks).copied() {
+            let Some(ust_usec) = native.kernel_ust_usec() else {
+                continue;
+            };
+            let Some(callback) = native.decode(&self.routes).callback else {
+                continue;
+            };
+            self.emitted_kernel_timestamps
+                .push_back(LibdrmKernelPageFlipTimestamp {
+                    output: callback.output,
+                    frame_serial: callback.frame_serial,
+                    ust_usec,
+                });
+        }
         for _ in 0..processed_callbacks {
             let _ = self.pending_callbacks.pop_front();
         }

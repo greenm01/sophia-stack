@@ -285,6 +285,14 @@
         native_resources.worker_release_enqueue_failures,
         native_resources.max_worker_request.as_millis(),
     );
+    if let Some(native_scanout) = native_scanout.as_ref() {
+        println!(
+            "sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps={} fallbacks={} pending={}",
+            native_scanout.kernel_page_flip_timestamps,
+            native_scanout.kernel_page_flip_timestamp_missing,
+            native_scanout.pending_kernel_page_flip_timestamps(),
+        );
+    }
     println!(
         "sophia_live_rendering_efficiency schema=1 status=complete cpu_updates={} cpu_replacements={} cpu_patch_updates={} cpu_patch_rects={} cpu_payload_bytes={} exact_pixel_metric_frames={} damage_scoped_metric_frames={} composition_target_reuses={}",
         cpu_buffer_updates,

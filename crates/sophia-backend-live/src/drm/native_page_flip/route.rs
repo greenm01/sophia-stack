@@ -67,6 +67,7 @@ impl LibdrmNativeCrtcRoute {
 pub struct LibdrmNativePageFlipCallback {
     pub output_slot: LibdrmNativeOutputSlot,
     pub frame_serial: u64,
+    kernel_ust_usec: Option<u64>,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -75,7 +76,24 @@ impl LibdrmNativePageFlipCallback {
         Self {
             output_slot,
             frame_serial,
+            kernel_ust_usec: None,
         }
+    }
+
+    pub fn new_with_kernel_timestamp(
+        output_slot: LibdrmNativeOutputSlot,
+        frame_serial: u64,
+        timestamp: std::time::Duration,
+    ) -> Self {
+        Self {
+            output_slot,
+            frame_serial,
+            kernel_ust_usec: Some(u64::try_from(timestamp.as_micros()).unwrap_or(u64::MAX)),
+        }
+    }
+
+    pub const fn kernel_ust_usec(self) -> Option<u64> {
+        self.kernel_ust_usec
     }
 
     pub fn decode(self, routes: &[LibdrmNativeOutputRoute]) -> LibdrmNativePageFlipDecodeReport {
@@ -115,5 +133,17 @@ pub fn reduce_native_page_flip_event(
     let route = routes.iter_mut().find(|route| route.crtc == event.crtc)?;
     let slot = route.slot();
     let frame_serial = route.observe_frame(event.frame);
-    Some(LibdrmNativePageFlipCallback::new(slot, frame_serial))
+    Some(LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
+        slot,
+        frame_serial,
+        event.duration,
+    ))
+}
+
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibdrmKernelPageFlipTimestamp {
+    pub output: OutputId,
+    pub frame_serial: u64,
+    pub ust_usec: u64,
 }

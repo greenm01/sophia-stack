@@ -3,6 +3,7 @@ mod persistent_native_scanout {
     use crate::*;
     use sophia_engine::{CompositorBackendTickInput, OutputFramePresentationState};
     use sophia_protocol::{OutputId, TransactionId};
+    use std::collections::BTreeMap;
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
@@ -30,6 +31,9 @@ mod persistent_native_scanout {
         pub nonzero_exports: usize,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
         pub presentation_started: Instant,
+        pub kernel_page_flip_timestamps: usize,
+        pub kernel_page_flip_timestamp_missing: usize,
+        kernel_page_flip_ust: BTreeMap<(OutputId, u64), u64>,
         pub vsync_overlap_rejections: usize,
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
@@ -271,6 +275,9 @@ mod persistent_native_scanout {
                 nonzero_exports: 0,
                 production_page_flips,
                 presentation_started: Instant::now(),
+                kernel_page_flip_timestamps: 0,
+                kernel_page_flip_timestamp_missing: 0,
+                kernel_page_flip_ust: BTreeMap::new(),
                 vsync_overlap_rejections: 0,
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
@@ -694,9 +701,21 @@ mod persistent_native_scanout {
                     .last_accepted
                     .and_then(|accepted| accepted.event.frame_serial)
                 {
-                    let elapsed = self.presentation_started.elapsed();
-                    let presentation_msec = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
-                    let ust = u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX);
+                    let (presentation_msec, ust) = if let Some(ust) =
+                        self.kernel_page_flip_ust.remove(&(output, kernel_sequence))
+                    {
+                        self.kernel_page_flip_timestamps =
+                            self.kernel_page_flip_timestamps.saturating_add(1);
+                        (ust / 1_000, ust)
+                    } else {
+                        self.kernel_page_flip_timestamp_missing =
+                            self.kernel_page_flip_timestamp_missing.saturating_add(1);
+                        let elapsed = self.presentation_started.elapsed();
+                        (
+                            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+                            u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
+                        )
+                    };
                     if self
                         .production_page_flips
                         .observe_page_flip(output, kernel_sequence, presentation_msec, ust)
@@ -802,6 +821,10 @@ mod persistent_native_scanout {
             Some((retirement.retirement.ust, retirement.retirement.msc))
         }
 
+        pub fn pending_kernel_page_flip_timestamps(&self) -> usize {
+            self.kernel_page_flip_ust.len()
+        }
+
         pub fn discard_presentation_feedback(&mut self, output: Option<OutputId>) {
             self.production_page_flips.discard_retirements(output);
         }
@@ -840,11 +863,12 @@ mod persistent_native_scanout {
             &mut self,
             group: usize,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let callbacks = {
+            let (callbacks, timestamps) = {
                 let group = &mut self.groups[group];
                 let _ = group
                     .session
                     .poll_native_page_flip_events(&group.sender, 64, 64);
+                let timestamps = group.session.drain_emitted_kernel_page_flip_timestamps();
                 let mut callbacks = Vec::new();
                 loop {
                     match group.receiver.try_recv() {
@@ -855,8 +879,14 @@ mod persistent_native_scanout {
                         }
                     }
                 }
-                callbacks
+                (callbacks, timestamps)
             };
+            for timestamp in timestamps {
+                self.kernel_page_flip_ust.insert(
+                    (timestamp.output, timestamp.frame_serial),
+                    timestamp.ust_usec,
+                );
+            }
             for callback in callbacks {
                 let Some(head) = self
                     .heads

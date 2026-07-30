@@ -502,6 +502,13 @@ impl RealAtomicScanoutPageFlipSession {
         self.poller
             .read_and_poll_page_flip_events(&mut self.reader, sender, max_read, max_emit)
     }
+
+    #[cfg(feature = "libdrm-events")]
+    pub fn drain_emitted_kernel_page_flip_timestamps(
+        &mut self,
+    ) -> Vec<LibdrmKernelPageFlipTimestamp> {
+        self.poller.drain_emitted_kernel_timestamps()
+    }
 }
 
 impl Drop for RealAtomicScanoutPageFlipSession {

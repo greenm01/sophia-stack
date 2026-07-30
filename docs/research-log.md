@@ -3,6 +3,27 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-30: Input-to-photon clock provenance
+
+- **Kernel presentation timestamp preserved.** The native DRM event adapter now
+  retains `PageFlipEvent::duration` as microseconds on its private callback,
+  carries it beside the public callback through bounded polling, and correlates
+  it by output/frame serial before presentation retirement. Production
+  retirement therefore uses the DRM kernel's monotonic page-flip UST instead of
+  `presentation_started.elapsed()`.
+- **Fallback is observable, not silent.** Synthetic presentation timestamps
+  remain available for fake and non-kernel callback sources, but production
+  completion now emits `sophia_live_page_flip_clock` with kernel timestamp,
+  fallback, and pending counts. The physical latency gate must require positive
+  kernel timestamps with zero fallbacks and zero pending correlations.
+- **Raw ingress remains open.** `InputEventPacket::time_msec` already preserves
+  libinput's kernel-monotonic event time, while the threaded poller currently
+  reports queue dwell only as a batch maximum. `--inject-text` calls the owner
+  routing path directly and therefore cannot prove raw injection or libinput
+  queue dwell. The next slice is a bounded uinput-backed injector plus
+  per-sample correlation from that raw timestamp through the submission whose
+  exact kernel page flip contains the resulting pixels.
+
 ## 2026-07-30: Terminal CPU benchmark hard-locked the machine — xterm geometry char/pixel confusion
 
 The first physical run of the 9.4 terminal CPU-path benchmark
@@ -109,11 +130,17 @@ required a power reset. Recovered evidence from
   is `~/sophia-amdgpu-logging-setup.sh`. GPU: Radeon RX 7900 GRE (Navi 31,
   RDNA3, `03:00.0`) plus a Raphael iGPU (`16:00.0`); `amdgpu` `gpu_recovery`,
   `lockup_timeout`, `reset_method`, `runpm` are all auto (`-1`).
-- **Remaining gate.** One final cautious physical rerun of the
-  controller-fixed benchmark with persistent logging active. If it still
-  locks, `/var/log/socklog/kernel/current` should finally capture the AMDGPU
-  ring/reset lines and we escalate to the teardown hardening and/or booting
-  with `amdgpu.gpu_recovery=1`.
+- **Controller-fixed physical gate passed.** Two commit-pinned runs on
+  `4cb4f5f` completed the 20-second producer and emitted passing schema-3
+  reports. Both recorded 6,648 lines / 831 completed iterations, positive
+  immutable CPU patch traffic, damage-driven partial repaint, zero authority
+  drops, zero unexpected protocol/native failures, clean kernel deltas, and
+  clean TTY3/greetd handback. Maximum CPU composition was 7 ms against the
+  25 ms budget. The runner archives retained `visual-confirmed=false` because
+  the local prompt did not record `yes`; the operator had separately observed
+  the expected scrolling-number surface and responsive pointer in the paced
+  session. That prompt metadata is not rewritten. The named automated
+  acceptance criteria are complete; no Xserver parity claim is made.
 
 ## 2026-07-30: GLX Animation Passed; Startup Evidence Lost a Valid Early Frame
 
