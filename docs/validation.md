@@ -250,7 +250,11 @@ the centered xterm scrolls continuously. The default 20-second, 500-by-500
 pixel intent resolves against the pinned `6x13` font rather than being passed
 to xterm as character cells. It emits eight lines every 16 ms, avoiding an
 unbounded producer burst while keeping the software-Present path continuously
-active. The independent 30-second watchdog bounds the session.
+active. An inner process-external timer bounds the producer even when terminal
+backpressure blocks a write, and its incremental count preserves completed
+bursts before xterm's process-level safety timeout. The independent 30-second
+watchdog bounds the complete session. Let the xterm exit automatically; the
+logout shortcut intentionally produces an incomplete benchmark.
 
 The trailing `sophia_terminal_performance schema=3` report requires positive
 immutable CPU patch traffic, damage-driven partial repaint, no unexpected X11

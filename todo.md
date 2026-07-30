@@ -669,8 +669,15 @@ promotes one to a hard M9 exit gate.
   xterm exited 84, and TTY3/greetd restoration completed normally. The probe
   now declares a fixed eight-line/16 ms cadence in schema-3 evidence, and the
   runner preserves structured interrupted evidence. See
-  `docs/research-log.md` 2026-07-30. Remaining: one cautious physical rerun of
-  the paced benchmark with `socklog` active; do not blind-rerun KMS.
+  `docs/research-log.md` 2026-07-30. Two paced physical attempts then proved
+  clean rendering, input, native drain, kernel delta, and TTY handback, but
+  produced no client completion: one was manually logged out before 20 seconds;
+  the other exposed a probe-controller bug where xterm backpressure held
+  `seq(1)` past the shell's wall-clock test and the outer safety timeout arrived
+  before the final-only count write. The producer now has an independent timer,
+  records completed bursts incrementally, and has a stalled-pty regression.
+  Remaining: one final cautious physical rerun of the controller-fixed benchmark
+  with `socklog` active; do not blind-rerun KMS.
 - [ ] Input-to-photon latency. Inject input through the physical libinput
   dwell/budget path and measure ingress to the exact presented frame that
   reflects it. Close two known plumbing gaps first: the retirement `ust` is a

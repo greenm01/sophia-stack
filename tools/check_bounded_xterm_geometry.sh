@@ -24,6 +24,18 @@ printf '%s\n' \
     'while [ "$#" -gt 0 ]; do' \
     '    if [ "$1" = -e ]; then' \
     '        shift' \
+    '        if [ -n "${SOPHIA_FAKE_XTERM_STALL:-}" ]; then' \
+    '            fifo="${TMPDIR:-/tmp}/sophia-fake-xterm-$$.fifo"' \
+    '            mkfifo "$fifo" || exit 3' \
+    '            sleep 30 <"$fifo" &' \
+    '            reader_pid=$!' \
+    '            "$@" >"$fifo"' \
+    '            status=$?' \
+    '            kill "$reader_pid" 2>/dev/null || true' \
+    '            wait "$reader_pid" 2>/dev/null || true' \
+    '            rm -f "$fifo"' \
+    '            exit "$status"' \
+    '        fi' \
     '        exec "$@"' \
     '    fi' \
     '    shift' \
@@ -123,5 +135,32 @@ paced_iterations="$(field "$paced_line" iterations)" ||
     fail "paced probe reported an unexpected workload: '$paced_line'"
 ((paced_lines == paced_batch * paced_iterations)) ||
     fail "paced probe line total is inconsistent: '$paced_line'"
+
+# A terminal that stops consuming its pty must not strand the producer inside
+# seq(1) until the outer xterm safety deadline. The independent inner timer
+# must stop the blocked producer, retain at least one completed burst, and let
+# xterm finalize normally.
+SECONDS=0
+if ! stalled_output="$(
+    SOPHIA_FAKE_XTERM_STALL=1 \
+    SOPHIA_XTERM_BIN="$FAKE_XTERM" \
+    SOPHIA_XTERM_DURATION_SECONDS=1 \
+    SOPHIA_XTERM_LINES=1000 \
+    SOPHIA_XTERM_INTERVAL_MSEC=1 \
+        "$PROBE"
+)"; then
+    fail "backpressured probe did not finalize"
+fi
+((SECONDS < 5)) ||
+    fail "backpressured probe reached the outer xterm safety deadline"
+stalled_line="$(
+    grep -E '^sophia_xterm_client schema=2 status=complete ' <<<"$stalled_output"
+)"
+[[ -n "$stalled_line" ]] ||
+    fail "backpressured probe emitted no client completion"
+stalled_iterations="$(field "$stalled_line" iterations)" ||
+    fail "backpressured completion lacks iterations"
+((stalled_iterations > 0)) ||
+    fail "backpressured probe reported no completed scrollback bursts"
 
 echo "bounded xterm geometry regressions passed"

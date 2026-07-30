@@ -290,7 +290,11 @@ lifecycle_phase complete input_guard
 if [[ "$SESSION_PROFILE" == standalone ]]; then
     echo "Starting Sophia's standalone natural-size application proof on $DISPLAY_NAME."
     echo "No terminal, xmonad bridge, or status bar will run."
-    echo "Use Super+Shift+Q to log out after inspecting the application."
+    if [[ "${SOPHIA_STANDALONE_WORKLOAD:-}" == xterm ]]; then
+        echo "Let the bounded xterm exit automatically; do not use the logout shortcut."
+    else
+        echo "Use Super+Shift+Q to log out after inspecting the application."
+    fi
 elif [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Starting Sophia with experimental xmonad layout policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."

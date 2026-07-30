@@ -79,7 +79,6 @@ fi
 [[ -n "$XTERM_BIN" && -x "$XTERM_BIN" ]] ||
     fail "xterm is not installed"
 command -v timeout >/dev/null || fail "timeout is unavailable"
-command -v date >/dev/null || fail "date is unavailable"
 command -v seq >/dev/null || fail "seq is unavailable"
 command -v sleep >/dev/null || fail "sleep is unavailable"
 
@@ -87,28 +86,53 @@ COUNT_FILE="$(mktemp)"
 INNER_SCRIPT="$(mktemp)"
 trap 'rm -f "$COUNT_FILE" "$INNER_SCRIPT"' EXIT
 
-# The inner workload self-bounds to $1 seconds and records its scrollback
-# iteration count to $3 so the outer probe can report deterministic client
-# throughput even though xterm prints no cadence line of its own. Small,
-# regularly paced batches avoid turning one shell write into more ordered
-# visual facts than the bounded authority channel can preserve at once.
+# The inner workload uses its own process-external timer and records every
+# completed scrollback burst to $3. A wall-clock test inside the producer is
+# insufficient: when xterm applies backpressure, the shell can remain blocked
+# in seq(1) past that test and never finalize the count file. The nested timeout
+# interrupts that blocked producer, after which the xterm-owned shell exits
+# normally and leaves deterministic completed-burst evidence. Small, regularly
+# paced batches avoid turning one shell write into more ordered visual facts
+# than the bounded authority channel can preserve at once.
 cat >"$INNER_SCRIPT" <<'INNER'
 duration_seconds="$1"
 lines_per_iteration="$2"
 count_file="$3"
 interval_seconds="$4"
-iterations=0
-end_epoch=$(( $(date +%s) + duration_seconds ))
-while [ "$(date +%s)" -lt "$end_epoch" ]; do
-    seq 1 "$lines_per_iteration"
-    iterations=$(( iterations + 1 ))
-    sleep "$interval_seconds"
-done
-printf '%s\n' "$iterations" >"$count_file"
+: >"$count_file"
+set +e
+timeout --signal=TERM --kill-after=1 "$duration_seconds" sh -c '
+    lines_per_iteration="$1"
+    count_file="$2"
+    interval_seconds="$3"
+    iterations=0
+    while :; do
+        seq 1 "$lines_per_iteration"
+        iterations=$(( iterations + 1 ))
+        printf "%s\n" "$iterations" >"$count_file"
+        sleep "$interval_seconds"
+    done
+' sh "$lines_per_iteration" "$count_file" "$interval_seconds"
+workload_status="$?"
+set -e
+case "$workload_status" in
+    124|137|143) ;;
+    *)
+        echo "bounded xterm producer exited unexpectedly: $workload_status" >&2
+        exit 1
+        ;;
+esac
+test -s "$count_file" || {
+    echo "bounded xterm producer completed no scrollback bursts" >&2
+    exit 1
+}
 INNER
 
-# Self-bounded by the inner loop; timeout is only a safety net so a hung xterm
-# still returns and restores the session.
+# Self-bounded by the inner producer timer; this timeout is the process-level
+# safety net for xterm startup/teardown. xterm can linger after its child has
+# completed while the X server drains its final traffic, so a timeout exit is
+# accepted only when the incremental count file proves that the independently
+# timed workload completed positive scrollback traffic.
 safety_deadline=$(( DURATION_SECONDS + 5 ))
 
 set +e

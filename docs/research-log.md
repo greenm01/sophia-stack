@@ -62,6 +62,23 @@ required a power reset. Recovered evidence from
   so an override cannot silently restore the unbounded producer. The gate
   runner also leaves a structured `interrupted` result and copies available
   session artifacts from its exit trap.
+- **First paced physical results: rendering passed, controller completion
+  fixed.** On commit `839d21a`, the first run was manually logged out at 14.3
+  seconds after visually confirming the scrolling xterm and responsive pointer;
+  it drained native scanout and restored TTY3/greetd cleanly but correctly had
+  no 20-second client record. The next run was left for the full window:
+  authority batches dropped `0`, unexpected protocol errors were `0`,
+  `cpu_max_compose_msec=6`, native failures were `0`, the kernel delta was
+  complete and clean, and handback was clean. It still failed the report
+  because xterm backpressure held the producer inside `seq(1)` past its
+  wall-clock loop test; the outer 25-second safety timeout ended xterm before
+  the producer's final-only count write. The probe controller now runs the
+  producer under an independent bounded timer and records each completed burst
+  incrementally. A stalled-pty offline regression exercises that path. A real
+  software-only Sophia session then emitted the client completion and cleaned
+  up normally even though xterm lingered until its process safety timeout.
+  The standalone launcher now explicitly tells bounded-xterm operators to let
+  it exit automatically instead of showing the generic logout hint.
 - **Native path is not the lock cause.** Audit: CPU-layer GL textures are
   reallocated to the incoming layer size (`sophia-renderer-native-egl` `gl.rs`),
   but that layer *is* the ≤64 MiB software buffer (≤ ~4096², inside RDNA3's
@@ -92,10 +109,11 @@ required a power reset. Recovered evidence from
   is `~/sophia-amdgpu-logging-setup.sh`. GPU: Radeon RX 7900 GRE (Navi 31,
   RDNA3, `03:00.0`) plus a Raphael iGPU (`16:00.0`); `amdgpu` `gpu_recovery`,
   `lockup_timeout`, `reset_method`, `runpm` are all auto (`-1`).
-- **Remaining gate.** A cautious physical rerun of the fixed benchmark with
-  persistent logging active. If it still locks, `/var/log/socklog/kernel/current`
-  should finally capture the AMDGPU ring/reset lines and we escalate to the
-  teardown hardening and/or booting with `amdgpu.gpu_recovery=1`.
+- **Remaining gate.** One final cautious physical rerun of the
+  controller-fixed benchmark with persistent logging active. If it still
+  locks, `/var/log/socklog/kernel/current` should finally capture the AMDGPU
+  ring/reset lines and we escalate to the teardown hardening and/or booting
+  with `amdgpu.gpu_recovery=1`.
 
 ## 2026-07-30: GLX Animation Passed; Startup Evidence Lost a Valid Early Frame
 
