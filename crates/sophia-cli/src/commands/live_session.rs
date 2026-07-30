@@ -125,6 +125,12 @@ impl SessionPhysicalInput {
             Self::Threaded(poller) => poller.policy_report(),
         }
     }
+
+    fn drain_event_timings(&mut self) -> Vec<sophia_backend_live::ThreadedNativeInputEventTiming> {
+        match self {
+            Self::Threaded(poller) => poller.drain_event_timings(),
+        }
+    }
 }
 
 fn open_session_physical_input(

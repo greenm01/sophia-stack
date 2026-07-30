@@ -495,6 +495,7 @@ fn routed_keyboard_report_retains_the_opaque_focus_target() {
 
     assert_eq!(report.keys_routed, 1);
     assert_eq!(report.key_targets, [surface]);
+    assert_eq!(report.routed_key_presses, [(1, 1)]);
     assert_eq!(
         input_receiver.try_recv().unwrap().request.target_surface,
         surface

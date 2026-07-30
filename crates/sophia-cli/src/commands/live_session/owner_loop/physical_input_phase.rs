@@ -47,6 +47,29 @@ macro_rules! drain_physical_input {
                     applied_client_focus,
                 },
             )?;
+            let event_timings = poller.drain_event_timings();
+            if physical_input_ready_at.is_some()
+                && input_proof_started_at.is_none()
+                && let Some((serial, event_time_msec)) = report.routed_key_presses.last().copied()
+                && let Some(timing) = event_timings
+                    .iter()
+                    .find(|timing| timing.serial == serial)
+            {
+                if timing.event_time_msec != event_time_msec {
+                    return Err("physical input timing sidecar did not match routed event".into());
+                }
+                input_raw_ingress_msec = Some(event_time_msec);
+                input_queue_dwell = Some(Duration::from_millis(
+                    u64::try_from(timing.queue_dwell_msec).unwrap_or(u64::MAX),
+                ));
+                println!(
+                    "sophia_live_input_latency schema=1 status=ingress source=libinput_kernel event_serial={} ingress_msec={} queue_dwell_msec={}",
+                    serial,
+                    event_time_msec,
+                    timing.queue_dwell_msec,
+                );
+                std::io::stdout().flush()?;
+            }
             metrics.physical_events = metrics.physical_events.saturating_add(report.events);
             metrics.physical_keys_routed = metrics
                 .physical_keys_routed

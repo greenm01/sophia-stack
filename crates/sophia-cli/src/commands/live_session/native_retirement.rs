@@ -4,6 +4,8 @@ use super::*;
 pub(super) struct NativePresentRetirementObservation {
     pub surface: SurfaceId,
     pub stable: bool,
+    pub ust_usec: u64,
+    pub msc: u64,
 }
 
 pub(super) fn record_native_present_retirement(
@@ -57,5 +59,7 @@ pub(super) fn record_native_present_retirement(
     NativePresentRetirementObservation {
         surface: retired.surface,
         stable,
+        ust_usec: retired.ust_usec,
+        msc: retired.msc,
     }
 }

@@ -697,6 +697,10 @@ promotes one to a hard M9 exit gate.
   positive kernel timestamp coverage, zero fallbacks/pending correlations, and
   the full-chain latency plus its per-stage breakdown (dwell, submit,
   submit-to-page-flip) below one refresh period at p95.
+  Implemented: the uinput keyboard helper, per-event libinput timing sidecar,
+  post-ingress submission correlation, kernel-UST retirement, stage reporting,
+  and a commit-pinned 20-sample TTY3 runner. Remaining: run the physical gate
+  and retain a passing p95 archive before checking this item complete.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

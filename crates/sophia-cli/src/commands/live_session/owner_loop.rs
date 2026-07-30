@@ -146,6 +146,10 @@ fn run_session_loop(
     let mut input_proof_started_at = None;
     let mut input_change_submission_baseline = None;
     let mut input_presented_latency = None;
+    let mut input_raw_ingress_msec: Option<u64> = None;
+    let mut input_queue_dwell: Option<Duration> = None;
+    let mut input_presented_ust_usec: Option<u64> = None;
+    let mut input_submit_to_page_flip: Option<Duration> = None;
     let mut pointer_checksum = None;
     let mut pointer_cursor_checksum = None;
     let mut pointer_phase_started_at = None;

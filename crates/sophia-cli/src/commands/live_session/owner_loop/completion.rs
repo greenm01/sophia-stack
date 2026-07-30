@@ -72,6 +72,32 @@
     {
         input_presented_latency = Some(started.elapsed());
     }
+    if let (Some(ingress_msec), Some(presented_ust_usec)) =
+        (input_raw_ingress_msec, input_presented_ust_usec)
+    {
+        let ingress_ust_usec = ingress_msec
+            .checked_mul(1_000)
+            .ok_or("physical input ingress timestamp overflowed microseconds")?;
+        let full_chain_usec = presented_ust_usec.checked_sub(ingress_ust_usec).ok_or(
+            "physical input and page-flip timestamps were not in the same monotonic clock domain",
+        )?;
+        let full_chain = Duration::from_micros(full_chain_usec);
+        let submit_to_page_flip = input_submit_to_page_flip
+            .ok_or("physical input frame retired without submit-to-page-flip timing")?;
+        let input_to_submit = full_chain.saturating_sub(submit_to_page_flip);
+        let queue_dwell = input_queue_dwell
+            .ok_or("physical input frame retired without per-event queue-dwell timing")?;
+        let dwell_to_submit = input_to_submit.saturating_sub(queue_dwell);
+        input_presented_latency = Some(full_chain);
+        println!(
+            "sophia_live_input_latency schema=1 status=complete source=libinput_to_kernel_page_flip ingress_msec={} queue_dwell_msec={} dwell_to_submit_msec={} submit_to_page_flip_msec={} full_chain_msec={}",
+            ingress_msec,
+            queue_dwell.as_millis(),
+            dwell_to_submit.as_millis(),
+            submit_to_page_flip.as_millis(),
+            full_chain.as_millis(),
+        );
+    }
 
     let report = scene
         .last_report()
@@ -115,6 +141,24 @@
                 .map_or(0, |native| native.callback_accepted),
         )
         .into());
+    }
+    if config.expect_physical_text.is_some()
+        && native_scanout.as_ref().is_some_and(|native| {
+            native.kernel_page_flip_timestamp_missing != 0
+                || native.pending_kernel_page_flip_timestamps() != 0
+        })
+    {
+        return Err(
+            "physical input proof observed fallback or pending kernel page-flip timestamps".into(),
+        );
+    }
+    if config.expect_physical_text.is_some()
+        && native_scanout.is_some()
+        && (input_raw_ingress_msec.is_none() || input_presented_ust_usec.is_none())
+    {
+        return Err(
+            "physical input proof did not correlate libinput ingress to its presented frame".into(),
+        );
     }
     if config.input_proof_requested() && !input_text_match {
         return Err(

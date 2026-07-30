@@ -64,6 +64,8 @@ pub struct LiveProductionRetiredPresent {
     pub source_size: Size,
     pub target: Rect,
     pub clip: Option<Rect>,
+    pub ust_usec: u64,
+    pub msc: u64,
 }
 
 #[derive(Debug)]

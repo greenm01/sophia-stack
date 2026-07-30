@@ -472,7 +472,12 @@
             }
             let service = runtime.service_native(native_scanout)?;
             if let Some(retired) = service.retired_present {
-                let NativePresentRetirementObservation { surface, stable } =
+                let NativePresentRetirementObservation {
+                    surface,
+                    stable,
+                    ust_usec,
+                    msc: _,
+                } =
                     record_native_present_retirement(
                         &mut layout,
                         runtime,
@@ -489,6 +494,16 @@
                     stable,
                 ) {
                     input_pixel_change = true;
+                    if input_presented_ust_usec.is_none()
+                        && let Some(ingress_ust_usec) =
+                            input_raw_ingress_msec.and_then(|msec| msec.checked_mul(1_000))
+                        && let Some(head) = native_scanout.heads.first()
+                        && head.presented_submission_ust_usec >= ingress_ust_usec
+                    {
+                        input_presented_ust_usec = Some(ust_usec);
+                        input_submit_to_page_flip =
+                            Some(head.presented_submit_to_page_flip);
+                    }
                 }
             }
             metrics.runtime_surfaces =

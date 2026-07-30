@@ -284,6 +284,9 @@
         }
         if (config.exit_after_input_proof || config.inject_text.is_some())
             && input_presented_latency.is_some()
+            && (config.expect_physical_text.is_none()
+                || native_scanout.is_none()
+                || input_presented_ust_usec.is_some())
             && input_text_match
             && (config.expect_physical_text.is_none() || physical_input_completion_reported)
             && (!config.expect_physical_pointer || pointer_pixel_change)

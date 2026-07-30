@@ -59,6 +59,7 @@ mod persistent_native_scanout {
         pub receiver: Option<Receiver<crate::LivePageFlipCallback>>,
         pub output: sophia_engine::HeadlessOutput,
         pub submitted_at: Option<Instant>,
+        pub submitted_ust_usec: Option<u64>,
         pub pending_nonzero_pixel_bytes: usize,
         pub last_checksum: u64,
         pub submitted_checksum: Option<u64>,
@@ -69,6 +70,8 @@ mod persistent_native_scanout {
         pub presented_content: Option<LiveProductionScanoutContent>,
         pub presented_checksum: u64,
         pub presented_submissions: usize,
+        pub presented_submission_ust_usec: u64,
+        pub presented_submit_to_page_flip: Duration,
         pub submissions: usize,
         pub retirements: usize,
         pub callback_accepted: usize,
@@ -219,6 +222,7 @@ mod persistent_native_scanout {
                             scale: 1,
                         },
                         submitted_at: None,
+                        submitted_ust_usec: None,
                         pending_nonzero_pixel_bytes: 0,
                         last_checksum: 0,
                         submitted_checksum: None,
@@ -229,6 +233,8 @@ mod persistent_native_scanout {
                         presented_content: None,
                         presented_checksum: 0,
                         presented_submissions: 0,
+                        presented_submission_ust_usec: 0,
+                        presented_submit_to_page_flip: Duration::ZERO,
                         submissions: 0,
                         retirements: 0,
                         callback_accepted: 0,
@@ -491,6 +497,7 @@ mod persistent_native_scanout {
                         self.heads[index].submissions =
                             self.heads[index].submissions.saturating_add(1);
                         self.heads[index].submitted_at = Some(Instant::now());
+                        self.heads[index].submitted_ust_usec = Some(Self::monotonic_ust_usec());
                         self.heads[index].submitted_checksum =
                             Some(self.heads[index].last_checksum);
                         self.heads[index].submitted_sequence = Some(self.heads[index].submissions);
@@ -646,10 +653,6 @@ mod persistent_native_scanout {
                     );
                     self.retirements = self.retirements.saturating_add(1);
                     self.heads[index].retirements = self.heads[index].retirements.saturating_add(1);
-                    if let Some(submitted_at) = self.heads[index].submitted_at.take() {
-                        self.max_submit_to_page_flip =
-                            self.max_submit_to_page_flip.max(submitted_at.elapsed());
-                    }
                 }
                 Status::NoSubmission | Status::WaitingForAcceptedPageFlip => {}
                 Status::ResourceRetireFailed => {
@@ -716,6 +719,22 @@ mod persistent_native_scanout {
                             u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
                         )
                     };
+                    let submitted_ust_usec = self.heads[index].submitted_ust_usec.take();
+                    let submit_to_page_flip = submitted_ust_usec
+                        .and_then(|submitted| ust.checked_sub(submitted))
+                        .map(Duration::from_micros)
+                        .or_else(|| {
+                            self.heads[index]
+                                .submitted_at
+                                .map(|submitted| submitted.elapsed())
+                        })
+                        .unwrap_or_default();
+                    self.heads[index].submitted_at = None;
+                    self.max_submit_to_page_flip =
+                        self.max_submit_to_page_flip.max(submit_to_page_flip);
+                    self.heads[index].presented_submission_ust_usec =
+                        submitted_ust_usec.unwrap_or_default();
+                    self.heads[index].presented_submit_to_page_flip = submit_to_page_flip;
                     if self
                         .production_page_flips
                         .observe_page_flip(output, kernel_sequence, presentation_msec, ust)
@@ -732,6 +751,15 @@ mod persistent_native_scanout {
             self.callback_queue_saturated = self
                 .callback_queue_saturated
                 .saturating_add(usize::from(report.max_reached));
+        }
+
+        fn monotonic_ust_usec() -> u64 {
+            let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+            let seconds = u64::try_from(now.tv_sec).unwrap_or_default();
+            let nanos = u64::try_from(now.tv_nsec).unwrap_or_default();
+            seconds
+                .saturating_mul(1_000_000)
+                .saturating_add(nanos / 1_000)
         }
 
         pub fn initialize(

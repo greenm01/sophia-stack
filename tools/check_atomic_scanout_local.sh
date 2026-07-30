@@ -80,6 +80,10 @@ bash -n tools/start_sophia_vkcube_standalone_tty3.sh \
     tools/check_sophia_glxgears_performance_reporter.sh \
     tools/check_sophia_rendering_performance_reporter.sh \
     tools/check_xserver_rendering_performance_reporter.sh
+bash -n tools/run_sophia_input_latency_tty3.sh \
+    tools/report_sophia_input_latency.sh \
+    tools/check_sophia_input_latency_reporter.sh
+tools/check_sophia_input_latency_reporter.sh
 tools/check_sophia_standalone_vkcube_verifier.sh
 tools/check_sophia_glxgears_performance_reporter.sh
 tools/check_sophia_rendering_performance_reporter.sh
@@ -179,5 +183,7 @@ bash -n tools/verify_live_session_milestone5_tty_recovery.sh
 bash -n tools/check_live_session_milestone5_verifier.sh
 tools/check_live_session_milestone5_verifier.sh
 python3 -c 'compile(open("tools/sophia_tty_mode.py", encoding="utf-8").read(), "tools/sophia_tty_mode.py", "exec")'
+python3 -c 'compile(open("tools/probes/uinput_text_injector.py", encoding="utf-8").read(), "tools/probes/uinput_text_injector.py", "exec")'
+tools/probes/uinput_text_injector.py --self-test
 
 echo "atomic scanout local checks passed"

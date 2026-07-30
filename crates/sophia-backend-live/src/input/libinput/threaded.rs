@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
@@ -29,6 +30,13 @@ pub struct ThreadedNativeInputStats {
     pub max_queue_dwell_msec: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ThreadedNativeInputEventTiming {
+    pub serial: u64,
+    pub event_time_msec: u64,
+    pub queue_dwell_msec: usize,
+}
+
 pub struct ThreadedNativeLibinputEventPoller {
     receiver: Receiver<QueuedInputEvent>,
     health: Receiver<Result<(), String>>,
@@ -38,6 +46,7 @@ pub struct ThreadedNativeLibinputEventPoller {
     max_queue_depth: Arc<AtomicUsize>,
     max_dispatch_gap_msec: Arc<AtomicUsize>,
     max_queue_dwell_msec: usize,
+    event_timings: VecDeque<ThreadedNativeInputEventTiming>,
     max_read_per_poll: usize,
     worker: Option<JoinHandle<()>>,
 }
@@ -55,6 +64,10 @@ impl ThreadedNativeLibinputEventPoller {
         self.policy
             .lock()
             .map_or_else(|_| NativeLibinputPolicyReport::default(), |policy| *policy)
+    }
+
+    pub fn drain_event_timings(&mut self) -> Vec<ThreadedNativeInputEventTiming> {
+        self.event_timings.drain(..).collect()
     }
 
     fn worker_error(&self) -> io::Result<()> {
@@ -83,9 +96,15 @@ impl NonBlockingInputPoller for ThreadedNativeLibinputEventPoller {
                 }
             };
             self.queue_depth.fetch_sub(1, Ordering::AcqRel);
-            self.max_queue_dwell_msec = self
-                .max_queue_dwell_msec
-                .max(usize::try_from(queued.queued_at.elapsed().as_millis()).unwrap_or(usize::MAX));
+            let queue_dwell_msec =
+                usize::try_from(queued.queued_at.elapsed().as_millis()).unwrap_or(usize::MAX);
+            self.max_queue_dwell_msec = self.max_queue_dwell_msec.max(queue_dwell_msec);
+            self.event_timings
+                .push_back(ThreadedNativeInputEventTiming {
+                    serial: queued.packet.serial,
+                    event_time_msec: queued.packet.time_msec,
+                    queue_dwell_msec,
+                });
             packets.push(queued.packet);
         }
         self.worker_error()?;
@@ -228,6 +247,7 @@ fn open_threaded_native_libinput_poller(
             max_queue_depth,
             max_dispatch_gap_msec,
             max_queue_dwell_msec: 0,
+            event_timings: VecDeque::new(),
             max_read_per_poll,
             worker: Some(worker),
         }),

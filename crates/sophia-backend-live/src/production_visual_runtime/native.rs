@@ -321,6 +321,8 @@ impl LiveProductionVisualRuntime {
             source_size,
             target,
             clip,
+            ust_usec: ust,
+            msc,
         }))
     }
 
