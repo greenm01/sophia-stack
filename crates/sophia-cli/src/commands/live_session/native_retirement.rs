@@ -63,3 +63,37 @@ pub(super) fn record_native_present_retirement(
         msc: retired.msc,
     }
 }
+
+pub(super) fn correlate_physical_input_page_flip(
+    input_delivery_complete: bool,
+    input_pixel_change: bool,
+    input_raw_ingress_msec: Option<u64>,
+    input_change_submission_baseline: Option<usize>,
+    native_scanout: &LiveProductionNativeScanout,
+    input_presented_ust_usec: &mut Option<u64>,
+    input_submit_to_page_flip: &mut Option<Duration>,
+) {
+    if input_presented_ust_usec.is_some() {
+        return;
+    }
+    let (Some(ingress_ust_usec), Some(baseline_submission), Some(head)) = (
+        input_raw_ingress_msec.and_then(|msec| msec.checked_mul(1_000)),
+        input_change_submission_baseline,
+        native_scanout.heads.first(),
+    ) else {
+        return;
+    };
+    if !physical_input_page_flip_correlates(
+        input_delivery_complete,
+        input_pixel_change,
+        ingress_ust_usec,
+        baseline_submission,
+        head.presented_submissions,
+        head.presented_submission_ust_usec,
+        head.presented_page_flip_ust_usec,
+    ) {
+        return;
+    }
+    *input_presented_ust_usec = Some(head.presented_page_flip_ust_usec);
+    *input_submit_to_page_flip = Some(head.presented_submit_to_page_flip);
+}

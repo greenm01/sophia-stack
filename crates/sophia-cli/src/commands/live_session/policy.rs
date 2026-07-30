@@ -161,6 +161,22 @@ fn stable_gpu_frame_proves_post_input_pixels(
     input_delivery_complete && stable && input_surface == Some(retired_surface)
 }
 
+fn physical_input_page_flip_correlates(
+    input_delivery_complete: bool,
+    input_pixel_change: bool,
+    ingress_ust_usec: u64,
+    baseline_submission: usize,
+    presented_submission: usize,
+    submission_ust_usec: u64,
+    page_flip_ust_usec: u64,
+) -> bool {
+    input_delivery_complete
+        && input_pixel_change
+        && presented_submission > baseline_submission
+        && submission_ust_usec >= ingress_ust_usec
+        && page_flip_ust_usec >= submission_ust_usec
+}
+
 fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bool {
     batch.removed_surfaces.is_empty()
         && batch.dma_buf_registrations.is_empty()

@@ -172,6 +172,17 @@ tools/build_qemu_session_initramfs.sh
 tools/qemu_session_harness.sh
 ```
 
+To run the focused input-latency regression and retain commit-pinned evidence:
+
+```sh
+tools/run_sophia_input_latency_qemu.sh
+```
+
+Set `SOPHIA_QEMU_INPUT_LATENCY_BUILD=0` to reuse an initramfs built from the
+current tree. This QEMU path proves virtio evdev/libinput ingress, changed-frame
+submission, kernel page-flip clock provenance, and exact text/pointer delivery.
+It does not replace the physical TTY3 p95 gate.
+
 For the complete unattended Milestone 5 acceptance gate, including strict
 two-xterm, emergency recovery, and both GTK profiles, run:
 

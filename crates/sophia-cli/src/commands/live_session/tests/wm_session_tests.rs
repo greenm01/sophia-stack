@@ -293,6 +293,75 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
 }
 
 #[test]
+fn no_wm_session_commits_policy_managed_pixels_without_admission() {
+    let surface = SurfaceId::new(55, 1);
+    let geometry = Rect {
+        x: 20,
+        y: 30,
+        width: 640,
+        height: 480,
+    };
+    let constraints = SurfaceConstraints {
+        min_size: None,
+        max_size: None,
+    };
+    let transaction = TransactionId::from_raw(111);
+    let mut batch = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+    batch
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            geometry,
+            constraints,
+            generation: 1,
+        });
+    batch.transactions.push(SurfaceTransaction {
+        transaction,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: 111 },
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: geometry.width,
+            height: geometry.height,
+        }),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    });
+    let mut layout = PersistentLiveLayout::new(false, None);
+    layout.cpu_buffer_sizes.insert(
+        111,
+        Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    );
+
+    let observation = layout.observe_authority_batch(&batch);
+    let (projected, released) = layout.projected_batch(&batch);
+
+    assert_eq!(observation.new_surfaces, vec![surface]);
+    assert_eq!(layout.next_unmanaged_surface(), None);
+    assert_eq!(
+        layout.admissions.state(surface),
+        sophia_engine::SurfacePresentationAdmissionState::Inactive
+    );
+    assert_eq!(
+        layout.layers.get(&surface).unwrap().source,
+        BufferSource::CpuBuffer { handle: 111 }
+    );
+    assert_eq!(projected.transactions.len(), 1);
+    assert!(released.is_empty());
+    assert!(layout.pre_admission_groups.is_empty());
+}
+
+#[test]
 fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     let surface = SurfaceId::new(6, 1);
     let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);

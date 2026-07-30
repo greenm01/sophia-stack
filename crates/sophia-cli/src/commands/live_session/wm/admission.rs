@@ -434,24 +434,38 @@ impl PersistentLiveLayout {
         new_surfaces: &mut BTreeSet<SurfaceId>,
     ) {
         for intent in &batch.presentation_intents {
-            let changed = self.admissions.observe_intent(*intent);
+            let facts = sophia_engine::SurfaceLayoutFacts::from(*intent);
+            let changed = if self.bypass_policy_admission {
+                match intent.kind {
+                    sophia_protocol::SurfacePresentationIntentKind::Request => {
+                        self.planning_surfaces.get(&intent.surface) != Some(&facts)
+                    }
+                    sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
+                        self.planning_surfaces.contains_key(&intent.surface)
+                    }
+                }
+            } else {
+                self.admissions.observe_intent(*intent)
+            };
             match intent.kind {
                 sophia_protocol::SurfacePresentationIntentKind::Request => {
-                    let facts = sophia_engine::SurfaceLayoutFacts::from(*intent);
                     self.planning_surfaces.insert(intent.surface, facts);
                     self.presentation_roles.insert(intent.surface, intent.role);
                     self.layout_epochs
                         .set_declared_constraints(intent.surface, intent.constraints);
-                    self.unmanaged_surfaces.insert(intent.surface);
-                    self.layout_epochs.set_admission(
-                        intent.surface,
-                        sophia_engine::SurfaceAdmissionState::Unmanaged,
-                    );
+                    if !self.bypass_policy_admission {
+                        self.unmanaged_surfaces.insert(intent.surface);
+                        self.layout_epochs.set_admission(
+                            intent.surface,
+                            sophia_engine::SurfaceAdmissionState::Unmanaged,
+                        );
+                    }
                     if changed {
                         new_surfaces.insert(intent.surface);
                     }
                 }
                 sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
+                    self.admissions.remove(intent.surface);
                     self.planning_surfaces.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
                     self.remove_admission_groups(intent.surface);

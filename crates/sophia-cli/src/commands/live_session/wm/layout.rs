@@ -47,14 +47,16 @@ struct PersistentLiveLayout {
     pending: Option<PendingLiveWmLayout>,
     focus_to_apply: Option<(TransactionId, SurfaceId)>,
     retirement_focus: BTreeMap<SurfaceId, (TransactionId, TransactionId)>,
+    bypass_policy_admission: bool,
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
 }
 
 impl PersistentLiveLayout {
-    fn new(stage_new_surfaces_offset: bool, center_first_surface_in: Option<Size>) -> Self {
+    fn new(external_wm_present: bool, center_first_surface_in: Option<Size>) -> Self {
         Self {
-            stage_new_surfaces_offset,
+            bypass_policy_admission: !external_wm_present,
+            stage_new_surfaces_offset: external_wm_present,
             center_first_surface_in,
             ..Self::default()
         }
@@ -88,7 +90,10 @@ impl PersistentLiveLayout {
             }
             match presentation.role {
                 sophia_protocol::SurfacePresentationRole::PolicyManaged => {
-                    if presentation.mapped && self.layers.contains_key(&presentation.surface) {
+                    if !self.bypass_policy_admission
+                        && presentation.mapped
+                        && self.layers.contains_key(&presentation.surface)
+                    {
                         self.unmanaged_surfaces.insert(presentation.surface);
                     }
                 }
@@ -223,7 +228,8 @@ impl PersistentLiveLayout {
                     new_surfaces.insert(transaction.surface);
                     let policy_managed = self.presentation_roles.get(&transaction.surface)
                         != Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned);
-                    if policy_managed
+                    if !self.bypass_policy_admission
+                        && policy_managed
                         && matches!(
                             self.admissions.state(transaction.surface),
                             sophia_engine::SurfacePresentationAdmissionState::PolicyPending
@@ -360,7 +366,8 @@ impl PersistentLiveLayout {
     }
 
     fn surface_requires_admission(&self, surface: SurfaceId) -> bool {
-        self.presentation_roles.get(&surface)
+        !self.bypass_policy_admission
+            && self.presentation_roles.get(&surface)
             == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
             && !matches!(
                 self.admissions.state(surface),

@@ -71,6 +71,7 @@ mod persistent_native_scanout {
         pub presented_checksum: u64,
         pub presented_submissions: usize,
         pub presented_submission_ust_usec: u64,
+        pub presented_page_flip_ust_usec: u64,
         pub presented_submit_to_page_flip: Duration,
         pub submissions: usize,
         pub retirements: usize,
@@ -234,6 +235,7 @@ mod persistent_native_scanout {
                         presented_checksum: 0,
                         presented_submissions: 0,
                         presented_submission_ust_usec: 0,
+                        presented_page_flip_ust_usec: 0,
                         presented_submit_to_page_flip: Duration::ZERO,
                         submissions: 0,
                         retirements: 0,
@@ -734,6 +736,7 @@ mod persistent_native_scanout {
                         self.max_submit_to_page_flip.max(submit_to_page_flip);
                     self.heads[index].presented_submission_ust_usec =
                         submitted_ust_usec.unwrap_or_default();
+                    self.heads[index].presented_page_flip_ust_usec = ust;
                     self.heads[index].presented_submit_to_page_flip = submit_to_page_flip;
                     if self
                         .production_page_flips

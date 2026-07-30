@@ -125,6 +125,7 @@ tools/operator_keyboard_hardware_proof.sh
 tools/vrr_hardware_proof.sh
 tools/build_qemu_session_initramfs.sh
 tools/qemu_session_harness.sh
+tools/run_sophia_input_latency_qemu.sh
 SOPHIA_QEMU_SCENARIO=emergency-recovery tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-classic tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-confined tools/qemu_session_harness.sh

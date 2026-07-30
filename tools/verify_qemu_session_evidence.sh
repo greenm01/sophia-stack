@@ -32,14 +32,29 @@ if [[ "${#output_lines[@]}" -ne 2 ]]; then
     exit 1
 fi
 declare -A output_checksums=()
+total_retirements=0
+total_callbacks=0
 for output_line in "${output_lines[@]}"; do
-    for field in submissions retirements callbacks nonzero_exports; do
+    for field in submissions nonzero_exports; do
         value="$(sed -n "s/.* ${field}=\([0-9][0-9]*\).*/\1/p" <<< "$output_line")"
         if [[ -z "$value" ]] || (( value == 0 )); then
             echo "QEMU output evidence has no $field: $output_line" >&2
             exit 1
         fi
     done
+    retirements="$(sed -n 's/.* retirements=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
+    callbacks="$(sed -n 's/.* callbacks=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
+    if [[ -z "$retirements" || -z "$callbacks" ]]; then
+        echo "QEMU output evidence is missing retirement counters: $output_line" >&2
+        exit 1
+    fi
+    if [[ "${SOPHIA_QEMU_REQUIRE_TWO_XTERM:-0}" == "1" ]] \
+        && (( retirements == 0 || callbacks == 0 )); then
+        echo "QEMU two-xterm output evidence has no asynchronous retirement: $output_line" >&2
+        exit 1
+    fi
+    total_retirements=$((total_retirements + retirements))
+    total_callbacks=$((total_callbacks + callbacks))
     checksum="$(sed -n 's/.* checksum=\([0-9][0-9]*\) .*/\1/p' <<< "$output_line")"
     if [[ -z "$checksum" ]] || [[ -n "${output_checksums[$checksum]:-}" ]]; then
         echo "QEMU output evidence does not contain distinct checksums" >&2
@@ -47,6 +62,10 @@ for output_line in "${output_lines[@]}"; do
     fi
     output_checksums[$checksum]=1
 done
+if (( total_retirements == 0 || total_callbacks == 0 )); then
+    echo "QEMU evidence has no asynchronous page-flip retirement" >&2
+    exit 1
+fi
 if [[ "$(grep -c '^sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
     echo "QEMU evidence is missing the per-output fixed-refresh vsync gate" >&2
     exit 1
@@ -67,6 +86,32 @@ if [[ "$(grep -c '^sophia_live_session_input schema=2 status=complete source=phy
     echo "QEMU evidence is missing the exact physical text completion record" >&2
     exit 1
 fi
+latency_line="$(grep '^sophia_live_input_latency schema=1 status=complete source=libinput_to_kernel_page_flip ' "$EVIDENCE_FILE" || true)"
+if [[ "$(wc -l <<< "$latency_line")" -ne 1 ]]; then
+    echo "QEMU evidence is missing the libinput-to-kernel-page-flip latency record" >&2
+    exit 1
+fi
+for field in queue_dwell_msec dwell_to_submit_msec submit_to_page_flip_msec full_chain_msec; do
+    value="$(sed -n "s/.* ${field}=\([0-9][0-9]*\).*/\1/p" <<< "$latency_line")"
+    if [[ -z "$value" ]]; then
+        echo "QEMU latency evidence is missing numeric $field" >&2
+        exit 1
+    fi
+    printf -v "$field" '%s' "$value"
+done
+stage_total_msec=$((queue_dwell_msec + dwell_to_submit_msec + submit_to_page_flip_msec))
+if (( stage_total_msec > full_chain_msec \
+    || full_chain_msec - stage_total_msec > 2 \
+    || full_chain_msec > 100 )); then
+    echo "QEMU latency evidence has inconsistent stages or exceeds 100 ms" >&2
+    exit 1
+fi
+clock_line="$(grep '^sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic ' "$EVIDENCE_FILE" || true)"
+if [[ "$(wc -l <<< "$clock_line")" -ne 1 ]] \
+    || ! [[ "$clock_line" =~ timestamps=([1-9][0-9]*)\ fallbacks=0\ pending=0$ ]]; then
+    echo "QEMU evidence lacks complete kernel page-flip timestamp coverage" >&2
+    exit 1
+fi
 if [[ "$(grep -c '^sophia_live_session_pointer schema=1 status=ready source=physical action=select$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
     echo "QEMU evidence is missing physical-pointer readiness" >&2
     exit 1
@@ -80,7 +125,8 @@ completion_line="$(grep -E '^sophia_live_session .*status=bounded_complete ' "$E
 if [[ ! " $completion_line " =~ " schema=10 " ]] \
     && [[ ! " $completion_line " =~ " schema=11 " ]] \
     && [[ ! " $completion_line " =~ " schema=14 " ]] \
-    && [[ ! " $completion_line " =~ " schema=15 " ]]; then
+    && [[ ! " $completion_line " =~ " schema=15 " ]] \
+    && [[ ! " $completion_line " =~ " schema=16 " ]]; then
     echo "QEMU evidence did not use the latency/resource schema" >&2
     exit 1
 fi
@@ -134,7 +180,8 @@ for field in input_presented_latency_msec cpu_max_compose_msec \
     printf -v "$field" '%s' "$value"
 done
 native_frame_surface_creations=0
-if [[ " $completion_line " =~ " schema=15 " ]]; then
+if [[ " $completion_line " =~ " schema=15 " ]] \
+    || [[ " $completion_line " =~ " schema=16 " ]]; then
     native_frame_surface_creations="$(
         sed -n 's/.* native_frame_surface_creations=\([0-9][0-9]*\).*/\1/p' \
             <<<"$completion_line"
@@ -158,7 +205,8 @@ if ! (( (native_target_creations == 0 && native_pipeline_creations == 0) \
     echo "QEMU evidence has inconsistent direct-write/persistent-GL resource counters" >&2
     exit 1
 fi
-if [[ " $completion_line " =~ " schema=15 " ]] \
+if { [[ " $completion_line " =~ " schema=15 " ]] \
+    || [[ " $completion_line " =~ " schema=16 " ]]; } \
     && (( native_frame_surface_creations < native_target_creations )); then
     echo "QEMU evidence has fewer frame surfaces than renderer epochs" >&2
     exit 1

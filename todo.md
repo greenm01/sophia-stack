@@ -699,8 +699,11 @@ promotes one to a hard M9 exit gate.
   submit-to-page-flip) below one refresh period at p95.
   Implemented: the uinput keyboard helper, per-event libinput timing sidecar,
   post-ingress submission correlation, kernel-UST retirement, stage reporting,
-  and a commit-pinned 20-sample TTY3 runner. Remaining: run the physical gate
-  and retain a passing p95 archive before checking this item complete.
+  and a commit-pinned 20-sample TTY3 runner. The unattended QEMU regression now
+  drives QMP input through virtio evdev/libinput, correlates software-composed
+  scanout to its kernel UST, and rejects fallback/pending clocks; it caught and
+  fixed a no-WM visual-admission startup deadlock. Remaining: run the physical
+  gate and retain a passing p95 archive before checking this item complete.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

@@ -3,6 +3,27 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-30: Unattended QEMU input-latency regression
+
+- **Host uinput is no longer required for development validation.** The QEMU
+  session injects QMP keys through the guest virtio keyboard, evdev, and the
+  normal threaded libinput poller. `tools/run_sophia_input_latency_qemu.sh`
+  rebuilds the guest by default and retains commit-pinned evidence under the
+  user's state directory.
+- **No-WM admission deadlock fixed.** Presentation-intent quarantine is an
+  external-WM ownership boundary. Proof sessions without a WM now commit
+  policy-managed X11 pixels directly instead of waiting forever for an absent
+  policy process to admit them.
+- **Software scanout is correlated directly.** CPU-composed xterm frames do
+  not create a GPU Present retirement record. The native head now retains the
+  accepted kernel page-flip UST as well as its submission UST, allowing the
+  input proof to select the changed post-ingress software frame exactly.
+- **Retained result.** The isolated two-output guest reached startup readiness
+  in 74 ms, routed and flushed all 14 keyboard events, matched `sophia`, proved
+  the pointer path, and reported a 6 ms full chain with 8 kernel timestamps,
+  zero fallbacks, and zero pending correlations. QEMU validates the clock and
+  correlation plumbing; it does not replace the physical 20-sample p95 gate.
+
 ## 2026-07-30: Input-to-photon clock provenance
 
 - **Kernel presentation timestamp preserved.** The native DRM event adapter now
@@ -24,9 +45,11 @@ Completed evidence is archived in `research-log-archive.md`.
   packets remain passive and unchanged. `--inject-text` remains synthetic and
   is never counted as this proof.
 - **Exact-frame correlation and gate.** The physical proof anchors on the last
-  routed key press, waits for X delivery, requires a stable changed surface
-  frame submitted after that raw ingress, and computes its retirement from the
-  matching kernel page-flip UST. Completion reports queue dwell,
+  routed key press, waits for X delivery, requires a changed output frame
+  submitted after that raw ingress, and computes its retirement from the
+  matching kernel page-flip UST. GPU Present surfaces retain the stable-surface
+  proof, while software-composed frames correlate on the native output
+  submission/page-flip pair. Completion reports queue dwell,
   dwell-to-submit, submit-to-page-flip, and full-chain latency.
   `tools/run_sophia_input_latency_tty3.sh` collects 20 independent
   commit-pinned uinput/libinput samples, rejects any fallback/pending page-flip
