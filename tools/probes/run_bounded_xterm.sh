@@ -28,6 +28,48 @@ fail() {
     fail "surface height must be a positive integer"
 [[ "$LINES_PER_ITERATION" =~ ^[1-9][0-9]*$ ]] ||
     fail "lines per iteration must be a positive integer"
+
+# SOPHIA_XTERM_WIDTH/HEIGHT are the intended *pixel* surface size (the session
+# reports them verbatim on the sophia_terminal_benchmark line). xterm's
+# -geometry, however, is expressed in character *cells*, not pixels: passing
+# "500x500" directly requests a 500-column by 500-row terminal, which with any
+# font is a multi-thousand-pixel window. On the CPU software-Present path the
+# X authority backs each window with one immutable buffer bounded by
+# X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES (64 MiB); a ~4004x5004 window overruns
+# that bound, so ImageText8 is rejected with BadWindow and xterm aborts. Pin a
+# fixed-metric core font and a fixed internal border so the pixel->cell
+# conversion is deterministic, and clamp the pixel intent well under the cap.
+XTERM_CELL_WIDTH=6      # matches the pinned "6x13" core bitmap font
+XTERM_CELL_HEIGHT=13
+XTERM_INTERNAL_BORDER=2 # pinned via -b so the frame is (cells*cell + 2*border)
+XTERM_MAX_PIXELS=2048   # 2048x2048x4 = 16 MiB, safely under the 64 MiB cap
+clamp_pixels() {
+    local value="$1"
+    ((value < XTERM_CELL_HEIGHT)) && value=$XTERM_CELL_HEIGHT
+    ((value > XTERM_MAX_PIXELS)) && value=$XTERM_MAX_PIXELS
+    printf '%s' "$value"
+}
+SURFACE_WIDTH="$(clamp_pixels "$SURFACE_WIDTH")"
+SURFACE_HEIGHT="$(clamp_pixels "$SURFACE_HEIGHT")"
+XTERM_COLS=$(((SURFACE_WIDTH - 2 * XTERM_INTERNAL_BORDER) / XTERM_CELL_WIDTH))
+XTERM_ROWS=$(((SURFACE_HEIGHT - 2 * XTERM_INTERNAL_BORDER) / XTERM_CELL_HEIGHT))
+((XTERM_COLS < 1)) && XTERM_COLS=1
+((XTERM_ROWS < 1)) && XTERM_ROWS=1
+
+# Dry-run: print the resolved geometry and CPU-buffer estimate, then exit before
+# touching xterm. Lets tools/check_bounded_xterm_geometry.sh assert the
+# pixel->cell conversion stays under the software-buffer cap with no X server,
+# GPU, or xterm binary present.
+if [[ -n "${SOPHIA_XTERM_PRINT_GEOMETRY:-}" ]]; then
+    geometry_pixel_width=$((XTERM_COLS * XTERM_CELL_WIDTH + 2 * XTERM_INTERNAL_BORDER))
+    geometry_pixel_height=$((XTERM_ROWS * XTERM_CELL_HEIGHT + 2 * XTERM_INTERNAL_BORDER))
+    printf 'sophia_xterm_geometry cols=%s rows=%s pixel_width=%s pixel_height=%s buffer_bytes=%s\n' \
+        "$XTERM_COLS" "$XTERM_ROWS" \
+        "$geometry_pixel_width" "$geometry_pixel_height" \
+        "$((geometry_pixel_width * geometry_pixel_height * 4))"
+    exit 0
+fi
+
 [[ -n "$XTERM_BIN" && -x "$XTERM_BIN" ]] ||
     fail "xterm is not installed"
 command -v timeout >/dev/null || fail "timeout is unavailable"
@@ -61,7 +103,9 @@ safety_deadline=$(( DURATION_SECONDS + 5 ))
 set +e
 timeout --signal=TERM "$safety_deadline" \
     "$XTERM_BIN" \
-    -geometry "${SURFACE_WIDTH}x${SURFACE_HEIGHT}" \
+    -fn "${XTERM_CELL_WIDTH}x${XTERM_CELL_HEIGHT}" \
+    -b "$XTERM_INTERNAL_BORDER" \
+    -geometry "${XTERM_COLS}x${XTERM_ROWS}" \
     -e sh "$INNER_SCRIPT" \
     "$DURATION_SECONDS" "$LINES_PER_ITERATION" "$COUNT_FILE"
 client_status="${PIPESTATUS[0]}"

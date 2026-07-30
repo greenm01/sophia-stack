@@ -649,6 +649,18 @@ promotes one to a hard M9 exit gate.
   teardown. Follow-up: define an apples-to-apples Xserver xterm-redraw cadence
   reference (Copy-based redraw has no clean per-frame flip) before claiming
   CPU-path parity.
+  Status: the first physical run hard-locked the machine. Root cause was a
+  probe bug, not the CPU path: `run_bounded_xterm.sh` passed the pixel intent
+  into xterm's `-geometry` (character cells), so `500x500` requested a
+  4004x5004 px window that overran the 64 MiB software-buffer cap, was rejected
+  `BadWindow`, and aborted startup before any layout committed; the hard lock
+  was the downstream greetd/RDNA3 KMS re-take after that abnormal early exit.
+  Reproduced deterministically offline via `x-authority-xterm-input-smoke`
+  (no KMS). Fixed by converting px→cells against a pinned `6x13` font and
+  clamping under the cap. Native path audited and cleared as a lock cause.
+  See `docs/research-log.md` 2026-07-30. Remaining: a cautious physical rerun
+  of the fixed benchmark with `socklog` persistent logging active; do not
+  blind-rerun the KMS launcher until then.
 - [ ] Input-to-photon latency. Inject input through the physical libinput
   dwell/budget path and measure ingress to the exact presented frame that
   reflects it. Close two known plumbing gaps first: the retirement `ust` is a

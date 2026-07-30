@@ -3,6 +3,71 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-30: Terminal CPU benchmark hard-locked the machine — xterm geometry char/pixel confusion
+
+The first physical run of the 9.4 terminal CPU-path benchmark
+(`tools/benchmark_sophia_terminal_tty3.sh`) hard-locked the machine and
+required a power reset. Recovered evidence from
+`~/.local/state/sophia/standalone-session/` isolated two distinct problems.
+
+- **Functional root cause (fixed).** `tools/probes/run_bounded_xterm.sh` passed
+  the intended *pixel* size (`SOPHIA_XTERM_WIDTH/HEIGHT=500`) straight into
+  xterm's `-geometry`, but xterm reads `-geometry` in *character cells*. With
+  the default font that requested a 4004x5004 px window. `apply_text_draw`
+  backs each CPU window with one immutable software buffer bounded by
+  `X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES` (64 MiB, `sophia-x-authority`
+  `software.rs`); 4004x5004x4 ≈ 80 MB overran it, so `draw_text` returned
+  `None`, the `ImageText8` was rejected `BadWindow`, xterm aborted (exit 83),
+  and the session ended with `"live session ended without a committed external
+  WM layout"` (exit 1). The X authority failed *closed* here — it refused the
+  buffer rather than allocating it.
+- **Deterministic offline reproduction.** Driving the committed
+  `x-authority-xterm-input-smoke` at `500x500` reproduced the crash
+  bit-identically (opcode 76 `X_ImageText8`, resource `0x200014`, serial `362`)
+  with no KMS involved. `40x8`/`100x50`/`200x150` pass. The authority runs the
+  same dispatch path offline, so this class of bug is debuggable without a
+  physical takeover. Note the `sophia_terminal_performance_pass.log` fixture was
+  aspirational: the benchmark had never had a real green run.
+- **Fix.** The probe now converts the pixel intent to a character geometry
+  against a pinned fixed-metric core font (`-fn 6x13 -b 2`) and clamps the pixel
+  intent well under the cap. Default 500 → `82x38` cells → 496x498 px → 988 KB;
+  the worst-case clamp (2048 px) stays at 16.7 MB. `SOPHIA_XTERM_WIDTH/HEIGHT`
+  remain the reported pixel intent on the `sophia_terminal_benchmark` line.
+- **Native path is not the lock cause.** Audit: CPU-layer GL textures are
+  reallocated to the incoming layer size (`sophia-renderer-native-egl` `gl.rs`),
+  but that layer *is* the ≤64 MiB software buffer (≤ ~4096², inside RDNA3's
+  16384 GL limit); DMA-BUF layers are client-bounded; scanout framebuffers are
+  output-sized. In the crashed run the oversized CPU buffer was refused, so
+  nothing oversized ever reached the GPU — only one output-sized blank frame
+  presented.
+- **The hard lock is downstream of the abnormal early exit at KMS handback.**
+  There is no DRM/VT code in Rust; the launcher stops greetd/lightdm, Sophia
+  becomes DRM master implicitly, and on exit drops master by closing the fd
+  while the launcher restarts the display manager. Teardown
+  (`detach_native_scanout`, `production_visual_runtime/native.rs`) drains
+  in-flight scanouts, rejects pending presents, and rebuilds the output set
+  without scanout — but it does **not** disable the CRTC or restore the prior
+  mode. Sophia leaves its last framebuffer active on the CRTC and drops master;
+  greetd/Xorg then re-modesets the RX 7900 GRE from that state. This teardown
+  path is identical for normal exits, which hand back cleanly, so the trigger
+  was the *early* abnormal exit (session aborted right after the first blank
+  frame, before the steady-state page-flip loop) hitting the RDNA3 re-take in a
+  fragile transient state.
+- **Decision.** The probe fix removes the trigger; the benchmark should now
+  reach steady state and hand back like every other clean run. Optional
+  hardening for the handback (deferred to a validated physical change): issue an
+  explicit CRTC-disable / mode-restore atomic commit before dropping master.
+- **Environment (not in-repo).** Host is Void Linux (runit, no journald), so
+  the prior-boot kernel dmesg was lost on reset. Persistent logging is now
+  enabled via `socklog-void` (`/var/log/socklog/kernel/current`); setup helper
+  is `~/sophia-amdgpu-logging-setup.sh`. GPU: Radeon RX 7900 GRE (Navi 31,
+  RDNA3, `03:00.0`) plus a Raphael iGPU (`16:00.0`); `amdgpu` `gpu_recovery`,
+  `lockup_timeout`, `reset_method`, `runpm` are all auto (`-1`).
+- **Remaining gate.** A cautious physical rerun of the fixed benchmark with
+  persistent logging active. If it still locks, `/var/log/socklog/kernel/current`
+  should finally capture the AMDGPU ring/reset lines and we escalate to the
+  teardown hardening and/or booting with `amdgpu.gpu_recovery=1`.
+
 ## 2026-07-30: GLX Animation Passed; Startup Evidence Lost a Valid Early Frame
 
 The bounded six-second physical rerun visibly animated. Radeonsi reported
