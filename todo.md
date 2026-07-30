@@ -659,8 +659,10 @@ promotes one to a hard M9 exit gate.
   (no KMS). Fixed by converting px→cells against a pinned `6x13` font and
   clamping under the cap. The schema-2 performance reporter now fail-closes
   above the established 25 ms CPU-composition budget and reports the applied
-  budget beside the observed maximum. Native path audited and cleared as a
-  lock cause.
+  budget beside the observed maximum. A commit-pinned TTY3 gate now refuses a
+  dirty tree or inactive persistent logging and archives the report, session,
+  guard, recovery, launcher, and exact kernel-log delta. Native path audited
+  and cleared as a lock cause.
   See `docs/research-log.md` 2026-07-30. Remaining: a cautious physical rerun
   of the fixed benchmark with `socklog` persistent logging active; do not
   blind-rerun the KMS launcher until then.

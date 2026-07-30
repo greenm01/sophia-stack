@@ -38,6 +38,12 @@ required a power reset. Recovered evidence from
   CPU-composition gate used by the retained two-xterm and QEMU evidence. It
   records `cpu_compose_budget_msec` beside the observed maximum; malformed or
   zero overrides fail before evidence is accepted.
+- **Commit-pinned physical runner.**
+  `tools/run_sophia_terminal_gate_tty3.sh` refuses a dirty worktree, requires
+  both persistent logging services and a nonempty kernel log before takeover,
+  and archives the source commit, benchmark/report results, session/guard/TTY
+  recovery, launcher handback, and the exact appended kernel-log bytes. A
+  rotated log or new AMDGPU rejection/reset/timeout fails closed.
 - **Native path is not the lock cause.** Audit: CPU-layer GL textures are
   reallocated to the incoming layer size (`sophia-renderer-native-egl` `gl.rs`),
   but that layer *is* the ≤64 MiB software buffer (≤ ~4096², inside RDNA3's

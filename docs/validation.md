@@ -236,16 +236,20 @@ The terminal CPU-path workload is a separate bounded standalone proof:
 ```sh
 tools/check_bounded_xterm_geometry.sh
 tools/check_sophia_terminal_performance_reporter.sh
-tools/benchmark_sophia_terminal_tty3.sh
+tools/run_sophia_terminal_gate_tty3.sh
 ```
 
 Before the physical command, require `sudo sv status socklog-unix nanoklogd`
 to report both services running and confirm
-`/var/log/socklog/kernel/current` is nonempty. Run from a logged-in local TTY3,
-arm Ctrl-Alt-Backspace when prompted, and confirm the centered xterm scrolls
-continuously. The default 20-second, 500-by-500 pixel intent resolves against
-the pinned `6x13` font rather than being passed to xterm as character cells.
-The independent 30-second watchdog bounds the session.
+`/var/log/socklog/kernel/current` is nonempty. The commit-pinned runner enforces
+those checks, refuses a dirty worktree, and archives the session, launcher,
+guard, recovery, performance report, and kernel-log delta under
+`$XDG_STATE_HOME/sophia/rendering-benchmarks/<commit>/terminal-cpu/`. Run it
+from a logged-in local TTY3, arm Ctrl-Alt-Backspace when prompted, and confirm
+the centered xterm scrolls continuously. The default 20-second, 500-by-500
+pixel intent resolves against the pinned `6x13` font rather than being passed
+to xterm as character cells. The independent 30-second watchdog bounds the
+session.
 
 The trailing `sophia_terminal_performance schema=2` report requires positive
 immutable CPU patch traffic, damage-driven partial repaint, no unexpected X11
