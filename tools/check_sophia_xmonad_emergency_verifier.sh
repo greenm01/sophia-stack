@@ -9,7 +9,8 @@ SESSION_TEMP="$(mktemp)"
 MUTATION_TEMP="$(mktemp)"
 trap 'rm -f -- "$SESSION_TEMP" "$MUTATION_TEMP"' EXIT
 
-sed '1i sophia_live_session_input_pipeline schema=1 status=emergency_exit\
+sed -e 's/^sophia_live_session schema=14 status=bounded_complete /sophia_live_session schema=16 status=bounded_complete /' \
+    -e '1i sophia_live_session_input_pipeline schema=1 status=emergency_exit\
 sophia_live_session_keys schema=1 status=released reason=emergency scope=all count=2' \
     "$SESSION_SOURCE" >"$SESSION_TEMP"
 "$ROOT_DIR/tools/verify_sophia_xmonad_emergency_tty3.sh" \

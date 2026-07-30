@@ -189,7 +189,7 @@ if ((border_surfaces < 2)); then
     echo "focused border did not cover two focus targets" >&2
     exit 1
 fi
-grep -Eq '^sophia_live_session schema=(14|15) status=bounded_complete .*wm_policy=external .*wm_requests=[1-9][0-9]* .*wm_committed=[1-9][0-9]* .*wm_degraded=false ' "$evidence"
+grep -Eq '^sophia_live_session schema=(14|15|16) status=bounded_complete .*wm_policy=external .*wm_requests=[1-9][0-9]* .*wm_committed=[1-9][0-9]* .*wm_degraded=false ' "$evidence"
 grep -q '^sophia_qemu_guest schema=1 status=complete scenario=xmonad-m7$' "$evidence"
 grep -q '^sophia_qemu_xmonad schema=1 status=restart_injected target=compatibility_bridge$' "$evidence"
 grep -q '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$evidence"

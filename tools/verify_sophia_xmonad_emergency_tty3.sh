@@ -53,7 +53,7 @@ require_line '^sophia_live_session_health schema=1 status=clean .*pending_input=
     "$SESSION_LOG" "the live owner did not finish with clean session state"
 
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' "$SESSION_LOG"
 )
 (( ${#completions[@]} == 1 )) ||
     fail "expected one bounded completion, found ${#completions[@]}"
