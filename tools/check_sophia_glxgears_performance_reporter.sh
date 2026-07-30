@@ -24,9 +24,23 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     exit 1
 fi
 
-sed 's/ust=1033334/ust=1016667/' "$FIXTURE" >"$MUTATED"
+sed \
+    's/samples=3 advancing_intervals=2/samples=2 advancing_intervals=1/' \
+    "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     echo "glxgears reporter accepted insufficient advancing cadence" >&2
+    exit 1
+fi
+
+sed 's/nonadvancing=0/nonadvancing=1/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted a nonadvancing cadence" >&2
+    exit 1
+fi
+
+sed 's/overflowed=false/overflowed=true/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted an overflowed cadence" >&2
     exit 1
 fi
 

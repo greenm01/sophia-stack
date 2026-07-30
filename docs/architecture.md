@@ -568,6 +568,13 @@ when it does not. Every owner-loop phase that may service native retirement
 must call the same retirement recorder. Authority-wait progress and the normal
 lifecycle phase are scheduling contexts, not separate presentation semantics.
 
+Performance cadence is accumulated from routed retained-buffer UST values in
+bounded owner state. Completion emits one summary containing sample count,
+advancing intervals, nonadvancing observations, overflow state, mean FPS, and
+p95 frame time. Benchmark tooling consumes that summary rather than enabling
+per-frame protocol tracing, so measurement does not require diagnostic I/O on
+the presentation hot path.
+
 Development takeover tooling may additionally arm an external wall-clock
 deadline. That watchdog is a sibling of the Sophia session process group, not
 an Engine subsystem. At its deadline it terminates the entire process group;

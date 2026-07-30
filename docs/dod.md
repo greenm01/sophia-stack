@@ -653,6 +653,12 @@ phase may drive the backend. The shared reducer owns admission retirement,
 stable-presentation evidence, and structured retirement records; callers retain
 only their phase-specific input-proof and timing updates.
 
+Retained-buffer cadence is bounded cold evidence, not a stream of formatted
+hot-path log records. The owner stores at most 8,192 UST intervals, derives
+mean cadence and exact p95 at completion, and reports whether samples were
+nonadvancing or capacity overflowed. Reporters reject incomplete evidence
+instead of silently substituting wall-clock log timestamps.
+
 Worker maintenance is a bounded command/acknowledgement exchange. Completion
 metrics are sampled only after cache clearing returns its updated counters.
 Import count, hit count, eviction count, and live entries remain separate

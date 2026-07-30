@@ -55,6 +55,29 @@ retirement, surface-keyed startup evidence, reducer input, and the structured
 retirement/scanout records. Phase-local input-proof bookkeeping remains at the
 call sites.
 
+The corrected physical run reached GPU content readiness and full startup
+readiness in 178 ms without native recovery. It visibly animated at 59.088
+client FPS, accepted 352/352 renderer requests, completed 351 Present Flips and
+Idle notifications, reported zero protocol errors, drained every imported
+image, and exited status 0 with clean session and TTY recovery.
+
+That successful run exposed a final benchmark-only mismatch: verbose tracing
+was intentionally disabled, but the cadence reporter still parsed per-frame
+Present diagnostic lines. Presentation cadence is now accumulated in bounded
+owner state from routed retained-buffer UST values and emitted once at
+completion. The report keeps exact sample/interval counts, nonadvancing and
+overflow flags, mean FPS, and p95 frame time without adding per-frame logging
+overhead. Reporter regressions reject insufficient, nonadvancing, or overflowed
+summaries.
+
+The final six-second run validated the aggregate path end to end. Startup
+reached readiness in 161 ms without recovery. The client reported 59.197 FPS;
+352 routed retained-buffer samples produced 351 advancing UST intervals, zero
+nonadvancing observations, 59.953 presentation FPS, and 17.324 ms p95 frame
+time. Sophia completed 353/353 renderer requests, 352 exact Flip/Idle pairs,
+zero protocol errors, zero live imports, and clean exit/TTY recovery. The
+schema-3 performance reporter returned `status=pass`.
+
 Teardown also exposed stale worker metrics: `ClearImages` was queued without an
 acknowledgement, then the owner immediately sampled the previous cache state.
 The maintenance command now returns its eviction result and updated persistent

@@ -359,10 +359,18 @@ Promotion now follows the gates below in order.
   record, with a regression for the absent-record state. A fourth run animated
   at 52.981 client FPS and exposed duplicate native-retirement service paths:
   the authority-wait copy logged transaction 46 but omitted startup evidence.
-  Both scheduling sites now use one shared retirement reducer. A clean schema-2
-  report rerun remains open; the external watchdog process-group regression
-  passes locally. Verbose per-stage tracing is now opt-in so benchmark cadence
-  is not distorted by diagnostic I/O.
+  Both scheduling sites now use one shared retirement reducer. The clean
+  lifecycle rerun reached readiness in 178 ms without recovery, animated at
+  59.088 client FPS, completed 352/352 renderer requests and 351 exact
+  Flip/Idle pairs, drained every import, and exited cleanly. Its reporter
+  exposed a measurement-only dependency on disabled per-frame tracing.
+  Cadence is now accumulated from routed UST values in bounded owner state and
+  emitted once at completion. The final physical run passed schema 3: 161 ms
+  startup, 59.197 client FPS, 352 retained-buffer samples, 59.953 presentation
+  FPS, 17.324 ms p95, 353/353 worker completion, zero protocol errors, and
+  zero live imports. The external watchdog process-group regression passes
+  locally. Verbose per-stage tracing remains opt-in so benchmark cadence is
+  not distorted by diagnostic I/O.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data

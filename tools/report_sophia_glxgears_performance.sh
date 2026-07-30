@@ -96,27 +96,34 @@ output_pixels="$(
 [[ "$output_pixels" =~ ^[1-9][0-9]*$ ]] ||
     fail "missing positive output pixel count"
 
-TIMESTAMPS_FILE="$(mktemp)"
-INTERVALS_FILE="$(mktemp)"
-trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE" "$INTERVALS_FILE.fps"' EXIT
-
-awk '
-    /^sophia_live_session_present_feedback schema=1 kind=complete / &&
-        / routed=true / && / mode=Flip / {
-        for (field_index = 1; field_index <= NF; field_index++) {
-            if ($field_index ~ /^ust=[0-9]+$/) {
-                split($field_index, pair, "=")
-                print pair[2]
-            }
-        }
-    }
-' "$SESSION_LOG" >"$TIMESTAMPS_FILE"
-
-if ! read -r timestamp_count present_fps p95_msec < <(
-    rendering_performance_cadence "$TIMESTAMPS_FILE" "$INTERVALS_FILE"
-); then
-    fail "need at least three advancing routed retained-buffer timestamps"
-fi
+cadence="$(
+    grep -E '^sophia_live_present_cadence schema=1 status=complete ' \
+        "$SESSION_LOG" | tail -n 1 || true
+)"
+[[ -n "$cadence" ]] || fail "missing retained-buffer cadence summary"
+timestamp_count="$(rendering_performance_field "$cadence" samples)" ||
+    fail "cadence summary lacks samples"
+advancing_intervals="$(rendering_performance_field "$cadence" advancing_intervals)" ||
+    fail "cadence summary lacks advancing_intervals"
+nonadvancing="$(rendering_performance_field "$cadence" nonadvancing)" ||
+    fail "cadence summary lacks nonadvancing"
+overflowed="$(rendering_performance_field "$cadence" overflowed)" ||
+    fail "cadence summary lacks overflowed"
+present_fps="$(rendering_performance_field "$cadence" mean_fps)" ||
+    fail "cadence summary lacks mean_fps"
+p95_msec="$(rendering_performance_field "$cadence" p95_frame_msec)" ||
+    fail "cadence summary lacks p95_frame_msec"
+[[ "$timestamp_count" =~ ^[0-9]+$
+    && "$advancing_intervals" =~ ^[0-9]+$
+    && "$nonadvancing" =~ ^[0-9]+$ ]] ||
+    fail "cadence counts must be nonnegative integers"
+((timestamp_count >= 3 && advancing_intervals == timestamp_count - 1)) ||
+    fail "cadence summary needs at least three exact advancing samples"
+((nonadvancing == 0)) || fail "cadence summary contains nonadvancing timestamps"
+[[ "$overflowed" == false ]] || fail "cadence summary overflowed"
+awk -v fps="$present_fps" -v p95="$p95_msec" \
+    'BEGIN { exit !(fps > 0 && p95 > 0) }' ||
+    fail "cadence FPS and p95 frame time must be positive"
 
 duration_seconds="$(rendering_performance_field "$benchmark" duration_seconds)" ||
     fail "benchmark metadata lacks duration_seconds"

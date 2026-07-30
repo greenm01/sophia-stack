@@ -1,5 +1,83 @@
+const PRESENT_CADENCE_CAPACITY: usize = 8_192;
+
+#[derive(Debug)]
+struct XPresentCadence {
+    first_ust: Option<u64>,
+    previous_ust: Option<u64>,
+    intervals_usec: Vec<u64>,
+    nonadvancing: usize,
+    overflowed: bool,
+}
+
+impl XPresentCadence {
+    fn new() -> Self {
+        Self {
+            first_ust: None,
+            previous_ust: None,
+            intervals_usec: Vec::with_capacity(PRESENT_CADENCE_CAPACITY),
+            nonadvancing: 0,
+            overflowed: false,
+        }
+    }
+
+    fn observe(&mut self, ust: u64) {
+        let Some(previous) = self.previous_ust else {
+            self.first_ust = Some(ust);
+            self.previous_ust = Some(ust);
+            return;
+        };
+        if ust <= previous {
+            self.nonadvancing = self.nonadvancing.saturating_add(1);
+            return;
+        }
+        if self.intervals_usec.len() == PRESENT_CADENCE_CAPACITY {
+            self.overflowed = true;
+        } else {
+            self.intervals_usec.push(ust - previous);
+        }
+        self.previous_ust = Some(ust);
+    }
+
+    fn summary(&self) -> Option<XPresentCadenceSummary> {
+        if self.overflowed || self.intervals_usec.len() < 2 {
+            return None;
+        }
+        let first_ust = self.first_ust?;
+        let last_ust = self.previous_ust?;
+        let elapsed_usec = last_ust.checked_sub(first_ust)?;
+        if elapsed_usec == 0 {
+            return None;
+        }
+        let mut sorted_intervals = self.intervals_usec.clone();
+        sorted_intervals.sort_unstable();
+        let p95_index = sorted_intervals
+            .len()
+            .saturating_mul(95)
+            .div_ceil(100)
+            .saturating_sub(1);
+        Some(XPresentCadenceSummary {
+            samples: self.intervals_usec.len().saturating_add(1),
+            advancing_intervals: self.intervals_usec.len(),
+            nonadvancing: self.nonadvancing,
+            mean_fps: self.intervals_usec.len() as f64 * 1_000_000.0
+                / elapsed_usec as f64,
+            p95_frame_msec: sorted_intervals[p95_index] as f64 / 1_000.0,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct XPresentCadenceSummary {
+    samples: usize,
+    advancing_intervals: usize,
+    nonadvancing: usize,
+    mean_fps: f64,
+    p95_frame_msec: f64,
+}
+
 struct XPresentSessionObserver {
     router: XServerFrontendProtocolRouter,
+    retained_cadence: XPresentCadence,
     complete_copy: usize,
     complete_flip: usize,
     complete_skip: usize,
@@ -17,6 +95,7 @@ impl XPresentSessionObserver {
     fn new(router: XServerFrontendProtocolRouter) -> Self {
         Self {
             router,
+            retained_cadence: XPresentCadence::new(),
             complete_copy: 0,
             complete_flip: 0,
             complete_skip: 0,
@@ -64,6 +143,9 @@ impl XPresentSessionObserver {
                         Ok(routed) => {
                             self.complete_routed =
                                 self.complete_routed.saturating_add(usize::from(routed));
+                            if routed && mode == XPresentCompletionMode::Flip {
+                                self.retained_cadence.observe(ust);
+                            }
                             if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
                                 eprintln!(
                                     "sophia_live_session_present_feedback schema=1 kind=complete transaction={} routed={routed} mode={mode:?} ust={ust} msc={msc}",

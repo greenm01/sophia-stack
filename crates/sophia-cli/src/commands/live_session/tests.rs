@@ -8,15 +8,15 @@ use super::{
     LiveProductionCpuScene, LiveProductionVisualRuntime, LiveXAuthorityFile,
     PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
-    SessionPointerPlacement, SessionProcessGuard, Size, Transform, authority_transaction_count,
-    authority_wait_timeout, center_geometry_without_scaling, clear_client_pressed_keys_state_only,
-    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
-    independent_native_output_presented, initial_session_focus_candidate,
-    input_baseline_is_presented, live_transaction_visual_evidence, managed_child_exit_is_nonfatal,
-    pending_wm_focus_after_engine_decision, physical_input_pixels_already_changed,
-    physical_input_routing_mode, place_pointer_event_for_routing,
-    pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
-    route_input_events, session_protocol_errors_are_fatal,
+    SessionPointerPlacement, SessionProcessGuard, Size, Transform, XPresentCadence,
+    authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
+    clear_client_pressed_keys_state_only, flush_all_client_pressed_keys,
+    global_runtime_deadline_ends_session, independent_native_output_presented,
+    initial_session_focus_candidate, input_baseline_is_presented, live_transaction_visual_evidence,
+    managed_child_exit_is_nonfatal, pending_wm_focus_after_engine_decision,
+    physical_input_pixels_already_changed, physical_input_routing_mode,
+    place_pointer_event_for_routing, pointer_press_starts_focus_handoff, record_runtime_commits,
+    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronous_modeset_record,
     take_settled_input_delivery_wait,
@@ -180,6 +180,24 @@ fn startup_gpu_visual_detail_does_not_require_a_base_committed_surface() {
     assert!(startup_surface_visual_detail(Some(true), 0));
     assert!(!startup_surface_visual_detail(None, 0));
     assert!(!startup_surface_visual_detail(Some(false), 0));
+}
+
+#[test]
+fn retained_present_cadence_is_aggregated_without_per_frame_logging() {
+    let mut cadence = XPresentCadence::new();
+    cadence.observe(1_000_000);
+    cadence.observe(1_016_667);
+    cadence.observe(1_033_334);
+
+    let summary = cadence.summary().expect("three advancing samples");
+    assert_eq!(summary.samples, 3);
+    assert_eq!(summary.advancing_intervals, 2);
+    assert_eq!(summary.nonadvancing, 0);
+    assert!((summary.mean_fps - 59.999).abs() < 0.001);
+    assert!((summary.p95_frame_msec - 16.667).abs() < f64::EPSILON);
+
+    cadence.observe(1_033_334);
+    assert_eq!(cadence.summary().unwrap().nonadvancing, 1);
 }
 
 #[test]
