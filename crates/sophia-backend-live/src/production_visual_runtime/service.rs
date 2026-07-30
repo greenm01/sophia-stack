@@ -128,6 +128,7 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<LiveProductionNativeServiceReport, Box<dyn std::error::Error>> {
+        native_scanout.ensure_page_flip_progress()?;
         let initial = self.native_output_service_request(native_scanout)?;
         let mut reducer = OutputFrameServiceReducer::begin(&initial)
             .map_err(|error| format!("invalid output frame service state: {error:?}"))?;

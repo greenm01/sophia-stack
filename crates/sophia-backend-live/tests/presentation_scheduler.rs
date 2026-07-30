@@ -8,11 +8,17 @@ use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LivePresentationResourceSession,
     LiveProductionAuthorityBatch, LiveProductionAuthorityGroup, LiveProductionPresentDisposition,
     LiveProductionPresentGate, LiveProductionPresentScheduler, LiveProductionPresentSubmission,
+    LiveProductionSubmittedPresent, LiveRetainedDmaBufLayer,
 };
+use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
-    AuthorityKind, BufferHandle, BufferSource, DRM_FORMAT_MOD_INVALID, DmaBufDescriptor,
-    DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
-    SurfaceTransactionReadiness, TransactionId,
+    AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
+    DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
+    SurfaceTransactionReadiness, TransactionId, Transform,
+};
+use sophia_renderer_live::{
+    LiveCompositionPlacement, LiveOwnedDmaBufPlane, LiveOwnedMultiPlaneDmaBufFrame,
+    LiveRendererImageId,
 };
 
 fn fd() -> OwnedFd {
@@ -102,6 +108,100 @@ fn scheduler_batch_with_disposition(
     let mut batch = scheduler_batch(transaction, surface, handle);
     batch.groups[0].present_submissions[0].layout_disposition = disposition;
     batch
+}
+
+fn in_flight_present(
+    transaction: TransactionId,
+    surface: SurfaceId,
+) -> LiveProductionSubmittedPresent {
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 64,
+        height: 48,
+    };
+    let buffer = BufferSource::DmaBuf { handle: 900 };
+    let production = ProductionSessionCoordinator::new(HeadlessEngine::default())
+        .with_committed_surfaces(vec![CommittedSurfaceState {
+            surface,
+            committed_generation: 1,
+            geometry,
+            buffer,
+            damage: Region::empty(),
+        }]);
+    let prepared = production.prepare_present_transaction(&SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: buffer,
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    });
+    LiveProductionSubmittedPresent {
+        transaction,
+        surface,
+        prepared,
+        displayed_layer: LiveRetainedDmaBufLayer {
+            image_id: LiveRendererImageId::from_raw(901),
+            frame: LiveOwnedMultiPlaneDmaBufFrame {
+                width: 64,
+                height: 48,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                modifier: DRM_FORMAT_MOD_INVALID,
+                plane_count: 1,
+                planes: [
+                    Some(LiveOwnedDmaBufPlane {
+                        fd: fd(),
+                        offset: 0,
+                        stride: 256,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            placement: LiveCompositionPlacement {
+                target: geometry,
+                clip: None,
+                transform: Transform::IDENTITY,
+                alpha: 1.0,
+            },
+        },
+    }
+}
+
+#[test]
+fn asynchronous_present_retains_one_transaction_until_scanout_submission() {
+    let transaction = TransactionId::from_raw(902);
+    let surface = SurfaceId::new(903, 1);
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    let mut resources = LivePresentationResourceSession::default();
+
+    scheduler.mark_rendering(in_flight_present(transaction, surface));
+
+    assert!(scheduler.has_rendering());
+    assert!(scheduler.has_in_flight());
+    assert_eq!(
+        scheduler.poll_gate(&mut resources, Instant::now()).unwrap(),
+        LiveProductionPresentGate::SubmittedInFlight
+    );
+    assert_eq!(
+        scheduler.promote_rendering_to_submitted(),
+        Some(transaction)
+    );
+    assert!(!scheduler.has_rendering());
+    assert!(scheduler.has_submitted());
+    assert_eq!(
+        scheduler
+            .take_submitted()
+            .map(|present| present.transaction),
+        Some(transaction)
+    );
+    assert!(!scheduler.has_in_flight());
 }
 
 #[test]

@@ -160,6 +160,26 @@ impl LiveProductionNativeScanout {
                 metrics.import_cache_capacity_rejections = metrics
                     .import_cache_capacity_rejections
                     .saturating_add(stats.import_cache.capacity_rejections);
+                if let Some(worker) = head.exporter.worker_metrics() {
+                    metrics.worker_requests =
+                        metrics.worker_requests.saturating_add(worker.requests);
+                    metrics.worker_completions = metrics
+                        .worker_completions
+                        .saturating_add(worker.completions);
+                    metrics.worker_failures =
+                        metrics.worker_failures.saturating_add(worker.failures);
+                    metrics.worker_soft_stalls = metrics
+                        .worker_soft_stalls
+                        .saturating_add(worker.soft_stalls);
+                    metrics.worker_hard_stalls = metrics
+                        .worker_hard_stalls
+                        .saturating_add(worker.hard_stalls);
+                    metrics.worker_release_enqueue_failures = metrics
+                        .worker_release_enqueue_failures
+                        .saturating_add(worker.release_enqueue_failures);
+                    metrics.max_worker_request =
+                        metrics.max_worker_request.max(worker.max_request_age);
+                }
                 metrics.max_target_create = metrics.max_target_create.max(stats.max_target_create);
                 metrics.max_frame_surface_create = metrics
                     .max_frame_surface_create

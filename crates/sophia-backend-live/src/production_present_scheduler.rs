@@ -35,6 +35,12 @@ pub struct LiveProductionSubmittedPresent {
     pub displayed_layer: crate::LiveRetainedDmaBufLayer,
 }
 
+#[derive(Debug)]
+enum LiveProductionInFlightPresent {
+    Rendering(LiveProductionSubmittedPresent),
+    Submitted(LiveProductionSubmittedPresent),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionPresentGate {
     Idle,
@@ -47,7 +53,7 @@ pub enum LiveProductionPresentGate {
 #[derive(Debug, Default)]
 pub struct LiveProductionPresentScheduler {
     queued: VecDeque<LiveProductionQueuedPresent>,
-    submitted: Option<LiveProductionSubmittedPresent>,
+    in_flight: Option<LiveProductionInFlightPresent>,
     first_acquire_delay: Option<Duration>,
     first_acquire_delay_applied: bool,
     reject_first_present: bool,
@@ -189,7 +195,7 @@ impl LiveProductionPresentScheduler {
         resources: &mut LivePresentationResourceSession,
         now: Instant,
     ) -> Result<LiveProductionPresentGate, Box<dyn Error>> {
-        if self.submitted.is_some() {
+        if self.in_flight.is_some() {
             return Ok(LiveProductionPresentGate::SubmittedInFlight);
         }
         let Some(eligible) = self
@@ -241,11 +247,45 @@ impl LiveProductionPresentScheduler {
     }
 
     pub fn mark_submitted(&mut self, submitted: LiveProductionSubmittedPresent) {
-        self.submitted = Some(submitted);
+        self.in_flight = Some(LiveProductionInFlightPresent::Submitted(submitted));
+    }
+
+    pub fn mark_rendering(&mut self, rendering: LiveProductionSubmittedPresent) {
+        self.in_flight = Some(LiveProductionInFlightPresent::Rendering(rendering));
+    }
+
+    pub fn promote_rendering_to_submitted(&mut self) -> Option<TransactionId> {
+        match self.in_flight.take()? {
+            LiveProductionInFlightPresent::Rendering(rendering) => {
+                let transaction = rendering.transaction;
+                self.in_flight = Some(LiveProductionInFlightPresent::Submitted(rendering));
+                Some(transaction)
+            }
+            submitted @ LiveProductionInFlightPresent::Submitted(_) => {
+                self.in_flight = Some(submitted);
+                None
+            }
+        }
+    }
+
+    pub fn take_rendering(&mut self) -> Option<LiveProductionSubmittedPresent> {
+        match self.in_flight.take()? {
+            LiveProductionInFlightPresent::Rendering(rendering) => Some(rendering),
+            submitted @ LiveProductionInFlightPresent::Submitted(_) => {
+                self.in_flight = Some(submitted);
+                None
+            }
+        }
     }
 
     pub fn take_submitted(&mut self) -> Option<LiveProductionSubmittedPresent> {
-        self.submitted.take()
+        match self.in_flight.take()? {
+            LiveProductionInFlightPresent::Submitted(submitted) => Some(submitted),
+            rendering @ LiveProductionInFlightPresent::Rendering(_) => {
+                self.in_flight = Some(rendering);
+                None
+            }
+        }
     }
 
     pub fn has_queued(&self) -> bool {
@@ -253,7 +293,21 @@ impl LiveProductionPresentScheduler {
     }
 
     pub fn has_submitted(&self) -> bool {
-        self.submitted.is_some()
+        matches!(
+            self.in_flight,
+            Some(LiveProductionInFlightPresent::Submitted(_))
+        )
+    }
+
+    pub fn has_rendering(&self) -> bool {
+        matches!(
+            self.in_flight,
+            Some(LiveProductionInFlightPresent::Rendering(_))
+        )
+    }
+
+    pub fn has_in_flight(&self) -> bool {
+        self.in_flight.is_some()
     }
 
     pub fn has_eligible(&self) -> bool {

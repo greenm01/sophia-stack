@@ -592,6 +592,73 @@ transition. Pool exhaustion becomes bounded frame deferral; reference counts
 must not be treated as lease state. Native handles remain inside the renderer
 and backend.
 
+Production GL execution uses the same state as flat worker records:
+
+- `RendererWorkerRequestId` identifies one immutable owned frame command;
+- `RendererWorkerLeaseId` identifies one worker-retained native scanout BO;
+- the owner-side shared-file lease contains only the reduced descriptor, ID,
+  and bounded release channel;
+- the worker-side lease table contains the native EGL/GBM owner.
+
+Neither record contains protocol objects, WM facts, callbacks, or Engine
+authority. Worker completion does not imply presentation. `Pending` reduces to
+backend deferral; only an accepted KMS page flip advances presentation, and
+only retirement releases the worker lease. A soft stall is a metric. A hard
+stall quarantines the worker and rejects the pending visual candidate without
+fabricating Complete or Idle.
+
+Renderer/KMS transport is a required topology fact:
+
+- `SharedDrmFile` submits renderer GEM handles directly and never PRIME-imports
+  them back into the same handle table;
+- `IndependentDrmFile` submits only through complete PRIME plane FDs and never
+  falls back to renderer-local handles.
+
+Every scanout owner declares one mode. Missing independent-file FDs fail
+closed before framebuffer creation.
+
+The protocol-neutral Present scheduler holds exactly one flat in-flight
+variant per output:
+
+- `Rendering` owns the transaction, prepared Engine commit, and displayed
+  layer while a worker request is pending;
+- `Submitted` owns the same immutable record after KMS accepts the buffer.
+
+Promotion changes only the variant. It does not reconstruct the record from
+current scene state. Queue replacement can affect only queued Presents; it
+cannot mutate either in-flight variant. Retirement or controlled failure is
+the sole path back to no in-flight Present.
+
+`OutputFramePresentationState` and native scanout content mirror the same
+four-stage data lifecycle: `Pending -> Rendering -> Submitted -> Presented`.
+Each transition moves the immutable record rather than reconstructing it from
+the newest scene. A separate newest-pending record may coexist with rendering
+or submitted work. A 500 ms submitted-page-flip watchdog is the terminal
+safety boundary for a lost DRM callback.
+
+Process-external takeover deadlines belong to operator tooling, not these
+records. They terminate a wedged session process group and restore saved TTY
+state without adding application identity or benchmark timing to Engine data.
+
+Startup evidence is a surface-keyed monotonic reduction. Stable retirement and
+nonzero-pixel facts may arrive before focus control completes, but are applied
+only after the same `SurfaceId` becomes the pinned startup surface. Native
+recovery clears presentation facts while retaining the authoritative pin and
+focus state. A presentation-layer fact must not be invalidated by inspecting
+the base surface buffer or by requiring membership in the base committed list,
+which may be absent while a DRI3 lease is displayed. CPU visual evidence
+depends on that record; exact surface-keyed GPU evidence does not.
+Native retirement has one reduction path even though more than one owner-loop
+phase may drive the backend. The shared reducer owns admission retirement,
+stable-presentation evidence, and structured retirement records; callers retain
+only their phase-specific input-proof and timing updates.
+
+Worker maintenance is a bounded command/acknowledgement exchange. Completion
+metrics are sampled only after cache clearing returns its updated counters.
+Import count, hit count, eviction count, and live entries remain separate
+facts: a changing-generation stream may correctly have zero hits, but shutdown
+must have zero live entries.
+
 ### Historical CompositePixmapRecord
 
 A composite pixmap record described the retired XLibre bridge-owned lifetime of

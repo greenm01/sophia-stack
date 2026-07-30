@@ -407,6 +407,57 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
 }
 
 #[test]
+fn asynchronous_rendering_keeps_its_snapshot_when_newer_work_is_queued() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(1, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+    };
+    let list = sophia_engine::CompositorDisplayList {
+        output,
+        commands: vec![CompositorDisplayCommand::Surface { surface }],
+    };
+    let snapshot = |generation| {
+        frame_snapshot(
+            output,
+            list.clone(),
+            &[committed(surface, geometry, generation)],
+        )
+    };
+    let mut presentation = presentation_state(output);
+    presentation.queue(snapshot(1)).unwrap();
+    presentation.mark_initial_presented().unwrap();
+
+    presentation.queue(snapshot(2)).unwrap();
+    presentation.mark_rendering().unwrap();
+    presentation.queue(snapshot(3)).unwrap();
+
+    assert_eq!(
+        presentation.rendering().unwrap().snapshot.surfaces[0].committed_generation,
+        2
+    );
+    assert_eq!(
+        presentation.pending().unwrap().snapshot.surfaces[0].committed_generation,
+        3
+    );
+    assert_eq!(
+        presentation.mark_submitted(),
+        Err(OutputFramePresentationError::RenderingInFlight)
+    );
+
+    presentation.promote_rendering_to_submitted().unwrap();
+    let retired = presentation.mark_presented().unwrap();
+    assert_eq!(retired.snapshot.surfaces[0].committed_generation, 2);
+
+    presentation.mark_submitted().unwrap();
+    let retired = presentation.mark_presented().unwrap();
+    assert_eq!(retired.snapshot.surfaces[0].committed_generation, 3);
+}
+
+#[test]
 fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline() {
     let output = OutputId::from_raw(1);
     let first = SurfaceId::new(1, 1);

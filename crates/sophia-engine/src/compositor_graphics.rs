@@ -237,6 +237,8 @@ pub enum OutputFramePresentationError {
     InvalidSnapshot,
     OutputMismatch,
     MissingPending,
+    RenderingInFlight,
+    MissingRendering,
     SubmissionInFlight,
     MissingSubmitted,
 }
@@ -260,6 +262,7 @@ pub struct OutputFramePresentationState {
     output: HeadlessOutput,
     repaint_policy: OutputRepaintPolicy,
     pending: Option<OutputFramePresentation>,
+    rendering: Option<OutputFramePresentation>,
     submitted: Option<OutputFramePresentation>,
     presented: Option<OutputFrameDamageSnapshot>,
 }
@@ -290,6 +293,7 @@ impl OutputFramePresentationState {
             output,
             repaint_policy,
             pending: None,
+            rendering: None,
             submitted: None,
             presented: None,
         })
@@ -310,6 +314,7 @@ impl OutputFramePresentationState {
             .submitted
             .as_ref()
             .map(|submitted| &submitted.snapshot)
+            .or_else(|| self.rendering.as_ref().map(|rendering| &rendering.snapshot))
             .or(self.presented.as_ref());
         let compositor_baseline = baseline.map(|baseline| &baseline.compositor_display_list);
         let compositor_damage = compositor_baseline.map_or_else(
@@ -340,9 +345,47 @@ impl OutputFramePresentationState {
         self.pending.take()
     }
 
+    pub fn mark_rendering(
+        &mut self,
+    ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
+        if self.rendering.is_some() {
+            return Err(OutputFramePresentationError::RenderingInFlight);
+        }
+        if self.submitted.is_some() {
+            return Err(OutputFramePresentationError::SubmissionInFlight);
+        }
+        self.rendering = Some(
+            self.pending
+                .take()
+                .ok_or(OutputFramePresentationError::MissingPending)?,
+        );
+        Ok(self.rendering.as_ref().expect("assigned above"))
+    }
+
+    pub fn promote_rendering_to_submitted(
+        &mut self,
+    ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
+        if self.submitted.is_some() {
+            return Err(OutputFramePresentationError::SubmissionInFlight);
+        }
+        self.submitted = Some(
+            self.rendering
+                .take()
+                .ok_or(OutputFramePresentationError::MissingRendering)?,
+        );
+        Ok(self.submitted.as_ref().expect("assigned above"))
+    }
+
+    pub fn discard_rendering(&mut self) -> Option<OutputFramePresentation> {
+        self.rendering.take()
+    }
+
     pub fn mark_submitted(
         &mut self,
     ) -> Result<&OutputFramePresentation, OutputFramePresentationError> {
+        if self.rendering.is_some() {
+            return Err(OutputFramePresentationError::RenderingInFlight);
+        }
         if self.submitted.is_some() {
             return Err(OutputFramePresentationError::SubmissionInFlight);
         }
@@ -368,6 +411,9 @@ impl OutputFramePresentationState {
     pub fn mark_initial_presented(
         &mut self,
     ) -> Result<OutputFramePresentation, OutputFramePresentationError> {
+        if self.rendering.is_some() {
+            return Err(OutputFramePresentationError::RenderingInFlight);
+        }
         if self.submitted.is_some() {
             return Err(OutputFramePresentationError::SubmissionInFlight);
         }
@@ -381,6 +427,10 @@ impl OutputFramePresentationState {
 
     pub fn pending(&self) -> Option<&OutputFramePresentation> {
         self.pending.as_ref()
+    }
+
+    pub fn rendering(&self) -> Option<&OutputFramePresentation> {
+        self.rendering.as_ref()
     }
 
     pub fn submitted(&self) -> Option<&OutputFramePresentation> {

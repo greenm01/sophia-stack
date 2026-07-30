@@ -278,6 +278,10 @@ struct FakeRenderedScanoutOwner {
 }
 
 impl LiveRenderedScanoutBufferPrimeSource for FakeRenderedScanoutOwner {
+    fn shares_kms_drm_file(&self) -> bool {
+        true
+    }
+
     fn export_scanout_dma_buf_fds(&self) -> io::Result<Option<LiveRenderedScanoutDmaBufFds>> {
         Ok(None)
     }

@@ -1,5 +1,8 @@
 #![cfg(test)]
-use super::startup_readiness::{StartupOutputEvidence, all_startup_outputs_presented};
+use super::startup_readiness::{
+    StartupOutputEvidence, StartupSurfacePresentationEvidence, all_startup_outputs_presented,
+    startup_surface_visual_detail,
+};
 use super::{
     BufferSource, CommittedSurfaceState, LayerSnapshot, LiveClientStdoutCapture,
     LiveProductionCpuScene, LiveProductionVisualRuntime, LiveXAuthorityFile,
@@ -20,6 +23,9 @@ use super::{
 };
 use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, SessionClientKeyState, SessionClientPressedKey,
+};
+use sophia_cli::session_startup::{
+    SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
 use sophia_engine::{
     InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
@@ -124,6 +130,56 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
         callbacks: 0,
         synchronous_modeset: true,
     }]));
+}
+
+#[test]
+fn startup_surface_presentation_evidence_is_order_independent_and_surface_keyed() {
+    let startup = SurfaceId::new(1, 1);
+    let status_bar = SurfaceId::new(2, 1);
+    let mut evidence = StartupSurfacePresentationEvidence::default();
+    let mut readiness = SessionStartupReadiness::default();
+
+    evidence.observe_stable(status_bar, 900);
+    evidence.observe_stable(startup, 100);
+    evidence.observe_stable(startup, 700);
+
+    assert!(evidence.stable_presented(startup));
+    assert!(evidence.stable_presented(status_bar));
+    assert_eq!(evidence.nonzero_rgb_pixels(startup), 700);
+    assert_eq!(evidence.nonzero_rgb_pixels(status_bar), 900);
+    assert_eq!(evidence.nonzero_rgb_pixels(SurfaceId::new(3, 1)), 0);
+    assert!(evidence.visual_detail(startup));
+    assert!(!evidence.visual_detail(SurfaceId::new(3, 1)));
+
+    for event in [
+        SessionStartupEvent::PinSurface(startup),
+        SessionStartupEvent::ClientFocusApplied(startup),
+    ] {
+        reduce_session_startup(&mut readiness, event);
+    }
+    if evidence.visual_detail(startup) {
+        reduce_session_startup(&mut readiness, SessionStartupEvent::VisualDetail(startup));
+    }
+    if evidence.stable_presented(startup) {
+        reduce_session_startup(
+            &mut readiness,
+            SessionStartupEvent::StablePresented(startup),
+        );
+    }
+    reduce_session_startup(&mut readiness, SessionStartupEvent::OutputsPresented);
+    assert!(readiness.ready);
+
+    evidence.clear();
+    assert!(!evidence.stable_presented(startup));
+}
+
+#[test]
+fn startup_gpu_visual_detail_does_not_require_a_base_committed_surface() {
+    assert!(startup_surface_visual_detail(None, 700));
+    assert!(startup_surface_visual_detail(Some(false), 700));
+    assert!(startup_surface_visual_detail(Some(true), 0));
+    assert!(!startup_surface_visual_detail(None, 0));
+    assert!(!startup_surface_visual_detail(Some(false), 0));
 }
 
 #[test]

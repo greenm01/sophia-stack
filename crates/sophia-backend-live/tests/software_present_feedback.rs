@@ -1,7 +1,7 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LivePresentCompletionMode, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
+    LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
     LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
     LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
 };
@@ -146,7 +146,7 @@ fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
                 transaction,
                 ust: 0,
                 msc: 0,
-                mode: LivePresentCompletionMode::Copy,
+                disposition: LivePresentBufferDisposition::Copied,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ]

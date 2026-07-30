@@ -574,6 +574,39 @@ fn live_runtime_assembly_drops_resources_from_non_exported_rendered_scanout() {
 }
 
 #[test]
+fn live_runtime_assembly_defers_a_pending_renderer_worker_without_native_submit() {
+    let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-worker-pending");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    let device = full_primary_plane_scanout_device();
+    let mut exporter = FakeRenderedScanoutExporter {
+        status: LiveRendererScanoutBufferExportStatus::Pending,
+        descriptor: None,
+        owner: None,
+        export_attempts: 0,
+    };
+
+    let submitted = assembly.submit_rendered_primary_plane_scanout_with(&device, &mut exporter);
+
+    assert_eq!(
+        submitted.status,
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending
+    );
+    assert_eq!(
+        submitted.export,
+        Some(LiveRendererScanoutBufferExportStatus::Pending)
+    );
+    assert_eq!(submitted.runtime_scanout_state(), RuntimeScanoutState::Deferred);
+    assert_eq!(exporter.export_attempts(), 1);
+    assert!(submitted.submission.is_none());
+    assert!(submitted.cleanup.is_none());
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
     let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-tracked-retire");
     let report = discover_live_backend(&LiveBackendConfig::new(&root));
@@ -786,4 +819,3 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
-

@@ -472,48 +472,24 @@
             }
             let service = runtime.service_native(native_scanout)?;
             if let Some(retired) = service.retired_present {
-                layout.complete_admission_retirement(retired.surface, retired.transaction);
-                let stable = runtime.stable_present(native_scanout, retired.transaction);
-                retired_present_surfaces.insert(retired.surface, retired.transaction);
-                if stable {
-                    let _ = reduce_session_startup(
+                let NativePresentRetirementObservation { surface, stable } =
+                    record_native_present_retirement(
+                        &mut layout,
+                        runtime,
+                        native_scanout,
+                        retired,
+                        &mut retired_present_surfaces,
+                        &mut startup_surface_presentations,
                         &mut startup_readiness,
-                        SessionStartupEvent::StablePresented(retired.surface),
                     );
-                }
                 if stable_gpu_frame_proves_post_input_pixels(
                     input_proof_started_at.is_some(),
                     input_surface,
-                    retired.surface,
+                    surface,
                     stable,
                 ) {
                     input_pixel_change = true;
                 }
-                let clip = retired.clip.map_or_else(
-                    || "none".to_owned(),
-                    |clip| format!("{}x{}_{}_{}", clip.width, clip.height, clip.x, clip.y),
-                );
-                println!(
-                    "sophia_live_session_present schema=2 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} clip={} unit_scale={}",
-                    retired.transaction.raw(),
-                    retired.surface.index(),
-                    retired.source_size.width,
-                    retired.source_size.height,
-                    retired.target.width,
-                    retired.target.height,
-                    retired.target.x,
-                    retired.target.y,
-                    clip,
-                    retired.source_size.width == retired.clip.unwrap_or(retired.target).width
-                        && retired.source_size.height
-                            == retired.clip.unwrap_or(retired.target).height,
-                );
-                println!(
-                    "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",
-                    if stable { "stable" } else { "superseded" },
-                    retired.transaction.raw(),
-                    !stable,
-                );
             }
             metrics.runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
@@ -616,50 +592,37 @@
             std::io::stdout().flush()?;
         }
 
-        if let (Some(runtime), Some(surface)) = (runtime.as_ref(), focus.focused_surface(seat))
-            && let Some(committed) = runtime
-                .committed_surfaces()
-                .iter()
-                .find(|committed| committed.surface == surface)
-        {
-            let cpu_visual_detail =
-                scene.surface_has_visual_detail(runtime.committed_surfaces(), surface);
-            let retired_gpu_detail =
-                retired_present_surfaces
-                    .get(&surface)
-                    .is_some_and(|transaction| {
-                        matches!(committed.buffer, BufferSource::DmaBuf { .. })
-                            && native_scanout
-                                .as_ref()
-                                .is_some_and(|native| runtime.stable_present(native, *transaction))
-                    });
-            let retired_gpu_pixels = retired_present_surfaces
-                .get(&surface)
-                .and_then(|transaction| {
-                    native_scanout.as_ref().map(|native| {
-                        native.presented_mixed_nonzero_rgb_pixels(*transaction)
+        if let Some(surface) = focus.focused_surface(seat) {
+            let cpu_visual_detail = runtime.as_ref().and_then(|runtime| {
+                runtime
+                    .committed_surfaces()
+                    .iter()
+                    .any(|committed| committed.surface == surface)
+                    .then(|| {
+                        scene.surface_has_visual_detail(runtime.committed_surfaces(), surface)
                     })
-                })
-                .unwrap_or(0);
-            if cpu_visual_detail || retired_gpu_detail {
+            });
+            let stable_gpu_pixels = startup_surface_presentations.nonzero_rgb_pixels(surface);
+            let stable_gpu_detail = startup_surface_presentations.visual_detail(surface);
+            let visual_detail =
+                startup_surface_visual_detail(cpu_visual_detail, stable_gpu_pixels);
+            if visual_detail {
                 let _ = reduce_session_startup(
                     &mut startup_readiness,
                     SessionStartupEvent::VisualDetail(surface),
                 );
             }
-            if retired_gpu_detail {
+            if stable_gpu_detail {
                 let _ = reduce_session_startup(
                     &mut startup_readiness,
                     SessionStartupEvent::StablePresented(surface),
                 );
             }
-            if input_content_surface != Some(surface)
-                && (cpu_visual_detail || retired_gpu_detail)
-            {
+            if input_content_surface != Some(surface) && visual_detail {
                 input_content_surface = Some(surface);
                 println!(
                     "sophia_live_session_input_pipeline schema=2 status=content_ready source={}",
-                    if retired_gpu_detail {
+                    if stable_gpu_detail {
                         "stable_present_scanout"
                     } else {
                         "cpu_visual_detail"
@@ -667,11 +630,11 @@
                 );
                 std::io::stdout().flush()?;
             }
-            if !startup_content_ready && (cpu_visual_detail || retired_gpu_detail) {
+            if !startup_content_ready && visual_detail {
                 startup_content_ready = true;
                 println!(
-                    "sophia_live_session_startup schema=2 status=content_ready source={} nonzero_rgb_pixels={retired_gpu_pixels}",
-                    if retired_gpu_detail {
+                    "sophia_live_session_startup schema=2 status=content_ready source={} nonzero_rgb_pixels={stable_gpu_pixels}",
+                    if stable_gpu_detail {
                         "stable_present_scanout"
                     } else {
                         "cpu_visual_detail"
@@ -766,6 +729,7 @@
             )?;
             *native_scanout = Some(replacement);
             retired_present_surfaces.clear();
+            startup_surface_presentations.clear();
             startup_content_ready = false;
             startup_required_submissions = None;
             input_content_surface = None;
@@ -793,13 +757,7 @@
                 .and_then(|required| startup_output_evidence(native, Some(required)))
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs));
             let focused_mixed_presented = startup_readiness.surface.is_some_and(|surface| {
-                retired_present_surfaces
-                    .get(&surface)
-                    .is_some_and(|transaction| {
-                        runtime
-                            .as_ref()
-                            .is_some_and(|runtime| runtime.stable_present(native, *transaction))
-                    })
+                startup_surface_presentations.stable_presented(surface)
             });
             let every_output_has_retired = startup_output_evidence(native, None)
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs));

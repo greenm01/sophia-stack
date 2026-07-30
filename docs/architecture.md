@@ -498,10 +498,82 @@ page-flip retirement.
 The warmed path targets no context, shader, or surface allocation. Damage and
 buffer-age history reduce composition work, while incomplete history forces a
 full repaint. One newest pending frame and one KMS submission are retained per
-output so slow rendering cannot create an unbounded queue. If measurement
-later requires a renderer worker, it consumes only immutable bounded frame
-commands and returns opaque rendered buffers; protocol and WM state remain on
-their existing owners.
+output so slow rendering cannot create an unbounded queue.
+
+Physical AMDGPU recovery evidence requires GL execution to be isolated from the
+session owner. After the initial synchronous modeset, the production native
+path moves EGL, GL, GBM targets, imported-image residency, and locked front
+buffers to a bounded renderer worker. The owner sends an immutable owned frame
+command and receives only a passive scanout descriptor and lease ID. The
+current worker uses a duplicate of the KMS DRM file, so its GEM handle namespace
+is shared and KMS consumes the descriptor directly. It must not PRIME-export
+and re-import that buffer into the same DRM file. An eventual independent
+render-node worker is the opposite typed mode: PRIME FDs are mandatory and its
+renderer-local handles are never submitted directly. `Pending` is an ordinary
+deferred scanout state, not a failed frame. KMS page-flip retirement drops the
+lease token; only then does the worker release the locked GBM buffer on the
+thread that owns its native context.
+
+```text
+ session/input owner                 renderer worker
+ ───────────────────                ───────────────
+ immutable frame ───── bounded ───▶ EGL/GL/GBM render
+       │                                   │
+       │   shared-file descriptor           │ retains native BO
+       ◀────────── lease ID ─────────────────┘
+       │
+       ├─ atomic KMS submit
+       ├─ input, cursor, VT, X polling continue
+       └─ page-flip retirement ───────────▶ release lease/BO
+```
+
+The worker has one request in flight per output, bounded command and lease
+storage, a 100 ms soft-stall observation, and a 1 s hard-stall quarantine. A
+hard stall cannot block physical input or invent presentation feedback. It
+fails the pending frame closed and preserves the last committed scanout.
+The output slot retains its mixed-frame identity and damage snapshot through
+pending, renderer, KMS, and presented ownership. Newer work can replace only
+the pending slot. Shared-file GEM descriptors and independent-file PRIME FDs
+are explicit, mutually exclusive transport modes rather than fallbacks.
+The presentation scheduler mirrors that ownership with one mutually exclusive
+in-flight record:
+
+```text
+queued Present → rendering worker → KMS submitted → page-flip retired
+       │                 │                 │                 │
+ exact transaction   immutable frame   resource submitted  Engine commit
+ prepared commit     and layer owner   and feedback held   feedback/Idle
+```
+
+Worker deferral is a state transition, not a rejection. Newer Presents remain
+bounded in the queue until the in-flight record retires, so a later client
+frame cannot relabel the KMS callback or consume the admission candidate.
+An accepted page flip has a 500 ms hard watchdog. Crossing it terminates the
+graphical session and restores the display manager instead of retaining an
+unbounded black or frozen seat.
+Multi-output GPU groups must eventually share this same worker service rather
+than multiplying native owner threads.
+
+Startup proof observations are monotonic and keyed by `SurfaceId`. A stable,
+nonzero KMS retirement may precede the asynchronous focus acknowledgement; it
+is retained until focus pins a surface, but can satisfy readiness only when
+its key matches that exact pinned surface. Presentation timing is therefore
+order-independent without allowing a status bar or unrelated client to prove
+the startup application. DRI3 presentation evidence is not revalidated against
+the base committed `BufferSource`: the presentation lease and base surface are
+separate state domains. Its consumer also does not require the surface to
+remain in the CPU/base committed-surface list. CPU detail is queried only when
+that record exists; an exact stable nonzero GPU retirement remains sufficient
+when it does not. Every owner-loop phase that may service native retirement
+must call the same retirement recorder. Authority-wait progress and the normal
+lifecycle phase are scheduling contexts, not separate presentation semantics.
+
+Development takeover tooling may additionally arm an external wall-clock
+deadline. That watchdog is a sibling of the Sophia session process group, not
+an Engine subsystem. At its deadline it terminates the entire process group;
+the launcher parent then restores the saved TTY and service state. Workload
+identity and duration remain tooling policy, while Engine and backend
+watchdogs continue to describe presentation progress only.
 
 Client DMA-BUF imports are renderer-owned, generation-keyed resources. The
 renderer frame boundary carries only an opaque image generation plus the cold-import
@@ -511,6 +583,13 @@ evicts the predecessor before backend-live releases its idle fence. Context
 reset clears native residency while the backend's still-live buffer lease
 allows a bounded re-import. Neither the X frontend nor the WM can observe or
 control the cache.
+
+Renderer maintenance remains worker-owned. Shutdown cache clearing uses a
+bounded request/acknowledgement and returns the updated resource counters
+before the owner emits completion evidence. A stream in which every client
+frame has a new generation is expected to import each frame and may record
+zero hits; reuse is required only for compositor repaints of an unchanged live
+generation.
 
 Direct scanout and hardware planes are backend capabilities, not alternate
 authority paths. Engine first proves scene eligibility, the backend validates

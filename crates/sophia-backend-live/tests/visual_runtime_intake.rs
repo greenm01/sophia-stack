@@ -1,17 +1,20 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LiveProductionCpuFrameQueueStatus, LiveProductionMixedLayerSource,
-    LiveProductionNativeSuspendOutcome, LiveProductionScanoutContent, LiveProductionVisualRuntime,
-    live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_frame_defer,
+    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveProductionCpuFrameQueueStatus,
+    LiveProductionMixedLayerSource, LiveProductionNativeSuspendOutcome,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
+    LiveProductionVisualRuntime, live_production_mixed_layer_order,
+    live_production_projection_requires_gpu_scanout, live_production_should_preserve_gpu_output,
+    live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
     AuthorityKind, BufferSource, OutputId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
+use std::time::Duration;
 
 fn output() -> HeadlessOutput {
     HeadlessOutput {
@@ -155,24 +158,36 @@ fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
     });
 
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(cpu, None, None, false, checksum),
+        reduce_live_production_cpu_frame_queue(cpu, None, None, false, false, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedPending
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, cpu, None, false, checksum),
+        reduce_live_production_cpu_frame_queue(None, cpu, None, false, false, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedSubmitted
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, true, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, true, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedPresented
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, mixed, false, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, mixed, false, false, checksum),
         LiveProductionCpuFrameQueueStatus::Queued
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, false, checksum + 1),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, false, checksum + 1),
         LiveProductionCpuFrameQueueStatus::Queued
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, None, mixed, true, false, checksum),
+        LiveProductionCpuFrameQueueStatus::GpuFrameOwned
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(mixed, None, None, false, false, checksum),
+        LiveProductionCpuFrameQueueStatus::GpuFrameOwned
+    );
+    assert_eq!(
+        reduce_live_production_cpu_frame_queue(None, mixed, None, false, false, checksum),
+        LiveProductionCpuFrameQueueStatus::GpuFrameOwned
     );
 }
 
@@ -182,12 +197,34 @@ fn unchanged_initial_modeset_frame_requires_one_event_bearing_submission() {
     let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
 
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, false, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, false, checksum),
         LiveProductionCpuFrameQueueStatus::BaselineRequired
     );
     assert_eq!(
-        reduce_live_production_cpu_frame_queue(None, None, cpu, true, checksum),
+        reduce_live_production_cpu_frame_queue(None, None, cpu, false, true, checksum),
         LiveProductionCpuFrameQueueStatus::UnchangedPresented
+    );
+}
+
+#[test]
+fn page_flip_watchdog_fails_closed_after_its_hard_boundary() {
+    assert_eq!(
+        reduce_live_production_page_flip_watchdog(None, LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL),
+        LiveProductionPageFlipWatchdogStatus::Idle
+    );
+    assert_eq!(
+        reduce_live_production_page_flip_watchdog(
+            Some(LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL - Duration::from_millis(1)),
+            LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL,
+        ),
+        LiveProductionPageFlipWatchdogStatus::Healthy
+    );
+    assert_eq!(
+        reduce_live_production_page_flip_watchdog(
+            Some(LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL),
+            LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL,
+        ),
+        LiveProductionPageFlipWatchdogStatus::HardStall
     );
 }
 

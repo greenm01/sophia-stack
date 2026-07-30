@@ -72,6 +72,11 @@ impl NativeGbmOwnedScanoutBufferExportReport {
                 },
                 buffer,
             },
+            LiveRendererScanoutBufferExportStatus::Pending => Self {
+                status,
+                detail,
+                buffer: None,
+            },
             status => Self {
                 status,
                 detail,

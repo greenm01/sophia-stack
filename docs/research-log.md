@@ -3,6 +3,174 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-30: GLX Animation Passed; Startup Evidence Lost a Valid Early Frame
+
+The bounded six-second physical rerun visibly animated. Radeonsi reported
+52.956 client FPS on the RX 7900 GRE. Sophia completed 242 renderer requests
+with 242 completions, no worker failure, soft stall, hard stall, or
+release-queue failure; native teardown drained without an abandoned scanout,
+and X protocol errors remained zero. Neither the 500 ms page-flip watchdog nor
+the independent 11-second session deadline fired.
+
+The run still exited status 1 because the completion gate claimed startup
+readiness was never reached. Transaction 46 had in fact produced 70,988
+nonzero RGB pixels, retired through KMS, committed visual admission, and was
+logged as a stable mixed scanout. That happened immediately before the X focus
+control acknowledgement pinned the startup surface. The startup reducer
+correctly rejected pre-pin evidence to prevent another client from satisfying
+the gate, but the owner retained only the latest transaction per surface.
+Continuous animation made every later retirement overlap a newer pending
+frame, so the already-proved stable frame could not be reconstructed.
+
+Startup presentation evidence is now retained monotonically in a
+surface-keyed map until readiness or native recovery. It records only a frame
+that was stable at its actual KMS retirement and preserves the maximum observed
+nonzero count. Once focus pins the startup surface, only evidence with that
+exact surface identity can supply visual-detail and stable-presentation
+events. A status bar or another client therefore cannot satisfy the startup
+application, while asynchronous focus and presentation ordering no longer
+creates a false failure.
+
+The next physical rerun showed that the map alone was insufficient. It
+retained transaction 46 correctly, but the consumer redundantly required a
+current base committed-surface record. Removing the earlier `BufferSource`
+subtype check had left this surrounding membership gate in place. DRI3 Present
+content is a presentation-layer lease; after admission, the base committed
+surface may legitimately be absent. A third bounded run still animated at
+53.542 client FPS, completed 242/242 worker requests with no stalls or failures,
+and drained all imports, while this gate alone produced the false startup
+failure. The stable nonzero KMS retirement already proves both GPU content and
+surface identity, so startup visual-detail reduction now uses that evidence
+even when no base committed record exists. A regression covers that exact
+state instead of approximating it with a DMA-BUF-backed base surface.
+
+The following run again animated normally at 52.981 client FPS and drained
+241/241 renderer requests, but exposed the underlying control-flow split.
+Transaction 46 retired while the owner was waiting for the next authority
+batch. That authority-wait path logged the same stable scanout as the ordinary
+lifecycle path but did not update startup presentation evidence. The two
+nearly identical retirement blocks had drifted semantically. Retirement is now
+recorded by one shared function used by both service sites; it owns admission
+retirement, surface-keyed startup evidence, reducer input, and the structured
+retirement/scanout records. Phase-local input-proof bookkeeping remains at the
+call sites.
+
+Teardown also exposed stale worker metrics: `ClearImages` was queued without an
+acknowledgement, then the owner immediately sampled the previous cache state.
+The maintenance command now returns its eviction result and updated persistent
+statistics over a one-slot bounded channel with a one-second deadline.
+Changing GLX buffers legitimately produced 242 imports and zero cache hits:
+Idle releases each generation before the client may mutate and reuse it. The
+report therefore requires positive imports and clean zero-debt teardown, while
+retaining cache hits as an informative counter rather than inventing reuse.
+The benchmark no longer forces verbose per-stage tracing. Normal structured
+presentation and resource summaries remain enabled, while diagnostic tracing
+can be opted into explicitly, so the performance probe does not measure its
+own high-volume logging.
+
+## 2026-07-29: GLX Freeze Was a Retained-Buffer Race on the Owner Thread
+
+The failed physical `glxgears` run completed and retired two mixed frames. On
+the next repaint Sophia emitted X Present `Copy` completion for a DMA-BUF it
+continued to retain and sample, then entered a production `glFinish`. That
+finish blocked the session owner for 10.097 seconds. Radeonsi reported a
+cancelled command stream, lost context, and guilty hard recovery; during the
+same interval the owner could not service the hardware cursor, physical input,
+VT control, or X traffic. The static gears, frozen pointer, and session abort
+were one failure, not separate input and animation bugs.
+
+Xserver's Present implementation confirms that `Copy` means the server has
+copied the pixmap and may idle it. Sophia had used that protocol result for a
+zero-copy retained compositor lease. The protocol-neutral backend contract now
+uses `Retained`, `Copied`, and `Skipped`. The X authority maps `Retained` to
+Present `Flip`; software snapshots alone use `Copy`. Idle remains behind exact
+KMS retirement.
+
+Production rendering no longer executes `glFinish` in composition, cache
+eviction, cache clear, or full-screen DMA-BUF drawing. EGL swap and KMS
+retirement carry the normal same-GPU ordering; diagnostic readback is bounded
+to the initial nonzero proof.
+
+The stronger containment boundary moves production EGL/GL/GBM work to a
+bounded renderer worker after the initial modeset. The worker receives an
+owned immutable frame and retains the native BO under a lease ID. The session
+owner receives only duplicated DMA-BUF FDs and a descriptor, so a driver stall
+cannot stop input or cursor service. A request becomes a deferred scanout while
+pending, reports a soft stall at 100 ms, and is quarantined after 1 second
+without fake Present feedback. Completion metrics now include worker requests,
+completions, failures, stalls, release-queue failures, and maximum request age.
+The remaining multi-output optimization is to share one worker among outputs
+that use the same render device.
+
+The first worker-enabled physical rerun remained static but did not reproduce
+the 10-second owner-thread stall. It exposed two asynchronous-boundary defects.
+While the mixed Present was rendering, a CPU repaint replaced the output's
+pending content label; the resulting KMS retirement was therefore recorded as
+CPU and could not satisfy the exact visual-admission transaction. A second CPU
+fallback then produced a valid GEM-backed scanout buffer whose DMA-BUF FD
+export was unavailable. The old synchronous submit path correctly used the GEM
+descriptor in that case, but the worker had incorrectly made FD export
+mandatory and rejected the frame.
+
+The first repair preserved mixed content ownership against CPU replacement
+while the GPU frame was in flight. It also treated PRIME export as optional
+and retained a descriptor fallback. That transport choice was provisional;
+the later lockup evidence below showed that PRIME and shared-file descriptors
+must be mutually exclusive topology modes, not preferred/fallback paths.
+
+The next physical run proved those repairs: the seat and DRM device became
+active, mixed transaction 46 reached KMS, and its page flip retired. The
+concurrent elogind `failed to add session ... to hash map: File exists`
+message was therefore nonfatal session-manager noise, not the presentation
+failure. Admission still remained `not_committed` because the Present
+scheduler had only queued and submitted states. A deferred renderer-worker
+export was popped from the queue as if it had failed; when KMS later accepted
+and retired that exact frame, no scheduler record remained to connect the
+retirement to its prepared Engine commit.
+
+The scheduler now retains one mutually exclusive in-flight record with
+`Rendering` and `Submitted` variants. The full immutable Present record moves
+`queued -> rendering` when the worker accepts it, `rendering -> submitted`
+only when KMS accepts the returned buffer, and leaves the scheduler only on
+retirement or controlled failure. A newer client frame may remain queued, but
+cannot replace the prepared transaction, displayed layer, or resource
+ownership of the frame already crossing the asynchronous boundary.
+
+The following physical run proved admission and protocol feedback through two
+advancing mixed Flip retirements, then froze the graphical session. Its log
+identified two deeper ownership defects. Output content and damage still had
+only pending/submitted slots, so newer compositor work relabelled transaction
+51's worker result as `RetainedMixed`. More seriously, the worker and KMS use
+duplicated descriptors for the same DRM file, but submission preferred a PRIME
+round trip. Importing that exported DMA-BUF back into the same DRM file may
+return GBM's existing GEM handle; KMS resource cleanup then closes a handle
+still owned by the renderer. The observed sequence was framebuffer resource
+creation failure, `DmaBufImageCreateFailed`, repeated EGL target replacement,
+then a submitted page flip that did not retire before emergency recovery.
+
+Output damage and native content now carry their own `Rendering` slot beside
+`Pending`, `Submitted`, and `Presented`. A worker request moves the exact
+snapshot and content into that slot; worker completion promotes that same
+record even if newer work is queued. Scanout transport now declares its DRM
+file topology explicitly. The current shared-file production path submits GEM
+descriptors directly and never PRIME-imports its own buffers. A future
+independent render-node path must provide PRIME FDs and fails closed if they
+are unavailable; the two modes are not runtime fallbacks for one another.
+A 500 ms page-flip watchdog terminates the session so a lost DRM event cannot
+leave the graphical seat waiting indefinitely.
+
+The operator reported the resulting graphical freeze as a complete system
+lock. The process-local page-flip watchdog is necessary but cannot be the only
+recovery boundary because it still depends on the session owner being
+scheduled. The development TTY launcher therefore accepts an independent
+wall-clock deadline. Its separate shell process records the deadline, sends
+TERM and then KILL to the complete Sophia session process group, and lets the
+existing parent cleanup restore keyboard, console graphics mode, keyd, and the
+display manager. The bounded `glxgears` proof enables that deadline at workload
+duration plus five seconds. This is containment, not evidence that the
+rendering defect is fixed, and it cannot recover a kernel-wide scheduler
+failure.
+
 ## 2026-07-28: GLX Compatibility Uses the Generic Standalone Workload Slot
 
 Sophia's bounded GLX proof now launches `glxgears` through the same standalone

@@ -171,6 +171,7 @@ pub struct LiveRendererScanoutBufferExportReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveRendererScanoutBufferExportStatus {
     Exported,
+    Pending,
     InvalidTarget,
     Unavailable,
     Degraded,
@@ -179,6 +180,10 @@ pub enum LiveRendererScanoutBufferExportStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveRendererScanoutBufferExportDetail {
     Exported,
+    WorkerPending,
+    WorkerQueueFull,
+    WorkerDisconnected,
+    WorkerStalled,
     InvalidTarget,
     BackendDeviceUnavailable,
     GbmDeviceUnavailable,
@@ -220,6 +225,7 @@ impl LiveRendererScanoutBufferExportDetail {
     pub const fn from_status(status: LiveRendererScanoutBufferExportStatus) -> Self {
         match status {
             LiveRendererScanoutBufferExportStatus::Exported => Self::Exported,
+            LiveRendererScanoutBufferExportStatus::Pending => Self::WorkerPending,
             LiveRendererScanoutBufferExportStatus::InvalidTarget => Self::InvalidTarget,
             LiveRendererScanoutBufferExportStatus::Unavailable => Self::BackendDeviceUnavailable,
             LiveRendererScanoutBufferExportStatus::Degraded => Self::RetainedBufferMissing,
@@ -290,6 +296,12 @@ impl LiveRendererScanoutBufferExporter for FakeRendererScanoutBufferExporter {
                         status: LiveRendererScanoutBufferExportStatus::Degraded,
                         descriptor: None,
                     }
+                }
+            }
+            LiveRendererScanoutBufferExportStatus::Pending => {
+                LiveRendererScanoutBufferExportReport {
+                    status: LiveRendererScanoutBufferExportStatus::Pending,
+                    descriptor: None,
                 }
             }
             status => LiveRendererScanoutBufferExportReport {

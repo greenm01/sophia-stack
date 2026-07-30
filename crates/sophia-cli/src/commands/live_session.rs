@@ -3,7 +3,8 @@ use super::prelude::*;
 use sophia_backend_live::{
     ClassicHardwareCursorUpdate, LiveProductionAuthorityBatch, LiveProductionCpuScene,
     LiveProductionCursorPresentation, LiveProductionCycleRequest, LiveProductionDmaBufRegistration,
-    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionVisualRuntime,
+    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionRetiredPresent,
+    LiveProductionVisualRuntime,
 };
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
@@ -57,6 +58,7 @@ use std::time::{Duration, Instant};
 
 mod authority_file;
 pub(super) mod input_guard;
+mod native_retirement;
 mod process_supervision;
 mod proof_artifacts;
 mod startup_readiness;
@@ -64,14 +66,16 @@ mod wm_transport_worker;
 mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
+use native_retirement::{NativePresentRetirementObservation, record_native_present_retirement};
 use process_supervision::{
     ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal,
     terminate_session_child,
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use startup_readiness::{
-    all_startup_outputs_presented, independent_native_output_presented, rects_intersect,
-    startup_output_evidence, startup_submission_requirement, synchronous_modeset_record,
+    StartupSurfacePresentationEvidence, all_startup_outputs_presented,
+    independent_native_output_presented, rects_intersect, startup_output_evidence,
+    startup_submission_requirement, startup_surface_visual_detail, synchronous_modeset_record,
 };
 use wm_transport_worker::{WmTransportPolicyEvent, WmTransportSubmitError, WmTransportWorker};
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};

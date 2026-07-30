@@ -424,12 +424,17 @@ where
             );
             self.stats.import_cache = persistent.import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            let pixel_metrics = rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
+                if let Some(metrics) = pixel_metrics {
+                    self.last_composition_pixel_metrics = Some(metrics);
+                    if metrics.nonzero_rgb_pixels > 0 {
+                        self.composition_pixel_proof_attempts = 3;
+                    }
+                }
             }
-            self.last_composition_pixel_metrics =
-                rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.composition_target_reuses =
@@ -494,12 +499,17 @@ where
             );
             self.stats.import_cache = import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            let pixel_metrics = rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
+                if let Some(metrics) = pixel_metrics {
+                    self.last_composition_pixel_metrics = Some(metrics);
+                    if metrics.nonzero_rgb_pixels > 0 {
+                        self.composition_pixel_proof_attempts = 3;
+                    }
+                }
             }
-            self.last_composition_pixel_metrics =
-                rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.composition_target = Some(PersistentCompositionTarget {

@@ -308,9 +308,11 @@ Promotion now follows the gates below in order.
   runner, and fail-closed schema-2 reporter are implemented in
   `tools/benchmark_sophia_glxgears_tty3.sh`. Require visible animation, direct
   GLX bootstrap, positive DRI3/mixed-composition and Present idle-fence
-  progress, advancing post-KMS Copy cadence, at least one retained-image cache
-  hit, zero descriptor mismatch/capacity rejection, clean retirement, and the same
-  renderer provider under the reference Xserver. Record client and
+  progress, advancing post-KMS Flip cadence, positive DMA-BUF imports, zero
+  descriptor mismatch/capacity rejection, clean retirement, and the same
+  renderer provider under the reference Xserver. Cache hits are reported but
+  are not required when every application frame carries a new buffer
+  generation. Record client and
   presentation cadence separately and keep this a compatibility diagnostic,
   not a substitute for the fixed Vulkan acceptance workload.
 - [x] Promote renderer-image residency from Milestone 13 into the GLX
@@ -321,6 +323,46 @@ Promotion now follows the gates below in order.
   bound, context reset clears residency, shutdown clears imports before
   presentation teardown, and reduced metrics expose imports, hits, evictions,
   mismatches, capacity rejection, and live debt.
+- [x] Correct retained DMA-BUF presentation semantics and isolate production
+  GL execution from the session/input owner. Protocol-neutral feedback now
+  distinguishes `Retained`, `Copied`, and `Skipped`; X maps a retained
+  compositor lease to Present `Flip` and sends Idle only after its exact KMS
+  retirement. The native hot path no longer calls `glFinish`. After the
+  initial modeset, a bounded renderer worker owns EGL/GL/GBM, imported images,
+  and locked front buffers while the owner retains input, cursor, VT, X
+  polling, and KMS authority. Require the physical GLX rerun to show advancing
+  animation, zero hard stalls, zero release-enqueue failures, and a clean
+  worker request/completion drain. The first worker-enabled rerun proved the
+  owner remained responsive but exposed stale CPU replacement of an in-flight
+  mixed frame and ambiguous scanout transport. CPU fallback is now deferred
+  across renderer/KMS ownership. The next run reached and retired a correctly
+  labelled mixed KMS frame but exposed loss of the Present record during
+  asynchronous worker deferral. The scheduler now owns one immutable
+  `Rendering`/`Submitted` record from worker acceptance through page-flip
+  retirement. The following
+  run retired two advancing Flips, then exposed the same missing rendering
+  slot in output content/damage plus an unsafe PRIME round trip inside the
+  shared DRM file. Both output records now follow
+  `Pending -> Rendering -> Submitted -> Presented`; shared-file scanout uses
+  direct GEM descriptors, independent-file scanout requires PRIME FDs, and a
+  500 ms page-flip watchdog terminates a lost-event session. The bounded
+  six-second physical rerun visibly animated at 52.956 client FPS, completed
+  242/242 renderer-worker requests without worker stalls or failures, drained
+  scanout, and reported zero X protocol errors. It exposed a final proof-only
+  ordering bug: the first stable nonzero KMS frame preceded X focus
+  acknowledgement and its evidence was discarded. Startup now retains
+  monotonic presentation evidence keyed by exact surface until focus pins the
+  application. Two follow-up runs proved 240/240 and 242/242 worker completion,
+  zero live import debt, visible animation up to 53.542 client FPS, and exposed
+  the remaining false base-committed-surface membership gate. The consumer now
+  treats exact stable GPU evidence independently of that optional CPU/base
+  record, with a regression for the absent-record state. A fourth run animated
+  at 52.981 client FPS and exposed duplicate native-retirement service paths:
+  the authority-wait copy logged transaction 46 but omitted startup evidence.
+  Both scheduling sites now use one shared retirement reducer. A clean schema-2
+  report rerun remains open; the external watchdog process-group regression
+  passes locally. Verbose per-stage tracing is now opt-in so benchmark cadence
+  is not distorted by diagnostic I/O.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data
@@ -662,7 +704,10 @@ consecutive passing runs.
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.
 - [ ] Preserve the independent emergency path, a known-good fallback session,
-  and a documented rollback procedure.
+  and a documented rollback procedure. The repository launcher now supports
+  an opt-in process-external wall-clock deadline, and the bounded GLX proof
+  enables it automatically; the installed session still needs an
+  installation-owned equivalent and physical recovery proof.
 - [ ] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
@@ -718,9 +763,14 @@ references rather than Sophia runtime components.
   remains part of the later direct-scanout item.
 - [ ] Keep one latest pending frame and one KMS submission in flight per
   output; prove input remains within half a refresh period at p99.
-- [ ] Move GL execution to one renderer worker per GPU only if pooled physical
-  evidence still exceeds that input budget. Use immutable bounded commands and
-  explicit retirement tokens.
+- [x] Move production GL execution off the session owner using immutable
+  bounded commands and explicit retirement tokens. The initial physical
+  implementation has one worker per native output and therefore one worker on
+  the current single-output GPU.
+- [ ] Coalesce all outputs in the same DRM/render-device group onto one shared
+  renderer worker before multi-output promotion. Preserve one latest pending
+  request per output, bounded response demultiplexing, and explicit per-output
+  retirement tokens.
 - [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
   layer, followed by a hardware cursor plane; retain mixed composition as the
   fail-closed fallback.

@@ -65,6 +65,7 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutSubmitResult<Owner> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveRenderedPrimaryPlaneScanoutSubmitStatus {
     SubmittedWaitingForPageFlip,
+    ScanoutExportPending,
     ScanoutTargetNotReady,
     FrameTargetUnavailable,
     ScanoutExportFailed,
@@ -78,6 +79,9 @@ pub fn runtime_scanout_state_from_rendered_primary_plane_submit_status(
     match status {
         LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip => {
             RuntimeScanoutState::Submitted
+        }
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending => {
+            RuntimeScanoutState::Deferred
         }
         LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutTargetNotReady
         | LiveRenderedPrimaryPlaneScanoutSubmitStatus::FrameTargetUnavailable

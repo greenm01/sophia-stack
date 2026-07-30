@@ -3,6 +3,7 @@ use super::{LiveRenderedScanoutBufferExport, LiveRenderedScanoutBufferExporter};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use crate::api::*;
 
+use super::{NativeGbmRendererWorker, NativeGbmRendererWorkerScanoutLease, WorkerPoll};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use sophia_renderer_live::{
     LiveCpuComposedFrame, LiveRendererScanoutBufferExportDetail,
@@ -11,7 +12,7 @@ use sophia_renderer_live::{
 };
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-enum PendingRenderedFrame {
+pub(super) enum PendingRenderedFrame {
     Cpu {
         frame: LiveCpuComposedFrame,
         checksum: u64,
@@ -27,6 +28,8 @@ where
 {
     discovery: R,
     context: Option<NativeGbmRenderedScanoutContext<R::Device>>,
+    worker: Option<NativeGbmRendererWorker>,
+    worker_frame_kind: Option<PendingRenderedFrameKind>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
     context_open_attempts: usize,
     export_attempts: usize,
@@ -45,6 +48,21 @@ where
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+#[derive(Debug)]
+pub enum NativeGbmRenderedScanoutOwner {
+    Inline(NativeGbmOwnedScanoutBuffer),
+    Worker(NativeGbmRendererWorkerScanoutLease),
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingRenderedFrameKind {
+    Cpu,
+    DmaBuf,
+    Mixed,
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 impl<R> NativeGbmRenderedScanoutBufferDiscoveryExporter<R>
 where
     R: RenderDeviceDiscoveryBackend,
@@ -53,6 +71,8 @@ where
         Self {
             discovery,
             context: None,
+            worker: None,
+            worker_frame_kind: None,
             context_status: None,
             context_open_attempts: 0,
             export_attempts: 0,
@@ -69,6 +89,33 @@ where
             last_cpu_frame_checksum: None,
             last_cpu_frame_export_status: None,
         }
+    }
+
+    pub fn new_worker(discovery: R) -> std::io::Result<Self>
+    where
+        R::Device: Send + 'static,
+    {
+        let device = discovery.open_render_device();
+        let mut exporter = Self::new(discovery);
+        exporter.context_open_attempts = 1;
+        exporter.worker = Some(NativeGbmRendererWorker::spawn(device)?);
+        Ok(exporter)
+    }
+
+    pub fn enable_worker(&mut self) -> std::io::Result<()>
+    where
+        R::Device: Send + 'static,
+    {
+        if self.worker.is_some() {
+            return Ok(());
+        }
+        self.context_open_attempts = self.context_open_attempts.saturating_add(1);
+        self.worker = Some(NativeGbmRendererWorker::spawn(
+            self.discovery.open_render_device(),
+        )?);
+        self.context = None;
+        self.context_status = None;
+        Ok(())
     }
 
     pub fn with_preferred_modifiers(mut self, preferred_modifiers: impl Into<Vec<u64>>) -> Self {
@@ -102,12 +149,21 @@ where
 
     pub const fn context_ready(&self) -> bool {
         self.context.is_some()
+            || matches!(
+                self.context_status,
+                Some(NativeGbmRenderedScanoutContextStatus::Ready)
+            )
     }
 
     pub fn persistent_render_stats(&self) -> sophia_renderer_live::LiveNativePersistentRenderStats {
-        self.context.as_ref().map_or_else(
-            sophia_renderer_live::LiveNativePersistentRenderStats::default,
-            NativeGbmRenderedScanoutContext::persistent_render_stats,
+        self.worker.as_ref().map_or_else(
+            || {
+                self.context.as_ref().map_or_else(
+                    sophia_renderer_live::LiveNativePersistentRenderStats::default,
+                    NativeGbmRenderedScanoutContext::persistent_render_stats,
+                )
+            },
+            NativeGbmRendererWorker::persistent_render_stats,
         )
     }
 
@@ -157,12 +213,20 @@ where
 
     pub const fn pending_frame(&self) -> bool {
         self.pending_frame.is_some()
+            || matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
+    }
+
+    pub const fn worker_in_flight(&self) -> bool {
+        matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }
 
     pub fn evict_renderer_image(
         &mut self,
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        if let Some(worker) = &self.worker {
+            return Ok(worker.evict_renderer_image(image_id));
+        }
         self.context
             .as_mut()
             .map_or(Ok(false), |context| context.evict_renderer_image(image_id))
@@ -171,6 +235,9 @@ where
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        if let Some(worker) = &mut self.worker {
+            return worker.clear_renderer_images();
+        }
         self.context.as_mut().map_or(
             Ok(0),
             sophia_renderer_live::NativeGbmRenderedScanoutContext::clear_renderer_images,
@@ -208,6 +275,9 @@ where
     }
 
     pub fn composition_nonzero_rgb_pixels(&self) -> usize {
+        if let Some(worker) = &self.worker {
+            return worker.composition_nonzero_rgb_pixels();
+        }
         self.context
             .as_ref()
             .map_or(0, |context| context.composition_nonzero_rgb_pixels())
@@ -219,7 +289,7 @@ impl<R> LiveRenderedScanoutBufferExporter for NativeGbmRenderedScanoutBufferDisc
 where
     R: RenderDeviceDiscoveryBackend,
 {
-    type Owner = NativeGbmOwnedScanoutBuffer;
+    type Owner = NativeGbmRenderedScanoutOwner;
 
     fn export_rendered_scanout_buffer(
         &mut self,
@@ -239,6 +309,10 @@ where
                 None,
                 None,
             );
+        }
+
+        if self.worker.is_some() {
+            return self.export_from_worker(target);
         }
 
         if self.context.is_none() {
@@ -328,9 +402,149 @@ where
             report.status,
             report.detail,
             descriptor,
-            report.buffer,
+            report.buffer.map(NativeGbmRenderedScanoutOwner::Inline),
         )
     }
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+impl<R> NativeGbmRenderedScanoutBufferDiscoveryExporter<R>
+where
+    R: RenderDeviceDiscoveryBackend,
+{
+    fn export_from_worker(
+        &mut self,
+        target: LiveGbmEglFrameTargetRecord,
+    ) -> LiveRenderedScanoutBufferExport<NativeGbmRenderedScanoutOwner> {
+        let worker = self
+            .worker
+            .as_mut()
+            .expect("worker export path requires a renderer worker");
+        match worker.poll() {
+            WorkerPoll::Exported(lease) => {
+                let kind = self.worker_frame_kind.take();
+                match kind {
+                    Some(PendingRenderedFrameKind::Cpu) => {
+                        self.last_cpu_frame_export_status =
+                            Some(LiveRendererScanoutBufferExportStatus::Exported);
+                    }
+                    Some(PendingRenderedFrameKind::DmaBuf) => {
+                        self.dmabuf_frame_exports = self.dmabuf_frame_exports.saturating_add(1);
+                    }
+                    Some(PendingRenderedFrameKind::Mixed) => {
+                        self.mixed_frame_exports = self.mixed_frame_exports.saturating_add(1);
+                    }
+                    None => {}
+                }
+                self.context_status = worker.context_status();
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Exported);
+                let descriptor = lease.descriptor();
+                return LiveRenderedScanoutBufferExport::new(
+                    LiveRendererScanoutBufferExportStatus::Exported,
+                    LiveRendererScanoutBufferExportDetail::Exported,
+                    Some(descriptor),
+                    Some(NativeGbmRenderedScanoutOwner::Worker(lease)),
+                );
+            }
+            WorkerPoll::Failed(detail) => {
+                self.worker_frame_kind = None;
+                self.context_status = worker.context_status();
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
+                tracing::warn!("sophia_renderer_worker schema=1 status=failed detail={detail:?}");
+                return LiveRenderedScanoutBufferExport::new(
+                    LiveRendererScanoutBufferExportStatus::Degraded,
+                    detail,
+                    None,
+                    None,
+                );
+            }
+            WorkerPoll::HardStalled(age) => {
+                self.worker_frame_kind = None;
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
+                tracing::error!(
+                    "sophia_renderer_worker schema=1 status=hard_stall age_ms={} action=quarantine",
+                    age.as_millis(),
+                );
+                return LiveRenderedScanoutBufferExport::new(
+                    LiveRendererScanoutBufferExportStatus::Degraded,
+                    LiveRendererScanoutBufferExportDetail::WorkerStalled,
+                    None,
+                    None,
+                );
+            }
+            WorkerPoll::Pending {
+                age,
+                soft_stall_started,
+            } => {
+                if soft_stall_started {
+                    tracing::warn!(
+                        "sophia_renderer_worker schema=1 status=soft_stall age_ms={}",
+                        age.as_millis(),
+                    );
+                }
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
+                return worker_pending_export();
+            }
+            WorkerPoll::Idle => {}
+        }
+
+        let Some(frame) = self.pending_frame.take() else {
+            self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
+            return LiveRenderedScanoutBufferExport::new(
+                LiveRendererScanoutBufferExportStatus::Degraded,
+                LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                None,
+                None,
+            );
+        };
+        let kind = match &frame {
+            PendingRenderedFrame::Cpu { checksum, .. } => {
+                self.cpu_frame_export_attempts = self.cpu_frame_export_attempts.saturating_add(1);
+                self.last_cpu_frame_checksum = Some(*checksum);
+                PendingRenderedFrameKind::Cpu
+            }
+            PendingRenderedFrame::DmaBuf(_) => {
+                self.dmabuf_frame_export_attempts =
+                    self.dmabuf_frame_export_attempts.saturating_add(1);
+                PendingRenderedFrameKind::DmaBuf
+            }
+            PendingRenderedFrame::Mixed(_) => {
+                self.mixed_frame_export_attempts =
+                    self.mixed_frame_export_attempts.saturating_add(1);
+                PendingRenderedFrameKind::Mixed
+            }
+        };
+        match worker.submit(target, frame, self.preferred_modifiers.clone()) {
+            Ok(()) => {
+                self.worker_frame_kind = Some(kind);
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
+                worker_pending_export()
+            }
+            Err(detail) => {
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
+                LiveRenderedScanoutBufferExport::new(
+                    LiveRendererScanoutBufferExportStatus::Degraded,
+                    detail,
+                    None,
+                    None,
+                )
+            }
+        }
+    }
+
+    pub fn worker_metrics(&self) -> Option<super::LiveRendererWorkerMetrics> {
+        self.worker.as_ref().map(NativeGbmRendererWorker::metrics)
+    }
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+fn worker_pending_export<Owner>() -> LiveRenderedScanoutBufferExport<Owner> {
+    LiveRenderedScanoutBufferExport::new(
+        LiveRendererScanoutBufferExportStatus::Pending,
+        LiveRendererScanoutBufferExportDetail::WorkerPending,
+        None,
+        None,
+    )
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

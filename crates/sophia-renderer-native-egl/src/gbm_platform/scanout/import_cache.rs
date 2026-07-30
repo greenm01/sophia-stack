@@ -211,9 +211,6 @@ impl NativeDmaBufImportCache {
         }) else {
             return Ok(false);
         };
-        pipeline
-            .finish_composition()
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)?;
         let entry = self.entries[index]
             .take()
             .expect("DMA-BUF cache entry index was checked above");
@@ -234,9 +231,6 @@ impl NativeDmaBufImportCache {
         display: khronos_egl::Display,
         pipeline: &PersistentXrgb8888GlPipeline,
     ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
-        pipeline
-            .finish_composition()
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)?;
         let mut cleared = 0usize;
         let mut image_destroy_failed = false;
         for entry in &mut self.entries {

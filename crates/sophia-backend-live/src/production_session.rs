@@ -220,10 +220,10 @@ impl LiveProductionPageFlipTracker {
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LivePresentCompletionMode {
-    Copy,
-    Flip,
-    Skip,
+pub enum LivePresentBufferDisposition {
+    Copied,
+    Retained,
+    Skipped,
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -233,7 +233,7 @@ pub enum LivePresentProtocolFeedback {
         transaction: TransactionId,
         ust: u64,
         msc: u64,
-        mode: LivePresentCompletionMode,
+        disposition: LivePresentBufferDisposition,
     },
     Idle {
         transaction: TransactionId,
@@ -343,12 +343,12 @@ impl LiveProductionPresentFeedbackCoordinator {
             transaction,
             ust,
             msc,
-            LivePresentCompletionMode::Copy,
+            LivePresentBufferDisposition::Copied,
             retirement.idle_fence == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
         ))
     }
 
-    pub fn complete_copy_without_idle(
+    pub fn complete_retained_without_idle(
         &self,
         transaction: TransactionId,
         ust: u64,
@@ -361,7 +361,7 @@ impl LiveProductionPresentFeedbackCoordinator {
                 transaction,
                 ust,
                 msc,
-                mode: LivePresentCompletionMode::Copy,
+                disposition: LivePresentBufferDisposition::Retained,
             }],
             idle_fence_triggered: false,
         })
@@ -397,7 +397,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             transaction,
             ust,
             msc,
-            LivePresentCompletionMode::Skip,
+            LivePresentBufferDisposition::Skipped,
             retirement.idle_fence == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
         ))
     }
@@ -410,7 +410,7 @@ impl LiveProductionPresentFeedbackCoordinator {
         transaction: TransactionId,
         ust: u64,
         msc: u64,
-        mode: LivePresentCompletionMode,
+        disposition: LivePresentBufferDisposition,
         idle_fence_triggered: bool,
     ) -> LivePresentFeedbackOutcome {
         LivePresentFeedbackOutcome {
@@ -419,7 +419,7 @@ impl LiveProductionPresentFeedbackCoordinator {
                     transaction,
                     ust,
                     msc,
-                    mode,
+                    disposition,
                 },
                 LivePresentProtocolFeedback::Idle { transaction },
             ],

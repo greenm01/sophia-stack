@@ -65,15 +65,51 @@ pub trait LiveRenderedScanoutBufferExporter {
 
 #[cfg(feature = "libdrm-events")]
 pub trait LiveRenderedScanoutBufferPrimeSource {
+    /// Whether the renderer and KMS device descriptors share one DRM file.
+    ///
+    /// PRIME-importing a buffer back into the same DRM file can return the
+    /// renderer's existing GEM handle. KMS cleanup would then close a handle
+    /// still owned by GBM, so shared-file owners must submit their descriptor
+    /// directly.
+    fn shares_kms_drm_file(&self) -> bool;
+
     fn export_scanout_dma_buf_fds(&self) -> std::io::Result<Option<LiveRenderedScanoutDmaBufFds>>;
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 impl LiveRenderedScanoutBufferPrimeSource for sophia_renderer_live::NativeGbmOwnedScanoutBuffer {
+    fn shares_kms_drm_file(&self) -> bool {
+        true
+    }
+
     fn export_scanout_dma_buf_fds(&self) -> std::io::Result<Option<LiveRenderedScanoutDmaBufFds>> {
         self.export_scanout_dma_buf_fds()
             .map(LiveRenderedScanoutDmaBufFds::from_native_gbm)
             .map(Some)
+    }
+}
+
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+impl LiveRenderedScanoutBufferPrimeSource for super::NativeGbmRenderedScanoutOwner {
+    fn shares_kms_drm_file(&self) -> bool {
+        true
+    }
+
+    fn export_scanout_dma_buf_fds(&self) -> std::io::Result<Option<LiveRenderedScanoutDmaBufFds>> {
+        match self {
+            super::NativeGbmRenderedScanoutOwner::Inline(owner) => owner
+                .export_scanout_dma_buf_fds()
+                .map(LiveRenderedScanoutDmaBufFds::from_native_gbm)
+                .map(Some),
+            super::NativeGbmRenderedScanoutOwner::Worker(owner) => {
+                owner.export_scanout_dma_buf_fds().map(|fds| {
+                    fds.map(|(plane_count, plane_fds)| LiveRenderedScanoutDmaBufFds {
+                        plane_count,
+                        plane_fds,
+                    })
+                })
+            }
+        }
     }
 }
 

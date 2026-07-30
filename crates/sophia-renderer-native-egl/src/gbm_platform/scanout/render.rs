@@ -544,7 +544,7 @@ fn render_native_target_composition(
         .and_then(|()| {
             target
                 .pipeline
-                .finish_composition()
+                .validate_composition()
                 .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed)
         })
         .and_then(|()| {

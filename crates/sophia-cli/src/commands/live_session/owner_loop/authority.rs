@@ -649,51 +649,24 @@
                     }
                     let service = runtime.service_native(native_scanout)?;
                     if let Some(retired) = service.retired_present {
-                        layout.complete_admission_retirement(
-                            retired.surface,
-                            retired.transaction,
-                        );
-                        let stable = runtime.stable_present(native_scanout, retired.transaction);
-                        retired_present_surfaces.insert(retired.surface, retired.transaction);
+                        let NativePresentRetirementObservation { surface, stable } =
+                            record_native_present_retirement(
+                                &mut layout,
+                                runtime,
+                                native_scanout,
+                                retired,
+                                &mut retired_present_surfaces,
+                                &mut startup_surface_presentations,
+                                &mut startup_readiness,
+                            );
                         if stable_gpu_frame_proves_post_input_pixels(
                             input_proof_started_at.is_some(),
                             input_surface,
-                            retired.surface,
+                            surface,
                             stable,
                         ) {
                             input_pixel_change = true;
                         }
-                        let clip = retired.clip.map_or_else(
-                            || "none".to_owned(),
-                            |clip| {
-                                format!(
-                                    "{}x{}_{}_{}",
-                                    clip.width, clip.height, clip.x, clip.y
-                                )
-                            },
-                        );
-                        println!(
-                            "sophia_live_session_present schema=2 status=retired transaction={} surface={} source={}x{} target={}x{}_{}_{} clip={} unit_scale={}",
-                            retired.transaction.raw(),
-                            retired.surface.index(),
-                            retired.source_size.width,
-                            retired.source_size.height,
-                            retired.target.width,
-                            retired.target.height,
-                            retired.target.x,
-                            retired.target.y,
-                            clip,
-                            retired.source_size.width
-                                == retired.clip.unwrap_or(retired.target).width
-                                && retired.source_size.height
-                                    == retired.clip.unwrap_or(retired.target).height,
-                        );
-                        println!(
-                            "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",
-                            if stable { "stable" } else { "superseded" },
-                            retired.transaction.raw(),
-                            !stable,
-                        );
                     }
                     metrics.backend_ticks = metrics
                         .backend_ticks

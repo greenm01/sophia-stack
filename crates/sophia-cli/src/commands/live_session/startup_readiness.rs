@@ -1,4 +1,46 @@
 use sophia_protocol::Rect;
+use sophia_protocol::SurfaceId;
+use std::collections::BTreeMap;
+
+#[derive(Debug, Default)]
+pub(super) struct StartupSurfacePresentationEvidence {
+    stable_nonzero_rgb_pixels: BTreeMap<SurfaceId, usize>,
+}
+
+impl StartupSurfacePresentationEvidence {
+    pub(super) fn observe_stable(&mut self, surface: SurfaceId, nonzero_rgb_pixels: usize) {
+        self.stable_nonzero_rgb_pixels
+            .entry(surface)
+            .and_modify(|observed| *observed = (*observed).max(nonzero_rgb_pixels))
+            .or_insert(nonzero_rgb_pixels);
+    }
+
+    pub(super) fn stable_presented(&self, surface: SurfaceId) -> bool {
+        self.stable_nonzero_rgb_pixels.contains_key(&surface)
+    }
+
+    pub(super) fn nonzero_rgb_pixels(&self, surface: SurfaceId) -> usize {
+        self.stable_nonzero_rgb_pixels
+            .get(&surface)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(super) fn visual_detail(&self, surface: SurfaceId) -> bool {
+        self.nonzero_rgb_pixels(surface) != 0
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.stable_nonzero_rgb_pixels.clear();
+    }
+}
+
+pub(super) fn startup_surface_visual_detail(
+    cpu_visual_detail: Option<bool>,
+    stable_nonzero_rgb_pixels: usize,
+) -> bool {
+    cpu_visual_detail.unwrap_or(false) || stable_nonzero_rgb_pixels != 0
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct StartupOutputEvidence {

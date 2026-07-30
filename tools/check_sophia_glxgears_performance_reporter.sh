@@ -14,7 +14,8 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" present_fps=59.999 "* ]]
 [[ "$report" == *" p95_frame_msec=16.667 "* ]]
 [[ "$report" == *" native_mixed_exports=3 "* ]]
-[[ "$report" == *" present_complete_copy=3 "* ]]
+[[ "$report" == *" present_complete_flip=3 "* ]]
+[[ "$report" == *" import_cache_imports=3 "* ]]
 [[ "$report" == *" import_cache_hits=2 "* ]]
 
 grep -v '^GL_RENDERER' "$FIXTURE" >"$MUTATED"
@@ -42,8 +43,15 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
 fi
 
 sed 's/import_cache_hits=2/import_cache_hits=0/' "$FIXTURE" >"$MUTATED"
+zero_hit_report="$("$REPORTER" "$MUTATED")"
+if [[ "$zero_hit_report" != *" import_cache_hits=0 "* ]]; then
+    echo "glxgears reporter rejected a valid zero-hit changing-buffer workload" >&2
+    exit 1
+fi
+
+sed 's/import_cache_imports=3/import_cache_imports=0/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
-    echo "glxgears reporter accepted missing retained-image cache hit" >&2
+    echo "glxgears reporter accepted missing DMA-BUF import evidence" >&2
     exit 1
 fi
 

@@ -4,7 +4,7 @@ use std::fs::File;
 use std::os::fd::OwnedFd;
 
 use sophia_backend_live::{
-    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuComposedFrame, LivePresentCompletionMode,
+    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuComposedFrame, LivePresentBufferDisposition,
     LivePresentFeedbackError, LivePresentProtocolFeedback, LivePresentationResourceSession,
     LivePresentationSubmission, LiveProductionPresentFeedbackCoordinator,
     LiveResourceReleaseStatus, LiveRetainedDmaBufLayer, compose_full_state_mixed_frame,
@@ -389,7 +389,7 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
                 transaction,
                 ust: 22,
                 msc: 33,
-                mode: LivePresentCompletionMode::Copy,
+                disposition: LivePresentBufferDisposition::Copied,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ]
@@ -427,7 +427,7 @@ fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
         .unwrap();
 
     let completed = coordinator
-        .complete_copy_without_idle(transaction, 22, 23)
+        .complete_retained_without_idle(transaction, 22, 23)
         .unwrap();
     assert_eq!(
         completed.feedback,
@@ -435,7 +435,7 @@ fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
             transaction,
             ust: 22,
             msc: 23,
-            mode: LivePresentCompletionMode::Copy,
+            disposition: LivePresentBufferDisposition::Retained,
         }]
     );
     assert_eq!(coordinator.resources().presentation_count(), 1);
@@ -478,7 +478,9 @@ fn composited_successor_can_release_completed_source_before_its_own_flip() {
         })
         .unwrap();
     coordinator.resources_mut().mark_submitted(first).unwrap();
-    coordinator.complete_copy_without_idle(first, 1, 2).unwrap();
+    coordinator
+        .complete_retained_without_idle(first, 1, 2)
+        .unwrap();
     coordinator
         .resources_mut()
         .begin(LivePresentationSubmission {
@@ -594,7 +596,7 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
                 transaction,
                 ust: 41,
                 msc: 42,
-                mode: LivePresentCompletionMode::Skip,
+                disposition: LivePresentBufferDisposition::Skipped,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ]

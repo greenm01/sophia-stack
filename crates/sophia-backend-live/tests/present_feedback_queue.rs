@@ -1,7 +1,7 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LivePresentCompletionMode, LivePresentFeedbackOutcome, LivePresentProtocolFeedback,
+    LivePresentBufferDisposition, LivePresentFeedbackOutcome, LivePresentProtocolFeedback,
     LiveProductionVisualRuntime,
 };
 use sophia_engine::HeadlessOutput;
@@ -15,7 +15,7 @@ fn feedback(transaction: u64) -> LivePresentFeedbackOutcome {
                 transaction,
                 ust: transaction.raw(),
                 msc: transaction.raw(),
-                mode: LivePresentCompletionMode::Flip,
+                disposition: LivePresentBufferDisposition::Retained,
             },
             LivePresentProtocolFeedback::Idle { transaction },
         ],

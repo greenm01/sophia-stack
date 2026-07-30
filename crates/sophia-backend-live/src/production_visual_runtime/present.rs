@@ -273,6 +273,16 @@ impl LiveProductionVisualRuntime {
                         displayed_layer: current_layer,
                     });
             }
+            Some(Status::ScanoutExportPending) => {
+                self.present_scheduler.pop_front();
+                self.present_scheduler
+                    .mark_rendering(LiveProductionSubmittedPresent {
+                        transaction,
+                        surface: queued_surface,
+                        prepared,
+                        displayed_layer: current_layer,
+                    });
+            }
             Some(Status::AlreadyInFlight | Status::CleanupPending) | None => {}
             Some(_) => {
                 self.present_scheduler.pop_front();

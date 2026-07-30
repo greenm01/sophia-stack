@@ -41,18 +41,18 @@ impl XPresentSessionObserver {
                     transaction,
                     ust,
                     msc,
-                    mode,
+                    disposition,
                 } => {
-                    let mode = match mode {
-                        sophia_backend_live::LivePresentCompletionMode::Copy => {
+                    let mode = match disposition {
+                        sophia_backend_live::LivePresentBufferDisposition::Copied => {
                             self.complete_copy = self.complete_copy.saturating_add(1);
                             XPresentCompletionMode::Copy
                         }
-                        sophia_backend_live::LivePresentCompletionMode::Flip => {
+                        sophia_backend_live::LivePresentBufferDisposition::Retained => {
                             self.complete_flip = self.complete_flip.saturating_add(1);
                             XPresentCompletionMode::Flip
                         }
-                        sophia_backend_live::LivePresentCompletionMode::Skip => {
+                        sophia_backend_live::LivePresentBufferDisposition::Skipped => {
                             self.complete_skip = self.complete_skip.saturating_add(1);
                             XPresentCompletionMode::Skip
                         }

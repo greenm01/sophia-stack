@@ -261,7 +261,7 @@
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
     println!(
-        "sophia_live_native_resources schema=4 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={}",
+        "sophia_live_native_resources schema=4 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} max_worker_request_msec={}",
         native_resources.target_creations,
         native_resources.pipeline_creations,
         native_resources.frame_surface_creations,
@@ -277,6 +277,13 @@
         native_resources.import_cache_live_entries,
         native_resources.import_cache_descriptor_mismatches,
         native_resources.import_cache_capacity_rejections,
+        native_resources.worker_requests,
+        native_resources.worker_completions,
+        native_resources.worker_failures,
+        native_resources.worker_soft_stalls,
+        native_resources.worker_hard_stalls,
+        native_resources.worker_release_enqueue_failures,
+        native_resources.max_worker_request.as_millis(),
     );
     println!(
         "sophia_live_rendering_efficiency schema=1 status=complete cpu_updates={} cpu_replacements={} cpu_patch_updates={} cpu_patch_rects={} cpu_payload_bytes={} exact_pixel_metric_frames={} damage_scoped_metric_frames={} composition_target_reuses={}",

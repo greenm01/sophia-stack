@@ -10,7 +10,12 @@ export SOPHIA_STANDALONE_APP_BIN="$ROOT_DIR/tools/probes/run_bounded_glxgears.sh
 export SOPHIA_GLXGEARS_DURATION_SECONDS="${SOPHIA_GLXGEARS_DURATION_SECONDS:-20}"
 export SOPHIA_GLXGEARS_WIDTH="${SOPHIA_GLXGEARS_WIDTH:-500}"
 export SOPHIA_GLXGEARS_HEIGHT="${SOPHIA_GLXGEARS_HEIGHT:-500}"
-export SOPHIA_SESSION_VERBOSE_TRACE=true
+[[ "$SOPHIA_GLXGEARS_DURATION_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "SOPHIA_GLXGEARS_DURATION_SECONDS must be a positive integer." >&2
+    exit 1
+}
+export SOPHIA_SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-$((SOPHIA_GLXGEARS_DURATION_SECONDS + 5))}"
+export SOPHIA_SESSION_VERBOSE_TRACE="${SOPHIA_SESSION_VERBOSE_TRACE:-false}"
 unset SOPHIA_STANDALONE_FRAME_COUNT
 
 printf '%s\n' \
@@ -18,6 +23,7 @@ printf '%s\n' \
     'First checking the direct GLX/DRI3/Present path without taking over the TTY.' \
     'Confirm that a centered window shows three smoothly rotating gears.' \
     'The application and Sophia exit automatically when the timer completes.' \
+    "An independent ${SOPHIA_SESSION_WATCHDOG_SECONDS}-second deadline restores the TTY if Sophia locks." \
     'Ctrl+Alt+Backspace remains available for emergency recovery.'
 
 cargo run --quiet --offline -p sophia-cli \

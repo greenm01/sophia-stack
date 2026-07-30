@@ -152,6 +152,9 @@ impl LiveProductionVisualRuntime {
         if let Some(submitted) = self.present_scheduler.take_submitted() {
             self.reject_gpu_presentation(submitted.transaction, 0, 0);
         }
+        if let Some(rendering) = self.present_scheduler.take_rendering() {
+            self.reject_gpu_presentation(rendering.transaction, 0, 0);
+        }
         let displayed = std::mem::take(&mut self.displayed_surfaces);
         for transaction in displayed
             .into_values()

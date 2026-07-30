@@ -49,6 +49,14 @@ where
     }
 
     let export = exporter.export_rendered_scanout_buffer(target).normalized();
+    if export.status == LiveRendererScanoutBufferExportStatus::Pending {
+        return LiveRenderedPrimaryPlaneScanoutSubmitResult::stopped_before_native_submit(
+            LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending,
+            scanout_target,
+            Some(target.status),
+            Some(export.status),
+        );
+    }
     if export.status != LiveRendererScanoutBufferExportStatus::Exported {
         return LiveRenderedPrimaryPlaneScanoutSubmitResult::stopped_before_native_submit(
             LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportFailed,
@@ -67,8 +75,26 @@ where
         );
     };
 
-    let prime_fds = owner.export_scanout_dma_buf_fds().ok().flatten();
-    let mut submit = if let Some(prime_fds) = prime_fds {
+    let shares_kms_drm_file = owner.shares_kms_drm_file();
+    let prime_fds = (!shares_kms_drm_file)
+        .then(|| owner.export_scanout_dma_buf_fds().ok().flatten())
+        .flatten();
+    if !shares_kms_drm_file && prime_fds.is_none() {
+        return LiveRenderedPrimaryPlaneScanoutSubmitResult::stopped_before_native_submit(
+            LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportFailed,
+            scanout_target,
+            Some(target.status),
+            Some(export.status),
+        );
+    }
+    let mut submit = if shares_kms_drm_file {
+        submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            device,
+            selection,
+            descriptor,
+            rendered_page_flip_policy(vrr_enabled),
+        )
+    } else if let Some(prime_fds) = prime_fds {
         submit_native_primary_plane_scanout_from_selection_and_renderer_dma_bufs_with_policy(
             device,
             selection,
@@ -77,12 +103,7 @@ where
             rendered_page_flip_policy(vrr_enabled),
         )
     } else {
-        submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
-            device,
-            selection,
-            descriptor,
-            rendered_page_flip_policy(vrr_enabled),
-        )
+        unreachable!("independent DRM files require PRIME transport")
     };
     if submit.status != LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip {
         return LiveRenderedPrimaryPlaneScanoutSubmitResult {

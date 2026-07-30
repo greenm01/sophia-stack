@@ -23,6 +23,14 @@ positive_field() {
     printf '%s\n' "$value"
 }
 
+nonnegative_field() {
+    local line="$1" key="$2" value
+    value="$(rendering_performance_field "$line" "$key")" ||
+        fail "completion lacks $key"
+    [[ "$value" =~ ^[0-9]+$ ]] || fail "$key is not a nonnegative integer"
+    printf '%s\n' "$value"
+}
+
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
 
 if grep -Eqi \
@@ -94,7 +102,7 @@ trap 'rm -f "$TIMESTAMPS_FILE" "$INTERVALS_FILE" "$INTERVALS_FILE.fps"' EXIT
 
 awk '
     /^sophia_live_session_present_feedback schema=1 kind=complete / &&
-        / routed=true / && / mode=Copy / {
+        / routed=true / && / mode=Flip / {
         for (field_index = 1; field_index <= NF; field_index++) {
             if ($field_index ~ /^ust=[0-9]+$/) {
                 split($field_index, pair, "=")
@@ -107,7 +115,7 @@ awk '
 if ! read -r timestamp_count present_fps p95_msec < <(
     rendering_performance_cadence "$TIMESTAMPS_FILE" "$INTERVALS_FILE"
 ); then
-    fail "need at least three advancing routed Copy timestamps"
+    fail "need at least three advancing routed retained-buffer timestamps"
 fi
 
 duration_seconds="$(rendering_performance_field "$benchmark" duration_seconds)" ||
@@ -142,7 +150,7 @@ awk -v fps="$client_mean_fps" 'BEGIN { exit !(fps > 0) }' ||
 native_retirements="$(positive_field "$completion" native_retirements)"
 native_nonzero_exports="$(positive_field "$completion" native_nonzero_exports)"
 native_mixed_exports="$(positive_field "$completion" native_mixed_exports)"
-present_complete_copy="$(positive_field "$completion" present_complete_copy)"
+present_complete_flip="$(positive_field "$completion" present_complete_flip)"
 present_idle="$(positive_field "$completion" present_idle)"
 present_idle_fence_triggers="$(
     positive_field "$completion" present_idle_fence_triggers
@@ -161,7 +169,8 @@ native_resources="$(
         tail -n 1 || true
 )"
 [[ -n "$native_resources" ]] || fail "missing native import-cache metrics"
-import_cache_hits="$(positive_field "$native_resources" import_cache_hits)"
+import_cache_imports="$(positive_field "$native_resources" import_cache_imports)"
+import_cache_hits="$(nonnegative_field "$native_resources" import_cache_hits)"
 for assignment in \
     import_cache_live_entries=0 \
     import_cache_descriptor_mismatches=0 \
@@ -171,4 +180,4 @@ for assignment in \
 done
 
 printf '%s\n' \
-    "sophia_glxgears_performance schema=2 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"
+    "sophia_glxgears_performance schema=3 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_flip=$present_complete_flip present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"

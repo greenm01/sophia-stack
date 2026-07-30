@@ -13,11 +13,17 @@ REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
+SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 if [[ "$SESSION_PROFILE" != standalone
     && "$SESSION_PROFILE" != xmonad
     && "$SESSION_PROFILE" != native
     && "$SESSION_PROFILE" != kitty ]]; then
     echo "SOPHIA_TTY_PROFILE must be standalone, xmonad, native, or kitty." >&2
+    exit 1
+fi
+if [[ -n "$SESSION_WATCHDOG_SECONDS"
+    && ! "$SESSION_WATCHDOG_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "SOPHIA_SESSION_WATCHDOG_SECONDS must be a positive integer when set." >&2
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
@@ -55,6 +61,7 @@ SESSION_LOG="$LOG_DIR/session.log"
 LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
 GUARD_ARMED_FILE="$STATE_DIR/input-guard.armed"
 GUARD_TRIGGERED_FILE="$STATE_DIR/input-guard.triggered"
+WATCHDOG_TRIGGERED_FILE="$STATE_DIR/session-watchdog.triggered"
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
@@ -156,6 +163,7 @@ tty_state=""
 kd_mode=""
 keyboard_mode=""
 guard_pid=""
+watchdog_pid=""
 session_pid=""
 cleanup_done=false
 emergency_session_shutdown=not_requested
@@ -184,7 +192,11 @@ cleanup() {
     fi
     cleanup_done=true
     local emergency=false
-    [[ ! -s "$GUARD_TRIGGERED_FILE" ]] || emergency=true
+    if [[ -s "$GUARD_TRIGGERED_FILE" || -s "$WATCHDOG_TRIGGERED_FILE" ]]; then
+        emergency=true
+    fi
+    [[ -z "$watchdog_pid" ]] || terminate_bounded "$watchdog_pid" "Sophia session watchdog"
+    watchdog_pid=""
     [[ -z "$session_pid" ]] || terminate_bounded "-$session_pid" "$SESSION_LABEL"
     session_pid=""
     [[ -z "$guard_pid" ]] || terminate_bounded "$guard_pid" "Sophia input guard"
@@ -207,7 +219,7 @@ cleanup() {
             status=1
         fi
     fi
-    rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
+    rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
     if [[ -n "$kd_mode" && -n "$tty_state" ]]; then
         local restored_kd restored_termios
         restored_kd="$(python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
@@ -250,7 +262,7 @@ fi
 [[ ! -f "$GUARD_LOG" ]] || mv -f "$GUARD_LOG" "$GUARD_LOG.previous"
 : >"$GUARD_LOG"
 chmod 600 "$GUARD_LOG"
-rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
+rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
 lifecycle_phase entering input_guard
 "$SOPHIA_BIN" sophia-session-input-guard \
     "${input_source_args[@]}" \
@@ -496,12 +508,34 @@ stty raw -echo
 lifecycle_phase entering graphics_takeover
 setsid "${session_command[@]}" > >(tee -a "$SESSION_LOG") 2>&1 &
 session_pid=$!
+if [[ -n "$SESSION_WATCHDOG_SECONDS" ]]; then
+    (
+        sleep "$SESSION_WATCHDOG_SECONDS"
+        if kill -0 "$session_pid" 2>/dev/null; then
+            printf 'sophia_session_watchdog schema=1 result=deadline_exceeded deadline_seconds=%s session_pid=%s action=terminate_process_group\n' \
+                "$SESSION_WATCHDOG_SECONDS" "$session_pid" >>"$SESSION_LOG"
+            printf 'deadline_exceeded\n' >"$WATCHDOG_TRIGGERED_FILE"
+            kill -TERM -- "-$session_pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL -- "-$session_pid" 2>/dev/null || true
+        fi
+    ) &
+    watchdog_pid=$!
+    echo "Independent session watchdog armed for ${SESSION_WATCHDOG_SECONDS} seconds."
+fi
 lifecycle_phase complete graphics_takeover
 lifecycle_phase entering session
 set +e
-wait -n "$session_pid" "$guard_pid"
+wait_targets=("$session_pid" "$guard_pid")
+[[ -z "$watchdog_pid" ]] || wait_targets+=("$watchdog_pid")
+wait -n "${wait_targets[@]}"
 status=$?
 set -e
+if [[ -s "$WATCHDOG_TRIGGERED_FILE" ]]; then
+    echo "Session deadline exceeded; automatic recovery requested." >&2
+    emergency_session_shutdown=watchdog_term
+    exit 124
+fi
 if [[ -s "$GUARD_TRIGGERED_FILE" ]]; then
     echo "Emergency recovery requested."
     emergency_session_shutdown=fallback_term

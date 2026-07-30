@@ -60,6 +60,7 @@ mod persistent_native_scanout {
         pub submitted_checksum: Option<u64>,
         pub submitted_sequence: Option<usize>,
         pub pending_content: Option<LiveProductionScanoutContent>,
+        pub rendering_content: Option<LiveProductionScanoutContent>,
         pub submitted_content: Option<LiveProductionScanoutContent>,
         pub presented_content: Option<LiveProductionScanoutContent>,
         pub presented_checksum: u64,
@@ -92,6 +93,13 @@ mod persistent_native_scanout {
         pub import_cache_live_entries: usize,
         pub import_cache_descriptor_mismatches: usize,
         pub import_cache_capacity_rejections: usize,
+        pub worker_requests: usize,
+        pub worker_completions: usize,
+        pub worker_failures: usize,
+        pub worker_soft_stalls: usize,
+        pub worker_hard_stalls: usize,
+        pub worker_release_enqueue_failures: usize,
+        pub max_worker_request: Duration,
         pub max_target_create: Duration,
         pub max_frame_surface_create: Duration,
         pub max_render: Duration,
@@ -212,6 +220,7 @@ mod persistent_native_scanout {
                         submitted_checksum: None,
                         submitted_sequence: None,
                         pending_content: None,
+                        rendering_content: None,
                         submitted_content: None,
                         presented_content: None,
                         presented_checksum: 0,
@@ -348,6 +357,33 @@ mod persistent_native_scanout {
             self.heads.iter().position(|head| head.output.id == output)
         }
 
+        pub fn page_flip_hard_stall(&self) -> Option<(OutputId, Duration)> {
+            self.heads.iter().find_map(|head| {
+                let age = head.submitted_at.map(|submitted| submitted.elapsed());
+                (reduce_live_production_page_flip_watchdog(
+                    age,
+                    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL,
+                ) == LiveProductionPageFlipWatchdogStatus::HardStall)
+                    .then_some((head.output.id, age.unwrap_or_default()))
+            })
+        }
+
+        pub fn ensure_page_flip_progress(&self) -> Result<(), Box<dyn std::error::Error>> {
+            let Some((output, age)) = self.page_flip_hard_stall() else {
+                return Ok(());
+            };
+            tracing::error!(
+                "sophia_live_native_page_flip schema=1 status=hard_stall output={} age_ms={} action=terminate_session",
+                output.raw(),
+                age.as_millis(),
+            );
+            Err(format!(
+                "native page flip exceeded the {} ms hard-stall boundary",
+                LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL.as_millis(),
+            )
+            .into())
+        }
+
         pub fn selection(&self, index: usize) -> crate::LibdrmNativePrimaryPlaneSelection {
             self.heads[index].selection
         }
@@ -369,16 +405,17 @@ mod persistent_native_scanout {
             runtime: &mut crate::LiveBackendRuntimeAssembly,
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+            self.ensure_page_flip_progress()?;
             if !self.heads[index].exporter.pending_frame() {
                 self.retire_ready_and_retry_cleanup(index, runtime)?;
                 return Ok(runtime.run_tick(input)?);
             }
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
-            let (report, exported_nonzero, queued_content) = {
+            let (report, exported_nonzero, worker_was_in_flight) = {
                 let groups = &mut self.groups;
                 let head = &mut self.heads[index];
-                let queued_content = head.pending_content;
+                let worker_was_in_flight = head.exporter.worker_in_flight();
                 let export_attempts_before = head.exporter.cpu_frame_export_attempts();
                 let report = runtime
                     .run_tick_with_native_gbm_rendered_primary_plane_scanout_exporter_with(
@@ -392,24 +429,7 @@ mod persistent_native_scanout {
                 if !head.exporter.pending_cpu_frame() {
                     head.pending_nonzero_pixel_bytes = 0;
                 }
-                if !head.exporter.pending_frame() {
-                    head.pending_content = None;
-                }
-                let queued_content = queued_content.map(|content| match content {
-                    LiveProductionScanoutContent::MixedPresent { transaction, .. } => {
-                        LiveProductionScanoutContent::MixedPresent {
-                            transaction,
-                            nonzero_rgb_pixels: head.exporter.composition_nonzero_rgb_pixels(),
-                        }
-                    }
-                    LiveProductionScanoutContent::RetainedMixed { .. } => {
-                        LiveProductionScanoutContent::RetainedMixed {
-                            nonzero_rgb_pixels: head.exporter.composition_nonzero_rgb_pixels(),
-                        }
-                    }
-                    content => content,
-                });
-                (report, exported_nonzero, queued_content)
+                (report, exported_nonzero, worker_was_in_flight)
             };
             if exported_nonzero {
                 self.nonzero_exports = self.nonzero_exports.saturating_add(1);
@@ -423,9 +443,33 @@ mod persistent_native_scanout {
             if let Some(submit) = report.rendered_primary_plane_scanout_submit {
                 self.heads[index].last_submit_report = Some(submit);
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
+                let worker_is_in_flight = self.heads[index].exporter.worker_in_flight();
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
-                        if self.heads[index].output_frames.pending().is_some() {
+                        let content = if worker_was_in_flight {
+                            self.heads[index].rendering_content.take()
+                        } else {
+                            self.heads[index].pending_content.take()
+                        };
+                        let content = content.map(|content| {
+                            content.with_nonzero_rgb_pixels(
+                                self.heads[index].exporter.composition_nonzero_rgb_pixels(),
+                            )
+                        });
+                        if worker_was_in_flight
+                            && self.heads[index].output_frames.rendering().is_some()
+                        {
+                            self.heads[index]
+                                .output_frames
+                                .promote_rendering_to_submitted()
+                                .map_err(|error| {
+                                    format!(
+                                        "compositor display-list worker promotion failed: {error}"
+                                    )
+                                })?;
+                        } else if !worker_was_in_flight
+                            && self.heads[index].output_frames.pending().is_some()
+                        {
                             self.heads[index]
                                 .output_frames
                                 .mark_submitted()
@@ -443,9 +487,9 @@ mod persistent_native_scanout {
                         self.heads[index].submitted_checksum =
                             Some(self.heads[index].last_checksum);
                         self.heads[index].submitted_sequence = Some(self.heads[index].submissions);
-                        self.heads[index].submitted_content = queued_content;
+                        self.heads[index].submitted_content = content;
                         if matches!(
-                            queued_content,
+                            content,
                             Some(
                                 LiveProductionScanoutContent::MixedPresent {
                                     nonzero_rgb_pixels: 1..,
@@ -466,24 +510,52 @@ mod persistent_native_scanout {
                             "sophia_live_native_page_flip schema=1 status=submitted output={} submission={} content={:?}",
                             output.raw(),
                             cycle,
-                            queued_content,
+                            content,
                         );
                         if self.production_page_flips.submit(output, cycle).is_err() {
                             self.vsync_overlap_rejections =
                                 self.vsync_overlap_rejections.saturating_add(1);
                         }
                     }
+                    Status::ScanoutExportPending => {
+                        if !worker_was_in_flight && worker_is_in_flight {
+                            self.heads[index].rendering_content =
+                                self.heads[index].pending_content.take();
+                            if self.heads[index].output_frames.pending().is_some() {
+                                self.heads[index]
+                                    .output_frames
+                                    .mark_rendering()
+                                    .map_err(|error| {
+                                        format!(
+                                            "compositor display-list render transition failed: {error}"
+                                        )
+                                    })?;
+                            }
+                        }
+                        self.submit_deferred = self.submit_deferred.saturating_add(1);
+                    }
                     Status::AlreadyInFlight | Status::CleanupPending => {
                         self.submit_deferred = self.submit_deferred.saturating_add(1);
                     }
                     status => {
-                        self.heads[index].output_frames.discard_pending();
+                        let failed_content = if worker_was_in_flight {
+                            self.heads[index].rendering_content.take()
+                        } else {
+                            self.heads[index].pending_content.take()
+                        };
+                        if worker_was_in_flight {
+                            self.heads[index].output_frames.discard_rendering();
+                        } else {
+                            self.heads[index].output_frames.discard_pending();
+                        }
                         self.submit_failures = self.submit_failures.saturating_add(1);
                         tracing::warn!(
-                            "sophia_live_native_submit schema=1 status=failed output={} reason={status:?} content={queued_content:?} export={:?} scanout_buffer={:?} submit={:?} commit={:?}",
+                            "sophia_live_native_submit schema=1 status=failed output={} reason={status:?} content={failed_content:?} export={:?} scanout_buffer={:?} resources={:?} framebuffer={:?} submit={:?} commit={:?}",
                             self.heads[index].output.id.raw(),
                             submit.export,
                             submit.scanout_buffer,
+                            submit.resources,
+                            submit.framebuffer,
                             submit.submit,
                             submit.commit_submit,
                         );
@@ -501,6 +573,7 @@ mod persistent_native_scanout {
             index: usize,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            self.ensure_page_flip_progress()?;
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
             let report = runtime.drain_rendered_primary_plane_page_flip_callbacks_with(
@@ -663,6 +736,7 @@ mod persistent_native_scanout {
                 .map_err(|evidence| {
                     format!("persistent native initial modeset failed: {evidence:?}")
                 })?;
+            head.exporter.enable_worker()?;
             if head.exporter.cpu_frame_export_attempts() > export_attempts_before
                 && head.pending_nonzero_pixel_bytes > 0
             {
@@ -701,6 +775,7 @@ mod persistent_native_scanout {
                 head.pending_content,
                 head.submitted_content,
                 head.presented_content,
+                head.exporter.worker_in_flight(),
                 head.callback_accepted != 0 || head.initial_modeset_submission.is_some(),
                 frame.checksum,
             );
@@ -812,9 +887,11 @@ mod persistent_native_scanout {
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
-    LivePersistentRenderMetrics, LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead,
-    LiveProductionNativeScanout, LiveProductionScanoutContent,
+    LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
+    LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
     live_production_scanout_is_stable_present, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_page_flip_watchdog,
 };
 
 #[derive(Debug)]

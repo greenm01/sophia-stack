@@ -211,6 +211,10 @@ pub fn run_live_session_composition_smoke(
 struct DeterministicRenderedScanoutOwner;
 
 impl LiveRenderedScanoutBufferPrimeSource for DeterministicRenderedScanoutOwner {
+    fn shares_kms_drm_file(&self) -> bool {
+        true
+    }
+
     fn export_scanout_dma_buf_fds(&self) -> std::io::Result<Option<LiveRenderedScanoutDmaBufFds>> {
         Ok(None)
     }

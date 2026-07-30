@@ -253,7 +253,6 @@ impl PersistentXrgb8888GlPipeline {
             self.gl
                 .vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 16, 8);
             self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
-            self.gl.finish();
             if self.gl.get_error() != glow::NO_ERROR {
                 return Err(NativeEglDrawSmokeStatus::GlUnavailable);
             }
@@ -437,7 +436,7 @@ impl PersistentXrgb8888GlPipeline {
             self.gl.delete_texture(image_texture);
         }
         draw?;
-        self.finish_composition()
+        self.validate_composition()
     }
 
     pub(crate) unsafe fn create_egl_image_texture(
@@ -502,11 +501,10 @@ impl PersistentXrgb8888GlPipeline {
         }
     }
 
-    pub(crate) fn finish_composition(&self) -> Result<(), NativeEglDrawSmokeStatus> {
+    pub(crate) fn validate_composition(&self) -> Result<(), NativeEglDrawSmokeStatus> {
         unsafe {
             self.gl.disable(glow::BLEND);
             self.gl.disable(glow::SCISSOR_TEST);
-            self.gl.finish();
             if self.gl.get_error() != glow::NO_ERROR {
                 return Err(NativeEglDrawSmokeStatus::GlUnavailable);
             }
@@ -528,7 +526,6 @@ impl PersistentXrgb8888GlPipeline {
             .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
         let mut rgba = vec![0; byte_len];
         unsafe {
-            self.gl.finish();
             self.gl.read_pixels(
                 0,
                 0,
@@ -767,7 +764,6 @@ unsafe fn draw_xrgb8888_frame(
         gl.enable_vertex_attrib_array(1);
         gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 16, 8);
         gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
-        gl.finish();
     }
     let gl_error = unsafe { gl.get_error() };
     unsafe {

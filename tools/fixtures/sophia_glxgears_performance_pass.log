@@ -1,11 +1,11 @@
 sophia_glxgears_benchmark schema=1 duration_seconds=20 surface_width=500 surface_height=500 swap_interval=1
 GL_RENDERER   = llvmpipe (LLVM fixture, 256 bits)
 sophia_live_output_repaint schema=1 status=initial_presented output=1 mode=full rects=1 pixels=3686400
-sophia_live_session_present_feedback schema=1 kind=complete transaction=1 routed=true mode=Copy ust=1000000 msc=1
-sophia_live_session_present_feedback schema=1 kind=complete transaction=2 routed=true mode=Copy ust=1016667 msc=2
-sophia_live_session_present_feedback schema=1 kind=complete transaction=3 routed=true mode=Copy ust=1033334 msc=3
+sophia_live_session_present_feedback schema=1 kind=complete transaction=1 routed=true mode=Flip ust=1000000 msc=1
+sophia_live_session_present_feedback schema=1 kind=complete transaction=2 routed=true mode=Flip ust=1016667 msc=2
+sophia_live_session_present_feedback schema=1 kind=complete transaction=3 routed=true mode=Flip ust=1033334 msc=3
 sophia_glxgears_client schema=1 status=complete duration_seconds=20 samples=3 mean_fps=59.981 timed_exit=true
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
 sophia_live_native_resources schema=4 status=complete import_cache_imports=3 import_cache_hits=2 import_cache_evictions=3 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0
-sophia_live_session schema=16 status=bounded_complete native_presentation=enabled native_submit_failures=0 native_retirements=3 native_retire_failures=0 native_max_submit_to_page_flip_msec=17 native_max_upload_msec=3 native_max_render_msec=5 native_nonzero_exports=3 native_mixed_exports=3 native_in_flight=false native_cleanup_pending=false wm_policy=external wm_restarts=0 wm_degraded=false present_complete_copy=3 present_complete_flip=0 present_idle=3 present_idle_fence_triggers=3 present_live_sources=0 present_live_fences=0 present_live_transactions=0
+sophia_live_session schema=16 status=bounded_complete native_presentation=enabled native_submit_failures=0 native_retirements=3 native_retire_failures=0 native_max_submit_to_page_flip_msec=17 native_max_upload_msec=3 native_max_render_msec=5 native_nonzero_exports=3 native_mixed_exports=3 native_in_flight=false native_cleanup_pending=false wm_policy=external wm_restarts=0 wm_degraded=false present_complete_copy=0 present_complete_flip=3 present_idle=3 present_idle_fence_triggers=3 present_live_sources=0 present_live_fences=0 present_live_transactions=0
 sophia_live_session_cleanup schema=1 status=clean resources=drained

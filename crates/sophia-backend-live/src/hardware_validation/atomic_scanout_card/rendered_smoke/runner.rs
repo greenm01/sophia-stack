@@ -1,7 +1,6 @@
 use super::super::select_real_atomic_scanout_card;
 use super::RealAtomicScanoutSmokeConfig;
 use crate::prelude::*;
-use sophia_renderer_live::NativeGbmOwnedScanoutBuffer;
 
 pub fn run_real_atomic_scanout_smoke_phases() -> Vec<LibdrmNativeAtomicScanoutSmokeEvidence> {
     let Some(config) = RealAtomicScanoutSmokeConfig::default_primary_output() else {
@@ -261,7 +260,7 @@ fn is_accepted_presented_page_flip(callback: &LivePageFlipCallbackReport) -> boo
 }
 
 fn waiting_retire_from_rendered_submission(
-    submission: LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmOwnedScanoutBuffer>,
+    submission: LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmRenderedScanoutOwner>,
 ) -> LibdrmNativePrimaryPlaneScanoutRetireResult {
     let LiveRenderedPrimaryPlaneScanoutSubmission {
         scanout_buffer,
@@ -279,7 +278,7 @@ fn waiting_retire_from_rendered_submission(
 
 fn retire_rendered_submission_after_page_flip(
     card: &RealAtomicScanoutCard,
-    submission: LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmOwnedScanoutBuffer>,
+    submission: LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmRenderedScanoutOwner>,
     callback: &LivePageFlipCallbackReport,
 ) -> LibdrmNativePrimaryPlaneScanoutRetireResult {
     let LiveRenderedPrimaryPlaneScanoutSubmission {

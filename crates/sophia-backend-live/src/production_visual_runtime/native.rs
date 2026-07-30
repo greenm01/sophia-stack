@@ -65,7 +65,8 @@ impl LiveProductionVisualRuntime {
         let skipped_present = self
             .present_scheduler
             .take_submitted()
-            .map(|submitted| submitted.transaction);
+            .or_else(|| self.present_scheduler.take_rendering())
+            .map(|present| present.transaction);
         self.reject_software_presents(0, 0);
         if let Some(transaction) = skipped_present {
             self.reject_gpu_presentation(transaction, 0, 0);
@@ -187,8 +188,28 @@ impl LiveProductionVisualRuntime {
             &mut output.runtime,
             compositor_tick_input(&layer_templates, 0, Vec::new(), None),
         )?;
-        if report.rendered_primary_plane_scanout_submit.is_some() {
-            self.mark_software_present_frame_submitted()?;
+        use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
+        match report
+            .rendered_primary_plane_scanout_submit
+            .map(|submit| submit.status)
+        {
+            Some(Status::SubmittedWaitingForPageFlip) => {
+                if let Some(transaction) = self.present_scheduler.promote_rendering_to_submitted() {
+                    native_scanout.discard_presentation_feedback(self.outputs.primary_output());
+                    self.presentation_feedback
+                        .resources_mut()
+                        .mark_submitted(transaction)?;
+                } else {
+                    self.mark_software_present_frame_submitted()?;
+                }
+            }
+            Some(Status::ScanoutExportPending) | None => {}
+            Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
+            Some(_) => {
+                if let Some(rendering) = self.present_scheduler.take_rendering() {
+                    self.reject_gpu_presentation(rendering.transaction, 0, 0);
+                }
+            }
         }
         Ok(report)
     }
@@ -249,18 +270,17 @@ impl LiveProductionVisualRuntime {
         };
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
-        let completion =
-            production
-                .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
-                    TransactionOutcome::Committed => presentation_feedback
-                        .complete_copy_without_idle(submitted.transaction, ust, msc),
-                    TransactionOutcome::RejectedStaleSurface
-                    | TransactionOutcome::RejectedInvalidSurface
-                    | TransactionOutcome::TimedOut => {
-                        presentation_feedback.reject_skip(submitted.transaction, ust, msc)
-                    }
-                })
-                .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
+        let completion = production
+            .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
+                TransactionOutcome::Committed => presentation_feedback
+                    .complete_retained_without_idle(submitted.transaction, ust, msc),
+                TransactionOutcome::RejectedStaleSurface
+                | TransactionOutcome::RejectedInvalidSurface
+                | TransactionOutcome::TimedOut => {
+                    presentation_feedback.reject_skip(submitted.transaction, ust, msc)
+                }
+            })
+            .map_err(|error| format!("page flip protocol settlement failed: {error:?}"))?;
         self.outputs
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);

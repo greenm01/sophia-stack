@@ -8,7 +8,6 @@ use crate::prelude::*;
 use evidence::reduced_smoke_evidence_for_phase;
 use policy::submit_policy_for_smoke_phase;
 use reduced_context::reduced_rendered_context_status_from_native;
-use sophia_renderer_live::NativeGbmOwnedScanoutBuffer;
 
 #[derive(Debug)]
 pub(super) struct RealAtomicScanoutSubmittedSmokePhase {
@@ -19,7 +18,7 @@ pub(super) struct RealAtomicScanoutSubmittedSmokePhase {
     pub(super) export_detail: LiveRendererScanoutBufferExportDetail,
     pub(super) submit: LibdrmNativePrimaryPlaneScanoutSubmitResult,
     pub(super) submission:
-        Option<LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmOwnedScanoutBuffer>>,
+        Option<LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmRenderedScanoutOwner>>,
 }
 
 impl RealAtomicScanoutSubmittedSmokePhase {
@@ -210,7 +209,7 @@ impl RealAtomicScanoutPageFlipSession {
             return Err(evidence);
         };
 
-        let prime_fds = owned_buffer.export_scanout_dma_buf_fds().ok();
+        let prime_fds = owned_buffer.export_scanout_dma_buf_fds().ok().flatten();
         let mut submit = if let Some(prime_fds) = prime_fds {
             submit_native_primary_plane_scanout_from_selection_and_renderer_dma_bufs_with_policy(
                 self.card(),
