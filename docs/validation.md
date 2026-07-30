@@ -689,12 +689,14 @@ After committing a candidate, run the first gate from any text terminal:
 tools/sophia_m9_promotion.sh next
 ```
 
-Gate zero is unattended. It runs the canonical offline local regression suite
-followed by the two-output M7 xmonad and M8 mixed-application QEMU scenarios. The retained
+Gate zero is unattended. It runs the canonical offline local regression suite,
+the two-output M7 xmonad and M8 mixed-application QEMU scenarios, and the
+isolated QEMU libinput-to-kernel-page-flip latency regression. The retained
 evidence covers focus click and drag, hidden-workspace input suppression,
 layout/workspace actions, launch/close/logout, clipboard and PRIMARY,
 Firefox/Kitty/Vulkan interaction, resize, dialog, bridge restart, compositor
-damage, and clean teardown. It is tied to the exact candidate commit.
+damage, exact input/frame clock correlation, and clean teardown. It is tied to
+the exact candidate commit.
 The M8 browser scroll stage first requires a newly observed and routed physical
 axis event, then uses a focused Space key to advance the deterministic local
 page. It proves Engine axis routing but does not claim that the current X

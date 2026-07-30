@@ -10,12 +10,15 @@ cp "$ROOT_DIR/tools/fixtures/qemu_xmonad_m7_pass.log" \
     "$TMP_DIR/qemu-m7.log"
 cp "$ROOT_DIR/tools/fixtures/qemu_xmonad_m8_mix_pass.log" \
     "$TMP_DIR/qemu-m8-mix.log"
+cp "$ROOT_DIR/tools/fixtures/qemu_session_evidence_pass.log" \
+    "$TMP_DIR/qemu-input-latency.log"
 printf '%s\n' \
     "commit=$COMMIT" \
     phase=local-regressions-started \
     phase=local-regressions-complete \
     phase=qemu-m7-complete \
     phase=qemu-m8-mix-complete \
+    phase=qemu-input-latency-complete \
     >"$TMP_DIR/sequence.log"
 
 "$ROOT_DIR/tools/verify_sophia_m9_semantic_gate.sh" "$TMP_DIR" "$COMMIT"
@@ -32,6 +35,12 @@ expect_failure() {
 sed -i '/phase=qemu-m8-mix-complete/d' "$TMP_DIR/sequence.log"
 expect_failure missing_m8_phase
 printf '%s\n' phase=qemu-m8-mix-complete >>"$TMP_DIR/sequence.log"
+sed -i '/phase=qemu-input-latency-complete/d' "$TMP_DIR/sequence.log"
+expect_failure missing_input_latency_phase
+printf '%s\n' phase=qemu-input-latency-complete >>"$TMP_DIR/sequence.log"
+mv "$TMP_DIR/qemu-input-latency.log" "$TMP_DIR/qemu-input-latency.missing"
+expect_failure missing_input_latency_evidence
+mv "$TMP_DIR/qemu-input-latency.missing" "$TMP_DIR/qemu-input-latency.log"
 expect_failure wrong_commit fedcba9876543210fedcba9876543210fedcba98
 printf '%s\n' 'sophia_qemu_guest schema=1 status=failed scenario=xmonad-m8-mix' \
     >>"$TMP_DIR/qemu-m8-mix.log"

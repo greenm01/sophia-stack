@@ -19,6 +19,7 @@ SEQUENCE="$EVIDENCE_DIR/sequence.log"
 RUNNER_LOG="$EVIDENCE_DIR/runner.log"
 M7_EVIDENCE="$EVIDENCE_DIR/qemu-m7.log"
 M8_EVIDENCE="$EVIDENCE_DIR/qemu-m8-mix.log"
+INPUT_LATENCY_EVIDENCE="$EVIDENCE_DIR/qemu-input-latency.log"
 
 : >"$RUNNER_LOG"
 chmod 600 "$RUNNER_LOG"
@@ -35,6 +36,10 @@ printf '%s\n' 'phase=qemu-m7-complete' >>"$SEQUENCE"
 
 SOPHIA_QEMU_EVIDENCE="$M8_EVIDENCE" tools/qemu_xmonad_m8_mix_acceptance.sh
 printf '%s\n' 'phase=qemu-m8-mix-complete' >>"$SEQUENCE"
+
+SOPHIA_QEMU_EVIDENCE="$INPUT_LATENCY_EVIDENCE" \
+    tools/run_sophia_input_latency_qemu.sh
+printf '%s\n' 'phase=qemu-input-latency-complete' >>"$SEQUENCE"
 
 tools/verify_sophia_m9_semantic_gate.sh "$EVIDENCE_DIR" "$COMMIT"
 printf '%s\n' 'phase=semantic-gate-complete' >>"$SEQUENCE"

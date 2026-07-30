@@ -5,6 +5,15 @@ Completed evidence is archived in `research-log-archive.md`.
 
 ## 2026-07-30: Unattended QEMU input-latency regression
 
+- **Promotion coverage.** The commit-pinned Milestone 9 semantic gate now
+  archives and verifies this isolated regression after its M7 and M8 scenarios.
+  A candidate cannot pass gate zero with only application semantics while
+  omitting the current libinput/page-flip correlation contract.
+- **Local gate hygiene.** The promotion rerun exposed a stale generic-QEMU
+  pass fixture and two unreviewed source-layout overages before virtualization
+  began. The fixture now carries the latency and kernel-clock records, session
+  configuration tests have their own domain file, and layout support is split
+  from the persistent layout owner. The complete local gate passes again.
 - **Host uinput is no longer required for development validation.** The QEMU
   session injects QMP keys through the guest virtio keyboard, evdev, and the
   normal threaded libinput poller. `tools/run_sophia_input_latency_qemu.sh`
