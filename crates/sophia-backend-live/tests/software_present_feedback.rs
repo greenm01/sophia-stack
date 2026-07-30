@@ -11,9 +11,109 @@ use sophia_protocol::{
     SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
 };
 use sophia_renderer_live::{
-    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
-    LiveProductionCpuScene,
+    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferSource,
+    LiveCpuBufferUpdate, LiveProductionCpuScene,
 };
+
+#[test]
+fn current_cpu_updates_remain_rooted_and_late_unrooted_patches_are_discarded() {
+    let size = Size {
+        width: 2,
+        height: 1,
+    };
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size,
+        scale: 1,
+    };
+    let batch = LiveProductionAuthorityBatch {
+        groups: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let mut scene = LiveProductionCpuScene::new(size);
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let run_update =
+        |runtime: &mut LiveProductionVisualRuntime, scene: &mut LiveProductionCpuScene, updates| {
+            runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
+                batch: &batch,
+                scene,
+                updates,
+                raised_surface: None,
+                focused_surface: None,
+                cursor_presentation: LiveProductionCursorPresentation::Software(None),
+                defer_frame: false,
+                output_descriptors: &[output],
+                native_scanout: None,
+                wm_update: None,
+                presentation_layout: &[],
+                chrome_surfaces: &[],
+                staged_cpu_buffer_handles: &[],
+            })
+        };
+
+    run_update(
+        &mut runtime,
+        &mut scene,
+        vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 72,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: vec![0; 8],
+        })],
+    )
+    .unwrap();
+    assert_eq!(scene.resident_buffer_count(), 1);
+
+    run_update(
+        &mut runtime,
+        &mut scene,
+        vec![LiveCpuBufferUpdate::Patch(LiveCpuBufferPatch {
+            handle: 72,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 2,
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            bytes: vec![1, 2, 3, 4],
+        })],
+    )
+    .unwrap();
+    assert_eq!(scene.resident_buffer_count(), 1);
+
+    run_update(&mut runtime, &mut scene, Vec::new()).unwrap();
+    assert_eq!(scene.resident_buffer_count(), 0);
+
+    run_update(
+        &mut runtime,
+        &mut scene,
+        vec![LiveCpuBufferUpdate::Patch(LiveCpuBufferPatch {
+            handle: 72,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 3,
+            rect: Rect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            bytes: vec![5, 6, 7, 8],
+        })],
+    )
+    .unwrap();
+    assert_eq!(scene.resident_buffer_count(), 0);
+}
 
 #[test]
 fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {

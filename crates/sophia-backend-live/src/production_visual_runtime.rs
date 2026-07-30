@@ -203,7 +203,7 @@ impl LiveProductionVisualRuntime {
         let LiveProductionCycleRequest {
             batch,
             scene,
-            updates,
+            mut updates,
             raised_surface,
             focused_surface,
             cursor_presentation,
@@ -221,6 +221,8 @@ impl LiveProductionVisualRuntime {
             batch,
             staged_cpu_buffer_handles,
         );
+        retain_relevant_cpu_buffer_updates(scene, &mut updates, &self.cpu_buffer_residency);
+        extend_cpu_buffer_residency_with_updates(&mut self.cpu_buffer_residency, &updates);
         let native_enabled = native_scanout.is_some();
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
@@ -395,7 +397,7 @@ impl LiveProductionVisualRuntime {
         let LiveProductionCycleRequest {
             batch,
             scene,
-            updates,
+            mut updates,
             raised_surface,
             focused_surface,
             cursor_presentation,
@@ -413,12 +415,21 @@ impl LiveProductionVisualRuntime {
             batch,
             staged_cpu_buffer_handles,
         );
+        retain_relevant_cpu_buffer_updates(scene, &mut updates, &self.cpu_buffer_residency);
+        extend_cpu_buffer_residency_with_updates(&mut self.cpu_buffer_residency, &updates);
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         self.set_chrome_surfaces(chrome_surfaces);
         let committed_surfaces = self.committed_surfaces().to_vec();
-        scene.apply_updates(updates)?;
+        scene.apply_production_updates(updates)?;
         scene.reconcile_buffer_residency(&self.cpu_buffer_residency);
+        let missing_buffers = scene.missing_committed_buffer_count(&committed_surfaces);
+        if missing_buffers != 0 {
+            return Err(format!(
+                "production GPU scene is missing {missing_buffers} committed CPU buffer(s)"
+            )
+            .into());
+        }
         let compose_started = Instant::now();
         let composition = if defer_frame {
             scene
@@ -713,6 +724,27 @@ fn write_cpu_buffer_residency(
             }),
     );
     handles.extend_from_slice(staged);
+    handles.sort_unstable();
+    handles.dedup();
+}
+
+fn retain_relevant_cpu_buffer_updates(
+    scene: &LiveProductionCpuScene,
+    updates: &mut Vec<crate::LiveCpuBufferUpdate>,
+    rooted_handles: &[u64],
+) {
+    updates.retain(|update| {
+        matches!(update, crate::LiveCpuBufferUpdate::Replace(_))
+            || scene.contains_buffer(update.handle())
+            || rooted_handles.binary_search(&update.handle()).is_ok()
+    });
+}
+
+fn extend_cpu_buffer_residency_with_updates(
+    handles: &mut Vec<u64>,
+    updates: &[crate::LiveCpuBufferUpdate],
+) {
+    handles.extend(updates.iter().map(crate::LiveCpuBufferUpdate::handle));
     handles.sort_unstable();
     handles.dedup();
 }

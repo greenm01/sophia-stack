@@ -3,6 +3,31 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-30: CPU patch residency is validated after transaction reduction
+
+The first commit-pinned Milestone 9 semantic rerun exposed a frontend-timing
+race during two-xterm startup. Renderer residency was derived from committed,
+staged, and current transaction buffers. A replacement or patch carried in an
+update-only intake was not itself a residency root, so the replacement could
+be installed and reclaimed before a later patch arrived. A superseded patch
+whose base had already been reclaimed then terminated frame composition with
+`MissingPatchBase`.
+
+Current replacement and materializable patch updates now extend the bounded
+residency root for their cycle. Production discards a late patch only when its
+base is absent; the strict renderer registry still rejects missing bases for
+direct callers. After Engine transaction reduction and residency
+reconciliation, production counts committed CPU surfaces without buffers and
+fails the cycle before composition if the count is nonzero. Thus superseded
+traffic cannot kill the session, while a relevant missing buffer still fails
+closed instead of producing absent or mismatched pixels.
+
+Regressions cover consecutive replacement/patch intakes, bounded eviction,
+late unrooted patch disposal, and the post-reduction missing-committed-buffer
+check. The exact M7 two-xterm QEMU acceptance then completed startup, both
+resize epochs, pointer click/drag focus, output-edge reversal, workspace
+projection, WM restart, launch/close, and clean logout.
+
 ## 2026-07-30: Unattended QEMU input-latency regression
 
 - **Promotion coverage.** The commit-pinned Milestone 9 semantic gate now

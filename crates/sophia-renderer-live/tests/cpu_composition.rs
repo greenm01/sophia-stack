@@ -4,12 +4,55 @@ use sophia_protocol::{
 };
 use sophia_renderer_live::{
     DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
-    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferSourceRef,
-    LiveCpuBufferUpdate, LiveCpuCompositionElementRef, LiveCpuCompositionLayer,
-    LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode, LiveProductionCpuScene,
-    compose_live_cpu_display_list_frame, compose_live_cpu_display_list_frame_with_metrics_reusing,
-    compose_live_cpu_frame, compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
+    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferSource,
+    LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuCompositionElementRef,
+    LiveCpuCompositionLayer, LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode,
+    LiveProductionCpuScene, compose_live_cpu_display_list_frame,
+    compose_live_cpu_display_list_frame_with_metrics_reusing, compose_live_cpu_frame,
+    compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
 };
+
+#[test]
+fn production_scene_discards_late_patch_but_reports_missing_committed_base() {
+    let size = Size {
+        width: 2,
+        height: 1,
+    };
+    let surface = SurfaceId::new(1, 1);
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 1,
+        },
+        buffer: BufferSource::CpuBuffer { handle: 72 },
+        damage: Region::empty(),
+    }];
+    let mut scene = LiveProductionCpuScene::new(size);
+
+    scene
+        .apply_production_updates([LiveCpuBufferUpdate::Patch(LiveCpuBufferPatch {
+            handle: 72,
+            size,
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 2,
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            bytes: vec![1, 2, 3, 4],
+        })])
+        .unwrap();
+
+    assert_eq!(scene.resident_buffer_count(), 0);
+    assert_eq!(scene.missing_committed_buffer_count(&committed), 1);
+}
 
 #[test]
 fn cpu_composition_blits_clipped_xrgb_layers() {

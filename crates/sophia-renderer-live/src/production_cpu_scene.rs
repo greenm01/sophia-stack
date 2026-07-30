@@ -67,6 +67,21 @@ impl LiveProductionCpuScene {
         Ok(())
     }
 
+    pub fn apply_production_updates(
+        &mut self,
+        updates: impl IntoIterator<Item = LiveCpuBufferUpdate>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for update in updates {
+            match self.buffers.apply(update) {
+                Ok(_) | Err(crate::LiveCpuBufferRegistryError::MissingPatchBase) => {}
+                Err(error) => {
+                    return Err(format!("renderer CPU buffer update failed: {error:?}").into());
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn reconcile_buffer_residency(&mut self, retained_handles: &[u64]) {
         self.buffers
             .retain_handles(|handle| retained_handles.binary_search(&handle).is_ok());
@@ -74,6 +89,10 @@ impl LiveProductionCpuScene {
 
     pub fn resident_buffer_count(&self) -> usize {
         self.buffers.len()
+    }
+
+    pub fn contains_buffer(&self, handle: u64) -> bool {
+        self.buffers.contains(handle)
     }
 
     pub fn resident_buffer_bytes(&self) -> usize {

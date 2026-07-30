@@ -97,9 +97,16 @@ where
         authority_commits: &[TransactionCommit],
     ) -> Result<Self::Frame, Self::Error> {
         self.scene
-            .apply_updates(self.updates.take().unwrap_or_default())?;
+            .apply_production_updates(self.updates.take().unwrap_or_default())?;
         self.scene
             .reconcile_buffer_residency(self.cpu_buffer_residency);
+        let missing_buffers = self.scene.missing_committed_buffer_count(committed);
+        if missing_buffers != 0 {
+            return Err(format!(
+                "production CPU scene is missing {missing_buffers} committed buffer(s)"
+            )
+            .into());
+        }
         let compose_started = Instant::now();
         let composition = if self.defer_frame {
             self.scene
