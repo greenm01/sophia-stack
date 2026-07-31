@@ -712,7 +712,13 @@ promotes one to a hard M9 exit gate.
   22 ms p95 because the paced seven-character injector created intermediate
   input frames and made the final key wait behind an earlier page flip. The
   gate now emits the same exact text as one zero-spacing uinput burst so one
-  sample measures one isolated libinput-to-presented-frame transaction.
+  sample measures one isolated libinput-to-presented-frame transaction. That
+  isolated run proved zero queue dwell but exposed 11–14 ms of pre-submit work:
+  every primary update was rebuilding and scanning an unchanged 1920x1080
+  secondary-output marker. Secondary frames are now cached by output slot and
+  descriptor, reused across primary recomposition, and invalidated when the
+  output changes. The dual-output QEMU GBM/KMS path passes with 2 ms maximum
+  composition; a same-commit physical p95 archive remains required.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

@@ -38,6 +38,7 @@ pub struct LiveProductionCpuScene {
     exact_pixel_proofs_remaining: usize,
     exact_pixel_metric_frames: usize,
     damage_scoped_metric_frames: usize,
+    secondary_output_frames: Vec<(usize, HeadlessOutput, LiveProductionComposedFrame)>,
 }
 
 impl LiveProductionCpuScene {
@@ -52,6 +53,7 @@ impl LiveProductionCpuScene {
             exact_pixel_proofs_remaining: 3,
             exact_pixel_metric_frames: 0,
             damage_scoped_metric_frames: 0,
+            secondary_output_frames: Vec::new(),
         }
     }
 
@@ -408,26 +410,43 @@ impl LiveProductionCpuScene {
     }
 
     pub fn frames_for_outputs(
-        &self,
+        &mut self,
         outputs: &[HeadlessOutput],
     ) -> Result<Vec<LiveProductionComposedFrame>, Box<dyn std::error::Error>> {
         let primary = self
             .last_report
             .as_ref()
             .ok_or("persistent CPU scene has no composed primary frame")?;
+        let primary_frame = primary.frame.clone();
+        let primary_checksum = primary.checksum;
+        let primary_nonzero_pixel_bytes = primary.nonzero_pixel_bytes;
+        let primary_damage_snapshot = self.last_output_damage_snapshot.clone();
+        self.secondary_output_frames.retain(|(index, output, _)| {
+            *index > 0 && outputs.get(*index).is_some_and(|current| current == output)
+        });
         let mut frames = Vec::with_capacity(outputs.len());
         for (index, output) in outputs.iter().enumerate() {
-            if index == 0 && output.size == primary.frame.size {
+            if index == 0 && output.size == primary_frame.size {
                 frames.push(LiveProductionComposedFrame {
-                    frame: primary.frame.clone(),
-                    checksum: primary.checksum,
-                    nonzero_pixel_bytes: primary.nonzero_pixel_bytes,
-                    output_damage_snapshot: self
-                        .last_output_damage_snapshot
+                    frame: primary_frame.clone(),
+                    checksum: primary_checksum,
+                    nonzero_pixel_bytes: primary_nonzero_pixel_bytes,
+                    output_damage_snapshot: primary_damage_snapshot
                         .as_ref()
                         .filter(|snapshot| snapshot.output == *output)
                         .cloned(),
                 });
+                continue;
+            }
+            if index > 0
+                && let Some((_, _, frame)) =
+                    self.secondary_output_frames
+                        .iter()
+                        .find(|(cached_index, cached_output, _)| {
+                            *cached_index == index && cached_output == output
+                        })
+            {
+                frames.push(frame.clone());
                 continue;
             }
             let marker_size = Size {
@@ -458,7 +477,7 @@ impl LiveProductionCpuScene {
             };
             let report = compose_live_cpu_frame(output.size, &[marker])
                 .map_err(|error| format!("secondary output composition failed: {error:?}"))?;
-            frames.push(LiveProductionComposedFrame {
+            let frame = LiveProductionComposedFrame {
                 frame: report.frame,
                 checksum: report.checksum,
                 nonzero_pixel_bytes: report.nonzero_pixel_bytes,
@@ -468,7 +487,12 @@ impl LiveProductionCpuScene {
                     &[],
                     None,
                 )?),
-            });
+            };
+            if index > 0 {
+                self.secondary_output_frames
+                    .push((index, *output, frame.clone()));
+            }
+            frames.push(frame);
         }
         Ok(frames)
     }

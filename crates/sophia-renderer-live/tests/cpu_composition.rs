@@ -463,6 +463,56 @@ fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
 }
 
 #[test]
+fn production_scene_reuses_unchanged_secondary_output_frames() {
+    let primary = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 4,
+            height: 3,
+        },
+        scale: 1,
+    };
+    let secondary = HeadlessOutput {
+        id: OutputId::from_raw(2),
+        size: Size {
+            width: 3,
+            height: 2,
+        },
+        scale: 1,
+    };
+    let display_list = CompositorDisplayList::empty(primary.id);
+    let mut scene = LiveProductionCpuScene::new(primary.size);
+
+    scene
+        .compose_display_list(primary, &[], &display_list, None)
+        .unwrap();
+    let first = scene.frames_for_outputs(&[primary, secondary]).unwrap();
+    scene
+        .compose_display_list(primary, &[], &display_list, None)
+        .unwrap();
+    let second = scene.frames_for_outputs(&[primary, secondary]).unwrap();
+
+    assert!(Arc::ptr_eq(&first[1].frame.bytes, &second[1].frame.bytes));
+    assert_eq!(first[1].checksum, second[1].checksum);
+
+    let resized_secondary = HeadlessOutput {
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        ..secondary
+    };
+    let resized = scene
+        .frames_for_outputs(&[primary, resized_secondary])
+        .unwrap();
+    assert!(!Arc::ptr_eq(
+        &second[1].frame.bytes,
+        &resized[1].frame.bytes
+    ));
+    assert_eq!(resized[1].frame.size, resized_secondary.size);
+}
+
+#[test]
 fn production_scene_metric_warmup_does_not_schedule_unchanged_content() {
     let output = HeadlessOutput {
         id: OutputId::from_raw(1),
