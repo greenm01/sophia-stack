@@ -49,8 +49,11 @@ fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequ
 fn native_frame_service_should_preempt_authority(
     request: &OutputFrameServiceRequest,
     preempted_previous_cycle: bool,
+    control_pending: bool,
 ) -> bool {
-    !preempted_previous_cycle && native_frame_service_requires_owner_progress(request)
+    !control_pending
+        && !preempted_previous_cycle
+        && native_frame_service_requires_owner_progress(request)
 }
 
 fn synchronize_runtime_surface_chrome_style(

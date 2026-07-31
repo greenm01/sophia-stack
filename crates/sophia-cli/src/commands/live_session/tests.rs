@@ -135,10 +135,13 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
     };
 
     assert!(native_frame_service_should_preempt_authority(
-        &pending, false
+        &pending, false, false
     ));
     assert!(!native_frame_service_should_preempt_authority(
-        &pending, true
+        &pending, true, false
+    ));
+    assert!(!native_frame_service_should_preempt_authority(
+        &pending, false, true
     ));
 }
 

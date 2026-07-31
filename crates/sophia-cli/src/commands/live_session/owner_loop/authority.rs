@@ -3,6 +3,7 @@
             (Some(runtime), Some(native_scanout)) => native_frame_service_should_preempt_authority(
                 &runtime.native_output_service_request(native_scanout)?,
                 native_frame_service_preempted_previous_cycle,
+                session_controls.pending_len() != 0,
             ),
             _ => false,
         };
