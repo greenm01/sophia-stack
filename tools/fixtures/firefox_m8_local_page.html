@@ -56,6 +56,10 @@
       advance('scroll complete');
       return;
     }
+    if (stage === 5 && event.key === 'r') {
+      advance('refocus complete');
+      return;
+    }
     if (stage !== 0 || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
     typed = (typed + event.key).slice(-6);
     if (typed === 'sophia') {

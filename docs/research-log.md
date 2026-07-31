@@ -32,6 +32,21 @@ completed startup, both
 resize epochs, pointer click/drag focus, output-edge reversal, workspace
 projection, WM restart, launch/close, and clean logout.
 
+The first commit-pinned M9 rerun subsequently exposed nondeterminism in the
+QEMU pointer-focus harness: it reset only the horizontal coordinate, so an
+inherited `y=0` placed the scripted click on compositor chrome and correctly
+produced `button_suppressed reason=no_target`. Focus click and drag setup now
+reset both axes, move 32 units horizontally, and use eight separate 16-unit
+vertical steps before sending a separate gesture command. This avoids relying
+on one acceleration-sensitive relative movement to leave the top edge.
+The same rerun reached Firefox's refocus proof and showed that back-to-back
+focus chords could race the X11 handoff, while a fixed two-chord pair could
+start and end on the terminal. The proof now cycles one surface at a time,
+waits for `focus_applied`, and sends an `r` probe accepted only by the page's
+refocus stage. This proves an acknowledged focus change plus delivery to the
+returned browser without depending solely on Firefox surfacing a DOM focus
+event under headless QEMU.
+
 ## 2026-07-30: Unattended QEMU input-latency regression
 
 - **Promotion coverage.** The commit-pinned Milestone 9 semantic gate now
