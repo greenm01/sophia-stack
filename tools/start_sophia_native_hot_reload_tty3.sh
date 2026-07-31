@@ -11,6 +11,12 @@ SEQUENCE_LOG="$PROOF_DIR/sequence.log"
 START_MARKER="$PROOF_DIR/start.marker"
 source "$ROOT_DIR/tools/config/proof_helpers.sh"
 
+terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
+if [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
+    echo "The native chrome proof requires Kitty; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
+    exit 1
+fi
+
 mkdir -p "$PROOF_DIR"
 chmod 700 "$PROOF_DIR"
 
@@ -140,6 +146,15 @@ printf '%s\n' \
 export SOPHIA_TTY_PROFILE=native
 "$ROOT_DIR/tools/start_sophia_tty3.sh" \
     --no-config \
-    --secondary-terminal \
+    "--session-app=terminal-secondary=$terminal_bin" \
+    --session-start=terminal-secondary \
+    --session-app-arg=terminal-secondary=--config \
+    --session-app-arg=terminal-secondary=NONE \
+    --session-app-arg=terminal-secondary=--override \
+    --session-app-arg=terminal-secondary=linux_display_server=x11 \
+    --session-app-arg=terminal-secondary=--override \
+    --session-app-arg=terminal-secondary=background_opacity=1 \
+    --session-app-arg=terminal-secondary=--title \
+    "--session-app-arg=terminal-secondary=Sophia Native TTY3 Secondary" \
     "--wm-process-arg=--wm-config=$WM_CONFIG" \
     "$@"

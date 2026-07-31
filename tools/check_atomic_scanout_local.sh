@@ -154,6 +154,12 @@ grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
 grep -Fq 'native) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
 grep -Fq "status=ready ' 180" tools/start_sophia_native_hot_reload_tty3.sh
+grep -Fq -- '--session-app=terminal-secondary=' tools/start_sophia_native_hot_reload_tty3.sh
+grep -Fq -- '--session-start=terminal-secondary' tools/start_sophia_native_hot_reload_tty3.sh
+if grep -Fq -- '--secondary-terminal' tools/start_sophia_native_hot_reload_tty3.sh; then
+    echo "Native chrome proof must use normal-session startup applications." >&2
+    exit 1
+fi
 grep -Fq -- '--exit-when-startup-exits' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--input-seat=$input_seat' tools/run_sophia_xmonad_session.sh
 if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then

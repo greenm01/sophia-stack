@@ -57,6 +57,21 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
             .is_some()
     );
 
+    let dual_terminal = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/kitty".to_owned(),
+        "--session-app=terminal-secondary=/usr/bin/kitty".to_owned(),
+        "--session-start=terminal".to_owned(),
+        "--session-start=terminal-secondary".to_owned(),
+        "--session-action-app=terminal=terminal".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(
+        dual_terminal.applications.startup,
+        ["terminal", "terminal-secondary"]
+    );
+    assert!(!dual_terminal.secondary_terminal);
+
     for args in [
         vec![
             "--session-mode=normal".to_owned(),
