@@ -116,6 +116,27 @@ fn configure_and_close_controls_can_be_in_flight_together() {
 }
 
 #[test]
+fn only_configure_controls_may_yield_priority_to_native_frames() {
+    let now = Instant::now();
+    let mut queue = SessionControlQueue::default();
+    queue
+        .enqueue(
+            control(1, 1, surface(1), XAuthorityControlKind::ConfigureSurface),
+            now,
+        )
+        .unwrap();
+    assert!(!queue.has_non_configure_pending());
+
+    queue
+        .enqueue(
+            control(1, 2, surface(1), XAuthorityControlKind::FocusSurface),
+            now,
+        )
+        .unwrap();
+    assert!(queue.has_non_configure_pending());
+}
+
+#[test]
 fn focus_controls_are_globally_serialized() {
     let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
     let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);

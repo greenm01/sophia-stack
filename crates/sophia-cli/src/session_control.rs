@@ -153,6 +153,12 @@ impl SessionControlQueue {
         self.pending.len()
     }
 
+    pub fn has_non_configure_pending(&self) -> bool {
+        self.pending
+            .iter()
+            .any(|pending| pending.key.kind != XAuthorityControlKind::ConfigureSurface)
+    }
+
     pub fn metrics(&self) -> SessionControlMetrics {
         self.metrics
     }

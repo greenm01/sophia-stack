@@ -4,6 +4,8 @@
                 &runtime.native_output_service_request(native_scanout)?,
                 native_frame_service_preempted_previous_cycle,
                 session_controls.pending_len() != 0,
+                session_controls.has_non_configure_pending(),
+                native_frame_control_priority_cycles,
             ),
             _ => false,
         };
@@ -40,6 +42,14 @@
                 )
         };
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
+        if session_controls.pending_len() == 0 {
+            native_frame_control_priority_cycles = 0;
+        } else if native_frame_service_preemption {
+            native_frame_control_priority_cycles = 0;
+        } else {
+            native_frame_control_priority_cycles =
+                native_frame_control_priority_cycles.saturating_add(1);
+        }
         match authority_batch {
             Ok(batch) => {
                 let drain_started = Instant::now();
