@@ -732,8 +732,12 @@ promotes one to a hard M9 exit gate.
   retained output snapshot, clears and replays only intersecting layers,
   borders, and cursor pixels in stacking order, and falls back to full
   composition whenever history or storage is incompatible. Focused pixel
-  regressions and the complete offline gate pass; commit-pinned QEMU and the
-  authoritative physical rerun remain before completion. The physical
+  regressions and the complete offline gate pass. Commit-pinned QEMU on
+  `a2c91f51` passed with exact input, kernel page-flip timestamps, clean
+  teardown, 3 ms maximum CPU composition, and an 18 ms full chain split into
+  0 ms queue dwell, 14 ms dwell-to-submit, and 4 ms submit-to-page-flip; QEMU
+  remains correctness evidence rather than the physical performance gate. The
+  authoritative physical rerun remains before completion. The physical
   contract now separates the synchronized two-refresh end-to-end bound from
   strict stage maxima; the retained 27 ms archive is acceptable end to end but
   its 11 ms dwell-to-submit maximum still identifies the optimization target.
