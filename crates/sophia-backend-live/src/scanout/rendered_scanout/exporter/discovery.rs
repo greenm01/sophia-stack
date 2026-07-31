@@ -236,6 +236,12 @@ where
         &mut self,
     ) -> Result<usize, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
         if let Some(worker) = &mut self.worker {
+            if worker.discard_in_flight_for_maintenance()? {
+                self.worker_frame_kind = None;
+                tracing::info!(
+                    "sophia_renderer_worker schema=1 status=maintenance_frame_discarded"
+                );
+            }
             return worker.clear_renderer_images();
         }
         self.context.as_mut().map_or(

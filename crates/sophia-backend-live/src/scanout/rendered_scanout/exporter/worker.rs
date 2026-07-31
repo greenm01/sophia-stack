@@ -248,6 +248,34 @@ impl NativeGbmRendererWorker {
             .is_ok()
     }
 
+    pub fn discard_in_flight_for_maintenance(
+        &mut self,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        if self.in_flight.is_none() {
+            return Ok(false);
+        }
+        let deadline = Instant::now() + WORKER_MAINTENANCE_TIMEOUT;
+        loop {
+            match self.poll() {
+                WorkerPoll::Idle => return Ok(false),
+                WorkerPoll::Exported(lease) => {
+                    drop(lease);
+                    return Ok(true);
+                }
+                WorkerPoll::Failed(detail) => return Err(detail),
+                WorkerPoll::HardStalled(_) => {
+                    return Err(LiveRendererScanoutBufferExportDetail::WorkerStalled);
+                }
+                WorkerPoll::Pending { .. } => {
+                    if Instant::now() >= deadline {
+                        return Err(LiveRendererScanoutBufferExportDetail::WorkerStalled);
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+    }
+
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, LiveRendererScanoutBufferExportDetail> {

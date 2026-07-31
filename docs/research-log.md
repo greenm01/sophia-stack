@@ -47,6 +47,13 @@ refocus stage. This proves an acknowledged focus change plus delivery to the
 returned browser without depending solely on Firefox surfacing a DOM focus
 event under headless QEMU.
 
+The first physical input-latency sample then completed its exact key and pixel
+proof but raced renderer teardown: KMS was drained while one asynchronous
+renderer frame was still finishing, so image cleanup returned `WorkerPending`.
+Renderer maintenance now settles and discards an unsubmitted worker result
+within the existing one-second maintenance boundary before clearing cached
+images. A failed or stalled worker remains a hard teardown error.
+
 ## 2026-07-30: Unattended QEMU input-latency regression
 
 - **Promotion coverage.** The commit-pinned Milestone 9 semantic gate now
