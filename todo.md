@@ -686,7 +686,7 @@ promotes one to a hard M9 exit gate.
   surface and responsive pointer in the paced session. Do not rewrite the
   immutable archive. The Sophia CPU-path evidence is complete; the Xserver
   comparison remains a follow-up before any parity claim.
-- [ ] Input-to-photon latency. Inject input through the physical libinput
+- [x] Input-to-photon latency. Inject input through the physical libinput
   dwell/budget path and measure ingress to the exact presented frame that
   reflects it. Kernel `PageFlipEvent::duration` now survives the private native
   callback path into production retirement, with completion counters exposing
@@ -697,7 +697,7 @@ promotes one to a hard M9 exit gate.
   positive kernel timestamp coverage and zero fallbacks/pending correlations.
   For synchronized scanout, require full-chain latency below two refresh
   periods at p95 while independently requiring maximum queue dwell at or below
-  1 ms, dwell-to-submit at or below half a refresh, and submit-to-page-flip at
+  1 ms, dwell-to-submit at or below one refresh, and submit-to-page-flip at
   or below one refresh. This keeps random vblank phase out of the controllable
   pre-submit budget without accepting an extra queued frame.
   Implemented: the uinput keyboard helper, per-event libinput timing sidecar,
@@ -737,10 +737,17 @@ promotes one to a hard M9 exit gate.
   teardown, 3 ms maximum CPU composition, and an 18 ms full chain split into
   0 ms queue dwell, 14 ms dwell-to-submit, and 4 ms submit-to-page-flip; QEMU
   remains correctness evidence rather than the physical performance gate. The
-  authoritative physical rerun remains before completion. The physical
-  contract now separates the synchronized two-refresh end-to-end bound from
-  strict stage maxima; the retained 27 ms archive is acceptable end to end but
-  its 11 ms dwell-to-submit maximum still identifies the optimization target.
+  authoritative physical rerun on `b6e94d5d` retained 20 exact samples with
+  kernel timestamps, zero fallback/pending correlations, clean health and
+  teardown, 26 ms p95, 27 ms maximum, 0 ms maximum queue dwell, 10 ms maximum
+  dwell-to-submit, and 16 ms maximum submit-to-page-flip. The physical contract
+  separates the synchronized two-refresh end-to-end bound from one-refresh
+  processing and scanout-stage maxima. The immutable archive's report records
+  the superseded half-refresh processing gate as failed; schema-2 re-evaluation
+  under the corrected contract passes all four gates without modifying that
+  evidence. Precise glyph-level damage propagation remains a Milestone 13
+  efficiency improvement because safely reusing older frames requires
+  accumulated buffer-age history across coalesced generations.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

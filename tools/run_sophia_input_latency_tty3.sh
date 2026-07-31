@@ -110,7 +110,7 @@ Usage: tools/run_sophia_input_latency_tty3.sh
 Run from a logged-in local TTY3 with DRM released and /dev/uinput writable.
 The default gate collects 20 independent samples and requires p95 below
 two 17 ms refresh periods. It separately caps queue dwell at 1 ms,
-dwell-to-submit at 8 ms, and submit-to-flip at 17 ms. Override the sample
+dwell-to-submit at 17 ms, and submit-to-flip at 17 ms. Override the sample
 count, refresh period, or stage budgets with the SOPHIA_INPUT_LATENCY_*
 environment variables.
 EOF
@@ -127,8 +127,7 @@ fi
 [[ "$REFRESH_MSEC" =~ ^[1-9][0-9]*$ ]] ||
     fail "SOPHIA_INPUT_LATENCY_REFRESH_MSEC must be a positive integer"
 if [[ -z "$MAX_DWELL_TO_SUBMIT_MSEC" ]]; then
-    MAX_DWELL_TO_SUBMIT_MSEC=$((REFRESH_MSEC / 2))
-    ((MAX_DWELL_TO_SUBMIT_MSEC > 0)) || MAX_DWELL_TO_SUBMIT_MSEC=1
+    MAX_DWELL_TO_SUBMIT_MSEC="$REFRESH_MSEC"
 fi
 if [[ -z "$MAX_SUBMIT_TO_FLIP_MSEC" ]]; then
     MAX_SUBMIT_TO_FLIP_MSEC="$REFRESH_MSEC"

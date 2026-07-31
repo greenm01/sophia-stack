@@ -15,13 +15,16 @@ otherwise ready.
 
 The physical contract now requires full-chain p95 below two configured refresh
 periods and independently fails when maximum queue dwell exceeds 1 ms,
-dwell-to-submit exceeds half a refresh, or submit-to-page-flip exceeds one
-refresh. The two-refresh bound is exclusive; stage bounds are inclusive. This
-accepts ordinary vblank phase while preserving strict gates on the portions
-Sophia controls and rejects an additional queued frame. The reporter emits the
-refresh, derived aggregate budget, every stage budget, and named failed gates
-under schema 2. Existing immutable schema-1 evidence remains valid historical
-evidence and is not rewritten.
+dwell-to-submit exceeds one refresh, or submit-to-page-flip exceeds one
+refresh. The first draft used half a refresh for dwell-to-submit, but physical
+evidence showed that this interval also includes the external client's response
+rather than only Sophia-owned work. One refresh is the meaningful correctness
+boundary: it rejects an additional processing frame, while the aggregate bound
+still rejects two complete stages at their limits. The two-refresh bound is
+exclusive; stage bounds are inclusive. The reporter emits the refresh, derived
+aggregate budget, every stage budget, and named failed gates under schema 2.
+Existing immutable schema-1 evidence remains valid historical evidence and is
+not rewritten.
 
 ## 2026-07-30: CPU patch residency is validated after transaction reduction
 

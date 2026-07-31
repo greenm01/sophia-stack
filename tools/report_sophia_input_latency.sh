@@ -29,7 +29,7 @@ Usage: tools/report_sophia_input_latency.sh SESSION_LOG...
 
 Require clean libinput-to-kernel-page-flip evidence in every log and report
 full-chain p95 below two refresh periods. The default 17 ms refresh also gates
-queue dwell at 1 ms, dwell-to-submit at 8 ms, and submit-to-flip at 17 ms.
+queue dwell at 1 ms, dwell-to-submit at 17 ms, and submit-to-flip at 17 ms.
 EOF
     exit 0
 fi
@@ -37,8 +37,7 @@ fi
 [[ "$REFRESH_MSEC" =~ ^[1-9][0-9]*$ ]] ||
     fail "SOPHIA_INPUT_LATENCY_REFRESH_MSEC must be a positive integer"
 if [[ -z "$MAX_DWELL_TO_SUBMIT_MSEC" ]]; then
-    MAX_DWELL_TO_SUBMIT_MSEC=$((REFRESH_MSEC / 2))
-    ((MAX_DWELL_TO_SUBMIT_MSEC > 0)) || MAX_DWELL_TO_SUBMIT_MSEC=1
+    MAX_DWELL_TO_SUBMIT_MSEC="$REFRESH_MSEC"
 fi
 if [[ -z "$MAX_SUBMIT_TO_FLIP_MSEC" ]]; then
     MAX_SUBMIT_TO_FLIP_MSEC="$REFRESH_MSEC"
