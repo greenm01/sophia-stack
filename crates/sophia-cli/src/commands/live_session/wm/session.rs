@@ -600,7 +600,8 @@ impl LiveWmSession {
             Ok(Some(completion)) => completion,
             Ok(None) => return Ok(None),
             Err(WmTransportSubmitError::Disconnected) => {
-                return Err("WM transport worker disconnected".into());
+                self.request_transport_restart("request_completion_disconnected", None);
+                return Ok(None);
             }
             Err(WmTransportSubmitError::Busy) => {
                 return Err("WM transport worker returned an invalid busy completion".into());
@@ -774,7 +775,9 @@ impl LiveWmSession {
                 Ok(())
             }
             Err(WmTransportSubmitError::Disconnected) => {
-                Err("WM transport worker disconnected".into())
+                self.queued_requests.push_front(request);
+                self.request_transport_restart("request_submit_disconnected", None);
+                Ok(())
             }
         }
     }

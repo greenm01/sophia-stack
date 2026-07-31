@@ -54,6 +54,12 @@ Renderer maintenance now settles and discards an unsubmitted worker result
 within the existing one-second maintenance boundary before clearing cached
 images. A failed or stalled worker remains a hard teardown error.
 
+The following commit-pinned M8 rerun exposed a second restart ordering window:
+the compatibility bridge could exit after policy-event polling but before a
+request submit or completion poll. Those request-channel disconnects now enter
+the same supervised, layout-preserving restart path as policy-channel
+disconnects instead of terminating the live session.
+
 ## 2026-07-30: Unattended QEMU input-latency regression
 
 - **Promotion coverage.** The commit-pinned Milestone 9 semantic gate now
