@@ -131,18 +131,15 @@ trap cleanup_sequence EXIT
 
 printf '%s\n' \
     'Native WM hot-reload proof:' \
-    '  1. After Kitty appears, press Super+Enter once and wait for the second prompt.' \
-    '  2. Confirm the 2px ring changes atomically to 6px without covering content.' \
-    '  3. It must remain 6px through the invalid-edit and deletion phases.' \
-    '  4. Confirm frame-only mode: both windows have 4px frames and only one focused color.' \
-    '  5. Confirm combined mode: both have 6px frames and the focused window has a 2px ring.' \
-    '  6. Focus both windows and type in each; no content, pointer, or keyboard may be lost.' \
-    '  7. Press Super+Shift+Q for normal logout after combined mode appears.' \
+    '  1. Wait while both Kitty windows start and the chrome modes advance automatically.' \
+    '  2. After combined mode appears, focus both windows and type in each.' \
+    '  3. Press Super+Shift+Q for normal logout.' \
     "Evidence: $SESSION_LOG" \
     "Sequence: $SEQUENCE_LOG"
 
 export SOPHIA_TTY_PROFILE=native
 "$ROOT_DIR/tools/start_sophia_tty3.sh" \
     --no-config \
+    --secondary-terminal \
     "--wm-process-arg=--wm-config=$WM_CONFIG" \
     "$@"
