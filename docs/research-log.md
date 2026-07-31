@@ -5605,3 +5605,19 @@ acknowledgement ordering.
   releases, and a final key ledger with zero pending keys or release barriers.
   Its negative regression removes every close-time clear and must fail, while a
   new regression removes one clear to represent an already-clean close.
+
+## 2026-07-31: physical latency must begin from the current presented baseline
+
+- The first complete 20-sample physical input-to-photon capture used kernel
+  page-flip timestamps with zero fallback or pending correlation and clean
+  teardown in every sample, but missed the sub-refresh gate at 18 ms p95
+  against a 17 ms budget.
+- Input readiness could use focused CPU visual detail or any earlier nonzero
+  native frame. Several samples therefore injected while a newer pre-input
+  focus/chrome frame was still queued, forcing the measured input frame to wait
+  behind unrelated presentation work.
+- CPU-backed proofs now require the current scene checksum to be the primary
+  output's presented checksum before announcing readiness. Stable GPU content
+  retains its independent surface-keyed presentation path, and headless CPU
+  proofs remain valid without a native frame. A regression rejects a stale
+  native checksum and zero-pixel or zero-export baselines.

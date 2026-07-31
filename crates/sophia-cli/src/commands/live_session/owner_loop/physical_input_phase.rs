@@ -411,7 +411,7 @@ loop {
     }
     service_core_config_reload!();
     service_session_controls!();
-    let input_baseline_presented_before_wait = include!("lifecycle.rs");
+    include!("lifecycle.rs");
     include!("wm_phase.rs");
     include!("authority.rs");
     include!("input_proof.rs");

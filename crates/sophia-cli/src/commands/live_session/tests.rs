@@ -10,14 +10,14 @@ use super::{
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, XPresentCadence,
     authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
-    clear_client_pressed_keys_state_only, flush_all_client_pressed_keys,
-    global_runtime_deadline_ends_session, independent_native_output_presented,
-    initial_session_focus_candidate, input_baseline_is_presented, live_transaction_visual_evidence,
-    managed_child_exit_is_nonfatal, pending_wm_focus_after_engine_decision,
-    physical_input_page_flip_correlates, physical_input_pixels_already_changed,
-    physical_input_routing_mode, place_pointer_event_for_routing,
-    pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
-    route_input_events, session_protocol_errors_are_fatal,
+    clear_client_pressed_keys_state_only, current_cpu_frame_is_presented,
+    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
+    independent_native_output_presented, initial_session_focus_candidate,
+    input_baseline_is_presented, live_transaction_visual_evidence, managed_child_exit_is_nonfatal,
+    pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
+    physical_input_pixels_already_changed, physical_input_routing_mode,
+    place_pointer_event_for_routing, pointer_press_starts_focus_handoff, record_runtime_commits,
+    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronous_modeset_record,
     take_settled_input_delivery_wait,
@@ -522,6 +522,24 @@ fn stable_focused_gpu_content_arms_input_without_cpu_scene_pixels() {
     assert!(input_baseline_is_presented(true, false));
     assert!(input_baseline_is_presented(false, true));
     assert!(!input_baseline_is_presented(false, false));
+}
+
+#[test]
+fn cpu_input_waits_for_the_current_scene_frame_to_reach_scanout() {
+    assert!(current_cpu_frame_is_presented(Some((41, 1)), None));
+    assert!(current_cpu_frame_is_presented(Some((41, 1)), Some((41, 1))));
+    assert!(!current_cpu_frame_is_presented(
+        Some((41, 1)),
+        Some((40, 1))
+    ));
+    assert!(!current_cpu_frame_is_presented(
+        Some((41, 0)),
+        Some((41, 1))
+    ));
+    assert!(!current_cpu_frame_is_presented(
+        Some((41, 1)),
+        Some((41, 0))
+    ));
 }
 
 #[test]

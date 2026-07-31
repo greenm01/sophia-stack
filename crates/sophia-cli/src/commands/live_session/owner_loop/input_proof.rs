@@ -5,17 +5,22 @@
         let focused_content_ready = focus
             .focused_surface(seat)
             .is_some_and(|surface| input_content_surface == Some(surface));
-        let cpu_baseline_presented = input_baseline_presented_before_wait
-            || scene.last_report().is_some_and(|report| {
-                report.nonzero_pixel_bytes > 0
-                    && native_scanout.as_ref().is_none_or(|native| {
-                        native.heads.first().is_some_and(|head| {
-                            head.presented_checksum != 0 && head.nonzero_exports > 0
-                        })
-                    })
-            });
+        let focused_gpu_presented = focus
+            .focused_surface(seat)
+            .is_some_and(|surface| startup_surface_presentations.visual_detail(surface));
+        let cpu_baseline_presented = current_cpu_frame_is_presented(
+            scene
+                .last_report()
+                .map(|report| (report.checksum, report.nonzero_pixel_bytes)),
+            native_scanout.as_ref().and_then(|native| {
+                native
+                    .heads
+                    .first()
+                    .map(|head| (head.presented_checksum, head.nonzero_exports))
+            }),
+        );
         let input_baseline_presented =
-            input_baseline_is_presented(focused_content_ready, cpu_baseline_presented);
+            input_baseline_is_presented(focused_gpu_presented, cpu_baseline_presented);
         let input_start_stable = if config.inject_surface_resize.is_some() {
             resize_proof_complete
         } else if config.expect_physical_text.is_some() {

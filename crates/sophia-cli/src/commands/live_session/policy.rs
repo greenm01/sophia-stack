@@ -146,10 +146,22 @@ fn physical_input_pixels_already_changed(
 }
 
 fn input_baseline_is_presented(
-    focused_content_ready: bool,
+    focused_gpu_presented: bool,
     cpu_baseline_presented: bool,
 ) -> bool {
-    focused_content_ready || cpu_baseline_presented
+    focused_gpu_presented || cpu_baseline_presented
+}
+
+fn current_cpu_frame_is_presented(
+    scene_frame: Option<(u64, usize)>,
+    native_frame: Option<(u64, usize)>,
+) -> bool {
+    scene_frame.is_some_and(|(checksum, nonzero_pixel_bytes)| {
+        nonzero_pixel_bytes > 0
+            && native_frame.is_none_or(|(presented_checksum, nonzero_exports)| {
+                presented_checksum == checksum && nonzero_exports > 0
+            })
+    })
 }
 
 fn stable_gpu_frame_proves_post_input_pixels(

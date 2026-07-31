@@ -821,14 +821,6 @@
         }
         include!("startup_watchdog.rs");
 
-        let input_baseline_presented_before_wait = scene.last_report().is_some_and(|report| {
-            report.nonzero_pixel_bytes > 0
-                && native_scanout.as_ref().is_none_or(|native| {
-                    native.heads.first().is_some_and(|head| {
-                        head.presented_checksum == report.checksum && head.nonzero_exports > 0
-                    })
-                })
-        });
         if input_presented_latency.is_none()
             && input_pixel_change
             && let Some(started) = input_proof_started_at
@@ -903,5 +895,5 @@
             metrics.session_ticks = metrics.session_ticks.saturating_add(1);
         }
 
-        input_baseline_presented_before_wait
+        ()
 }
