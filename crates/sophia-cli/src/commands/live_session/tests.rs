@@ -14,11 +14,11 @@ use super::{
     flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_visual_evidence, managed_child_exit_is_nonfatal,
-    native_frame_service_requires_owner_progress, pending_wm_focus_after_engine_decision,
-    physical_input_page_flip_correlates, physical_input_pixels_already_changed,
-    physical_input_routing_mode, place_pointer_event_for_routing,
-    pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
-    route_input_events, session_protocol_errors_are_fatal,
+    native_frame_service_requires_owner_progress, native_frame_service_should_preempt_authority,
+    pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
+    physical_input_pixels_already_changed, physical_input_routing_mode,
+    place_pointer_event_for_routing, pointer_press_starts_focus_handoff, record_runtime_commits,
+    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     synchronous_modeset_record, take_settled_input_delivery_wait,
@@ -120,6 +120,26 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
         presentation_queued: false,
     };
     assert!(!native_frame_service_requires_owner_progress(&idle));
+}
+
+#[test]
+fn native_frame_progress_cannot_consecutively_preempt_authority() {
+    let pending = OutputFrameServiceRequest {
+        outputs: vec![OutputFrameServiceObservation {
+            output: OutputId::from_raw(1),
+            primary: true,
+            native_phase: OutputNativeFramePhase::InFlight,
+            pending_frame: true,
+        }],
+        presentation_queued: false,
+    };
+
+    assert!(native_frame_service_should_preempt_authority(
+        &pending, false
+    ));
+    assert!(!native_frame_service_should_preempt_authority(
+        &pending, true
+    ));
 }
 
 #[test]

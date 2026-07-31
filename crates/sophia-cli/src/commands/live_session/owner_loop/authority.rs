@@ -1,18 +1,21 @@
 {
-        let native_frame_progress_pending = match (runtime.as_ref(), native_scanout.as_ref()) {
-            (Some(runtime), Some(native_scanout)) => native_frame_service_requires_owner_progress(
+        let native_frame_service_preemption = match (runtime.as_ref(), native_scanout.as_ref()) {
+            (Some(runtime), Some(native_scanout)) => native_frame_service_should_preempt_authority(
                 &runtime.native_output_service_request(native_scanout)?,
+                native_frame_service_preempted_previous_cycle,
             ),
             _ => false,
         };
         let wm_only_cycle = initial_authority_batch.is_none()
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
-        let authority_batch = if native_frame_progress_pending {
+        let authority_batch = if native_frame_service_preemption {
             // Renderer completion and KMS retirement are not X Authority
             // events. Give their bounded polling path a turn even when queued
             // or newly arriving metadata-only X batches keep the authority
-            // channel continuously readable.
+            // channel continuously readable. Never take two such preemptions
+            // consecutively so X control and focus traffic also makes bounded
+            // progress under a continuously active renderer.
             std::thread::sleep(Duration::from_millis(1));
             Err(std::sync::mpsc::RecvTimeoutError::Timeout)
         } else {
@@ -35,6 +38,7 @@
                     Ok,
                 )
         };
+        native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
         match authority_batch {
             Ok(batch) => {
                 let drain_started = Instant::now();
