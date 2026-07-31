@@ -84,6 +84,7 @@ bash -n tools/run_sophia_input_latency_tty3.sh \
     tools/report_sophia_input_latency.sh \
     tools/check_sophia_input_latency_reporter.sh \
     tools/setup_sophia_uinput.sh
+tools/run_sophia_input_latency_tty3.sh --self-test
 tools/check_sophia_input_latency_reporter.sh
 tools/check_sophia_standalone_vkcube_verifier.sh
 tools/check_sophia_glxgears_performance_reporter.sh

@@ -704,6 +704,10 @@ promotes one to a hard M9 exit gate.
   scanout to its kernel UST, and rejects fallback/pending clocks; it caught and
   fixed a no-WM visual-admission startup deadlock. Remaining: run the physical
   gate and retain a passing p95 archive before checking this item complete.
+  The first damage-reuse physical rerun completed 16 clean samples with a
+  2 ms maximum native upload, then stopped before injection on a transient
+  cursor-plane `EACCES`; the runner now retries only that exact pre-input
+  startup failure and still fails closed after input readiness or injection.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

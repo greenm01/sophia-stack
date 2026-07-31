@@ -9,6 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-20}"
 REFRESH_BUDGET_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+MAX_SESSION_START_ATTEMPTS=3
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 ARCHIVE_ROOT="$STATE_HOME/sophia/rendering-benchmarks/$COMMIT/input-latency"
@@ -20,6 +21,61 @@ PROOF_PID=
 fail() {
     echo "Sophia input latency gate failed: $*" >&2
     exit 1
+}
+
+is_retryable_pre_input_cursor_failure() {
+    local session_log="$1" trigger_file="$2" result_file="$3"
+
+    [[ -s "$session_log" && ! -e "$trigger_file" && ! -e "$result_file" ]] &&
+        ! grep -Fq \
+            'sophia_live_session_input schema=1 status=ready source=physical' \
+            "$session_log" &&
+        ! grep -Fq \
+            'sophia_live_input_latency schema=1 status=complete ' \
+            "$session_log" &&
+        grep -Fq \
+            'sophia_live_session_pointer schema=2 status=unavailable source=hardware_cursor error=hardware cursor update failed: Permission denied (os error 13)' \
+            "$session_log" &&
+        grep -Fq \
+            'native session cannot provide an owned atomic cursor: hardware cursor update failed: Permission denied (os error 13)' \
+            "$session_log"
+}
+
+check_retry_classifier() {
+    local fixture status
+    fixture="$(mktemp -d)"
+    status=0
+
+    printf '%s\n' \
+        'sophia_live_session_pointer schema=2 status=unavailable source=hardware_cursor error=hardware cursor update failed: Permission denied (os error 13)' \
+        'Error: "native session cannot provide an owned atomic cursor: hardware cursor update failed: Permission denied (os error 13)"' \
+        >"$fixture/session.log"
+    if ! is_retryable_pre_input_cursor_failure \
+        "$fixture/session.log" "$fixture/inject" "$fixture/result"; then
+        echo "pre-input cursor EACCES was not classified as retryable" >&2
+        status=1
+    fi
+
+    : >"$fixture/inject"
+    if is_retryable_pre_input_cursor_failure \
+        "$fixture/session.log" "$fixture/inject" "$fixture/result"; then
+        echo "cursor EACCES after an injection trigger was classified as retryable" >&2
+        status=1
+    fi
+    rm -f -- "$fixture/inject"
+
+    printf '%s\n' \
+        'sophia_live_session_input schema=1 status=ready source=physical' \
+        >>"$fixture/session.log"
+    if is_retryable_pre_input_cursor_failure \
+        "$fixture/session.log" "$fixture/inject" "$fixture/result"; then
+        echo "cursor EACCES after physical-input readiness was classified as retryable" >&2
+        status=1
+    fi
+
+    rm -rf -- "$fixture"
+    ((status == 0)) || return "$status"
+    echo "Sophia input latency retry classifier checks passed"
 }
 
 stop_children() {
@@ -54,6 +110,11 @@ SOPHIA_INPUT_LATENCY_REFRESH_MSEC.
 EOF
     exit 0
 fi
+if [[ "${1:-}" == --self-test ]]; then
+    [[ $# -eq 1 ]] || fail "--self-test does not accept additional arguments"
+    check_retry_classifier
+    exit 0
+fi
 [[ $# -eq 0 ]] || fail "unexpected arguments (use --help)"
 [[ "$SAMPLES" =~ ^[1-9][0-9]*$ && "$SAMPLES" -le 100 ]] ||
     fail "SOPHIA_INPUT_LATENCY_SAMPLES must be an integer from 1 through 100"
@@ -74,8 +135,9 @@ mkdir -p "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 trap 'preserve_pending $?' EXIT
-printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_budget_msec=%s\n' \
+printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_budget_msec=%s\nmax_session_start_attempts=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_BUDGET_MSEC" \
+    "$MAX_SESSION_START_ATTEMPTS" \
     >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
@@ -115,26 +177,50 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
     [[ "$input_device" == /dev/input/event* && -e "$input_device" ]] ||
         fail "injector published an invalid input device: $input_device"
 
-    SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$session_log" \
-        SOPHIA_LIVE_SESSION_RUNTIME_MSEC=30000 \
-        SOPHIA_LIVE_SESSION_SKIP_BUILD=1 \
-        SOPHIA_ATOMIC_SCANOUT_SKIP_PREFLIGHT=1 \
-        tools/live_session_persistent_hardware_proof.sh \
-        "--input-devices=$input_device" \
-        --expect-physical-text=sophia \
-        --exit-after-input-proof &
-    PROOF_PID=$!
+    for ((attempt = 1; attempt <= MAX_SESSION_START_ATTEMPTS; attempt++)); do
+        SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$session_log" \
+            SOPHIA_LIVE_SESSION_RUNTIME_MSEC=30000 \
+            SOPHIA_LIVE_SESSION_SKIP_BUILD=1 \
+            SOPHIA_ATOMIC_SCANOUT_SKIP_PREFLIGHT=1 \
+            tools/live_session_persistent_hardware_proof.sh \
+            "--input-devices=$input_device" \
+            --expect-physical-text=sophia \
+            --exit-after-input-proof &
+        PROOF_PID=$!
 
-    session_deadline=$((SECONDS + 20))
-    while ! grep -Fq \
-        'sophia_live_session_input schema=1 status=ready source=physical' \
-        "$session_log" 2>/dev/null; do
-        kill -0 "$PROOF_PID" 2>/dev/null ||
-            fail "Sophia exited before sample $sample requested physical input"
-        ((SECONDS < session_deadline)) ||
-            fail "Sophia did not request physical input for sample $sample"
-        sleep 0.01
+        proof_exited=0
+        session_deadline=$((SECONDS + 20))
+        while ! grep -Fq \
+            'sophia_live_session_input schema=1 status=ready source=physical' \
+            "$session_log" 2>/dev/null; do
+            if ! kill -0 "$PROOF_PID" 2>/dev/null; then
+                proof_exited=1
+                break
+            fi
+            ((SECONDS < session_deadline)) ||
+                fail "Sophia did not request physical input for sample $sample"
+            sleep 0.01
+        done
+        ((proof_exited == 0)) && break
+
+        set +e
+        wait "$PROOF_PID"
+        proof_status=$?
+        PROOF_PID=
+        set -e
+        if ((proof_status != 0 && attempt < MAX_SESSION_START_ATTEMPTS)) &&
+            is_retryable_pre_input_cursor_failure \
+                "$session_log" "$trigger_file" "$result_file"; then
+            failed_session_log="$sample_dir/session-start-attempt-$(printf '%03d' "$attempt").log"
+            mv "$session_log" "$failed_session_log"
+            printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s attempt=%s reason=pre_input_cursor_eacces\n' \
+                "$sample" "$attempt" | tee -a "$sample_dir/attempts.log"
+            sleep 0.1
+            continue
+        fi
+        fail "Sophia exited before sample $sample requested physical input (status $proof_status)"
     done
+
     : >"$trigger_file"
     chmod 600 "$trigger_file"
 

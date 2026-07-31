@@ -5643,3 +5643,19 @@ acknowledgement ordering.
   reducing maximum native upload to 1 ms while preserving exact input pixels,
   kernel page-flip correlation, zero renderer failures, and clean lease
   teardown. Physical TTY3 p95 remains the authoritative acceptance gate.
+
+## 2026-07-31: pre-input cursor ownership failure is not a latency sample
+
+- The first damage-reuse physical rerun completed 16 independent input proofs
+  with clean renderer/KMS teardown and a 2 ms maximum native upload. Sample 17
+  exited before physical-input readiness or injection because the initial
+  cursor-plane atomic update returned `EACCES`.
+- No uinput trigger, injector timestamp, or latency record existed, so the
+  failure did not describe input-to-photon performance. Treating it as a sample
+  would conflate transient session startup ownership with the measured path.
+- The physical runner now makes at most three session-start attempts while
+  retaining the same uninjected uinput device. A retry requires the exact
+  cursor `EACCES`, no physical-input readiness, no trigger or injector result,
+  and no completed latency record. The rejected attempt log is retained beside
+  the eventual sample. Any other failure, any failure after readiness, or
+  exhaustion of the bound still stops the gate.
