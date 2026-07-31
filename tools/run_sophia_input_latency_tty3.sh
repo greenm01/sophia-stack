@@ -9,6 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-20}"
 REFRESH_BUDGET_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+KEY_INTERVAL_MSEC=0
 MAX_SESSION_START_ATTEMPTS=3
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -135,14 +136,15 @@ mkdir -p "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 trap 'preserve_pending $?' EXIT
-printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_budget_msec=%s\nmax_session_start_attempts=%s\n' \
+printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_budget_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_BUDGET_MSEC" \
-    "$MAX_SESSION_START_ATTEMPTS" \
+    "$KEY_INTERVAL_MSEC" "$MAX_SESSION_START_ATTEMPTS" \
     >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
 cd "$ROOT_DIR"
-tools/probes/uinput_text_injector.py --self-test |
+tools/probes/uinput_text_injector.py \
+    "--key-interval-ms=$KEY_INTERVAL_MSEC" --self-test |
     tee "$PENDING/injector-self-test.log"
 cargo build --quiet --release --offline -p sophia-cli \
     --features atomic-scanout-live
@@ -162,6 +164,7 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
         --trigger-file="$trigger_file" \
         --result-file="$result_file" \
         --timeout-seconds=180 \
+        "--key-interval-ms=$KEY_INTERVAL_MSEC" \
         >"$sample_dir/injector.log" 2>&1 &
     INJECTOR_PID=$!
 

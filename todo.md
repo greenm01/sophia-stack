@@ -708,6 +708,11 @@ promotes one to a hard M9 exit gate.
   2 ms maximum native upload, then stopped before injection on a transient
   cursor-plane `EACCES`; the runner now retries only that exact pre-input
   startup failure and still fails closed after input readiness or injection.
+  The next complete archive retained the 2 ms upload maximum but measured
+  22 ms p95 because the paced seven-character injector created intermediate
+  input frames and made the final key wait behind an earlier page flip. The
+  gate now emits the same exact text as one zero-spacing uinput burst so one
+  sample measures one isolated libinput-to-presented-frame transaction.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer
