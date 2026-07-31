@@ -520,7 +520,7 @@
                     session_controls: &mut session_controls,
                     next_focus_control_transaction: &mut next_focus_control_transaction,
                 })?;
-                reconcile_pending_wm_focus!();
+                reconcile_pending_wm_focus!(runtime);
                 if let Some(surface) = focus.focused_surface(seat) {
                     let cpu_visual_detail =
                         scene.surface_has_visual_detail(runtime.committed_surfaces(), surface);

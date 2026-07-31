@@ -519,7 +519,7 @@
             // Admission focus can become eligible on a page-flip retirement.
             // Reconcile it here so an idle client does not need to emit another
             // authority batch before it can receive focus.
-            reconcile_pending_wm_focus!();
+            reconcile_pending_wm_focus!(runtime);
         }
         let mut input_routing_mode = physical_input_routing_mode(
             primary_child_exited,

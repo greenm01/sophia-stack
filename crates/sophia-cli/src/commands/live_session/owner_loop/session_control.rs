@@ -249,9 +249,9 @@ macro_rules! flush_all_client_keys {
 }
 
 macro_rules! reconcile_pending_wm_focus {
-    () => {{
+    ($runtime:expr) => {{
         if let Some((transaction, surface)) = layout.focus_to_apply {
-            let decision = focus.focus_surface(seat, surface, runtime.committed_surfaces());
+            let decision = focus.focus_surface(seat, surface, $runtime.committed_surfaces());
             layout.focus_to_apply =
                 pending_wm_focus_after_engine_decision((transaction, surface), decision);
             match decision {
