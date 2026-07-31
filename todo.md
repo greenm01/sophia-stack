@@ -694,9 +694,12 @@ promotes one to a hard M9 exit gate.
   ingress gap remains: `--inject-text` bypasses the libinput queue-dwell stage.
   Add a bounded uinput-backed injector and per-sample correlation from the
   libinput event timestamp through the exact submitted/presented frame. Require
-  positive kernel timestamp coverage, zero fallbacks/pending correlations, and
-  the full-chain latency plus its per-stage breakdown (dwell, submit,
-  submit-to-page-flip) below one refresh period at p95.
+  positive kernel timestamp coverage and zero fallbacks/pending correlations.
+  For synchronized scanout, require full-chain latency below two refresh
+  periods at p95 while independently requiring maximum queue dwell at or below
+  1 ms, dwell-to-submit at or below half a refresh, and submit-to-page-flip at
+  or below one refresh. This keeps random vblank phase out of the controllable
+  pre-submit budget without accepting an extra queued frame.
   Implemented: the uinput keyboard helper, per-event libinput timing sidecar,
   post-ingress submission correlation, kernel-UST retirement, stage reporting,
   and a commit-pinned 20-sample TTY3 runner. The unattended QEMU regression now
@@ -730,7 +733,10 @@ promotes one to a hard M9 exit gate.
   borders, and cursor pixels in stacking order, and falls back to full
   composition whenever history or storage is incompatible. Focused pixel
   regressions and the complete offline gate pass; commit-pinned QEMU and the
-  authoritative physical rerun remain before completion.
+  authoritative physical rerun remain before completion. The physical
+  contract now separates the synchronized two-refresh end-to-end bound from
+  strict stage maxima; the retained 27 ms archive is acceptable end to end but
+  its 11 ms dwell-to-submit maximum still identifies the optimization target.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

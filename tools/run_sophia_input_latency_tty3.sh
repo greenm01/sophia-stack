@@ -8,7 +8,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-20}"
-REFRESH_BUDGET_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+REFRESH_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+MAX_QUEUE_DWELL_MSEC="${SOPHIA_INPUT_LATENCY_MAX_QUEUE_DWELL_MSEC:-1}"
+MAX_DWELL_TO_SUBMIT_MSEC="${SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC:-}"
+MAX_SUBMIT_TO_FLIP_MSEC="${SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC:-}"
 KEY_INTERVAL_MSEC=0
 MAX_SESSION_START_ATTEMPTS=3
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
@@ -106,8 +109,10 @@ Usage: tools/run_sophia_input_latency_tty3.sh
 
 Run from a logged-in local TTY3 with DRM released and /dev/uinput writable.
 The default gate collects 20 independent samples and requires p95 below
-17 ms. Override with SOPHIA_INPUT_LATENCY_SAMPLES and
-SOPHIA_INPUT_LATENCY_REFRESH_MSEC.
+two 17 ms refresh periods. It separately caps queue dwell at 1 ms,
+dwell-to-submit at 8 ms, and submit-to-flip at 17 ms. Override the sample
+count, refresh period, or stage budgets with the SOPHIA_INPUT_LATENCY_*
+environment variables.
 EOF
     exit 0
 fi
@@ -119,8 +124,20 @@ fi
 [[ $# -eq 0 ]] || fail "unexpected arguments (use --help)"
 [[ "$SAMPLES" =~ ^[1-9][0-9]*$ && "$SAMPLES" -le 100 ]] ||
     fail "SOPHIA_INPUT_LATENCY_SAMPLES must be an integer from 1 through 100"
-[[ "$REFRESH_BUDGET_MSEC" =~ ^[1-9][0-9]*$ ]] ||
+[[ "$REFRESH_MSEC" =~ ^[1-9][0-9]*$ ]] ||
     fail "SOPHIA_INPUT_LATENCY_REFRESH_MSEC must be a positive integer"
+if [[ -z "$MAX_DWELL_TO_SUBMIT_MSEC" ]]; then
+    MAX_DWELL_TO_SUBMIT_MSEC=$((REFRESH_MSEC / 2))
+    ((MAX_DWELL_TO_SUBMIT_MSEC > 0)) || MAX_DWELL_TO_SUBMIT_MSEC=1
+fi
+if [[ -z "$MAX_SUBMIT_TO_FLIP_MSEC" ]]; then
+    MAX_SUBMIT_TO_FLIP_MSEC="$REFRESH_MSEC"
+fi
+for budget in "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
+    "$MAX_SUBMIT_TO_FLIP_MSEC"; do
+    [[ "$budget" =~ ^[0-9]+$ ]] ||
+        fail "stage latency budgets must be nonnegative integers"
+done
 [[ -t 0 && "$(tty)" == /dev/tty3 ]] ||
     fail "run this interactively from a logged-in local TTY3"
 [[ -e /dev/uinput ]] ||
@@ -136,9 +153,11 @@ mkdir -p "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 trap 'preserve_pending $?' EXIT
-printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_budget_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
-    "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_BUDGET_MSEC" \
-    "$KEY_INTERVAL_MSEC" "$MAX_SESSION_START_ATTEMPTS" \
+printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
+    "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_MSEC" \
+    "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
+    "$MAX_SUBMIT_TO_FLIP_MSEC" "$KEY_INTERVAL_MSEC" \
+    "$MAX_SESSION_START_ATTEMPTS" \
     >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
@@ -242,7 +261,10 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
 done
 
 set +e
-SOPHIA_INPUT_LATENCY_REFRESH_MSEC="$REFRESH_BUDGET_MSEC" \
+SOPHIA_INPUT_LATENCY_REFRESH_MSEC="$REFRESH_MSEC" \
+SOPHIA_INPUT_LATENCY_MAX_QUEUE_DWELL_MSEC="$MAX_QUEUE_DWELL_MSEC" \
+SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC="$MAX_DWELL_TO_SUBMIT_MSEC" \
+SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC="$MAX_SUBMIT_TO_FLIP_MSEC" \
     tools/report_sophia_input_latency.sh \
     "$PENDING"/sample-*/session.log | tee "$PENDING/report.log"
 report_status="${PIPESTATUS[0]}"

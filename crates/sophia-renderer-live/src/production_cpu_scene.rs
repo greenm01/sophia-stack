@@ -14,12 +14,19 @@ use crate::{
     compose_live_cpu_frame_ref_with_cursor,
 };
 
+const RETAINED_PRIMARY_CPU_FRAME_CAPACITY: usize = 3;
+
 #[derive(Clone)]
 pub struct LiveProductionComposedFrame {
     pub frame: LiveCpuComposedFrame,
     pub checksum: u64,
     pub nonzero_pixel_bytes: usize,
     pub output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
+}
+
+struct RetainedPrimaryCpuFrame {
+    bytes: std::sync::Arc<Vec<u8>>,
+    output_damage_snapshot: OutputFrameDamageSnapshot,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,6 +46,7 @@ pub struct LiveProductionCpuScene {
     exact_pixel_proofs_remaining: usize,
     exact_pixel_metric_frames: usize,
     damage_scoped_metric_frames: usize,
+    retained_primary_frames: Vec<RetainedPrimaryCpuFrame>,
     secondary_output_frames: Vec<(usize, HeadlessOutput, LiveProductionComposedFrame)>,
 }
 
@@ -54,6 +62,7 @@ impl LiveProductionCpuScene {
             exact_pixel_proofs_remaining: 3,
             exact_pixel_metric_frames: 0,
             damage_scoped_metric_frames: 0,
+            retained_primary_frames: Vec::new(),
             secondary_output_frames: Vec::new(),
         }
     }
@@ -173,6 +182,20 @@ impl LiveProductionCpuScene {
         if output.size != self.output_size {
             return Err("CPU scene output descriptor has a mismatched size".into());
         }
+        let cursor_geometry = cursor_position.map(|position| Rect {
+            x: position.x.floor() as i32,
+            y: position.y.floor() as i32,
+            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+        });
+        let current_output_damage_snapshot = output_frame_damage_snapshot(
+            output,
+            display_list.clone(),
+            committed_surfaces,
+            cursor_geometry,
+        )?;
+        let (reusable_bytes, repaint_damage) =
+            self.take_primary_repaint_baseline(&current_output_damage_snapshot);
         let mut elements = Vec::with_capacity(display_list.commands.len().saturating_mul(4));
         for command in &display_list.commands {
             match command {
@@ -215,32 +238,6 @@ impl LiveProductionCpuScene {
                 }
             }
         }
-        let cursor_geometry = cursor_position.map(|position| Rect {
-            x: position.x.floor() as i32,
-            y: position.y.floor() as i32,
-            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
-            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
-        });
-        let current_output_damage_snapshot = output_frame_damage_snapshot(
-            output,
-            display_list.clone(),
-            committed_surfaces,
-            cursor_geometry,
-        )?;
-        let repaint_damage = self
-            .last_output_damage_snapshot
-            .as_ref()
-            .and_then(|previous| {
-                let damage =
-                    output_frame_damage(Some(previous), &current_output_damage_snapshot).ok()?;
-                match plan_output_repaint(self.output_size, &damage, OutputRepaintPolicy::default())
-                    .ok()?
-                {
-                    OutputRepaintPlan::Skip => Some(Region::empty()),
-                    OutputRepaintPlan::Partial { damage, .. } => Some(damage),
-                    OutputRepaintPlan::Full { .. } => None,
-                }
-            });
         let metrics_mode = if self.exact_pixel_proofs_remaining == 0 {
             self.damage_scoped_metric_frames = self.damage_scoped_metric_frames.saturating_add(1);
             LiveCpuFrameMetricsMode::DamageScopedEvidence
@@ -249,7 +246,6 @@ impl LiveProductionCpuScene {
             self.exact_pixel_metric_frames = self.exact_pixel_metric_frames.saturating_add(1);
             LiveCpuFrameMetricsMode::ExactPixels
         };
-        let reusable_bytes = self.last_report.take().map(|report| report.frame.bytes);
         self.last_report = Some(
             compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
                 self.output_size,
@@ -266,6 +262,59 @@ impl LiveProductionCpuScene {
         self.last_output_damage_snapshot = Some(current_output_damage_snapshot);
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
+    }
+
+    fn take_primary_repaint_baseline(
+        &mut self,
+        current: &OutputFrameDamageSnapshot,
+    ) -> (Option<std::sync::Arc<Vec<u8>>>, Option<Region>) {
+        let latest = self.last_report.take().and_then(|report| {
+            self.last_output_damage_snapshot
+                .take()
+                .map(|output_damage_snapshot| RetainedPrimaryCpuFrame {
+                    bytes: report.frame.bytes,
+                    output_damage_snapshot,
+                })
+        });
+        let Some(latest) = latest else {
+            self.retained_primary_frames.clear();
+            return (None, None);
+        };
+
+        if let Some(damage) = retained_primary_repaint_damage(
+            self.output_size,
+            &latest.output_damage_snapshot,
+            current,
+        ) && (damage.rects.is_empty() || std::sync::Arc::strong_count(&latest.bytes) == 1)
+        {
+            return (Some(latest.bytes), Some(damage));
+        }
+
+        self.retained_primary_frames.push(latest);
+        let reusable = self
+            .retained_primary_frames
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, retained)| {
+                if std::sync::Arc::strong_count(&retained.bytes) != 1 {
+                    return None;
+                }
+                retained_primary_repaint_damage(
+                    self.output_size,
+                    &retained.output_damage_snapshot,
+                    current,
+                )
+                .map(|damage| (index, damage))
+            });
+        if let Some((index, damage)) = reusable {
+            let retained = self.retained_primary_frames.remove(index);
+            return (Some(retained.bytes), Some(damage));
+        }
+        while self.retained_primary_frames.len() > RETAINED_PRIMARY_CPU_FRAME_CAPACITY {
+            self.retained_primary_frames.remove(0);
+        }
+        (None, None)
     }
 
     fn compose_ordered(
@@ -320,6 +369,7 @@ impl LiveProductionCpuScene {
                 .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
         self.last_output_damage_snapshot = None;
+        self.retained_primary_frames.clear();
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }
@@ -512,5 +562,18 @@ impl LiveProductionCpuScene {
             frames.push(frame);
         }
         Ok(frames)
+    }
+}
+
+fn retained_primary_repaint_damage(
+    output_size: Size,
+    retained: &OutputFrameDamageSnapshot,
+    current: &OutputFrameDamageSnapshot,
+) -> Option<Region> {
+    let damage = output_frame_damage(Some(retained), current).ok()?;
+    match plan_output_repaint(output_size, &damage, OutputRepaintPolicy::default()).ok()? {
+        OutputRepaintPlan::Skip => Some(Region::empty()),
+        OutputRepaintPlan::Partial { damage, .. } => Some(damage),
+        OutputRepaintPlan::Full { .. } => None,
     }
 }

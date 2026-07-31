@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REFRESH_BUDGET_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+REFRESH_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
+MAX_QUEUE_DWELL_MSEC="${SOPHIA_INPUT_LATENCY_MAX_QUEUE_DWELL_MSEC:-1}"
+MAX_DWELL_TO_SUBMIT_MSEC="${SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC:-}"
+MAX_SUBMIT_TO_FLIP_MSEC="${SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC:-}"
+END_TO_END_REFRESHES=2
 
 fail() {
     echo "Sophia input latency report failed: $*" >&2
@@ -24,13 +28,27 @@ if [[ "${1:-}" == --help ]]; then
 Usage: tools/report_sophia_input_latency.sh SESSION_LOG...
 
 Require clean libinput-to-kernel-page-flip evidence in every log and report
-full-chain p95 against SOPHIA_INPUT_LATENCY_REFRESH_MSEC (default: 17).
+full-chain p95 below two refresh periods. The default 17 ms refresh also gates
+queue dwell at 1 ms, dwell-to-submit at 8 ms, and submit-to-flip at 17 ms.
 EOF
     exit 0
 fi
 (($# > 0)) || fail "provide at least one session log"
-[[ "$REFRESH_BUDGET_MSEC" =~ ^[1-9][0-9]*$ ]] ||
+[[ "$REFRESH_MSEC" =~ ^[1-9][0-9]*$ ]] ||
     fail "SOPHIA_INPUT_LATENCY_REFRESH_MSEC must be a positive integer"
+if [[ -z "$MAX_DWELL_TO_SUBMIT_MSEC" ]]; then
+    MAX_DWELL_TO_SUBMIT_MSEC=$((REFRESH_MSEC / 2))
+    ((MAX_DWELL_TO_SUBMIT_MSEC > 0)) || MAX_DWELL_TO_SUBMIT_MSEC=1
+fi
+if [[ -z "$MAX_SUBMIT_TO_FLIP_MSEC" ]]; then
+    MAX_SUBMIT_TO_FLIP_MSEC="$REFRESH_MSEC"
+fi
+for budget in "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
+    "$MAX_SUBMIT_TO_FLIP_MSEC"; do
+    [[ "$budget" =~ ^[0-9]+$ ]] ||
+        fail "stage latency budgets must be nonnegative integers"
+done
+END_TO_END_BUDGET_MSEC=$((REFRESH_MSEC * END_TO_END_REFRESHES))
 
 latencies=()
 max_queue_dwell=0
@@ -84,11 +102,32 @@ p95="${sorted[p95_rank - 1]}"
 maximum="${sorted[samples - 1]}"
 status=passed
 exit_status=0
-if ((p95 >= REFRESH_BUDGET_MSEC)); then
+failed_gates=()
+if ((p95 >= END_TO_END_BUDGET_MSEC)); then
+    failed_gates+=(full_chain_p95)
+fi
+if ((max_queue_dwell > MAX_QUEUE_DWELL_MSEC)); then
+    failed_gates+=(queue_dwell)
+fi
+if ((max_dwell_to_submit > MAX_DWELL_TO_SUBMIT_MSEC)); then
+    failed_gates+=(dwell_to_submit)
+fi
+if ((max_submit_to_flip > MAX_SUBMIT_TO_FLIP_MSEC)); then
+    failed_gates+=(submit_to_page_flip)
+fi
+if ((${#failed_gates[@]} > 0)); then
     status=failed
     exit_status=1
 fi
-printf 'sophia_input_latency_report schema=1 status=%s samples=%s p95_msec=%s max_msec=%s refresh_budget_msec=%s max_queue_dwell_msec=%s max_dwell_to_submit_msec=%s max_submit_to_page_flip_msec=%s\n' \
-    "$status" "$samples" "$p95" "$maximum" "$REFRESH_BUDGET_MSEC" \
-    "$max_queue_dwell" "$max_dwell_to_submit" "$max_submit_to_flip"
+failed_gate_summary=none
+if ((${#failed_gates[@]} > 0)); then
+    printf -v failed_gate_summary '%s,' "${failed_gates[@]}"
+    failed_gate_summary="${failed_gate_summary%,}"
+fi
+printf 'sophia_input_latency_report schema=2 status=%s failed_gates=%s samples=%s p95_msec=%s max_msec=%s refresh_msec=%s end_to_end_budget_refreshes=%s end_to_end_budget_msec=%s max_queue_dwell_msec=%s queue_dwell_budget_msec=%s max_dwell_to_submit_msec=%s dwell_to_submit_budget_msec=%s max_submit_to_page_flip_msec=%s submit_to_page_flip_budget_msec=%s\n' \
+    "$status" "$failed_gate_summary" "$samples" "$p95" "$maximum" \
+    "$REFRESH_MSEC" "$END_TO_END_REFRESHES" "$END_TO_END_BUDGET_MSEC" \
+    "$max_queue_dwell" "$MAX_QUEUE_DWELL_MSEC" \
+    "$max_dwell_to_submit" "$MAX_DWELL_TO_SUBMIT_MSEC" \
+    "$max_submit_to_flip" "$MAX_SUBMIT_TO_FLIP_MSEC"
 exit "$exit_status"

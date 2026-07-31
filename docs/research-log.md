@@ -3,6 +3,26 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-07-31: Synchronized input latency uses an end-to-end and stage contract
+
+The former physical gate required full-chain p95 below one 17 ms refresh. A
+randomly phased input event can spend nearly that entire interval waiting for
+the next synchronized page flip after useful work has completed, leaving an
+unrealistic sub-millisecond p95 allowance for input delivery, client response,
+composition, and submission. The aggregate bound therefore encouraged tearing,
+VRR, or workload-specific bypasses before the normal synchronized path was
+otherwise ready.
+
+The physical contract now requires full-chain p95 below two configured refresh
+periods and independently fails when maximum queue dwell exceeds 1 ms,
+dwell-to-submit exceeds half a refresh, or submit-to-page-flip exceeds one
+refresh. The two-refresh bound is exclusive; stage bounds are inclusive. This
+accepts ordinary vblank phase while preserving strict gates on the portions
+Sophia controls and rejects an additional queued frame. The reporter emits the
+refresh, derived aggregate budget, every stage budget, and named failed gates
+under schema 2. Existing immutable schema-1 evidence remains valid historical
+evidence and is not rewritten.
+
 ## 2026-07-30: CPU patch residency is validated after transaction reduction
 
 The first commit-pinned Milestone 9 semantic rerun exposed a frontend-timing
