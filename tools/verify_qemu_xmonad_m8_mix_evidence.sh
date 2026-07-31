@@ -26,7 +26,7 @@ close_actions=$(grep -c '^sophia_live_wm schema=1 status=session_action_committe
     exit 1
 }
 close_key_clears=$(grep -c '^sophia_live_session_keys schema=1 status=cleared reason=close_surface .* count=[1-9][0-9]*$' "$evidence" || true)
-(( close_key_clears >= 3 )) || {
+(( close_key_clears >= 2 )) || {
     echo "M8 mix observed only $close_key_clears nonblocking close key clears" >&2
     exit 1
 }

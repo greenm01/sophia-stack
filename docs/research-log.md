@@ -5589,3 +5589,19 @@ acknowledgement ordering.
 - Mixed and CPU presentation now reports X Present `Copy`; `Flip` is reserved
   for future direct scanout. Reduced metrics and the GLX reporter require cache
   hits, reject mismatch/capacity debt, and preserve post-KMS cadence evidence.
+
+## 2026-07-31: close cleanup evidence must allow an already-clear key ledger
+
+- The same-commit QEMU M8 session completed all three close actions, normal
+  application exits, clean input drain, and normal cleanup, but its verifier
+  rejected Firefox because only two closes emitted nonzero `close_surface`
+  key-clear records.
+- Firefox had already released the same two keys during an earlier focus
+  transition. Closing a surface with no remaining pressed keys correctly emits
+  no nonzero key-clear record; requiring one for every close made promotion
+  depend on input and lifecycle timing rather than final state.
+- The verifier still requires three committed close actions, at least two
+  demonstrated nonblocking close-time key clears, positive state-only
+  releases, and a final key ledger with zero pending keys or release barriers.
+  Its negative regression removes every close-time clear and must fail, while a
+  new regression removes one clear to represent an already-clean close.
