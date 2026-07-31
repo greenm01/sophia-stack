@@ -7,7 +7,7 @@
             .as_ref()
             .and_then(|wm| wm.surface_chrome_style())
             .unwrap_or(config.surface_chrome_style);
-        runtime.set_surface_chrome_style(style);
+        synchronize_runtime_surface_chrome_style(runtime, style);
     }
     if pending_wm_update.is_none()
         && layout.pending.is_none()

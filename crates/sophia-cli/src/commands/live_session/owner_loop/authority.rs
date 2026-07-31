@@ -331,6 +331,15 @@
                 let runtime = runtime
                     .as_mut()
                     .expect("persistent backend runtime was initialized above");
+                // Layout progress can promote staged WM chrome after the
+                // earlier WM phase. Synchronize again at the production
+                // boundary so the committed clearance and rendered chrome
+                // always belong to the same transaction.
+                let surface_chrome_style = wm_session
+                    .as_ref()
+                    .and_then(|wm| wm.surface_chrome_style())
+                    .unwrap_or(config.surface_chrome_style);
+                synchronize_runtime_surface_chrome_style(runtime, surface_chrome_style);
                 if layout.pending.is_none() {
                     runtime.release_layout_deferred_presentations();
                 }

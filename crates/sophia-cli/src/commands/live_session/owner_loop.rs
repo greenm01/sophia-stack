@@ -46,6 +46,13 @@ fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequ
         })
 }
 
+fn synchronize_runtime_surface_chrome_style(
+    runtime: &mut LiveProductionVisualRuntime,
+    style: sophia_engine::SurfaceChromeStyle,
+) -> bool {
+    runtime.set_surface_chrome_style(style)
+}
+
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,

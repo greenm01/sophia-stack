@@ -20,8 +20,8 @@ use super::{
     pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
     route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
-    successful_primary_exit_ends_session, synchronous_modeset_record,
-    take_settled_input_delivery_wait,
+    successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
+    synchronous_modeset_record, take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, SessionClientKeyState, SessionClientPressedKey,
@@ -120,6 +120,28 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
         presentation_queued: false,
     };
     assert!(!native_frame_service_requires_owner_progress(&idle));
+}
+
+#[test]
+fn promoted_chrome_is_synchronized_at_the_production_boundary() {
+    let outputs = [sophia_engine::HeadlessOutput::deterministic()];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None, None).unwrap();
+    let promoted = sophia_engine::SurfaceChromeStyle {
+        focus_ring: sophia_engine::FocusRingStyle {
+            width: 6,
+            ..sophia_engine::FocusRingStyle::default()
+        },
+        ..sophia_engine::SurfaceChromeStyle::default()
+    };
+
+    assert!(synchronize_runtime_surface_chrome_style(
+        &mut runtime,
+        promoted
+    ));
+    assert!(!synchronize_runtime_surface_chrome_style(
+        &mut runtime,
+        promoted
+    ));
 }
 
 #[test]
