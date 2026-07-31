@@ -271,6 +271,21 @@ where
         }
     }
 
+    pub fn rewrite_xrgb8888_owned_scanout_buffer_damage(
+        &mut self,
+        buffer: &mut NativeGbmOwnedScanoutBuffer,
+        pixels: &[u8],
+        damage: &[NativeCompositionRect],
+    ) -> Result<(), NativeGbmScanoutBufferExportDetail> {
+        let started = Instant::now();
+        let result = buffer.rewrite_xrgb8888_damage(pixels, damage);
+        self.stats.max_upload = self.stats.max_upload.max(started.elapsed());
+        if result.is_ok() {
+            self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
+        }
+        result
+    }
+
     pub fn export_dmabuf_owned_scanout_buffer_with_modifiers(
         &mut self,
         frame: NativeDmaBufFrame<'_>,

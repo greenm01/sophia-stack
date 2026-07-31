@@ -16,6 +16,7 @@ pub(super) enum PendingRenderedFrame {
     Cpu {
         frame: LiveCpuComposedFrame,
         checksum: u64,
+        damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     },
     DmaBuf(sophia_renderer_live::LiveOwnedDmaBufFrame),
     Mixed(sophia_renderer_live::LiveOwnedMixedCompositionFrame),
@@ -185,7 +186,20 @@ where
         frame: LiveCpuComposedFrame,
         checksum: u64,
     ) {
-        self.pending_frame = Some(PendingRenderedFrame::Cpu { frame, checksum });
+        self.set_pending_cpu_frame_with_damage(frame, checksum, None);
+    }
+
+    pub fn set_pending_cpu_frame_with_damage(
+        &mut self,
+        frame: LiveCpuComposedFrame,
+        checksum: u64,
+        damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+    ) {
+        self.pending_frame = Some(PendingRenderedFrame::Cpu {
+            frame,
+            checksum,
+            damage_snapshot,
+        });
     }
 
     pub const fn pending_cpu_frame(&self) -> bool {
@@ -386,7 +400,9 @@ where
                 }
                 report
             }
-            Some(PendingRenderedFrame::Cpu { frame, checksum }) => {
+            Some(PendingRenderedFrame::Cpu {
+                frame, checksum, ..
+            }) => {
                 self.cpu_frame_export_attempts = self.cpu_frame_export_attempts.saturating_add(1);
                 self.last_cpu_frame_checksum = Some(checksum);
                 let report = context.export_xrgb8888_owned_scanout_buffer_with_modifiers(

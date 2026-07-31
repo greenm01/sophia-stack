@@ -842,8 +842,11 @@ mod persistent_native_scanout {
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
                 checksum: frame.checksum,
             });
-            head.exporter
-                .set_pending_cpu_frame_with_checksum(frame.frame, frame.checksum);
+            head.exporter.set_pending_cpu_frame_with_damage(
+                frame.frame,
+                frame.checksum,
+                frame.output_damage_snapshot,
+            );
             status
         }
 

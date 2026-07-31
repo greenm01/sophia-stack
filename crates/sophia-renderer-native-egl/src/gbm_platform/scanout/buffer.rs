@@ -104,6 +104,54 @@ impl NativeGbmOwnedScanoutBuffer {
         self.modifier
     }
 
+    pub fn rewrite_xrgb8888_damage(
+        &mut self,
+        pixels: &[u8],
+        damage: &[NativeCompositionRect],
+    ) -> Result<(), NativeGbmScanoutBufferExportDetail> {
+        const DRM_FORMAT_XRGB8888: u32 = 0x3432_5258;
+
+        let source_stride = self
+            .width
+            .checked_mul(4)
+            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+        let source_len = usize::try_from(source_stride)
+            .ok()
+            .and_then(|stride| stride.checked_mul(usize::try_from(self.height).ok()?))
+            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+        if self.format != DRM_FORMAT_XRGB8888
+            || self.pitch < source_stride
+            || pixels.len() != source_len
+        {
+            return Err(NativeGbmScanoutBufferExportDetail::InvalidTarget);
+        }
+        if damage.is_empty() {
+            return Ok(());
+        }
+        let width = self.width;
+        let height = self.height;
+        let buffer = self
+            ._buffer
+            .as_mut()
+            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
+        buffer
+            .map_mut(0, 0, width, height, |mapped| {
+                let target_stride = mapped.stride();
+                copy_xrgb8888_damage(
+                    pixels,
+                    source_stride,
+                    width,
+                    height,
+                    mapped.buffer_mut(),
+                    target_stride,
+                    damage,
+                )
+            })
+            .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed)??;
+        trace_native_lifecycle("cpu_frame_damage_written");
+        Ok(())
+    }
+
     pub fn export_plane_fds(
         &self,
     ) -> Result<NativeGbmOwnedScanoutBufferPlaneFds, NativeGbmScanoutBufferExportDetail> {
@@ -134,6 +182,71 @@ impl NativeGbmOwnedScanoutBuffer {
         })
     }
 }
+
+fn copy_xrgb8888_damage(
+    source: &[u8],
+    source_stride: u32,
+    width: u32,
+    height: u32,
+    target: &mut [u8],
+    target_stride: u32,
+    damage: &[NativeCompositionRect],
+) -> Result<(), NativeGbmScanoutBufferExportDetail> {
+    let target_len = usize::try_from(target_stride)
+        .ok()
+        .and_then(|stride| stride.checked_mul(usize::try_from(height).ok()?))
+        .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+    if target.len() < target_len {
+        return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
+    }
+    for rect in damage {
+        let left = i64::from(rect.x).clamp(0, i64::from(width));
+        let top = i64::from(rect.y).clamp(0, i64::from(height));
+        let right = i64::from(rect.x)
+            .saturating_add(i64::from(rect.width))
+            .clamp(0, i64::from(width));
+        let bottom = i64::from(rect.y)
+            .saturating_add(i64::from(rect.height))
+            .clamp(0, i64::from(height));
+        if left >= right || top >= bottom {
+            continue;
+        }
+        let left = usize::try_from(left).unwrap_or_default();
+        let top = usize::try_from(top).unwrap_or_default();
+        let right = usize::try_from(right).unwrap_or(left);
+        let bottom = usize::try_from(bottom).unwrap_or(top);
+        let row_bytes = right
+            .saturating_sub(left)
+            .checked_mul(4)
+            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+        for row in top..bottom {
+            let source_start = row
+                .checked_mul(usize::try_from(source_stride).unwrap_or(0))
+                .and_then(|offset| offset.checked_add(left.saturating_mul(4)))
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+            let target_start = row
+                .checked_mul(usize::try_from(target_stride).unwrap_or(0))
+                .and_then(|offset| offset.checked_add(left.saturating_mul(4)))
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+            let source_end = source_start
+                .checked_add(row_bytes)
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+            let target_end = target_start
+                .checked_add(row_bytes)
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+            let source_row = source
+                .get(source_start..source_end)
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+            let target_row = target
+                .get_mut(target_start..target_end)
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
+            target_row.copy_from_slice(source_row);
+        }
+    }
+    Ok(())
+}
+
+mod tests;
 
 pub struct NativeGbmOwnedScanoutBufferPlaneFds {
     plane_count: u8,

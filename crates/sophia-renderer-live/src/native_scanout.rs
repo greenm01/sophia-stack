@@ -432,6 +432,35 @@ where
         )
     }
 
+    pub fn rewrite_xrgb8888_owned_scanout_buffer_damage(
+        &mut self,
+        buffer: &mut NativeGbmOwnedScanoutBuffer,
+        frame: &crate::LiveCpuComposedFrame,
+        damage: &[Rect],
+    ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
+        if buffer.descriptor.size != frame.size
+            || buffer.descriptor.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+        {
+            return Err(LiveRendererScanoutBufferExportDetail::InvalidTarget);
+        }
+        let damage = damage
+            .iter()
+            .map(|rect| sophia_renderer_native_egl::NativeCompositionRect {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+            })
+            .collect::<Vec<_>>();
+        self.inner
+            .rewrite_xrgb8888_owned_scanout_buffer_damage(
+                &mut buffer._buffer,
+                &frame.bytes,
+                &damage,
+            )
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
     pub fn export_dmabuf_owned_scanout_buffer_with_modifiers(
         &mut self,
         target: LiveGbmEglFrameTargetRecord,

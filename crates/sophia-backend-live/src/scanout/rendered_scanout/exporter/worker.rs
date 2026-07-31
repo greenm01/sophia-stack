@@ -3,8 +3,8 @@ use crate::api::*;
 use sophia_renderer_live::{
     LiveNativePersistentRenderStats, LiveRendererImageId, LiveRendererScanoutBufferDescriptor,
     LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
-    NativeGbmOwnedScanoutBuffer, NativeGbmRenderedScanoutContext,
-    NativeGbmRenderedScanoutContextStatus,
+    NativeGbmOwnedScanoutBuffer, NativeGbmOwnedScanoutBufferExportReport,
+    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
 };
 use std::collections::BTreeMap;
 use std::io;
@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 const WORKER_COMMAND_CAPACITY: usize = 32;
 const WORKER_RESULT_CAPACITY: usize = 2;
 const WORKER_LEASE_CAPACITY: usize = 16;
+const WORKER_FREE_CPU_BUFFER_CAPACITY: usize = 3;
 pub const LIVE_RENDERER_WORKER_SOFT_STALL: Duration = Duration::from_millis(100);
 pub const LIVE_RENDERER_WORKER_HARD_STALL: Duration = Duration::from_secs(1);
 const WORKER_MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -366,7 +367,8 @@ fn run_worker<D>(
     let report = NativeGbmRenderedScanoutContext::from_backend_device_result(device);
     let context_status = report.status;
     let mut context = report.context;
-    let mut leases = BTreeMap::<LiveRendererWorkerLeaseId, NativeGbmOwnedScanoutBuffer>::new();
+    let mut leases = BTreeMap::<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>::new();
+    let mut free_cpu_buffers = Vec::<ReusableCpuBuffer>::new();
     let mut next_lease_id = 1_u64;
 
     while let Ok(command) = command_receiver.recv() {
@@ -390,6 +392,7 @@ fn run_worker<D>(
                             frame,
                             &preferred_modifiers,
                             &mut leases,
+                            &mut free_cpu_buffers,
                             &mut next_lease_id,
                         )
                     },
@@ -436,10 +439,35 @@ fn run_worker<D>(
                 });
             }
             WorkerCommand::Release(lease_id) => {
-                leases.remove(&lease_id);
+                if let Some(lease) = leases.remove(&lease_id)
+                    && let Some(metadata) = lease.cpu
+                    && free_cpu_buffers.len() < WORKER_FREE_CPU_BUFFER_CAPACITY
+                {
+                    free_cpu_buffers.push(ReusableCpuBuffer {
+                        buffer: lease.buffer,
+                        checksum: metadata.checksum,
+                        damage_snapshot: metadata.damage_snapshot,
+                    });
+                }
             }
         }
     }
+}
+
+struct WorkerCpuBufferMetadata {
+    checksum: u64,
+    damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+}
+
+struct WorkerLeaseBuffer {
+    buffer: NativeGbmOwnedScanoutBuffer,
+    cpu: Option<WorkerCpuBufferMetadata>,
+}
+
+struct ReusableCpuBuffer {
+    buffer: NativeGbmOwnedScanoutBuffer,
+    checksum: u64,
+    damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
 }
 
 fn render_frame<D>(
@@ -447,7 +475,8 @@ fn render_frame<D>(
     target: LiveGbmEglFrameTargetRecord,
     frame: PendingRenderedFrame,
     preferred_modifiers: &[u64],
-    leases: &mut BTreeMap<LiveRendererWorkerLeaseId, NativeGbmOwnedScanoutBuffer>,
+    leases: &mut BTreeMap<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>,
+    free_cpu_buffers: &mut Vec<ReusableCpuBuffer>,
     next_lease_id: &mut u64,
 ) -> WorkerOutcome
 where
@@ -456,21 +485,80 @@ where
     if leases.len() >= WORKER_LEASE_CAPACITY {
         return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
     }
-    let report = match frame {
-        PendingRenderedFrame::Cpu { frame, .. } => context
-            .export_xrgb8888_owned_scanout_buffer_with_modifiers(
-                target,
-                &frame,
-                preferred_modifiers,
-            ),
-        PendingRenderedFrame::DmaBuf(frame) => context
-            .export_dmabuf_owned_scanout_buffer_with_modifiers(
+    let (report, cpu) = match frame {
+        PendingRenderedFrame::Cpu {
+            frame,
+            checksum,
+            damage_snapshot,
+        } => {
+            let reused = free_cpu_buffers
+                .iter()
+                .rposition(|candidate| candidate.buffer.descriptor().size == frame.size)
+                .and_then(|index| {
+                    let mut candidate = free_cpu_buffers.swap_remove(index);
+                    let damage = reusable_cpu_buffer_damage(
+                        candidate.checksum,
+                        candidate.damage_snapshot.as_ref(),
+                        checksum,
+                        damage_snapshot.as_ref(),
+                        frame.size,
+                    );
+                    match context.rewrite_xrgb8888_owned_scanout_buffer_damage(
+                        &mut candidate.buffer,
+                        &frame,
+                        &damage,
+                    ) {
+                        Ok(()) => {
+                            let damaged_pixels = damage.iter().fold(0_u64, |total, rect| {
+                                let pixels = i64::from(rect.width)
+                                    .max(0)
+                                    .saturating_mul(i64::from(rect.height).max(0));
+                                total.saturating_add(u64::try_from(pixels).unwrap_or(u64::MAX))
+                            });
+                            tracing::info!(
+                                "sophia_renderer_worker schema=1 status=cpu_buffer_reused damage_rects={} damaged_pixels={}",
+                                damage.len(),
+                                damaged_pixels,
+                            );
+                            Some(NativeGbmOwnedScanoutBufferExportReport::new(
+                                LiveRendererScanoutBufferExportStatus::Exported,
+                                LiveRendererScanoutBufferExportDetail::Exported,
+                                Some(candidate.buffer),
+                            ))
+                        }
+                        Err(detail) => {
+                            tracing::warn!(
+                                "sophia_renderer_worker schema=1 status=cpu_buffer_reuse_failed detail={detail:?}"
+                            );
+                            None
+                        }
+                    }
+                });
+            let report = reused.unwrap_or_else(|| {
+                context.export_xrgb8888_owned_scanout_buffer_with_modifiers(
+                    target,
+                    &frame,
+                    preferred_modifiers,
+                )
+            });
+            (
+                report,
+                Some(WorkerCpuBufferMetadata {
+                    checksum,
+                    damage_snapshot,
+                }),
+            )
+        }
+        PendingRenderedFrame::DmaBuf(frame) => (
+            context.export_dmabuf_owned_scanout_buffer_with_modifiers(
                 target,
                 frame.as_frame(),
                 preferred_modifiers,
             ),
+            None,
+        ),
         PendingRenderedFrame::Mixed(frame) => {
-            match context.export_owned_mixed_frame_with_modifiers(
+            let report = match context.export_owned_mixed_frame_with_modifiers(
                 target,
                 &frame,
                 preferred_modifiers,
@@ -481,7 +569,8 @@ where
                         LiveRendererScanoutBufferExportDetail::InvalidTarget,
                     );
                 }
-            }
+            };
+            (report, None)
         }
     };
     if report.status != LiveRendererScanoutBufferExportStatus::Exported {
@@ -493,9 +582,38 @@ where
     let descriptor = buffer.descriptor();
     let lease_id = LiveRendererWorkerLeaseId(*next_lease_id);
     *next_lease_id = next_lease_id.saturating_add(1);
-    leases.insert(lease_id, buffer);
+    leases.insert(lease_id, WorkerLeaseBuffer { buffer, cpu });
     WorkerOutcome::Exported {
         descriptor,
         lease_id,
     }
 }
+
+fn reusable_cpu_buffer_damage(
+    previous_checksum: u64,
+    previous: Option<&sophia_engine::OutputFrameDamageSnapshot>,
+    checksum: u64,
+    current: Option<&sophia_engine::OutputFrameDamageSnapshot>,
+    size: sophia_protocol::Size,
+) -> Vec<sophia_protocol::Rect> {
+    if previous_checksum == checksum {
+        return Vec::new();
+    }
+    let damage = previous
+        .zip(current)
+        .and_then(|(previous, current)| {
+            sophia_engine::output_frame_damage(Some(previous), current).ok()
+        })
+        .map(|damage| damage.rects)
+        .filter(|damage| !damage.is_empty());
+    damage.unwrap_or_else(|| {
+        vec![sophia_protocol::Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        }]
+    })
+}
+
+mod tests;
