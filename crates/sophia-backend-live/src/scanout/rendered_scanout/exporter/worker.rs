@@ -82,6 +82,7 @@ impl Drop for NativeGbmRendererWorkerScanoutLease {
 pub(super) struct NativeGbmRendererWorker {
     command_sender: SyncSender<WorkerCommand>,
     result_receiver: Receiver<WorkerResult>,
+    thread: Option<thread::JoinHandle<()>>,
     next_request_id: u64,
     in_flight: Option<InFlightRequest>,
     context_status: Option<NativeGbmRenderedScanoutContextStatus>,
@@ -99,12 +100,13 @@ impl NativeGbmRendererWorker {
     {
         let (command_sender, command_receiver) = sync_channel(WORKER_COMMAND_CAPACITY);
         let (result_sender, result_receiver) = sync_channel(WORKER_RESULT_CAPACITY);
-        thread::Builder::new()
+        let thread = thread::Builder::new()
             .name("sophia-render-gpu".to_owned())
             .spawn(move || run_worker(device, command_receiver, result_sender))?;
         Ok(Self {
             command_sender,
             result_receiver,
+            thread: Some(thread),
             next_request_id: 1,
             in_flight: None,
             context_status: None,
@@ -305,6 +307,29 @@ impl NativeGbmRendererWorker {
     }
 }
 
+impl Drop for NativeGbmRendererWorker {
+    fn drop(&mut self) {
+        let mut shutdown = WorkerCommand::Shutdown;
+        loop {
+            match self.command_sender.try_send(shutdown) {
+                Ok(()) | Err(TrySendError::Disconnected(_)) => break,
+                Err(TrySendError::Full(command)) => {
+                    shutdown = command;
+                    while self.result_receiver.try_recv().is_ok() {}
+                    thread::yield_now();
+                }
+            }
+        }
+        if let Some(thread) = self.thread.take() {
+            while !thread.is_finished() {
+                while self.result_receiver.try_recv().is_ok() {}
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let _ = thread.join();
+        }
+    }
+}
+
 pub(super) enum WorkerPoll {
     Idle,
     Pending {
@@ -334,6 +359,7 @@ enum WorkerCommand {
         completion_sender: SyncSender<WorkerMaintenanceResult>,
     },
     Release(LiveRendererWorkerLeaseId),
+    Shutdown,
 }
 
 struct WorkerResult {
@@ -450,6 +476,7 @@ fn run_worker<D>(
                     });
                 }
             }
+            WorkerCommand::Shutdown => break,
         }
     }
 }
