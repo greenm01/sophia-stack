@@ -719,6 +719,18 @@ promotes one to a hard M9 exit gate.
   descriptor, reused across primary recomposition, and invalidated when the
   output changes. The dual-output QEMU GBM/KMS path passes with 2 ms maximum
   composition; a same-commit physical p95 archive remains required.
+  The next 20-sample physical archive on `df1f385b` retained exact input,
+  kernel timestamps, clean teardown, and a 2 ms maximum native upload, but
+  measured 25 ms p95 and 28 ms maximum. Queue dwell remained at 0–1 ms while
+  dwell-to-submit remained 9–13 ms: caching the secondary output removed only
+  part of the owner-path work because the primary CPU scene still cleared and
+  recomposed the complete 3840x960 frame for each bounded xterm change. Primary
+  display-list composition now derives a normalized repaint plan from the
+  retained output snapshot, clears and replays only intersecting layers,
+  borders, and cursor pixels in stacking order, and falls back to full
+  composition whenever history or storage is incompatible. Focused pixel
+  regressions and the complete offline gate pass; commit-pinned QEMU and the
+  authoritative physical rerun remain before completion.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no wrong-size buffer

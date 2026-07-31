@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use sophia_engine::CompositorRgb8;
-use sophia_protocol::{Point, Rect, Size};
+use sophia_protocol::{Point, Rect, Region, Size};
 
 use crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888;
 
@@ -161,6 +161,27 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
     metrics_mode: LiveCpuFrameMetricsMode,
     reusable_bytes: Option<Arc<Vec<u8>>>,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        output_size,
+        elements,
+        cursor_position,
+        metrics_mode,
+        reusable_bytes,
+        None,
+    )
+}
+
+/// Reuses a retained frame and rebuilds only `repaint_damage` when the
+/// retained storage is compatible. Missing or incompatible storage falls
+/// back to a full composition.
+pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    metrics_mode: LiveCpuFrameMetricsMode,
+    reusable_bytes: Option<Arc<Vec<u8>>>,
+    repaint_damage: Option<&Region>,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
     let width = usize::try_from(output_size.width)
         .ok()
         .filter(|width| *width > 0)
@@ -197,14 +218,18 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
         }
         _ => None,
     });
-    let mut frame_bytes = reusable_frame_bytes(reusable_bytes, byte_len);
-    let writable_bytes =
-        Arc::get_mut(&mut frame_bytes).expect("reusable frame bytes must have unique ownership");
-    if let Some(layer) = direct {
-        writable_bytes.copy_from_slice(layer.buffer.bytes);
-    } else {
-        writable_bytes.fill(0);
-    }
+    let partial_repaint = repaint_damage.filter(|_| {
+        reusable_bytes
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() == byte_len)
+    });
+    let repaint_requires_write = partial_repaint.is_some_and(|damage| !damage.rects.is_empty());
+    let frame_bytes = reusable_frame_bytes(
+        reusable_bytes,
+        byte_len,
+        partial_repaint.is_some(),
+        repaint_requires_write,
+    );
     let mut frame = LiveCpuComposedFrame {
         size: output_size,
         stride: frame_stride,
@@ -212,23 +237,54 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
         bytes: frame_bytes,
     };
     let mut layers_composed = 0usize;
-    if direct.is_some() {
-        layers_composed = 1;
-    } else {
-        for element in elements {
-            let composed = match element {
-                LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
-                LiveCpuCompositionElementRef::Solid { geometry, color } => {
-                    compose_solid_rect(&mut frame, *geometry, *color)
-                }
-            };
-            if composed {
-                layers_composed = layers_composed.saturating_add(1);
+    if let Some(damage) = partial_repaint {
+        let mut composed_elements = vec![false; elements.len()];
+        for clip in damage.rects.iter().copied() {
+            if !clear_frame_rect(&mut frame, clip) {
+                continue;
+            }
+            for (index, element) in elements.iter().enumerate() {
+                let composed = match element {
+                    LiveCpuCompositionElementRef::Layer(layer) => {
+                        compose_layer_clipped(&mut frame, layer, clip)
+                    }
+                    LiveCpuCompositionElementRef::Solid { geometry, color } => {
+                        compose_solid_rect_clipped(&mut frame, *geometry, *color, clip)
+                    }
+                };
+                composed_elements[index] |= composed;
+            }
+            if let Some(position) = cursor_position {
+                compose_software_cursor_clipped(&mut frame, position, clip);
             }
         }
-    }
-    if let Some(position) = cursor_position {
-        compose_software_cursor(&mut frame, position);
+        layers_composed = composed_elements
+            .into_iter()
+            .filter(|composed| *composed)
+            .count();
+    } else {
+        let writable_bytes = Arc::get_mut(&mut frame.bytes)
+            .expect("reusable frame bytes must have unique ownership");
+        if let Some(layer) = direct {
+            writable_bytes.copy_from_slice(layer.buffer.bytes);
+            layers_composed = 1;
+        } else {
+            writable_bytes.fill(0);
+            for element in elements {
+                let composed = match element {
+                    LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
+                    LiveCpuCompositionElementRef::Solid { geometry, color } => {
+                        compose_solid_rect(&mut frame, *geometry, *color)
+                    }
+                };
+                if composed {
+                    layers_composed = layers_composed.saturating_add(1);
+                }
+            }
+        }
+        if let Some(position) = cursor_position {
+            compose_software_cursor(&mut frame, position);
+        }
     }
     let (nonzero_evidence, checksum) =
         composition_evidence_metrics(output_size, elements, cursor_position);
@@ -245,9 +301,22 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing(
     })
 }
 
-fn reusable_frame_bytes(reusable_bytes: Option<Arc<Vec<u8>>>, byte_len: usize) -> Arc<Vec<u8>> {
+fn reusable_frame_bytes(
+    reusable_bytes: Option<Arc<Vec<u8>>>,
+    byte_len: usize,
+    preserve_pixels: bool,
+    requires_unique_ownership: bool,
+) -> Arc<Vec<u8>> {
     match reusable_bytes {
-        Some(bytes) if bytes.len() == byte_len && Arc::strong_count(&bytes) == 1 => bytes,
+        Some(bytes)
+            if bytes.len() == byte_len
+                && (!requires_unique_ownership || Arc::strong_count(&bytes) == 1) =>
+        {
+            bytes
+        }
+        Some(bytes) if bytes.len() == byte_len && preserve_pixels => {
+            Arc::new(bytes.as_ref().clone())
+        }
         _ => Arc::new(vec![0; byte_len]),
     }
 }
@@ -317,27 +386,30 @@ fn compose_solid_rect(
     geometry: Rect,
     color: CompositorRgb8,
 ) -> bool {
-    let left = i64::from(geometry.x).max(0);
-    let top = i64::from(geometry.y).max(0);
-    let right = i64::from(geometry.x)
-        .saturating_add(i64::from(geometry.width))
-        .min(i64::from(frame.size.width));
-    let bottom = i64::from(geometry.y)
-        .saturating_add(i64::from(geometry.height))
-        .min(i64::from(frame.size.height));
-    if left >= right || top >= bottom {
-        return false;
-    }
-    let Ok(start_x) = usize::try_from(left) else {
-        return false;
-    };
-    let Ok(start_y) = usize::try_from(top) else {
+    compose_solid_rect_clipped(frame, geometry, color, output_rect(frame.size))
+}
+
+fn compose_solid_rect_clipped(
+    frame: &mut LiveCpuComposedFrame,
+    geometry: Rect,
+    color: CompositorRgb8,
+    clip: Rect,
+) -> bool {
+    let Some(target) =
+        clip_rect(geometry, clip).and_then(|rect| clip_rect(rect, output_rect(frame.size)))
+    else {
         return false;
     };
-    let Ok(width) = usize::try_from(right.saturating_sub(left)) else {
+    let Ok(start_x) = usize::try_from(target.x) else {
         return false;
     };
-    let Ok(height) = usize::try_from(bottom.saturating_sub(top)) else {
+    let Ok(start_y) = usize::try_from(target.y) else {
+        return false;
+    };
+    let Ok(width) = usize::try_from(target.width) else {
+        return false;
+    };
+    let Ok(height) = usize::try_from(target.height) else {
         return false;
     };
     let Ok(stride) = usize::try_from(frame.stride) else {
@@ -383,6 +455,10 @@ pub const DEFAULT_CURSOR_SHAPE: [&[u8]; DEFAULT_CURSOR_EDGE] = [
 ];
 
 fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point) {
+    compose_software_cursor_clipped(frame, position, output_rect(frame.size));
+}
+
+fn compose_software_cursor_clipped(frame: &mut LiveCpuComposedFrame, position: Point, clip: Rect) {
     if !position.x.is_finite()
         || !position.y.is_finite()
         || position.x < f64::from(i32::MIN)
@@ -404,7 +480,9 @@ fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point) {
             };
             let x = origin_x.saturating_add(i32::try_from(column).unwrap_or(i32::MAX));
             let y = origin_y.saturating_add(i32::try_from(row).unwrap_or(i32::MAX));
-            put_pixel(frame, x, y, color);
+            if rect_contains_point(clip, x, y) {
+                put_pixel(frame, x, y, color);
+            }
         }
     }
 }
@@ -462,6 +540,14 @@ fn cpu_frame_metrics(bytes: &[u8]) -> (usize, u64) {
 }
 
 fn compose_layer(frame: &mut LiveCpuComposedFrame, layer: &LiveCpuCompositionLayerRef<'_>) -> bool {
+    compose_layer_clipped(frame, layer, output_rect(frame.size))
+}
+
+fn compose_layer_clipped(
+    frame: &mut LiveCpuComposedFrame,
+    layer: &LiveCpuCompositionLayerRef<'_>,
+    clip: Rect,
+) -> bool {
     if layer.buffer.format != LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
         || layer.geometry.width <= 0
         || layer.geometry.height <= 0
@@ -478,30 +564,32 @@ fn compose_layer(frame: &mut LiveCpuComposedFrame, layer: &LiveCpuCompositionLay
     {
         return false;
     }
-    let frame_width = usize::try_from(frame.size.width).unwrap_or(0);
-    let frame_height = usize::try_from(frame.size.height).unwrap_or(0);
-    let target_stride = usize::try_from(frame.stride).unwrap_or(0);
-    let source_x = usize::try_from(layer.geometry.x.saturating_neg()).unwrap_or(0);
-    let source_y = usize::try_from(layer.geometry.y.saturating_neg()).unwrap_or(0);
-    let target_x = usize::try_from(layer.geometry.x.max(0)).unwrap_or(frame_width);
-    let target_y = usize::try_from(layer.geometry.y.max(0)).unwrap_or(frame_height);
-    if source_x >= source_width
-        || source_y >= source_height
-        || target_x >= frame_width
-        || target_y >= frame_height
-    {
+    let drawable = Rect {
+        x: layer.geometry.x,
+        y: layer.geometry.y,
+        width: layer.geometry.width.min(layer.buffer.size.width),
+        height: layer.geometry.height.min(layer.buffer.size.height),
+    };
+    let Some(target) =
+        clip_rect(drawable, clip).and_then(|rect| clip_rect(rect, output_rect(frame.size)))
+    else {
         return false;
-    }
-    let copy_width = usize::try_from(layer.geometry.width)
-        .unwrap_or(0)
-        .saturating_sub(source_x)
-        .min(source_width.saturating_sub(source_x))
-        .min(frame_width.saturating_sub(target_x));
-    let copy_height = usize::try_from(layer.geometry.height)
-        .unwrap_or(0)
-        .saturating_sub(source_y)
-        .min(source_height.saturating_sub(source_y))
-        .min(frame_height.saturating_sub(target_y));
+    };
+    let target_stride = usize::try_from(frame.stride).unwrap_or(0);
+    let Ok(source_x) = usize::try_from(i64::from(target.x) - i64::from(layer.geometry.x)) else {
+        return false;
+    };
+    let Ok(source_y) = usize::try_from(i64::from(target.y) - i64::from(layer.geometry.y)) else {
+        return false;
+    };
+    let Ok(target_x) = usize::try_from(target.x) else {
+        return false;
+    };
+    let Ok(target_y) = usize::try_from(target.y) else {
+        return false;
+    };
+    let copy_width = usize::try_from(target.width).unwrap_or(0);
+    let copy_height = usize::try_from(target.height).unwrap_or(0);
     if copy_width == 0 || copy_height == 0 {
         return false;
     }
@@ -532,4 +620,85 @@ fn compose_layer(frame: &mut LiveCpuComposedFrame, layer: &LiveCpuCompositionLay
         copied = true;
     }
     copied
+}
+
+fn clear_frame_rect(frame: &mut LiveCpuComposedFrame, rect: Rect) -> bool {
+    let Some(rect) = clip_rect(rect, output_rect(frame.size)) else {
+        return false;
+    };
+    let Ok(start_x) = usize::try_from(rect.x) else {
+        return false;
+    };
+    let Ok(start_y) = usize::try_from(rect.y) else {
+        return false;
+    };
+    let Ok(width) = usize::try_from(rect.width) else {
+        return false;
+    };
+    let Ok(height) = usize::try_from(rect.height) else {
+        return false;
+    };
+    let Ok(stride) = usize::try_from(frame.stride) else {
+        return false;
+    };
+    let Some(bytes) = Arc::get_mut(&mut frame.bytes) else {
+        return false;
+    };
+    for y in start_y..start_y.saturating_add(height) {
+        let row_start = y
+            .saturating_mul(stride)
+            .saturating_add(start_x.saturating_mul(4));
+        let row_end = row_start.saturating_add(width.saturating_mul(4));
+        let Some(row) = bytes.get_mut(row_start..row_end) else {
+            return false;
+        };
+        row.fill(0);
+    }
+    true
+}
+
+const fn output_rect(size: Size) -> Rect {
+    Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    }
+}
+
+fn clip_rect(rect: Rect, clip: Rect) -> Option<Rect> {
+    if rect.is_empty() || clip.is_empty() {
+        return None;
+    }
+    let left = i64::from(rect.x).max(i64::from(clip.x));
+    let top = i64::from(rect.y).max(i64::from(clip.y));
+    let right = i64::from(rect.x)
+        .saturating_add(i64::from(rect.width))
+        .min(i64::from(clip.x).saturating_add(i64::from(clip.width)));
+    let bottom = i64::from(rect.y)
+        .saturating_add(i64::from(rect.height))
+        .min(i64::from(clip.y).saturating_add(i64::from(clip.height)));
+    if left >= right || top >= bottom {
+        return None;
+    }
+    Some(Rect {
+        x: i32::try_from(left).ok()?,
+        y: i32::try_from(top).ok()?,
+        width: i32::try_from(right.saturating_sub(left)).ok()?,
+        height: i32::try_from(bottom.saturating_sub(top)).ok()?,
+    })
+}
+
+fn rect_contains_point(rect: Rect, x: i32, y: i32) -> bool {
+    if rect.is_empty() {
+        return false;
+    }
+    let x = i64::from(x);
+    let y = i64::from(y);
+    let left = i64::from(rect.x);
+    let top = i64::from(rect.y);
+    x >= left
+        && x < left.saturating_add(i64::from(rect.width))
+        && y >= top
+        && y < top.saturating_add(i64::from(rect.height))
 }

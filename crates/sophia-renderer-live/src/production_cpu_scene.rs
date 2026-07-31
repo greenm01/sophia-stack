@@ -1,15 +1,16 @@
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
-    output_frame_damage_snapshot,
+    OutputRepaintPlan, OutputRepaintPolicy, output_frame_damage, output_frame_damage_snapshot,
+    plan_output_repaint,
 };
-use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Size, SurfaceId};
+use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
 
 use crate::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferRegistry, LiveCpuBufferSource,
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame,
     LiveCpuCompositionElementRef, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
     LiveCpuCompositionReport, LiveCpuFrameMetricsMode,
-    compose_live_cpu_display_list_frame_with_metrics_reusing, compose_live_cpu_frame,
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage, compose_live_cpu_frame,
     compose_live_cpu_frame_ref_with_cursor,
 };
 
@@ -214,6 +215,32 @@ impl LiveProductionCpuScene {
                 }
             }
         }
+        let cursor_geometry = cursor_position.map(|position| Rect {
+            x: position.x.floor() as i32,
+            y: position.y.floor() as i32,
+            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+        });
+        let current_output_damage_snapshot = output_frame_damage_snapshot(
+            output,
+            display_list.clone(),
+            committed_surfaces,
+            cursor_geometry,
+        )?;
+        let repaint_damage = self
+            .last_output_damage_snapshot
+            .as_ref()
+            .and_then(|previous| {
+                let damage =
+                    output_frame_damage(Some(previous), &current_output_damage_snapshot).ok()?;
+                match plan_output_repaint(self.output_size, &damage, OutputRepaintPolicy::default())
+                    .ok()?
+                {
+                    OutputRepaintPlan::Skip => Some(Region::empty()),
+                    OutputRepaintPlan::Partial { damage, .. } => Some(damage),
+                    OutputRepaintPlan::Full { .. } => None,
+                }
+            });
         let metrics_mode = if self.exact_pixel_proofs_remaining == 0 {
             self.damage_scoped_metric_frames = self.damage_scoped_metric_frames.saturating_add(1);
             LiveCpuFrameMetricsMode::DamageScopedEvidence
@@ -224,29 +251,19 @@ impl LiveProductionCpuScene {
         };
         let reusable_bytes = self.last_report.take().map(|report| report.frame.bytes);
         self.last_report = Some(
-            compose_live_cpu_display_list_frame_with_metrics_reusing(
+            compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
                 self.output_size,
                 &elements,
                 cursor_position,
                 metrics_mode,
                 reusable_bytes,
+                repaint_damage.as_ref(),
             )
             .map_err(|error| {
                 format!("persistent CPU display-list composition failed: {error:?}")
             })?,
         );
-        let cursor_geometry = cursor_position.map(|position| Rect {
-            x: position.x.floor() as i32,
-            y: position.y.floor() as i32,
-            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
-            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
-        });
-        self.last_output_damage_snapshot = Some(output_frame_damage_snapshot(
-            output,
-            display_list.clone(),
-            committed_surfaces,
-            cursor_geometry,
-        )?);
+        self.last_output_damage_snapshot = Some(current_output_damage_snapshot);
         self.record_last_report();
         Ok(self.last_report.as_ref().expect("assigned above"))
     }

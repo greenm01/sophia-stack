@@ -1,4 +1,8 @@
-use sophia_engine::{CompositorDisplayList, CompositorRgb8, HeadlessOutput};
+use std::sync::Arc;
+
+use sophia_engine::{
+    CompositorDisplayCommand, CompositorDisplayList, CompositorRgb8, HeadlessOutput,
+};
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Point, Rect, Region, Size, SurfaceId,
 };
@@ -8,7 +12,8 @@ use sophia_renderer_live::{
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuCompositionElementRef,
     LiveCpuCompositionLayer, LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode,
     LiveProductionCpuScene, compose_live_cpu_display_list_frame,
-    compose_live_cpu_display_list_frame_with_metrics_reusing, compose_live_cpu_frame,
+    compose_live_cpu_display_list_frame_with_metrics_reusing,
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage, compose_live_cpu_frame,
     compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
 };
 
@@ -539,4 +544,367 @@ fn production_scene_metric_warmup_does_not_schedule_unchanged_content() {
     assert_eq!(scene.exact_pixel_metric_frames(), 3);
     assert_eq!(scene.damage_scoped_metric_frames(), 1);
 }
-use std::sync::Arc;
+
+#[test]
+fn damage_scoped_composition_preserves_pixels_outside_clipped_damage() {
+    let size = Size {
+        width: 4,
+        height: 1,
+    };
+    let reusable = Arc::new(vec![0x7a; 16]);
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[LiveCpuCompositionElementRef::Solid {
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 1,
+            },
+            color: CompositorRgb8 {
+                red: 0x11,
+                green: 0x22,
+                blue: 0x33,
+            },
+        }],
+        None,
+        LiveCpuFrameMetricsMode::ExactPixels,
+        Some(reusable),
+        Some(&Region::single(Rect {
+            x: -2,
+            y: 0,
+            width: 4,
+            height: 1,
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(
+        &report.frame.bytes[..8],
+        &[0x33, 0x22, 0x11, 0xff, 0x33, 0x22, 0x11, 0xff]
+    );
+    assert_eq!(&report.frame.bytes[8..], &[0x7a; 8]);
+}
+
+#[test]
+fn damage_scoped_composition_clears_removed_pixels_and_restores_stacking() {
+    let size = Size {
+        width: 4,
+        height: 1,
+    };
+    let background = CompositorRgb8 {
+        red: 0x10,
+        green: 0x20,
+        blue: 0x30,
+    };
+    let old = compose_live_cpu_display_list_frame(
+        size,
+        &[
+            LiveCpuCompositionElementRef::Solid {
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 1,
+                },
+                color: background,
+            },
+            LiveCpuCompositionElementRef::Solid {
+                geometry: Rect {
+                    x: 1,
+                    y: 0,
+                    width: 2,
+                    height: 1,
+                },
+                color: CompositorRgb8 {
+                    red: 0x90,
+                    green: 0x80,
+                    blue: 0x70,
+                },
+            },
+        ],
+        None,
+    )
+    .unwrap();
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[
+            LiveCpuCompositionElementRef::Solid {
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 1,
+                },
+                color: background,
+            },
+            LiveCpuCompositionElementRef::Solid {
+                geometry: Rect {
+                    x: 2,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                color: CompositorRgb8 {
+                    red: 0xa0,
+                    green: 0xb0,
+                    blue: 0xc0,
+                },
+            },
+        ],
+        None,
+        LiveCpuFrameMetricsMode::ExactPixels,
+        Some(old.frame.bytes),
+        Some(&Region::single(Rect {
+            x: 1,
+            y: 0,
+            width: 2,
+            height: 1,
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(&report.frame.bytes[4..8], &[0x30, 0x20, 0x10, 0xff]);
+    assert_eq!(&report.frame.bytes[8..12], &[0xc0, 0xb0, 0xa0, 0xff]);
+    assert_eq!(report.layers_composed, 2);
+}
+
+#[test]
+fn damage_scoped_composition_copies_a_shared_retained_frame() {
+    let size = Size {
+        width: 3,
+        height: 1,
+    };
+    let reusable = Arc::new(vec![0xaa; 12]);
+    let observer = reusable.clone();
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[LiveCpuCompositionElementRef::Solid {
+            geometry: Rect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            color: CompositorRgb8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+            },
+        }],
+        None,
+        LiveCpuFrameMetricsMode::ExactPixels,
+        Some(reusable),
+        Some(&Region::single(Rect {
+            x: 1,
+            y: 0,
+            width: 1,
+            height: 1,
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(observer.as_ref(), &[0xaa; 12]);
+    assert!(!Arc::ptr_eq(&observer, &report.frame.bytes));
+    assert_eq!(&report.frame.bytes[..4], &[0xaa; 4]);
+    assert_eq!(&report.frame.bytes[4..8], &[3, 2, 1, 0xff]);
+    assert_eq!(&report.frame.bytes[8..], &[0xaa; 4]);
+}
+
+#[test]
+fn damage_scoped_composition_keeps_shared_storage_when_damage_is_empty() {
+    let size = Size {
+        width: 3,
+        height: 1,
+    };
+    let reusable = Arc::new(vec![0xaa; 12]);
+    let observer = reusable.clone();
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[],
+        None,
+        LiveCpuFrameMetricsMode::DamageScopedEvidence,
+        Some(reusable),
+        Some(&Region::empty()),
+    )
+    .unwrap();
+
+    assert!(Arc::ptr_eq(&observer, &report.frame.bytes));
+    assert_eq!(report.frame.bytes.as_ref(), &[0xaa; 12]);
+}
+
+#[test]
+fn damage_scoped_composition_clears_the_old_cursor_and_draws_the_new_cursor() {
+    let size = Size {
+        width: 32,
+        height: 20,
+    };
+    let old =
+        compose_live_cpu_display_list_frame(size, &[], Some(Point { x: 0.0, y: 0.0 })).unwrap();
+    let damage = Region {
+        rects: vec![
+            Rect {
+                x: 0,
+                y: 0,
+                width: 16,
+                height: 16,
+            },
+            Rect {
+                x: 16,
+                y: 0,
+                width: 16,
+                height: 16,
+            },
+        ],
+    };
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[],
+        Some(Point { x: 16.0, y: 0.0 }),
+        LiveCpuFrameMetricsMode::ExactPixels,
+        Some(old.frame.bytes),
+        Some(&damage),
+    )
+    .unwrap();
+
+    assert_eq!(&report.frame.bytes[..4], &[0; 4]);
+    assert_eq!(&report.frame.bytes[16 * 4..17 * 4], &[0, 0, 0, 0xff]);
+}
+
+#[test]
+fn damage_scoped_composition_falls_back_for_an_incompatible_baseline() {
+    let size = Size {
+        width: 2,
+        height: 1,
+    };
+    let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+        size,
+        &[LiveCpuCompositionElementRef::Solid {
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+            color: CompositorRgb8 {
+                red: 0x11,
+                green: 0x22,
+                blue: 0x33,
+            },
+        }],
+        None,
+        LiveCpuFrameMetricsMode::ExactPixels,
+        Some(Arc::new(vec![0xaa; 4])),
+        Some(&Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(
+        report.frame.bytes.as_ref(),
+        &[0x33, 0x22, 0x11, 0xff, 0x33, 0x22, 0x11, 0xff]
+    );
+}
+
+#[test]
+fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 4,
+            height: 1,
+        },
+        scale: 1,
+    };
+    let left = SurfaceId::new(1, 1);
+    let right = SurfaceId::new(2, 1);
+    let mut committed = [
+        CommittedSurfaceState {
+            surface: left,
+            committed_generation: 1,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+            buffer: BufferSource::CpuBuffer { handle: 1 },
+            damage: Region::empty(),
+        },
+        CommittedSurfaceState {
+            surface: right,
+            committed_generation: 1,
+            geometry: Rect {
+                x: 2,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+            buffer: BufferSource::CpuBuffer { handle: 2 },
+            damage: Region::empty(),
+        },
+    ];
+    let display_list = CompositorDisplayList {
+        output: output.id,
+        commands: vec![
+            CompositorDisplayCommand::Surface { surface: left },
+            CompositorDisplayCommand::Surface { surface: right },
+        ],
+    };
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    scene
+        .apply_updates([
+            LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 1,
+                size: Size {
+                    width: 2,
+                    height: 1,
+                },
+                stride: 8,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: vec![0x11; 8],
+            }),
+            LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 2,
+                size: Size {
+                    width: 2,
+                    height: 1,
+                },
+                stride: 8,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: vec![0x22; 8],
+            }),
+        ])
+        .unwrap();
+    scene
+        .compose_display_list(output, &committed, &display_list, None)
+        .unwrap();
+
+    committed[0].committed_generation = 2;
+    scene
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 1,
+            size: Size {
+                width: 2,
+                height: 1,
+            },
+            stride: 8,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 2,
+            bytes: vec![0x33; 8],
+        })])
+        .unwrap();
+    let report = scene
+        .compose_display_list(output, &committed, &display_list, None)
+        .unwrap();
+
+    assert_eq!(report.layers_composed, 1);
+    assert_eq!(&report.frame.bytes[..8], &[0x33; 8]);
+    assert_eq!(&report.frame.bytes[8..], &[0x22; 8]);
+}
