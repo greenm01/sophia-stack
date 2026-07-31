@@ -520,58 +520,7 @@
                     session_controls: &mut session_controls,
                     next_focus_control_transaction: &mut next_focus_control_transaction,
                 })?;
-                if let Some((transaction, surface)) = layout.focus_to_apply {
-                    let decision = focus.focus_surface(seat, surface, runtime.committed_surfaces());
-                    layout.focus_to_apply = pending_wm_focus_after_engine_decision(
-                        (transaction, surface),
-                        decision,
-                    );
-                    match decision {
-                        InputFocusDecision::Focused => {
-                            if wm_session.is_some() {
-                                if let Some(previous) = applied_client_focus
-                                    && previous != surface
-                                {
-                                    flush_client_keys!(previous, "focus_handoff");
-                                }
-                                let client = layout
-                                    .client_routes
-                                    .client_for_surface(surface)
-                                    .ok_or("WM focus has no X11 client route")?;
-                                session_controls.enqueue(XAuthorityClientControlCommand {
-                                    client,
-                                    command: XAuthorityControlCommand::FocusSurface {
-                                        transaction,
-                                        surface,
-                                    },
-                                }, Instant::now()).map_err(|error| {
-                                    format!("failed to queue WM focus reconciliation: {error:?}")
-                                })?;
-                            }
-                            let _ = reduce_session_startup(
-                                &mut startup_readiness,
-                                SessionStartupEvent::PinSurface(surface),
-                            );
-                            println!(
-                                "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
-                                transaction.raw()
-                            );
-                            println!(
-                                "sophia_live_wm schema=1 status=focus_committed transaction={} target=surface",
-                                transaction.raw()
-                            );
-                        }
-                        InputFocusDecision::UnknownSurface => {}
-                        InputFocusDecision::InvalidSeat => {
-                            return Err("WM focus reconciliation used an invalid seat".into());
-                        }
-                    }
-                }
-                if !focus_ready_reported && focus.focused_surface(seat).is_some() {
-                    println!("sophia_live_session_input_pipeline schema=1 status=focus_ready");
-                    std::io::stdout().flush()?;
-                    focus_ready_reported = true;
-                }
+                reconcile_pending_wm_focus!();
                 if let Some(surface) = focus.focused_surface(seat) {
                     let cpu_visual_detail =
                         scene.surface_has_visual_detail(runtime.committed_surfaces(), surface);

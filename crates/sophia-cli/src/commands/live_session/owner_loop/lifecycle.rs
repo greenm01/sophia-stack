@@ -516,6 +516,10 @@
                 session_controls: &mut session_controls,
                 next_focus_control_transaction: &mut next_focus_control_transaction,
             })?;
+            // Admission focus can become eligible on a page-flip retirement.
+            // Reconcile it here so an idle client does not need to emit another
+            // authority batch before it can receive focus.
+            reconcile_pending_wm_focus!();
         }
         let mut input_routing_mode = physical_input_routing_mode(
             primary_child_exited,
