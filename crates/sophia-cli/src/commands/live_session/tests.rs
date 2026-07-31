@@ -14,10 +14,11 @@ use super::{
     flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_visual_evidence, managed_child_exit_is_nonfatal,
-    pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
-    physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, pointer_press_starts_focus_handoff, record_runtime_commits,
-    rects_intersect, route_input_events, session_protocol_errors_are_fatal,
+    native_frame_service_requires_owner_progress, pending_wm_focus_after_engine_decision,
+    physical_input_page_flip_correlates, physical_input_pixels_already_changed,
+    physical_input_routing_mode, place_pointer_event_for_routing,
+    pointer_press_starts_focus_handoff, record_runtime_commits, rects_intersect,
+    route_input_events, session_protocol_errors_are_fatal,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronous_modeset_record,
     take_settled_input_delivery_wait,
@@ -29,9 +30,11 @@ use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
 use sophia_engine::{
-    InputFocusState, KeyRepeatConfig, KeyRepeatState, WmShortcutRegistry, WmShortcutRouter,
+    InputFocusState, KeyRepeatConfig, KeyRepeatState, OutputFrameServiceObservation,
+    OutputFrameServiceRequest, OutputNativeFramePhase, WmShortcutRegistry, WmShortcutRouter,
     pointer_offset_for_geometry,
 };
+use sophia_protocol::OutputId;
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
     NamespaceProfile, Point, SeatId, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness,
@@ -86,6 +89,37 @@ fn physical_input_selects_the_low_latency_owner_wait_budget() {
         authority_wait_timeout(false, false, false),
         Duration::from_millis(25)
     );
+}
+
+#[test]
+fn native_frame_progress_preempts_metadata_only_authority_batches() {
+    let request = OutputFrameServiceRequest {
+        outputs: vec![OutputFrameServiceObservation {
+            output: OutputId::from_raw(1),
+            primary: true,
+            native_phase: OutputNativeFramePhase::Idle,
+            pending_frame: true,
+        }],
+        presentation_queued: false,
+    };
+
+    assert!(native_frame_service_requires_owner_progress(&request));
+
+    let mut in_flight = request;
+    in_flight.outputs[0].pending_frame = false;
+    in_flight.outputs[0].native_phase = OutputNativeFramePhase::InFlight;
+    assert!(native_frame_service_requires_owner_progress(&in_flight));
+
+    let idle = OutputFrameServiceRequest {
+        outputs: vec![OutputFrameServiceObservation {
+            output: OutputId::from_raw(1),
+            primary: true,
+            native_phase: OutputNativeFramePhase::Idle,
+            pending_frame: false,
+        }],
+        presentation_queued: false,
+    };
+    assert!(!native_frame_service_requires_owner_progress(&idle));
 }
 
 #[test]

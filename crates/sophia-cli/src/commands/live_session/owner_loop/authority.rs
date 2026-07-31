@@ -1,25 +1,40 @@
 {
+        let native_frame_progress_pending = match (runtime.as_ref(), native_scanout.as_ref()) {
+            (Some(runtime), Some(native_scanout)) => native_frame_service_requires_owner_progress(
+                &runtime.native_output_service_request(native_scanout)?,
+            ),
+            _ => false,
+        };
         let wm_only_cycle = initial_authority_batch.is_none()
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
-        let authority_batch = initial_authority_batch
-            .take()
-            .or_else(|| pending_authority_batches.pop_front())
-            .or_else(|| {
-                pending_wm_update.as_ref().map(|update| {
-                    wm_update_coordinator_batch(update.commit.transaction)
+        let authority_batch = if native_frame_progress_pending {
+            // Renderer completion and KMS retirement are not X Authority
+            // events. Give their bounded polling path a turn even when queued
+            // or newly arriving metadata-only X batches keep the authority
+            // channel continuously readable.
+            std::thread::sleep(Duration::from_millis(1));
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        } else {
+            initial_authority_batch
+                .take()
+                .or_else(|| pending_authority_batches.pop_front())
+                .or_else(|| {
+                    pending_wm_update.as_ref().map(|update| {
+                        wm_update_coordinator_batch(update.commit.transaction)
+                    })
                 })
-            })
-            .map_or_else(
-                || {
-                    authority_receiver.recv_timeout(authority_wait_timeout(
-                        physical_input.is_some(),
-                        cursor_updates.dirty,
-                        session_controls.pending_len() != 0,
-                    ))
-                },
-                Ok,
-            );
+                .map_or_else(
+                    || {
+                        authority_receiver.recv_timeout(authority_wait_timeout(
+                            physical_input.is_some(),
+                            cursor_updates.dirty,
+                            session_controls.pending_len() != 0,
+                        ))
+                    },
+                    Ok,
+                )
+        };
         match authority_batch {
             Ok(batch) => {
                 let drain_started = Instant::now();

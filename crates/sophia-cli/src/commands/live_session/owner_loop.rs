@@ -39,6 +39,13 @@ fn authority_wait_timeout(
     )
 }
 
+fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequest) -> bool {
+    request.presentation_queued
+        || request.outputs.iter().any(|output| {
+            output.pending_frame || output.native_phase != OutputNativeFramePhase::Idle
+        })
+}
+
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
