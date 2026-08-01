@@ -93,6 +93,59 @@ fn override_redirect_window_is_reported_as_client_positioned() {
 }
 
 #[test]
+fn reparent_reports_policy_role_transition_to_session_observer() {
+    let namespace = NamespaceId::from_raw(45);
+    let parent = 0x220911;
+    let child = 0x220912;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    for (sequence, window) in [(1, parent), (2, child)] {
+        let create = decode_x11_core_request(
+            context(namespace, 540, XByteOrder::LittleEndian),
+            &create_window_request(
+                XByteOrder::LittleEndian,
+                window,
+                0,
+                0,
+                640,
+                480,
+            ),
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 1),
+            create,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+
+    let reparented = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 7),
+        XWireRequest::ReparentWindow {
+            window: XResourceId::new(u64::from(child), 1),
+            parent: XResourceId::new(u64::from(parent), 1),
+            x: 12,
+            y: 24,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(matches!(
+        reparented.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.surface == SurfaceId::new(child, 1)
+                && surface.presentation == SurfacePresentationRole::ClientPositioned
+                && surface.geometry.x == 12
+                && surface.geometry.y == 24
+    ));
+}
+
+#[test]
 fn x11_dispatch_reports_window_lifecycle_map_state() {
     let namespace = NamespaceId::from_raw(45);
     let window = XResourceId::new(0x220902, 1);

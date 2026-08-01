@@ -283,6 +283,9 @@ impl XAuthorityObservedTransactionBatch {
             .iter()
             .filter_map(|surface| {
                 let kind = match trace.major_opcode {
+                    7 if surface.role == SurfacePresentationRole::ClientPositioned => {
+                        SurfacePresentationIntentKind::Withdraw
+                    }
                     8 | 9
                         if surface.role == SurfacePresentationRole::PolicyManaged
                             && !surface.mapped =>

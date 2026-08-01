@@ -858,6 +858,11 @@ focus-away/focus-return, and a pointer-opened dialog. The strict verifier orders
 the six Kitty checkpoints around the two status-zero Firefox exits, requires
 the routed axis between the DOM PRIMARY and scroll stages, and rejects pending
 input/actions, protocol errors, or native/frontend/authority cleanup debt.
+During resize, a buffer whose pixel-aligned target is larger or smaller than
+the current child surface may be clipped but must never be scaled. A click on a
+client-positioned Firefox render child must hand focus to its containing
+policy-managed Firefox surface while the X event still reaches the selected
+descendant window.
 Verify and retain the run with:
 
 ```sh

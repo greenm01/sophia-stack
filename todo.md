@@ -780,7 +780,13 @@ than adding speculative browser compatibility.
   completes the DOM stage with `source=wheel`, `axis_route=true`, and
   `keyboard_fallback=false`.
 - [ ] Run the deterministic local Firefox workload beside two independently
-  usable Kitty windows.
+  usable Kitty windows. The first isolated-profile physical run proved a real
+  Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
+  exposed clipped-frame rejection and descendant-click focus ambiguity after
+  xmonad resize. Pixel-aligned clipped Presents, same-client managed-toplevel
+  focus handoff, reparent role withdrawal, and client-scoped observation
+  overload handling now have regressions; repeat the physical workflow before
+  closing this item.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
   workspace hide/show, refocus, dialog open/close, and status-zero exit.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

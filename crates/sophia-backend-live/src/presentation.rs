@@ -42,9 +42,8 @@ impl LiveRetainedDmaBufLayer {
     }
 
     pub fn has_unit_scale(&self) -> bool {
-        let logical = self.placement.clip.unwrap_or(self.placement.target);
-        logical.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
-            && logical.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
+        self.placement.target.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
+            && self.placement.target.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
     }
 
     pub fn reproject(&mut self, surface: Rect) {

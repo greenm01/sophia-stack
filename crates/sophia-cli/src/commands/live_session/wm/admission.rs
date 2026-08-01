@@ -432,6 +432,7 @@ impl PersistentLiveLayout {
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,
         new_surfaces: &mut BTreeSet<SurfaceId>,
+        withdrawn_surfaces: &mut BTreeSet<SurfaceId>,
     ) {
         for intent in &batch.presentation_intents {
             let facts = sophia_engine::SurfaceLayoutFacts::from(*intent);
@@ -465,6 +466,7 @@ impl PersistentLiveLayout {
                     }
                 }
                 sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
+                    withdrawn_surfaces.insert(intent.surface);
                     self.admissions.remove(intent.surface);
                     self.planning_surfaces.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
@@ -541,6 +543,10 @@ impl PersistentLiveLayout {
             });
         }
         layers
+    }
+
+    fn is_policy_managed(&self, surface: SurfaceId) -> bool {
+        !self.is_client_positioned(surface)
     }
 
     fn present_layout_disposition(

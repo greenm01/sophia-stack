@@ -228,7 +228,7 @@ pub fn run_x11_core_socket_server_once_routed(
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
         try_emit_x_authority_observation(&transaction_sender, &trace)
             .map(|_| ())
-            .map_err(|error| X11SetupSocketError::new(error.to_string()))
+            .map_err(x_authority_observation_client_error)
     });
     frontend.serve_next_concurrently_routed_traced(&broker, observer)?;
     while frontend.active_client_worker_count() != 0 {
@@ -269,7 +269,7 @@ pub fn run_x_server_frontend_routed_until_stopped(
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
         try_emit_x_authority_observation(&transaction_sender, &trace)
             .map(|_| ())
-            .map_err(|error| X11SetupSocketError::new(error.to_string()))
+            .map_err(x_authority_observation_client_error)
     });
     let mut accepting = true;
     loop {
@@ -339,6 +339,13 @@ pub fn run_x_server_frontend_routed_until_stopped(
             std::thread::sleep(Duration::from_millis(1));
         }
     }
+}
+
+#[cfg(unix)]
+fn x_authority_observation_client_error(
+    error: crate::XAuthorityTransportError,
+) -> X11SetupSocketError {
+    X11SetupSocketError::client_failure(error.to_string())
 }
 
 /// Convenience form of [`run_x_server_frontend_routed_until_stopped`] for an

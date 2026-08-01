@@ -55,11 +55,12 @@ fn validate_live_wm_transaction(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for placement in &transaction.render_positions {
         let known = layout.knows_surface(placement.surface);
+        let policy_managed = layout.is_policy_managed(placement.surface);
         let empty = placement.geometry.is_empty();
         let within = rect_is_within(bounds, placement.geometry);
-        if !known || empty || !within {
+        if !known || !policy_managed || empty || !within {
             return Err(format!(
-                "live WM returned invalid placement: known={known} empty={empty} within={within} geometry={:?} bounds={bounds:?}",
+                "live WM returned invalid placement: known={known} policy_managed={policy_managed} empty={empty} within={within} geometry={:?} bounds={bounds:?}",
                 placement.geometry
             )
             .into());
@@ -67,6 +68,7 @@ fn validate_live_wm_transaction(
     }
     for request in &transaction.requested_sizes {
         if !layout.knows_surface(request.surface)
+            || !layout.is_policy_managed(request.surface)
             || request.size.width <= 0
             || request.size.height <= 0
             || request.size.width > i32::from(u16::MAX)
@@ -77,7 +79,9 @@ fn validate_live_wm_transaction(
     }
     if transaction
         .focus
-        .is_some_and(|surface| !layout.knows_surface(surface))
+        .is_some_and(|surface| {
+            !layout.knows_surface(surface) || !layout.is_policy_managed(surface)
+        })
     {
         return Err("live WM returned an unknown focus surface".into());
     }

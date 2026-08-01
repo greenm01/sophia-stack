@@ -151,7 +151,7 @@ fn route_input_events(
     focus: &InputFocusState,
     committed_surfaces: &[CommittedSurfaceState],
     input_layers: &[LayerSnapshot],
-    _client_routes: &XAuthorityClientSurfaceRoutes,
+    client_routes: &XAuthorityClientSurfaceRoutes,
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
     key_repeat: &mut KeyRepeatState,
@@ -177,7 +177,7 @@ fn route_input_events(
         committed_surfaces,
         input_layers,
         &surface_roles,
-        _client_routes,
+        client_routes,
         input_sender,
         modifiers,
         key_repeat,
@@ -207,7 +207,7 @@ fn route_input_events_with_pointer_focus(
     committed_surfaces: &[CommittedSurfaceState],
     input_layers: &[LayerSnapshot],
     surface_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
-    _client_routes: &XAuthorityClientSurfaceRoutes,
+    client_routes: &XAuthorityClientSurfaceRoutes,
     input_sender: &SyncSender<XAuthorityRoutedInput>,
     modifiers: &mut XCoreKeyboardMapper,
     key_repeat: &mut KeyRepeatState,
@@ -598,6 +598,13 @@ fn route_input_events_with_pointer_focus(
                 let Some(surface) = route.target_surface else {
                     continue;
                 };
+                let focus_surface = pointer_focus_surface(
+                    surface,
+                    global,
+                    input_layers,
+                    surface_roles,
+                    client_routes,
+                );
                 let request = sophia_protocol::RoutedInputRequest {
                     serial: event.serial,
                     seat: event.seat,
@@ -611,16 +618,16 @@ fn route_input_events_with_pointer_focus(
                 let starts_focus_handoff = pointer_press_starts_focus_handoff(
                     &kind,
                     applied_client_focus,
-                    surface,
-                    surface_roles.get(&surface).copied(),
+                    focus_surface,
+                    surface_roles.get(&focus_surface).copied(),
                     pointer_focus_handoff
                         .as_deref()
                         .is_some_and(|handoff| handoff.target().is_none()),
                 );
                 if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
                     if starts_focus_handoff {
-                        handoff.begin(surface, now_msec, request)?;
-                        report.pointer_focus_targets.push(surface);
+                        handoff.begin(focus_surface, now_msec, request)?;
+                        report.pointer_focus_targets.push(focus_surface);
                         continue;
                     }
                     if handoff.target().is_some() {
@@ -651,6 +658,40 @@ fn route_input_events_with_pointer_focus(
         }
     }
     Ok(report)
+}
+
+fn pointer_focus_surface(
+    target: SurfaceId,
+    global: sophia_protocol::Point,
+    input_layers: &[LayerSnapshot],
+    surface_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+) -> SurfaceId {
+    if surface_roles.get(&target)
+        != Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
+    {
+        return target;
+    }
+    let Some(client) = client_routes.client_for_surface(target) else {
+        return target;
+    };
+    input_layers
+        .iter()
+        .filter(|layer| {
+            surface_roles.get(&layer.surface)
+                == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
+                && client_routes.client_for_surface(layer.surface) == Some(client)
+                && point_is_inside_rect(global, layer.geometry)
+        })
+        .max_by_key(|layer| (layer.stack_rank, layer.surface))
+        .map_or(target, |layer| layer.surface)
+}
+
+fn point_is_inside_rect(point: sophia_protocol::Point, rect: sophia_protocol::Rect) -> bool {
+    point.x >= f64::from(rect.x)
+        && point.y >= f64::from(rect.y)
+        && point.x < f64::from(rect.x.saturating_add(rect.width))
+        && point.y < f64::from(rect.y.saturating_add(rect.height))
 }
 
 fn pointer_press_starts_focus_handoff(

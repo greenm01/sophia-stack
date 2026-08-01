@@ -11,6 +11,7 @@ impl LiveWmLayoutFingerprint {
                 .keys()
                 .chain(layout.planning_surfaces.keys())
                 .copied()
+                .filter(|surface| layout.is_policy_managed(*surface))
                 .filter(|surface| state.surface_workspace(*surface).is_some())
                 .collect(),
         )
@@ -352,6 +353,9 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if !layout.is_policy_managed(surface) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
         if self.has_request_source(LiveWmProposalSource::Manage(surface)) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
@@ -419,7 +423,9 @@ impl LiveWmSession {
                     .layers
                     .values()
                     .filter(|layer| {
-                        self.workspace_state.surface_workspace(layer.surface) == Some(workspace)
+                        layout.is_policy_managed(layer.surface)
+                            && self.workspace_state.surface_workspace(layer.surface)
+                                == Some(workspace)
                     })
                     .map(|layer| {
                         live_layout_node(
@@ -479,6 +485,9 @@ impl LiveWmSession {
             .layers
             .values()
             .filter_map(|layer| {
+                if !layout.is_policy_managed(layer.surface) {
+                    return None;
+                }
                 let workspace = self.workspace_state.surface_workspace(layer.surface)?;
                 (workspace == output_state.workspace).then_some((layer, workspace))
             })

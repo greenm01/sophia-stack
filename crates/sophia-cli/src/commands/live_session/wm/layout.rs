@@ -14,6 +14,7 @@ struct PendingLiveWmLayout {
 
 struct LiveAuthorityLayoutObservation {
     new_surfaces: Vec<SurfaceId>,
+    withdrawn_surfaces: Vec<SurfaceId>,
     output_reservations_changed: bool,
     admission_group_invalid: bool,
     admission_group_overflowed: bool,
@@ -70,11 +71,24 @@ impl PersistentLiveLayout {
         let mut admission_group_invalid = false;
         let mut admission_group_overflowed = false;
         let mut new_surfaces = BTreeSet::new();
+        let mut withdrawn_surfaces = BTreeSet::new();
         self.client_routes.observe(batch);
-        self.observe_presentation_intents(batch, &mut new_surfaces);
+        self.observe_presentation_intents(
+            batch,
+            &mut new_surfaces,
+            &mut withdrawn_surfaces,
+        );
         for presentation in &batch.surface_presentations {
-            self.presentation_roles
+            let previous_role = self
+                .presentation_roles
                 .insert(presentation.surface, presentation.role);
+            if previous_role
+                == Some(sophia_protocol::SurfacePresentationRole::PolicyManaged)
+                && presentation.role
+                    == sophia_protocol::SurfacePresentationRole::ClientPositioned
+            {
+                withdrawn_surfaces.insert(presentation.surface);
+            }
             self.layout_epochs
                 .set_declared_constraints(presentation.surface, presentation.constraints);
             output_reservations_changed |= self.output_reservations.observe_presentation(
@@ -276,6 +290,7 @@ impl PersistentLiveLayout {
         }
         LiveAuthorityLayoutObservation {
             new_surfaces: new_surfaces.into_iter().collect(),
+            withdrawn_surfaces: withdrawn_surfaces.into_iter().collect(),
             output_reservations_changed,
             admission_group_invalid,
             admission_group_overflowed,

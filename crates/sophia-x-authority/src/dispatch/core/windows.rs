@@ -234,10 +234,11 @@ fn dispatch_core_window_request(
                     x,
                     y,
                 } => {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
                     let result = runtime
                         .set_window_parent(context.namespace, window, parent)
                         .and_then(|()| {
-                            runtime.configure_window_geometry(
+                            runtime.configure_window_geometry_observed(
                                 context.namespace,
                                 window,
                                 XWindowGeometryUpdate {
@@ -248,20 +249,24 @@ fn dispatch_core_window_request(
                                 },
                             )
                         });
-                    let outputs = result
-                        .err()
-                        .map(|error| {
-                            XClientOutput::Error(x_error_from_runtime(
+                    let (response, outputs) = match result {
+                        Ok(surface) => {
+                            let mut response = XAuthorityResponsePacket::accepted(transaction);
+                            response.surfaces.push(surface);
+                            (response, Vec::new())
+                        }
+                        Err(error) => (
+                            XAuthorityResponsePacket::rejected(transaction, error),
+                            vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
                                 u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))
-                        })
-                        .into_iter()
-                        .collect();
+                            ))],
+                        ),
+                    };
                     XDispatchResult {
-                        response: None,
+                        response: Some(response),
                         outputs,
                         metadata_candidates: Vec::new(),
                     }

@@ -229,6 +229,14 @@
                         "work_area",
                     )?;
                 }
+                if let Some(wm_session) = wm_session.as_mut() {
+                    for surface in &layout_observation.withdrawn_surfaces {
+                        require_wm_request_admission(
+                            wm_session.enqueue_surface_removed(*surface)?,
+                            "surface_withdrawn",
+                        )?;
+                    }
+                }
                 for surface in layout_observation.new_surfaces {
                     if session_launches.observe_surface(surface) {
                         println!(

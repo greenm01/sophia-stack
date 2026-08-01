@@ -1,11 +1,12 @@
 use super::super::{InputDeliveryPhase, InputDeliveryState};
 use super::*;
+use crate::commands::live_session::pointer_focus_surface;
 use sophia_engine::InputFocusDecision;
 use sophia_protocol::TransactionId;
 use sophia_x_authority::{
     XAuthorityClientInputDelivery, XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn flushed_input_delivery_retires_its_client_key_release_barrier() {
@@ -178,6 +179,76 @@ fn client_positioned_primary_press_bypasses_managed_focus_handoff() {
         Some(sophia_protocol::SurfacePresentationRole::PolicyManaged),
         true,
     ));
+}
+
+#[test]
+fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_client() {
+    let managed = SurfaceId::new(41, 1);
+    let child = SurfaceId::new(42, 1);
+    let other = SurfaceId::new(43, 1);
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(9);
+    let other_client = sophia_x_authority::XServerFrontendClientId::from_raw(10);
+    let geometry = Rect {
+        x: 100,
+        y: 50,
+        width: 800,
+        height: 600,
+    };
+    let layer = |surface, stack_rank| LayerSnapshot {
+        surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank,
+        geometry,
+        source: BufferSource::None,
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation: 1,
+        resize_sync: ResizeSyncCapability::ImplicitOnly,
+    };
+    let layers = [layer(managed, 2), layer(child, 3), layer(other, 4)];
+    let roles = BTreeMap::from([
+        (
+            managed,
+            sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        ),
+        (
+            child,
+            sophia_protocol::SurfacePresentationRole::ClientPositioned,
+        ),
+        (
+            other,
+            sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        ),
+    ]);
+    let mut routes = XAuthorityClientSurfaceRoutes::default();
+    for (surface, route_client) in [(managed, client), (child, client), (other, other_client)] {
+        let mut batch = crate::commands::live_session::wm_update_coordinator_batch(
+            TransactionId::from_raw(u64::from(surface.index())),
+        );
+        batch.client = Some(route_client);
+        batch
+            .presentation_intents
+            .push(sophia_protocol::SurfacePresentationIntent {
+                surface,
+                kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+                role: roles[&surface],
+                geometry,
+                constraints: sophia_protocol::SurfaceConstraints {
+                    min_size: None,
+                    max_size: None,
+                },
+                generation: 1,
+            });
+        routes.observe(&batch);
+    }
+
+    assert_eq!(
+        pointer_focus_surface(child, Point { x: 120.0, y: 80.0 }, &layers, &roles, &routes,),
+        managed,
+    );
 }
 
 #[test]

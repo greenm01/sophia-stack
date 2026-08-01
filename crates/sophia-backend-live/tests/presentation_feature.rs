@@ -130,7 +130,10 @@ fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
     let frame = session
         .build_mixed_frame(transaction, None, surface, None, 1.0)
         .unwrap();
-    let LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. } = &frame.layers[0] else {
+    let LiveOwnedMixedCompositionLayer::DmaBuf {
+        frame, placement, ..
+    } = &frame.layers[0]
+    else {
         panic!("expected a DMA-BUF layer");
     };
     assert_eq!(
@@ -141,6 +144,12 @@ fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
         }
     );
     assert_eq!(placement.clip, Some(surface));
+    let retained = LiveRetainedDmaBufLayer {
+        image_id: LiveRendererImageId::from_raw(transaction.raw()),
+        frame: frame.try_clone().unwrap(),
+        placement: *placement,
+    };
+    assert!(retained.has_unit_scale());
 }
 
 #[test]

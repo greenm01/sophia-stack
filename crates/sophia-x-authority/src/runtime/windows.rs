@@ -284,6 +284,16 @@ impl XAuthorityRuntime {
          window: crate::XResourceId,
          update: XWindowGeometryUpdate,
      ) -> Result<(), XAuthorityRuntimeError> {
+         self.configure_window_geometry_observed(namespace, window, update)
+             .map(drop)
+     }
+
+     pub(crate) fn configure_window_geometry_observed(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         update: XWindowGeometryUpdate,
+     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
          self.resources
              .lookup(namespace, window, XResourceKind::Window)?;
          self.windows.apply(XWindowLifecycleEvent::Configured {
@@ -293,8 +303,8 @@ impl XAuthorityRuntime {
              width: update.width,
              height: update.height,
              generation: update.generation,
-         })?;
-         Ok(())
+         })?
+         .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
  
      /// Ends an X11 window's lifetime and returns the Sophia surface that the

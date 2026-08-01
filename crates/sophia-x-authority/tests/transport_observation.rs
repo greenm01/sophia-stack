@@ -1,6 +1,7 @@
 use sophia_protocol::{
-    AuthorityKind, BufferSource, Rect, Region, SurfaceId, SurfaceTransaction,
-    SurfaceTransactionReadiness, TransactionId,
+    AuthorityKind, AuthorityLocalId, AuthoritySurface, BufferSource, NamespaceId, Rect, Region,
+    SurfaceConstraints, SurfaceId, SurfacePresentationIntentKind, SurfacePresentationRole,
+    SurfaceTransaction, SurfaceTransactionReadiness, TransactionId,
 };
 use sophia_x_authority::{
     X_ATOM_NONE, X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE, X_RANDR_MAJOR_OPCODE,
@@ -38,6 +39,45 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
         released_fences: Vec::new(),
         server_reply_fd_count: 0,
     }
+}
+
+#[test]
+fn reparent_to_client_positioned_emits_policy_withdrawal() {
+    let surface = SurfaceId::new(0x0020_0102, 1);
+    let geometry = Rect {
+        x: 12,
+        y: 24,
+        width: 640,
+        height: 480,
+    };
+    let mut trace = observation(Vec::new());
+    trace.major_opcode = 7;
+    let mut response = XAuthorityResponsePacket::accepted(TransactionId::from_raw(1));
+    response.surfaces.push(AuthoritySurface {
+        authority: AuthorityKind::SophiaX,
+        local_id: AuthorityLocalId::new(0x0020_0102, 1),
+        surface,
+        namespace: Some(NamespaceId::from_raw(1)),
+        presentation: SurfacePresentationRole::ClientPositioned,
+        mapped: true,
+        geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    });
+    trace.result.response = Some(response);
+
+    let batch = XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace).unwrap();
+
+    assert!(matches!(
+        batch.presentation_intents.as_slice(),
+        [intent]
+            if intent.surface == surface
+                && intent.kind == SurfacePresentationIntentKind::Withdraw
+                && intent.role == SurfacePresentationRole::ClientPositioned
+    ));
 }
 
 fn error(sequence: u16, major_code: u8, resource_id: u32) -> XClientOutput {
