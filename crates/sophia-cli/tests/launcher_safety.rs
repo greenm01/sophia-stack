@@ -54,6 +54,20 @@ fn kitty_gate_always_retains_one_shot_composition_pixel_evidence() {
 }
 
 #[test]
+fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
+    assert!(SESSION_LAUNCHER.contains("firefox_m10_profile_dir=\"\""));
+    assert!(SESSION_LAUNCHER.contains("$firefox_m10_profile_dir/user.js"));
+    assert!(SESSION_LAUNCHER.contains("browser.tabs.remote.autostart"));
+    assert!(SESSION_LAUNCHER.contains("fission.autostart"));
+    assert!(SESSION_LAUNCHER.contains("--session-app-arg=firefox=--profile"));
+    assert!(SESSION_LAUNCHER.contains("--session-app-arg=firefox=$firefox_m10_profile_dir"));
+    assert!(SESSION_LAUNCHER.contains("GDK_BACKEND=x11"));
+    assert!(SESSION_LAUNCHER.contains("MOZ_ENABLE_WAYLAND=0"));
+    assert!(SESSION_LAUNCHER.contains("MOZ_FORCE_DISABLE_E10S=1"));
+    assert!(SESSION_LAUNCHER.contains("MOZ_USE_XINPUT2=1"));
+}
+
+#[test]
 fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
     let restore_manager = TTY3_LAUNCHER
         .find("sudo sv up \"$display_manager\"")

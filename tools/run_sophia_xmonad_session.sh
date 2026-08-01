@@ -73,8 +73,20 @@ WATCHDOG_TRIGGERED_FILE="$STATE_DIR/session-watchdog.triggered"
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 firefox_m10_probe_dir=""
+firefox_m10_profile_dir=""
 if [[ "$FIREFOX_M10_PROOF" == true ]]; then
     firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
+    firefox_m10_profile_dir="$firefox_m10_probe_dir/firefox-profile"
+    mkdir -p "$firefox_m10_profile_dir"
+    chmod 700 "$firefox_m10_profile_dir"
+    printf '%s\n' \
+        'user_pref("browser.tabs.remote.autostart", false);' \
+        'user_pref("browser.tabs.remote.autostart.2", false);' \
+        'user_pref("fission.autostart", false);' \
+        'user_pref("middlemouse.paste", true);' \
+        'user_pref("middlemouse.contentLoadURL", false);' \
+        >"$firefox_m10_profile_dir/user.js"
+    chmod 600 "$firefox_m10_profile_dir/user.js"
 fi
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"
@@ -512,6 +524,14 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             --session-action-app=firefox=firefox
             --session-app-arg=firefox=--no-remote
             --session-app-arg=firefox=--new-instance
+        )
+        if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+            session_args+=(
+                --session-app-arg=firefox=--profile
+                "--session-app-arg=firefox=$firefox_m10_profile_dir"
+            )
+        fi
+        session_args+=(
             "--session-app-arg=firefox=file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
         )
     fi
@@ -534,6 +554,11 @@ session_environment=(
 if [[ "$FIREFOX_M10_PROOF" == true ]]; then
     session_environment+=(
         "SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR=$firefox_m10_probe_dir"
+        GDK_BACKEND=x11
+        GTK_USE_PORTAL=0
+        MOZ_ENABLE_WAYLAND=0
+        MOZ_FORCE_DISABLE_E10S=1
+        MOZ_USE_XINPUT2=1
     )
 fi
 if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then

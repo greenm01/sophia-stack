@@ -847,7 +847,10 @@ tools/start_sophia_xmonad_firefox_proof_tty3.sh
 
 The launcher uses the offline fixture and keeps the current instruction visible
 inside the active window; the operator does not need to memorize a sequence
-before graphics takeover. Kitty A and Kitty B each accept three short,
+before graphics takeover. It creates a run-local Firefox profile and uses the
+same native-X, single-process, XI2 configuration as the passing QEMU workload,
+so the proof neither inherits the operator's normal Firefox profile nor changes
+it. Kitty A and Kitty B each accept three short,
 content-redacted checkpoints before Firefox, after its normal `Ctrl+Q` exit,
 and after its restarted window is closed through xmonad. The Firefox page
 requires keyboard, `CLIPBOARD`, `PRIMARY`, a physical wheel event, resize,
