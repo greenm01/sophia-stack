@@ -117,6 +117,8 @@ bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
 bash -n tools/fixtures/firefox_m10_kitty_probe.sh
+bash -n tools/check_firefox_m10_kitty_probe.sh
+tools/check_firefox_m10_kitty_probe.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh \
     tools/stop_sophia_native_session.sh tools/stop_sophia_standalone_session.sh \
     tools/stop_sophia_session.sh

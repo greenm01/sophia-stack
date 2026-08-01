@@ -789,8 +789,12 @@ than adding speculative browser compatibility.
   trace then proved that Firefox's render child was still projected at global
   origin and overlapped Kitty's input region. Descendant DMA-BUF Presents now
   reduce to their managed toplevel with an accumulated X-hierarchy offset and
-  target-bounded clipping; repeat the physical workflow before closing this
-  item.
+  target-bounded clipping. The following physical run proved correct unit-scale
+  browser placement plus keyboard and clipboard interaction, then exposed an
+  edge-target instruction and an unsynchronized two-Kitty prompt race in the
+  proof harness. Those prompts now coordinate exactly one restart and direct
+  pointer work away from compositor edges; repeat the physical workflow before
+  closing this item.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
   workspace hide/show, refocus, dialog open/close, and status-zero exit.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
