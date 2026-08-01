@@ -35,28 +35,15 @@ The development TTY profile now establishes:
 - Native-X Kitty and Firefox protocol coverage plus unattended two-output QEMU
   mix and soak evidence.
 
-This is still development evidence: the captured lifecycle reports
-`installed=false`, `build=true`, and `manual_service=true`. The immediate
-blocker is completing one commit-pinned unattended semantic gate plus the
-short physical hardware gates. Physical evidence
-showed that neither a reused GBM surface nor a reused EGL/GL context bound to
-fresh surfaces is safe on the current AMDGPU stack: both fail on the third
-mixed render. Mixed composition therefore keeps one complete target per export
-as the correctness baseline. Retirement-driven target pooling remains a
-post-soak optimization unless measured latency prevents promotion. The focused
-xmobar promotion capture now establishes the protocol-neutral work-area path
-on both outputs: the 14-pixel top reservation produced exact reduced managed
-geometry, button and axis input reached the client-positioned bar without
-stealing Kitty focus, workspace and repeated VT round-trips preserved the
-scene, 50 mixed composition lifetimes balanced with zero replacement, and
-teardown was clean. Held-repeat, clipboard, workspace, focus, application, and
-teardown semantics are retained by the Rust and two-output QEMU suites instead
-of being manually repeated on every candidate.
-Milestone 9 has one commit-pinned promotion ledger:
-`tools/sophia_m9_promotion.sh next` first runs the unattended semantic gate,
-then selects the next short physical gate, archives immutable evidence, runs
-the matching verifier, and refuses a dirty worktree or evidence from another
-commit.
+This remains development evidence: the captured lifecycle reports
+`installed=false`, `build=true`, and `manual_service=true`. Milestone 9's
+commit-pinned promotion ledger passed all five gates on commit `727c716d`:
+unattended QEMU semantics, native chrome, four-Kitty hardware smoke, xmobar
+hardware smoke, and independent emergency recovery. The current renderer uses
+one persistent composition target and frame surface with measured reuse,
+balanced import-cache teardown, and a drained renderer-worker ledger. The next
+product milestone is the combined physical Firefox workload; installed-login,
+repeat-cycle, and workday-soak requirements remain later gates.
 
 ## Daily-Driver Promotion Contract
 
@@ -76,11 +63,12 @@ xmonad session proves all of the following:
 
 ---
 
-## Milestone 9: xmonad Session Promotion
+## Post-Milestone 9 retained session follow-ups
 
-This is the active milestone. The Kitty-only physical baseline and the
-underlying xmonad protocol/resize corrections are established and archived.
-Promotion now follows the gates below in order.
+Milestone 9 completed on commit `727c716d` on 2026-08-01. Its five immutable
+promotion records all pass. The unchecked items retained below are explicitly
+post-promotion compatibility, optimization, and stress follow-ups; they do not
+reopen the completed Milestone 9 exit gate.
 
 ### 9.1 Native presentation lifetime and latency
 
