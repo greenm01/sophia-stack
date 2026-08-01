@@ -43,6 +43,15 @@ evidence_count() {
     grep -c "$1" "$EVIDENCE_FILE" 2>/dev/null || true
 }
 
+evidence_has_after_line() {
+    local pattern=$1
+    local line=$2
+    awk -v pattern="$pattern" -v line="$line" '
+        NR > line && $0 ~ pattern { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$EVIDENCE_FILE"
+}
+
 wait_for_new_evidence() {
     local pattern=$1
     local baseline=$2
@@ -715,13 +724,12 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+1
     echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+1" | tee -a "$EVIDENCE_FILE"
     sleep 1
-    restart_layout_baseline="$(grep -c '^sophia_live_wm schema=1 status=layout_committed ' "$EVIDENCE_FILE" || true)"
-    restart_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=focus_reconciled ' "$EVIDENCE_FILE" || true)"
-    restart_clear_focus_baseline="$(grep -c '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$EVIDENCE_FILE" || true)"
     restarted=false
+    restart_line=0
     for _ in $(seq 1 400); do
         if grep -q '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$EVIDENCE_FILE"; then
             restarted=true
+            restart_line="$(awk '/^sophia_live_wm schema=1 status=restarted .*preserved_layout=true/ { print NR; exit }' "$EVIDENCE_FILE")"
             break
         fi
         if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
@@ -733,24 +741,22 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     fi
     recovery_layout=false
     for _ in $(seq 1 400); do
-        current_layout_count="$(grep -c '^sophia_live_wm schema=1 status=layout_committed ' "$EVIDENCE_FILE" || true)"
-        if (( current_layout_count > restart_layout_baseline )); then
+        if evidence_has_after_line '^sophia_live_wm schema=1 status=layout_committed ' "$restart_line"; then
             recovery_layout=true
             break
         fi
         if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
         sleep 0.05
     done
-    if [[ "$recovery_layout" != true ]] && ! grep -q '^sophia_live_wm schema=1 status=layout_timeout .*preserved_layout=true' "$EVIDENCE_FILE"; then
+    if [[ "$recovery_layout" != true ]] &&
+        ! evidence_has_after_line '^sophia_live_wm schema=1 status=layout_timeout .*preserved_layout=true' "$restart_line"; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=restart_layout_timeout" | tee -a "$EVIDENCE_FILE"
         exit 1
     fi
     focus_state_recovered=false
     for _ in $(seq 1 400); do
-        current_focus_count="$(grep -c '^sophia_live_wm schema=1 status=focus_reconciled ' "$EVIDENCE_FILE" || true)"
-        current_clear_focus_count="$(grep -c '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$EVIDENCE_FILE" || true)"
-        if (( current_focus_count > restart_focus_baseline
-            || current_clear_focus_count > restart_clear_focus_baseline )); then
+        if evidence_has_after_line '^sophia_live_wm schema=1 status=focus_reconciled ' "$restart_line" ||
+            evidence_has_after_line '^sophia_live_wm schema=1 status=hidden_focus_cleared ' "$restart_line"; then
             focus_state_recovered=true
             break
         fi
