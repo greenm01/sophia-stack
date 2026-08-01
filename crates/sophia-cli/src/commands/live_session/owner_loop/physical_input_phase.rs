@@ -408,6 +408,8 @@ macro_rules! drain_physical_input {
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
+let mut native_frame_service_deadline_armed = false;
+let mut native_frame_idle_service_cycles = 0_u8;
 loop {
     if let Some(wm) = wm_session.as_mut() {
         wm.service_policy_update()?;

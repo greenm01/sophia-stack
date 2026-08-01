@@ -54,10 +54,10 @@ fn native_frame_service_should_preempt_authority(
     service_due: bool,
 ) -> bool {
     // Controls get several owner turns first, but no control class may block
-    // renderer polling indefinitely. The service deadline also covers work
-    // whose instantaneous output hint is idle, so worker watchdogs keep making
-    // progress through resize-recovery traffic. The following owner turn
-    // returns to authority traffic.
+    // renderer polling indefinitely. An armed service deadline also covers
+    // work whose instantaneous output hint has gone idle, so worker watchdogs
+    // keep making progress through resize-recovery traffic. The following
+    // owner turn returns to authority traffic.
     const CONTROL_PRIORITY_CYCLES: u8 = 4;
 
     (!control_pending || control_priority_cycles >= CONTROL_PRIORITY_CYCLES)

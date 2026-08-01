@@ -1,14 +1,29 @@
 {
-        let native_frame_service_preemption = match (runtime.as_ref(), native_scanout.as_ref()) {
-            (Some(runtime), Some(native_scanout)) => native_frame_service_should_preempt_authority(
-                &runtime.native_output_service_request(native_scanout)?,
-                native_frame_service_preempted_previous_cycle,
-                session_controls.pending_len() != 0,
-                native_frame_control_priority_cycles,
-                last_native_frame_service.elapsed() >= Duration::from_millis(4),
-            ),
-            _ => false,
+        let native_frame_service_request = match (runtime.as_ref(), native_scanout.as_ref()) {
+            (Some(runtime), Some(native_scanout)) => {
+                Some(runtime.native_output_service_request(native_scanout)?)
+            }
+            _ => None,
         };
+        if native_frame_service_request
+            .as_ref()
+            .is_some_and(native_frame_service_requires_owner_progress)
+        {
+            native_frame_service_deadline_armed = true;
+            native_frame_idle_service_cycles = 0;
+        }
+        let native_frame_service_preemption = native_frame_service_request
+            .as_ref()
+            .is_some_and(|request| {
+                native_frame_service_should_preempt_authority(
+                    request,
+                    native_frame_service_preempted_previous_cycle,
+                    session_controls.pending_len() != 0,
+                    native_frame_control_priority_cycles,
+                    native_frame_service_deadline_armed
+                        && last_native_frame_service.elapsed() >= Duration::from_millis(16),
+                )
+            });
         let wm_only_cycle = initial_authority_batch.is_none()
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
@@ -637,6 +652,20 @@
                     }
                     let service = runtime.service_native(native_scanout)?;
                     last_native_frame_service = Instant::now();
+                    let native_work_remains = native_frame_service_requires_owner_progress(
+                        &runtime.native_output_service_request(native_scanout)?,
+                    );
+                    if native_work_remains {
+                        native_frame_service_deadline_armed = true;
+                        native_frame_idle_service_cycles = 0;
+                    } else if native_frame_service_deadline_armed {
+                        native_frame_idle_service_cycles =
+                            native_frame_idle_service_cycles.saturating_add(1);
+                        if native_frame_idle_service_cycles >= 4 {
+                            native_frame_service_deadline_armed = false;
+                            native_frame_idle_service_cycles = 0;
+                        }
+                    }
                     if let Some(retired) = service.retired_present {
                         let NativePresentRetirementObservation {
                             surface,
