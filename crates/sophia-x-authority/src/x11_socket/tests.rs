@@ -86,6 +86,69 @@ fn pointer_target_prefers_mapped_button_selecting_content_child() {
         selections.pointer_event_coordinates(top_level, content_child, 100, 200),
         (100, 120)
     );
+    assert_eq!(
+        selections.pointer_event_target(top_level, 100, 200),
+        content_child
+    );
+    assert_eq!(
+        selections.ancestry_including(content_child),
+        vec![content_child, top_level, root]
+    );
+}
+
+#[test]
+fn pointer_event_target_does_not_depend_on_core_event_selection() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let content_child = XResourceId::new(0x200002, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        top_level,
+        root,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        },
+    );
+    selections.register(
+        content_child,
+        top_level,
+        Rect {
+            x: 0,
+            y: 80,
+            width: 800,
+            height: 520,
+        },
+    );
+    selections.observe_mapped(top_level);
+    selections.observe_mapped(content_child);
+
+    assert_eq!(
+        selections.pointer_event_target(top_level, 100, 200),
+        content_child
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, false, 100, 200),
+        None
+    );
+
+    let namespace = NamespaceId::from_raw(17);
+    let owner = 4;
+    let mut authority = crate::XInputAuthorityState::default();
+    authority.select_xi_events(namespace, owner, content_child, &[(2, vec![1 << 6])]);
+    assert_eq!(
+        x11_selected_xi_event_window(
+            &authority,
+            namespace,
+            owner,
+            &selections.ancestry_including(content_child),
+            2,
+            6,
+        ),
+        Some(content_child)
+    );
 }
 
 #[test]

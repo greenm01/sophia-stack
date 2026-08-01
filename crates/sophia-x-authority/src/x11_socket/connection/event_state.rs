@@ -245,6 +245,36 @@ impl XCoreEventSelectionState {
         })
     }
 
+    fn pointer_event_target(
+        &self,
+        surface_window: XResourceId,
+        event_x: i16,
+        event_y: i16,
+    ) -> XResourceId {
+        self.stacking
+            .iter()
+            .rev()
+            .copied()
+            .find(|candidate| {
+                self.mapped.contains(candidate)
+                    && (*candidate == surface_window
+                        || self.ancestors(*candidate).contains(&surface_window))
+                    && self.contains_surface_point(
+                        surface_window,
+                        *candidate,
+                        i32::from(event_x),
+                        i32::from(event_y),
+                    )
+            })
+            .unwrap_or(surface_window)
+    }
+
+    fn ancestry_including(&self, window: XResourceId) -> Vec<XResourceId> {
+        std::iter::once(window)
+            .chain(self.ancestors(window))
+            .collect()
+    }
+
     fn crossing_selected(&self, window: XResourceId, entered: bool) -> bool {
         let mask = if entered {
             Self::ENTER_WINDOW_MASK

@@ -614,6 +614,23 @@ fn clamp_engine_i16(value: i32) -> i16 {
 }
 
 #[cfg(unix)]
+fn x11_selected_xi_event_window(
+    authority: &crate::XInputAuthorityState,
+    namespace: NamespaceId,
+    owner: u64,
+    ancestry: &[XResourceId],
+    device: u16,
+    event_type: u16,
+) -> Option<XResourceId> {
+    ancestry
+        .iter()
+        .find(|window| {
+            authority.xi_event_selected(namespace, owner, **window, device, event_type)
+        })
+        .copied()
+}
+
+#[cfg(unix)]
 struct X11InputWriterState {
     stream: Arc<Mutex<UnixStream>>,
     byte_order: XByteOrder,
@@ -623,6 +640,8 @@ struct X11InputWriterState {
     xkb_state_details: Arc<AtomicU16>,
     xkb_modifiers: Arc<AtomicU16>,
     surface_windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
+    input_authority: Option<Arc<Mutex<crate::XInputAuthorityState>>>,
+    namespace: NamespaceId,
     client: XServerFrontendClientId,
 }
 
@@ -640,6 +659,8 @@ fn spawn_x11_input_event_writer(
         xkb_state_details,
         xkb_modifiers,
         surface_windows,
+        input_authority,
+        namespace,
         client,
     } = state;
     let stop = Arc::new(AtomicBool::new(false));
@@ -651,10 +672,10 @@ fn spawn_x11_input_event_writer(
             let (
                 event,
                 target_window,
-                xi_event_type,
-                xi_event_window,
-                xi_emulated_button_type,
-                xi_emulated_button_window,
+                mut xi_event_type,
+                mut xi_event_window,
+                mut xi_emulated_button_type,
+                mut xi_emulated_button_window,
                 xi_transition_mask,
                 delivery,
             ) =
@@ -715,9 +736,9 @@ fn spawn_x11_input_event_writer(
                 );
             }
             let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-            let (delivered_window, pointer_surface_window) = match event {
+            let (delivered_window, pointer_surface_window, pointer_event_ancestry) = match event {
                 XAuthorityInputEvent::Key(_) => {
-                    (routed_keyboard_window.unwrap_or(focused_window), None)
+                    (routed_keyboard_window.unwrap_or(focused_window), None, None)
                 }
                 XAuthorityInputEvent::Pointer(pointer) => {
                     let surface_window = target_window.unwrap_or(
@@ -731,11 +752,18 @@ fn spawn_x11_input_event_writer(
                             X11SetupSocketError::new("X11 pointer target surface is unknown")
                         })?,
                     );
-                    let delivered_window = core_event_selections
+                    let selections = core_event_selections
                         .lock()
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
+                        })?;
+                    let event_window = selections.pointer_event_target(
+                        surface_window,
+                        pointer.event_x,
+                        pointer.event_y,
+                    );
+                    let event_ancestry = selections.ancestry_including(event_window);
+                    let delivered_window = selections
                         .selected_pointer_target(
                             surface_window,
                             matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
@@ -743,9 +771,85 @@ fn spawn_x11_input_event_writer(
                             pointer.event_y,
                         )
                         .unwrap_or(surface_window);
-                    (delivered_window, Some(surface_window))
+                    (delivered_window, Some(surface_window), Some(event_ancestry))
                 }
             };
+            if let (Some(input_authority), Some(event_ancestry)) =
+                (input_authority.as_ref(), pointer_event_ancestry.as_ref())
+            {
+                let authority = input_authority.lock().map_err(|_| {
+                    X11SetupSocketError::new("X11 input authority lock poisoned")
+                })?;
+                let (selected_type, emulated_button_selected_type) = match event {
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind: XAuthorityPointerEventKind::Motion,
+                        ..
+                    }) => (Some(6), None),
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind: XAuthorityPointerEventKind::Button { pressed, .. },
+                        ..
+                    }) => (Some(if pressed { 4 } else { 5 }), None),
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind:
+                            XAuthorityPointerEventKind::Axis {
+                                pressed,
+                                horizontal_position_v120,
+                                vertical_position_v120,
+                                ..
+                            },
+                        ..
+                    }) => (
+                        (horizontal_position_v120.is_some()
+                            || vertical_position_v120.is_some())
+                        .then_some(6),
+                        Some(if pressed { 4 } else { 5 }),
+                    ),
+                    XAuthorityInputEvent::Key(_) => (None, None),
+                };
+                xi_event_window = selected_type.and_then(|event_type| {
+                    x11_selected_xi_event_window(
+                        &authority,
+                        namespace,
+                        client.raw(),
+                        event_ancestry,
+                        2,
+                        event_type,
+                    )
+                });
+                xi_event_type = xi_event_window.and(selected_type);
+                xi_emulated_button_window =
+                    emulated_button_selected_type.and_then(|event_type| {
+                        x11_selected_xi_event_window(
+                            &authority,
+                            namespace,
+                            client.raw(),
+                            event_ancestry,
+                            2,
+                            event_type,
+                        )
+                    });
+                xi_emulated_button_type =
+                    xi_emulated_button_window.and(emulated_button_selected_type);
+            }
+            if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
+                && let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                    kind: XAuthorityPointerEventKind::Axis { pressed, .. },
+                    ..
+                }) = event
+            {
+                let descendant_target = pointer_event_ancestry
+                    .as_ref()
+                    .and_then(|ancestry| ancestry.first())
+                    .zip(pointer_surface_window)
+                    .is_some_and(|(event_window, surface_window)| *event_window != surface_window);
+                tracing::debug!(
+                    "sophia_x11_axis_delivery schema=1 descendant_target={} smooth_selected={} emulated_button_selected={} pressed={} input_redacted=true",
+                    descendant_target,
+                    xi_event_type == Some(6),
+                    xi_emulated_button_type.is_some(),
+                    pressed,
+                );
+            }
             let (wire_event_x, wire_event_y) = match (event, pointer_surface_window) {
                 (XAuthorityInputEvent::Pointer(pointer), Some(surface_window)) => {
                     core_event_selections

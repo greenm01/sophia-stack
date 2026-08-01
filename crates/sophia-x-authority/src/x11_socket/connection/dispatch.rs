@@ -141,6 +141,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     xkb_state_details: xkb_state_details.clone(),
                     xkb_modifiers: xkb_modifiers.clone(),
                     surface_windows: surface_windows.clone(),
+                    input_authority: protocol_routing
+                        .as_ref()
+                        .map(|routing| routing.input_authority.clone()),
+                    namespace,
                     client,
                 },
                 receiver,
