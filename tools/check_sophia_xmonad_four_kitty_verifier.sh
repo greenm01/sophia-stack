@@ -35,8 +35,8 @@ sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pend
 sophia_session_launches schema=1 status=complete peak_depth=3 rejected=0 admission_timeouts=0
 sophia_live_owner_timing schema=2 status=complete max_child_reap_msec=25 max_input_phase_msec=12
 sophia_live_wm_transport schema=1 status=complete peak_depth=2 pending=0 rejected=0 stale_responses=0 max_queue_dwell_msec=12 max_round_trip_msec=180
-sophia_live_native_resources schema=2 status=complete target_creations=64 pipeline_creations=64 frame_surface_creations=64 cpu_target_creations=0 dmabuf_target_creations=0 composition_target_creations=64 generation_replacements=0 recovery_replacements=0
-sophia_live_session schema=15 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 native_mixed_exports=64 native_target_recreations=64 native_frame_surface_creations=64 native_max_target_create_msec=14 native_max_frame_surface_create_msec=4 native_max_render_msec=10 native_max_submit_to_page_flip_msec=20 native_max_upload_msec=8 input_queue_dwell_max_msec=12
+sophia_live_native_resources schema=4 status=complete target_creations=1 pipeline_creations=1 frame_surface_creations=1 cpu_target_creations=0 dmabuf_target_creations=0 composition_target_creations=1 composition_target_reuses=63 generation_replacements=0 recovery_replacements=0 import_cache_imports=16 import_cache_hits=48 import_cache_evictions=16 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0 worker_requests=64 worker_completions=64 worker_failures=0 worker_soft_stalls=0 worker_hard_stalls=0 worker_release_enqueue_failures=0 max_worker_request_msec=10
+sophia_live_session schema=15 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 native_mixed_exports=64 native_target_recreations=0 native_frame_surface_creations=1 native_max_target_create_msec=14 native_max_frame_surface_create_msec=4 native_max_render_msec=10 native_max_submit_to_page_flip_msec=20 native_max_upload_msec=8 input_queue_dwell_max_msec=12
 sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=10 retirements=9 callbacks=9 nonzero_exports=1
 sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=7 retirements=6 callbacks=6 nonzero_exports=1
 sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
@@ -78,8 +78,8 @@ expect_rejected wrong_chrome_clearance \
     'status=negotiated source=core_fallback capability=false clearance=2' \
     'status=negotiated source=core_fallback capability=false clearance=3'
 expect_rejected unsafe_epoch_reuse \
-    'native_target_recreations=64' \
-    'native_target_recreations=63'
+    'native_target_recreations=0' \
+    'native_target_recreations=1'
 expect_rejected no_mixed_exports \
     'native_mixed_exports=64' \
     'native_mixed_exports=0'
@@ -105,11 +105,29 @@ expect_rejected oversized_resize_epoch \
     'status=held transaction=4 surfaces=4' \
     'status=held transaction=4 surfaces=5'
 expect_rejected surface_count_mismatch \
-    'native_frame_surface_creations=64' \
-    'native_frame_surface_creations=63'
+    'native_frame_surface_creations=1' \
+    'native_frame_surface_creations=2'
 expect_rejected recovery_replacement \
     'recovery_replacements=0' \
     'recovery_replacements=1'
+expect_rejected composition_reuse_gap \
+    'composition_target_reuses=63' \
+    'composition_target_reuses=62'
+expect_rejected import_cache_leak \
+    'import_cache_live_entries=0' \
+    'import_cache_live_entries=1'
+expect_rejected import_cache_descriptor_mismatch \
+    'import_cache_descriptor_mismatches=0' \
+    'import_cache_descriptor_mismatches=1'
+expect_rejected incomplete_worker_request \
+    'worker_completions=64' \
+    'worker_completions=63'
+expect_rejected worker_failure \
+    'worker_failures=0' \
+    'worker_failures=1'
+expect_rejected worker_latency \
+    'max_worker_request_msec=10' \
+    'max_worker_request_msec=101'
 expect_rejected excessive_input_dwell \
     'input_queue_dwell_max_msec=12' \
     'input_queue_dwell_max_msec=101'

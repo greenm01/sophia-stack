@@ -349,14 +349,18 @@ for key in native_mixed_exports native_target_recreations \
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=2 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=4 status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
 resources="${resource_lines[0]}"
 for key in target_creations pipeline_creations frame_surface_creations cpu_target_creations \
-    dmabuf_target_creations composition_target_creations generation_replacements \
-    recovery_replacements; do
+    dmabuf_target_creations composition_target_creations composition_target_reuses \
+    generation_replacements recovery_replacements import_cache_imports import_cache_hits \
+    import_cache_evictions import_cache_live_entries import_cache_descriptor_mismatches \
+    import_cache_capacity_rejections worker_requests worker_completions worker_failures \
+    worker_soft_stalls worker_hard_stalls worker_release_enqueue_failures \
+    max_worker_request_msec; do
     value="$(field "$resources" "$key")" ||
         fail "resource-lifetime record is missing $key"
     [[ "$value" =~ ^[0-9]+$ ]] ||
@@ -368,8 +372,22 @@ frame_surface_creations="$(field "$resources" frame_surface_creations)"
 cpu_targets="$(field "$resources" cpu_target_creations)"
 dmabuf_targets="$(field "$resources" dmabuf_target_creations)"
 composition_targets="$(field "$resources" composition_target_creations)"
+composition_target_reuses="$(field "$resources" composition_target_reuses)"
 generation_replacements="$(field "$resources" generation_replacements)"
 recovery_replacements="$(field "$resources" recovery_replacements)"
+import_cache_imports="$(field "$resources" import_cache_imports)"
+import_cache_hits="$(field "$resources" import_cache_hits)"
+import_cache_evictions="$(field "$resources" import_cache_evictions)"
+import_cache_live_entries="$(field "$resources" import_cache_live_entries)"
+import_cache_descriptor_mismatches="$(field "$resources" import_cache_descriptor_mismatches)"
+import_cache_capacity_rejections="$(field "$resources" import_cache_capacity_rejections)"
+worker_requests="$(field "$resources" worker_requests)"
+worker_completions="$(field "$resources" worker_completions)"
+worker_failures="$(field "$resources" worker_failures)"
+worker_soft_stalls="$(field "$resources" worker_soft_stalls)"
+worker_hard_stalls="$(field "$resources" worker_hard_stalls)"
+worker_release_enqueue_failures="$(field "$resources" worker_release_enqueue_failures)"
+max_worker_request_msec="$(field "$resources" max_worker_request_msec)"
 mixed_exports="$(field "$completion" native_mixed_exports)"
 target_recreations="$(field "$completion" native_target_recreations)"
 completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)"
@@ -377,16 +395,29 @@ completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)
     fail "target and pipeline creation counts diverged"
 (( target_creations == cpu_targets + dmabuf_targets + composition_targets )) ||
     fail "resource-class creation counts do not sum to the total"
-(( composition_targets == mixed_exports )) ||
-    fail "composition did not use one complete target per safe export"
-(( frame_surface_creations >= mixed_exports )) ||
-    fail "resource evidence omitted export-scoped frame surfaces"
+(( composition_targets > 0 && composition_targets + composition_target_reuses == mixed_exports )) ||
+    fail "persistent composition target creation and reuse did not cover every mixed export"
+(( frame_surface_creations == composition_targets )) ||
+    fail "persistent composition targets and frame surfaces diverged"
 (( completion_frame_surfaces == frame_surface_creations )) ||
     fail "completion and resource frame-surface counts diverged"
-(( target_recreations == mixed_exports )) ||
-    fail "composition target retirement did not match safe exports"
+(( target_recreations == 0 )) ||
+    fail "stable composition resources were recreated"
 (( generation_replacements == 0 && recovery_replacements == 0 )) ||
     fail "stable CPU or direct DMA-BUF resources were replaced"
+(( import_cache_imports > 0 && import_cache_hits > 0 )) ||
+    fail "four-window composition did not exercise persistent import-cache reuse"
+(( import_cache_imports == import_cache_evictions && import_cache_live_entries == 0 )) ||
+    fail "import-cache resources did not drain completely"
+(( import_cache_descriptor_mismatches == 0 && import_cache_capacity_rejections == 0 )) ||
+    fail "import-cache validation or capacity rejected an export"
+(( worker_requests > 0 && worker_requests == worker_completions )) ||
+    fail "renderer-worker requests did not complete"
+(( worker_failures == 0 && worker_soft_stalls == 0 && worker_hard_stalls == 0 &&
+    worker_release_enqueue_failures == 0 )) ||
+    fail "renderer worker failed, stalled, or lost a release"
+(( max_worker_request_msec <= 100 )) ||
+    fail "renderer-worker request exceeded the 100ms promotion budget: $max_worker_request_msec"
 
 mapfile -t owner_timing_lines < <(
     grep -E '^sophia_live_owner_timing schema=2 status=complete ' "$SESSION_LOG"
