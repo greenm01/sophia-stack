@@ -205,6 +205,43 @@ fn asynchronous_present_retains_one_transaction_until_scanout_submission() {
 }
 
 #[test]
+fn queued_present_is_not_runnable_while_an_earlier_present_is_rendering() {
+    let first_transaction = TransactionId::from_raw(40);
+    let second_transaction = TransactionId::from_raw(41);
+    let surface = SurfaceId::new(42, 1);
+    let second_handle = BufferHandle::from_raw(43);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(second_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    scheduler.mark_rendering(in_flight_present(first_transaction, surface));
+    scheduler
+        .enqueue_group(
+            &scheduler_batch(second_transaction, surface, second_handle).groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert!(scheduler.has_queued());
+    assert!(scheduler.has_eligible());
+    assert!(scheduler.has_rendering());
+    assert!(!scheduler.has_runnable_queued());
+
+    assert_eq!(
+        scheduler
+            .take_rendering()
+            .map(|present| present.transaction),
+        Some(first_transaction)
+    );
+    assert!(scheduler.has_runnable_queued());
+}
+
+#[test]
 fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
     let handle = BufferHandle::from_raw(37);
     let transaction = TransactionId::from_raw(38);

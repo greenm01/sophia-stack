@@ -292,6 +292,10 @@ impl LiveProductionPresentScheduler {
         !self.queued.is_empty()
     }
 
+    pub fn has_runnable_queued(&self) -> bool {
+        self.in_flight.is_none() && self.has_eligible()
+    }
+
     pub fn has_submitted(&self) -> bool {
         matches!(
             self.in_flight,

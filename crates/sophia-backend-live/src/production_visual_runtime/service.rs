@@ -29,7 +29,7 @@ pub struct LiveProductionVisualDiagnostics {
 impl LiveProductionVisualRuntime {
     pub fn diagnostics(&self) -> LiveProductionVisualDiagnostics {
         LiveProductionVisualDiagnostics {
-            present_queued: self.present_scheduler.has_queued(),
+            present_queued: self.present_scheduler.has_runnable_queued(),
             present_scheduling_blocked: self.present_scheduler.has_layout_deferred()
                 && !self.present_scheduler.has_eligible(),
             live_sources: self.presentation_feedback.resources().source_count(),
