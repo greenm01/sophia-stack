@@ -211,6 +211,14 @@
         )
         .into());
     }
+    let recovery_extent_count = layout.recovery_extent_count();
+    if recovery_extent_count != 0 || layout.constraint_relayout_required() {
+        return Err(format!(
+            "persistent live session ended with temporary layout constraints: recovery_extents={recovery_extent_count} constraint_relayout_pending={}",
+            layout.constraint_relayout_required(),
+        )
+        .into());
+    }
     if config.firefox_proof_requested() {
         if !firefox_m8_proof.complete()
             || selection_owner_changes < 2
@@ -415,6 +423,11 @@
         committed_session_actions.len(),
         input_delivery.pending.len(),
         wm_session.as_ref().is_some_and(|wm| wm.degraded),
+    );
+    println!(
+        "sophia_live_layout_health schema=1 status=clean recovery_extents={} constraint_relayout_pending={}",
+        recovery_extent_count,
+        layout.constraint_relayout_required(),
     );
     println!(
         "sophia_live_session_protocol_errors schema=1 expected={} unexpected={}",

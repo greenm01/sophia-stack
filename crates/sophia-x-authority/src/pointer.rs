@@ -30,6 +30,14 @@ impl XCorePointerMapper {
         self.button_state
     }
 
+    pub const fn horizontal_scroll_position_v120(self) -> i32 {
+        self.horizontal_scroll_v120
+    }
+
+    pub const fn vertical_scroll_position_v120(self) -> i32 {
+        self.vertical_scroll_v120
+    }
+
     pub fn map_evdev_button(&mut self, evdev_button: u32, pressed: bool) -> Option<(u8, u16)> {
         let (button, mask) = match evdev_button {
             272 => (1, 1 << 8),

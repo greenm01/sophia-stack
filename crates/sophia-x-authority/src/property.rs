@@ -108,6 +108,39 @@ pub enum XSizeHintsDecodeError {
     InvalidBounds,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XTransientForDecodeError {
+    InvalidType,
+    InvalidFormat,
+    InvalidLength,
+    InvalidWindow,
+}
+
+pub fn decode_x_transient_for(
+    record: &XPropertyRecord,
+    atoms: &XAtomTable,
+    byte_order: XByteOrder,
+) -> Option<Result<XResourceId, XTransientForDecodeError>> {
+    if atoms.name(record.property) != Some("WM_TRANSIENT_FOR") {
+        return None;
+    }
+    if atoms.name(record.property_type) != Some("WINDOW") {
+        return Some(Err(XTransientForDecodeError::InvalidType));
+    }
+    if record.format != 32 {
+        return Some(Err(XTransientForDecodeError::InvalidFormat));
+    }
+    if record.bytes.len() != 4 {
+        return Some(Err(XTransientForDecodeError::InvalidLength));
+    }
+    let raw = u64::from(byte_order.u32(&record.bytes));
+    let owner = XResourceId::new(raw, 1);
+    if !owner.is_valid() {
+        return Some(Err(XTransientForDecodeError::InvalidWindow));
+    }
+    Some(Ok(owner))
+}
+
 pub fn decode_x_size_hints(
     record: &XPropertyRecord,
     atoms: &XAtomTable,

@@ -561,6 +561,12 @@ pub enum XClientReply {
         sequence: u16,
         root: XResourceId,
         child: XResourceId,
+        root_x: i16,
+        root_y: i16,
+        win_x: i16,
+        win_y: i16,
+        buttons: u32,
+        modifiers: u16,
     },
     XiGetFocus {
         sequence: u16,
@@ -677,6 +683,7 @@ pub enum XXiDeviceClass {
         number: u16,
         min: i64,
         max: i64,
+        value: i64,
     },
     Scroll {
         source_id: u16,

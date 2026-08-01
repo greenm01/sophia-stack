@@ -59,6 +59,7 @@ fn reparent_to_client_positioned_emits_policy_withdrawal() {
         surface,
         namespace: Some(NamespaceId::from_raw(1)),
         presentation: SurfacePresentationRole::ClientPositioned,
+        presentation_owner: None,
         mapped: true,
         geometry,
         constraints: SurfaceConstraints {

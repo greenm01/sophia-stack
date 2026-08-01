@@ -279,6 +279,20 @@ inside the frontend with a bounded deterministic RMLVO configuration (default
 `GetKeyboardMapping`, `GetModifierMapping`, `KeyPress`, and `KeyRelease` remain
 the client-visible compatibility baseline.
 
+XI2 2.1 exposes relative pointer X/Y on valuators 0/1 and cumulative horizontal
+and vertical scroll positions on valuators 2/3. Query replies use current
+authority-local state rather than class-template zeros. Pointer queries and
+device events resolve the immediate descendant of the selected window, encode
+coordinates relative to that selected window, and carry current button and
+effective modifier masks. Smooth wheel Motion and its compatibility button
+pair use `XIPointerEmulated`; Engine axis packets remain free of X11 policy.
+
+`WM_TRANSIENT_FOR` is reduced at the X boundary to an optional presentation
+owner on `AuthoritySurface`. It changes a root-child dialog from policy-managed
+to client-positioned without teaching Engine ICCCM atoms. The live session
+keeps attached visibility tied to the mapped owner, and explicit unmap or owner
+loss cannot leave a stale popup in composition.
+
 ## Namespace Model
 
 The normative identity, profile, admission, capability, and grant contract is

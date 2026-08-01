@@ -118,6 +118,7 @@ fn encode_x_input_reply(
                                     number,
                                     min,
                                     max,
+                                    value,
                                 } => {
                                     push_u16(byte_order, &mut body, 2);
                                     push_u16(byte_order, &mut body, 11);
@@ -126,7 +127,7 @@ fn encode_x_input_reply(
                                     push_u32(byte_order, &mut body, 0);
                                     push_i64(byte_order, &mut body, *min);
                                     push_i64(byte_order, &mut body, *max);
-                                    push_i64(byte_order, &mut body, 0);
+                                    push_i64(byte_order, &mut body, *value);
                                     push_u32(byte_order, &mut body, 1);
                                     body.extend_from_slice(&[0; 4]);
                                 }
@@ -169,12 +170,33 @@ fn encode_x_input_reply(
                     sequence,
                     root,
                     child,
+                    root_x,
+                    root_y,
+                    win_x,
+                    win_y,
+                    buttons,
+                    modifiers,
                 } => {
-                    let mut out = vec![0; 56];
-                    write_reply_header(byte_order, &mut out, sequence, 6);
+                    let buttons_len = u16::from(buttons != 0);
+                    let mut out = vec![0; 56 + usize::from(buttons_len) * 4];
+                    write_reply_header(
+                        byte_order,
+                        &mut out,
+                        sequence,
+                        6 + u32::from(buttons_len),
+                    );
                     put_resource(byte_order, &mut out[8..12], root);
                     put_resource(byte_order, &mut out[12..16], child);
+                    put_u32(byte_order, &mut out[16..20], (i32::from(root_x) << 16) as u32);
+                    put_u32(byte_order, &mut out[20..24], (i32::from(root_y) << 16) as u32);
+                    put_u32(byte_order, &mut out[24..28], (i32::from(win_x) << 16) as u32);
+                    put_u32(byte_order, &mut out[28..32], (i32::from(win_y) << 16) as u32);
                     out[32] = 1;
+                    put_u16(byte_order, &mut out[34..36], buttons_len);
+                    put_u32(byte_order, &mut out[48..52], u32::from(modifiers));
+                    if buttons_len != 0 {
+                        put_u32(byte_order, &mut out[56..60], buttons);
+                    }
                     out
                 }
                 XClientReply::XiGetFocus { sequence, focus } => {

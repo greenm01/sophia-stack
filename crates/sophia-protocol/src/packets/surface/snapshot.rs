@@ -24,6 +24,7 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             presentation: SurfacePresentationRole::PolicyManaged,
+            presentation_owner: None,
             mapped: self.mapped,
             geometry: self.geometry,
             constraints: SurfaceConstraints {

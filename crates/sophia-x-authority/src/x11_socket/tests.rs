@@ -300,6 +300,26 @@ fn pointer_query_reports_latest_engine_routed_position_and_child() {
     let top_level = XResourceId::new(0x200001, 1);
     let content_child = XResourceId::new(0x200002, 1);
     let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        top_level,
+        root,
+        Rect {
+            x: 2,
+            y: 2,
+            width: 800,
+            height: 600,
+        },
+    );
+    selections.register(
+        content_child,
+        top_level,
+        Rect {
+            x: 2,
+            y: 2,
+            width: 780,
+            height: 580,
+        },
+    );
     selections.observe_pointer(top_level, content_child, 63, 237, 61, 235, 0);
 
     assert_eq!(
@@ -321,6 +341,17 @@ fn pointer_query_reports_latest_engine_routed_position_and_child() {
             root_y: 237,
             win_x: 61,
             win_y: 235,
+            mask: 0,
+        })
+    );
+    assert_eq!(
+        selections.query_pointer(content_child),
+        Some(XCorePointerQuery {
+            child: XResourceId::NONE,
+            root_x: 63,
+            root_y: 237,
+            win_x: 59,
+            win_y: 233,
             mask: 0,
         })
     );
@@ -1154,6 +1185,9 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
         6,
         motion,
         XResourceId::new(0x200001, 1),
+        XResourceId::new(0x200002, 1),
+        7,
+        -8,
         0,
     );
     assert_eq!(bytes.len(), 80);
@@ -1163,11 +1197,15 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
     assert_eq!(u16::from_le_bytes([bytes[10], bytes[11]]), 2);
     assert_eq!(
         i32::from_le_bytes(bytes[40..44].try_into().unwrap()),
-        3 << 16
+        7 << 16
     );
     assert_eq!(
         i32::from_le_bytes(bytes[44..48].try_into().unwrap()),
-        -4 << 16
+        -8 << 16
+    );
+    assert_eq!(
+        u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+        0x200002
     );
     let axis = XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
         kind: XAuthorityPointerEventKind::Axis {
@@ -1190,6 +1228,9 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
         6,
         axis,
         XResourceId::new(0x200001, 1),
+        XResourceId::NONE,
+        3,
+        -4,
         0,
     );
     assert_eq!(scroll.len(), 92);
@@ -1225,6 +1266,9 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
             time_msec: 11,
         }),
         XResourceId::new(0x200001, 1),
+        XResourceId::NONE,
+        3,
+        -4,
         0,
     );
     assert_eq!(two_axis_scroll.len(), 100);
@@ -1266,6 +1310,9 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
             time_msec: 12,
         }),
         XResourceId::new(0x200001, 1),
+        XResourceId::NONE,
+        3,
+        -4,
         XI_POINTER_EMULATED,
     );
     assert_eq!(emulated_button.len(), 80);

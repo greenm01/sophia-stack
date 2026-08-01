@@ -7,9 +7,9 @@ use crate::{
     XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XErrorCode,
     XGlxContextConfig, XMetadataPropertyCandidate, XPropertyError, XPropertyTable, XRandrModeInfo,
     XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError,
-    XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints, encode_x_client_output,
-    metadata_property_candidate, x_error_from_runtime, x_error_from_wire_parse,
-    x_selection_failure_event,
+    XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints, decode_x_transient_for,
+    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
+    x_error_from_wire_parse, x_selection_failure_event,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 

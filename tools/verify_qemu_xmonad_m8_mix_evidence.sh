@@ -36,7 +36,8 @@ for stage in loaded keyboard clipboard primary resize dialog; do
         exit 1
     }
 done
-grep -q '^sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true$' "$evidence"
+grep -q '^sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-navigation$' "$evidence"
+grep -q '^sophia_qemu_firefox_m8 schema=3 status=interactions_complete keyboard=true clipboard=true primary=true navigation=true scroll=true resize=true refocus=true pointer=true dialog=true$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=3 status=axis_observed$' "$evidence"
 axis_routes=$(awk '
     /^sophia_live_session_pointer schema=9 status=axis_batch / {

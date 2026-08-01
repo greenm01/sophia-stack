@@ -294,6 +294,10 @@ fn encode_authority_surface(surface: &AuthoritySurface, out: &mut Vec<u8>) {
             sophia_protocol::SurfacePresentationRole::ClientPositioned => 2,
         },
     );
+    encode_bool(surface.presentation_owner.is_some(), out);
+    if let Some(owner) = surface.presentation_owner {
+        encode_surface_id(owner, out);
+    }
     encode_bool(surface.mapped, out);
     encode_rect(surface.geometry, out);
     encode_constraints(surface.constraints, out);
@@ -315,6 +319,11 @@ fn decode_authority_surface(cursor: &mut Cursor<'_>) -> Result<AuthoritySurface,
                     value: u32::from(value),
                 });
             }
+        },
+        presentation_owner: if decode_bool(cursor)? {
+            Some(decode_surface_id(cursor)?)
+        } else {
+            None
         },
         mapped: decode_bool(cursor)?,
         geometry: decode_rect(cursor)?,

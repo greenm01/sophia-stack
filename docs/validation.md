@@ -700,10 +700,11 @@ layout/workspace actions, launch/close/logout, clipboard and PRIMARY,
 Firefox/Kitty/Vulkan interaction, resize, dialog, bridge restart, compositor
 damage, exact input/frame clock correlation, and clean teardown. It is tied to
 the exact candidate commit.
-The M8 browser scroll stage first requires a newly observed and routed physical
-axis event, then uses a focused Space key to advance the deterministic local
-page. It proves Engine axis routing but does not claim that the current X
-frontend produces native Firefox DOM `wheel` events.
+The M8 browser scroll stage uses Firefox's native XI2 path. The deterministic
+page first performs a real local-document navigation, then requires two
+vertical DOM wheel events and nonzero document displacement before it advances.
+The gate orders two newly routed axis packets between PRIMARY and scroll; there
+is no keyboard fallback.
 
 After that gate passes, switch to a logged-in TTY3 and run the same command
 once for each remaining pending gate. The command refuses a dirty worktree,
@@ -853,16 +854,22 @@ so the proof neither inherits the operator's normal Firefox profile nor changes
 it. Kitty A and Kitty B each accept three short,
 content-redacted checkpoints before Firefox, after its normal `Ctrl+Q` exit,
 and after its restarted window is closed through xmonad. The Firefox page
-requires keyboard, `CLIPBOARD`, `PRIMARY`, a physical wheel event, resize,
-focus-away/focus-return, and a pointer-opened dialog. The strict verifier orders
-the six Kitty checkpoints around the two status-zero Firefox exits, requires
-the routed axis between the DOM PRIMARY and scroll stages, and rejects pending
-input/actions, protocol errors, or native/frontend/authority cleanup debt.
+requires keyboard, `CLIPBOARD`, `PRIMARY`, a real navigation followed by
+document scrolling, resize, focus-away/focus-return, and a pointer-opened
+dialog. The strict verifier orders the six Kitty checkpoints around the two
+status-zero Firefox exits, requires two routed axis packets between the DOM
+PRIMARY and scroll stages, and rejects pending input/actions, protocol errors,
+native/frontend/authority cleanup debt, or retained temporary layout
+constraints. Its resize checkpoint requires the actual Super+Space action, a
+committed three-surface layout/resize epoch, and all three managed surfaces
+remaining visible.
 During resize, a buffer whose pixel-aligned target is larger or smaller than
 the current child surface may be clipped but must never be scaled. A click on a
 client-positioned Firefox render child must hand focus to its containing
 policy-managed Firefox surface while the X event still reaches the selected
-descendant window.
+descendant window. A `WM_TRANSIENT_FOR` popup remains attached to that managed
+owner, follows its workspace visibility, and must disappear from composition
+on unmap or owner removal without entering blind-WM admission.
 Verify and retain the run with:
 
 ```sh

@@ -334,20 +334,26 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::UnmapWindow { window } => {
-                    let outputs = if let Err(error) =
-                        runtime.unmap_window(context.namespace, window)
-                    {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    let outputs = match runtime.unmap_window(context.namespace, window) {
+                        Ok(Some(surface)) => {
+                            response.surfaces.push(surface);
+                            Vec::new()
+                        }
+                        Ok(None) => Vec::new(),
+                        Err(error) => {
+                            response = XAuthorityResponsePacket::rejected(transaction, error);
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
                                 u32::try_from(window.local.raw()).unwrap_or(0),
                             ))]
-                    } else {
-                        Vec::new()
+                        }
                     };
                     XDispatchResult {
-                        response: None,
+                        response: Some(response),
                         outputs,
                         metadata_candidates: Vec::new(),
                     }

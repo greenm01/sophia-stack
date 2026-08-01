@@ -1,4 +1,17 @@
 {
+    if layout.constraint_relayout_required()
+        && layout.pending.is_none()
+        && let Some(wm) = wm_session.as_mut()
+    {
+        match wm.enqueue_relayout(&layout, output)? {
+            LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {
+                layout.acknowledge_constraint_relayout();
+            }
+            LiveWmRequestAdmission::RejectedCapacity => {
+                return Err("WM recovery-constraint relayout exceeded owner capacity".into());
+            }
+        }
+    }
     if let Some(wm) = wm_session.as_mut() {
         let _ = wm.poll_restart(&layout, output)?;
     }

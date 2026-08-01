@@ -21,6 +21,8 @@ pub struct AuthoritySurface {
     pub surface: SurfaceId,
     pub namespace: Option<NamespaceId>,
     pub presentation: SurfacePresentationRole,
+    /// Opaque owner for an attached client-positioned surface.
+    pub presentation_owner: Option<SurfaceId>,
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,

@@ -3,12 +3,16 @@
 <meta charset="utf-8">
 <title>0000000000000000</title>
 <style>
-  html, body { height: 100%; margin: 0; background: #102038; color: #fff; font: 28px sans-serif; }
-  main { box-sizing: border-box; height: 100%; padding: 8vh 10vw; }
+  html, body { min-height: 100%; margin: 0; background: #102038; color: #fff; font: 28px sans-serif; }
+  main { box-sizing: border-box; min-height: 100vh; padding: 8vh 10vw; }
   input, button { box-sizing: border-box; display: block; width: 100%; margin: 3vh 0; padding: 2vh; font: inherit; }
   #status { min-height: 2em; padding: 2vh; background: #284a78; }
   #next { min-height: 3em; padding: 2vh; background: #183252; }
+  #navigate { display: none; box-sizing: border-box; padding: 35vh 10vw; background: #183252; color: #fff; text-align: center; }
+  #scroll-proof { display: none; height: 160vh; padding: 10vh; background: linear-gradient(#183252, #624070); }
   .primary-proof #primary { position: fixed; inset: 0; z-index: 10; margin: 0; }
+  .navigation-proof #navigate { display: block; position: fixed; inset: 0; z-index: 10; }
+  .scroll-proof #scroll-proof { display: block; }
   .dialog-proof #dialog { position: fixed; inset: 0; z-index: 10; margin: 0; }
 </style>
 <main>
@@ -20,10 +24,14 @@
   <div id="status">waiting</div>
   <div id="next">Step 1/8: type <strong>sophia</strong>.</div>
 </main>
+<a id="navigate" href="?navigated=1">Navigate to the scroll proof page</a>
+<div id="scroll-proof">Continue scrolling down this real document.</div>
 <script>
   const stages = [16, 32, 48, 64, 80, 96, 112, 128];
-  let stage = 0;
+  const navigated = new URLSearchParams(location.search).get('navigated') === '1';
+  let stage = navigated ? 3 : 0;
   let refocusArmed = false;
+  let verticalWheelEvents = 0;
   const status = document.querySelector('#status');
   const next = document.querySelector('#next');
   const source = document.querySelector('#source');
@@ -32,7 +40,7 @@
     'Step 1/8: type sophia.',
     'Step 2/8: Ctrl+A, Ctrl+C, Tab, Ctrl+V.',
     'Step 3/8: move the pointer well inside this colored page, away from every screen edge, then middle-click.',
-    'Step 4/8: keep the pointer well inside this colored page and scroll vertically through at least two notches. Keep scrolling until Step 5 appears.',
+    'Step 4/8: click the full-page navigation target, then scroll vertically through at least two notches on the next document.',
     'Step 5/8: press Super+Space to resize.',
     'Step 6/8: press Super+J away, then Super+J as needed until Firefox returns.',
     'Step 7/8: click the full-page dialog target, then press Enter.',
@@ -41,6 +49,7 @@
   function advance(label) {
     stage += 1;
     document.body.classList.toggle('primary-proof', stage === 2);
+    document.body.classList.toggle('navigation-proof', stage === 3 && !navigated);
     document.body.classList.toggle('dialog-proof', stage === 6);
     document.title = '0'.repeat(stages[stage]);
     status.textContent = label;
@@ -96,15 +105,22 @@
   document.querySelector('#primary').addEventListener('input', event => {
     if (stage === 2 && event.target.value === 'sophia') advance('primary complete');
   });
+  function completeScrollIfReady() {
+    if (stage === 3 && navigated && verticalWheelEvents >= 2 && scrollY > 0) {
+      advance('navigation and document scroll complete');
+    }
+  }
   addEventListener('wheel', event => {
-    if (stage !== 3) return;
-    if (event.deltaY !== 0) {
-      advance('scroll complete');
-    } else {
+    if (stage !== 3 || !navigated) return;
+    if (event.deltaY === 0) {
       status.textContent = 'XI2 scroll baseline received';
       next.textContent = 'Step 4/8: scroll vertically once more; keep the pointer inside the page.';
+      return;
     }
+    verticalWheelEvents += 1;
+    completeScrollIfReady();
   }, { passive: true });
+  addEventListener('scroll', completeScrollIfReady, { passive: true });
   addEventListener('resize', () => {
     if (stage === 4) advance('resize complete');
   });
@@ -114,5 +130,11 @@
       advance('dialog complete');
     }
   });
+  if (navigated) {
+    document.title = '0'.repeat(stages[stage]);
+    document.body.classList.add('scroll-proof');
+    status.textContent = 'navigation complete';
+    next.textContent = nextSteps[stage];
+  }
 </script>
 </html>

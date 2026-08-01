@@ -41,6 +41,12 @@ fn dispatch_x_input_request(
                             sequence: context.sequence,
                             root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                             child: XResourceId::NONE,
+                            root_x: 0,
+                            root_y: 0,
+                            win_x: 0,
+                            win_y: 0,
+                            buttons: 0,
+                            modifiers: 0,
                         })
                     } else {
                         XClientOutput::Error(crate::XClientError {
@@ -152,24 +158,28 @@ fn dispatch_x_input_request(
                                 number: 0,
                                 min: 0,
                                 max: i64::from(u16::MAX) << 32,
+                                value: 0,
                             },
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
                                 number: 1,
                                 min: 0,
                                 max: i64::from(u16::MAX) << 32,
+                                value: 0,
                             },
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
                                 number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
                                 min: 0,
                                 max: 0,
+                                value: 0,
                             },
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
                                 number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
                                 min: 0,
                                 max: 0,
+                                value: 0,
                             },
                             XXiDeviceClass::Scroll {
                                 source_id: 2,

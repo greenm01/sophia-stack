@@ -62,6 +62,7 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            owner: None,
             mapped: false,
             geometry,
             constraints: SurfaceConstraints {

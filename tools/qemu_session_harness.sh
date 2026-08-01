@@ -442,6 +442,8 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage primary
+    "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
+    echo "sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-navigation" | tee -a "$EVIDENCE_FILE"
     for wheel_notch in 1 2; do
         axis_route_baseline="$(axis_route_count)"
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
@@ -514,7 +516,7 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage dialog
-    echo "sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true" | tee -a "$EVIDENCE_FILE"
+    echo "sophia_qemu_firefox_m8 schema=3 status=interactions_complete keyboard=true clipboard=true primary=true navigation=true scroll=true resize=true refocus=true pointer=true dialog=true" | tee -a "$EVIDENCE_FILE"
 }
 
 cleanup() {

@@ -112,6 +112,11 @@ or layout policy.
   modifier state before emitting core and selected XI2 events. Live topology
   updates produce mask-selected RandR notifications, and surface resize keeps
   new geometry quarantined until matching pixels commit.
+- XI2 pointer state is authority-local X compatibility state: `QueryDevice`
+  exposes live X/Y and cumulative scroll valuators, `XIQueryPointer` derives
+  immediate-child, local-coordinate, button, and modifier state from the X
+  hierarchy, and selected device events carry the same hierarchy-relative
+  facts. Engine continues to route only protocol-neutral pointer packets.
 - A policy-managed X11 `MapWindow` first emits a protocol-neutral
   `SurfacePresentationIntent`; it does not make the window client-visible.
   Engine and the blind WM can therefore plan from geometry, constraints, role,
@@ -119,6 +124,11 @@ or layout policy.
   proposal, one `AdmitSurface` control configures and maps the X window, and
   matching authority pixels complete the atomic visual commit. Override-redirect
   and standalone frontend paths retain their ordinary immediate-map behavior.
+- X root-child transients remain outside blind-WM placement. The X frontend
+  reduces `WM_TRANSIENT_FOR` to an optional protocol-neutral presentation owner;
+  the session composes a mapped client-positioned transient only while that
+  owner is present and visible. Map, unmap, property deletion, and owner removal
+  publish lifecycle snapshots rather than leaving stale popup layers.
 - `sophia-portal` has deterministic reducers for clipboard, drag-and-drop, file
   handoff, screen capture, URI open, and notifications. Owner-only bounded
   broker IPC, policy-provider IPC, expiry/revocation lifecycle, and the first

@@ -3,6 +3,36 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-01: Firefox failures converged on XI state, popup lifecycle, and recovery constraints
+
+The latest physical observations separated three failures that the old
+eight-stage fixture could accidentally conflate. Wheel packets could reach a
+page without moving the document; Firefox popup/toplevel lifecycle changes did
+not always publish a compositing snapshot; and a temporary exact-size recovery
+extent could survive successful visual admission, pinning Firefox at
+1280-by-1040 while xmonad resized only the two Kitty surfaces. The old resize
+verifier compounded this by looking for focus action 1 even though
+Super+Space is xmonad action 3.
+
+The X frontend now reports current valuator values from `XIQueryDevice`, full
+hierarchy-relative `XIQueryPointer` coordinates/child/button/modifier state,
+and immediate-child plus button-mask state in XI2 device events. Root-child
+`WM_TRANSIENT_FOR` is reduced to a protocol-neutral presentation-owner edge.
+Attached client-positioned surfaces publish map/unmap snapshots, follow the
+owner's workspace visibility, never enter blind-WM admission, and stay hidden
+after owner removal until the client publishes a new ownership snapshot.
+
+Successful CPU admission or exact DMA-BUF retirement clears the Engine-owned
+temporary recovery extent and requests one coalesced relayout. Clean shutdown
+now fails if any such extent or relayout obligation remains. The offline page
+requires a real local navigation, two vertical DOM wheel events, and nonzero
+document displacement. The strict physical verifier requires a three-surface
+resize epoch/layout, action 3, a three-visible-surface projection, and zero
+recovery constraints. Focused Engine, X wire, transient lifecycle, query reply,
+and verifier mutation tests pass locally. A fresh physical run remains the
+Milestone 10 acceptance boundary; these changes do not promote historical
+evidence.
+
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 
 The isolated-profile physical M10 run advanced the deterministic Firefox page

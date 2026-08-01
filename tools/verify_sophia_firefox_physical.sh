@@ -133,9 +133,17 @@ axis_routes="$(awk -v first="$primary_line" -v last="$scroll_line" '
 (( axis_routes >= 2 )) ||
     fail "Firefox's DOM scroll stage followed $axis_routes routed wheel packets; expected at least two for the XI2 baseline and delta"
 resize_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=resize ')"
-resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$scroll_line")"
+resize_epoch="$(line_number_after '^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=3$' "$scroll_line")"
+resize_layout="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$' "$scroll_line")"
+resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=3$' "$scroll_line")"
+resize_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=3 focus=surface$' "$scroll_line")"
+[[ -n "$resize_epoch" && -n "$resize_layout" && -n "$resize_action" ]] \
+    && (( resize_epoch < resize_action && resize_layout < resize_action )) ||
+    fail "the Firefox resize stage lacks a committed three-surface layout epoch"
 [[ -n "$resize_action" ]] && (( resize_action < resize_line )) ||
-    fail "the Firefox resize stage lacks an ordered physical layout action"
+    fail "the Firefox resize stage lacks an ordered Super+Space layout action"
+[[ -n "$resize_projection" ]] && (( resize_action < resize_projection && resize_projection < resize_line )) ||
+    fail "the Firefox resize stage did not retain all three managed surfaces"
 grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
     "$SESSION_LOG" || fail "Firefox eight-stage proof did not complete"
 grep -Eq '^sophia_firefox_m10 schema=1 status=complete kitty_checkpoints=6 content=redacted$' \
@@ -153,6 +161,11 @@ health="$(grep -E '^sophia_live_session_health schema=1 status=clean ' "$SESSION
 [[ -n "$health" ]] || fail "clean session health summary is missing"
 for assignment in protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false; do
     require_eq "$health" "${assignment%%=*}" "${assignment#*=}"
+done
+layout_health="$(grep -E '^sophia_live_layout_health schema=1 status=clean ' "$SESSION_LOG" | tail -n 1 || true)"
+[[ -n "$layout_health" ]] || fail "clean layout health summary is missing"
+for assignment in recovery_extents=0 constraint_relayout_pending=false; do
+    require_eq "$layout_health" "${assignment%%=*}" "${assignment#*=}"
 done
 keys="$(grep -E '^sophia_live_session_keys schema=2 status=complete ' "$SESSION_LOG" | tail -n 1)"
 [[ -n "$keys" ]] || fail "final key-state summary is missing"

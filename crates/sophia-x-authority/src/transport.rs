@@ -36,6 +36,7 @@ pub struct XAuthorityMetadataObservation {
 pub struct XAuthoritySurfacePresentationObservation {
     pub surface: SurfaceId,
     pub role: SurfacePresentationRole,
+    pub owner: Option<SurfaceId>,
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -172,6 +173,7 @@ impl XAuthorityObservedTransactionBatch {
                 .map(|surface| XAuthoritySurfacePresentationObservation {
                     surface: surface.surface,
                     role: surface.presentation,
+                    owner: surface.presentation_owner,
                     mapped: surface.mapped,
                     geometry: surface.geometry,
                     constraints: surface.constraints,
@@ -268,6 +270,7 @@ impl XAuthorityObservedTransactionBatch {
                     .map(|surface| XAuthoritySurfacePresentationObservation {
                         surface: surface.surface,
                         role: surface.presentation,
+                        owner: surface.presentation_owner,
                         mapped: surface.mapped,
                         geometry: surface.geometry,
                         constraints: surface.constraints,
@@ -292,7 +295,9 @@ impl XAuthorityObservedTransactionBatch {
                     {
                         SurfacePresentationIntentKind::Request
                     }
-                    10 => SurfacePresentationIntentKind::Withdraw,
+                    10 if surface.role == SurfacePresentationRole::PolicyManaged => {
+                        SurfacePresentationIntentKind::Withdraw
+                    }
                     _ => return None,
                 };
                 Some(SurfacePresentationIntent {

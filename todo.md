@@ -794,7 +794,13 @@ than adding speculative browser compatibility.
   counted it as a packet. Smooth Motion and compatibility button events now
   carry the emulation flag, while a redacted axis-batch record publishes exact
   observed/routed packet counts. Repeat the physical stage before closing this
-  item again.
+  item again. The follow-up implementation now also returns live pointer X/Y
+  and cumulative scroll positions from XI2 `QueryDevice`, reports hierarchy-
+  correct child/local coordinates plus button/modifier state from
+  `XIQueryPointer`, and includes the immediate child and button mask in XI2
+  device events. The offline scroll stage now requires a real document
+  navigation, two vertical DOM wheel events, and nonzero document displacement;
+  receiving wheel packets without scrolling can no longer pass the fixture.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
@@ -812,7 +818,17 @@ than adding speculative browser compatibility.
   pointer work away from compositor edges; repeat the physical workflow before
   closing this item.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
-  workspace hide/show, refocus, dialog open/close, and status-zero exit.
+  workspace hide/show, refocus, dialog open/close, and status-zero exit. Root-
+  child `WM_TRANSIENT_FOR` windows now cross the frontend/session boundary as
+  protocol-neutral attached client-positioned surfaces, follow their owner's
+  workspace visibility, publish map/unmap snapshots, and remain hidden if the
+  owner disappears. Temporary exact-size recovery constraints clear only after
+  matching CPU admission or exact DMA-BUF retirement, queue one coalesced blind-
+  WM relayout, and must be zero in the clean layout-health record. The strict
+  Firefox verifier now requires action 3 (`Super+Space`), a committed
+  three-surface resize epoch/layout, a three-visible-surface workspace
+  projection, and clean recovery-constraint teardown. A fresh physical run is
+  still required.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

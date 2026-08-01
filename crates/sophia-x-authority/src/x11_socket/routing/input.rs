@@ -18,15 +18,16 @@ fn encode_xi_device_event(
     event_type: u16,
     event: XAuthorityInputEvent,
     event_window: XResourceId,
+    child_window: XResourceId,
+    event_x: i16,
+    event_y: i16,
     flags: u32,
 ) -> Vec<u8> {
-    let (device, time, detail, root_x, root_y, event_x, event_y, state) = match event {
+    let (device, time, detail, root_x, root_y, state) = match event {
         XAuthorityInputEvent::Key(key) => (
             3,
             key.time_msec,
             u32::from(key.keycode),
-            0,
-            0,
             0,
             0,
             key.state,
@@ -46,8 +47,6 @@ fn encode_xi_device_event(
             },
             pointer.root_x,
             pointer.root_y,
-            pointer.event_x,
-            pointer.event_y,
             pointer.state,
         ),
     };
@@ -64,6 +63,11 @@ fn encode_xi_device_event(
         byte_order,
         &mut out[24..28],
         u32::try_from(event_window.local.raw()).unwrap_or(0),
+    );
+    write_xi_u32(
+        byte_order,
+        &mut out[28..32],
+        u32::try_from(child_window.local.raw()).unwrap_or(0),
     );
     write_xi_u32(
         byte_order,
@@ -88,6 +92,21 @@ fn encode_xi_device_event(
     write_xi_u16(byte_order, &mut out[52..54], device);
     write_xi_u32(byte_order, &mut out[56..60], flags);
     write_xi_u32(byte_order, &mut out[72..76], u32::from(state & 0xff));
+    let buttons = (1_u8..=5).fold(0_u32, |buttons, button| {
+        let core_mask = 1_u16 << (u32::from(button) + 7);
+        if state & core_mask != 0 {
+            buttons | (1_u32 << button)
+        } else {
+            buttons
+        }
+    });
+    if buttons != 0 {
+        write_xi_u16(byte_order, &mut out[48..50], 1);
+        match byte_order {
+            XByteOrder::LittleEndian => out.extend_from_slice(&buttons.to_le_bytes()),
+            XByteOrder::BigEndian => out.extend_from_slice(&buttons.to_be_bytes()),
+        }
+    }
     if let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
         kind:
             XAuthorityPointerEventKind::Axis {

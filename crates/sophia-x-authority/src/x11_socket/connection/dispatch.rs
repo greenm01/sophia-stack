@@ -401,6 +401,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         crate::XWireRequest::QueryPointer { window } => Some(*window),
                         _ => None,
                     };
+                    let queried_xi_pointer_window = match &request {
+                        crate::XWireRequest::XiQueryPointer { window, .. } => Some(*window),
+                        _ => None,
+                    };
+                    let queried_xi_device =
+                        matches!(&request, crate::XWireRequest::XiQueryDevice { .. });
                     let mapped_window = match &request {
                         crate::XWireRequest::Authority(crate::XAuthorityRequestPacket {
                             kind: crate::XAuthorityRequestKind::MapWindow { window, .. },
@@ -542,6 +548,102 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     *mask = pointer.mask;
                                 }
                             }
+                        }
+                    }
+                    if let Some(window) = queried_xi_pointer_window {
+                        let pointer = core_event_selections
+                            .lock()
+                            .map_err(|_| {
+                                X11SetupSocketError::new(
+                                    "X11 core event selection lock poisoned",
+                                )
+                            })?
+                            .query_pointer(window);
+                        if let Some(pointer) = pointer {
+                            let buttons = (1_u8..=5).fold(0_u32, |buttons, button| {
+                                let core_mask = 1_u16 << (u32::from(button) + 7);
+                                if pointer.mask & core_mask != 0 {
+                                    buttons | (1_u32 << button)
+                                } else {
+                                    buttons
+                                }
+                            });
+                            for client_output in &mut output.outputs {
+                                if let crate::XClientOutput::Reply(
+                                    crate::XClientReply::XiQueryPointer {
+                                        child,
+                                        root_x,
+                                        root_y,
+                                        win_x,
+                                        win_y,
+                                        buttons: reply_buttons,
+                                        modifiers,
+                                        ..
+                                    },
+                                ) = client_output
+                                {
+                                    *child = pointer.child;
+                                    *root_x = pointer.root_x;
+                                    *root_y = pointer.root_y;
+                                    *win_x = pointer.win_x;
+                                    *win_y = pointer.win_y;
+                                    *reply_buttons = buttons;
+                                    *modifiers = pointer.mask & 0xff;
+                                }
+                            }
+                        }
+                    }
+                    if queried_xi_device {
+                        let pointer = protocol_routing
+                            .as_ref()
+                            .and_then(|routing| routing.pointer_state.lock().ok())
+                            .and_then(|states| states.values().next().copied())
+                            .unwrap_or_default();
+                        let root_pointer = core_event_selections
+                            .lock()
+                            .map_err(|_| {
+                                X11SetupSocketError::new(
+                                    "X11 core event selection lock poisoned",
+                                )
+                            })?
+                            .query_pointer(XResourceId::new(
+                                u64::from(crate::X_SETUP_DEFAULT_ROOT),
+                                1,
+                            ));
+                        for client_output in &mut output.outputs {
+                            let crate::XClientOutput::Reply(
+                                crate::XClientReply::XiQueryDevice { devices, .. },
+                            ) = client_output
+                            else {
+                                continue;
+                            };
+                            for class in devices.iter_mut().flat_map(|device| &mut device.classes) {
+                                let crate::XXiDeviceClass::Valuator { number, value, .. } = class
+                                else {
+                                    continue;
+                                };
+                                *value = match *number {
+                                    0 => root_pointer
+                                        .map_or(0, |query| i64::from(query.root_x) << 32),
+                                    1 => root_pointer
+                                        .map_or(0, |query| i64::from(query.root_y) << 32),
+                                    crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR => {
+                                        i64::from(pointer.horizontal_scroll_position_v120()) << 32
+                                    }
+                                    crate::X_POINTER_VERTICAL_SCROLL_VALUATOR => {
+                                        i64::from(pointer.vertical_scroll_position_v120()) << 32
+                                    }
+                                    _ => *value,
+                                };
+                            }
+                        }
+                        if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
+                            tracing::debug!(
+                                "sophia_x11_xi_device_state schema=1 horizontal_v120={} vertical_v120={} pointer_observed={} input_redacted=true",
+                                pointer.horizontal_scroll_position_v120(),
+                                pointer.vertical_scroll_position_v120(),
+                                root_pointer.is_some(),
+                            );
                         }
                     }
                     trace_selection_property_read_result(selection_property_read, &output);

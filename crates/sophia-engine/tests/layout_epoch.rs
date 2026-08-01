@@ -145,7 +145,9 @@ fn recovery_preserves_declared_constraints_and_can_be_cleared() {
         .begin_recovery([(surface, size(900, 700))], [surface])
         .unwrap();
 
+    assert_eq!(coordinator.recovery_extent_count(), 1);
     assert!(coordinator.clear_recovery_extent(surface));
+    assert_eq!(coordinator.recovery_extent_count(), 0);
     assert_eq!(coordinator.effective_constraints(surface), declared);
     assert!(coordinator.surface_resizable(surface));
 }

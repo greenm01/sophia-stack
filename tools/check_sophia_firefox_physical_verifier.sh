@@ -32,6 +32,24 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted only one post-PRIMARY scroll packet" >&2
     exit 1
 fi
+sed 's/physical_action_committed action=3/physical_action_committed action=1/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted the wrong resize action" >&2
+    exit 1
+fi
+sed 's/matched_surfaces=3/matched_surfaces=2/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted an incomplete resize epoch" >&2
+    exit 1
+fi
+grep -Fv 'sophia_live_layout_health' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing layout health" >&2
+    exit 1
+fi
 awk '
     /status=started id=firefox source=action/ {
         seen++

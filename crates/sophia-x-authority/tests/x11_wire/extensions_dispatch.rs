@@ -836,6 +836,10 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
                     XByteOrder::LittleEndian,
                     &devices[0][class_offset + 20..class_offset + 28],
                 ) as i64,
+                read_u64(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 28..class_offset + 36],
+                ) as i64,
             )),
             3 => scrolls.push((
                 read_u16(
@@ -854,14 +858,43 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
     assert_eq!(
         valuators,
         vec![
-            (0, 0, i64::from(u16::MAX) << 32),
-            (1, 0, i64::from(u16::MAX) << 32),
-            (2, 0, 0),
-            (3, 0, 0),
+            (0, 0, i64::from(u16::MAX) << 32, 0),
+            (1, 0, i64::from(u16::MAX) << 32, 0),
+            (2, 0, 0, 0),
+            (3, 0, 0, 0),
         ]
     );
     assert_eq!(scrolls, vec![(2, 2), (3, 1)]);
     assert!(devices[0].len() > 128);
+}
+
+#[test]
+fn xi_query_pointer_encodes_coordinates_buttons_and_modifiers() {
+    let reply = encode_x_client_output(
+        XByteOrder::LittleEndian,
+        XClientOutput::Reply(XClientReply::XiQueryPointer {
+            sequence: 9,
+            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            child: XResourceId::new(0x220031, 1),
+            root_x: 320,
+            root_y: 240,
+            win_x: -12,
+            win_y: 18,
+            buttons: (1 << 1) | (1 << 3),
+            modifiers: 5,
+        }),
+    );
+
+    assert_eq!(reply.len(), 60);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[12..16]), 0x220031);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[16..20]), 320 << 16);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reply[24..28]),
+        (-12_i32 << 16) as u32
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &reply[34..36]), 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[48..52]), 5);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[56..60]), 10);
 }
 
 #[test]

@@ -432,6 +432,13 @@ impl LayoutEpochCoordinator {
         })
     }
 
+    pub fn recovery_extent_count(&self) -> usize {
+        self.constraints
+            .values()
+            .filter(|state| state.recovery_extent.is_some())
+            .count()
+    }
+
     pub fn set_admission(&mut self, surface: SurfaceId, state: SurfaceAdmissionState) {
         self.admission.insert(surface, state);
     }

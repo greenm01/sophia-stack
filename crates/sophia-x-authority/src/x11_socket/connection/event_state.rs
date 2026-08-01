@@ -32,7 +32,7 @@ struct XCoreWindowEventSelection {
 #[derive(Clone, Copy, Debug)]
 struct XCorePointerSnapshot {
     surface_window: XResourceId,
-    delivered_window: XResourceId,
+    pointer_window: XResourceId,
     root_x: i16,
     root_y: i16,
     event_x: i16,
@@ -350,7 +350,7 @@ impl XCoreEventSelectionState {
     fn observe_pointer(
         &mut self,
         surface_window: XResourceId,
-        delivered_window: XResourceId,
+        pointer_window: XResourceId,
         root_x: i16,
         root_y: i16,
         event_x: i16,
@@ -359,7 +359,7 @@ impl XCoreEventSelectionState {
     ) {
         self.pointer = Some(XCorePointerSnapshot {
             surface_window,
-            delivered_window,
+            pointer_window,
             root_x,
             root_y,
             event_x,
@@ -371,18 +371,31 @@ impl XCoreEventSelectionState {
     fn query_pointer(&self, window: XResourceId) -> Option<XCorePointerQuery> {
         let pointer = self.pointer?;
         let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-        let (child, win_x, win_y) = if window == root {
-            (pointer.surface_window, pointer.root_x, pointer.root_y)
-        } else if window == pointer.surface_window {
-            (
-                (pointer.delivered_window != pointer.surface_window)
-                    .then_some(pointer.delivered_window)
-                    .unwrap_or(XResourceId::NONE),
+        let ancestry = self.ancestry_including(pointer.pointer_window);
+        let child = if window == root {
+            ancestry
+                .iter()
+                .position(|candidate| *candidate == root)
+                .and_then(|index| index.checked_sub(1))
+                .and_then(|index| ancestry.get(index).copied())
+                .unwrap_or(pointer.surface_window)
+        } else {
+            ancestry
+                .iter()
+                .position(|candidate| *candidate == window)
+                .and_then(|index| index.checked_sub(1))
+                .and_then(|index| ancestry.get(index).copied())
+                .unwrap_or(XResourceId::NONE)
+        };
+        let (win_x, win_y) = if window == root {
+            (pointer.root_x, pointer.root_y)
+        } else {
+            self.pointer_event_coordinates(
+                pointer.surface_window,
+                window,
                 pointer.event_x,
                 pointer.event_y,
             )
-        } else {
-            (XResourceId::NONE, pointer.event_x, pointer.event_y)
         };
         Some(XCorePointerQuery {
             child,

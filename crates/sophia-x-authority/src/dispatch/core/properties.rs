@@ -63,8 +63,9 @@ fn dispatch_core_property_request(
                     }
                 }
                 XWireRequest::ChangeProperty(change) => {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
                     let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { runtime.validate_window_access(context.namespace, change.window) };
-                    let (output, metadata_candidates) = match window_access {
+                    let (output, metadata_candidates, response) = match window_access {
                         Err(error) => (
                             XClientOutput::Error(x_error_from_runtime(
                                 error,
@@ -73,6 +74,7 @@ fn dispatch_core_property_request(
                                 u32::try_from(change.window.local.raw()).unwrap_or(0),
                             )),
                             Vec::new(),
+                            None,
                         ),
                         Ok(()) => match properties.apply_change(context.namespace, change.clone()) {
                             Ok(record) => {
@@ -85,6 +87,23 @@ fn dispatch_core_property_request(
                                         constraints,
                                     );
                                 }
+                                let transient = decode_x_transient_for(
+                                    &record,
+                                    atoms,
+                                    context.byte_order,
+                                );
+                                let response = transient.map(|decoded| {
+                                    let mut response =
+                                        XAuthorityResponsePacket::accepted(transaction);
+                                    if let Ok(surface) = runtime.set_window_transient_for(
+                                        context.namespace,
+                                        record.window,
+                                        decoded.ok(),
+                                    ) {
+                                        response.surfaces.push(surface);
+                                    }
+                                    response
+                                });
                                 let candidate = metadata_property_candidate(&record, atoms);
                                 (
                                     XClientOutput::Event(XClientEvent::PropertyNotify {
@@ -95,6 +114,7 @@ fn dispatch_core_property_request(
                                         new_value: true,
                                     }),
                                     candidate.into_iter().collect(),
+                                    response,
                                 )
                             }
                             Err(_) => (
@@ -106,30 +126,49 @@ fn dispatch_core_property_request(
                                     major_code: context.major_opcode,
                                 }),
                                 Vec::new(),
+                                None,
                             ),
                         },
                     };
                     XDispatchResult {
-                        response: None,
+                        response,
                         outputs: vec![output],
                         metadata_candidates,
                     }
                 }
                 XWireRequest::DeleteProperty { window, property } => {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
                     let access = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Ok(())
                     } else {
                         runtime.validate_window_access(context.namespace, window)
                     };
-                    let outputs = match access {
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))],
-                        Ok(()) => properties
-                            .remove(context.namespace, window, property)
+                    let (outputs, response) = match access {
+                        Err(error) => (
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u32::try_from(window.local.raw()).unwrap_or(0),
+                            ))],
+                            None,
+                        ),
+                        Ok(()) => {
+                            let removed = properties.remove(context.namespace, window, property);
+                            let response = (atoms.name(property) == Some("WM_TRANSIENT_FOR"))
+                                .then(|| {
+                                    let mut response =
+                                        XAuthorityResponsePacket::accepted(transaction);
+                                    if let Ok(surface) = runtime.set_window_transient_for(
+                                        context.namespace,
+                                        window,
+                                        None,
+                                    ) {
+                                        response.surfaces.push(surface);
+                                    }
+                                    response
+                                });
+                            let outputs = removed
                             .map(|_| {
                                 if atoms.name(property) == Some("WM_NORMAL_HINTS") {
                                     let _ = runtime.set_window_constraints(
@@ -148,12 +187,14 @@ fn dispatch_core_property_request(
                                     time: 0,
                                     new_value: false,
                                 })
-                            })
-                            .into_iter()
-                            .collect(),
+                                })
+                                .into_iter()
+                            .collect();
+                            (outputs, response)
+                        }
                     };
                     XDispatchResult {
-                        response: None,
+                        response,
                         outputs,
                         metadata_candidates: Vec::new(),
                     }

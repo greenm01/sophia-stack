@@ -239,6 +239,7 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            owner: None,
             mapped: false,
             geometry,
             constraints,
@@ -403,6 +404,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            owner: None,
             mapped: false,
             geometry,
             constraints,
@@ -647,6 +649,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: intent.role,
+            owner: None,
             // Admission is an engine lifecycle, not a mutable X mapped-bit
             // predicate. Pixels must remain quarantined even if X already
             // reports the window mapped.
@@ -744,7 +747,17 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     let (projected, released) = layout.projected_batch(&empty);
     assert!(released.is_empty());
     assert_eq!(projected.released_dma_bufs, vec![buffer]);
+    layout.layout_epochs.set_recovery_extent(
+        surface,
+        Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    );
+    assert_eq!(layout.recovery_extent_count(), 1);
     assert!(layout.complete_admission_retirement(surface, pixel_transaction));
+    assert_eq!(layout.recovery_extent_count(), 0);
+    assert!(layout.constraint_relayout_required());
     assert_eq!(
         layout.admissions.state(surface),
         sophia_engine::SurfacePresentationAdmissionState::Managed
@@ -781,6 +794,7 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: intent.role,
+            owner: None,
             mapped: true,
             geometry,
             constraints: intent.constraints,
@@ -942,6 +956,7 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            owner: None,
             mapped: false,
             geometry,
             constraints: SurfaceConstraints {

@@ -505,7 +505,7 @@ fn spawn_x11_control_writer(
                     )?
                         .unmap_window(namespace, window)
                     {
-                        Ok(was_active) => was_active,
+                        Ok(surface) => surface.is_some(),
                         Err(_) => {
                             channels.send_ack(
                                 client,
@@ -628,6 +628,48 @@ fn x11_selected_xi_event_window(
             authority.xi_event_selected(namespace, owner, **window, device, event_type)
         })
         .copied()
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug)]
+struct X11XiPointerDelivery {
+    window: XResourceId,
+    child: XResourceId,
+    event_x: i16,
+    event_y: i16,
+    ancestry_depth: usize,
+}
+
+#[cfg(unix)]
+fn x11_xi_pointer_delivery(
+    selections: &XCoreEventSelectionState,
+    surface_window: XResourceId,
+    event_ancestry: &[XResourceId],
+    selected_window: Option<XResourceId>,
+    event_x: i16,
+    event_y: i16,
+) -> Option<X11XiPointerDelivery> {
+    let window = selected_window?;
+    let selected_index = event_ancestry
+        .iter()
+        .position(|candidate| *candidate == window)?;
+    let child = selected_index
+        .checked_sub(1)
+        .and_then(|index| event_ancestry.get(index).copied())
+        .unwrap_or(XResourceId::NONE);
+    let (event_x, event_y) = selections.pointer_event_coordinates(
+        surface_window,
+        window,
+        event_x,
+        event_y,
+    );
+    Some(X11XiPointerDelivery {
+        window,
+        child,
+        event_x,
+        event_y,
+        ancestry_depth: selected_index,
+    })
 }
 
 #[cfg(unix)]
@@ -852,25 +894,6 @@ fn spawn_x11_input_event_writer(
                 xi_emulated_button_type =
                     xi_emulated_button_window.and(emulated_button_selected_type);
             }
-            if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
-                && let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                    kind: XAuthorityPointerEventKind::Axis { pressed, .. },
-                    ..
-                }) = event
-            {
-                let descendant_target = pointer_event_ancestry
-                    .as_ref()
-                    .and_then(|ancestry| ancestry.first())
-                    .zip(pointer_surface_window)
-                    .is_some_and(|(event_window, surface_window)| *event_window != surface_window);
-                tracing::info!(
-                    "sophia_x11_axis_delivery schema=1 descendant_target={} smooth_selected={} emulated_button_selected={} pressed={} input_redacted=true",
-                    descendant_target,
-                    xi_event_type == Some(6),
-                    xi_emulated_button_type.is_some(),
-                    pressed,
-                );
-            }
             let (wire_event_x, wire_event_y) = match (event, pointer_surface_window) {
                 (XAuthorityInputEvent::Pointer(pointer), Some(surface_window)) => {
                     core_event_selections
@@ -887,6 +910,74 @@ fn spawn_x11_input_event_writer(
                 }
                 _ => (0, 0),
             };
+            let (xi_delivery, xi_emulated_button_delivery) = match (
+                event,
+                pointer_surface_window,
+                pointer_event_ancestry.as_deref(),
+            ) {
+                (
+                    XAuthorityInputEvent::Pointer(pointer),
+                    Some(surface_window),
+                    Some(event_ancestry),
+                ) => {
+                    let selections = core_event_selections.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 core event selection lock poisoned")
+                    })?;
+                    (
+                        x11_xi_pointer_delivery(
+                            &selections,
+                            surface_window,
+                            event_ancestry,
+                            xi_event_window,
+                            pointer.event_x,
+                            pointer.event_y,
+                        ),
+                        x11_xi_pointer_delivery(
+                            &selections,
+                            surface_window,
+                            event_ancestry,
+                            xi_emulated_button_window,
+                            pointer.event_x,
+                            pointer.event_y,
+                        ),
+                    )
+                }
+                _ => (None, None),
+            };
+            if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
+                && let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                    kind:
+                        XAuthorityPointerEventKind::Axis {
+                            pressed,
+                            horizontal_position_v120,
+                            vertical_position_v120,
+                            ..
+                        },
+                    state,
+                    ..
+                }) = event
+            {
+                let descendant_target = pointer_event_ancestry
+                    .as_ref()
+                    .and_then(|ancestry| ancestry.first())
+                    .zip(pointer_surface_window)
+                    .is_some_and(|(event_window, surface_window)| *event_window != surface_window);
+                tracing::info!(
+                    "sophia_x11_axis_delivery schema=2 descendant_target={} smooth_selected={} smooth_child={} smooth_depth={} emulated_button_selected={} emulated_button_child={} emulated_button_depth={} pressed={} horizontal_v120={} vertical_v120={} physical_buttons={} input_redacted=true",
+                    descendant_target,
+                    xi_event_type == Some(6),
+                    xi_delivery.is_some_and(|delivery| delivery.child != XResourceId::NONE),
+                    xi_delivery.map_or(0, |delivery| delivery.ancestry_depth),
+                    xi_emulated_button_type.is_some(),
+                    xi_emulated_button_delivery
+                        .is_some_and(|delivery| delivery.child != XResourceId::NONE),
+                    xi_emulated_button_delivery.map_or(0, |delivery| delivery.ancestry_depth),
+                    pressed,
+                    horizontal_position_v120.unwrap_or(0),
+                    vertical_position_v120.unwrap_or(0),
+                    state >> 8,
+                );
+            }
             let delivered_focus = delivered_window;
             if matches!(event, XAuthorityInputEvent::Key(_))
                 && focused_surface_window.load(Ordering::Acquire) == delivered_focus.local.raw()
@@ -1150,7 +1241,11 @@ fn spawn_x11_input_event_writer(
                         })?
                         .observe_pointer(
                             surface_window,
-                            delivered_window,
+                            pointer_event_ancestry
+                                .as_ref()
+                                .and_then(|ancestry| ancestry.first())
+                                .copied()
+                                .unwrap_or(delivered_window),
                             root_x,
                             root_y,
                             event_x,
@@ -1196,7 +1291,13 @@ fn spawn_x11_input_event_writer(
                     }
                 }
                 if let Some(event_type) = xi_event_type {
-                    let xi_window = xi_event_window.unwrap_or(delivered_window);
+                    let delivery = xi_delivery.unwrap_or(X11XiPointerDelivery {
+                        window: xi_event_window.unwrap_or(delivered_window),
+                        child: XResourceId::NONE,
+                        event_x: wire_event_x,
+                        event_y: wire_event_y,
+                        ancestry_depth: 0,
+                    });
                     // The smooth valuator event is the physical source event. Only
                     // its compatibility button companion is pointer-emulated.
                     let generic = encode_xi_device_event(
@@ -1204,7 +1305,10 @@ fn spawn_x11_input_event_writer(
                         sequence,
                         event_type,
                         event,
-                        xi_window,
+                        delivery.window,
+                        delivery.child,
+                        delivery.event_x,
+                        delivery.event_y,
                         0,
                     );
                     stream.write_all(&generic).map_err(|error| {
@@ -1214,13 +1318,22 @@ fn spawn_x11_input_event_writer(
                     })?;
                 }
                 if let Some(event_type) = xi_emulated_button_type {
-                    let xi_window = xi_emulated_button_window.unwrap_or(delivered_window);
+                    let delivery = xi_emulated_button_delivery.unwrap_or(X11XiPointerDelivery {
+                        window: xi_emulated_button_window.unwrap_or(delivered_window),
+                        child: XResourceId::NONE,
+                        event_x: wire_event_x,
+                        event_y: wire_event_y,
+                        ancestry_depth: 0,
+                    });
                     let generic = encode_xi_device_event(
                         byte_order,
                         sequence,
                         event_type,
                         event,
-                        xi_window,
+                        delivery.window,
+                        delivery.child,
+                        delivery.event_x,
+                        delivery.event_y,
                         XI_POINTER_EMULATED,
                     );
                     stream.write_all(&generic).map_err(|error| {

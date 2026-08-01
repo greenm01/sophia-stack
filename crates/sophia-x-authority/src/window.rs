@@ -14,6 +14,7 @@ pub struct XWindowRecord {
     pub surface: SurfaceId,
     pub namespace: NamespaceId,
     pub override_redirect: bool,
+    pub presentation_owner: Option<SurfaceId>,
     pub map_state: XMapState,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -23,7 +24,7 @@ pub struct XWindowRecord {
 impl XWindowRecord {
     pub fn presentation_role(&self) -> SurfacePresentationRole {
         let is_root_child = self.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT);
-        if self.override_redirect || !is_root_child {
+        if self.override_redirect || self.presentation_owner.is_some() || !is_root_child {
             SurfacePresentationRole::ClientPositioned
         } else {
             SurfacePresentationRole::PolicyManaged
@@ -37,6 +38,7 @@ impl XWindowRecord {
             surface: self.surface,
             namespace: Some(self.namespace),
             presentation: self.presentation_role(),
+            presentation_owner: self.presentation_owner,
             mapped: self.map_state == XMapState::Mapped,
             geometry: self.geometry,
             constraints: self.constraints,
@@ -119,6 +121,7 @@ impl XWindowTable {
                     surface,
                     namespace,
                     override_redirect: false,
+                    presentation_owner: None,
                     map_state: XMapState::Unmapped,
                     geometry,
                     constraints,
@@ -231,6 +234,19 @@ impl XWindowTable {
             .get_mut(&id)
             .ok_or(XAuthorityAccessError::UnknownResource)?;
         record.constraints = constraints;
+        Ok(record.authority_surface())
+    }
+
+    pub fn set_presentation_owner(
+        &mut self,
+        id: XResourceId,
+        owner: Option<SurfaceId>,
+    ) -> Result<AuthoritySurface, XAuthorityAccessError> {
+        let record = self
+            .windows
+            .get_mut(&id)
+            .ok_or(XAuthorityAccessError::UnknownResource)?;
+        record.presentation_owner = owner.filter(|owner| *owner != record.surface);
         Ok(record.authority_surface())
     }
 

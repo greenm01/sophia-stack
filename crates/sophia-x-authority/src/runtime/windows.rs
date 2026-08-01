@@ -122,6 +122,26 @@ impl XAuthorityRuntime {
              .map_err(Into::into)
      }
 
+    pub fn set_window_transient_for(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        owner: Option<crate::XResourceId>,
+    ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        let owner_surface = owner.and_then(|owner| {
+            self.resources
+                .lookup(namespace, owner, XResourceKind::Window)
+                .ok()?;
+            let (root, _, _) = self.windows.presentation_root_and_offset(owner).ok()?;
+            self.windows.get(root).map(|record| record.surface)
+        });
+        self.windows
+            .set_presentation_owner(window, owner_surface)
+            .map_err(Into::into)
+    }
+
     pub fn set_window_parent(
          &mut self,
          namespace: NamespaceId,
@@ -539,20 +559,18 @@ impl XAuthorityRuntime {
         &mut self,
         namespace: NamespaceId,
         window: crate::XResourceId,
-     ) -> Result<bool, XAuthorityRuntimeError> {
+    ) -> Result<Option<AuthoritySurface>, XAuthorityRuntimeError> {
          self.resources
              .lookup(namespace, window, XResourceKind::Window)?;
          let record = self
              .windows
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
-         let was_active = record.map_state != crate::XMapState::Unmapped;
          let generation = record.generation;
          self.windows.apply(XWindowLifecycleEvent::Unmapped {
              id: window,
              generation,
-         })?;
-         Ok(was_active)
+         }).map_err(Into::into)
      }
  
      pub fn map_direct_subwindows(

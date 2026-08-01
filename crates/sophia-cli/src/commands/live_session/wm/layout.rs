@@ -40,6 +40,8 @@ struct PersistentLiveLayout {
     layout_epochs: LayoutEpochCoordinator,
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+    presentation_owners: BTreeMap<SurfaceId, SurfaceId>,
+    mapped_surfaces: BTreeSet<SurfaceId>,
     pre_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     released_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     output_reservations: sophia_engine::SurfaceOutputReservationState,
@@ -51,6 +53,7 @@ struct PersistentLiveLayout {
     bypass_policy_admission: bool,
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
+    constraint_relayout_required: bool,
 }
 
 impl PersistentLiveLayout {
@@ -82,12 +85,50 @@ impl PersistentLiveLayout {
             let previous_role = self
                 .presentation_roles
                 .insert(presentation.surface, presentation.role);
+            if presentation.mapped {
+                self.mapped_surfaces.insert(presentation.surface);
+            } else {
+                self.mapped_surfaces.remove(&presentation.surface);
+            }
+            if let Some(owner) = presentation.owner {
+                self.presentation_owners.insert(presentation.surface, owner);
+            } else {
+                self.presentation_owners.remove(&presentation.surface);
+            }
             if previous_role
                 == Some(sophia_protocol::SurfacePresentationRole::PolicyManaged)
                 && presentation.role
                     == sophia_protocol::SurfacePresentationRole::ClientPositioned
             {
                 withdrawn_surfaces.insert(presentation.surface);
+                self.admissions.remove(presentation.surface);
+                self.planning_surfaces.remove(&presentation.surface);
+                self.unmanaged_surfaces.remove(&presentation.surface);
+            } else if previous_role
+                == Some(sophia_protocol::SurfacePresentationRole::ClientPositioned)
+                && presentation.role
+                    == sophia_protocol::SurfacePresentationRole::PolicyManaged
+                && presentation.mapped
+            {
+                let intent = sophia_protocol::SurfacePresentationIntent {
+                    surface: presentation.surface,
+                    kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+                    role: presentation.role,
+                    geometry: presentation.geometry,
+                    constraints: presentation.constraints,
+                    generation: presentation.generation,
+                };
+                let facts = sophia_engine::SurfaceLayoutFacts::from(intent);
+                self.planning_surfaces.insert(presentation.surface, facts);
+                if !self.bypass_policy_admission {
+                    self.admissions.observe_intent(intent);
+                    self.unmanaged_surfaces.insert(presentation.surface);
+                    self.layout_epochs.set_admission(
+                        presentation.surface,
+                        sophia_engine::SurfaceAdmissionState::Unmanaged,
+                    );
+                }
+                new_surfaces.insert(presentation.surface);
             }
             self.layout_epochs
                 .set_declared_constraints(presentation.surface, presentation.constraints);
@@ -335,6 +376,14 @@ impl PersistentLiveLayout {
             .retain(|surface| !removed_surfaces.contains(surface));
         self.presentation_roles
             .retain(|surface, _| !removed_surfaces.contains(surface));
+        // Preserve a surviving transient's attachment to a removed owner.  A
+        // stale owner is deliberately non-visible until the client publishes
+        // a new ownership snapshot; dropping the relation here would promote
+        // the transient to an unattached, visible client-positioned surface.
+        self.presentation_owners
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.mapped_surfaces
+            .retain(|surface| !removed_surfaces.contains(surface));
         self.retirement_focus
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
@@ -395,9 +444,44 @@ impl PersistentLiveLayout {
     fn top_client_positioned_surface(&self) -> Option<SurfaceId> {
         self.layers
             .values()
-            .filter(|layer| self.is_client_positioned(layer.surface))
+            .filter(|layer| {
+                self.is_client_positioned(layer.surface)
+                    && self.mapped_surfaces.contains(&layer.surface)
+            })
             .max_by_key(|layer| (layer.stack_rank, layer.surface))
             .map(|layer| layer.surface)
+    }
+
+    fn release_recovery_extent(&mut self, surface: SurfaceId, reason: &'static str) -> bool {
+        if !self.layout_epochs.clear_recovery_extent(surface) {
+            return false;
+        }
+        self.constraint_relayout_required = true;
+        println!(
+            "sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface={} reason={reason}",
+            surface.index(),
+        );
+        true
+    }
+
+    fn constraint_relayout_required(&self) -> bool {
+        self.constraint_relayout_required
+    }
+
+    fn acknowledge_constraint_relayout(&mut self) {
+        self.constraint_relayout_required = false;
+    }
+
+    fn recovery_extent_count(&self) -> usize {
+        self.layout_epochs.recovery_extent_count()
+    }
+
+    fn client_positioned_mapped(&self, surface: SurfaceId) -> bool {
+        self.is_client_positioned(surface) && self.mapped_surfaces.contains(&surface)
+    }
+
+    fn presentation_owner(&self, surface: SurfaceId) -> Option<SurfaceId> {
+        self.presentation_owners.get(&surface).copied()
     }
 
     fn stage(
@@ -741,6 +825,7 @@ impl PersistentLiveLayout {
                 BufferSource::CpuBuffer { .. } => {
                     if self.admissions.mark_managed(*surface) {
                         self.planning_surfaces.remove(surface);
+                        self.release_recovery_extent(*surface, "cpu_admission_committed");
                         println!(
                             "sophia_live_visual_admission schema=1 status=committed transaction={} surface={} source=cpu_snapshot",
                             transaction.transaction.raw(),
@@ -751,6 +836,7 @@ impl PersistentLiveLayout {
                 _ => {
                     if self.admissions.mark_managed(*surface) {
                         self.planning_surfaces.remove(surface);
+                        self.release_recovery_extent(*surface, "admission_committed");
                     }
                 }
             }
