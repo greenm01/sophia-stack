@@ -48,6 +48,50 @@ fn renderer_residency_tracks_only_cpu_buffers_owned_by_admission_groups() {
 }
 
 #[test]
+fn released_admission_pixels_wait_for_policy_assignment() {
+    let surface = SurfaceId::new(63, 1);
+    let transaction = TransactionId::from_raw(370);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let group = crate::commands::live_session::LiveAdmissionAuthorityGroup {
+        transaction,
+        transactions: vec![SurfaceTransaction {
+            transaction,
+            authority: sophia_protocol::AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: geometry,
+            target_buffer: BufferSource::CpuBuffer { handle: 371 },
+            damage: Region::single(geometry),
+            readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: 0,
+        }],
+        present_submissions: Vec::new(),
+        software_present_submissions: Vec::new(),
+        superseded: false,
+    };
+    let batch =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(372));
+    let mut layout = PersistentLiveLayout::default();
+    layout.unmanaged_surfaces.insert(surface);
+    layout.released_admission_groups.push_back(group);
+
+    let (_, released) = layout.projected_batch(&batch);
+    assert!(released.is_empty());
+    assert_eq!(layout.released_admission_groups.len(), 1);
+
+    layout.unmanaged_surfaces.remove(&surface);
+    let (_, released) = layout.projected_batch(&batch);
+    assert_eq!(released.len(), 1);
+    assert!(layout.released_admission_groups.is_empty());
+}
+
+#[test]
 fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
     let surface = SurfaceId::new(8, 1);
     let geometry = Rect {

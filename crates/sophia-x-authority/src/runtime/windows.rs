@@ -225,6 +225,26 @@ impl XAuthorityRuntime {
              .map(|record| record.map_state)
              .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
+
+     /// Whether an X client may directly mutate this window's geometry.
+     /// Once a policy-managed toplevel is mapped, geometry belongs to the
+     /// Engine/WM control path; children and override-redirect windows retain
+     /// normal client geometry authority.
+     pub fn client_controls_window_geometry(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<bool, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         let record = self
+             .windows
+             .get(window)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         Ok(record.map_state != crate::XMapState::Mapped
+             || record.presentation_role()
+                 != sophia_protocol::SurfacePresentationRole::PolicyManaged)
+     }
  
      pub fn create_glx_context(
          &mut self,

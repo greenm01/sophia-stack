@@ -981,10 +981,16 @@ impl PersistentLiveLayout {
                 projected.released_fences.push(handle);
             }
         }
-        (
-            projected,
-            self.released_admission_groups.drain(..).collect(),
-        )
+        let mut released = Vec::new();
+        let mut retained = VecDeque::new();
+        while let Some(group) = self.released_admission_groups.pop_front() {
+            if group.contains_any_surface(&self.unmanaged_surfaces) {
+                retained.push_back(group);
+            } else {
+                released.push(group);
+            }
+        }
+        self.released_admission_groups = retained;
+        (projected, released)
     }
-
 }

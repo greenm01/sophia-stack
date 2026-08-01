@@ -366,17 +366,26 @@ fn dispatch_core_window_request(
                     height,
                     ..
                 } => {
-                    let outputs = if let Err(error) = runtime.configure_window_geometry(
-                        context.namespace,
-                        window,
-                        XWindowGeometryUpdate {
-                            x,
-                            y,
-                            width,
-                            height,
-                            generation: u64::from(context.sequence),
-                        },
-                    ) {
+                    let configure = runtime
+                        .client_controls_window_geometry(context.namespace, window)
+                        .and_then(|client_controls| {
+                            if client_controls {
+                                runtime.configure_window_geometry(
+                                    context.namespace,
+                                    window,
+                                    XWindowGeometryUpdate {
+                                        x,
+                                        y,
+                                        width,
+                                        height,
+                                        generation: u64::from(context.sequence),
+                                    },
+                                )
+                            } else {
+                                Ok(())
+                            }
+                        });
+                    let outputs = if let Err(error) = configure {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,
@@ -390,17 +399,17 @@ fn dispatch_core_window_request(
                                     .window_override_redirect(context.namespace, window)
                                     .unwrap_or(false);
                                 vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
-                                sequence: context.sequence,
-                                event: window,
-                                window,
-                                above_sibling: None,
-                                x: clamp_i16(geometry.x),
-                                y: clamp_i16(geometry.y),
-                                width: clamp_u16(geometry.width),
-                                height: clamp_u16(geometry.height),
-                                border_width: 0,
-                                override_redirect,
-                            })]
+                                    sequence: context.sequence,
+                                    event: window,
+                                    window,
+                                    above_sibling: None,
+                                    x: clamp_i16(geometry.x),
+                                    y: clamp_i16(geometry.y),
+                                    width: clamp_u16(geometry.width),
+                                    height: clamp_u16(geometry.height),
+                                    border_width: 0,
+                                    override_redirect,
+                                })]
                             }
                             Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
                                 error,

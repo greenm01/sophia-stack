@@ -842,6 +842,13 @@ than adding speculative browser compatibility.
   overflow. Admission now remains open beyond the maximum WM transaction;
   held pointer motion coalesces and exceptional capacity loss is atomic and
   nonfatal. Repeat the physical workflow before closing this item.
+  The next trace showed why the longer wait did not help: Firefox's mapped
+  toplevel `ConfigureWindow` was incorrectly allowed to overwrite the geometry
+  already committed by Engine, and recovery drained its selected frame before
+  WM assignment made the surface visible. Mapped policy toplevel geometry is
+  now Engine-owned, released admission pixels wait for policy assignment, and
+  the xmonad admission fallback is back to two seconds. Repeat the physical
+  launch before continuing the full workflow.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

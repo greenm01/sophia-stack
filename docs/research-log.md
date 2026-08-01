@@ -89,16 +89,13 @@ so the physical gate cannot regress to accepting the former overlay-only
 dialog or pre-navigation wheel delivery.
 
 The first run against that contract reached real document scroll but exposed
-an admission-time timeout rather than an input failure. The xmonad bridge gave
-every resize fence two seconds; Firefox had published its first 1280-by-1040
-buffer but did not acknowledge the initial three-window 1276-by-1422 configure
-before that deadline. Recovery therefore preserved the startup extent, clipped
-the browser chrome, and left later Super+Space actions unable to generate a DOM
-resize. Manage-surface responses now declare an eight-second bounded fence;
-ordinary interactive relayouts remain at two seconds. The physical verifier
-also counts xmobar's retained non-workspace surface explicitly: four surfaces
-at the normal Firefox baseline, five while the real popup is attached, then
-four again after close.
+an admission-time timeout rather than an input failure. The initial diagnosis
+widened manage-surface resize fences from two to eight seconds because Firefox
+had published a 1280-by-1040 buffer but had not satisfied the three-window
+1276-by-1422 epoch. That avoided an early rollback but did not make Firefox
+honor the size. The physical verifier also counts xmobar's retained
+non-workspace surface explicitly: four surfaces at the normal Firefox
+baseline, five while the real popup is attached, then four again after close.
 
 The next physical launch exposed two coupled owner-loop bounds. Application
 admission still used the five-second proof-completion timeout even though a
@@ -110,6 +107,25 @@ admission now has a distinct twelve-second bound, strictly beyond the maximum
 WM transaction. Adjacent held pointer motions coalesce; an exceptional full
 handoff is discarded atomically and reported without terminating the desktop.
 Focused regressions cover both deadline ordering and the bounded input path.
+
+The immediate rerun proved the longer fence was masking the actual authority
+violation. Sophia admitted Firefox at the WM's 1276-by-1422 geometry, then
+accepted Firefox's own mapped-toplevel `ConfigureWindow` and let it overwrite
+that Engine-owned geometry with 1280-by-1040. The epoch could therefore never
+match and the browser stayed hidden for the entire eight-second fence. Mapped
+policy-managed toplevel geometry is now immutable from the client path;
+children, override-redirect windows, and pre-admission windows retain their X11
+geometry authority, while a denied toplevel request receives the current
+Engine geometry in `ConfigureNotify`. The xmonad admission fence returns to two
+seconds as a bounded fallback.
+
+The same trace exposed a recovery ordering defect: selected admission pixels
+were drained while the surface still remained in the unassigned WM set. The
+later policy projection made Firefox visible only after that one-shot frame was
+gone. Released admission groups now remain quarantined until policy assignment,
+then enter production exactly once. Pointer focus handoff remains separately
+bounded at four seconds so the two-second layout fallback cannot win a timeout
+race with a click made during launch.
 
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 

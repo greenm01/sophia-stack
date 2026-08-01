@@ -245,6 +245,92 @@ fn x11_dispatch_reports_window_lifecycle_map_state() {
 }
 
 #[test]
+fn mapped_policy_toplevel_cannot_overwrite_engine_geometry() {
+    let namespace = NamespaceId::from_raw(45);
+    let window = XResourceId::new(0x220903, 1);
+    let surface = SurfaceId::new(0x220903, 1);
+    let engine_geometry = Rect {
+        x: 2,
+        y: 16,
+        width: 1276,
+        height: 1422,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.set_policy_map_deferred(true);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    assert_eq!(
+        runtime
+            .apply(XAuthorityRequestPacket {
+                transaction: TransactionId::from_raw(1),
+                namespace,
+                kind: XAuthorityRequestKind::CreateWindow {
+                    window,
+                    surface,
+                    geometry: Rect {
+                        x: 10,
+                        y: 10,
+                        width: 1280,
+                        height: 1040,
+                    },
+                    constraints: SurfaceConstraints {
+                        min_size: None,
+                        max_size: None,
+                    },
+                    generation: 1,
+                },
+            })
+            .outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+    assert_eq!(
+        runtime
+            .apply(XAuthorityRequestPacket {
+                transaction: TransactionId::from_raw(2),
+                namespace,
+                kind: XAuthorityRequestKind::MapWindow {
+                    window,
+                    generation: 2,
+                },
+            })
+            .outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+    runtime
+        .admit_window_from_engine(namespace, window, engine_geometry)
+        .unwrap();
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 12),
+        XWireRequest::ConfigureWindow {
+            window,
+            value_mask: 0x000f,
+            x: Some(10),
+            y: Some(10),
+            width: Some(1280),
+            height: Some(1040),
+            sibling: None,
+            stack_mode: None,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert_eq!(runtime.window_geometry(namespace, window), Ok(engine_geometry));
+    assert!(matches!(
+        result.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::ConfigureNotify {
+            x: 2,
+            y: 16,
+            width: 1276,
+            height: 1422,
+            ..
+        })]
+    ));
+}
+
+#[test]
 fn x11_dispatch_reports_core_modifier_mapping() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

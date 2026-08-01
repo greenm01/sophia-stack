@@ -688,6 +688,22 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         .outputs
                         .iter()
                         .any(|output| matches!(output, crate::XClientOutput::Error(_)));
+                    let hierarchy_geometry = hierarchy_geometry.and_then(
+                        |(window, _, _, _, _)| {
+                            runtime
+                                .window_geometry(namespace, window)
+                                .ok()
+                                .map(|geometry| {
+                                    (
+                                        window,
+                                        Some(crate::dispatch::clamp_i16(geometry.x)),
+                                        Some(crate::dispatch::clamp_i16(geometry.y)),
+                                        Some(crate::dispatch::clamp_u16(geometry.width)),
+                                        Some(crate::dispatch::clamp_u16(geometry.height)),
+                                    )
+                                })
+                        },
+                    );
                     if dispatch_succeeded {
                         if let Some(focus) = requested_input_focus {
                             focused_surface_window.store(focus.local.raw(), Ordering::Release);

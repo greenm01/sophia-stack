@@ -89,6 +89,20 @@ impl LiveAdmissionAuthorityGroup {
                 .any(|submission| submission.surface == surface)
     }
 
+    fn contains_any_surface(&self, surfaces: &BTreeSet<SurfaceId>) -> bool {
+        self.transactions
+            .iter()
+            .any(|transaction| surfaces.contains(&transaction.surface))
+            || self
+                .present_submissions
+                .iter()
+                .any(|submission| surfaces.contains(&submission.surface))
+            || self
+                .software_present_submissions
+                .iter()
+                .any(|submission| surfaces.contains(&submission.surface))
+    }
+
     fn reproject_surface(&mut self, surface: SurfaceId, geometry: Rect) {
         for transaction in &mut self.transactions {
             if transaction.surface == surface {

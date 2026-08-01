@@ -603,8 +603,8 @@ fn pointer_focus_handoff_expires_without_frontend_acknowledgment() {
         )
         .unwrap();
 
-    assert!(!handoff.expire(2_099));
-    assert!(handoff.expire(2_100));
+    assert!(!handoff.expire(4_099));
+    assert!(handoff.expire(4_100));
     assert_eq!(handoff.target(), None);
     assert!(handoff.take_ready(Some(target)).is_none());
 }

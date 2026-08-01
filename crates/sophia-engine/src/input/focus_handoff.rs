@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use sophia_protocol::{RoutedInputRequest, SurfaceId};
 
 pub const POINTER_FOCUS_HANDOFF_CAPACITY: usize = 256;
-pub const POINTER_FOCUS_HANDOFF_TIMEOUT_MSEC: u64 = 2_000;
+pub const POINTER_FOCUS_HANDOFF_TIMEOUT_MSEC: u64 = 4_000;
 
 /// Protocol-neutral ordered pointer input held while a requested focus change
 /// crosses the WM and frontend authority boundaries.

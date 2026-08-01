@@ -35,7 +35,7 @@ const BRIDGE_TIMEOUT: Duration = Duration::from_secs(3);
 const QUIET_PERIOD: Duration = Duration::from_millis(80);
 const IO_POLL: Duration = Duration::from_millis(20);
 const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
-const XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC: u32 = 8_000;
+const XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
 const FIRST_PRIVATE_X_DISPLAY: u16 = 90;
 const LAST_PRIVATE_X_DISPLAY: u16 = 4_095;
 

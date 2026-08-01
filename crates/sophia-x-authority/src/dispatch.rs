@@ -817,11 +817,11 @@ fn x_error_from_property_read(error: XPropertyError) -> XErrorCode {
     }
 }
 
-fn clamp_i16(value: i32) -> i16 {
+pub(crate) fn clamp_i16(value: i32) -> i16 {
     value.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
 }
 
-fn clamp_u16(value: i32) -> u16 {
+pub(crate) fn clamp_u16(value: i32) -> u16 {
     value.clamp(0, i32::from(u16::MAX)) as u16
 }
 
