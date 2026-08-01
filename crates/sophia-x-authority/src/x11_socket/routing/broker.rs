@@ -104,11 +104,11 @@ impl XServerFrontendRouteBroker {
     }
 
     /// Creates a broker whose focus/configure and input-flush acknowledgements
-    /// return through Engine-owned bounded queues.
+    /// return through Engine-owned queues.
     pub fn with_control_and_input_delivery_senders(
         queue_capacity: NonZeroUsize,
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
-        input_delivery_sender: SyncSender<XAuthorityClientInputDelivery>,
+        input_delivery_sender: Sender<XAuthorityClientInputDelivery>,
     ) -> Self {
         Self::with_transports(
             queue_capacity,
@@ -121,7 +121,7 @@ impl XServerFrontendRouteBroker {
     pub fn with_control_and_input_delivery_senders_and_xkb_config(
         queue_capacity: NonZeroUsize,
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
-        input_delivery_sender: SyncSender<XAuthorityClientInputDelivery>,
+        input_delivery_sender: Sender<XAuthorityClientInputDelivery>,
         xkb_config: crate::XkbRmlvoConfig,
     ) -> Result<Self, crate::XkbKeyboardError> {
         crate::XkbKeyboardState::new(&xkb_config)?;
@@ -140,7 +140,7 @@ impl XServerFrontendRouteBroker {
         queue_capacity: NonZeroUsize,
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
         acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
-        input_delivery_sender: Option<SyncSender<XAuthorityClientInputDelivery>>,
+        input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     ) -> Self {
         let capacity = queue_capacity.get();
         let (input_sender, input_receiver) = sync_channel(capacity);

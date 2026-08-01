@@ -271,7 +271,10 @@ pub(crate) fn run_persistent_xterm_session(
     }
     let (authority_sender, authority_receiver) = sync_channel(SESSION_AUTHORITY_CAPACITY);
     let (control_ack_sender, control_ack_receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
-    let (input_delivery_sender, input_delivery_receiver) = sync_channel(SESSION_KEY_CAPACITY);
+    // Completion notifications must never kill an X11 writer merely because
+    // another client filled a shared acknowledgement queue while the owner was
+    // committing a WM transaction. Routed input itself remains bounded.
+    let (input_delivery_sender, input_delivery_receiver) = channel();
     let broker =
         XServerFrontendRouteBroker::with_control_and_input_delivery_senders_and_xkb_config(
             NonZeroUsize::new(SESSION_KEY_CAPACITY).expect("session route capacity is nonzero"),

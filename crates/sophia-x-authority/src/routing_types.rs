@@ -102,6 +102,7 @@ impl XAuthorityInputDeliveryId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityInputDeliveryOutcome {
     Flushed,
+    TargetGone,
     RouteRejected,
     WriteFailed,
 }
@@ -239,7 +240,6 @@ pub enum XServerFrontendRouteError {
     DuplicatePresentation { transaction: TransactionId },
     ClientQueueDisconnected { client: XServerFrontendClientId },
     DuplicateClient { client: XServerFrontendClientId },
-    InputDeliveryQueueFull,
     RegistryPoisoned,
 }
 
@@ -282,9 +282,6 @@ impl core::fmt::Display for XServerFrontendRouteError {
                     "X11 route client {} is already registered",
                     client.raw()
                 )
-            }
-            Self::InputDeliveryQueueFull => {
-                formatter.write_str("X11 input delivery acknowledgement queue is full")
             }
             Self::RegistryPoisoned => formatter.write_str("X11 route registry lock poisoned"),
         }

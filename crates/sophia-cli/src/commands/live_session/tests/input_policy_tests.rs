@@ -42,6 +42,40 @@ fn flushed_input_delivery_retires_its_client_key_release_barrier() {
 }
 
 #[test]
+fn target_gone_delivery_retires_without_poisoning_the_session() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(8);
+    let mut state = InputDeliveryState::default();
+    state.pending.insert(delivery);
+    state.events_expected = 1;
+    let mut release_barrier = BTreeSet::from([delivery]);
+    let (sender, receiver) = sync_channel(1);
+    sender
+        .send(XAuthorityClientInputDelivery {
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::TargetGone,
+        })
+        .unwrap();
+    let mut proof_started_at = None;
+    let mut post_input_deadline = None;
+
+    InputDeliveryPhase {
+        receiver: &receiver,
+        state: &mut state,
+        client_key_release_barrier: &mut release_barrier,
+        proof_started_at: &mut proof_started_at,
+        post_input_deadline: &mut post_input_deadline,
+    }
+    .drain()
+    .unwrap();
+
+    assert!(state.pending.is_empty());
+    assert!(release_barrier.is_empty());
+    assert_eq!(state.events_expected, 0);
+    assert_eq!(state.events_flushed, 0);
+}
+
+#[test]
 fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
     let seat = SeatId::from_raw(1);
     let surface = SurfaceId::new(41, 1);

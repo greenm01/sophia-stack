@@ -631,6 +631,22 @@ fn x11_selected_xi_event_window(
 }
 
 #[cfg(unix)]
+fn x11_pointer_surface_window(
+    target_window: Option<XResourceId>,
+    surface: SurfaceId,
+    surface_windows: &Mutex<BTreeMap<SurfaceId, XResourceId>>,
+) -> Result<Option<XResourceId>, X11SetupSocketError> {
+    if target_window.is_some() {
+        return Ok(target_window);
+    }
+    Ok(surface_windows
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 surface/window map lock poisoned"))?
+        .get(&surface)
+        .copied())
+}
+
+#[cfg(unix)]
 struct X11InputWriterState {
     stream: Arc<Mutex<UnixStream>>,
     byte_order: XByteOrder,
@@ -741,17 +757,22 @@ fn spawn_x11_input_event_writer(
                     (routed_keyboard_window.unwrap_or(focused_window), None, None)
                 }
                 XAuthorityInputEvent::Pointer(pointer) => {
-                    let surface_window = target_window.unwrap_or(
-                        *surface_windows
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 surface/window map lock poisoned")
-                        })?
-                        .get(&pointer.surface)
-                        .ok_or_else(|| {
-                            X11SetupSocketError::new("X11 pointer target surface is unknown")
-                        })?,
-                    );
+                    let Some(surface_window) = x11_pointer_surface_window(
+                        target_window,
+                        pointer.surface,
+                        &surface_windows,
+                    )? else {
+                        receiver.send_delivery(
+                            client,
+                            delivery,
+                            XAuthorityInputDeliveryOutcome::TargetGone,
+                        )?;
+                        tracing::debug!(
+                            "sophia_x11_input_delivery schema=1 status=target_gone event=pointer client={} input_redacted=true",
+                            client.raw(),
+                        );
+                        continue;
+                    };
                     let selections = core_event_selections
                         .lock()
                         .map_err(|_| {

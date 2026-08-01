@@ -132,7 +132,7 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
     let server_path = socket_path.clone();
     let (transaction_sender, transaction_receiver) = sync_channel(256);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(64);
-    let (input_delivery_sender, input_delivery_receiver) = sync_channel(64);
+    let (input_delivery_sender, input_delivery_receiver) = channel();
     let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(64).unwrap(),
         control_ack_sender,

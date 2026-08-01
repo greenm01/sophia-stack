@@ -15,6 +15,29 @@ fn xi_key_selection_bypasses_core_keyboard_startup_wait() {
 }
 
 #[test]
+fn input_delivery_notifications_do_not_backpressure_x11_writers() {
+    let client = XServerFrontendClientId::from_raw(1);
+    let (_route_sender, route_receiver) = sync_channel(1);
+    let (delivery_sender, delivery_receiver) = channel();
+    let receiver = X11InputEventReceiver::Routed {
+        receiver: route_receiver,
+        deliveries: Some(delivery_sender),
+    };
+
+    for raw in 1..=1_024 {
+        receiver
+            .send_delivery(
+                client,
+                Some(XAuthorityInputDeliveryId::from_raw(raw)),
+                XAuthorityInputDeliveryOutcome::Flushed,
+            )
+            .unwrap();
+    }
+
+    assert_eq!(delivery_receiver.try_iter().count(), 1_024);
+}
+
+#[test]
 fn listener_transaction_ids_are_global_across_client_workers() {
     let state = X11CoreSocketServerState::new();
     let first_worker = state.clone();
@@ -148,6 +171,22 @@ fn pointer_event_target_does_not_depend_on_core_event_selection() {
             6,
         ),
         Some(content_child)
+    );
+}
+
+#[test]
+fn explicit_pointer_window_does_not_require_a_live_surface_mapping() {
+    let surface = SurfaceId::new(18, 1);
+    let target = XResourceId::new(0x200001, 1);
+    let surface_windows = Mutex::new(BTreeMap::new());
+
+    assert_eq!(
+        x11_pointer_surface_window(Some(target), surface, &surface_windows).unwrap(),
+        Some(target)
+    );
+    assert_eq!(
+        x11_pointer_surface_window(None, surface, &surface_windows).unwrap(),
+        None
     );
 }
 
@@ -618,7 +657,7 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
 fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
     let client = XServerFrontendClientId(12);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(1);
-    let (delivery_sender, delivery_receiver) = sync_channel(1);
+    let (delivery_sender, delivery_receiver) = channel();
     let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(1).unwrap(),
         control_ack_sender,

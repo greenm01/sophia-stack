@@ -45,7 +45,7 @@ mod prelude {
         x_fixed_glyph_rows,
     };
     pub(crate) use std::os::unix::net::UnixStream;
-    pub(crate) use std::sync::mpsc::sync_channel;
+    pub(crate) use std::sync::mpsc::{channel, sync_channel};
     pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
     pub(crate) use x11rb::protocol::Event;
 }

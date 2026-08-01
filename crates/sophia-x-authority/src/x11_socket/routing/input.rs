@@ -224,7 +224,7 @@ enum X11InputEventReceiver {
     Plain(Receiver<XAuthorityInputEvent>),
     Routed {
         receiver: Receiver<XAuthorityClientInputEvent>,
-        deliveries: Option<SyncSender<XAuthorityClientInputDelivery>>,
+        deliveries: Option<Sender<XAuthorityClientInputDelivery>>,
     },
 }
 
@@ -287,15 +287,12 @@ impl X11InputEventReceiver {
         else {
             return Ok(());
         };
-        match sender.try_send(XAuthorityClientInputDelivery {
+        match sender.send(XAuthorityClientInputDelivery {
             client,
             delivery,
             outcome,
         }) {
-            Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(X11SetupSocketError::new(
-                "X11 input delivery acknowledgement channel is full",
-            )),
+            Ok(()) | Err(_) => Ok(()),
         }
     }
 }

@@ -20,7 +20,7 @@ fn run_x_authority_kitty_input_smoke()
 
     let (transaction_sender, transaction_receiver) = sync_channel(4_096);
     let (control_ack_sender, control_ack_receiver) = sync_channel(64);
-    let (input_delivery_sender, input_delivery_receiver) = sync_channel(64);
+    let (input_delivery_sender, input_delivery_receiver) = channel();
     let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(64).expect("Kitty input smoke route capacity is nonzero"),
         control_ack_sender,

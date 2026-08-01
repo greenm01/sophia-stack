@@ -17,7 +17,7 @@ struct XServerFrontendRouteRegistry {
     xkb_config: crate::XkbRmlvoConfig,
     xkb_worker: XkbKeyboardWorker,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
-    input_delivery_sender: Option<SyncSender<XAuthorityClientInputDelivery>>,
+    input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     per_client_queue_capacity: NonZeroUsize,
     source_payload_sender: SyncSender<crate::ClipboardSourcePayload>,
 }
@@ -1014,13 +1014,12 @@ impl XServerFrontendRouteRegistry {
         let Some(sender) = self.input_delivery_sender.as_ref() else {
             return Ok(());
         };
-        match sender.try_send(XAuthorityClientInputDelivery {
+        match sender.send(XAuthorityClientInputDelivery {
             client,
             delivery,
             outcome,
         }) {
-            Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(XServerFrontendRouteError::InputDeliveryQueueFull),
+            Ok(()) | Err(_) => Ok(()),
         }
     }
 }

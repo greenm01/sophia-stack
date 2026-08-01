@@ -117,6 +117,13 @@ impl InputDeliveryPhase<'_> {
                 XAuthorityInputDeliveryOutcome::Flushed => {
                     self.state.events_flushed = self.state.events_flushed.saturating_add(1);
                 }
+                XAuthorityInputDeliveryOutcome::TargetGone => {
+                    self.state.events_expected = self.state.events_expected.saturating_sub(1);
+                    println!(
+                        "sophia_live_session_input_delivery schema=1 status=retired reason=target_gone client={}",
+                        delivery.client.raw(),
+                    );
+                }
                 XAuthorityInputDeliveryOutcome::RouteRejected
                 | XAuthorityInputDeliveryOutcome::WriteFailed => {
                     return Err(format!(
