@@ -139,6 +139,8 @@ fn routed_input_discards_another_clients_event() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -157,6 +159,8 @@ fn routed_input_discards_another_clients_event() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -177,6 +181,8 @@ fn routed_input_discards_another_clients_event() {
                 modifiers_after: 0,
                 time_msec: 2,
             }),
+            None,
+            None,
             None,
             None,
             None,
@@ -257,6 +263,8 @@ fn route_broker_delivers_to_the_registered_client_only() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -275,6 +283,8 @@ fn route_broker_delivers_to_the_registered_client_only() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: None,
         }
@@ -312,6 +322,8 @@ fn route_broker_delivers_to_the_registered_client_only() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -522,6 +534,8 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
                 target_window: None,
                 xi_event_type: None,
                 xi_event_window: None,
+                xi_emulated_button_type: None,
+                xi_emulated_button_window: None,
                 xi_transition_mask: 0,
                 delivery: None,
             })
@@ -563,6 +577,8 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             target_window: None,
             xi_event_type: None,
             xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
             xi_transition_mask: 0,
             delivery: Some(delivery),
         })
@@ -727,7 +743,12 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
         .input_authority
         .lock()
         .unwrap()
-        .select_xi_events(namespace, client.raw(), root, &[(1, vec![1 << 6])]);
+        .select_xi_events(
+            namespace,
+            client.raw(),
+            root,
+            &[(1, vec![(1 << 4) | (1 << 5) | (1 << 6)])],
+        );
     broker
         .routed_input_sender()
         .send(XAuthorityRoutedInput {
@@ -752,6 +773,8 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
     let pressed = channels.input.recv().unwrap();
     assert_eq!(pressed.xi_event_type, Some(6));
     assert_eq!(pressed.xi_event_window, Some(root));
+    assert_eq!(pressed.xi_emulated_button_type, Some(4));
+    assert_eq!(pressed.xi_emulated_button_window, Some(root));
     assert!(matches!(
         pressed.event,
         XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
@@ -767,6 +790,8 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
     let released = channels.input.recv().unwrap();
     assert_eq!(released.xi_event_type, None);
     assert_eq!(released.xi_event_window, None);
+    assert_eq!(released.xi_emulated_button_type, Some(5));
+    assert_eq!(released.xi_emulated_button_window, Some(root));
     assert!(matches!(
         released.event,
         XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
@@ -779,6 +804,66 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
             ..
         })
     ));
+}
+
+#[test]
+fn routed_axis_resolves_smooth_and_emulated_button_selections_independently() {
+    let namespace = NamespaceId::from_raw(12);
+    let client = XServerFrontendClientId(5);
+    let surface = SurfaceId::new(13, 1);
+    let window = XResourceId::new(0x200002, 1);
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .register_window_parent(client, window, root)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .select_xi_events(
+            namespace,
+            client.raw(),
+            root,
+            &[(1, vec![(1 << 4) | (1 << 5)])],
+        );
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 4,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 4,
+                target_surface: surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerAxis {
+                    horizontal_v120: 0,
+                    vertical_v120: -120,
+                },
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    let pressed = channels.input.recv().unwrap();
+    assert_eq!(pressed.xi_event_type, None);
+    assert_eq!(pressed.xi_event_window, None);
+    assert_eq!(pressed.xi_emulated_button_type, Some(4));
+    assert_eq!(pressed.xi_emulated_button_window, Some(root));
+    let released = channels.input.recv().unwrap();
+    assert_eq!(released.xi_event_type, None);
+    assert_eq!(released.xi_emulated_button_type, Some(5));
+    assert_eq!(released.xi_emulated_button_window, Some(root));
 }
 
 #[test]
@@ -862,6 +947,7 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
             time_msec: 9,
         }),
         XResourceId::new(0x200001, 1),
+        0,
     );
     assert_eq!(bytes.len(), 80);
     assert_eq!(bytes[0], 35);
@@ -896,6 +982,7 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
             time_msec: 10,
         }),
         XResourceId::new(0x200001, 1),
+        0,
     );
     assert_eq!(scroll.len(), 92);
     assert_eq!(u32::from_le_bytes(scroll[4..8].try_into().unwrap()), 15);
@@ -929,6 +1016,7 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
             time_msec: 11,
         }),
         XResourceId::new(0x200001, 1),
+        0,
     );
     assert_eq!(two_axis_scroll.len(), 100);
     assert_eq!(
@@ -948,6 +1036,45 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
     assert_eq!(
         i64::from_le_bytes(two_axis_scroll[92..100].try_into().unwrap()),
         i64::from(45) << 32
+    );
+    let emulated_button = encode_xi_device_event(
+        XByteOrder::LittleEndian,
+        10,
+        4,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Axis {
+                button: 5,
+                pressed: true,
+                horizontal_position_v120: None,
+                vertical_position_v120: Some(120),
+            },
+            surface: SurfaceId::new(1, 1),
+            root_x: 11,
+            root_y: 12,
+            event_x: 3,
+            event_y: -4,
+            state: 5,
+            time_msec: 12,
+        }),
+        XResourceId::new(0x200001, 1),
+        XI_POINTER_EMULATED,
+    );
+    assert_eq!(emulated_button.len(), 80);
+    assert_eq!(
+        u16::from_le_bytes(emulated_button[8..10].try_into().unwrap()),
+        4
+    );
+    assert_eq!(
+        u32::from_le_bytes(emulated_button[16..20].try_into().unwrap()),
+        5
+    );
+    assert_eq!(
+        u32::from_le_bytes(emulated_button[56..60].try_into().unwrap()),
+        XI_POINTER_EMULATED
+    );
+    assert_eq!(
+        u16::from_le_bytes(emulated_button[50..52].try_into().unwrap()),
+        0
     );
     let crossing = encode_xi_crossing_event(
         XByteOrder::LittleEndian,

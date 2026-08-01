@@ -823,9 +823,19 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
             &devices[0][class_offset + 2..class_offset + 4],
         )) * 4;
         match class_type {
-            2 => valuators.push(read_u16(
-                XByteOrder::LittleEndian,
-                &devices[0][class_offset + 6..class_offset + 8],
+            2 => valuators.push((
+                read_u16(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 6..class_offset + 8],
+                ),
+                read_u64(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 12..class_offset + 20],
+                ) as i64,
+                read_u64(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 20..class_offset + 28],
+                ) as i64,
             )),
             3 => scrolls.push((
                 read_u16(
@@ -841,7 +851,15 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
         }
         class_offset += class_len;
     }
-    assert_eq!(valuators, vec![0, 1, 2, 3]);
+    assert_eq!(
+        valuators,
+        vec![
+            (0, 0, i64::from(u16::MAX) << 32),
+            (1, 0, i64::from(u16::MAX) << 32),
+            (2, 0, 0),
+            (3, 0, 0),
+        ]
+    );
     assert_eq!(scrolls, vec![(2, 2), (3, 1)]);
     assert!(devices[0].len() > 128);
 }

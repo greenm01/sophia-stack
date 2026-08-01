@@ -59,6 +59,7 @@ sophia_firefox_m8 schema=1 status=stage_complete stage=keyboard index=1 title_by
 sophia_firefox_m8 schema=1 status=stage_complete stage=clipboard index=2 title_bytes=56 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=primary index=3 title_bytes=72 content=redacted
 sophia_live_session_pointer schema=3 status=axis_routed
+sophia_live_session_pointer schema=3 status=axis_routed
 sophia_firefox_m8 schema=1 status=stage_complete stage=scroll index=4 title_bytes=88 content=redacted
 sophia_live_wm schema=1 status=physical_action_committed action=1
 sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_bytes=104 content=redacted

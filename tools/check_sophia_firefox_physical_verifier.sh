@@ -23,6 +23,16 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     exit 1
 fi
 awk '
+    /stage=primary / { inside=1 }
+    inside && /status=axis_routed/ && !removed { removed=1; next }
+    { print }
+' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted only one post-PRIMARY scroll packet" >&2
+    exit 1
+fi
+awk '
     /status=started id=firefox source=action/ {
         seen++
         if (seen == 2) next

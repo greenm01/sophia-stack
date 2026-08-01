@@ -119,9 +119,12 @@ for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
 done
 primary_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=primary ')"
 scroll_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ')"
-axis_line="$(line_number_after '^sophia_live_session_pointer schema=3 status=axis_routed$' "$primary_line")"
-[[ -n "$axis_line" ]] && (( axis_line < scroll_line )) ||
-    fail "a routed physical wheel axis did not advance Firefox's DOM scroll stage"
+axis_routes="$(awk -v first="$primary_line" -v last="$scroll_line" '
+    NR > first && NR < last && /^sophia_live_session_pointer schema=3 status=axis_routed$/ { count++ }
+    END { print count + 0 }
+' "$SESSION_LOG")"
+(( axis_routes >= 2 )) ||
+    fail "Firefox's DOM scroll stage followed $axis_routes routed wheel packets; expected at least two for the XI2 baseline and delta"
 resize_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=resize ')"
 resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$scroll_line")"
 [[ -n "$resize_action" ]] && (( resize_action < resize_line )) ||

@@ -65,6 +65,8 @@ pub struct XAuthorityClientInputEvent {
     pub target_window: Option<XResourceId>,
     pub xi_event_type: Option<u16>,
     pub xi_event_window: Option<XResourceId>,
+    pub xi_emulated_button_type: Option<u16>,
+    pub xi_emulated_button_window: Option<XResourceId>,
     pub xi_transition_mask: u16,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }

@@ -162,14 +162,14 @@ fn dispatch_x_input_request(
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
                                 number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
-                                min: i64::from(-1) << 32,
-                                max: i64::from(-1) << 32,
+                                min: 0,
+                                max: 0,
                             },
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
                                 number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
-                                min: i64::from(-1) << 32,
-                                max: i64::from(-1) << 32,
+                                min: 0,
+                                max: 0,
                             },
                             XXiDeviceClass::Scroll {
                                 source_id: 2,

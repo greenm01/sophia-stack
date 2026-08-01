@@ -426,6 +426,8 @@ fn send_xterm_text_to_client(
                 target_window: None,
                 xi_event_type: None,
                 xi_event_window: None,
+                xi_emulated_button_type: None,
+                xi_emulated_button_window: None,
                 xi_transition_mask: 0,
                 delivery: Some(delivery),
             })?;

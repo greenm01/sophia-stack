@@ -332,6 +332,8 @@ run_firefox_m8_interactions() {
     local clipboard_complete=false
     local primary_complete=false
     local scroll_complete=false
+    local axis_route_baseline
+    local wheel_notch
     local resize_complete=false
     local refocus_complete=false
     local dialog_complete=false
@@ -409,21 +411,23 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage primary
-    axis_route_baseline="$(evidence_count '^sophia_live_session_pointer schema=3 status=axis_routed$')"
-    for _ in $(seq 1 10); do
+    for wheel_notch in 1 2; do
+        axis_route_baseline="$(evidence_count '^sophia_live_session_pointer schema=3 status=axis_routed$')"
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
-        wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80 || true
-        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' 0 20; then
-            scroll_complete=true
-            break
+        if ! wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80; then
+            echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_axis_route_timeout notch=$wheel_notch" | tee -a "$EVIDENCE_FILE"
+            return 1
         fi
     done
+    if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' 0 80; then
+        scroll_complete=true
+    fi
     if [[ "$scroll_complete" != true ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_stage_timeout stage=scroll" | tee -a "$EVIDENCE_FILE"
         return 1
     fi
     wait_for_firefox_stage scroll
-    echo "sophia_qemu_firefox_m8 schema=3 status=scroll_complete source=wheel axis_route=true keyboard_fallback=false" | tee -a "$EVIDENCE_FILE"
+    echo "sophia_qemu_firefox_m8 schema=4 status=scroll_complete source=wheel axis_routes=2 keyboard_fallback=false" | tee -a "$EVIDENCE_FILE"
     restore_focused_interaction_surface
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+spc

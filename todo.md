@@ -777,13 +777,19 @@ than adding speculative browser compatibility.
   deterministic local page's DOM `wheel` stage. The clean QEMU gate negotiates
   Firefox XI2 2.1, advertises horizontal and vertical scroll valuators, routes
   cumulative smooth-axis positions through the selected ancestor window, and
-  completes the DOM stage with `source=wheel`, `axis_route=true`, and
+  completes the DOM stage with `source=wheel`, `axis_routes=2`, and
   `keyboard_fallback=false`. The first physical run to reach this stage proved
   that libinput and Engine routing completed but Firefox did not receive a DOM
   wheel event. Sophia had incorrectly overlaid its scroll valuators on pointer
   X/Y axes 0/1; the X frontend now advertises X/Y on 0/1 and scrolling on 2/3
-  and emits matching XI2 masks. Repeat the physical stage before closing this
-  item again.
+  and emits matching XI2 masks. The next physical run delivered exactly one
+  smooth XI2 motion packet. GTK uses the first value for its per-axis baseline,
+  so it correctly produced no scroll delta; QEMU's old ten-attempt loop hid
+  that requirement. The X frontend now also emits XI2 ButtonPress/Release
+  wheel compatibility events marked `XIPointerEmulated`, reports zero/zero
+  bounds for its relative scroll valuators, and both proof paths explicitly
+  require two routed wheel packets. Repeat the physical stage before closing
+  this item again.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then

@@ -653,6 +653,8 @@ fn spawn_x11_input_event_writer(
                 target_window,
                 xi_event_type,
                 xi_event_window,
+                xi_emulated_button_type,
+                xi_emulated_button_window,
                 xi_transition_mask,
                 delivery,
             ) =
@@ -1076,10 +1078,27 @@ fn spawn_x11_input_event_writer(
                         event_type,
                         event,
                         xi_window,
+                        0,
                     );
                     stream.write_all(&generic).map_err(|error| {
                         X11SetupSocketError::new(format!(
                             "failed to write XI2 generic event: {error}"
+                        ))
+                    })?;
+                }
+                if let Some(event_type) = xi_emulated_button_type {
+                    let xi_window = xi_emulated_button_window.unwrap_or(delivered_window);
+                    let generic = encode_xi_device_event(
+                        byte_order,
+                        sequence,
+                        event_type,
+                        event,
+                        xi_window,
+                        XI_POINTER_EMULATED,
+                    );
+                    stream.write_all(&generic).map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to write emulated XI2 wheel-button event: {error}"
                         ))
                     })?;
                 }

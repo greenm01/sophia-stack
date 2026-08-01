@@ -1,4 +1,7 @@
 #[cfg(unix)]
+const XI_POINTER_EMULATED: u32 = 1 << 16;
+
+#[cfg(unix)]
 fn clamp_input_coordinate(value: f64) -> i16 {
     if !value.is_finite() {
         return 0;
@@ -15,6 +18,7 @@ fn encode_xi_device_event(
     event_type: u16,
     event: XAuthorityInputEvent,
     event_window: XResourceId,
+    flags: u32,
 ) -> Vec<u8> {
     let (device, time, detail, root_x, root_y, event_x, event_y, state) = match event {
         XAuthorityInputEvent::Key(key) => (
@@ -32,6 +36,11 @@ fn encode_xi_device_event(
             pointer.time_msec,
             match pointer.kind {
                 XAuthorityPointerEventKind::Button { button, .. } => u32::from(button),
+                XAuthorityPointerEventKind::Axis { button, .. }
+                    if matches!(event_type, 4 | 5) =>
+                {
+                    u32::from(button)
+                }
                 XAuthorityPointerEventKind::Axis { .. } => 0,
                 XAuthorityPointerEventKind::Motion => 0,
             },
@@ -77,6 +86,7 @@ fn encode_xi_device_event(
         (i32::from(event_y) << 16) as u32,
     );
     write_xi_u16(byte_order, &mut out[52..54], device);
+    write_xi_u32(byte_order, &mut out[56..60], flags);
     write_xi_u32(byte_order, &mut out[72..76], u32::from(state & 0xff));
     if let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
         kind:
@@ -87,6 +97,7 @@ fn encode_xi_device_event(
             },
         ..
     }) = event
+        && event_type == 6
         && (horizontal_position_v120.is_some() || vertical_position_v120.is_some())
     {
         write_xi_u16(byte_order, &mut out[50..52], 1);
@@ -208,6 +219,8 @@ type X11ReceivedInputEvent = (
     Option<XResourceId>,
     Option<u16>,
     Option<XResourceId>,
+    Option<u16>,
+    Option<XResourceId>,
     u16,
     Option<XAuthorityInputDeliveryId>,
 );
@@ -221,7 +234,7 @@ impl X11InputEventReceiver {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
-                .map(|event| (event, None, None, None, 0, None)),
+                .map(|event| (event, None, None, None, None, None, 0, None)),
             Self::Routed { receiver, .. } => {
                 match receiver.recv_timeout(Duration::from_millis(10)) {
                     Ok(route) if route.client == client => Ok((
@@ -229,6 +242,8 @@ impl X11InputEventReceiver {
                         route.target_window,
                         route.xi_event_type,
                         route.xi_event_window,
+                        route.xi_emulated_button_type,
+                        route.xi_emulated_button_window,
                         route.xi_transition_mask,
                         route.delivery,
                     )),
@@ -388,6 +403,36 @@ impl XServerFrontendRouteRegistry {
             None
         };
         let xi_event_type = xi_event_window.and(selected_type);
+        let xi_emulated_button_selected_type = match event {
+            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                kind: XAuthorityPointerEventKind::Axis { pressed, .. },
+                ..
+            }) => Some(if pressed { 4 } else { 5 }),
+            _ => None,
+        };
+        let xi_emulated_button_window =
+            if let Some(selected_type) = xi_emulated_button_selected_type {
+                let authority = self
+                    .input_authority
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+                event_ancestry
+                    .iter()
+                    .find(|window| {
+                        authority.xi_event_selected(
+                            namespace,
+                            client.raw(),
+                            **window,
+                            xi_device,
+                            selected_type,
+                        )
+                    })
+                    .copied()
+            } else {
+                None
+            };
+        let xi_emulated_button_type =
+            xi_emulated_button_window.and(xi_emulated_button_selected_type);
         let transition_types: &[u16] = if xi_device == 3 { &[9, 10] } else { &[7, 8] };
         let authority = self
             .input_authority
@@ -414,6 +459,8 @@ impl XServerFrontendRouteRegistry {
             target_window,
             xi_event_type,
             xi_event_window,
+            xi_emulated_button_type,
+            xi_emulated_button_window,
             xi_transition_mask,
             delivery,
         })
