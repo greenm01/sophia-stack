@@ -799,8 +799,13 @@ than adding speculative browser compatibility.
   correct child/local coordinates plus button/modifier state from
   `XIQueryPointer`, and includes the immediate child and button mask in XI2
   device events. The offline scroll stage now requires a real document
-  navigation, two vertical DOM wheel events, and nonzero document displacement;
-  receiving wheel packets without scrolling can no longer pass the fixture.
+  navigation, a post-baseline vertical DOM wheel event, and nonzero document
+  displacement, while the QEMU verifier independently requires both routed
+  wheel packets after replacement-document readiness; receiving packets
+  without scrolling can no longer pass the fixture. The strengthened QEMU gate
+  passes end to end, including the real Firefox popup's ready, attached,
+  confirmed, detached lifecycle and clean guest shutdown. Repeat the physical
+  stage before closing this item.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then

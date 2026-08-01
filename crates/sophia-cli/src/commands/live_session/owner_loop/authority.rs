@@ -119,6 +119,28 @@
                                 "sophia_firefox_m8 schema=1 status=page_ready title_bytes=36 content=redacted"
                             );
                         }
+                        if !firefox_m8_navigation_ready_reported
+                            && firefox_m8_proof.navigation_ready(
+                                &metadata.property_name,
+                                metadata.byte_len,
+                            )
+                        {
+                            firefox_m8_navigation_ready_reported = true;
+                            println!(
+                                "sophia_firefox_m8 schema=1 status=navigation_ready content=redacted"
+                            );
+                        }
+                        if !firefox_m8_dialog_ready_reported
+                            && firefox_m8_proof.dialog_ready(
+                                &metadata.property_name,
+                                metadata.byte_len,
+                            )
+                        {
+                            firefox_m8_dialog_ready_reported = true;
+                            println!(
+                                "sophia_firefox_m8 schema=1 status=dialog_ready content=redacted"
+                            );
+                        }
                         for (stage, index, title_bytes) in
                             firefox_m8_proof.observe(&metadata.property_name, metadata.byte_len)
                         {

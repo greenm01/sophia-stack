@@ -252,6 +252,8 @@ fn run_session_loop(
     let mut firefox_m8_proof = FirefoxM8StageProof::default();
     let mut firefox_m10_kitty_proof = FirefoxM10KittyProof::default();
     let mut firefox_m8_page_ready_reported = false;
+    let mut firefox_m8_navigation_ready_reported = false;
+    let mut firefox_m8_dialog_ready_reported = false;
     let mut selection_owner_changes = 0usize;
     let mut selection_conversions = 0usize;
     let mut first_protocol_error = None;

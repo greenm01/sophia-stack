@@ -37,6 +37,24 @@ for stage in loaded keyboard clipboard primary resize dialog; do
     }
 done
 grep -q '^sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-navigation$' "$evidence"
+grep -q '^sophia_firefox_m8 schema=1 status=navigation_ready content=redacted$' "$evidence"
+navigation_ready_line=$(grep -n '^sophia_firefox_m8 schema=1 status=navigation_ready content=redacted$' "$evidence" | head -n 1 | cut -d: -f1)
+scroll_line=$(grep -n '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' "$evidence" | head -n 1 | cut -d: -f1)
+scroll_axis_routes=$(sed -n "${navigation_ready_line},${scroll_line}p" "$evidence" | awk '
+    /^sophia_live_session_pointer schema=9 status=axis_batch / {
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^routed=[0-9]+$/) {
+                split($i, field, "=")
+                total += field[2]
+            }
+        }
+    }
+    END { print total + 0 }
+')
+(( scroll_axis_routes >= 2 )) || {
+    echo "M8 mix observed only $scroll_axis_routes routed wheel packets after navigation readiness" >&2
+    exit 1
+}
 grep -q '^sophia_qemu_firefox_m8 schema=3 status=interactions_complete keyboard=true clipboard=true primary=true navigation=true scroll=true resize=true refocus=true pointer=true dialog=true$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=3 status=axis_observed$' "$evidence"
 axis_routes=$(awk '
@@ -55,6 +73,10 @@ axis_routes=$(awk '
     exit 1
 }
 grep -q '^sophia_qemu_firefox_m8 schema=4 status=scroll_complete source=wheel axis_routes=2 keyboard_fallback=false$' "$evidence"
+grep -q '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' "$evidence"
+grep -q '^sophia_qemu_firefox_m8 schema=5 status=dialog_open surface_snapshot=true$' "$evidence"
+grep -q '^sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-dialog-confirmation$' "$evidence"
+grep -q '^sophia_qemu_firefox_m8 schema=6 status=dialog_closed surface_snapshot=true$' "$evidence"
 for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
     grep -q "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage " "$evidence"
 done

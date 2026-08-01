@@ -822,6 +822,32 @@ impl FirefoxM8StageProof {
         vec![(Self::STAGES[stage_index], stage_index, byte_len)]
     }
 
+    fn navigation_ready(&self, property_name: &str, byte_len: usize) -> bool {
+        if property_name != "_NET_WM_NAME" || self.completed_stage != 4 {
+            return false;
+        }
+        let Some(active_residue) = self.active_residue else {
+            return false;
+        };
+        let Some(baseline) = self.baseline_title_bytes[active_residue] else {
+            return false;
+        };
+        byte_len == baseline.saturating_add(49)
+    }
+
+    fn dialog_ready(&self, property_name: &str, byte_len: usize) -> bool {
+        if property_name != "_NET_WM_NAME" || self.completed_stage != 7 {
+            return false;
+        }
+        let Some(active_residue) = self.active_residue else {
+            return false;
+        };
+        let Some(baseline) = self.baseline_title_bytes[active_residue] else {
+            return false;
+        };
+        byte_len == baseline.saturating_add(97)
+    }
+
     fn complete(&self) -> bool {
         self.completed_stage == Self::STAGES.len()
     }

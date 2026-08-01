@@ -368,6 +368,9 @@ run_firefox_m8_interactions() {
     local resize_complete=false
     local refocus_complete=false
     local dialog_complete=false
+    local popup_layout_baseline
+    local popup_focus_baseline
+    local popup_close_baseline
     wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=page_ready ' 0 800
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+l
@@ -442,8 +445,14 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage primary
+    local navigation_ready_baseline
+    navigation_ready_baseline="$(evidence_count '^sophia_firefox_m8 schema=1 status=navigation_ready ')"
     "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
     echo "sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-navigation" | tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=navigation_ready ' "$navigation_ready_baseline" 80; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_navigation_ready_timeout" | tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
     for wheel_notch in 1 2; do
         axis_route_baseline="$(axis_route_count)"
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
@@ -499,23 +508,48 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage refocus
     isolate_focused_interaction_surface
+    dialog_stage_baseline="$(evidence_count '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
     for _ in $(seq 1 10); do
+        popup_layout_baseline="$(evidence_count '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$')"
+        popup_focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+        popup_close_baseline="$(evidence_count '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$')"
+        popup_ready_baseline="$(evidence_count '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$')"
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ret
-        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ' 0 20; then
+        if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$popup_layout_baseline" 80; then
+            page_focus_baseline="$(evidence_count '^sophia_live_wm schema=1 status=focus_reconciled ')"
+            "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+            echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j phase=firefox-dialog-refocus" | tee -a "$EVIDENCE_FILE"
+            wait_for_new_evidence '^sophia_live_wm schema=1 status=focus_reconciled ' "$page_focus_baseline" 400 || true
+            continue
+        fi
+        if ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$popup_focus_baseline" 80; then
+            echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_dialog_focus_timeout" | tee -a "$EVIDENCE_FILE"
+            return 1
+        fi
+        if ! wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' "$popup_ready_baseline" 400; then
+            echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_dialog_ready_timeout" | tee -a "$EVIDENCE_FILE"
+            return 1
+        fi
+        echo "sophia_qemu_firefox_m8 schema=5 status=dialog_open surface_snapshot=true" | tee -a "$EVIDENCE_FILE"
+        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
+        echo "sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-dialog-confirmation" | tee -a "$EVIDENCE_FILE"
+        if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ' "$dialog_stage_baseline" 800; then
             dialog_complete=true
             break
         fi
-        page_focus_baseline="$(evidence_count '^sophia_live_wm schema=1 status=focus_reconciled ')"
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
-        echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j phase=firefox-dialog-refocus" | tee -a "$EVIDENCE_FILE"
-        wait_for_new_evidence '^sophia_live_wm schema=1 status=focus_reconciled ' "$page_focus_baseline" 400 || true
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_dialog_confirmation_timeout" | tee -a "$EVIDENCE_FILE"
+        return 1
     done
     if [[ "$dialog_complete" != true ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_stage_timeout stage=dialog" | tee -a "$EVIDENCE_FILE"
         return 1
     fi
     wait_for_firefox_stage dialog
+    if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$' "$popup_close_baseline" 400; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_dialog_close_timeout" | tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+    echo "sophia_qemu_firefox_m8 schema=6 status=dialog_closed surface_snapshot=true" | tee -a "$EVIDENCE_FILE"
     echo "sophia_qemu_firefox_m8 schema=3 status=interactions_complete keyboard=true clipboard=true primary=true navigation=true scroll=true resize=true refocus=true pointer=true dialog=true" | tee -a "$EVIDENCE_FILE"
 }
 

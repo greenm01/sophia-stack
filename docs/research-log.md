@@ -25,13 +25,60 @@ after owner removal until the client publishes a new ownership snapshot.
 Successful CPU admission or exact DMA-BUF retirement clears the Engine-owned
 temporary recovery extent and requests one coalesced relayout. Clean shutdown
 now fails if any such extent or relayout obligation remains. The offline page
-requires a real local navigation, two vertical DOM wheel events, and nonzero
-document displacement. The strict physical verifier requires a three-surface
+requires a real local navigation, a post-baseline DOM wheel event, and nonzero
+document displacement while the verifier independently requires both physical
+axis routes. The strict physical verifier requires a three-surface
 resize epoch/layout, action 3, a three-visible-surface projection, and zero
 recovery constraints. Focused Engine, X wire, transient lifecycle, query reply,
 and verifier mutation tests pass locally. A fresh physical run remains the
 Milestone 10 acceptance boundary; these changes do not promote historical
 evidence.
+
+The first strengthened QEMU run then proved the navigation click and both
+axis routes, but timed out at scroll. The fixture incremented its wheel counter
+only for nonzero DOM deltas, even though GTK can consume the first XI2 absolute
+value as a zero-delta baseline. After correcting that counter, a second run
+exposed the independent harness race: both notches were routed within 160 ms of
+the click, before the replacement document had an observable ready point. The
+navigated fixture now publishes an out-of-band title-length checkpoint, the
+session reports a redacted `navigation_ready` marker, and QEMU waits for it
+before injecting exactly two notches. Because XI2's first absolute value does
+not produce a DOM wheel event, the page requires the second notch's DOM event
+plus `scrollY > 0`, while the verifier independently requires both routed axis
+packets between navigation readiness and the scroll checkpoint. Thus packet
+delivery without real document displacement still cannot pass.
+
+That corrected run passed scroll, resize, and refocus, then exposed an existing
+fixture gap: Firefox rendered JavaScript `alert()` as a tab-modal overlay, so it
+could not prove the X11 transient-toplevel lifecycle at all. The dialog step now
+opens a real click-gated Firefox popup with an autofocus confirmation button.
+The harness waits for its attached four-surface layout snapshot before sending
+Return, then waits for the popup's X focus acknowledgement because layout
+publication precedes focus application. The popup finalizes its blank document
+before installing its confirmation handlers. The Enter handler publishes the
+final redacted title-length checkpoint on the popup itself before closing,
+avoiding cross-process messages and throttled opener timers during teardown.
+Close is delayed by one second so Firefox can publish `_NET_WM_NAME`; the
+harness then requires the return from four to three surfaces and publishes
+dedicated redacted `dialog_open` and `dialog_closed` checkpoints. This directly
+exercises the popup-lifecycle snapshot that the strengthened session path is
+intended to guarantee.
+
+The first real-popup QEMU run found one more ordering boundary: the attached
+surface and X focus acknowledgement both preceded Firefox installing the
+popup's DOM key handler, so an immediate Return was lost. The later retry then
+opened a second popup and made an already completed stage look like a close
+timeout. The popup now publishes a distinct redacted `dialog_ready` title only
+after its confirmation handler is installed. QEMU waits for that readiness,
+uses a pre-interaction stage baseline instead of accepting stale completion,
+and fails the confirmation attempt instead of reopening an ambiguous popup.
+The ready-popup run also proved that X toplevel focus does not guarantee
+Firefox's internal keyboard focus proxy will deliver an immediate synthetic
+Return. Because this stage is a pointer and popup-lifecycle proof (keyboard is
+already proven separately), QEMU and the operator now click the popup's
+full-window confirmation button. The title checkpoint wait is forty seconds:
+under llvmpipe load the redacted metadata batch can trail the visible popup
+close by more than twenty seconds.
 
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 
