@@ -8,7 +8,7 @@ Sophia provides an alternative. It preserves the inspectable, shared-X profile t
 
 ## Architecture
 
-Sophia is separated by authority, not by convenience. 
+Sophia divides its systems based on what each part is permitted to control, rather than what is easiest to write.
 
 - **Sophia Engine:** The absolute visual authority. It manages physical input, visual state, frame scheduling, transaction commits, rendering, and display output.
 - **Sophia X Server Frontend:** A clean, modern X11 frontend. It presents the established X11 API, translates protocol state into Sophia surface transactions, and performs X11 delivery rules. It does not control layout or scanout.
@@ -94,17 +94,7 @@ Sophia assumes clients are untrusted and places them in isolated namespaces. A c
 
 ## Status
 
-Sophia is a research prototype. The native Sophia X Server Frontend is the designated product path; no other application protocol is currently supported. 
-
-Completed milestones feature paired classic/confined namespace evidence, Engine-owned CPU and DMA-BUF composition, physical input, multi-output KMS, portal-mediated selections, and an unattended xmonad daily-driver session.
-
-Standard DRI3 1.2 now carries FD-bearing `Open`, modifier-bearing multi-plane pixmaps, xshmfences, and Present transactions through the native frontend. The persistent renderer imports those typed resources, gates acquire fences, composes DMA-BUF and CPU layers, and applies the prepared Engine state only after matching native page-flip feedback. The offline suite covers complete-before-Idle delivery, idle-fence triggering, rejection preservation, and exact teardown. The paired software and CPU-plus-`vkcube` X13 gate now passes with controlled acquire delay, rejection recovery, mixed page flips, idle-fence delivery, and exact teardown.
-
-The namespace-keyed X resource model, explicit classic/confined live launch profiles, per-client revocation, portal request/grant lifecycle, and owner-only broker IPC are implemented. The bounded cross-namespace enforcement matrix and authority-private native clipboard flows are proven for targeted text transfers.
-
-The former Smithay-backed Wayland frontend is retired under `research/wayland`. It proved that the Engine boundary is not inherently X-shaped, but it is not a production dependency or promise of future compatibility. A future translator must justify itself from product evidence and reduce to Sophia's existing authority model.
-
-Similarly, XLibre is not a production dependency. Its frozen source and prototype evidence reside under `research/xlibre`. Sophia may reconsider an optional provider only if measured native-X gaps justify the authority and maintenance cost.
+Sophia is a research prototype. The native Sophia X Server Frontend is the designated product path, and no other application protocol is currently supported. However, the transaction boundary is protocol-neutral, allowing future translation layers or native interfaces—such as Wayland—to be added without importing another protocol's desktop architecture.
 
 ## License
 
