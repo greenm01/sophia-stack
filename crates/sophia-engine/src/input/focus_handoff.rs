@@ -34,7 +34,25 @@ impl PointerFocusHandoffState {
     }
 
     pub fn defer(&mut self, request: RoutedInputRequest) -> Result<(), &'static str> {
+        if matches!(request.kind, sophia_protocol::InputEventKind::PointerMotion)
+            && self.pending.back().is_some_and(|pending| {
+                matches!(pending.kind, sophia_protocol::InputEventKind::PointerMotion)
+                    && pending.seat == request.seat
+                    && pending.device == request.device
+                    && pending.target_surface == request.target_surface
+            })
+        {
+            *self
+                .pending
+                .back_mut()
+                .expect("adjacent pointer motion was present") = request;
+            return Ok(());
+        }
         if self.pending.len() >= POINTER_FOCUS_HANDOFF_CAPACITY {
+            // Never leave a partial button/axis sequence available for later
+            // delivery. The caller may continue the session after reporting
+            // the bounded handoff drop.
+            self.clear();
             return Err("pointer focus handoff capacity exhausted");
         }
         self.pending.push_back(request);

@@ -100,6 +100,17 @@ also counts xmobar's retained non-workspace surface explicitly: four surfaces
 at the normal Firefox baseline, five while the real popup is attached, then
 four again after close.
 
+The next physical launch exposed two coupled owner-loop bounds. Application
+admission still used the five-second proof-completion timeout even though a
+manage-surface resize may now wait eight seconds (and the session accepts at
+most ten). It declared Firefox timed out while that layout fence was valid.
+At nearly the same point, a pointer focus handoff accumulated a full bounded
+batch and propagated its capacity result as a fatal session error. Application
+admission now has a distinct twelve-second bound, strictly beyond the maximum
+WM transaction. Adjacent held pointer motions coalesce; an exceptional full
+handoff is discarded atomically and reported without terminating the desktop.
+Focused regressions cover both deadline ordering and the bounded input path.
+
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 
 The isolated-profile physical M10 run advanced the deterministic Firefox page

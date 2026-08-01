@@ -24,6 +24,7 @@ struct PhysicalInputRouteReport {
     virtual_terminal: Option<u8>,
     virtual_terminal_modifier_releases: usize,
     pointer_focus_handoff_expired: bool,
+    pointer_focus_handoff_capacity_drops: usize,
     pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
     pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
     pointer_boundary_reversals: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
@@ -253,6 +254,7 @@ fn route_input_events_with_pointer_focus(
         virtual_terminal: None,
         virtual_terminal_modifier_releases: 0,
         pointer_focus_handoff_expired: false,
+        pointer_focus_handoff_capacity_drops: 0,
         pointer_focus_handoff_released: None,
         pointer_boundary_entries: Vec::new(),
         pointer_boundary_reversals: Vec::new(),
@@ -573,6 +575,12 @@ fn route_input_events_with_pointer_focus(
                     }
                     continue;
                 }
+                // Capacity failure clears the entire held sequence. Suppress
+                // the rest of this already-polled pointer batch as part of
+                // the same atomic drop; fresh input resumes next owner turn.
+                if report.pointer_focus_handoff_capacity_drops != 0 {
+                    continue;
+                }
                 let pending_target = pointer_focus_handoff
                     .as_deref()
                     .and_then(PointerFocusHandoffState::target);
@@ -631,7 +639,11 @@ fn route_input_events_with_pointer_focus(
                         continue;
                     }
                     if handoff.target().is_some() {
-                        handoff.defer(request)?;
+                        if handoff.defer(request).is_err() {
+                            report.pointer_focus_handoff_capacity_drops = report
+                                .pointer_focus_handoff_capacity_drops
+                                .saturating_add(1);
+                        }
                         continue;
                     }
                 }

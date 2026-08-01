@@ -736,7 +736,10 @@ impl LiveWmSession {
             })
             .count();
         let timeout = Duration::from_millis(u64::from(
-            transaction.timeout_msec.clamp(100, 10_000),
+            transaction.timeout_msec.clamp(
+                100,
+                SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
+            ),
         ));
         Ok(LiveWmProposal {
             transaction: transaction.transaction,

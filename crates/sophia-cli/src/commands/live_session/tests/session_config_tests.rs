@@ -167,6 +167,13 @@ fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
 }
 
 #[test]
+fn application_admission_outlives_the_longest_wm_transaction() {
+    assert!(
+        SESSION_APP_ADMISSION_TIMEOUT_MSEC > u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC)
+    );
+}
+
+#[test]
 fn production_input_seat_and_explicit_paths_are_distinct_modes() {
     let seat = PersistentXtermSessionConfig::from_args(&[
         "--input-seat=seat0".to_owned(),

@@ -88,6 +88,12 @@ macro_rules! drain_physical_input {
                     "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=timeout"
                 );
             }
+            if report.pointer_focus_handoff_capacity_drops != 0 {
+                eprintln!(
+                    "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=capacity count={}",
+                    report.pointer_focus_handoff_capacity_drops,
+                );
+            }
             if let Some((surface, count)) = report.pointer_focus_handoff_released {
                 println!(
                     "sophia_live_session_pointer schema=5 status=focus_handoff_released surface={} count={count}",

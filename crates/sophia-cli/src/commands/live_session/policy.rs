@@ -244,7 +244,9 @@ fn execute_committed_session_actions(
                 .index(),
         );
     } else if launch_admission_started_at
-        .is_some_and(|started| started.elapsed() >= Duration::from_millis(SESSION_COMPLETION_TIMEOUT_MSEC))
+        .is_some_and(|started| {
+            started.elapsed() >= Duration::from_millis(SESSION_APP_ADMISSION_TIMEOUT_MSEC)
+        })
         && let Some(admission) = launches.timeout_current()
     {
         *launch_admission_started_at = None;

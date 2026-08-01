@@ -1,7 +1,7 @@
 mod support;
 use sophia_engine::{
-    OutputUnionPointerState, PointerBoundaryContact, PointerBoundarySide,
-    confine_pointer_to_outputs,
+    OutputUnionPointerState, POINTER_FOCUS_HANDOFF_CAPACITY, PointerBoundaryContact,
+    PointerBoundarySide, confine_pointer_to_outputs,
 };
 use support::*;
 
@@ -605,6 +605,97 @@ fn pointer_focus_handoff_expires_without_frontend_acknowledgment() {
 
     assert!(!handoff.expire(2_099));
     assert!(handoff.expire(2_100));
+    assert_eq!(handoff.target(), None);
+    assert!(handoff.take_ready(Some(target)).is_none());
+}
+
+#[test]
+fn pointer_focus_handoff_coalesces_adjacent_motion() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = PointerFocusHandoffState::default();
+    handoff
+        .begin(
+            target,
+            100,
+            handoff_request(
+                1,
+                target,
+                InputEventKind::PointerButton {
+                    button: 0x110,
+                    pressed: true,
+                },
+            ),
+        )
+        .unwrap();
+    handoff
+        .defer(handoff_request(2, target, InputEventKind::PointerMotion))
+        .unwrap();
+    handoff
+        .defer(handoff_request(3, target, InputEventKind::PointerMotion))
+        .unwrap();
+    handoff
+        .defer(handoff_request(
+            4,
+            target,
+            InputEventKind::PointerButton {
+                button: 0x110,
+                pressed: false,
+            },
+        ))
+        .unwrap();
+
+    let ready = handoff.take_ready(Some(target)).unwrap();
+    assert_eq!(
+        ready
+            .into_iter()
+            .map(|request| request.serial)
+            .collect::<Vec<_>>(),
+        [1, 3, 4]
+    );
+}
+
+#[test]
+fn pointer_focus_handoff_capacity_failure_discards_the_atomic_sequence() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = PointerFocusHandoffState::default();
+    handoff
+        .begin(
+            target,
+            100,
+            handoff_request(
+                1,
+                target,
+                InputEventKind::PointerButton {
+                    button: 0x110,
+                    pressed: true,
+                },
+            ),
+        )
+        .unwrap();
+    for serial in 2..=POINTER_FOCUS_HANDOFF_CAPACITY as u64 {
+        handoff
+            .defer(handoff_request(
+                serial,
+                target,
+                InputEventKind::PointerAxis {
+                    horizontal_v120: 0,
+                    vertical_v120: 120,
+                },
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(
+        handoff.defer(handoff_request(
+            POINTER_FOCUS_HANDOFF_CAPACITY as u64 + 1,
+            target,
+            InputEventKind::PointerAxis {
+                horizontal_v120: 0,
+                vertical_v120: 120,
+            },
+        )),
+        Err("pointer focus handoff capacity exhausted")
+    );
     assert_eq!(handoff.target(), None);
     assert!(handoff.take_ready(Some(target)).is_none());
 }

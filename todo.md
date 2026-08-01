@@ -837,6 +837,11 @@ than adding speculative browser compatibility.
   (two Kitty windows, Firefox, and the retained physical xmobar baseline),
   and clean recovery-constraint teardown. A fresh physical run is still
   required.
+  A subsequent `Super+F` run exposed a stale five-second application-admission
+  deadline below the accepted WM resize bound and a fatal pointer-focus queue
+  overflow. Admission now remains open beyond the maximum WM transaction;
+  held pointer motion coalesces and exceptional capacity loss is atomic and
+  nonfatal. Repeat the physical workflow before closing this item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

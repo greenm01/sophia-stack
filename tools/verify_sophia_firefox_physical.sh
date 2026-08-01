@@ -65,6 +65,10 @@ if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degrad
     "$SESSION_LOG"; then
     fail "session log contains a Sophia error, panic, or degraded status"
 fi
+if grep -Eq '^sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=' \
+    "$SESSION_LOG"; then
+    fail "session dropped a pointer focus handoff"
+fi
 grep -Eq '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
     "$SESSION_LOG" || fail "external xmonad policy never became ready"
 grep -Eq '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
