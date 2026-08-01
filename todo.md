@@ -832,8 +832,10 @@ than adding speculative browser compatibility.
   WM relayout, and must be zero in the clean layout-health record. The strict
   Firefox verifier now requires action 3 (`Super+Space`), a committed
   three-surface resize epoch/layout, a three-visible-surface workspace
-  projection, and clean recovery-constraint teardown. A fresh physical run is
-  still required.
+  projection, replacement-document and popup-document readiness, an ordered
+  four-surface popup-open snapshot followed by a three-surface close snapshot,
+  and clean recovery-constraint teardown. A fresh physical run is still
+  required.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

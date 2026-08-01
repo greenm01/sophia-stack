@@ -32,10 +32,34 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted only one post-PRIMARY scroll packet" >&2
     exit 1
 fi
+sed '/status=navigation_ready /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing navigation readiness" >&2
+    exit 1
+fi
 sed 's/physical_action_committed action=3/physical_action_committed action=1/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted the wrong resize action" >&2
+    exit 1
+fi
+sed '/status=dialog_ready /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing popup readiness" >&2
+    exit 1
+fi
+sed '/layout_committed transaction=19 surfaces=4 /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing popup-open layout" >&2
+    exit 1
+fi
+sed '/layout_committed transaction=20 surfaces=3 /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing popup-close layout" >&2
     exit 1
 fi
 sed 's/matched_surfaces=3/matched_surfaces=2/' "$SESSION" >"$TEMP_FILE"

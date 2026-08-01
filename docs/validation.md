@@ -857,12 +857,14 @@ and after its restarted window is closed through xmonad. The Firefox page
 requires keyboard, `CLIPBOARD`, `PRIMARY`, a real navigation followed by
 document scrolling, resize, focus-away/focus-return, and a pointer-opened
 dialog. The strict verifier orders the six Kitty checkpoints around the two
-status-zero Firefox exits, requires two routed axis packets between the DOM
-PRIMARY and scroll stages, and rejects pending input/actions, protocol errors,
-native/frontend/authority cleanup debt, or retained temporary layout
-constraints. Its resize checkpoint requires the actual Super+Space action, a
-committed three-surface layout/resize epoch, and all three managed surfaces
-remaining visible.
+status-zero Firefox exits, requires replacement-document readiness followed by
+two routed axis packets before DOM scroll completion, and rejects pending
+input/actions, protocol errors, native/frontend/authority cleanup debt, or
+retained temporary layout constraints. Its resize checkpoint requires the
+actual Super+Space action, a committed three-surface layout/resize epoch, and
+all three managed surfaces remaining visible. Its dialog checkpoint requires
+popup-document readiness, a four-surface layout snapshot, confirmation, and a
+return to three surfaces before Firefox exits.
 During resize, a buffer whose pixel-aligned target is larger or smaller than
 the current child surface may be clipped but must never be scaled. A click on a
 client-positioned Firefox render child must hand focus to its containing

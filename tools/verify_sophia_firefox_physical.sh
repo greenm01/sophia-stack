@@ -118,8 +118,11 @@ for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
         fail "Firefox stage did not complete exactly once: $stage"
 done
 primary_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=primary ')"
+navigation_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=navigation_ready content=redacted$' 'replacement Firefox document never became ready')"
 scroll_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ')"
-axis_routes="$(awk -v first="$primary_line" -v last="$scroll_line" '
+(( primary_line < navigation_ready_line && navigation_ready_line < scroll_line )) ||
+    fail "Firefox navigation readiness is not ordered between PRIMARY and scroll completion"
+axis_routes="$(awk -v first="$navigation_ready_line" -v last="$scroll_line" '
     NR > first && NR < last && /^sophia_live_session_pointer schema=9 status=axis_batch / {
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^routed=[0-9]+$/) {
@@ -146,6 +149,19 @@ resize_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspac
     fail "the Firefox resize stage did not retain all three managed surfaces"
 grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
     "$SESSION_LOG" || fail "Firefox eight-stage proof did not complete"
+refocus_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ')"
+dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox popup document never became ready')"
+dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
+popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$refocus_line")"
+[[ -n "$popup_open_line" ]] || fail "Firefox popup did not publish a four-surface layout snapshot"
+popup_close_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$' "$dialog_line")"
+[[ -n "$popup_close_line" ]] || fail "Firefox popup did not publish a three-surface close snapshot"
+(( refocus_line < dialog_ready_line
+    && dialog_ready_line < popup_open_line
+    && popup_open_line < dialog_line
+    && dialog_line < popup_close_line
+    && popup_close_line < first_exit )) ||
+    fail "Firefox popup ready/open/confirm/close lifecycle is out of order"
 grep -Eq '^sophia_firefox_m10 schema=1 status=complete kitty_checkpoints=6 content=redacted$' \
     "$SESSION_LOG" || fail "Firefox M10 Kitty proof did not complete"
 

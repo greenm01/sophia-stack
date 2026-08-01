@@ -80,6 +80,14 @@ full-window confirmation button. The title checkpoint wait is forty seconds:
 under llvmpipe load the redacted metadata batch can trail the visible popup
 close by more than twenty seconds.
 
+The physical verifier now carries the same boundaries into the promotion
+contract. It requires replacement-document readiness before counting its two
+wheel routes, then orders popup document readiness, a four-surface layout,
+dialog confirmation, and the return to three surfaces before Firefox's normal
+exit. Mutation fixtures independently remove each readiness and layout record,
+so the physical gate cannot regress to accepting the former overlay-only
+dialog or pre-navigation wheel delivery.
+
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 
 The isolated-profile physical M10 run advanced the deterministic Firefox page
