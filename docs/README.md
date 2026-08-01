@@ -56,6 +56,8 @@ override the ownership and trust rules in the normative architecture.
   work, and measurable exits.
 - [Active Research Log](research-log.md) contains current investigations and
   retained evidence.
+- [Project Hagia](project-hagia.md) is a design note for a future Sophia-native
+  window manager fork.
 
 ## Historical Material
 

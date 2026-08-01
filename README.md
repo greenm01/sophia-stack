@@ -80,17 +80,7 @@ Sophia assumes clients are untrusted and places them in isolated namespaces. A c
 
 ## Documentation
 
-- `docs/README.md` — Maps normative contracts, subsystem status, evidence, and historical material.
-- `docs/specification.md` — The proposed project constitution, including invariants, hard non-goals, and amendment rules.
-- `docs/architecture.md` — Maps processes and load-bearing boundaries.
-- `docs/namespaces-and-portals.md` — Defines admission, isolation profiles, capabilities, grants, and cross-namespace failure behavior.
-- `docs/dod.md` — Defines Sophia's data-oriented design rules.
-- `docs/sophia-x-authority.md` — Defines the long-term Sophia X Server Frontend and its X11 compatibility boundary.
-- `docs/x11-compatibility-matrix.md` — Records the real-client evidence that admits each native X11 compatibility slice.
-- `docs/style-guide.md` — Records implementation discipline.
-- `docs/research-log.md` — Captures active decisions and research questions.
-- `docs/research-log-archive.md` — Preserves completed research and validation evidence.
-- `todo.md` — Tracks only active milestones and measurable exits.
+For detailed design specifications, architectural guides, security policies, and research logs, see [docs/README.md](docs/README.md).
 
 ## Status
 
