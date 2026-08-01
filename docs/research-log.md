@@ -5819,3 +5819,21 @@ acknowledgement ordering.
   protocol, input-drain, native-presentation, frontend, authority, guard, and
   TTY restoration checks. Mutation fixtures reject missing wheel, Kitty
   retention, forced-close, and cleanup evidence.
+
+## 2026-08-01: xmonad application keys identify semantic slots
+
+- The first self-guided physical run proved both Kitty checkpoint clients and
+  then rejected every `Super+F` request as `UnavailableSessionAction`; Firefox
+  never spawned. The session descriptor contained terminal and browser launch
+  actions but no application-menu launcher.
+- The compatibility bridge previously selected the first, second, or third
+  launch action remaining in the negotiated descriptor. The xmonad bindings
+  themselves are semantic—`Super+Enter` is terminal, `Super+P` is the launcher,
+  and `Super+F` is the browser—so filtering an unavailable middle application
+  incorrectly shifted later meanings while leaving their keys fixed.
+- Translation now maps those three profile actions to stable application IDs
+  1, 2, and 3, then applies the existing descriptor admission check. A focused
+  regression requires `Super+F` to launch application 3 when applications 1
+  and 3 are present and requires the absent application-2 binding to fail
+  closed. Engine still receives only the negotiated protocol-level session
+  action and remains unaware of xmonad key semantics.

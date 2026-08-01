@@ -52,11 +52,13 @@ else
     echo 'Next: press Super+F and follow the instructions inside Firefox.'
 fi
 
+echo "Do not type ${tokens[1]^^} until Firefox completes and Ctrl+Q closes it."
 await_token "${tokens[1]}"
 set_redacted_title "${title_bytes[1]}"
 echo "Kitty ${terminal^^} retained content and input after normal Firefox close."
 echo 'After both A2 and B2: press Super+F, wait for its page, then press Super+Shift+C.'
 
+echo "Do not type ${tokens[2]^^} until the restarted Firefox window has closed."
 await_token "${tokens[2]}"
 set_redacted_title "${title_bytes[2]}"
 echo "Kitty ${terminal^^} retained content and input after forced Firefox close."

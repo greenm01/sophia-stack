@@ -1,11 +1,14 @@
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, NamespaceId,
-    OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId, WmCommand, WmFocusRequest,
-    WmModifierMask, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
+    OutputId, Rect, SessionApplicationId, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WM_API_VERSION, WmActionActivation, WmActionId, WmCommand, WmFocusRequest, WmModifierMask,
+    WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmSessionAction,
+    WmSessionDescriptor, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeState,
-    XMONAD_ACTION_APPLICATION_1,
+    LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeError, X11WmBridgeState,
+    XMONAD_ACTION_APPLICATION_1, XMONAD_ACTION_APPLICATION_2, XMONAD_ACTION_APPLICATION_3,
+    translate_xmonad_profile_action,
 };
 
 #[test]
@@ -52,6 +55,55 @@ fn xmonad_launches_the_terminal_with_super_enter() {
         .expect("xmonad terminal binding");
     assert_eq!(binding.keycode, 28);
     assert_eq!(binding.modifiers.bits, WmModifierMask::SUPER);
+}
+
+#[test]
+fn xmonad_application_bindings_keep_semantic_slots_when_the_launcher_is_absent() {
+    let workspace = WorkspaceId::from_raw(1);
+    let output = OutputId::from_raw(1);
+    let terminal = WmSessionAction::LaunchApplication {
+        application: SessionApplicationId::from_raw(1),
+    };
+    let browser = WmSessionAction::LaunchApplication {
+        application: SessionApplicationId::from_raw(3),
+    };
+    let session = WmSessionDescriptor {
+        api_version: WM_API_VERSION,
+        workspaces: vec![workspace],
+        active_workspaces: vec![WmOutputWorkspace { output, workspace }],
+        session_actions: vec![
+            WmSessionAction::CloseFocused,
+            WmSessionAction::Logout,
+            terminal,
+            browser,
+        ],
+    };
+    let activate = |action| WmRequestPacket {
+        transaction: TransactionId::from_raw(action),
+        kind: WmRequestKind::ActionActivated(WmActionActivation {
+            action: WmActionId::from_raw(action),
+            output,
+            workspace,
+            focused_surface: None,
+            nodes: Vec::new(),
+        }),
+    };
+
+    let response =
+        translate_xmonad_profile_action(&activate(XMONAD_ACTION_APPLICATION_3), &session)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        response.commands,
+        vec![WmCommand::RequestSessionAction {
+            action: browser,
+            target: None,
+        }]
+    );
+    assert_eq!(
+        translate_xmonad_profile_action(&activate(XMONAD_ACTION_APPLICATION_2), &session,),
+        Err(X11WmBridgeError::UnavailableSessionAction)
+    );
 }
 
 #[test]

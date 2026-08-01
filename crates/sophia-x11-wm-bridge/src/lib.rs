@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
-    LayoutNodeSnapshot, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
-    SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION, WmActionId,
+    LayoutNodeSnapshot, Rect, SessionApplicationId, Size, SurfaceConstraints, SurfaceId,
+    SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION, WmActionId,
     WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask, WmRequestKind,
     WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor, WorkspaceId,
 };
@@ -240,19 +240,13 @@ pub fn translate_xmonad_profile_action(
             XMONAD_ACTION_APPLICATION_1
             | XMONAD_ACTION_APPLICATION_2
             | XMONAD_ACTION_APPLICATION_3 => {
-                let slot = match raw {
-                    XMONAD_ACTION_APPLICATION_1 => 0,
-                    XMONAD_ACTION_APPLICATION_2 => 1,
-                    XMONAD_ACTION_APPLICATION_3 => 2,
+                let application = match raw {
+                    XMONAD_ACTION_APPLICATION_1 => SessionApplicationId::from_raw(1),
+                    XMONAD_ACTION_APPLICATION_2 => SessionApplicationId::from_raw(2),
+                    XMONAD_ACTION_APPLICATION_3 => SessionApplicationId::from_raw(3),
                     _ => unreachable!(),
                 };
-                session
-                    .session_actions
-                    .iter()
-                    .filter(|action| matches!(action, WmSessionAction::LaunchApplication { .. }))
-                    .nth(slot)
-                    .copied()
-                    .ok_or(X11WmBridgeError::UnavailableSessionAction)?
+                WmSessionAction::LaunchApplication { application }
             }
             XMONAD_ACTION_CLOSE => WmSessionAction::CloseFocused,
             XMONAD_ACTION_LOGOUT => WmSessionAction::Logout,
