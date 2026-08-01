@@ -51,16 +51,18 @@ fn native_frame_service_should_preempt_authority(
     preempted_previous_cycle: bool,
     control_pending: bool,
     control_priority_cycles: u8,
+    service_due: bool,
 ) -> bool {
     // Controls get several owner turns first, but no control class may block
-    // renderer polling indefinitely. A client can be waiting for an earlier
-    // Present to retire before it can finish a focus, admission, lifecycle, or
-    // resize handshake. The following owner turn returns to authority traffic.
+    // renderer polling indefinitely. The service deadline also covers work
+    // whose instantaneous output hint is idle, so worker watchdogs keep making
+    // progress through resize-recovery traffic. The following owner turn
+    // returns to authority traffic.
     const CONTROL_PRIORITY_CYCLES: u8 = 4;
 
     (!control_pending || control_priority_cycles >= CONTROL_PRIORITY_CYCLES)
         && !preempted_previous_cycle
-        && native_frame_service_requires_owner_progress(request)
+        && (service_due || native_frame_service_requires_owner_progress(request))
 }
 
 fn synchronize_runtime_surface_chrome_style(

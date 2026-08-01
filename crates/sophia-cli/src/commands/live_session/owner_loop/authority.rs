@@ -5,6 +5,7 @@
                 native_frame_service_preempted_previous_cycle,
                 session_controls.pending_len() != 0,
                 native_frame_control_priority_cycles,
+                last_native_frame_service.elapsed() >= Duration::from_millis(4),
             ),
             _ => false,
         };
@@ -635,6 +636,7 @@
                         runtime.release_layout_deferred_presentations();
                     }
                     let service = runtime.service_native(native_scanout)?;
+                    last_native_frame_service = Instant::now();
                     if let Some(retired) = service.retired_present {
                         let NativePresentRetirementObservation {
                             surface,

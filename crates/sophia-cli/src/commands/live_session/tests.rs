@@ -135,19 +135,41 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
     };
 
     assert!(native_frame_service_should_preempt_authority(
-        &pending, false, false, 0
+        &pending, false, false, 0, false
     ));
     assert!(!native_frame_service_should_preempt_authority(
-        &pending, true, false, 0
+        &pending, true, false, 0, false
     ));
     assert!(!native_frame_service_should_preempt_authority(
-        &pending, false, true, 0
+        &pending, false, true, 0, false
     ));
     assert!(!native_frame_service_should_preempt_authority(
-        &pending, false, true, 3
+        &pending, false, true, 3, false
     ));
     assert!(native_frame_service_should_preempt_authority(
-        &pending, false, true, 4
+        &pending, false, true, 4, false
+    ));
+
+    let idle = OutputFrameServiceRequest {
+        outputs: vec![OutputFrameServiceObservation {
+            output: OutputId::from_raw(1),
+            primary: true,
+            native_phase: OutputNativeFramePhase::Idle,
+            pending_frame: false,
+        }],
+        presentation_queued: false,
+    };
+    assert!(!native_frame_service_should_preempt_authority(
+        &idle, false, false, 0, false
+    ));
+    assert!(native_frame_service_should_preempt_authority(
+        &idle, false, false, 0, true
+    ));
+    assert!(!native_frame_service_should_preempt_authority(
+        &idle, false, true, 3, true
+    ));
+    assert!(native_frame_service_should_preempt_authority(
+        &idle, false, true, 4, true
     ));
 }
 
