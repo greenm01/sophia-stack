@@ -16,7 +16,7 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted a missing PRIMARY stage" >&2
     exit 1
 fi
-grep -Fv 'status=axis_routed' "$SESSION" >"$TEMP_FILE"
+grep -Fv 'status=axis_batch' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted missing scroll routing" >&2
@@ -24,7 +24,7 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
 fi
 awk '
     /stage=primary / { inside=1 }
-    inside && /status=axis_routed/ && !removed { removed=1; next }
+    inside && /status=axis_batch/ && !removed { removed=1; next }
     { print }
 ' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \

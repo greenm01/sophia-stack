@@ -380,6 +380,12 @@ macro_rules! drain_physical_input {
                 println!("sophia_live_session_pointer schema=3 status=axis_routed");
                 input_observations.pointer_axis_routed = true;
             }
+            if report.pointer_axes_observed > 0 || report.pointer_axes_routed > 0 {
+                println!(
+                    "sophia_live_session_pointer schema=9 status=axis_batch observed={} routed={}",
+                    report.pointer_axes_observed, report.pointer_axes_routed,
+                );
+            }
             if !input_observations.client_positioned_pointer_axis_routed
                 && report
                     .pointer_axis_targets

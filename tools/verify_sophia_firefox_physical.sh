@@ -120,7 +120,14 @@ done
 primary_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=primary ')"
 scroll_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ')"
 axis_routes="$(awk -v first="$primary_line" -v last="$scroll_line" '
-    NR > first && NR < last && /^sophia_live_session_pointer schema=3 status=axis_routed$/ { count++ }
+    NR > first && NR < last && /^sophia_live_session_pointer schema=9 status=axis_batch / {
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^routed=[0-9]+$/) {
+                split($i, field, "=")
+                count += field[2]
+            }
+        }
+    }
     END { print count + 0 }
 ' "$SESSION_LOG")"
 (( axis_routes >= 2 )) ||

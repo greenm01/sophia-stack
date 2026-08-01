@@ -12,8 +12,8 @@ sophia_firefox_m8 schema=1 status=stage_complete stage=clipboard index=2 title_b
 sophia_firefox_m8 schema=1 status=stage_complete stage=primary index=3 title_bytes=72 content=redacted
 sophia_live_session_pointer schema=3 status=axis_observed
 sophia_live_session_pointer schema=3 status=axis_routed
-sophia_live_session_pointer schema=3 status=axis_observed
-sophia_live_session_pointer schema=3 status=axis_routed
+sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
+sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
 sophia_firefox_m8 schema=1 status=stage_complete stage=scroll index=4 title_bytes=88 content=redacted
 sophia_qemu_firefox_m8 schema=4 status=scroll_complete source=wheel axis_routes=2 keyboard_fallback=false
 sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_bytes=104 content=redacted

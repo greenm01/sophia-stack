@@ -1078,7 +1078,7 @@ fn spawn_x11_input_event_writer(
                         event_type,
                         event,
                         xi_window,
-                        0,
+                        xi_device_event_flags(event),
                     );
                     stream.write_all(&generic).map_err(|error| {
                         X11SetupSocketError::new(format!(

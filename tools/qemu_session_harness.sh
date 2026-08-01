@@ -43,6 +43,37 @@ evidence_count() {
     grep -c "$1" "$EVIDENCE_FILE" 2>/dev/null || true
 }
 
+axis_route_count() {
+    awk '
+        /^sophia_live_session_pointer schema=9 status=axis_batch / {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^routed=[0-9]+$/) {
+                    split($i, field, "=")
+                    total += field[2]
+                }
+            }
+        }
+        END { print total + 0 }
+    ' "$EVIDENCE_FILE" 2>/dev/null
+}
+
+wait_for_axis_route_count() {
+    local baseline=$1
+    local attempts=${2:-400}
+    local current
+    for _ in $(seq 1 "$attempts"); do
+        current="$(axis_route_count)"
+        if (( current > baseline )); then
+            return 0
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+            return 1
+        fi
+        sleep 0.05
+    done
+    return 1
+}
+
 evidence_has_after_line() {
     local pattern=$1
     local line=$2
@@ -412,9 +443,9 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage primary
     for wheel_notch in 1 2; do
-        axis_route_baseline="$(evidence_count '^sophia_live_session_pointer schema=3 status=axis_routed$')"
+        axis_route_baseline="$(axis_route_count)"
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
-        if ! wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80; then
+        if ! wait_for_axis_route_count "$axis_route_baseline" 80; then
             echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_axis_route_timeout notch=$wheel_notch" | tee -a "$EVIDENCE_FILE"
             return 1
         fi

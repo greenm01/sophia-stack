@@ -786,10 +786,15 @@ than adding speculative browser compatibility.
   smooth XI2 motion packet. GTK uses the first value for its per-axis baseline,
   so it correctly produced no scroll delta; QEMU's old ten-attempt loop hid
   that requirement. The X frontend now also emits XI2 ButtonPress/Release
-  wheel compatibility events marked `XIPointerEmulated`, reports zero/zero
-  bounds for its relative scroll valuators, and both proof paths explicitly
-  require two routed wheel packets. Repeat the physical stage before closing
-  this item again.
+  wheel compatibility events, reports zero/zero bounds for its relative scroll
+  valuators, and both proof paths explicitly require two routed wheel packets.
+  A live follow-up exposed two remaining conformance/evidence defects: the
+  translated smooth XI2 Motion lacked Xorg's `XIPointerEmulated` flag, and the
+  `axis_routed` marker was intentionally one-shot even though the verifier
+  counted it as a packet. Smooth Motion and compatibility button events now
+  carry the emulation flag, while a redacted axis-batch record publishes exact
+  observed/routed packet counts. Repeat the physical stage before closing this
+  item again.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
