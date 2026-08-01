@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use sophia_protocol::{SurfaceId, TransactionId};
 use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityControlKind,
-    XAuthorityControlOutcome, XServerFrontendClientId,
+    XAuthorityControlOutcome, XServerFrontendClientId, XServerFrontendControlRouter,
+    XServerFrontendRouteError,
 };
 
 pub const SESSION_CONTROL_CAPACITY: usize = 32;
@@ -99,6 +100,37 @@ pub struct SessionControlQueue {
     metrics: SessionControlMetrics,
 }
 
+pub trait SessionControlSender {
+    fn try_send_control(
+        &self,
+        command: XAuthorityClientControlCommand,
+    ) -> Result<(), TrySendError<XAuthorityClientControlCommand>>;
+}
+
+impl SessionControlSender for SyncSender<XAuthorityClientControlCommand> {
+    fn try_send_control(
+        &self,
+        command: XAuthorityClientControlCommand,
+    ) -> Result<(), TrySendError<XAuthorityClientControlCommand>> {
+        self.try_send(command)
+    }
+}
+
+impl SessionControlSender for XServerFrontendControlRouter {
+    fn try_send_control(
+        &self,
+        command: XAuthorityClientControlCommand,
+    ) -> Result<(), TrySendError<XAuthorityClientControlCommand>> {
+        match self.route_control(command) {
+            Ok(()) => Ok(()),
+            Err(XServerFrontendRouteError::ClientQueueFull { .. }) => {
+                Err(TrySendError::Full(command))
+            }
+            Err(_) => Err(TrySendError::Disconnected(command)),
+        }
+    }
+}
+
 impl SessionControlQueue {
     pub fn enqueue(
         &mut self,
@@ -125,7 +157,7 @@ impl SessionControlQueue {
 
     pub fn service(
         &mut self,
-        sender: &SyncSender<XAuthorityClientControlCommand>,
+        sender: &impl SessionControlSender,
         receiver: &Receiver<XAuthorityClientControlAck>,
         now: Instant,
         completions: &mut Vec<SessionControlCompletion>,
@@ -135,7 +167,7 @@ impl SessionControlQueue {
 
     pub fn service_when(
         &mut self,
-        sender: &SyncSender<XAuthorityClientControlCommand>,
+        sender: &impl SessionControlSender,
         receiver: &Receiver<XAuthorityClientControlAck>,
         now: Instant,
         completions: &mut Vec<SessionControlCompletion>,
@@ -237,7 +269,7 @@ impl SessionControlQueue {
 
     fn dispatch(
         &mut self,
-        sender: &SyncSender<XAuthorityClientControlCommand>,
+        sender: &impl SessionControlSender,
         now: Instant,
     ) -> Result<(), SessionControlFailure> {
         let focus_in_flight = self
@@ -249,7 +281,7 @@ impl SessionControlQueue {
             if pending.dispatched_at.is_some() || (pending.key.is_focus() && dispatched_focus) {
                 continue;
             }
-            match sender.try_send(pending.command) {
+            match sender.try_send_control(pending.command) {
                 Ok(()) => {
                     pending.dispatched_at = Some(now);
                     self.metrics.dispatched += 1;

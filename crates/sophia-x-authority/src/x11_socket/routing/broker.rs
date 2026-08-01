@@ -1,12 +1,14 @@
 /// Engine-facing ingress and per-client queue registry for a routed X11
 /// session.
 ///
-/// Engine code sends client-addressed input and control values to the bounded
-/// ingress queues, then its session loop calls [`Self::route_pending`] to move
-/// them into the registered worker's private queues. The broker never
-/// broadcasts a route. Routes whose client disappeared after Engine selection
-/// are retired with a negative acknowledgement; queue backpressure and
-/// registry corruption remain service-fatal.
+/// Engine code sends client-addressed input through the bounded ingress queues,
+/// then its session loop calls [`Self::route_pending`] to move it into the
+/// registered worker's private queue. Latency-sensitive control can instead use
+/// [`Self::control_router`] to reach the selected client's bounded queue
+/// directly. The broker never broadcasts a route. Routes whose client
+/// disappeared after Engine selection are retired with a negative
+/// acknowledgement; queue backpressure and registry corruption remain
+/// service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
@@ -29,6 +31,33 @@ pub struct XServerFrontendRouteBroker {
 #[derive(Clone)]
 pub struct XServerFrontendProtocolRouter {
     registry: XServerFrontendRouteRegistry,
+}
+
+/// Cloneable control handle for Engine-owned focus and configure commands.
+///
+/// This handle routes directly to the selected client's bounded queue so
+/// latency-sensitive control does not wait behind frontend input processing.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct XServerFrontendControlRouter {
+    registry: XServerFrontendRouteRegistry,
+}
+
+#[cfg(unix)]
+impl XServerFrontendControlRouter {
+    pub fn route_control(
+        &self,
+        route: XAuthorityClientControlCommand,
+    ) -> Result<(), XServerFrontendRouteError> {
+        match self.registry.route_control(route) {
+            Ok(()) => Ok(()),
+            Err(
+                XServerFrontendRouteError::UnknownClient { .. }
+                | XServerFrontendRouteError::ClientQueueDisconnected { .. },
+            ) => self.registry.acknowledge_stale_control(route),
+            Err(error) => Err(error),
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -157,6 +186,12 @@ impl XServerFrontendRouteBroker {
 
     pub fn control_sender(&self) -> SyncSender<XAuthorityClientControlCommand> {
         self.control_sender.clone()
+    }
+
+    pub fn control_router(&self) -> XServerFrontendControlRouter {
+        XServerFrontendControlRouter {
+            registry: self.registry.clone(),
+        }
     }
 
     pub fn recv_control_ack_timeout(

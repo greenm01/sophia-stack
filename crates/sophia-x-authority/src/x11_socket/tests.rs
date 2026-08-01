@@ -510,6 +510,26 @@ fn route_broker_retires_control_after_client_disconnect() {
 }
 
 #[test]
+fn control_router_bypasses_broker_ingress() {
+    let client = XServerFrontendClientId(14);
+    let surface = SurfaceId::new(15, 1);
+    let transaction = TransactionId::from_raw(16);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(1).unwrap());
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    let command = XAuthorityControlCommand::FocusSurface {
+        transaction,
+        surface,
+    };
+
+    broker
+        .control_router()
+        .route_control(XAuthorityClientControlCommand { client, command })
+        .unwrap();
+
+    assert_eq!(channels.control.try_recv(), Ok(command));
+}
+
+#[test]
 fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
     let namespace = NamespaceId::from_raw(9);
     let focused = XServerFrontendClientId(1);
@@ -740,4 +760,38 @@ fn root_focus_uses_mapped_stacking_order_and_restacking() {
 
     selections.observe_unmapped(lower);
     assert_eq!(selections.keyboard_target(root), upper);
+}
+
+#[test]
+fn pending_control_gets_the_next_runtime_lock() {
+    let runtime = Arc::new(Mutex::new(XAuthorityRuntime::default()));
+    let held = runtime.lock().expect("initial runtime lock");
+    let control_runtime_pending = Arc::new(AtomicUsize::new(0));
+    let (order_sender, order_receiver) = std::sync::mpsc::channel();
+
+    let control_runtime = runtime.clone();
+    let control_pending = control_runtime_pending.clone();
+    let control_sender = order_sender.clone();
+    let control = std::thread::spawn(move || {
+        let _guard = lock_x11_control_runtime(&control_runtime, &control_pending)
+            .expect("control runtime lock");
+        control_sender.send("control").expect("control order");
+    });
+    while control_runtime_pending.load(Ordering::Acquire) == 0 {
+        std::thread::yield_now();
+    }
+
+    let request_runtime = runtime.clone();
+    let request_pending = control_runtime_pending.clone();
+    let request = std::thread::spawn(move || {
+        wait_for_x11_control_runtime(&request_pending);
+        let _guard = request_runtime.lock().expect("request runtime lock");
+        order_sender.send("request").expect("request order");
+    });
+    drop(held);
+
+    assert_eq!(order_receiver.recv().expect("first owner"), "control");
+    assert_eq!(order_receiver.recv().expect("second owner"), "request");
+    control.join().expect("control owner");
+    request.join().expect("request owner");
 }

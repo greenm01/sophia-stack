@@ -1,7 +1,7 @@
 struct SessionLoopChannels<'a> {
     authority: &'a Receiver<XAuthorityObservedTransactionBatch>,
     input: &'a SyncSender<XAuthorityRoutedInput>,
-    control: &'a SyncSender<XAuthorityClientControlCommand>,
+    control: &'a XServerFrontendControlRouter,
     control_acknowledgements: &'a Receiver<XAuthorityClientControlAck>,
     input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
 }

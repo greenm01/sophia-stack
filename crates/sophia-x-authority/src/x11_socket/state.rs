@@ -6,6 +6,7 @@ pub struct X11CoreSocketServerState {
     runtime: Arc<Mutex<XAuthorityRuntime>>,
     atoms: Arc<Mutex<XAtomTable>>,
     properties: Arc<Mutex<XPropertyTable>>,
+    control_runtime_pending: Arc<AtomicUsize>,
     clients: Arc<Mutex<X11CoreClientLeaseState>>,
     next_transaction_id: Arc<AtomicU64>,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
@@ -19,6 +20,10 @@ impl core::fmt::Debug for X11CoreSocketServerState {
             .field("runtime", &self.runtime)
             .field("atoms", &self.atoms)
             .field("properties", &self.properties)
+            .field(
+                "control_runtime_pending",
+                &self.control_runtime_pending.load(Ordering::Relaxed),
+            )
             .field("clients", &self.clients)
             .field(
                 "next_transaction_id",
@@ -50,6 +55,7 @@ impl Default for X11CoreSocketServerState {
             runtime: Default::default(),
             atoms: Default::default(),
             properties: Default::default(),
+            control_runtime_pending: Default::default(),
             clients: Arc::new(Mutex::new(X11CoreClientLeaseState {
                 next_client_resource_range: 1,
                 next_client_id: 1,

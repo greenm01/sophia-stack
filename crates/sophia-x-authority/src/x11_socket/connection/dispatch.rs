@@ -159,6 +159,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 state.atoms.clone(),
                 state.properties.clone(),
                 state.runtime.clone(),
+                state.control_runtime_pending.clone(),
                 resource_id_range,
                 namespace,
                 client,
@@ -205,6 +206,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
+                wait_for_x11_control_runtime(&state.control_runtime_pending);
                 let server_owner = state
                     .runtime
                     .lock()
@@ -453,6 +455,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     } else {
                         false
                     };
+                    wait_for_x11_control_runtime(&state.control_runtime_pending);
                     let mut runtime = state.runtime.lock().map_err(|_| {
                         X11SetupSocketError::new("X11 authority runtime lock poisoned")
                     })?;

@@ -179,6 +179,7 @@ fn spawn_x11_control_writer(
     atoms: Arc<Mutex<XAtomTable>>,
     properties: Arc<Mutex<XPropertyTable>>,
     runtime: Arc<Mutex<XAuthorityRuntime>>,
+    control_runtime_pending: Arc<AtomicUsize>,
     resource_id_range: crate::XWireClientResourceRange,
     namespace: NamespaceId,
     client: XServerFrontendClientId,
@@ -241,11 +242,10 @@ fn spawn_x11_control_writer(
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {
                 XAuthorityControlCommand::AdmitSurface { geometry, .. } => {
-                    let geometry = match runtime
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                        })?
+                    let geometry = match lock_x11_control_runtime(
+                        &runtime,
+                        &control_runtime_pending,
+                    )?
                         .admit_window_from_engine(namespace, window, geometry)
                     {
                         Ok(geometry) => geometry,
@@ -295,11 +295,10 @@ fn spawn_x11_control_writer(
                         )?;
                         continue;
                     }
-                    let geometry = match runtime
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                        })?
+                    let geometry = match lock_x11_control_runtime(
+                        &runtime,
+                        &control_runtime_pending,
+                    )?
                         .configure_window_size_from_engine(namespace, window, size)
                     {
                         Ok(geometry) => geometry,
@@ -394,9 +393,8 @@ fn spawn_x11_control_writer(
                 }
                 XAuthorityControlCommand::FocusSurface { .. } => {
                     let previous = {
-                        let mut runtime = runtime.lock().map_err(|_| {
-                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                        })?;
+                        let mut runtime =
+                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                         let (previous, _) = runtime.input_focus(namespace);
                         if runtime.set_input_focus(namespace, window, 1).is_err() {
                             channels.send_ack(
@@ -458,9 +456,8 @@ fn spawn_x11_control_writer(
                 XAuthorityControlCommand::ClearFocus { .. } => {
                     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
                     {
-                        let mut runtime = runtime.lock().map_err(|_| {
-                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                        })?;
+                        let mut runtime =
+                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                         if runtime.set_input_focus(namespace, root, 1).is_err() {
                             channels.send_ack(
                                 client,
@@ -494,11 +491,10 @@ fn spawn_x11_control_writer(
                     }
                 }
                 XAuthorityControlCommand::WithdrawSurface { .. } => {
-                    let was_active = match runtime
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                        })?
+                    let was_active = match lock_x11_control_runtime(
+                        &runtime,
+                        &control_runtime_pending,
+                    )?
                         .unmap_window(namespace, window)
                     {
                         Ok(was_active) => was_active,
@@ -575,6 +571,24 @@ fn spawn_x11_control_writer(
         Ok(())
     });
     Ok(X11ControlWriter { stop, thread })
+}
+
+#[cfg(unix)]
+fn wait_for_x11_control_runtime(control_runtime_pending: &AtomicUsize) {
+    while control_runtime_pending.load(Ordering::Acquire) != 0 {
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(unix)]
+fn lock_x11_control_runtime<'a>(
+    runtime: &'a Mutex<XAuthorityRuntime>,
+    control_runtime_pending: &AtomicUsize,
+) -> Result<std::sync::MutexGuard<'a, XAuthorityRuntime>, X11SetupSocketError> {
+    control_runtime_pending.fetch_add(1, Ordering::AcqRel);
+    let result = runtime.lock();
+    control_runtime_pending.fetch_sub(1, Ordering::AcqRel);
+    result.map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))
 }
 
 #[cfg(unix)]

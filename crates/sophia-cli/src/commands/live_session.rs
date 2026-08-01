@@ -41,10 +41,10 @@ use sophia_x_authority::{
     XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
     XAuthorityRoutedInputMode, XCoreKeyboardMapper, XPresentCompletionMode,
     XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
-    XServerFrontendConfig, XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
-    XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker, XServerFrontendServiceCommand,
-    XServerFrontendSetupAuthorization, XkbKeymapSnapshot,
-    run_x_server_frontend_routed_until_stopped,
+    XServerFrontendConfig, XServerFrontendControlRouter, XServerFrontendProtocolRouter,
+    XServerFrontendRenderDeviceError, XServerFrontendRenderDeviceProvider,
+    XServerFrontendRouteBroker, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
+    XkbKeymapSnapshot, run_x_server_frontend_routed_until_stopped,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{Read, Write};
@@ -280,7 +280,7 @@ pub(crate) fn run_persistent_xterm_session(
             config.xkb_config.clone(),
         )?;
     let input_sender = broker.routed_input_sender();
-    let control_sender = broker.control_sender();
+    let control_sender = broker.control_router();
     let protocol_router = broker.protocol_router();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
     let mut server = Some(std::thread::spawn(move || {
