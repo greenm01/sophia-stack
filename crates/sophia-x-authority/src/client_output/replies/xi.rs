@@ -130,6 +130,22 @@ fn encode_x_input_reply(
                                     push_u32(byte_order, &mut body, 1);
                                     body.extend_from_slice(&[0; 4]);
                                 }
+                                XXiDeviceClass::Scroll {
+                                    source_id,
+                                    number,
+                                    scroll_type,
+                                    flags,
+                                    increment,
+                                } => {
+                                    push_u16(byte_order, &mut body, 3);
+                                    push_u16(byte_order, &mut body, 6);
+                                    push_u16(byte_order, &mut body, *source_id);
+                                    push_u16(byte_order, &mut body, *number);
+                                    push_u16(byte_order, &mut body, *scroll_type);
+                                    push_u16(byte_order, &mut body, 0);
+                                    push_u32(byte_order, &mut body, *flags);
+                                    push_i64(byte_order, &mut body, *increment);
+                                }
                             }
                         }
                     }

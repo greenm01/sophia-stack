@@ -664,4 +664,3 @@ fn x11_dispatch_query_colors_returns_bounded_color_records() {
         u16::MAX
     );
 }
-

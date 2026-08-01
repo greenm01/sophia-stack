@@ -27,7 +27,16 @@ pub struct XAuthorityKeyEvent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityPointerEventKind {
     Motion,
-    Button { button: u8, pressed: bool },
+    Button {
+        button: u8,
+        pressed: bool,
+    },
+    Axis {
+        button: u8,
+        pressed: bool,
+        horizontal_position_v120: Option<i32>,
+        vertical_position_v120: Option<i32>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +64,7 @@ pub struct XAuthorityClientInputEvent {
     pub event: XAuthorityInputEvent,
     pub target_window: Option<XResourceId>,
     pub xi_event_type: Option<u16>,
+    pub xi_event_window: Option<XResourceId>,
     pub xi_transition_mask: u16,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }

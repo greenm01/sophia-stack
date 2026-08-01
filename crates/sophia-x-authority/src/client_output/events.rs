@@ -140,6 +140,39 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             event_y,
             state,
         ),
+        XClientEvent::PointerCrossing {
+            sequence,
+            entered,
+            detail,
+            time,
+            root,
+            event,
+            root_x,
+            root_y,
+            event_x,
+            event_y,
+            state,
+            mode,
+            focus,
+        } => {
+            write_pointer_event(
+                byte_order,
+                &mut out,
+                if entered { 7 } else { 8 },
+                detail,
+                sequence,
+                time,
+                root,
+                event,
+                root_x,
+                root_y,
+                event_x,
+                event_y,
+                state,
+            );
+            out[30] = mode;
+            out[31] = 1 | (u8::from(focus) << 1);
+        }
         XClientEvent::Expose {
             sequence,
             window,

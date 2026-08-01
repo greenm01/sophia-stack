@@ -3,6 +3,8 @@
 struct XServerFrontendRouteRegistry {
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    window_parents:
+        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
     core_event_subscriptions:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
     randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
@@ -81,6 +83,8 @@ struct XServerFrontendClientRouteRegistration {
     client: XServerFrontendClientId,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    window_parents:
+        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
     core_event_subscriptions:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
     randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
@@ -208,6 +212,7 @@ impl XServerFrontendRouteRegistry {
                 client,
                 clients: self.clients.clone(),
                 surfaces: self.surfaces.clone(),
+                window_parents: self.window_parents.clone(),
                 core_event_subscriptions: self.core_event_subscriptions.clone(),
                 randr_subscriptions: self.randr_subscriptions.clone(),
                 present_subscriptions: self.present_subscriptions.clone(),
@@ -249,6 +254,55 @@ impl XServerFrontendRouteRegistry {
                 },
             );
         Ok(())
+    }
+
+    fn register_window_parent(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+        parent: XResourceId,
+    ) -> Result<(), XServerFrontendRouteError> {
+        self.window_parents
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .insert((client, window), parent);
+        Ok(())
+    }
+
+    fn remove_window_parent(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+    ) -> Result<(), XServerFrontendRouteError> {
+        self.window_parents
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .remove(&(client, window));
+        Ok(())
+    }
+
+    fn window_ancestry(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+    ) -> Result<Vec<XResourceId>, XServerFrontendRouteError> {
+        let parents = self
+            .window_parents
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut ancestry = vec![window];
+        let mut candidate = window;
+        for _ in 0..64 {
+            let Some(parent) = parents.get(&(client, candidate)).copied() else {
+                break;
+            };
+            if ancestry.contains(&parent) {
+                break;
+            }
+            ancestry.push(parent);
+            candidate = parent;
+        }
+        Ok(ancestry)
     }
 
     fn select_randr_input(
@@ -791,9 +845,7 @@ impl XServerFrontendRouteRegistry {
                         grab.window
                     });
                 }
-                let Some(button) =
-                    crate::XCorePointerMapper::map_axis_to_button(horizontal_v120, vertical_v120)
-                else {
+                let Some(axis) = pointer.map_axis(horizontal_v120, vertical_v120) else {
                     return self.send_input_delivery(
                         client,
                         route.delivery,
@@ -807,15 +859,25 @@ impl XServerFrontendRouteRegistry {
                     })?
                     .map_or(0, |(_, state, _)| state)
                     | pointer.state();
+                let release_state = state | pointer.axis_release_state(axis.button);
                 let pointer_event = |pressed| {
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                        kind: XAuthorityPointerEventKind::Button { button, pressed },
+                        kind: XAuthorityPointerEventKind::Axis {
+                            button: axis.button,
+                            pressed,
+                            horizontal_position_v120: pressed
+                                .then_some(axis.horizontal_position_v120)
+                                .flatten(),
+                            vertical_position_v120: pressed
+                                .then_some(axis.vertical_position_v120)
+                                .flatten(),
+                        },
                         surface: route.request.target_surface,
                         root_x: clamp_input_coordinate(route.request.global_position.x),
                         root_y: clamp_input_coordinate(route.request.global_position.y),
                         event_x: clamp_input_coordinate(route.request.local_position.x),
                         event_y: clamp_input_coordinate(route.request.local_position.y),
-                        state,
+                        state: if pressed { state } else { release_state },
                         time_msec,
                     })
                 };
@@ -971,6 +1033,9 @@ impl Drop for XServerFrontendClientRouteRegistration {
         }
         if let Ok(mut surfaces) = self.surfaces.lock() {
             surfaces.retain(|_, route| route.client != self.client);
+        }
+        if let Ok(mut parents) = self.window_parents.lock() {
+            parents.retain(|(client, _), _| *client != self.client);
         }
         if let Ok(mut subscriptions) = self.core_event_subscriptions.lock() {
             subscriptions.retain(|(client, _), _| *client != self.client);

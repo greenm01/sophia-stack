@@ -27,6 +27,15 @@ fn decode_get_modifier_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseE
     Ok(XWireRequest::GetModifierMapping)
 }
 
+fn decode_get_pointer_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(
+        X_GET_POINTER_MAPPING,
+        X_GET_POINTER_MAPPING_REQ_LEN,
+        bytes.len(),
+    )?;
+    Ok(XWireRequest::GetPointerMapping)
+}
+
 fn decode_get_keyboard_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(
         X_GET_KEYBOARD_MAPPING,
@@ -163,4 +172,3 @@ fn decode_ungrab_server(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_SERVER, X_UNGRAB_SERVER_REQ_LEN, bytes.len())?;
     Ok(XWireRequest::UngrabServer)
 }
-

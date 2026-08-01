@@ -302,15 +302,25 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let hierarchy_create = match &request {
                         crate::XWireRequest::CreateWindow { packet, parent, .. } => {
                             match &packet.kind {
-                                crate::XAuthorityRequestKind::CreateWindow { window, .. } => {
-                                    Some((*window, *parent))
+                                crate::XAuthorityRequestKind::CreateWindow {
+                                    window,
+                                    geometry,
+                                    ..
+                                } => {
+                                    Some((*window, *parent, *geometry))
                                 }
                                 _ => None,
                             }
                         }
-                        crate::XWireRequest::ReparentWindow { window, parent, .. } => {
-                            Some((*window, *parent))
-                        }
+                        _ => None,
+                    };
+                    let hierarchy_reparent = match &request {
+                        crate::XWireRequest::ReparentWindow {
+                            window,
+                            parent,
+                            x,
+                            y,
+                        } => Some((*window, *parent, *x, *y)),
                         _ => None,
                     };
                     let hierarchy_restack = match &request {
@@ -320,6 +330,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             stack_mode,
                             ..
                         } => Some((*window, *sibling, *stack_mode)),
+                        _ => None,
+                    };
+                    let hierarchy_geometry = match &request {
+                        crate::XWireRequest::ConfigureWindow {
+                            window,
+                            x,
+                            y,
+                            width,
+                            height,
+                            ..
+                        } => Some((*window, *x, *y, *width, *height)),
                         _ => None,
                     };
                     let randr_selection = match &request {
@@ -369,6 +390,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
                         crate::XWireRequest::SetInputFocus { focus, .. } => Some(*focus),
+                        _ => None,
+                    };
+                    let queried_pointer_window = match &request {
+                        crate::XWireRequest::QueryPointer { window } => Some(*window),
                         _ => None,
                     };
                     let mapped_window = match &request {
@@ -481,6 +506,39 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         &mut atoms,
                         &mut properties,
                     );
+                    if let Some(window) = queried_pointer_window {
+                        let pointer = core_event_selections
+                            .lock()
+                            .map_err(|_| {
+                                X11SetupSocketError::new(
+                                    "X11 core event selection lock poisoned",
+                                )
+                            })?
+                            .query_pointer(window);
+                        if let Some(pointer) = pointer {
+                            for client_output in &mut output.outputs {
+                                if let crate::XClientOutput::Reply(
+                                    crate::XClientReply::QueryPointer {
+                                        child,
+                                        root_x,
+                                        root_y,
+                                        win_x,
+                                        win_y,
+                                        mask,
+                                        ..
+                                    },
+                                ) = client_output
+                                {
+                                    *child = pointer.child;
+                                    *root_x = pointer.root_x;
+                                    *root_y = pointer.root_y;
+                                    *win_x = pointer.win_x;
+                                    *win_y = pointer.win_y;
+                                    *mask = pointer.mask;
+                                }
+                            }
+                        }
+                    }
                     trace_selection_property_read_result(selection_property_read, &output);
                     if dri3_query && !state.has_render_device_provider() {
                         for client_output in &mut output.outputs {
@@ -544,11 +602,26 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 )?;
                             }
                         }
-                        if let Some((window, parent)) = hierarchy_create {
-                            selections.register(window, parent);
+                        if let Some((window, parent, geometry)) = hierarchy_create {
+                            selections.register(window, parent, geometry);
+                            if let Some(routing) = protocol_routing.as_ref() {
+                                routing
+                                    .register_window_parent(client, window, parent)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to register X11 window hierarchy: {error}"
+                                        ))
+                                    })?;
+                            }
+                        }
+                        if let Some((window, parent, x, y)) = hierarchy_reparent {
+                            selections.reparent(window, parent, x, y);
                         }
                         if let Some((window, sibling, mode)) = hierarchy_restack {
                             selections.restack(window, sibling, mode);
+                        }
+                        if let Some((window, x, y, width, height)) = hierarchy_geometry {
+                            selections.configure_geometry(window, x, y, width, height);
                         }
                         if let Some(window) = mapped_window
                             && output.response.as_ref().is_some_and(|response| {
@@ -563,6 +636,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         if let Some(window) = destroyed_window {
                             selections.remove(window);
                             if let Some(routing) = protocol_routing.as_ref() {
+                                routing
+                                    .remove_window_parent(client, window)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to remove X11 window hierarchy: {error}"
+                                        ))
+                                    })?;
                                 routing.remove_core_event_window(window).map_err(|error| {
                                     X11SetupSocketError::new(format!(
                                         "failed to remove core X11 event subscriptions: {error}"

@@ -709,6 +709,7 @@ pub enum XWireRequest {
         cursor: XResourceId,
     },
     GetModifierMapping,
+    GetPointerMapping,
     GetKeyboardMapping {
         first_keycode: u8,
         count: u8,
@@ -883,6 +884,7 @@ pub fn decode_x11_core_request(
         X_QUERY_EXTENSION => decode_query_extension(context, bytes),
         X_LIST_EXTENSIONS => decode_list_extensions(bytes),
         X_GET_KEYBOARD_MAPPING => decode_get_keyboard_mapping(bytes),
+        X_GET_POINTER_MAPPING => decode_get_pointer_mapping(bytes),
         X_GET_MODIFIER_MAPPING => decode_get_modifier_mapping(bytes),
         X_SOPHIA_PRESENT_MAJOR_OPCODE => decode_sophia_present(context, bytes),
         X_MIT_SHM_MAJOR_OPCODE => decode_mit_shm(context, bytes),

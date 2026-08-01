@@ -151,6 +151,7 @@ impl XServerFrontendRouteBroker {
             registry: XServerFrontendRouteRegistry {
                 clients: Arc::new(Mutex::new(BTreeMap::new())),
                 surfaces: Arc::new(Mutex::new(BTreeMap::new())),
+                window_parents: Arc::new(Mutex::new(BTreeMap::new())),
                 core_event_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 randr_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 present_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),

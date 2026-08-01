@@ -170,6 +170,7 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || 
         done
         export MOZ_ENABLE_WAYLAND=0
         export MOZ_FORCE_DISABLE_E10S=1
+        export MOZ_USE_XINPUT2=1
         export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         mkdir -p /tmp/firefox-profile
         printf '%s\n' \

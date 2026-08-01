@@ -200,8 +200,14 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     )
     .unwrap();
     assert_eq!(modifier_mapping, XWireRequest::GetModifierMapping);
-    let keyboard_mapping = decode_x11_core_request(
+    let pointer_mapping = decode_x11_core_request(
         context(namespace, 513, XByteOrder::LittleEndian),
+        &[117, 0, 1, 0],
+    )
+    .unwrap();
+    assert_eq!(pointer_mapping, XWireRequest::GetPointerMapping);
+    let keyboard_mapping = decode_x11_core_request(
+        context(namespace, 514, XByteOrder::LittleEndian),
         &[101, 0, 2, 0, 8, 4, 0, 0],
     )
     .unwrap();

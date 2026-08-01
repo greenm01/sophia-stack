@@ -6,6 +6,15 @@ use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;
 
 #[test]
+fn xi_key_selection_bypasses_core_keyboard_startup_wait() {
+    assert!(x11_keyboard_route_ready(true, true, false, false));
+    assert!(x11_keyboard_route_ready(true, false, true, false));
+    assert!(!x11_keyboard_route_ready(true, false, false, false));
+    assert!(x11_keyboard_route_ready(true, false, false, true));
+    assert!(x11_keyboard_route_ready(false, false, false, false));
+}
+
+#[test]
 fn listener_transaction_ids_are_global_across_client_workers() {
     let state = X11CoreSocketServerState::new();
     let first_worker = state.clone();
@@ -19,6 +28,96 @@ fn listener_transaction_ids_are_global_across_client_workers() {
     assert_ne!(second, third);
     assert_eq!(first.raw() + 1, second.raw());
     assert_eq!(second.raw() + 1, third.raw());
+}
+
+#[test]
+fn pointer_target_prefers_mapped_button_selecting_content_child() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let key_child = XResourceId::new(0x200002, 1);
+    let content_child = XResourceId::new(0x200003, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        top_level,
+        root,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        },
+    );
+    selections.register(
+        key_child,
+        top_level,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 80,
+        },
+    );
+    selections.register(
+        content_child,
+        top_level,
+        Rect {
+            x: 0,
+            y: 80,
+            width: 800,
+            height: 520,
+        },
+    );
+    selections.update(top_level, Some((1 << 2) | (1 << 3)), None);
+    selections.update(key_child, Some((1 << 0) | (1 << 1)), None);
+    selections.update(content_child, Some((1 << 2) | (1 << 3)), None);
+    selections.observe_mapped(top_level);
+    selections.observe_mapped(key_child);
+    selections.observe_mapped(content_child);
+
+    assert_eq!(
+        selections.selected_pointer_target(top_level, false, 100, 200),
+        Some(content_child)
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, 100, 200),
+        None
+    );
+    assert_eq!(
+        selections.pointer_event_coordinates(top_level, content_child, 100, 200),
+        (100, 120)
+    );
+}
+
+#[test]
+fn pointer_query_reports_latest_engine_routed_position_and_child() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let content_child = XResourceId::new(0x200002, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.observe_pointer(top_level, content_child, 63, 237, 61, 235, 0);
+
+    assert_eq!(
+        selections.query_pointer(root),
+        Some(XCorePointerQuery {
+            child: top_level,
+            root_x: 63,
+            root_y: 237,
+            win_x: 63,
+            win_y: 237,
+            mask: 0,
+        })
+    );
+    assert_eq!(
+        selections.query_pointer(top_level),
+        Some(XCorePointerQuery {
+            child: content_child,
+            root_x: 63,
+            root_y: 237,
+            win_x: 61,
+            win_y: 235,
+            mask: 0,
+        })
+    );
 }
 
 #[test]
@@ -39,6 +138,7 @@ fn routed_input_discards_another_clients_event() {
             .into(),
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -56,6 +156,7 @@ fn routed_input_discards_another_clients_event() {
             .into(),
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -76,6 +177,7 @@ fn routed_input_discards_another_clients_event() {
                 modifiers_after: 0,
                 time_msec: 2,
             }),
+            None,
             None,
             None,
             0,
@@ -154,6 +256,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             event: input,
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -171,6 +274,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             event: input,
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: None,
         }
@@ -207,6 +311,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             event: input,
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: None,
         })
@@ -416,6 +521,7 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
                 .into(),
                 target_window: None,
                 xi_event_type: None,
+                xi_event_window: None,
                 xi_transition_mask: 0,
                 delivery: None,
             })
@@ -456,6 +562,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             .into(),
             target_window: None,
             xi_event_type: None,
+            xi_event_window: None,
             xi_transition_mask: 0,
             delivery: Some(delivery),
         })
@@ -599,6 +706,82 @@ fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
 }
 
 #[test]
+fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
+    let namespace = NamespaceId::from_raw(11);
+    let client = XServerFrontendClientId(4);
+    let surface = SurfaceId::new(12, 1);
+    let window = XResourceId::new(0x200001, 1);
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .register_window_parent(client, window, root)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .select_xi_events(namespace, client.raw(), root, &[(1, vec![1 << 6])]);
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 3,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 3,
+                target_surface: surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerAxis {
+                    horizontal_v120: 0,
+                    vertical_v120: 120,
+                },
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    let pressed = channels.input.recv().unwrap();
+    assert_eq!(pressed.xi_event_type, Some(6));
+    assert_eq!(pressed.xi_event_window, Some(root));
+    assert!(matches!(
+        pressed.event,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Axis {
+                button: 5,
+                pressed: true,
+                horizontal_position_v120: None,
+                vertical_position_v120: Some(120),
+            },
+            ..
+        })
+    ));
+    let released = channels.input.recv().unwrap();
+    assert_eq!(released.xi_event_type, None);
+    assert_eq!(released.xi_event_window, None);
+    assert!(matches!(
+        released.event,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Axis {
+                button: 5,
+                pressed: false,
+                horizontal_position_v120: None,
+                vertical_position_v120: None,
+            },
+            ..
+        })
+    ));
+}
+
+#[test]
 fn synchronous_keyboard_grab_queues_until_allow_events() {
     let namespace = NamespaceId::from_raw(10);
     let client = XServerFrontendClientId(3);
@@ -693,6 +876,36 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
         i32::from_le_bytes(bytes[44..48].try_into().unwrap()),
         -4 << 16
     );
+    let scroll = encode_xi_device_event(
+        XByteOrder::LittleEndian,
+        8,
+        6,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Axis {
+                button: 5,
+                pressed: true,
+                horizontal_position_v120: None,
+                vertical_position_v120: Some(120),
+            },
+            surface: SurfaceId::new(1, 1),
+            root_x: 11,
+            root_y: 12,
+            event_x: 3,
+            event_y: -4,
+            state: 5,
+            time_msec: 10,
+        }),
+        XResourceId::new(0x200001, 1),
+    );
+    assert_eq!(scroll.len(), 92);
+    assert_eq!(u32::from_le_bytes(scroll[4..8].try_into().unwrap()), 15);
+    assert_eq!(u32::from_le_bytes(scroll[16..20].try_into().unwrap()), 0);
+    assert_eq!(u16::from_le_bytes(scroll[50..52].try_into().unwrap()), 1);
+    assert_eq!(&scroll[80..84], &[1 << 1, 0, 0, 0]);
+    assert_eq!(
+        i64::from_le_bytes(scroll[84..92].try_into().unwrap()),
+        i64::from(120) << 32
+    );
     let crossing = encode_xi_crossing_event(
         XByteOrder::LittleEndian,
         8,
@@ -719,7 +932,16 @@ fn keyboard_focus_propagates_only_through_its_ancestor_chain() {
     let mut selections = XCoreEventSelectionState::default();
     let parent = XResourceId::new(0x200007, 1);
     let child = XResourceId::new(0x200001, 1);
-    selections.register(child, parent);
+    selections.register(
+        child,
+        parent,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        },
+    );
     assert_eq!(selections.selected_keyboard_target(child), None);
     selections.update(parent, Some(1), None);
 
@@ -749,7 +971,16 @@ fn root_focus_uses_mapped_stacking_order_and_restacking() {
     let upper = XResourceId::new(0x200002, 1);
     let mut selections = XCoreEventSelectionState::default();
     for window in [lower, upper] {
-        selections.register(window, root);
+        selections.register(
+            window,
+            root,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+        );
         selections.update(window, Some(1), None);
         selections.observe_mapped(window);
     }

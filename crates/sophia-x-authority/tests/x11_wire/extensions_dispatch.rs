@@ -775,8 +775,28 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
     .encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 1);
 
-    let devices = dispatch_x11_wire_request(
+    let xi_version = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
+        XWireRequest::XiQueryVersion {
+            major_version: 2,
+            minor_version: 3,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &xi_version[0][8..10]),
+        2
+    );
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &xi_version[0][10..12]),
+        1
+    );
+
+    let devices = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
         XWireRequest::XiQueryDevice { device_id: 0 },
         &mut runtime,
         &mut atoms,
@@ -784,7 +804,23 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
     )
     .encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &devices[0][8..10]), 2);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &devices[0][38..40]), 3);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &devices[0][38..40]), 5);
+    let horizontal_scroll = [
+        3, 0, 6, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0,
+    ];
+    let vertical_scroll = [
+        3, 0, 6, 0, 2, 0, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0,
+    ];
+    assert!(
+        devices[0]
+            .windows(horizontal_scroll.len())
+            .any(|window| window == horizontal_scroll)
+    );
+    assert!(
+        devices[0]
+            .windows(vertical_scroll.len())
+            .any(|window| window == vertical_scroll)
+    );
     assert!(devices[0].len() > 128);
 }
 

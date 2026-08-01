@@ -221,6 +221,33 @@ fn x11_dispatch_reports_core_modifier_mapping() {
 }
 
 #[test]
+fn x11_dispatch_reports_seven_button_identity_pointer_mapping() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 524, XByteOrder::LittleEndian),
+        &[117, 0, 1, 0],
+    )
+    .unwrap();
+
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 117),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0].len(), 40);
+    assert_eq!(encoded[0][1], 7);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 2);
+    assert_eq!(&encoded[0][32..39], &[1, 2, 3, 4, 5, 6, 7]);
+}
+
+#[test]
 fn x11_dispatch_reports_us_keyboard_mapping_for_minimal_server() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

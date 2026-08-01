@@ -32,6 +32,7 @@ fn encode_xi_device_event(
             pointer.time_msec,
             match pointer.kind {
                 XAuthorityPointerEventKind::Button { button, .. } => u32::from(button),
+                XAuthorityPointerEventKind::Axis { .. } => 0,
                 XAuthorityPointerEventKind::Motion => 0,
             },
             pointer.root_x,
@@ -45,7 +46,6 @@ fn encode_xi_device_event(
     out[0] = 35;
     out[1] = crate::X_INPUT_MAJOR_OPCODE;
     write_xi_u16(byte_order, &mut out[2..4], sequence);
-    write_xi_u32(byte_order, &mut out[4..8], 12);
     write_xi_u16(byte_order, &mut out[8..10], event_type);
     write_xi_u16(byte_order, &mut out[10..12], device);
     write_xi_u32(byte_order, &mut out[12..16], time);
@@ -78,6 +78,39 @@ fn encode_xi_device_event(
     );
     write_xi_u16(byte_order, &mut out[52..54], device);
     write_xi_u32(byte_order, &mut out[72..76], u32::from(state & 0xff));
+    if let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+        kind:
+            XAuthorityPointerEventKind::Axis {
+                horizontal_position_v120,
+                vertical_position_v120,
+                ..
+            },
+        ..
+    }) = event
+        && (horizontal_position_v120.is_some() || vertical_position_v120.is_some())
+    {
+        write_xi_u16(byte_order, &mut out[50..52], 1);
+        let mut mask = 0u8;
+        if horizontal_position_v120.is_some() {
+            mask |= 1;
+        }
+        if vertical_position_v120.is_some() {
+            mask |= 1 << 1;
+        }
+        out.extend_from_slice(&[mask, 0, 0, 0]);
+        for position in [horizontal_position_v120, vertical_position_v120]
+            .into_iter()
+            .flatten()
+        {
+            let fixed = i64::from(position) << 32;
+            match byte_order {
+                XByteOrder::LittleEndian => out.extend_from_slice(&fixed.to_le_bytes()),
+                XByteOrder::BigEndian => out.extend_from_slice(&fixed.to_be_bytes()),
+            }
+        }
+    }
+    let length = u32::try_from((out.len() - 32) / 4).unwrap_or(u32::MAX);
+    write_xi_u32(byte_order, &mut out[4..8], length);
     out
 }
 
@@ -174,6 +207,7 @@ type X11ReceivedInputEvent = (
     XAuthorityInputEvent,
     Option<XResourceId>,
     Option<u16>,
+    Option<XResourceId>,
     u16,
     Option<XAuthorityInputDeliveryId>,
 );
@@ -187,13 +221,14 @@ impl X11InputEventReceiver {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
-                .map(|event| (event, None, None, 0, None)),
+                .map(|event| (event, None, None, None, 0, None)),
             Self::Routed { receiver, .. } => {
                 match receiver.recv_timeout(Duration::from_millis(10)) {
                     Ok(route) if route.client == client => Ok((
                         route.event,
                         route.target_window,
                         route.xi_event_type,
+                        route.xi_event_window,
                         route.xi_transition_mask,
                         route.delivery,
                     )),
@@ -310,39 +345,64 @@ impl XServerFrontendRouteRegistry {
         delivery: Option<XAuthorityInputDeliveryId>,
     ) -> Result<(), XServerFrontendRouteError> {
         let (xi_device, selected_type) = match event {
-            XAuthorityInputEvent::Key(key) => (3, if key.pressed { 2 } else { 3 }),
+            XAuthorityInputEvent::Key(key) => (3, Some(if key.pressed { 2 } else { 3 })),
             XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                 kind: XAuthorityPointerEventKind::Button { pressed, .. },
                 ..
-            }) => (2, if pressed { 4 } else { 5 }),
-            XAuthorityInputEvent::Pointer(_) => (2, 6),
+            }) => (2, Some(if pressed { 4 } else { 5 })),
+            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                kind:
+                    XAuthorityPointerEventKind::Axis {
+                        horizontal_position_v120,
+                        vertical_position_v120,
+                        ..
+                    },
+                ..
+            }) => (
+                2,
+                (horizontal_position_v120.is_some() || vertical_position_v120.is_some())
+                    .then_some(6),
+            ),
+            XAuthorityInputEvent::Pointer(_) => (2, Some(6)),
         };
         let event_window = target_window.unwrap_or(surface_window);
-        let xi_event_type = self
-            .input_authority
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .xi_event_selected(
-                namespace,
-                client.raw(),
-                event_window,
-                xi_device,
-                selected_type,
-            )
-            .then_some(selected_type);
+        let event_ancestry = self.window_ancestry(client, event_window)?;
+        let xi_event_window = if let Some(selected_type) = selected_type {
+            let authority = self
+                .input_authority
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+            event_ancestry
+                .iter()
+                .find(|window| {
+                    authority.xi_event_selected(
+                        namespace,
+                        client.raw(),
+                        **window,
+                        xi_device,
+                        selected_type,
+                    )
+                })
+                .copied()
+        } else {
+            None
+        };
+        let xi_event_type = xi_event_window.and(selected_type);
         let transition_types: &[u16] = if xi_device == 3 { &[9, 10] } else { &[7, 8] };
         let authority = self
             .input_authority
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
         let xi_transition_mask = transition_types.iter().fold(0u16, |mask, event_type| {
-            if authority.xi_event_selected(
-                namespace,
-                client.raw(),
-                event_window,
-                xi_device,
-                *event_type,
-            ) {
+            if event_ancestry.iter().any(|window| {
+                authority.xi_event_selected(
+                    namespace,
+                    client.raw(),
+                    *window,
+                    xi_device,
+                    *event_type,
+                )
+            }) {
                 mask | (1 << event_type)
             } else {
                 mask
@@ -353,6 +413,7 @@ impl XServerFrontendRouteRegistry {
             event,
             target_window,
             xi_event_type,
+            xi_event_window,
             xi_transition_mask,
             delivery,
         })

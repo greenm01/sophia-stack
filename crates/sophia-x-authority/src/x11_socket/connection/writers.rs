@@ -262,12 +262,14 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
-                    core_event_selections
+                    let mut selections = core_event_selections
                         .lock()
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
-                        .observe_mapped(window);
+                        })?;
+                    selections.update_geometry(window, geometry);
+                    selections.observe_mapped(window);
+                    drop(selections);
                     x11_surface_geometry_records(
                         byte_order,
                         event_sequence,
@@ -315,6 +317,12 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
+                    core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .update_geometry(window, geometry);
                     x11_surface_geometry_records(
                         byte_order,
                         event_sequence,
@@ -640,7 +648,14 @@ fn spawn_x11_input_event_writer(
         let mut focus_sent_to = None;
         let mut pointer_sent_to = None;
         while !writer_stop.load(Ordering::Acquire) {
-            let (event, target_window, xi_event_type, xi_transition_mask, delivery) =
+            let (
+                event,
+                target_window,
+                xi_event_type,
+                xi_event_window,
+                xi_transition_mask,
+                delivery,
+            ) =
                 match receiver.recv_timeout(client) {
                     Ok(event) => event,
                     Err(RecvTimeoutError::Timeout) => continue,
@@ -664,11 +679,12 @@ fn spawn_x11_input_event_writer(
                 let routed_fallback =
                     target_window.map(|window| selections.keyboard_target(window));
                 drop(selections);
-                if !matches!(event, XAuthorityInputEvent::Key(_))
-                    || focused_selected.is_some()
-                    || routed_selected.is_some()
-                    || std::time::Instant::now() >= keyboard_deadline
-                {
+                if x11_keyboard_route_ready(
+                    matches!(event, XAuthorityInputEvent::Key(_)),
+                    xi_event_type.is_some(),
+                    focused_selected.is_some() || routed_selected.is_some(),
+                    std::time::Instant::now() >= keyboard_deadline,
+                ) {
                     break (
                         focused_selected.unwrap_or(focused_fallback),
                         routed_selected.or(routed_fallback),
@@ -697,10 +713,13 @@ fn spawn_x11_input_event_writer(
                 );
             }
             let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-            let delivered_window = match event {
-                XAuthorityInputEvent::Key(_) => routed_keyboard_window.unwrap_or(focused_window),
-                XAuthorityInputEvent::Pointer(pointer) => target_window.unwrap_or(
-                    *surface_windows
+            let (delivered_window, pointer_surface_window) = match event {
+                XAuthorityInputEvent::Key(_) => {
+                    (routed_keyboard_window.unwrap_or(focused_window), None)
+                }
+                XAuthorityInputEvent::Pointer(pointer) => {
+                    let surface_window = target_window.unwrap_or(
+                        *surface_windows
                         .lock()
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 surface/window map lock poisoned")
@@ -709,7 +728,37 @@ fn spawn_x11_input_event_writer(
                         .ok_or_else(|| {
                             X11SetupSocketError::new("X11 pointer target surface is unknown")
                         })?,
-                ),
+                    );
+                    let delivered_window = core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .selected_pointer_target(
+                            surface_window,
+                            matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
+                            pointer.event_x,
+                            pointer.event_y,
+                        )
+                        .unwrap_or(surface_window);
+                    (delivered_window, Some(surface_window))
+                }
+            };
+            let (wire_event_x, wire_event_y) = match (event, pointer_surface_window) {
+                (XAuthorityInputEvent::Pointer(pointer), Some(surface_window)) => {
+                    core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .pointer_event_coordinates(
+                            surface_window,
+                            delivered_window,
+                            pointer.event_x,
+                            pointer.event_y,
+                        )
+                }
+                _ => (0, 0),
             };
             let delivered_focus = delivered_window;
             if matches!(event, XAuthorityInputEvent::Key(_))
@@ -731,43 +780,31 @@ fn spawn_x11_input_event_writer(
                     },
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                         kind: XAuthorityPointerEventKind::Motion,
-                        surface,
+                        surface: _,
                         root_x,
                         root_y,
-                        event_x,
-                        event_y,
+                        event_x: _,
+                        event_y: _,
                         state,
                         time_msec,
                     }) => XClientEvent::PointerMotion {
                         sequence: 0,
                         time: time_msec,
                         root,
-                        event: target_window.unwrap_or(
-                            *surface_windows
-                                .lock()
-                                .map_err(|_| {
-                                    X11SetupSocketError::new("X11 surface/window map lock poisoned")
-                                })?
-                                .get(&surface)
-                                .ok_or_else(|| {
-                                    X11SetupSocketError::new(
-                                        "X11 pointer target surface is unknown",
-                                    )
-                                })?,
-                        ),
+                        event: delivered_window,
                         root_x,
                         root_y,
-                        event_x,
-                        event_y,
+                        event_x: wire_event_x,
+                        event_y: wire_event_y,
                         state,
                     },
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                         kind: XAuthorityPointerEventKind::Button { button, pressed },
-                        surface,
+                        surface: _,
                         root_x,
                         root_y,
-                        event_x,
-                        event_y,
+                        event_x: _,
+                        event_y: _,
                         state,
                         time_msec,
                     }) => XClientEvent::PointerButton {
@@ -776,23 +813,35 @@ fn spawn_x11_input_event_writer(
                         button,
                         time: time_msec,
                         root,
-                        event: target_window.unwrap_or(
-                            *surface_windows
-                                .lock()
-                                .map_err(|_| {
-                                    X11SetupSocketError::new("X11 surface/window map lock poisoned")
-                                })?
-                                .get(&surface)
-                                .ok_or_else(|| {
-                                    X11SetupSocketError::new(
-                                        "X11 pointer target surface is unknown",
-                                    )
-                                })?,
-                        ),
+                        event: delivered_window,
                         root_x,
                         root_y,
-                        event_x,
-                        event_y,
+                        event_x: wire_event_x,
+                        event_y: wire_event_y,
+                        state,
+                    },
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind: XAuthorityPointerEventKind::Axis {
+                            button, pressed, ..
+                        },
+                        surface: _,
+                        root_x,
+                        root_y,
+                        event_x: _,
+                        event_y: _,
+                        state,
+                        time_msec,
+                    }) => XClientEvent::PointerButton {
+                        sequence: 0,
+                        pressed,
+                        button,
+                        time: time_msec,
+                        root,
+                        event: delivered_window,
+                        root_x,
+                        root_y,
+                        event_x: wire_event_x,
+                        event_y: wire_event_y,
                         state,
                     },
                 },
@@ -815,6 +864,66 @@ fn spawn_x11_input_event_writer(
                     _ => None,
                 };
                 if let Some((previous, out_type, in_type)) = transition {
+                    if let XAuthorityInputEvent::Pointer(pointer) = event {
+                        let selections = core_event_selections.lock().map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?;
+                        if let Some(previous) = previous
+                            && selections.crossing_selected(previous, false)
+                        {
+                            stream
+                                .write_all(&encode_x_client_event(
+                                    byte_order,
+                                    XClientEvent::PointerCrossing {
+                                        sequence,
+                                        entered: false,
+                                        detail: 3,
+                                        time: pointer.time_msec,
+                                        root,
+                                        event: previous,
+                                        root_x: pointer.root_x,
+                                        root_y: pointer.root_y,
+                                        event_x: wire_event_x,
+                                        event_y: wire_event_y,
+                                        state: pointer.state,
+                                        mode: 0,
+                                        focus: true,
+                                    },
+                                ))
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to write X11 LeaveNotify event: {error}"
+                                    ))
+                                })?;
+                        }
+                        if selections.crossing_selected(delivered_window, true) {
+                            stream
+                                .write_all(&encode_x_client_event(
+                                    byte_order,
+                                    XClientEvent::PointerCrossing {
+                                        sequence,
+                                        entered: true,
+                                        detail: 3,
+                                        time: pointer.time_msec,
+                                        root,
+                                        event: delivered_window,
+                                        root_x: pointer.root_x,
+                                        root_y: pointer.root_y,
+                                        event_x: wire_event_x,
+                                        event_y: wire_event_y,
+                                        state: pointer.state,
+                                        mode: 0,
+                                        focus: true,
+                                    },
+                                ))
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to write X11 EnterNotify event: {error}"
+                                    ))
+                                })?;
+                        }
+                        drop(selections);
+                    }
                     if let Some(previous) = previous
                         && xi_transition_mask & (1 << out_type) != 0
                     {
@@ -878,6 +987,50 @@ fn spawn_x11_input_event_writer(
                         ))
                     }
                 })?;
+                if let (
+                    Some(surface_window),
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind,
+                        root_x,
+                        root_y,
+                        event_x,
+                        event_y,
+                        state,
+                        ..
+                    }),
+                ) = (pointer_surface_window, event)
+                {
+                    let mask = match kind {
+                        XAuthorityPointerEventKind::Motion => state,
+                        XAuthorityPointerEventKind::Button { button, pressed }
+                        | XAuthorityPointerEventKind::Axis {
+                            button, pressed, ..
+                        } => {
+                            let button_mask = (button <= 5)
+                                .then_some(1_u16 << (u32::from(button) + 7))
+                                .unwrap_or(0);
+                            if pressed {
+                                state | button_mask
+                            } else {
+                                state & !button_mask
+                            }
+                        }
+                    };
+                    core_event_selections
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 core event selection lock poisoned")
+                        })?
+                        .observe_pointer(
+                            surface_window,
+                            delivered_window,
+                            root_x,
+                            root_y,
+                            event_x,
+                            event_y,
+                            mask,
+                        );
+                }
                 if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                     tracing::trace!(
                         "sophia_x11_socket_write schema=1 writer=input bytes={} payload_redacted=true",
@@ -916,12 +1069,13 @@ fn spawn_x11_input_event_writer(
                     }
                 }
                 if let Some(event_type) = xi_event_type {
+                    let xi_window = xi_event_window.unwrap_or(delivered_window);
                     let generic = encode_xi_device_event(
                         byte_order,
                         sequence,
                         event_type,
                         event,
-                        delivered_window,
+                        xi_window,
                     );
                     stream.write_all(&generic).map_err(|error| {
                         X11SetupSocketError::new(format!(
@@ -955,4 +1109,14 @@ fn spawn_x11_input_event_writer(
         Ok(())
     });
     Ok(X11InputEventWriter { stop, thread })
+}
+
+#[cfg(unix)]
+fn x11_keyboard_route_ready(
+    is_key: bool,
+    xi_selected: bool,
+    core_selected: bool,
+    deadline_elapsed: bool,
+) -> bool {
+    !is_key || xi_selected || core_selected || deadline_elapsed
 }

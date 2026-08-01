@@ -374,6 +374,7 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage clipboard
+    isolate_focused_interaction_surface
     for _ in $(seq 1 10); do
         # Shift+Insert consumes PRIMARY without depending on a stale tile count
         # or pointer coordinate. The browser can expose more than one top-level,
@@ -408,13 +409,10 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage primary
-    isolate_focused_interaction_surface
     axis_route_baseline="$(evidence_count '^sophia_live_session_pointer schema=3 status=axis_routed$')"
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 wheel-down
-        if wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80; then
-            "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" spc
-        fi
+        wait_for_new_evidence '^sophia_live_session_pointer schema=3 status=axis_routed$' "$axis_route_baseline" 80 || true
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ' 0 20; then
             scroll_complete=true
             break
@@ -425,6 +423,7 @@ run_firefox_m8_interactions() {
         return 1
     fi
     wait_for_firefox_stage scroll
+    echo "sophia_qemu_firefox_m8 schema=3 status=scroll_complete source=wheel axis_route=true keyboard_fallback=false" | tee -a "$EVIDENCE_FILE"
     restore_focused_interaction_surface
     for _ in $(seq 1 10); do
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+spc

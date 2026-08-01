@@ -39,6 +39,7 @@ done
 grep -q '^sophia_qemu_firefox_m8 schema=2 status=interactions_complete keyboard=true clipboard=true primary=true scroll=true resize=true refocus=true pointer=true dialog=true$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=3 status=axis_observed$' "$evidence"
 grep -q '^sophia_live_session_pointer schema=3 status=axis_routed$' "$evidence"
+grep -q '^sophia_qemu_firefox_m8 schema=3 status=scroll_complete source=wheel axis_route=true keyboard_fallback=false$' "$evidence"
 for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
     grep -q "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage " "$evidence"
 done

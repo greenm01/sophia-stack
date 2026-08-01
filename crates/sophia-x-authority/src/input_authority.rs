@@ -280,7 +280,7 @@ impl XInputAuthorityState {
         device: u16,
         event_type: u16,
     ) -> bool {
-        [device, 1].into_iter().any(|selected_device| {
+        [device, 0, 1].into_iter().any(|selected_device| {
             self.xi_selections
                 .get(&(namespace, owner, window, selected_device))
                 .is_some_and(|mask| {

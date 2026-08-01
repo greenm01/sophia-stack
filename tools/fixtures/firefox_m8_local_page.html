@@ -52,10 +52,6 @@
     if (stage === 0 && event.target.value === 'sophia') advance('keyboard complete');
   });
   addEventListener('keydown', event => {
-    if (stage === 3 && event.key === ' ') {
-      advance('scroll complete');
-      return;
-    }
     if (stage === 5 && event.key === 'r') {
       advance('refocus complete');
       return;

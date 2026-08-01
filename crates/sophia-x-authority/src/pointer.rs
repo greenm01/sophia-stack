@@ -1,9 +1,22 @@
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct XCorePointerMapper {
     button_state: u16,
+    horizontal_scroll_v120: i32,
+    vertical_scroll_v120: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XScrollAxisUpdate {
+    pub button: u8,
+    pub horizontal_position_v120: Option<i32>,
+    pub vertical_position_v120: Option<i32>,
 }
 
 impl XCorePointerMapper {
+    const fn core_button_mask(button: u8) -> u16 {
+        if button <= 5 { 1u16 << (button + 7) } else { 0 }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -42,5 +55,31 @@ impl XCorePointerMapper {
         } else {
             None
         }
+    }
+
+    pub fn map_axis(
+        &mut self,
+        horizontal_v120: i32,
+        vertical_v120: i32,
+    ) -> Option<XScrollAxisUpdate> {
+        let button = Self::map_axis_to_button(horizontal_v120, vertical_v120)?;
+        let horizontal_position_v120 = (horizontal_v120 != 0).then(|| {
+            self.horizontal_scroll_v120 =
+                self.horizontal_scroll_v120.saturating_add(horizontal_v120);
+            self.horizontal_scroll_v120
+        });
+        let vertical_position_v120 = (vertical_v120 != 0).then(|| {
+            self.vertical_scroll_v120 = self.vertical_scroll_v120.saturating_add(vertical_v120);
+            self.vertical_scroll_v120
+        });
+        Some(XScrollAxisUpdate {
+            button,
+            horizontal_position_v120,
+            vertical_position_v120,
+        })
+    }
+
+    pub const fn axis_release_state(self, button: u8) -> u16 {
+        self.button_state | Self::core_button_mask(button)
     }
 }

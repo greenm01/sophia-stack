@@ -121,6 +121,21 @@ pub enum XClientEvent {
         event_y: i16,
         state: u16,
     },
+    PointerCrossing {
+        sequence: u16,
+        entered: bool,
+        detail: u8,
+        time: XTimestamp,
+        root: XResourceId,
+        event: XResourceId,
+        root_x: i16,
+        root_y: i16,
+        event_x: i16,
+        event_y: i16,
+        state: u16,
+        mode: u8,
+        focus: bool,
+    },
     Expose {
         sequence: u16,
         window: XResourceId,
@@ -578,6 +593,10 @@ pub enum XClientReply {
         keycodes_per_modifier: u8,
         keycodes: Vec<u8>,
     },
+    GetPointerMapping {
+        sequence: u16,
+        mapping: Vec<u8>,
+    },
     GetKeyboardMapping {
         sequence: u16,
         keysyms_per_keycode: u8,
@@ -658,6 +677,13 @@ pub enum XXiDeviceClass {
         number: u16,
         min: i64,
         max: i64,
+    },
+    Scroll {
+        source_id: u16,
+        number: u16,
+        scroll_type: u16,
+        flags: u32,
+        increment: i64,
     },
 }
 

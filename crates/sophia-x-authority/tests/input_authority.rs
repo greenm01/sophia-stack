@@ -78,8 +78,15 @@ fn xi2_selection_masks_are_device_scoped_and_disconnect_cleaned() {
     let namespace = NamespaceId::from_raw(3);
     let window = XResourceId::new(0x100, 1);
     let mut state = XInputAuthorityState::default();
-    state.select_xi_events(namespace, 7, window, &[(1, vec![1 << 6])]);
+    state.select_xi_events(
+        namespace,
+        7,
+        window,
+        &[(0, vec![1 << 6]), (1, vec![1 << 4]), (2, vec![1 << 5])],
+    );
     assert!(state.xi_event_selected(namespace, 7, window, 2, 6));
+    assert!(state.xi_event_selected(namespace, 7, window, 2, 4));
+    assert!(state.xi_event_selected(namespace, 7, window, 2, 5));
     assert!(!state.xi_event_selected(namespace, 8, window, 2, 6));
     state.cleanup_owner(7);
     assert!(!state.xi_event_selected(namespace, 7, window, 2, 6));

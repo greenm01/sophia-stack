@@ -8,6 +8,7 @@ fn encode_core_late_reply(
             | XClientReply::GetInputFocus { .. }
             | XClientReply::QueryPointer { .. }
             | XClientReply::GetModifierMapping { .. }
+            | XClientReply::GetPointerMapping { .. }
             | XClientReply::GetKeyboardMapping { .. }
             | XClientReply::GetKeyboardControl { .. }
             | XClientReply::TranslateCoordinates { .. }
@@ -80,6 +81,20 @@ fn encode_core_late_reply(
                     out[1] = keycodes_per_modifier;
                     out[X_CLIENT_OUTPUT_RECORD_LEN..X_CLIENT_OUTPUT_RECORD_LEN + keycodes.len()]
                         .copy_from_slice(&keycodes);
+                    out
+                }
+                XClientReply::GetPointerMapping { sequence, mapping } => {
+                    let padded_mapping_len = padded_len(mapping.len());
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + padded_mapping_len];
+                    write_reply_header(
+                        byte_order,
+                        &mut out[..X_CLIENT_OUTPUT_RECORD_LEN],
+                        sequence,
+                        u32::try_from(padded_mapping_len / 4).unwrap_or(0),
+                    );
+                    out[1] = u8::try_from(mapping.len()).unwrap_or(0);
+                    out[X_CLIENT_OUTPUT_RECORD_LEN..X_CLIENT_OUTPUT_RECORD_LEN + mapping.len()]
+                        .copy_from_slice(&mapping);
                     out
                 }
                 XClientReply::GetKeyboardMapping {

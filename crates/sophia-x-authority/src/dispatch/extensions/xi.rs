@@ -132,7 +132,7 @@ fn dispatch_x_input_request(
                     outputs: vec![XClientOutput::Reply(XClientReply::XiQueryVersion {
                         sequence: context.sequence,
                         major_version: 2,
-                        minor_version: 0,
+                        minor_version: 1,
                     })],
                     metadata_candidates: Vec::new(),
                 },
@@ -145,7 +145,7 @@ fn dispatch_x_input_request(
                         classes: vec![
                             XXiDeviceClass::Button {
                                 source_id: 2,
-                                button_count: 5,
+                                button_count: 7,
                             },
                             XXiDeviceClass::Valuator {
                                 source_id: 2,
@@ -158,6 +158,20 @@ fn dispatch_x_input_request(
                                 number: 1,
                                 min: 0,
                                 max: i64::from(u16::MAX) << 32,
+                            },
+                            XXiDeviceClass::Scroll {
+                                source_id: 2,
+                                number: 0,
+                                scroll_type: 2,
+                                flags: 1 << 1,
+                                increment: i64::from(120) << 32,
+                            },
+                            XXiDeviceClass::Scroll {
+                                source_id: 2,
+                                number: 1,
+                                scroll_type: 1,
+                                flags: 1 << 1,
+                                increment: i64::from(120) << 32,
                             },
                         ],
                     };

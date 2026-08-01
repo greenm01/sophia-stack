@@ -151,6 +151,17 @@ fn protocol_neutral_axes_map_to_x11_core_scroll_buttons_at_the_frontend() {
     assert_eq!(XCorePointerMapper::map_axis_to_button(-120, 0), Some(6));
     assert_eq!(XCorePointerMapper::map_axis_to_button(120, 0), Some(7));
     assert_eq!(XCorePointerMapper::map_axis_to_button(0, 0), None);
+
+    let mut pointer = XCorePointerMapper::new();
+    let first = pointer.map_axis(0, 120).unwrap();
+    assert_eq!(first.button, 5);
+    assert_eq!(first.horizontal_position_v120, None);
+    assert_eq!(first.vertical_position_v120, Some(120));
+    assert_eq!(pointer.axis_release_state(first.button), 1 << 12);
+    let second = pointer.map_axis(-120, 120).unwrap();
+    assert_eq!(second.button, 5);
+    assert_eq!(second.horizontal_position_v120, Some(-120));
+    assert_eq!(second.vertical_position_v120, Some(240));
 }
 
 #[test]

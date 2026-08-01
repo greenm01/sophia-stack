@@ -10,6 +10,7 @@ fn dispatch_core_input_discovery_request(
             XWireRequest::GetInputFocus
             | XWireRequest::SetInputFocus { .. }
             | XWireRequest::GetModifierMapping
+            | XWireRequest::GetPointerMapping
             | XWireRequest::GetKeyboardMapping { .. }
             | XWireRequest::GetKeyboardControl
             | XWireRequest::Bell
@@ -86,6 +87,14 @@ fn dispatch_core_input_discovery_request(
                         sequence: context.sequence,
                         keycodes_per_modifier: 2,
                         keycodes: vec![50, 62, 66, 0, 37, 105, 64, 108, 77, 0, 0, 0, 133, 134, 0, 0],
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
+                XWireRequest::GetPointerMapping => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Reply(XClientReply::GetPointerMapping {
+                        sequence: context.sequence,
+                        mapping: vec![1, 2, 3, 4, 5, 6, 7],
                     })],
                     metadata_candidates: Vec::new(),
                 },
