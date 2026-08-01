@@ -211,7 +211,7 @@
         )
         .into());
     }
-    if config.firefox_m8_proof {
+    if config.firefox_proof_requested() {
         if !firefox_m8_proof.complete()
             || selection_owner_changes < 2
             || selection_conversions < 2
@@ -230,6 +230,20 @@
             firefox_m8_proof.completed_stage,
             selection_owner_changes,
             selection_conversions,
+        );
+    }
+    if config.firefox_m10_proof {
+        if !firefox_m10_kitty_proof.complete() {
+            return Err(format!(
+                "Firefox M10 Kitty proof incomplete: checkpoints={}/{}",
+                firefox_m10_kitty_proof.completed(),
+                FirefoxM10KittyProof::CHECKPOINTS.len(),
+            )
+            .into());
+        }
+        println!(
+            "sophia_firefox_m10 schema=1 status=complete kitty_checkpoints={} content=redacted",
+            firefox_m10_kitty_proof.completed(),
         );
     }
     if config.inject_surface_resize.is_some() && !resize_proof_complete {

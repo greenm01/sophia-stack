@@ -2,4 +2,4 @@
 set -euo pipefail
 
 RELEASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "$RELEASE_DIR/bin/sophia-session" --firefox-m8-proof "$@"
+exec "$RELEASE_DIR/bin/sophia-session" --firefox-m10-proof "$@"

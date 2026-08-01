@@ -94,6 +94,7 @@ struct PersistentXtermSessionConfig {
     m4_reject_first_present: bool,
     m4_diagnose_first_mixed_export: bool,
     firefox_m8_proof: bool,
+    firefox_m10_proof: bool,
 }
 
 impl PersistentXtermSessionConfig {
@@ -407,9 +408,15 @@ impl PersistentXtermSessionConfig {
             .iter()
             .any(|arg| arg == "--m4-diagnose-first-mixed-export");
         let firefox_m8_proof = args.iter().any(|arg| arg == "--firefox-m8-proof");
-        if firefox_m8_proof && (!normal_session || applications.firefox.is_none()) {
+        let firefox_m10_proof = args.iter().any(|arg| arg == "--firefox-m10-proof");
+        if firefox_m8_proof && firefox_m10_proof {
+            return Err("select only one Firefox proof generation".into());
+        }
+        if (firefox_m8_proof || firefox_m10_proof)
+            && (!normal_session || applications.firefox.is_none())
+        {
             return Err(
-                "--firefox-m8-proof requires normal session mode and a Firefox action mapping"
+                "Firefox proof mode requires normal session mode and a Firefox action mapping"
                     .into(),
             );
         }
@@ -599,6 +606,7 @@ impl PersistentXtermSessionConfig {
             m4_reject_first_present,
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
+            firefox_m10_proof,
         })
     }
 
@@ -698,6 +706,10 @@ impl PersistentXtermSessionConfig {
             .stderr(Stdio::inherit());
         Ok(command.spawn()?)
     }
+
+    fn firefox_proof_requested(&self) -> bool {
+        self.firefox_m8_proof || self.firefox_m10_proof
+    }
 }
 
 #[derive(Default)]
@@ -705,6 +717,49 @@ struct FirefoxM8StageProof {
     baseline_title_bytes: [Option<usize>; 16],
     active_residue: Option<usize>,
     completed_stage: usize,
+}
+
+#[derive(Default)]
+struct FirefoxM10KittyProof {
+    observed: [bool; Self::CHECKPOINTS.len()],
+}
+
+impl FirefoxM10KittyProof {
+    const CHECKPOINTS: [(usize, &'static str, &'static str); 6] = [
+        (193, "a", "before"),
+        (194, "b", "before"),
+        (211, "a", "after_normal_close"),
+        (212, "b", "after_normal_close"),
+        (229, "a", "after_forced_close"),
+        (230, "b", "after_forced_close"),
+    ];
+
+    fn observe(
+        &mut self,
+        property_name: &str,
+        byte_len: usize,
+    ) -> Option<(&'static str, &'static str)> {
+        if property_name != "_NET_WM_NAME" {
+            return None;
+        }
+        let (index, (_, terminal, checkpoint)) = Self::CHECKPOINTS
+            .iter()
+            .enumerate()
+            .find(|(_, (expected, _, _))| *expected == byte_len)?;
+        if self.observed[index] {
+            return None;
+        }
+        self.observed[index] = true;
+        Some((*terminal, *checkpoint))
+    }
+
+    fn complete(&self) -> bool {
+        self.observed.iter().all(|observed| *observed)
+    }
+
+    fn completed(&self) -> usize {
+        self.observed.iter().filter(|observed| **observed).count()
+    }
 }
 
 

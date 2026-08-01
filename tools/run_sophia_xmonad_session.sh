@@ -14,6 +14,13 @@ REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
+FIREFOX_M10_PROOF=false
+for argument in "$@"; do
+    if [[ "$argument" == --firefox-m10-proof ]]; then
+        FIREFOX_M10_PROOF=true
+        break
+    fi
+done
 if [[ "$SESSION_PROFILE" != standalone
     && "$SESSION_PROFILE" != xmonad
     && "$SESSION_PROFILE" != native
@@ -65,6 +72,10 @@ WATCHDOG_TRIGGERED_FILE="$STATE_DIR/session-watchdog.triggered"
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
+firefox_m10_probe_dir=""
+if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+    firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
+fi
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"
 [[ ! -f "$LIFECYCLE_LOG" ]] || mv -f "$LIFECYCLE_LOG" "$LIFECYCLE_LOG.previous"
@@ -461,9 +472,17 @@ else
         --session-app-arg=terminal=linux_display_server=x11
         --session-app-arg=terminal=--override
         --session-app-arg=terminal=background_opacity=1
-        --session-app-arg=terminal=--title
-        "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
     )
+    if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+        session_args+=(
+            "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_kitty_probe.sh"
+        )
+    else
+        session_args+=(
+            --session-app-arg=terminal=--title
+            "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
+        )
+    fi
 fi
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     session_args+=(
@@ -512,6 +531,11 @@ session_environment=(
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
     "SOPHIA_SESSION_TTY=$tty_name"
 )
+if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+    session_environment+=(
+        "SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR=$firefox_m10_probe_dir"
+    )
+fi
 if [[ "${SOPHIA_SESSION_VERBOSE_TRACE:-false}" == true ]]; then
     session_environment+=(
         SOPHIA_LIVE_SESSION_DIAGNOSTIC=1

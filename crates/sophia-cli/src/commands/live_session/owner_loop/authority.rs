@@ -94,7 +94,7 @@
                     .saturating_add(batch.expected_protocol_errors.len());
                 if batch.selection_owner_change {
                     selection_owner_changes = selection_owner_changes.saturating_add(1);
-                    if config.firefox_m8_proof {
+                    if config.firefox_proof_requested() {
                         println!(
                             "sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count={selection_owner_changes} content=redacted"
                         );
@@ -102,13 +102,13 @@
                 }
                 if batch.selection_conversion {
                     selection_conversions = selection_conversions.saturating_add(1);
-                    if config.firefox_m8_proof {
+                    if config.firefox_proof_requested() {
                         println!(
                             "sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count={selection_conversions} content=redacted"
                         );
                     }
                 }
-                if config.firefox_m8_proof {
+                if config.firefox_proof_requested() {
                     for metadata in &batch.metadata {
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
@@ -125,6 +125,14 @@
                             println!(
                                 "sophia_firefox_m8 schema=1 status=stage_complete stage={stage} index={index} title_bytes={} content=redacted",
                                 title_bytes,
+                            );
+                        }
+                        if config.firefox_m10_proof
+                            && let Some((terminal, checkpoint)) = firefox_m10_kitty_proof
+                                .observe(&metadata.property_name, metadata.byte_len)
+                        {
+                            println!(
+                                "sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal={terminal} checkpoint={checkpoint} content=redacted"
                             );
                         }
                     }

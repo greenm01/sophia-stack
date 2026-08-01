@@ -34,5 +34,23 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted one Firefox launch" >&2
     exit 1
 fi
+sed '/terminal=a checkpoint=after_normal_close /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing Kitty retention evidence" >&2
+    exit 1
+fi
+grep -Fv 'action=CloseFocused' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing forced close" >&2
+    exit 1
+fi
+grep -Fv 'status=clean app_groups=0 frontend_workers=0' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing cleanup" >&2
+    exit 1
+fi
 
 echo "physical Firefox verifier fixtures passed"

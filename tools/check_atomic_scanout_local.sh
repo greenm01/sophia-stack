@@ -116,6 +116,7 @@ bash -n tools/verify_sophia_xmonad_focused_border.sh
 bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
+bash -n tools/fixtures/firefox_m10_kitty_probe.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh \
     tools/stop_sophia_native_session.sh tools/stop_sophia_standalone_session.sh \
     tools/stop_sophia_session.sh
@@ -175,7 +176,10 @@ bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
 bash -n tools/installed/sophia-session
 bash -n tools/installed/sophia-kitty-session
+bash -n tools/installed/sophia-firefox-proof
 bash -n tools/installed/capture-runtime-identity.sh
+grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
+grep -Fq 'firefox_m10_kitty_probe.sh' tools/package_live_session.sh
 bash -n tools/verify_installed_runtime_identity.sh
 bash -n tools/record_installed_session_run.sh tools/record_installed_emergency_run.sh
 bash -n tools/verify_installed_session_cycles.sh
