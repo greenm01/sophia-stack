@@ -83,6 +83,12 @@ renderer/backend systems. Its public boundaries may still speak in snapshots and
 commands, but its inner loops should stay allocation-light, cache-conscious, and
 auditable.
 
+[State and Transition Discipline](state-and-transition-discipline.md) explains
+the deeper model behind these boundaries. State-Action-Model is only a limited
+analogy for proposal, acceptance, and derived output at selected boundaries;
+it is not a Sophia protocol and does not replace the explicit data-oriented
+Engine transaction path.
+
 ## Candidate IDs
 
 Typed IDs prevent one domain's integer from masquerading as another.

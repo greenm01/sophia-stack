@@ -9,6 +9,9 @@ the trust and transfer model. [Engine Architecture](engine-architecture.md)
 defines the domains inside Engine and the precise scope of its compositor
 role. [Compositor Graphics](compositor-graphics.md) defines the
 renderer-neutral compositor-owned display list and its native lowering.
+[State and Transition Discipline](state-and-transition-discipline.md) explains
+the transition-system, I/O-automaton, single-writer, and CALM foundations behind
+these contracts without adding another normative layer.
 Subsystem documents record implementation detail and current coverage.
 
 Sophia is an X-centric product with an Engine-centered architecture. Sophia

@@ -34,6 +34,14 @@ unimplemented target behavior explicitly.
 - [Sophia WM API](sophia-wm-api.md) defines the versioned, metadata-blind native
   policy contract shared by Sophia WMs and legacy compatibility profiles.
 
+## Architecture Rationale
+
+- [State and Transition Discipline](state-and-transition-discipline.md)
+  explains how transition systems, I/O automata, single-writer authority, and
+  CALM make Sophia's separated authorities manageable. It also records the
+  limited explanatory relationship to State-Action-Model. Rationale explains
+  the normative architecture but does not override it.
+
 ## Subsystem Contracts And Current Status
 
 - [Sophia X Server Frontend](sophia-x-authority.md) records the native X11
