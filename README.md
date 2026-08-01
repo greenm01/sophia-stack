@@ -1,94 +1,20 @@
-# The Linux Desktop Problem
+# Sophia Stack
 
-The current landscape forces a choice between extremes: decentralized freedom versus centralized bureaucracy.
+Sophia is a modern, atomic X11 desktop system. It uses a protocol-neutral, authority-separated visual engine to retain X11's highly flexible application model while replacing its implicit presentation and ambient trust with strict visual authority.
 
-X11 is a beautiful, asynchronous disaster. Built for diskless terminals and slow networks, it offers a hacker's playground—a shared property tree where any script can move any window. You want a tiling window manager? You write one. You want a global hotkey daemon? You build it. X11 never asks a committee for permission. But X11 tears. It leaves black borders during resizes, and it operates on the flawed assumption that every client is trustworthy.
+Linux graphics stacks have historically required choosing between X11's open, scriptable environment and Wayland's secure, tear-free rendering. X11 offers a shared property tree where any script can manipulate the desktop, but it suffers from tearing and assumes all clients are trustworthy. Wayland secures the desktop and enforces atomic buffer swaps, but its restrictive protocol often stifles customization and rapid development.
 
-Wayland stepped in to fix the visual rot. It enforces atomic buffer swaps and secures the desktop. The tearing stopped, but so did the freedom. Wayland makes the compositor a dictator. If you want a screenshot tool or a custom dock, you wait for competing developers to ratify an XML schema. It traded the permissionless joy of the Linux desktop for a bureaucratic straitjacket.
-
-Sophia rejects this false binary.
-
-Sophia is a modern atomic X11 desktop system built on a protocol-neutral,
-authority-separated visual engine. It keeps X11's mechanism-oriented
-application model while replacing the monolithic display server's implicit
-presentation and ambient trust.
-
-# The Engine Dictates the Pixels
-
-Sophia Engine is the absolute visual authority. It hit-tests the scene, schedules the frames, and owns the scanout. It enforces a simple, unbreakable rule: no new geometry appears on the screen without matching, committed pixels. If an application hangs during a resize, Sophia fails closed. The old, perfectly rendered layout remains on the screen. 
-
-## X11 Is The Foundation
-
-The **Sophia X Server Frontend** is a clean, modern X server implementation. It
-presents the established X11 API to applications and reduces client requests
-into atomic Sophia surface transactions. It does not own workspaces, dictate
-layout, read physical input, or control scanout.
-
-X11 is not a deprecated migration path in Sophia. The long-term X Server
-Frontend is a Sophia-owned, modern X server implementation: X11 remains the
-application API while Sophia modernizes its rendering, presentation, and output
-architecture underneath. A classic shared-X profile preserves the inspectable,
-scriptable model people value; confined namespaces are an explicit session
-choice, not a reason to erase that model.
-
-X11 is Sophia's sole current application protocol, but it is not allowed to
-shape Engine internals. The transaction boundary remains protocol-neutral so a
-future compatibility translator or evidence-driven native interface can be
-added without importing another protocol's desktop architecture. Sophia does
-not design a speculative replacement protocol today.
-
-## The Window Manager Remains Blind
-
-Layout policy belongs in an external process. The Sophia Window Manager receives opaque layout nodes. It never sees an XID, a window title, a namespace, or a protocol-local object ID. It crunches the geometry and returns command packets. Because the window manager is blind, it cannot leak secure metadata. Because it sits outside the rendering hot path, it can crash, restart, or be rewritten in any language without taking down the session.
-
-## The Boundaries Do Not Dictate the Interface
-
-Sophia's current policy slot is called the window manager, but the architecture
-does not belong to one kind of window manager—or even to one familiar kind of
-desktop. A policy client may tile, scroll, stack, float, mix those approaches,
-or organize a single-purpose session. Xmonad and qtile are useful examples of
-replaceable policy. An Xfce-style environment would add panels, decorations,
-settings, and session services through their proper shell and service
-boundaries instead of turning them into compositor privileges.
-
-The same restraint applies to future interfaces. If experience eventually
-justifies a Sophia-native compositor/Engine protocol, it must preserve the
-authority split rather than make one shell or interaction model permanent.
-
-Sophia aims for the visual integrity of a modern composited system and the
-freedom to replace the policy and interface around it.
-
-No tearing. No shared mutable state. NOT designed by committee.
-
-# The Sophia Session Stack
-
-Sophia is an X-centric, frame-perfect session stack with a reusable
-protocol-neutral Engine.
-
-The project starts from a plain frustration: Linux graphics stacks make you
-choose too often. X11 is open and hackable, but it lets clients share too much
-state and makes tear-free resizing a negotiation. Wayland fixes the visual
-model, then pushes every desktop feature through a compositor and a protocol
-process that can move slowly.
-
-Sophia takes a different route. Engine is the visual authority; the Sophia X
-Server Frontend translates X11 into bounded transactions; the window manager
-stays outside the hot path and sees only opaque layout nodes. Portals handle
-deliberate namespace crossing. The goal is a desktop that keeps the sharp edges
-people like about X11 without making every client part of one shared trust
-domain.
-
-One rule drives the design:
-
-```text
-Do not present new geometry unless the matching pixels are ready.
-```
-
-Slow clients may lag. Misbehaving clients may get degraded. They should not
-tear the desktop, expose black borders, or force the compositor to present a
-half-finished resize.
+Sophia provides an alternative. It preserves the inspectable, shared-X profile that power users value while adopting a modern rendering architecture underneath.
 
 ## Architecture
+
+Sophia is separated by authority, not by convenience. 
+
+- **Sophia Engine:** The absolute visual authority. It manages physical input, visual state, frame scheduling, transaction commits, rendering, and display output.
+- **Sophia X Server Frontend:** A clean, modern X11 frontend. It presents the established X11 API, translates protocol state into Sophia surface transactions, and performs X11 delivery rules. It does not control layout or scanout.
+- **Sophia WM (Window Manager):** A dedicated policy process handling layout, focus, keybindings, workspaces, and launch decisions. It operates entirely on opaque layout nodes and `SurfaceId` handles.
+- **Sophia Portals:** Mechanisms for deliberate cross-namespace transfers, such as clipboard sharing, drag-and-drop, and screen capture.
+- **Metadata Broker and Chrome:** Translates protocol metadata into redacted compositor UI without exposing namespaces to the window manager.
 
 ```text
 ================================================================================
@@ -138,178 +64,47 @@ half-finished resize.
  └────────────────────────────────────┘     └─────────────────────────────────┘
 ```
 
-## How It Works
+## Core Principles
 
-Input reaches Sophia Engine first. The engine owns the scene graph, transforms,
-outputs, and frame loop, so it maps physical input to the surface the user can
-see. The X frontend then performs X11 delivery rules: focus, grabs, event
-masks, modifier state, and namespace checks.
+### Visual Authority
 
-The Sophia X Server Frontend implements a modern, compatibility-driven X11
-subset. Sophia adds compatibility only from named real-client evidence and
-adds X11 extensions only where an established mechanism cannot serve a real
-need. The frontend owns X resources and client semantics; it does not own
-layout, scanout, compositor chrome, or portal policy.
+The Sophia Engine dictates the pixels. It enforces a simple rule: no new geometry appears on the screen without matching, committed pixels. If an application hangs during a resize, Sophia maintains the last successfully rendered layout. Slow or misbehaving clients will not tear the desktop or expose black borders.
 
-The WM is a policy process. It manages workspaces, focus policy, layouts,
-keybindings, and launch decisions, but it does that through opaque handles. It
-does not need XIDs, namespace IDs, window titles, app classes, or clipboard
-payloads.
+### Opaque Window Management
 
-Rendering is transaction-based. The WM proposes layout. The X frontend provides
-pending buffers, damage, constraints, and readiness. Sophia Engine commits
-geometry and pixels together on a frame boundary. If a surface is not ready, the
-engine keeps the last committed state until policy says otherwise.
+Layout policy belongs in an external process. Because the window manager sits outside the rendering hot path, it can crash, restart, or be rewritten without taking down the session. To maintain security, the window manager remains intentionally blind to client identity. It receives opaque layout nodes and never sees an XID, a window title, a namespace, or a clipboard payload. 
 
-## Security Architecture
+### Secure Namespaces
 
-Sophia starts from a blunt assumption: every client may lie. The window manager
-may crash. A protocol may carry thirty years of bad habits. Security is not a
-feature added after the desktop works. It is the shape of the system.
-
-### Namespaces At The Edge
-
-The X frontend sits at the edge of the session. A **classic shared-X**
-profile puts trusted applications in one namespace and deliberately preserves
-the inspectable, scriptable X11 object model. A confined profile assigns clients
-to separate namespaces before they can create useful state: an untrusted browser
-then cannot query, inspect, or send events to a trusted terminal without an
-explicit handoff.
-
-Cross-namespace lookup fails closed unless a portal grants a narrow handoff.
-Sophia treats this as a user and session-policy choice, not a reason to deny
-trusted local users the shared-X workflow they selected.
-
-### A Blind Window Manager
-
-The WM manages layout, focus, and workspaces, but it does not receive client
-identity. It sees opaque layout nodes and `SurfaceId` handles. It does not see
-XIDs, protocol-local object IDs, namespaces, titles, classes, PIDs, paths, or clipboard
-payloads.
-
-That blindness is deliberate. If the WM is compromised, the attacker gets a
-geometry calculator, not a desktop-wide spyglass. The process can propose where
-rectangles go. Sophia Engine still validates the proposal before anything
-reaches the screen.
-
-### Portals, Not Privileged APIs
-
-Namespaces sometimes need to cross. Clipboard, drag-and-drop, file handoff,
-screenshots, notifications, and URI opens all require controlled transfer.
-Sophia routes those requests through portals.
-
-A portal request is a state machine, not a backdoor:
-
-- **Pending:** the request exists, but the target does not receive the payload;
-- **Prompt:** user or policy code sees bounded, sanitized facts;
-- **Approval:** a single-use, generation-bound handoff is granted;
-- **Revocation:** owner changes, expiry, or policy denial close the transfer.
-
-Denial maps back to native protocol failure. Clients do not get synthetic input.
-They do not get to freeze the session while they wait.
-
-### The Engine Owns Visual Truth
-
-Sophia Engine is the only component with global visual knowledge. It owns
-hit-testing, frame scheduling, rendering, and scanout. It does not own high-level
-layout policy.
-
-The engine enforces the visual security rule: geometry and pixels commit
-together. A slow or hostile client cannot make Sophia present a half-resized
-window, black border, or stale buffer stretched into a new shape. The last good
-frame stays visible until a complete transaction is ready or explicit policy
-chooses to degrade it.
-
-### Small Surface Area
-
-Sophia keeps protocol complexity at the edges. Authorities translate client
-protocols. The WM receives blind policy data. Portals handle deliberate
-cross-namespace transfer. The rendering hot path stays small and data-oriented.
-
-That is the security pitch: fewer global privileges, fewer trusted processes,
-and fewer ways for one client to learn what another client is doing.
-
-## Project Shape
-
-Sophia is split by authority, not by convenience.
-
-- **Sophia Engine** owns physical input, visual state, frame scheduling,
-  transaction commits, rendering, and display output.
-- **Sophia X Server Frontend** owns X11 compatibility and translates protocol
-  state into Sophia surface transactions.
-- **Spatial policy**, currently served by the Sophia WM API, owns layout,
-  focus policy, keybindings, workspaces, and launch decisions.
-- **Sophia Portals** handle intentional namespace crossing: clipboard,
-  drag-and-drop, files, screen capture/recording, notifications, and URI
-  handoff.
-- **Metadata Broker and Chrome** turn protocol metadata into redacted
-  compositor UI without giving the WM namespace visibility.
+Sophia assumes clients are untrusted and places them in isolated namespaces. A classic shared-X profile can be used to run trusted applications in a single namespace, preserving the traditional X11 object model. However, an untrusted application cannot inspect or send events to a trusted namespace without an explicit, user-granted portal handoff. Cross-namespace lookups fail closed by default.
 
 ## Documentation
 
-- `docs/README.md` maps normative contracts, subsystem status, evidence, and
-  historical material.
-- `docs/specification.md` is the proposed project constitution: a discussion
-  draft for invariants, hard non-goals, compatibility admission, and the
-  compatibility admission, and amendment rules. Existing normative contracts
-  retain precedence until it is explicitly ratified.
-- `docs/architecture.md` maps processes and load-bearing boundaries.
-- `docs/engine-architecture.md` maps Engine domains, visual data flow, current
-  Rust modules, and the compositor role.
-- `docs/namespaces-and-portals.md` defines admission, isolation profiles,
-  capabilities, grants, and cross-namespace failure behavior.
-- `docs/dod.md` defines Sophia's data-oriented design rules.
-- `docs/sophia-x-authority.md` defines the long-term Sophia X Server Frontend
-  and its X11 compatibility boundary.
-- `docs/x11-compatibility-matrix.md` records the real-client evidence that
-  admits each native X11 compatibility slice.
-- `docs/style-guide.md` records implementation discipline.
-- `docs/research-log.md` captures active decisions and research questions.
-- `docs/research-log-archive.md` preserves completed research and validation
-  evidence.
-- `research/xlibre/docs/xlibre-prototype-regression-map.md` maps retired XLibre
-  checks to active Sophia-owned regressions.
-- `research/wayland/README.md` preserves the retired Wayland frontend and maps
-  its architectural lessons to active native-X and Engine regressions.
-- `todo.md` tracks only active milestones and measurable exits.
+- `docs/README.md` — Maps normative contracts, subsystem status, evidence, and historical material.
+- `docs/specification.md` — The proposed project constitution, including invariants, hard non-goals, and amendment rules.
+- `docs/architecture.md` — Maps processes and load-bearing boundaries.
+- `docs/namespaces-and-portals.md` — Defines admission, isolation profiles, capabilities, grants, and cross-namespace failure behavior.
+- `docs/dod.md` — Defines Sophia's data-oriented design rules.
+- `docs/sophia-x-authority.md` — Defines the long-term Sophia X Server Frontend and its X11 compatibility boundary.
+- `docs/x11-compatibility-matrix.md` — Records the real-client evidence that admits each native X11 compatibility slice.
+- `docs/style-guide.md` — Records implementation discipline.
+- `docs/research-log.md` — Captures active decisions and research questions.
+- `docs/research-log-archive.md` — Preserves completed research and validation evidence.
+- `todo.md` — Tracks only active milestones and measurable exits.
 
 ## Status
 
-Sophia is a research prototype. The native Sophia X Server Frontend is the
-product path; no other application protocol is currently supported. The
-completed milestones retain paired classic/confined namespace evidence,
-Engine-owned CPU and DMA-BUF composition, physical input, multi-output KMS,
-portal-mediated selections, and an unattended xmonad daily-driver session.
+Sophia is a research prototype. The native Sophia X Server Frontend is the designated product path; no other application protocol is currently supported. 
 
-Standard DRI3 1.2 now carries FD-bearing `Open`, modifier-bearing multi-plane
-pixmaps, xshmfences, and Present transactions through the native frontend. The
-persistent renderer imports those typed resources, gates acquire fences,
-composes DMA-BUF and CPU layers, and applies the prepared Engine state only
-after matching native page-flip feedback. Complete-before-Idle delivery,
-idle-fence triggering, rejection preservation, and exact teardown are covered
-by the offline suite. The paired software and CPU-plus-`vkcube` X13 gate now
-passes with controlled acquire delay, rejection recovery, mixed page flips,
-idle-fence delivery, and exact teardown.
+Completed milestones feature paired classic/confined namespace evidence, Engine-owned CPU and DMA-BUF composition, physical input, multi-output KMS, portal-mediated selections, and an unattended xmonad daily-driver session.
 
-The namespace-keyed X resource model, profile/capability/admission types,
-session-owned in-memory registry, explicit classic/confined live launch
-profiles, same-UID admission, per-client revocation, fresh owner-only
-Xauthority publication/removal, portal request/grant lifecycle, and owner-only
-broker IPC already exist. The bounded cross-namespace enforcement matrix,
-targeted admission cleanup, and authority-private native `CLIPBOARD`/`PRIMARY`
-source-proxy flow are proven for `TARGETS`, `UTF8_STRING`, and bounded UTF-8
-`text/plain`.
+Standard DRI3 1.2 now carries FD-bearing `Open`, modifier-bearing multi-plane pixmaps, xshmfences, and Present transactions through the native frontend. The persistent renderer imports those typed resources, gates acquire fences, composes DMA-BUF and CPU layers, and applies the prepared Engine state only after matching native page-flip feedback. The offline suite covers complete-before-Idle delivery, idle-fence triggering, rejection preservation, and exact teardown. The paired software and CPU-plus-`vkcube` X13 gate now passes with controlled acquire delay, rejection recovery, mixed page flips, idle-fence delivery, and exact teardown.
 
-The former Smithay-backed Wayland frontend is retired under
-`research/wayland`. It proved that the Engine boundary was not inherently
-X-shaped, but it is not a production dependency, supported runtime, validation
-gate, or promise of future compatibility. A future translator must justify
-itself from product evidence and reduce to Sophia's existing authority model.
+The namespace-keyed X resource model, explicit classic/confined live launch profiles, per-client revocation, portal request/grant lifecycle, and owner-only broker IPC are implemented. The bounded cross-namespace enforcement matrix and authority-private native clipboard flows are proven for targeted text transfers.
 
-XLibre is not a production dependency, feature, workspace member, or launcher
-path. Its frozen source and prototype evidence live under `research/xlibre`.
-Sophia may reconsider an optional provider only if measured native-X gaps later
-justify that authority and maintenance cost.
+The former Smithay-backed Wayland frontend is retired under `research/wayland`. It proved that the Engine boundary is not inherently X-shaped, but it is not a production dependency or promise of future compatibility. A future translator must justify itself from product evidence and reduce to Sophia's existing authority model.
+
+Similarly, XLibre is not a production dependency. Its frozen source and prototype evidence reside under `research/xlibre`. Sophia may reconsider an optional provider only if measured native-X gaps justify the authority and maintenance cost.
 
 ## License
 
