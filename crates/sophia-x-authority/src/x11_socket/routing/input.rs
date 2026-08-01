@@ -92,10 +92,10 @@ fn encode_xi_device_event(
         write_xi_u16(byte_order, &mut out[50..52], 1);
         let mut mask = 0u8;
         if horizontal_position_v120.is_some() {
-            mask |= 1;
+            mask |= 1u8 << u32::from(crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR);
         }
         if vertical_position_v120.is_some() {
-            mask |= 1 << 1;
+            mask |= 1u8 << u32::from(crate::X_POINTER_VERTICAL_SCROLL_VALUATOR);
         }
         out.extend_from_slice(&[mask, 0, 0, 0]);
         for position in [horizontal_position_v120, vertical_position_v120]

@@ -804,23 +804,45 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
     )
     .encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &devices[0][8..10]), 2);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &devices[0][38..40]), 5);
-    let horizontal_scroll = [
-        3, 0, 6, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0,
-    ];
-    let vertical_scroll = [
-        3, 0, 6, 0, 2, 0, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 120, 0, 0, 0,
-    ];
-    assert!(
-        devices[0]
-            .windows(horizontal_scroll.len())
-            .any(|window| window == horizontal_scroll)
-    );
-    assert!(
-        devices[0]
-            .windows(vertical_scroll.len())
-            .any(|window| window == vertical_scroll)
-    );
+    let pointer_class_count = read_u16(XByteOrder::LittleEndian, &devices[0][38..40]);
+    assert_eq!(pointer_class_count, 7);
+    let pointer_name_len = usize::from(read_u16(
+        XByteOrder::LittleEndian,
+        &devices[0][40..42],
+    ));
+    let mut class_offset = 44 + pointer_name_len.next_multiple_of(4);
+    let mut valuators = Vec::new();
+    let mut scrolls = Vec::new();
+    for _ in 0..pointer_class_count {
+        let class_type = read_u16(
+            XByteOrder::LittleEndian,
+            &devices[0][class_offset..class_offset + 2],
+        );
+        let class_len = usize::from(read_u16(
+            XByteOrder::LittleEndian,
+            &devices[0][class_offset + 2..class_offset + 4],
+        )) * 4;
+        match class_type {
+            2 => valuators.push(read_u16(
+                XByteOrder::LittleEndian,
+                &devices[0][class_offset + 6..class_offset + 8],
+            )),
+            3 => scrolls.push((
+                read_u16(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 6..class_offset + 8],
+                ),
+                read_u16(
+                    XByteOrder::LittleEndian,
+                    &devices[0][class_offset + 8..class_offset + 10],
+                ),
+            )),
+            _ => {}
+        }
+        class_offset += class_len;
+    }
+    assert_eq!(valuators, vec![0, 1, 2, 3]);
+    assert_eq!(scrolls, vec![(2, 2), (3, 1)]);
     assert!(devices[0].len() > 128);
 }
 

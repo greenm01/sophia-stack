@@ -5938,3 +5938,25 @@ acknowledgement ordering.
   its deliberate fail-closed verifier rejected three of eight browser stages,
   zero selection conversions, and three launches. It is diagnostic evidence,
   not a Milestone 10 pass; the synchronized physical workflow must be rerun.
+
+## 2026-08-01: XI2 scroll valuators must not replace pointer X and Y
+
+- The synchronized physical Firefox run reached the deterministic loaded,
+  keyboard, clipboard, pointer, and PRIMARY stages. A real wheel event then
+  crossed libinput, was observed and routed by Engine, and received an X input
+  delivery acknowledgement, while the page never completed its DOM `wheel`
+  stage. Firefox presentation continued retiring at the correct toplevel, so
+  this isolated the failure after compositor hit testing and before browser
+  event handling.
+- Sophia described horizontal and vertical scrolling as XI2 valuators 0 and 1
+  and set those same bits in XI2 motion events. Xorg reserves valuators 0 and 1
+  for relative pointer X and Y; its input-test device places relative
+  horizontal and vertical scrolling on valuators 2 and 3. A scroll class names
+  an existing valuator rather than replacing the pointer coordinate axes.
+- The X frontend now reports four relative pointer valuators, associates the
+  preferred horizontal and vertical scroll classes with axes 2 and 3, and sets
+  those same valuator-mask bits in XI2 motion events. Cumulative v120 positions
+  and legacy Button4-Button7 emulation remain X-frontend state; Engine input
+  packets remain protocol-neutral. Wire regressions parse the complete pointer
+  class topology and cover simultaneous two-axis value ordering. The physical
+  Firefox DOM stage remains the acceptance proof.

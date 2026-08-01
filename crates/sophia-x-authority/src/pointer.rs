@@ -1,3 +1,8 @@
+/// XI2 reserves valuators 0 and 1 for relative pointer X and Y.
+pub const X_POINTER_HORIZONTAL_SCROLL_VALUATOR: u16 = 2;
+/// The vertical scroll valuator follows pointer X/Y and horizontal scrolling.
+pub const X_POINTER_VERTICAL_SCROLL_VALUATOR: u16 = 3;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct XCorePointerMapper {
     button_state: u16,

@@ -901,10 +901,53 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
     assert_eq!(u32::from_le_bytes(scroll[4..8].try_into().unwrap()), 15);
     assert_eq!(u32::from_le_bytes(scroll[16..20].try_into().unwrap()), 0);
     assert_eq!(u16::from_le_bytes(scroll[50..52].try_into().unwrap()), 1);
-    assert_eq!(&scroll[80..84], &[1 << 1, 0, 0, 0]);
+    assert_eq!(
+        &scroll[80..84],
+        &[1 << crate::X_POINTER_VERTICAL_SCROLL_VALUATOR, 0, 0, 0,]
+    );
     assert_eq!(
         i64::from_le_bytes(scroll[84..92].try_into().unwrap()),
         i64::from(120) << 32
+    );
+    let two_axis_scroll = encode_xi_device_event(
+        XByteOrder::LittleEndian,
+        9,
+        6,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Axis {
+                button: 5,
+                pressed: true,
+                horizontal_position_v120: Some(-30),
+                vertical_position_v120: Some(45),
+            },
+            surface: SurfaceId::new(1, 1),
+            root_x: 11,
+            root_y: 12,
+            event_x: 3,
+            event_y: -4,
+            state: 5,
+            time_msec: 11,
+        }),
+        XResourceId::new(0x200001, 1),
+    );
+    assert_eq!(two_axis_scroll.len(), 100);
+    assert_eq!(
+        &two_axis_scroll[80..84],
+        &[
+            (1 << crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR)
+                | (1 << crate::X_POINTER_VERTICAL_SCROLL_VALUATOR),
+            0,
+            0,
+            0,
+        ]
+    );
+    assert_eq!(
+        i64::from_le_bytes(two_axis_scroll[84..92].try_into().unwrap()),
+        i64::from(-30) << 32
+    );
+    assert_eq!(
+        i64::from_le_bytes(two_axis_scroll[92..100].try_into().unwrap()),
+        i64::from(45) << 32
     );
     let crossing = encode_xi_crossing_event(
         XByteOrder::LittleEndian,

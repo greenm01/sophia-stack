@@ -771,14 +771,19 @@ QEMU already proves the bounded Firefox protocol workflow. This milestone
 tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
 than adding speculative browser compatibility.
 
-- [x] Complete generic Firefox wheel compatibility in the X frontend. Preserve
+- [ ] Complete generic Firefox wheel compatibility in the X frontend. Preserve
   protocol-neutral Engine axis routing, translate it through the appropriate
   X11 input semantics, and require a real routed axis event to produce the
   deterministic local page's DOM `wheel` stage. The clean QEMU gate negotiates
   Firefox XI2 2.1, advertises horizontal and vertical scroll valuators, routes
   cumulative smooth-axis positions through the selected ancestor window, and
   completes the DOM stage with `source=wheel`, `axis_route=true`, and
-  `keyboard_fallback=false`.
+  `keyboard_fallback=false`. The first physical run to reach this stage proved
+  that libinput and Engine routing completed but Firefox did not receive a DOM
+  wheel event. Sophia had incorrectly overlaid its scroll valuators on pointer
+  X/Y axes 0/1; the X frontend now advertises X/Y on 0/1 and scrolling on 2/3
+  and emits matching XI2 masks. Repeat the physical stage before closing this
+  item again.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
