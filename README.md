@@ -1,10 +1,12 @@
 # Sophia Stack
 
-Sophia is a modern, atomic X11 desktop system. It uses a protocol-neutral, authority-separated visual engine to retain X11's highly flexible application model while replacing its implicit presentation and ambient trust with strict visual authority.
+Sophia is a modern, atomic X11 desktop system. Its protocol-neutral visual engine keeps X11's flexible application model while replacing ambient trust and implicit presentation with explicit authority boundaries.
 
-Linux graphics stacks have historically required choosing between X11's open, scriptable environment and Wayland's secure, tear-free rendering. X11 offers a shared property tree where any script can manipulate the desktop, but it suffers from tearing and assumes all clients are trustworthy. Wayland secures the desktop and enforces atomic buffer swaps, but its restrictive protocol often stifles customization and rapid development.
+One way to describe the design is a constitutional cathedral with bazaar edges. The core is planned as one coherent system, but no component has unchecked power. The Engine controls pixels and physical input, the protocol frontend applies X11 rules, and the window manager chooses layout policy. Their interfaces define and limit those roles.
 
-Sophia provides an alternative. It preserves the inspectable, shared-X profile that power users value while adopting a modern rendering architecture underneath.
+Around that core, window managers, shells, protocol frontends, and portal policies can be replaced or developed independently. The core enforces safety and presentation rules; components at the edges decide how the desktop behaves.
+
+Sophia's current product path is native X11. It preserves a classic shared-X profile for trusted applications and adds isolated namespaces for clients that should not share authority.
 
 ## Architecture
 
