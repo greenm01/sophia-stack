@@ -863,7 +863,7 @@ fn spawn_x11_input_event_writer(
                     .and_then(|ancestry| ancestry.first())
                     .zip(pointer_surface_window)
                     .is_some_and(|(event_window, surface_window)| *event_window != surface_window);
-                tracing::debug!(
+                tracing::info!(
                     "sophia_x11_axis_delivery schema=1 descendant_target={} smooth_selected={} emulated_button_selected={} pressed={} input_redacted=true",
                     descendant_target,
                     xi_event_type == Some(6),

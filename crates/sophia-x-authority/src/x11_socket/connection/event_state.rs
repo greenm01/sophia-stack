@@ -228,21 +228,17 @@ impl XCoreEventSelectionState {
         } else {
             Self::BUTTON_MASKS
         };
-        self.stacking.iter().rev().copied().find(|candidate| {
-            self.mapped.contains(candidate)
-                && (*candidate == surface_window
-                    || self.ancestors(*candidate).contains(&surface_window))
-                && self.contains_surface_point(
-                    surface_window,
-                    *candidate,
-                    i32::from(event_x),
-                    i32::from(event_y),
-                )
-                && self
-                    .windows
-                    .get(candidate)
-                    .is_some_and(|selection| selection.mask & selected_mask != 0)
-        })
+        let event_window = self.pointer_event_target(surface_window, event_x, event_y);
+        for candidate in self.ancestry_including(event_window) {
+            let selection = self.windows.get(&candidate).copied().unwrap_or_default();
+            if selection.mask & selected_mask != 0 {
+                return Some(candidate);
+            }
+            if candidate == surface_window || selection.do_not_propagate_mask & selected_mask != 0 {
+                break;
+            }
+        }
+        None
     }
 
     fn pointer_event_target(
@@ -251,22 +247,23 @@ impl XCoreEventSelectionState {
         event_x: i16,
         event_y: i16,
     ) -> XResourceId {
-        self.stacking
-            .iter()
-            .rev()
-            .copied()
-            .find(|candidate| {
-                self.mapped.contains(candidate)
-                    && (*candidate == surface_window
-                        || self.ancestors(*candidate).contains(&surface_window))
+        let mut target = surface_window;
+        for _ in 0..64 {
+            let Some(child) = self.stacking.iter().rev().copied().find(|candidate| {
+                self.parents.get(candidate) == Some(&target)
+                    && self.mapped.contains(candidate)
                     && self.contains_surface_point(
                         surface_window,
                         *candidate,
                         i32::from(event_x),
                         i32::from(event_y),
                     )
-            })
-            .unwrap_or(surface_window)
+            }) else {
+                break;
+            };
+            target = child;
+        }
+        target
     }
 
     fn ancestry_including(&self, window: XResourceId) -> Vec<XResourceId> {

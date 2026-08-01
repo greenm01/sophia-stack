@@ -477,6 +477,10 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let source = LiveWmProposalSource::Action(action);
+        if self.has_request_source(source) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
         let output_state = self
             .workspace_state
             .output(output.id)
@@ -515,7 +519,7 @@ impl LiveWmSession {
             kind: LiveWmQueuedKind::Proposal {
                 base_state: self.workspace_state.clone(),
                 fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
-                source: LiveWmProposalSource::Action(action),
+                source,
             },
             queued_at: Instant::now(),
         })

@@ -175,6 +175,110 @@ fn pointer_event_target_does_not_depend_on_core_event_selection() {
 }
 
 #[test]
+fn pointer_event_target_follows_window_hierarchy_after_parent_restack() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let content_child = XResourceId::new(0x200002, 1);
+    let nested_child = XResourceId::new(0x200003, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        top_level,
+        root,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        },
+    );
+    selections.register(
+        content_child,
+        top_level,
+        Rect {
+            x: 0,
+            y: 80,
+            width: 800,
+            height: 520,
+        },
+    );
+    selections.register(
+        nested_child,
+        content_child,
+        Rect {
+            x: 20,
+            y: 20,
+            width: 760,
+            height: 480,
+        },
+    );
+    selections.observe_mapped(top_level);
+    selections.observe_mapped(content_child);
+    selections.observe_mapped(nested_child);
+
+    // A WM may restack the managed top-level after its client-owned children.
+    // That must not make the parent win a flat-stack hit test over its child.
+    selections.restack(top_level, None, Some(0));
+
+    assert_eq!(
+        selections.pointer_event_target(top_level, 100, 200),
+        nested_child
+    );
+}
+
+#[test]
+fn core_pointer_selection_propagates_only_through_hit_target_ancestors() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let content_child = XResourceId::new(0x200002, 1);
+    let overlay_sibling = XResourceId::new(0x200003, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        top_level,
+        root,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        },
+    );
+    selections.register(
+        content_child,
+        top_level,
+        Rect {
+            x: 0,
+            y: 80,
+            width: 800,
+            height: 520,
+        },
+    );
+    selections.register(
+        overlay_sibling,
+        top_level,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 80,
+        },
+    );
+    selections.update(top_level, Some(1 << 2), None);
+    selections.update(overlay_sibling, Some(1 << 2), None);
+    selections.observe_mapped(top_level);
+    selections.observe_mapped(content_child);
+    selections.observe_mapped(overlay_sibling);
+
+    assert_eq!(
+        selections.pointer_event_target(top_level, 100, 200),
+        content_child
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, false, 100, 200),
+        Some(top_level)
+    );
+}
+
+#[test]
 fn explicit_pointer_window_does_not_require_a_live_surface_mapping() {
     let surface = SurfaceId::new(18, 1);
     let target = XResourceId::new(0x200001, 1);

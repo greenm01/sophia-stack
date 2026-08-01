@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SOPHIA_TTY_PROFILE=xmonad
+export SOPHIA_X11_AUTHORITY_TRACE=1
 cat <<'INSTRUCTIONS'
 Physical Firefox Milestone 10 proof:
   1. Follow the short checkpoint prompt shown inside each Kitty.
