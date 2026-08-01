@@ -50,17 +50,15 @@ fn native_frame_service_should_preempt_authority(
     request: &OutputFrameServiceRequest,
     preempted_previous_cycle: bool,
     control_pending: bool,
-    non_configure_control_pending: bool,
     control_priority_cycles: u8,
 ) -> bool {
-    // Focus, admission, and lifecycle controls retain exclusive priority so
-    // their bounded handshakes cannot be delayed by renderer work. Configure
-    // controls get several owner turns first, but must then yield: some clients
-    // cannot publish resize pixels until their earlier Present frames retire.
+    // Controls get several owner turns first, but no control class may block
+    // renderer polling indefinitely. A client can be waiting for an earlier
+    // Present to retire before it can finish a focus, admission, lifecycle, or
+    // resize handshake. The following owner turn returns to authority traffic.
     const CONTROL_PRIORITY_CYCLES: u8 = 4;
 
-    !non_configure_control_pending
-        && (!control_pending || control_priority_cycles >= CONTROL_PRIORITY_CYCLES)
+    (!control_pending || control_priority_cycles >= CONTROL_PRIORITY_CYCLES)
         && !preempted_previous_cycle
         && native_frame_service_requires_owner_progress(request)
 }

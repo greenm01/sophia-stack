@@ -4,7 +4,6 @@
                 &runtime.native_output_service_request(native_scanout)?,
                 native_frame_service_preempted_previous_cycle,
                 session_controls.pending_len() != 0,
-                session_controls.has_non_configure_pending(),
                 native_frame_control_priority_cycles,
             ),
             _ => false,
