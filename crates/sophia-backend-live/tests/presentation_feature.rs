@@ -124,7 +124,7 @@ fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
         x: 64,
         y: 12,
         width: 32,
-        height: 48,
+        height: 80,
     };
 
     let frame = session
@@ -140,10 +140,17 @@ fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
         placement.target,
         Rect {
             width: 64,
+            height: 48,
             ..surface
         }
     );
-    assert_eq!(placement.clip, Some(surface));
+    assert_eq!(
+        placement.clip,
+        Some(Rect {
+            height: 48,
+            ..surface
+        })
+    );
     let retained = LiveRetainedDmaBufLayer {
         image_id: LiveRendererImageId::from_raw(transaction.raw()),
         frame: frame.try_clone().unwrap(),

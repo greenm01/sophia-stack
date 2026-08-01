@@ -94,8 +94,8 @@ pub struct XAuthorityPresentSubmission {
     pub transaction: TransactionId,
     pub surface: SurfaceId,
     pub buffer: sophia_protocol::BufferHandle,
-    pub x_offset: i16,
-    pub y_offset: i16,
+    pub x_offset: i32,
+    pub y_offset: i32,
     pub acquire_fence: Option<sophia_protocol::FenceHandle>,
     pub idle_fence: Option<sophia_protocol::FenceHandle>,
 }

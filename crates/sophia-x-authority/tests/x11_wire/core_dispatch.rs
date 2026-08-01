@@ -946,3 +946,95 @@ fn standard_present_pixmap_reduces_dri3_pixmap_to_dmabuf_transaction() {
     assert_eq!(response.transactions[0].damage.rects[0].width, 64);
     assert_eq!(response.transactions[0].damage.rects[0].height, 48);
 }
+
+#[test]
+fn child_dri3_present_projects_onto_the_managed_toplevel() {
+    let namespace = NamespaceId::from_raw(46);
+    let parent = XResourceId::new(0x220820, 1);
+    let child = XResourceId::new(0x220821, 1);
+    let pixmap = XResourceId::new(0x220822, 1);
+    let parent_surface = SurfaceId::new(46, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    for (window, surface, geometry) in [
+        (
+            parent,
+            parent_surface,
+            Rect {
+                x: 100,
+                y: 200,
+                width: 64,
+                height: 80,
+            },
+        ),
+        (
+            child,
+            SurfaceId::new(47, 1),
+            Rect {
+                x: 5,
+                y: 7,
+                width: 64,
+                height: 48,
+            },
+        ),
+    ] {
+        runtime.apply(XAuthorityRequestPacket {
+            transaction: TransactionId::from_raw(u64::from(surface.index())),
+            namespace,
+            kind: XAuthorityRequestKind::CreateWindow {
+                window,
+                surface,
+                geometry,
+                constraints: SurfaceConstraints {
+                    min_size: None,
+                    max_size: None,
+                },
+                generation: 1,
+            },
+        });
+    }
+    runtime.set_window_parent(namespace, child, parent).unwrap();
+    let descriptor = runtime
+        .create_dri3_pixmap(namespace, pixmap, 1, 64 * 48 * 4, 64, 48, 256, 24, 32)
+        .unwrap();
+
+    let response = runtime.present_standard_pixmap(
+        TransactionId::from_raw(548),
+        namespace,
+        child,
+        pixmap,
+        2,
+        3,
+        None,
+        None,
+    );
+
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(response.transactions.len(), 1);
+    let transaction = &response.transactions[0];
+    assert_eq!(transaction.surface, parent_surface);
+    assert_eq!(transaction.target_geometry.x, 100);
+    assert_eq!(transaction.target_geometry.y, 200);
+    assert_eq!(transaction.target_geometry.width, 64);
+    assert_eq!(transaction.target_geometry.height, 80);
+    assert_eq!(
+        transaction.target_buffer,
+        BufferSource::DmaBuf {
+            handle: descriptor.handle.raw()
+        }
+    );
+    assert_eq!(
+        transaction.damage,
+        Region::single(Rect {
+            x: 7,
+            y: 10,
+            width: 64,
+            height: 48,
+        })
+    );
+    assert_eq!(
+        runtime
+            .window_presentation_root_and_offset(namespace, child)
+            .unwrap(),
+        (parent, parent_surface, 5, 7)
+    );
+}

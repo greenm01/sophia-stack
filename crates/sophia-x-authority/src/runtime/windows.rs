@@ -122,7 +122,7 @@ impl XAuthorityRuntime {
              .map_err(Into::into)
      }
 
-     pub fn set_window_parent(
+    pub fn set_window_parent(
          &mut self,
          namespace: NamespaceId,
          window: crate::XResourceId,
@@ -134,8 +134,24 @@ impl XAuthorityRuntime {
              self.resources
                  .lookup(namespace, parent, XResourceKind::Window)?;
          }
-         self.windows.set_parent(window, parent).map_err(Into::into)
-     }
+        self.windows.set_parent(window, parent).map_err(Into::into)
+    }
+
+    pub fn window_presentation_root_and_offset(
+        &self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+    ) -> Result<(crate::XResourceId, sophia_protocol::SurfaceId, i32, i32), XAuthorityRuntimeError>
+    {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        let (root, x, y) = self.windows.presentation_root_and_offset(window)?;
+        let record = self
+            .windows
+            .get(root)
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        Ok((root, record.surface, x, y))
+    }
 
      pub fn window_parent_and_children(
          &self,

@@ -46,8 +46,8 @@ pub(super) fn record_native_present_retirement(
         retired.target.x,
         retired.target.y,
         clip,
-        retired.source_size.width == retired.clip.unwrap_or(retired.target).width
-            && retired.source_size.height == retired.clip.unwrap_or(retired.target).height,
+        retired.source_size.width == retired.target.width
+            && retired.source_size.height == retired.target.height,
     );
     println!(
         "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",

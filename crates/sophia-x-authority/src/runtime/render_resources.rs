@@ -330,12 +330,38 @@ impl XAuthorityRuntime {
              );
          };
          let damage = translated_present_damage(&source_damage, x_offset, y_offset);
-         let (buffer, damage) = if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap) {
+         let (target_window, target_generation, buffer, damage) =
+             if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap) {
+                 let (presentation_window, _, child_x, child_y) =
+                     match self.window_presentation_root_and_offset(namespace, window) {
+                         Ok(presentation) => presentation,
+                         Err(error) => {
+                             return XAuthorityResponsePacket::rejected(transaction, error);
+                         }
+                     };
+                 let Some(presentation_record) = self.windows.get(presentation_window) else {
+                     return XAuthorityResponsePacket::rejected(
+                         transaction,
+                         XAuthorityRuntimeError::UnknownResource,
+                     );
+                 };
              (
+                 presentation_window,
+                 presentation_record.generation,
                  sophia_protocol::BufferSource::DmaBuf {
                      handle: descriptor.handle.raw(),
                  },
-                 damage,
+                 Region {
+                     rects: damage
+                         .rects
+                         .into_iter()
+                         .map(|rect| Rect {
+                             x: rect.x.saturating_add(child_x),
+                             y: rect.y.saturating_add(child_y),
+                             ..rect
+                         })
+                         .collect(),
+                 },
              )
          } else {
              if let Some(binding) = self.shm_pixmaps.get(&pixmap).cloned() {
@@ -408,6 +434,8 @@ impl XAuthorityRuntime {
              let handle = update.handle();
              self.last_cpu_buffer_update = Some(update);
              (
+                 window,
+                 record.generation,
                  sophia_protocol::BufferSource::CpuBuffer { handle },
                  damage,
              )
@@ -415,10 +443,10 @@ impl XAuthorityRuntime {
          self.finish_drawing_update(XDrawingUpdate::present_buffer(
              transaction,
              namespace,
-             window,
+             target_window,
              buffer,
              damage,
-             record.generation,
+             target_generation,
              250,
          ))
      }

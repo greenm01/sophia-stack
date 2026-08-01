@@ -21,8 +21,8 @@ pub struct LiveProductionQueuedPresent {
     pub target: Rect,
     pub surface_clip: Rect,
     deferred_by_layout: bool,
-    x_offset: i16,
-    y_offset: i16,
+    x_offset: i32,
+    y_offset: i32,
     deadline: Instant,
     not_before: Instant,
 }
@@ -160,8 +160,8 @@ impl LiveProductionPresentScheduler {
                 candidate,
                 cpu_layers: Arc::clone(&cpu_layers),
                 target: Rect {
-                    x: geometry.x.saturating_add(i32::from(x_offset)),
-                    y: geometry.y.saturating_add(i32::from(y_offset)),
+                    x: geometry.x.saturating_add(x_offset),
+                    y: geometry.y.saturating_add(y_offset),
                     ..geometry
                 },
                 surface_clip: geometry,
@@ -181,8 +181,8 @@ impl LiveProductionPresentScheduler {
                 continue;
             }
             queued.target = Rect {
-                x: geometry.x.saturating_add(i32::from(queued.x_offset)),
-                y: geometry.y.saturating_add(i32::from(queued.y_offset)),
+                x: geometry.x.saturating_add(queued.x_offset),
+                y: geometry.y.saturating_add(queued.y_offset),
                 ..geometry
             };
             queued.surface_clip = geometry;

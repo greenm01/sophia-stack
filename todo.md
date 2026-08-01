@@ -785,8 +785,12 @@ than adding speculative browser compatibility.
   exposed clipped-frame rejection and descendant-click focus ambiguity after
   xmonad resize. Pixel-aligned clipped Presents, same-client managed-toplevel
   focus handoff, reparent role withdrawal, and client-scoped observation
-  overload handling now have regressions; repeat the physical workflow before
-  closing this item.
+  overload handling allowed the next run to retire the browser frames, but the
+  trace then proved that Firefox's render child was still projected at global
+  origin and overlapped Kitty's input region. Descendant DMA-BUF Presents now
+  reduce to their managed toplevel with an accumulated X-hierarchy offset and
+  target-bounded clipping; repeat the physical workflow before closing this
+  item.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
   workspace hide/show, refocus, dialog open/close, and status-zero exit.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

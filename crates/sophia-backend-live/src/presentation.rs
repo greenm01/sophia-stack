@@ -70,11 +70,10 @@ fn pixel_aligned_dma_buf_placement(
         height: frame_size.height,
         ..surface
     };
-    let clip = if frame_size.width == surface.width && frame_size.height == surface.height {
-        clip
-    } else {
-        Some(intersect_rects(surface, clip.unwrap_or(surface)))
-    };
+    let surface_clip = intersect_rects(surface, clip.unwrap_or(surface));
+    let clip = (frame_size.width != surface.width || frame_size.height != surface.height)
+        .then_some(intersect_rects(target, surface_clip))
+        .or(clip);
     LiveCompositionPlacement {
         target,
         clip,
