@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 export SOPHIA_TTY_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 export SOPHIA_BUILD_SESSION=false
 export SOPHIA_MANAGE_KEYD=false

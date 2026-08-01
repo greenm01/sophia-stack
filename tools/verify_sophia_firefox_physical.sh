@@ -137,7 +137,7 @@ axis_routes="$(awk -v first="$navigation_ready_line" -v last="$scroll_line" '
     fail "Firefox's DOM scroll stage followed $axis_routes routed wheel packets; expected at least two for the XI2 baseline and delta"
 resize_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=resize ')"
 resize_epoch="$(line_number_after '^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=3$' "$scroll_line")"
-resize_layout="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$' "$scroll_line")"
+resize_layout="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$scroll_line")"
 resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=3$' "$scroll_line")"
 resize_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=3 focus=surface$' "$scroll_line")"
 [[ -n "$resize_epoch" && -n "$resize_layout" && -n "$resize_action" ]] \
@@ -152,10 +152,10 @@ grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_c
 refocus_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ')"
 dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox popup document never became ready')"
 dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
-popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$refocus_line")"
-[[ -n "$popup_open_line" ]] || fail "Firefox popup did not publish a four-surface layout snapshot"
-popup_close_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=3 .* outcome=Committed$' "$dialog_line")"
-[[ -n "$popup_close_line" ]] || fail "Firefox popup did not publish a three-surface close snapshot"
+popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=5 .* outcome=Committed$' "$refocus_line")"
+[[ -n "$popup_open_line" ]] || fail "Firefox popup did not publish a five-surface layout snapshot"
+popup_close_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$dialog_line")"
+[[ -n "$popup_close_line" ]] || fail "Firefox popup did not publish a four-surface close snapshot"
 (( refocus_line < dialog_ready_line
     && dialog_ready_line < popup_open_line
     && popup_open_line < dialog_line

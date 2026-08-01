@@ -863,8 +863,8 @@ input/actions, protocol errors, native/frontend/authority cleanup debt, or
 retained temporary layout constraints. Its resize checkpoint requires the
 actual Super+Space action, a committed three-surface layout/resize epoch, and
 all three managed surfaces remaining visible. Its dialog checkpoint requires
-popup-document readiness, a four-surface layout snapshot, confirmation, and a
-return to three surfaces before Firefox exits.
+popup-document readiness, a five-surface layout snapshot, confirmation, and a
+return to the four-surface physical xmobar baseline before Firefox exits.
 During resize, a buffer whose pixel-aligned target is larger or smaller than
 the current child surface may be clipped but must never be scaled. A click on a
 client-positioned Firefox render child must hand focus to its containing

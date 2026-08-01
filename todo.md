@@ -833,7 +833,8 @@ than adding speculative browser compatibility.
   Firefox verifier now requires action 3 (`Super+Space`), a committed
   three-surface resize epoch/layout, a three-visible-surface workspace
   projection, replacement-document and popup-document readiness, an ordered
-  four-surface popup-open snapshot followed by a three-surface close snapshot,
+  five-surface popup-open snapshot followed by a four-surface close snapshot
+  (two Kitty windows, Firefox, and the retained physical xmobar baseline),
   and clean recovery-constraint teardown. A fresh physical run is still
   required.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

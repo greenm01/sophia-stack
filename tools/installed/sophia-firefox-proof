@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 exec "$RELEASE_DIR/bin/sophia-session" --firefox-m10-proof "$@"

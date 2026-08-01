@@ -735,7 +735,9 @@ impl LiveWmSession {
                     .is_some_and(|current| current.geometry != layer.geometry)
             })
             .count();
-        let timeout = Duration::from_millis(u64::from(transaction.timeout_msec.clamp(100, 2_000)));
+        let timeout = Duration::from_millis(u64::from(
+            transaction.timeout_msec.clamp(100, 10_000),
+        ));
         Ok(LiveWmProposal {
             transaction: transaction.transaction,
             layers: proposed,

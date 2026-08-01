@@ -63,16 +63,16 @@ sophia_live_session_pointer schema=3 status=axis_routed
 sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
 sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
 sophia_firefox_m8 schema=1 status=stage_complete stage=scroll index=4 title_bytes=88 content=redacted
-sophia_live_wm schema=1 status=layout_committed transaction=18 surfaces=3 moved_surfaces=3 configure_deliveries=3 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=18 surfaces=4 moved_surfaces=3 configure_deliveries=3 outcome=Committed
 sophia_live_resize_epoch schema=1 status=committed transaction=18 matched_surfaces=3
 sophia_live_wm schema=1 status=physical_action_committed action=3
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=18 output=1 workspace=1 visible_surfaces=3 focus=surface
 sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_bytes=104 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=refocus index=6 title_bytes=120 content=redacted
 sophia_firefox_m8 schema=1 status=dialog_ready content=redacted
-sophia_live_wm schema=1 status=layout_committed transaction=19 surfaces=4 moved_surfaces=1 configure_deliveries=2 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=19 surfaces=5 moved_surfaces=1 configure_deliveries=2 outcome=Committed
 sophia_firefox_m8 schema=1 status=stage_complete stage=dialog index=7 title_bytes=136 content=redacted
-sophia_live_wm schema=1 status=layout_committed transaction=20 surfaces=3 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=20 surfaces=4 moved_surfaces=1 configure_deliveries=1 outcome=Committed
 sophia_session_app schema=1 status=exited id=firefox source=managed exit_status=exit status: 0
 sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=after_normal_close content=redacted
 sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=after_normal_close content=redacted

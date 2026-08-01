@@ -88,6 +88,18 @@ exit. Mutation fixtures independently remove each readiness and layout record,
 so the physical gate cannot regress to accepting the former overlay-only
 dialog or pre-navigation wheel delivery.
 
+The first run against that contract reached real document scroll but exposed
+an admission-time timeout rather than an input failure. The xmonad bridge gave
+every resize fence two seconds; Firefox had published its first 1280-by-1040
+buffer but did not acknowledge the initial three-window 1276-by-1422 configure
+before that deadline. Recovery therefore preserved the startup extent, clipped
+the browser chrome, and left later Super+Space actions unable to generate a DOM
+resize. Manage-surface responses now declare an eight-second bounded fence;
+ordinary interactive relayouts remain at two seconds. The physical verifier
+also counts xmobar's retained non-workspace surface explicitly: four surfaces
+at the normal Firefox baseline, five while the real popup is attached, then
+four again after close.
+
 ## 2026-08-01: First physical Firefox rendering/input diagnosis
 
 The isolated-profile physical M10 run advanced the deterministic Firefox page

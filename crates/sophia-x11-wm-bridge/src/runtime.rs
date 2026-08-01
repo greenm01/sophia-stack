@@ -35,6 +35,7 @@ const BRIDGE_TIMEOUT: Duration = Duration::from_secs(3);
 const QUIET_PERIOD: Duration = Duration::from_millis(80);
 const IO_POLL: Duration = Duration::from_millis(20);
 const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
+const XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC: u32 = 8_000;
 const FIRST_PRIVATE_X_DISPLAY: u16 = 90;
 const LAST_PRIVATE_X_DISPLAY: u16 = 4_095;
 
@@ -436,8 +437,13 @@ impl LegacyX11WmBridgeRuntime {
                 requests.push(LegacyWmRequest::FocusWindow { window });
             }
         }
+        let resize_timeout_msec = if matches!(&request.kind, WmRequestKind::ManageSurface(_)) {
+            XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC
+        } else {
+            XMONAD_RESIZE_TIMEOUT_MSEC
+        };
         self.bridge
-            .translate_legacy_requests(request.transaction, &requests, XMONAD_RESIZE_TIMEOUT_MSEC)
+            .translate_legacy_requests(request.transaction, &requests, resize_timeout_msec)
             .map_err(Into::into)
     }
 
