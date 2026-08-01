@@ -2,21 +2,6 @@
 const XI_POINTER_EMULATED: u32 = 1 << 16;
 
 #[cfg(unix)]
-const fn xi_device_event_flags(event: XAuthorityInputEvent) -> u32 {
-    if matches!(
-        event,
-        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-            kind: XAuthorityPointerEventKind::Axis { .. },
-            ..
-        })
-    ) {
-        XI_POINTER_EMULATED
-    } else {
-        0
-    }
-}
-
-#[cfg(unix)]
 fn clamp_input_coordinate(value: f64) -> i16 {
     if !value.is_finite() {
         return 0;

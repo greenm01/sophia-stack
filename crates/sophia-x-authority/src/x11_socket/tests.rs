@@ -1148,7 +1148,6 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
         state: 5,
         time_msec: 9,
     });
-    assert_eq!(xi_device_event_flags(motion), 0);
     let bytes = encode_xi_device_event(
         XByteOrder::LittleEndian,
         7,
@@ -1185,22 +1184,18 @@ fn xi2_device_event_uses_xge_header_and_fp1616_local_coordinates() {
         state: 5,
         time_msec: 10,
     });
-    assert_eq!(xi_device_event_flags(axis), XI_POINTER_EMULATED);
     let scroll = encode_xi_device_event(
         XByteOrder::LittleEndian,
         8,
         6,
         axis,
         XResourceId::new(0x200001, 1),
-        XI_POINTER_EMULATED,
+        0,
     );
     assert_eq!(scroll.len(), 92);
     assert_eq!(u32::from_le_bytes(scroll[4..8].try_into().unwrap()), 15);
     assert_eq!(u32::from_le_bytes(scroll[16..20].try_into().unwrap()), 0);
-    assert_eq!(
-        u32::from_le_bytes(scroll[56..60].try_into().unwrap()),
-        XI_POINTER_EMULATED
-    );
+    assert_eq!(u32::from_le_bytes(scroll[56..60].try_into().unwrap()), 0);
     assert_eq!(u16::from_le_bytes(scroll[50..52].try_into().unwrap()), 1);
     assert_eq!(
         &scroll[80..84],

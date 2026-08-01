@@ -1197,13 +1197,15 @@ fn spawn_x11_input_event_writer(
                 }
                 if let Some(event_type) = xi_event_type {
                     let xi_window = xi_event_window.unwrap_or(delivered_window);
+                    // The smooth valuator event is the physical source event. Only
+                    // its compatibility button companion is pointer-emulated.
                     let generic = encode_xi_device_event(
                         byte_order,
                         sequence,
                         event_type,
                         event,
                         xi_window,
-                        xi_device_event_flags(event),
+                        0,
                     );
                     stream.write_all(&generic).map_err(|error| {
                         X11SetupSocketError::new(format!(
