@@ -5960,3 +5960,10 @@ acknowledgement ordering.
   packets remain protocol-neutral. Wire regressions parse the complete pointer
   class topology and cover simultaneous two-axis value ordering. The physical
   Firefox DOM stage remains the acceptance proof.
+
+## 2026-08-01: GitHub organization registered as sophia-stack-project
+
+- Evaluated candidates for a centralized GitHub organization to host the Sophia display server, Hagia, and related system components.
+- The exact names `sophia` and `sophia-stack` are taken on GitHub as user accounts.
+- Decided on `sophia-stack-project` as the organization name to perfectly match the `sophia-stack.org` domain and project boundaries. Other system-level candidates like `sophia-window-system` remain reserved.
+- The organization registration on GitHub will act as a permanent holder for future repository migrations and ecosystem consolidation when the engine reaches maturity.
