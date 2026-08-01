@@ -41,42 +41,54 @@ awk '
         phase = 2
         next
     }
-    phase == 2 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6$/ {
+    phase == 2 && /^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_6 / {
         phase = 3
         next
     }
-    phase == 3 && /^sophia_wm_config_reload schema=2 status=rejected reason=parse / {
+    phase == 3 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6$/ {
         phase = 4
         next
     }
-    phase == 4 && /^sophia_wm_config_reload schema=2 status=rejected reason=read / {
+    phase == 4 && /^sophia_wm_config_reload schema=2 status=rejected reason=parse / {
         phase = 5
         next
     }
-    phase == 5 && /^sophia_live_wm_policy schema=2 status=applied generation=3 .*focus_ring_width=0 .*frame_width=4 clearance=4$/ {
+    phase == 5 && /^sophia_wm_config_reload schema=2 status=rejected reason=read / {
         phase = 6
         next
     }
-    phase == 6 && /^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=2$/ {
+    phase == 6 && /^sophia_live_wm_policy schema=2 status=applied generation=3 .*focus_ring_width=0 .*frame_width=4 clearance=4$/ {
         phase = 7
         next
     }
-    phase == 7 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4$/ {
+    phase == 7 && /^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=2$/ {
         phase = 8
         next
     }
-    phase == 8 && /^sophia_live_wm_policy schema=2 status=applied generation=4 .*focus_ring_width=2 .*frame_width=6 clearance=6$/ {
+    phase == 8 && /^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_4 / {
         phase = 9
         next
     }
-    phase == 9 && /^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=2$/ {
+    phase == 9 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4$/ {
         phase = 10
         next
     }
-    phase == 10 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=12 clearance=6$/ {
+    phase == 10 && /^sophia_live_wm_policy schema=2 status=applied generation=4 .*focus_ring_width=2 .*frame_width=6 clearance=6$/ {
         phase = 11
+        next
     }
-    END { exit !(phase == 11) }
+    phase == 11 && /^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=2$/ {
+        phase = 12
+        next
+    }
+    phase == 12 && /^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_6 / {
+        phase = 13
+        next
+    }
+    phase == 13 && /^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=12 clearance=6$/ {
+        phase = 14
+    }
+    END { exit !(phase == 14) }
 ' "$SESSION_LOG" || fail "chrome phases or atomic resize boundaries are incomplete or out of order"
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .*pending_input=0 .*wm_degraded=false$' \

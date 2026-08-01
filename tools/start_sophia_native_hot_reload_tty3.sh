@@ -81,6 +81,8 @@ printf 'commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)" >>"$SEQUENCE_LOG"
         exit 1
     sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
         exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_6 ' "$baseline" ||
+        exit 1
     sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6$' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=ring_wide generation=2 focus_ring_width=6 frame_width=0' >>"$SEQUENCE_LOG"
@@ -105,6 +107,8 @@ printf 'commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)" >>"$SEQUENCE_LOG"
         exit 1
     sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
         exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_4 ' "$baseline" ||
+        exit 1
     sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4$' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=frame_only generation=3 focus_ring_width=0 frame_width=4' >>"$SEQUENCE_LOG"
@@ -115,6 +119,8 @@ printf 'commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)" >>"$SEQUENCE_LOG"
     sophia_proof_wait_for_new_log '^sophia_live_wm_policy schema=2 status=applied generation=4 .*focus_ring_width=2 .*frame_width=6 clearance=6$' "$baseline" ||
         exit 1
     sophia_proof_wait_for_new_log '^sophia_live_resize_epoch schema=1 status=committed transaction=[0-9]+ matched_surfaces=2$' "$baseline" ||
+        exit 1
+    sophia_proof_wait_for_new_log '^sophia_live_session_present schema=2 status=retired .* target=[0-9]+x[0-9]+_[0-9]+_6 ' "$baseline" ||
         exit 1
     sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=12 clearance=6$' "$baseline" ||
         exit 1

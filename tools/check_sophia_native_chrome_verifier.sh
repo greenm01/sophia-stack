@@ -19,6 +19,8 @@ expect_failure() {
 
 sed '/generation=3 .*focus_ring_width=0/d' "$FIXTURE" >"$TMP"
 expect_failure missing_frame_policy
+sed '/session_present .*target=.*_4 /d' "$FIXTURE" >"$TMP"
+expect_failure missing_frame_presentation
 sed '/frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1/d' "$FIXTURE" >"$TMP"
 expect_failure missing_combined_composition
 sed 's/native_cleanup_pending=false/native_cleanup_pending=true/' "$FIXTURE" >"$TMP"

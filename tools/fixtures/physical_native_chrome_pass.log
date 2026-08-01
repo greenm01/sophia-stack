@@ -1,13 +1,16 @@
 sophia_live_wm_policy schema=2 status=applied generation=2 bindings=4 focus_ring_enabled=true focus_ring_width=6 frame_enabled=false frame_width=0 clearance=6
 sophia_live_resize_epoch schema=1 status=committed transaction=2 matched_surfaces=2
+sophia_live_session_present schema=2 status=retired transaction=20 surface=1 source=1268x1428 target=1268x1428_6_6 clip=1268x1428_6_6 unit_scale=true
 sophia_live_compositor_chrome_set schema=1 status=composed generation=20 eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6
 sophia_wm_config_reload schema=2 status=rejected reason=parse error=redacted
 sophia_wm_config_reload schema=2 status=rejected reason=read error=redacted
 sophia_live_wm_policy schema=2 status=applied generation=3 bindings=4 focus_ring_enabled=false focus_ring_width=0 frame_enabled=true frame_width=4 clearance=4
 sophia_live_resize_epoch schema=1 status=committed transaction=3 matched_surfaces=2
+sophia_live_session_present schema=2 status=retired transaction=30 surface=1 source=1272x1432 target=1272x1432_4_4 clip=1272x1432_4_4 unit_scale=true
 sophia_live_compositor_chrome_set schema=1 status=composed generation=30 eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4
 sophia_live_wm_policy schema=2 status=applied generation=4 bindings=4 focus_ring_enabled=true focus_ring_width=2 frame_enabled=true frame_width=6 clearance=6
 sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=2
+sophia_live_session_present schema=2 status=retired transaction=40 surface=1 source=1268x1428 target=1268x1428_6_6 clip=1268x1428_6_6 unit_scale=true
 sophia_live_compositor_chrome_set schema=1 status=composed generation=40 eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=12 clearance=6
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session schema=15 status=bounded_complete native_submit_failures=0 native_retire_failures=0 native_cleanup_pending=false placeholder=true
