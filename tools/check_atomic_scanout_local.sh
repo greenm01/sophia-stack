@@ -116,9 +116,16 @@ bash -n tools/verify_sophia_xmonad_focused_border.sh
 bash -n tools/check_sophia_xmonad_focused_border_verifier.sh
 tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
-bash -n tools/fixtures/firefox_m10_kitty_probe.sh
+bash -n tools/start_sophia_xmonad_firefox_selection_tty3.sh \
+    tools/start_sophia_xmonad_firefox_lifecycle_tty3.sh
+bash -n tools/fixtures/firefox_m10_kitty_probe.sh \
+    tools/fixtures/firefox_m10_selection_kitty_probe.sh
 bash -n tools/check_firefox_m10_kitty_probe.sh
 tools/check_firefox_m10_kitty_probe.sh
+bash -n tools/check_firefox_m10_selection_kitty_probe.sh
+tools/check_firefox_m10_selection_kitty_probe.sh
+bash -n tools/check_firefox_m10_selection_page.sh
+tools/check_firefox_m10_selection_page.sh
 bash -n tools/run_sophia_kitty_session.sh tools/stop_sophia_kitty_session.sh \
     tools/stop_sophia_native_session.sh tools/stop_sophia_standalone_session.sh \
     tools/stop_sophia_session.sh
@@ -133,6 +140,12 @@ bash -n tools/record_sophia_firefox_physical_run.sh
 bash -n tools/verify_sophia_firefox_physical_runs.sh
 bash -n tools/check_sophia_firefox_physical_verifier.sh
 tools/check_sophia_firefox_physical_verifier.sh
+bash -n tools/verify_sophia_firefox_selection_physical.sh \
+    tools/check_sophia_firefox_selection_verifier.sh \
+    tools/verify_sophia_firefox_lifecycle_physical.sh \
+    tools/check_sophia_firefox_lifecycle_verifier.sh
+tools/check_sophia_firefox_selection_verifier.sh
+tools/check_sophia_firefox_lifecycle_verifier.sh
 tools/check_sophia_xmonad_tty3_verifier.sh
 tools/check_sophia_xmonad_emergency_verifier.sh
 tools/check_installed_session_lifecycle_verifier.sh

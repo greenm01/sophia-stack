@@ -1038,10 +1038,17 @@ than adding speculative browser compatibility.
   bidirectional Firefox/Kitty handoffs for both selections, advances only from
   exact default-paste input, publishes two peer checkpoints, and requires an
   ordered owner-change/conversion pair in all four directions. Offline
-  coordinator, reducer, and fail-closed verifier regressions pass; repeat the
-  complete physical workflow before closing this item.
+  coordinator, reducer, and fail-closed verifier regressions pass. A focused
+  one-Kitty/one-Firefox slice now stops immediately after the four directional
+  transfers, uses direction-specific tokens, and requires a trusted full-field
+  PRIMARY selection before leaving Firefox. Pass that short physical slice,
+  then repeat the complete promotion workflow before closing this item.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
-  their content, focus, workspaces, and interactivity.
+  their content, focus, workspaces, and interactivity. A focused lifecycle
+  slice removes clipboard, scroll, resize, refocus, and dialog work while
+  retaining two Kitty processes, two status-zero Firefox exits, and ordered
+  normal/WM-forced close checkpoints. Pass that short physical slice before
+  rerunning the complete promotion workflow.
 - [ ] Audit only the desktop services observed by this run—such as DBus,
   PipeWire, or portal helpers—and add session integration only for evidenced
   failures.

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 probe_dir="${SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR:-}"
+proof_slice="${SOPHIA_FIREFOX_M10_PROOF_SLICE:-promotion}"
 if [[ -z "$probe_dir" || ! -d "$probe_dir" ]]; then
     echo "Firefox M10 Kitty probe directory is unavailable." >&2
     exit 1
@@ -55,11 +56,11 @@ await_token() {
 }
 
 await_selection_transfer() {
-    local kind="$1" gesture="$2" reply
+    local kind="$1" gesture="$2" expected="$3" reply
     while true; do
         printf '\nKitty B %s transfer: %s, then press Enter: ' "$kind" "$gesture"
         IFS= read -r reply
-        if [[ "$reply" == sophia ]]; then
+        if [[ "$reply" == "$expected" ]]; then
             return 0
         fi
         echo 'Expected SOPHIA; try again.'
@@ -78,16 +79,20 @@ if [[ "$terminal" == a ]]; then
 else
     await_both_checkpoints 1
     echo 'Both Kitty windows are ready. Press Super+F and follow the instructions inside Firefox.'
-    await_selection_transfer CLIPBOARD 'press Ctrl+Shift+V once'
-    set_redacted_title 202
-    mark_checkpoint clipboard
-    printf '\nCLIPBOARD received exactly. Select and copy this exact line with Ctrl+Shift+C:\n%s\n' sophia
-    echo 'Cycle back to Firefox and paste it there. Return when Firefox shows its PRIMARY step.'
-    await_selection_transfer PRIMARY 'middle-click once'
-    set_redacted_title 203
-    mark_checkpoint primary
-    printf '\nPRIMARY received exactly. Select this exact line with the pointer:\n%s\n' sophia
-    echo 'Cycle back to Firefox and middle-click its full-page PRIMARY target.'
+    if [[ "$proof_slice" == promotion ]]; then
+        await_selection_transfer CLIPBOARD 'press Ctrl+Shift+V once' sophia
+        set_redacted_title 202
+        mark_checkpoint clipboard
+        printf '\nCLIPBOARD received exactly. Select and copy this exact line with Ctrl+Shift+C:\n%s\n' sophia-kitty-clipboard
+        echo 'Cycle back to Firefox and paste it there. Return when Firefox shows its PRIMARY step.'
+        await_selection_transfer PRIMARY 'middle-click once' sophia-firefox-primary
+        set_redacted_title 203
+        mark_checkpoint primary
+        printf '\nPRIMARY received exactly. Select this exact line with the pointer:\n%s\n' sophia-kitty-primary
+        echo 'Cycle back to Firefox and middle-click its full-page PRIMARY target.'
+    else
+        echo 'Lifecycle slice: wait for the Firefox page, then press Ctrl+Q and return here.'
+    fi
 fi
 
 echo "Do not type ${tokens[1]^^} until Firefox completes and Ctrl+Q closes it."

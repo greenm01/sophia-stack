@@ -25,6 +25,58 @@ fn firefox_m10_kitty_proof_requires_peer_selection_checkpoints() {
     assert!(!proof.complete(3, 4));
     assert!(!proof.complete(4, 3));
     assert!(proof.complete(4, 4));
+
+    let mut lifecycle = FirefoxM10KittyProof::default();
+    for title_bytes in [193, 194, 211, 212, 229, 230] {
+        assert!(lifecycle.observe("_NET_WM_NAME", title_bytes).is_some());
+    }
+    assert!(lifecycle.lifecycle_complete());
+    assert!(!lifecycle.complete(4, 4));
+}
+
+#[test]
+fn focused_selection_kitty_proof_requires_all_three_checkpoints() {
+    let mut proof = FirefoxM10SelectionKittyProof::default();
+    for (title_bytes, checkpoint) in [
+        (241, "before"),
+        (242, "clipboard_peer"),
+        (243, "primary_peer"),
+    ] {
+        assert_eq!(proof.observe("_NET_WM_NAME", title_bytes), Some(checkpoint));
+    }
+    assert_eq!(proof.completed(), 3);
+    assert!(proof.complete());
+}
+
+#[test]
+fn firefox_physical_slices_are_mutually_exclusive() {
+    let base = [
+        "--session-mode=normal".to_owned(),
+        "--session-app=firefox=/usr/bin/firefox".to_owned(),
+        "--session-action-app=firefox=firefox".to_owned(),
+    ];
+    for proof in [
+        "--firefox-m10-selection-proof",
+        "--firefox-m10-lifecycle-proof",
+    ] {
+        let mut arguments = base.to_vec();
+        arguments.push(proof.to_owned());
+        let config = PersistentXtermSessionConfig::from_args(&arguments).unwrap();
+        assert!(config.firefox_proof_requested());
+        assert!(!config.firefox_full_proof_requested());
+    }
+
+    let mut conflicting = base.to_vec();
+    conflicting.extend([
+        "--firefox-m10-selection-proof".to_owned(),
+        "--firefox-m10-lifecycle-proof".to_owned(),
+    ]);
+    assert!(
+        PersistentXtermSessionConfig::from_args(&conflicting)
+            .unwrap_err()
+            .to_string()
+            .contains("select only one Firefox proof mode")
+    );
 }
 
 #[test]

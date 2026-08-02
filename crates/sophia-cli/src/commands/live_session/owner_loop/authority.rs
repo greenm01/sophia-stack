@@ -149,12 +149,20 @@
                                 title_bytes,
                             );
                         }
-                        if config.firefox_m10_proof
+                        if (config.firefox_m10_proof || config.firefox_m10_lifecycle_proof)
                             && let Some((terminal, checkpoint)) = firefox_m10_kitty_proof
                                 .observe(&metadata.property_name, metadata.byte_len)
                         {
                             println!(
                                 "sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal={terminal} checkpoint={checkpoint} content=redacted"
+                            );
+                        }
+                        if config.firefox_m10_selection_proof
+                            && let Some(checkpoint) = firefox_m10_selection_kitty_proof
+                                .observe(&metadata.property_name, metadata.byte_len)
+                        {
+                            println!(
+                                "sophia_firefox_selection schema=1 status=kitty_checkpoint checkpoint={checkpoint} content=redacted"
                             );
                         }
                     }

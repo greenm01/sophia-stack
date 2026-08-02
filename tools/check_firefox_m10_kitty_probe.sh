@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROBE="$ROOT_DIR/tools/fixtures/firefox_m10_kitty_probe.sh"
 TEMP_DIR="$(mktemp -d)"
-trap 'rm -rf -- "$TEMP_DIR"' EXIT
+LIFECYCLE_TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf -- "$TEMP_DIR" "$LIFECYCLE_TEMP_DIR"' EXIT
 
 printf 'a1\na2\na3\n' |
     env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$TEMP_DIR" "$PROBE" \
@@ -15,7 +16,7 @@ for _ in $(seq 1 100); do
     sleep 0.01
 done
 [[ -d "$TEMP_DIR/kitty-a" ]]
-printf 'b1\nwrong\nsophia\nwrong\nsophia\nb2\nb3\n' |
+printf 'b1\nwrong\nsophia\nwrong\nsophia-firefox-primary\nb2\nb3\n' |
     env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$TEMP_DIR" "$PROBE" \
         >"$TEMP_DIR/second.out" &
 second_pid=$!
@@ -37,5 +38,24 @@ done
 [[ -e "$TEMP_DIR/checkpoint-b-primary" ]]
 [[ "$(grep -Fc 'Expected SOPHIA; try again.' "$b_output")" == 2 ]]
 [[ "$(grep -Fc 'received exactly' "$b_output")" == 2 ]]
+
+printf 'a1\na2\na3\n' |
+    env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$LIFECYCLE_TEMP_DIR" \
+        SOPHIA_FIREFOX_M10_PROOF_SLICE=lifecycle "$PROBE" \
+        >"$LIFECYCLE_TEMP_DIR/first.out" &
+lifecycle_first_pid=$!
+for _ in $(seq 1 100); do
+    [[ -d "$LIFECYCLE_TEMP_DIR/kitty-a" ]] && break
+    sleep 0.01
+done
+printf 'b1\nb2\nb3\n' |
+    env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$LIFECYCLE_TEMP_DIR" \
+        SOPHIA_FIREFOX_M10_PROOF_SLICE=lifecycle "$PROBE" \
+        >"$LIFECYCLE_TEMP_DIR/second.out" &
+lifecycle_second_pid=$!
+wait "$lifecycle_first_pid"
+wait "$lifecycle_second_pid"
+[[ "$(grep -hc 'transfer:' "$LIFECYCLE_TEMP_DIR"/*.out | awk '{ sum += $1 } END { print sum + 0 }')" == 0 ]]
+grep -Fq 'Lifecycle slice' "$LIFECYCLE_TEMP_DIR/second.out"
 
 echo 'Firefox M10 Kitty checkpoint coordinator passed'

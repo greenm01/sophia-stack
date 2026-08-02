@@ -75,6 +75,8 @@ install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"
 install -m 755 tools/fixtures/firefox_m10_kitty_probe.sh \
     "$artifact/tools/fixtures/firefox_m10_kitty_probe.sh"
+install -m 755 tools/fixtures/firefox_m10_selection_kitty_probe.sh \
+    "$artifact/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
 install -m 644 tools/fixtures/xmobar_sophia.config \
     "$artifact/tools/fixtures/xmobar_sophia.config"
 

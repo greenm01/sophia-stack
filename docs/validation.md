@@ -840,17 +840,41 @@ artifact:
 
 ### Physical Firefox workflow
 
-After the normal xmonad input gate passes, run the content-redacted physical
-Firefox workflow from TTY3:
+Use the focused source-tree slices while diagnosing one Firefox boundary. They
+run the same Sophia/X-authority path and isolated Firefox profile as promotion,
+but stop as soon as the affected contract is proved:
+
+```sh
+# One Kitty, one Firefox, four bidirectional CLIPBOARD/PRIMARY transfers.
+tools/start_sophia_xmonad_firefox_selection_tty3.sh
+tools/verify_sophia_firefox_selection_physical.sh
+
+# Two Kitty windows, normal Firefox close, restart, and WM-forced close.
+tools/start_sophia_xmonad_firefox_lifecycle_tty3.sh
+tools/verify_sophia_firefox_lifecycle_physical.sh
+```
+
+The selection slice uses a distinct token for every direction and requires a
+trusted, complete pointer selection before leaving Firefox for the PRIMARY
+handoff. Its verifier orders an owner change and a conversion inside each of
+the four peer intervals, so same-process reuse and stale selection state cannot
+advance it. The lifecycle slice removes clipboard, scroll, resize, refocus, and
+dialog work; its verifier still requires two independent Kitty processes, two
+status-zero Firefox exits, an ordered `CloseFocused`, clean health, and clean
+frontend teardown. These slices are diagnostic evidence, not promotion runs.
+
+After the affected slice passes and the normal xmonad input gate remains clean,
+run the content-redacted physical Firefox promotion workflow from TTY3:
 
 ```sh
 tools/start_sophia_xmonad_firefox_proof_tty3.sh
 ```
 
-The launcher uses the offline fixture and keeps the current instruction visible
-inside the active window; the operator does not need to memorize a sequence
-before graphics takeover. It creates a run-local Firefox profile and uses the
-same native-X, single-process, XI2 configuration as the passing QEMU workload,
+The promotion launcher uses the offline fixture and keeps the current
+instruction visible inside the active window; the operator does not need to
+memorize a sequence before graphics takeover. It creates a run-local Firefox
+profile and uses the same native-X, single-process, XI2 configuration as the
+passing QEMU workload,
 so the proof neither inherits the operator's normal Firefox profile nor changes
 it. Kitty A and Kitty B each accept three short,
 content-redacted checkpoints before Firefox, after its normal `Ctrl+Q` exit,

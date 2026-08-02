@@ -95,6 +95,8 @@ struct PersistentXtermSessionConfig {
     m4_diagnose_first_mixed_export: bool,
     firefox_m8_proof: bool,
     firefox_m10_proof: bool,
+    firefox_m10_selection_proof: bool,
+    firefox_m10_lifecycle_proof: bool,
 }
 
 impl PersistentXtermSessionConfig {
@@ -409,10 +411,25 @@ impl PersistentXtermSessionConfig {
             .any(|arg| arg == "--m4-diagnose-first-mixed-export");
         let firefox_m8_proof = args.iter().any(|arg| arg == "--firefox-m8-proof");
         let firefox_m10_proof = args.iter().any(|arg| arg == "--firefox-m10-proof");
-        if firefox_m8_proof && firefox_m10_proof {
-            return Err("select only one Firefox proof generation".into());
+        let firefox_m10_selection_proof = args
+            .iter()
+            .any(|arg| arg == "--firefox-m10-selection-proof");
+        let firefox_m10_lifecycle_proof = args
+            .iter()
+            .any(|arg| arg == "--firefox-m10-lifecycle-proof");
+        let firefox_proof_count = [
+            firefox_m8_proof,
+            firefox_m10_proof,
+            firefox_m10_selection_proof,
+            firefox_m10_lifecycle_proof,
+        ]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
+        if firefox_proof_count > 1 {
+            return Err("select only one Firefox proof mode".into());
         }
-        if (firefox_m8_proof || firefox_m10_proof)
+        if firefox_proof_count == 1
             && (!normal_session || applications.firefox.is_none())
         {
             return Err(
@@ -607,6 +624,8 @@ impl PersistentXtermSessionConfig {
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
             firefox_m10_proof,
+            firefox_m10_selection_proof,
+            firefox_m10_lifecycle_proof,
         })
     }
 
@@ -708,6 +727,13 @@ impl PersistentXtermSessionConfig {
     }
 
     fn firefox_proof_requested(&self) -> bool {
+        self.firefox_m8_proof
+            || self.firefox_m10_proof
+            || self.firefox_m10_selection_proof
+            || self.firefox_m10_lifecycle_proof
+    }
+
+    fn firefox_full_proof_requested(&self) -> bool {
         self.firefox_m8_proof || self.firefox_m10_proof
     }
 }
@@ -722,6 +748,42 @@ struct FirefoxM8StageProof {
 #[derive(Default)]
 struct FirefoxM10KittyProof {
     observed: [bool; Self::CHECKPOINTS.len()],
+}
+
+#[derive(Default)]
+struct FirefoxM10SelectionKittyProof {
+    observed: [bool; Self::CHECKPOINTS.len()],
+}
+
+impl FirefoxM10SelectionKittyProof {
+    const CHECKPOINTS: [(usize, &'static str); 3] = [
+        (241, "before"),
+        (242, "clipboard_peer"),
+        (243, "primary_peer"),
+    ];
+
+    fn observe(&mut self, property_name: &str, byte_len: usize) -> Option<&'static str> {
+        if property_name != "_NET_WM_NAME" {
+            return None;
+        }
+        let (index, (_, checkpoint)) = Self::CHECKPOINTS
+            .iter()
+            .enumerate()
+            .find(|(_, (expected, _))| *expected == byte_len)?;
+        if self.observed[index] {
+            return None;
+        }
+        self.observed[index] = true;
+        Some(*checkpoint)
+    }
+
+    fn complete(&self) -> bool {
+        self.observed.iter().all(|observed| *observed)
+    }
+
+    fn completed(&self) -> usize {
+        self.observed.iter().filter(|observed| **observed).count()
+    }
 }
 
 impl FirefoxM10KittyProof {
@@ -760,6 +822,12 @@ impl FirefoxM10KittyProof {
         self.observed.iter().all(|observed| *observed)
             && selection_owner_changes >= Self::REQUIRED_SELECTION_OPERATIONS
             && selection_conversions >= Self::REQUIRED_SELECTION_OPERATIONS
+    }
+
+    fn lifecycle_complete(&self) -> bool {
+        [0, 1, 4, 5, 6, 7]
+            .into_iter()
+            .all(|index| self.observed[index])
     }
 
     fn completed(&self) -> usize {

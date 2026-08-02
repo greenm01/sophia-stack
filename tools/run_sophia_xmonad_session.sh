@@ -15,12 +15,21 @@ DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 FIREFOX_M10_PROOF=false
+FIREFOX_M10_SELECTION_PROOF=false
+FIREFOX_M10_LIFECYCLE_PROOF=false
 for argument in "$@"; do
-    if [[ "$argument" == --firefox-m10-proof ]]; then
-        FIREFOX_M10_PROOF=true
-        break
-    fi
+    case "$argument" in
+        --firefox-m10-proof) FIREFOX_M10_PROOF=true ;;
+        --firefox-m10-selection-proof) FIREFOX_M10_SELECTION_PROOF=true ;;
+        --firefox-m10-lifecycle-proof) FIREFOX_M10_LIFECYCLE_PROOF=true ;;
+    esac
 done
+FIREFOX_M10_ANY_PROOF=false
+if [[ "$FIREFOX_M10_PROOF" == true
+    || "$FIREFOX_M10_SELECTION_PROOF" == true
+    || "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
+    FIREFOX_M10_ANY_PROOF=true
+fi
 if [[ "$SESSION_PROFILE" != standalone
     && "$SESSION_PROFILE" != xmonad
     && "$SESSION_PROFILE" != native
@@ -74,7 +83,7 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 firefox_m10_probe_dir=""
 firefox_m10_profile_dir=""
-if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
     firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
     firefox_m10_profile_dir="$firefox_m10_probe_dir/firefox-profile"
     mkdir -p "$firefox_m10_profile_dir"
@@ -485,7 +494,11 @@ else
         --session-app-arg=terminal=--override
         --session-app-arg=terminal=background_opacity=1
     )
-    if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+    if [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
+        session_args+=(
+            "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
+        )
+    elif [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
         session_args+=(
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_kitty_probe.sh"
         )
@@ -520,8 +533,10 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
     firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
     if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then
         firefox_page="file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
-        if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+        if [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
             firefox_page="${firefox_page}?selection_peer=kitty"
+        elif [[ "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
+            firefox_page="${firefox_page}?lifecycle_only=1"
         fi
         session_args+=(
             "--session-app=firefox=$firefox_bin"
@@ -529,7 +544,7 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             --session-app-arg=firefox=--no-remote
             --session-app-arg=firefox=--new-instance
         )
-        if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+        if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
             session_args+=(
                 --session-app-arg=firefox=--profile
                 "--session-app-arg=firefox=$firefox_m10_profile_dir"
@@ -555,9 +570,18 @@ session_environment=(
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
     "SOPHIA_SESSION_TTY=$tty_name"
 )
-if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
     session_environment+=(
         "SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR=$firefox_m10_probe_dir"
+        "SOPHIA_FIREFOX_M10_PROOF_SLICE=$(
+            if [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
+                echo selection
+            elif [[ "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
+                echo lifecycle
+            else
+                echo promotion
+            fi
+        )"
         GDK_BACKEND=x11
         GTK_USE_PORTAL=0
         MOZ_ENABLE_WAYLAND=0

@@ -35,9 +35,11 @@
   const parameters = new URLSearchParams(location.search);
   const navigated = parameters.get('navigated') === '1';
   const selectionPeer = parameters.get('selection_peer') === 'kitty';
+  const lifecycleOnly = parameters.get('lifecycle_only') === '1';
   let stage = navigated ? 3 : 0;
   let refocusArmed = false;
   let selectionPeerAway = false;
+  let primarySourceArmed = false;
   let verticalWheelEvents = 0;
   const status = document.querySelector('#status');
   const next = document.querySelector('#next');
@@ -46,10 +48,10 @@
   const nextSteps = [
     'Step 1/8: type sophia.',
     selectionPeer
-      ? 'Step 2/8: Ctrl+A and Ctrl+C. Cycle with Super+J to Kitty B, follow its CLIPBOARD prompt, copy its returned sophia, cycle back here, then press Ctrl+V.'
+      ? 'Step 2/8: Ctrl+A and Ctrl+C. Cycle with Super+J to the selection Kitty, follow its CLIPBOARD prompt, copy its returned token, cycle back here, then press Ctrl+V.'
       : 'Step 2/8: Ctrl+A, Ctrl+C, Tab, Ctrl+V.',
     selectionPeer
-      ? 'Step 3/8: drag-select sophia in the source field. Cycle to Kitty B, follow its PRIMARY prompt, select its returned sophia, cycle back here, then middle-click.'
+      ? 'Step 3/8: physically drag-select the entire Firefox PRIMARY token. Wait for PRIMARY armed, cycle to the selection Kitty, follow its prompt, select its returned token, cycle back here, then middle-click.'
       : 'Step 3/8: move the pointer well inside this colored page, away from every screen edge, then middle-click.',
     'Step 4/8: click the full-page navigation target, then scroll vertically through at least two notches on the next document.',
     'Step 5/8: press Super+Space to resize.',
@@ -66,7 +68,10 @@
     status.textContent = label;
     next.textContent = nextSteps[stage];
     document.body.style.background = `hsl(${stage * 47} 55% 24%)`;
-    if (stage === 1 || stage === 2) {
+    if (selectionPeer && stage === 2) {
+      source.value = 'sophia-firefox-primary';
+      source.focus();
+    } else if (stage === 1 || stage === 2) {
       source.focus();
       source.select();
     }
@@ -87,11 +92,25 @@
     }
   });
   addEventListener('blur', () => {
-    if (selectionPeer && (stage === 1 || stage === 2)) selectionPeerAway = true;
+    if (selectionPeer && stage === 1) selectionPeerAway = true;
+    if (selectionPeer && stage === 2) {
+      selectionPeerAway = primarySourceArmed;
+      if (!primarySourceArmed) {
+        status.textContent = 'PRIMARY is not armed';
+        next.textContent = 'Return here and physically drag-select the entire Firefox PRIMARY token before switching windows.';
+      }
+    }
     if (stage === 5) refocusArmed = true;
   });
   source.addEventListener('input', event => {
     if (stage === 0 && event.target.value === 'sophia') advance('keyboard complete');
+  });
+  source.addEventListener('select', event => {
+    if (!selectionPeer || stage !== 2 || !event.isTrusted) return;
+    if (source.selectionStart !== 0 || source.selectionEnd !== source.value.length) return;
+    primarySourceArmed = true;
+    status.textContent = 'PRIMARY armed';
+    next.textContent = 'Cycle to the selection Kitty and follow its PRIMARY prompt.';
   });
   addEventListener('keydown', event => {
     if (stage !== 0 || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
@@ -114,12 +133,14 @@
     }
   });
   document.querySelector('#clipboard').addEventListener('input', event => {
-    if (stage === 1 && event.target.value === 'sophia') {
+    const expected = selectionPeer ? 'sophia-kitty-clipboard' : 'sophia';
+    if (stage === 1 && event.target.value === expected) {
       advance('clipboard complete');
     }
   });
   document.querySelector('#primary').addEventListener('input', event => {
-    if (stage === 2 && event.target.value === 'sophia') advance('primary complete');
+    const expected = selectionPeer ? 'sophia-kitty-primary' : 'sophia';
+    if (stage === 2 && event.target.value === expected) advance('primary complete');
   });
   function completeScrollIfReady() {
     // XI2's first absolute-axis value establishes GTK's baseline and does not
@@ -169,6 +190,9 @@
     next.textContent = nextSteps[stage];
   } else if (selectionPeer) {
     document.querySelector('#navigate').href = '?navigated=1&selection_peer=kitty';
+  } else if (lifecycleOnly) {
+    status.textContent = 'Firefox lifecycle page ready';
+    next.textContent = 'Press Ctrl+Q now, then return to the Kitty checkpoints.';
   }
 </script>
 </html>
