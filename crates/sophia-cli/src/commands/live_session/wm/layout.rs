@@ -516,20 +516,41 @@ impl PersistentLiveLayout {
         surface: SurfaceId,
         size: Size,
     ) -> bool {
-        let Some(candidate) = self
+        if let Some(candidate) = self
             .awaiting_visual_commits
             .complete(transaction, surface, size)
-        else {
+        {
+            self.layout_epochs
+                .record_committed(candidate.surface, candidate.size);
+            println!(
+                "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
+                candidate.transaction.raw(),
+                candidate.surface.index(),
+                candidate.size.width,
+                candidate.size.height,
+            );
+            return true;
+        }
+
+        // A launch-time recovery epoch can admit the exact fallback frame and
+        // commit before the client answers the standing blind-WM target. That
+        // later frame has no pending layout epoch to arm it, but native
+        // retirement is still exact visual proof. Accept only the outstanding
+        // target while its temporary recovery extent is active; unrelated or
+        // old-sized unarmed Presents remain unable to mutate committed state.
+        if self.layout_epochs.recovery_extent(surface).is_none()
+            || self.layout_epochs.pending_target(surface) != Some(size)
+        {
             return false;
-        };
-        self.layout_epochs
-            .record_committed(candidate.surface, candidate.size);
+        }
+        self.layout_epochs.record_committed(surface, size);
+        self.release_recovery_extent(surface, "standing_target_presented");
         println!(
-            "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
-            candidate.transaction.raw(),
-            candidate.surface.index(),
-            candidate.size.width,
-            candidate.size.height,
+            "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={} source=standing_target_recovery",
+            transaction.raw(),
+            surface.index(),
+            size.width,
+            size.height,
         );
         true
     }

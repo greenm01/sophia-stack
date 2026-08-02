@@ -965,8 +965,16 @@ than adding speculative browser compatibility.
   it reused the ordinary admission selector, which correctly blocks while
   rollback extents exist. Reseed replay now has a separate candidate query
   that ignores only that scheduling gate while retaining known-surface and
-  terminal-retry checks. Require `reseed_queued request=manage` in the next
-  physical run.
+  terminal-retry checks. The next run confirmed `request=manage` and retired
+  Firefox's 1280-by-1040 fallback followed by its exact 1276-by-1422 standing
+  target, but the latter remained clipped to 1276-by-1040 because it arrived
+  after the constrained admission epoch and therefore was not armed. The old
+  regression had bypassed this production boundary by manually recording the
+  target. Exact native retirement now discharges an unarmed standing target
+  only while the same surface retains its temporary recovery extent, queues
+  one constraint relayout, and leaves unrelated unarmed frames rejected.
+  Require `recovery_extent_cleared reason=standing_target_presented`, a full
+  1276-by-1422 clip, and successful pointer handoff in the next physical run.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

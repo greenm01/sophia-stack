@@ -1109,15 +1109,46 @@ fn fallback_admission_keeps_recovery_extent_until_the_standing_target_commits() 
     );
     assert!(!layout.constraint_relayout_required());
 
-    layout.layout_epochs.record_committed(surface, target);
-    assert!(layout.release_recovery_extent_after_commit(surface, Some(target), "test_target",));
+    assert!(!layout.complete_visual_commit(TransactionId::from_raw(690), surface, fallback,));
+    assert_eq!(
+        layout.layout_epochs.recovery_extent(surface),
+        Some(fallback)
+    );
+    assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
+
+    assert!(layout.complete_visual_commit(TransactionId::from_raw(691), surface, target,));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
     assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+    assert_eq!(
+        layout.layout_epochs.effective_constraints(surface),
+        SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        }
+    );
     assert!(layout.constraint_relayout_required());
 }
 
 #[test]
-fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() {
+fn unarmed_target_without_a_recovery_extent_cannot_bypass_the_layout_epoch() {
     let surface = SurfaceId::new(70, 1);
+    let target = Size {
+        width: 1276,
+        height: 709,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.set_pending_target(surface, target);
+
+    assert!(!layout.complete_visual_commit(TransactionId::from_raw(700), surface, target,));
+    assert_eq!(layout.layout_epochs.committed_size(surface), None);
+    assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
+    assert!(!layout.constraint_relayout_required());
+}
+
+#[test]
+fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() {
+    let surface = SurfaceId::new(71, 1);
     let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
     let geometry = Rect {
         x: 20,
