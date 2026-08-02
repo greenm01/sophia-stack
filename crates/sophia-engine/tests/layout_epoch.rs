@@ -400,3 +400,78 @@ fn layout_transaction<const N: usize>(placements: [(SurfaceId, Rect); N]) -> Lay
         timeout_msec: 500,
     }
 }
+
+#[test]
+fn admission_surface_retains_a_standing_target_instead_of_welding_to_its_launch_size() {
+    // Reproduces the Firefox M10 weld: a first-launch client presents its own
+    // default extent (1280x1040) before it can honor the blind-WM tile
+    // (1276x1422), so the launch epoch times out. Recovery must fence the
+    // surface for visibility WITHOUT rolling it back to its own size or
+    // rejecting the WM target, and the owner records a standing obligation that
+    // drives it to the tile once the temporary extent clears.
+    let surface = SurfaceId::new(9, 1);
+    let launch = size(1280, 1040);
+    let target = size(1276, 1422);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(surface, launch);
+    coordinator.set_admission(surface, SurfaceAdmissionState::Unmanaged);
+
+    // After the fix, expire_pending passes an admission surface only as a fixed
+    // (fenced) surface, never as a rolled-back request. That must not reject the
+    // WM target or emit a configure back at the client's own launch size.
+    let configures = coordinator
+        .begin_recovery(std::iter::empty::<(SurfaceId, Size)>(), [surface])
+        .unwrap();
+    assert!(
+        configures.is_empty(),
+        "a fenced admission surface must not receive a rollback configure"
+    );
+    assert!(
+        coordinator.request_allowed(surface, target),
+        "the blind-WM target must never be marked rejected"
+    );
+    assert_eq!(coordinator.recovery_extent(surface), Some(launch));
+
+    // The owner records the standing obligation toward the WM tile.
+    coordinator.set_pending_target(surface, target);
+    assert_eq!(coordinator.pending_target(surface), Some(target));
+
+    // Once the launch buffer retires the temporary extent clears and the
+    // surface is free to resize, but the obligation is still outstanding.
+    assert!(coordinator.clear_recovery_extent(surface));
+    assert!(coordinator.surface_resizable(surface));
+    assert_eq!(coordinator.pending_target(surface), Some(target));
+
+    // Committing the exact target discharges the obligation.
+    coordinator.record_committed(surface, target);
+    assert_eq!(coordinator.pending_target(surface), None);
+}
+
+#[test]
+fn pending_target_matching_committed_size_is_not_an_obligation() {
+    let surface = SurfaceId::new(10, 1);
+    let extent = size(800, 600);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(surface, extent);
+    // Nothing to drive when the surface already sits at the target.
+    coordinator.set_pending_target(surface, extent);
+    assert_eq!(coordinator.pending_target(surface), None);
+    // Removing a managed surface drops any obligation with it.
+    coordinator.set_pending_target(surface, size(1000, 700));
+    assert_eq!(coordinator.pending_target(surface), Some(size(1000, 700)));
+    coordinator.remove(surface);
+    assert_eq!(coordinator.pending_target(surface), None);
+}
+
+#[test]
+fn re_drive_transaction_ids_advance_without_arming_rollback_state() {
+    let surface = SurfaceId::new(11, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    let first = coordinator.next_recovery_transaction().unwrap();
+    let second = coordinator.next_recovery_transaction().unwrap();
+    assert!(second.raw() > first.raw());
+    // A plain re-drive configure must not gate the client's visible
+    // observations the way a rollback configure does.
+    assert!(!coordinator.rollback_pending(surface));
+    assert!(coordinator.accept_observation(surface, size(1276, 1422)));
+}

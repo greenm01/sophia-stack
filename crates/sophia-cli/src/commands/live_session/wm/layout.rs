@@ -464,6 +464,56 @@ impl PersistentLiveLayout {
         true
     }
 
+    /// Re-drives every unmet standing target obligation. After an aborted
+    /// launch epoch admits a client at whatever extent it first mapped, this
+    /// sends one plain (non-rollback) `ConfigureSurface` at the blind-WM target
+    /// so the client converges without the epoch having to block on its first
+    /// exact-size frame. The configure does not gate the client's visible
+    /// observations, so it keeps showing its current buffer until it resizes.
+    fn redrive_unmet_targets(
+        &mut self,
+        session_controls: &mut SessionControlQueue,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let obligations = self
+            .layout_epochs
+            .pending_target_surfaces()
+            .collect::<Vec<_>>();
+        for (surface, target) in obligations {
+            if self.layout_epochs.recovery_extent(surface).is_some()
+                || self.layout_epochs.committed_size(surface) == Some(target)
+            {
+                continue;
+            }
+            let Some(client) = self.client_routes.client_for_surface(surface) else {
+                continue;
+            };
+            let Some(transaction) = self.layout_epochs.next_recovery_transaction() else {
+                continue;
+            };
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand {
+                        client,
+                        command: XAuthorityControlCommand::ConfigureSurface {
+                            transaction,
+                            surface,
+                            size: target,
+                        },
+                    },
+                    Instant::now(),
+                )
+                .map_err(|error| format!("failed to queue target re-drive control: {error:?}"))?;
+            println!(
+                "sophia_live_resize_epoch schema=2 status=target_redrive_enqueued transaction={} surface={} width={} height={}",
+                transaction.raw(),
+                surface.index(),
+                target.width,
+                target.height,
+            );
+        }
+        Ok(())
+    }
+
     fn constraint_relayout_required(&self) -> bool {
         self.constraint_relayout_required
     }
@@ -676,17 +726,38 @@ impl PersistentLiveLayout {
             .copied()
             .filter(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) >= 1)
             .collect::<BTreeSet<_>>();
+        // A first-launch admission surface is fenced through a fixed recovery
+        // extent (the `fixed_surfaces` argument below), not rolled back. Rolling
+        // it back would issue a ConfigureSurface at its own initial buffer size
+        // and mark the blind-WM target as rejected, welding the client to the
+        // size it happened to map at (e.g. Firefox's 1280x1040 default) instead
+        // of converging on the WM tile. Only already-managed surfaces roll back
+        // to a known-good size.
         let rollback = self.layout_epochs.begin_recovery(
             pending
                 .requested_sizes
                 .iter()
-                .filter(|(surface, _)| !terminal_admissions.contains(surface))
+                .filter(|(surface, _)| {
+                    !terminal_admissions.contains(surface)
+                        && !admission_surfaces.contains(surface)
+                })
                 .map(|(surface, size)| (*surface, *size)),
             admission_surfaces
                 .iter()
                 .copied()
                 .filter(|surface| !terminal_admissions.contains(surface)),
         )?;
+        // Retain each fenced admission surface's blind-WM target as a standing
+        // obligation. Once its temporary recovery extent clears it is driven to
+        // that size rather than staying welded to the extent it first mapped at.
+        for surface in &admission_surfaces {
+            if terminal_admissions.contains(surface) {
+                continue;
+            }
+            if let Some(target) = pending.requested_sizes.get(surface) {
+                self.layout_epochs.set_pending_target(*surface, *target);
+            }
+        }
         let rollback_transaction = rollback
             .first()
             .map(|request| request.transaction)

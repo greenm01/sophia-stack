@@ -121,6 +121,12 @@ pub struct LayoutEpochCoordinator {
     rejected_sizes: BTreeMap<SurfaceId, Size>,
     constraints: BTreeMap<SurfaceId, SurfaceConstraintState>,
     admission: BTreeMap<SurfaceId, SurfaceAdmissionState>,
+    // Standing size a surface must still converge on after an aborted layout
+    // epoch admitted it at a different extent. A first-launch client can be
+    // shown at whatever it first rendered while this obligation drives it
+    // toward the blind-WM target; it clears once the surface commits a
+    // buffer at that exact target.
+    pending_targets: BTreeMap<SurfaceId, Size>,
     next_observation_sequence: u64,
     next_transaction: u64,
 }
@@ -135,6 +141,7 @@ impl Default for LayoutEpochCoordinator {
             rejected_sizes: BTreeMap::new(),
             constraints: BTreeMap::new(),
             admission: BTreeMap::new(),
+            pending_targets: BTreeMap::new(),
             next_observation_sequence: 1,
             next_transaction: 1 << 63,
         }
@@ -239,6 +246,45 @@ impl LayoutEpochCoordinator {
         if self.rejected_sizes.get(&surface) == Some(&size) {
             self.rejected_sizes.remove(&surface);
         }
+        // A surface that commits its outstanding target has converged; the
+        // standing re-drive obligation is discharged.
+        if self.pending_targets.get(&surface) == Some(&size) {
+            self.pending_targets.remove(&surface);
+        }
+    }
+
+    /// Records a size a surface must still converge on after an aborted layout
+    /// epoch admitted it at a different extent. No-op when it already matches
+    /// the committed size (nothing to drive).
+    pub fn set_pending_target(&mut self, surface: SurfaceId, target: Size) {
+        if self.committed_sizes.get(&surface) == Some(&target) {
+            self.pending_targets.remove(&surface);
+        } else {
+            self.pending_targets.insert(surface, target);
+        }
+    }
+
+    pub fn pending_target(&self, surface: SurfaceId) -> Option<Size> {
+        self.pending_targets.get(&surface).copied()
+    }
+
+    pub fn clear_pending_target(&mut self, surface: SurfaceId) -> bool {
+        self.pending_targets.remove(&surface).is_some()
+    }
+
+    pub fn pending_target_surfaces(&self) -> impl Iterator<Item = (SurfaceId, Size)> + '_ {
+        self.pending_targets
+            .iter()
+            .map(|(surface, size)| (*surface, *size))
+    }
+
+    /// Allocates the next recovery-namespace transaction id without arming any
+    /// rollback or rejection state. Used to correlate a plain re-drive configure
+    /// that must not gate the client's visible observations.
+    pub fn next_recovery_transaction(&mut self) -> Option<TransactionId> {
+        let transaction = TransactionId::from_raw(self.next_transaction);
+        self.next_transaction = self.next_transaction.checked_add(1)?;
+        Some(transaction)
     }
 
     /// Records a complete authority buffer extent without claiming that its
@@ -455,6 +501,7 @@ impl LayoutEpochCoordinator {
         self.rejected_sizes.remove(&surface);
         self.constraints.remove(&surface);
         self.admission.remove(&surface);
+        self.pending_targets.remove(&surface);
     }
 
     pub fn rollback_pending(&self, surface: SurfaceId) -> bool {

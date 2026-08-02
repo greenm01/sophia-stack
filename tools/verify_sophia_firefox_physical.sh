@@ -63,6 +63,10 @@ require_file "$RECOVERY_LOG"
 
 if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degraded)([[:space:]]|$))' \
     "$SESSION_LOG"; then
+    # Surface the specific proof/stage failure before the generic verdict so a
+    # run self-reports (e.g. "died on resize") without a manual log read.
+    grep -E '(Firefox M[0-9]+ proof incomplete: [^"]*|status=failed reason=[a-z_]+( stage=[a-z]+)?)' \
+        "$SESSION_LOG" | sed 's/^/  cause: /' >&2 || true
     fail "session log contains a Sophia error, panic, or degraded status"
 fi
 if grep -Eq '^sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=' \

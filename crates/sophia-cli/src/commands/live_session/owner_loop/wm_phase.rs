@@ -5,6 +5,7 @@
     {
         match wm.enqueue_relayout(&layout, output)? {
             LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {
+                layout.redrive_unmet_targets(&mut session_controls)?;
                 layout.acknowledge_constraint_relayout();
             }
             LiveWmRequestAdmission::RejectedCapacity => {
