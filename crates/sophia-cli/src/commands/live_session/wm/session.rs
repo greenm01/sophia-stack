@@ -751,7 +751,12 @@ impl LiveWmSession {
             );
         }
         validate_live_wm_transaction(&transaction, layout, bounds)?;
-        let mut proposed = layout.planning_layers();
+        // A WM response may only introduce planning surfaces represented by
+        // its own candidate workspace state. This matters when restart reseed
+        // queues a committed relayout ahead of a pending ManageSurface: the
+        // first response must not consume the pending surface's quarantined
+        // pixels before the second request owns that admission.
+        let mut proposed = layout.planning_layers_for_workspace_state(&plan.candidate);
         let engine = HeadlessEngine::new(output);
         let commit = engine.commit_layout_transaction(&transaction, &mut proposed);
         if commit.outcome != TransactionOutcome::Committed {

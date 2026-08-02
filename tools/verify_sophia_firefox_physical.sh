@@ -113,6 +113,64 @@ second_exit="$(line_number '^sophia_session_app schema=1 status=exited id=firefo
     && second_exit < kitty_forced_a && second_exit < kitty_forced_b )) ||
     fail "Firefox close/restart and Kitty retention checkpoints are out of order"
 
+mapfile -t firefox_admission_starts < <(
+    grep -E '^sophia_session_app schema=2 status=started id=firefox source=action transaction=[0-9]+$' \
+        "$SESSION_LOG"
+)
+(( ${#firefox_admission_starts[@]} == 2 )) ||
+    fail "expected exactly two correlated Firefox admission starts"
+firefox_exit_lines=("$first_exit" "$second_exit")
+admission_restart_count=0
+for index in 0 1; do
+    start_record="${firefox_admission_starts[$index]}"
+    action_transaction="$(field "$start_record" transaction)" ||
+        fail "Firefox admission start lacks its action transaction"
+    admission_start_line="$(line_number "^sophia_session_app schema=2 status=started id=firefox source=action transaction=${action_transaction}$")"
+    surface_observed_line="$(line_number_after "^sophia_session_app schema=2 status=surface_observed source=action transaction=${action_transaction} surface=[0-9]+$" "$admission_start_line")"
+    [[ -n "$surface_observed_line" ]] ||
+        fail "Firefox action $action_transaction never observed a surface"
+    surface_record="$(sed -n "${surface_observed_line}p" "$SESSION_LOG")"
+    firefox_admission_surface="$(field "$surface_record" surface)" ||
+        fail "Firefox surface observation lacks its opaque surface"
+    admitted_line="$(line_number_after "^sophia_session_app schema=2 status=admitted source=action transaction=${action_transaction} surface=${firefox_admission_surface}$" "$surface_observed_line")"
+    [[ -n "$admitted_line" ]] ||
+        fail "Firefox action $action_transaction never completed visual admission"
+    (( admitted_line < firefox_exit_lines[index] )) ||
+        fail "Firefox action $action_transaction exited before admission completed"
+    visual_presented_line="$(line_number_after "^sophia_live_visual_admission schema=1 status=presented transaction=[0-9]+ surface=${firefox_admission_surface}$" "$surface_observed_line")"
+    [[ -n "$visual_presented_line" ]] && (( visual_presented_line < admitted_line )) ||
+        fail "Firefox action $action_transaction lacks retired admission pixels"
+
+    mapfile -t admission_restarts < <(awk -v first="$surface_observed_line" -v last="$admitted_line" '
+        NR > first && NR < last && /^sophia_live_wm schema=1 status=restarted / { print NR }
+    ' "$SESSION_LOG")
+    (( ${#admission_restarts[@]} <= 1 )) ||
+        fail "Firefox action $action_transaction restarted the WM more than once"
+    admission_restart_count=$((admission_restart_count + ${#admission_restarts[@]}))
+    if (( ${#admission_restarts[@]} == 1 )); then
+        restart_line="${admission_restarts[0]}"
+        committed_phase_line="$(line_number_after '^sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout$' "$restart_line")"
+        manage_phase_line="$(line_number_after "^sophia_live_wm schema=4 status=reseed_queued phase=pending_admission request=manage surface=${firefox_admission_surface}$" "$committed_phase_line")"
+        [[ -n "$committed_phase_line" && -n "$manage_phase_line" ]] \
+            && (( committed_phase_line < manage_phase_line && manage_phase_line < admitted_line )) ||
+            fail "Firefox recovery did not queue committed layout before manage replay"
+        seed_commit_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' "$manage_phase_line")"
+        [[ -n "$seed_commit_line" ]] && (( seed_commit_line < admitted_line )) ||
+            fail "Firefox recovery lacks a committed-layout reseed"
+        if awk -v first="$restart_line" -v last="$seed_commit_line" -v surface="$firefox_admission_surface" '
+            NR > first && NR < last &&
+                $0 ~ /^sophia_live_visual_admission schema=1 status=armed / &&
+                $0 ~ ("surface=" surface "$") { found=1 }
+            END { exit !found }
+        ' "$SESSION_LOG"; then
+            fail "committed-layout reseed consumed Firefox admission pixels"
+        fi
+        replay_arm_line="$(line_number_after "^sophia_live_visual_admission schema=1 status=armed transaction=[0-9]+ surface=${firefox_admission_surface}$" "$seed_commit_line")"
+        [[ -n "$replay_arm_line" ]] && (( replay_arm_line < visual_presented_line )) ||
+            fail "Firefox manage replay did not arm its retained visual candidate"
+    fi
+done
+
 forced_close="$(line_number_after '^sophia_live_wm schema=1 status=session_action_committed .* action=CloseFocused$' "$second_start")"
 [[ -n "$forced_close" ]] && (( forced_close < second_exit )) ||
     fail "second Firefox was not closed through the WM close path"
@@ -278,13 +336,18 @@ mapfile -t completions < <(grep -E '^sophia_live_session schema=(14|15|16) statu
 completion="${completions[0]}"
 for assignment in \
     native_presentation=enabled physical_input=enabled wm_policy=external \
-    wm_restarts=0 wm_degraded=false native_submit_failures=0 \
+    wm_degraded=false native_submit_failures=0 \
     native_retire_failures=0 native_callback_rejected=0 \
     native_callback_queue_saturated=0 native_in_flight=false \
     native_cleanup_pending=false present_disconnect_failures=0 \
     present_live_sources=0 present_live_fences=0 present_live_transactions=0; do
     require_eq "$completion" "${assignment%%=*}" "${assignment#*=}"
 done
+completion_restarts="$(field "$completion" wm_restarts)" || fail "completion lacks wm_restarts"
+[[ "$completion_restarts" =~ ^[0-9]+$ ]] ||
+    fail "wm_restarts is not an integer: $completion_restarts"
+(( completion_restarts == admission_restart_count )) ||
+    fail "completion reports $completion_restarts WM restarts, observed $admission_restart_count during Firefox admission"
 expected="$(field "$completion" input_events_expected)" || fail "completion lacks input_events_expected"
 flushed="$(field "$completion" input_events_flushed)" || fail "completion lacks input_events_flushed"
 [[ "$expected" == "$flushed" ]] || fail "input queue did not drain: expected=$expected flushed=$flushed"

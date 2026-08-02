@@ -540,10 +540,15 @@ impl PersistentLiveLayout {
         })
     }
 
-    fn planning_layers(&self) -> Vec<LayerSnapshot> {
+    fn planning_layers_for_workspace_state(
+        &self,
+        workspace_state: &WmWorkspaceState,
+    ) -> Vec<LayerSnapshot> {
         let mut layers = self.layers.values().cloned().collect::<Vec<_>>();
         for facts in self.planning_surfaces.values() {
-            if self.layers.contains_key(&facts.surface) {
+            if self.layers.contains_key(&facts.surface)
+                || workspace_state.surface_workspace(facts.surface).is_none()
+            {
                 continue;
             }
             layers.push(LayerSnapshot {

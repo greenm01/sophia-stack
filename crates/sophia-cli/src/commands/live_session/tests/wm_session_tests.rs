@@ -28,6 +28,33 @@ fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     }
 }
 
+fn planning_layers_for(
+    layout: &PersistentLiveLayout,
+    surfaces: impl IntoIterator<Item = SurfaceId>,
+) -> Vec<LayerSnapshot> {
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let workspace = WorkspaceId::from_raw(1);
+    let mut workspace_state = WmWorkspaceState::new(
+        [(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+        )],
+        1,
+    )
+    .unwrap();
+    for surface in surfaces {
+        workspace_state
+            .register_surface(surface, workspace)
+            .unwrap();
+    }
+    layout.planning_layers_for_workspace_state(&workspace_state)
+}
+
 fn hold_test_resize(
     layout: &mut PersistentLiveLayout,
     surface: SurfaceId,
@@ -440,6 +467,229 @@ fn restart_relayout_contains_only_committed_surfaces_in_admission_order() {
 }
 
 #[test]
+fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let workspace = WorkspaceId::from_raw(1);
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let committed_a = SurfaceId::new(1, 1);
+    let committed_b = SurfaceId::new(2, 1);
+    let firefox = SurfaceId::new(3, 1);
+    let fallback = Size {
+        width: 1280,
+        height: 1040,
+    };
+    let tile = Size {
+        width: 1276,
+        height: 1422,
+    };
+    let fallback_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: fallback.width,
+        height: fallback.height,
+    };
+    let pixel_transaction = TransactionId::from_raw(1529);
+    let pixel_buffer = BufferHandle::from_raw(1530);
+    let admission_transaction = TransactionId::from_raw(5);
+    let mut layout = PersistentLiveLayout::default();
+    layout
+        .layers
+        .insert(committed_a, test_layer(committed_a, bounds));
+    layout
+        .layers
+        .insert(committed_b, test_layer(committed_b, bounds));
+    layout.dma_buf_sizes.insert(pixel_buffer, fallback);
+
+    let intent = sophia_protocol::SurfacePresentationIntent {
+        surface: firefox,
+        kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+        role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        geometry: fallback_geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    };
+    let mut observed =
+        crate::commands::live_session::wm_update_coordinator_batch(pixel_transaction);
+    observed.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    observed.presentation_intents.push(intent);
+    observed.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface: firefox,
+            role: intent.role,
+            owner: None,
+            mapped: true,
+            geometry: fallback_geometry,
+            constraints: intent.constraints,
+            generation: intent.generation,
+        },
+    );
+    observed.transactions.push(SurfaceTransaction {
+        transaction: pixel_transaction,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface: firefox,
+        namespace: None,
+        target_geometry: fallback_geometry,
+        target_buffer: BufferSource::DmaBuf {
+            handle: pixel_buffer.raw(),
+        },
+        damage: Region::single(fallback_geometry),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    });
+    observed
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: pixel_transaction,
+            surface: firefox,
+            buffer: pixel_buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+    observed.presented_surfaces.push(firefox);
+    layout.observe_authority_batch(&observed);
+    assert!(
+        layout
+            .admissions
+            .begin_control(firefox, admission_transaction, fallback_geometry)
+    );
+    assert!(
+        layout
+            .admissions
+            .acknowledge_control(firefox, admission_transaction)
+    );
+    layout.admission_retries.insert(firefox, 1);
+    layout.layout_epochs.set_recovery_extent(firefox, fallback);
+    layout.layout_epochs.set_pending_target(firefox, tile);
+
+    let mut committed_state = WmWorkspaceState::new([(output, bounds)], 1).unwrap();
+    committed_state
+        .register_surface(committed_a, workspace)
+        .unwrap();
+    committed_state
+        .register_surface(committed_b, workspace)
+        .unwrap();
+    let relayout_transaction = TransactionId::from_raw(6);
+    let relayout_layers = layout.planning_layers_for_workspace_state(&committed_state);
+    assert_eq!(
+        relayout_layers
+            .iter()
+            .map(|layer| layer.surface)
+            .collect::<Vec<_>>(),
+        vec![committed_a, committed_b]
+    );
+    let relayout = LiveWmProposal {
+        transaction: relayout_transaction,
+        layers: relayout_layers,
+        requested_sizes: BTreeMap::new(),
+        focus: Some(committed_b),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: relayout_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![committed_a, committed_b],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: Some(crate::commands::live_session::LiveWmCommitEffects {
+            workspace_state: committed_state.clone(),
+            transaction: relayout_transaction,
+            session_action: None,
+        }),
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(relayout, &mut controls).unwrap().is_some());
+    assert_eq!(controls.pending_len(), 0);
+    assert!(layout.unmanaged_surfaces.contains(&firefox));
+    assert_eq!(layout.admission_retries.get(&firefox), Some(&1));
+    assert_eq!(layout.pre_admission_groups.len(), 1);
+    assert!(layout.released_admission_groups.is_empty());
+    assert!(!layout.awaiting_visual_commits.surface_awaiting(firefox));
+    assert_eq!(
+        layout.admissions.state(firefox),
+        sophia_engine::SurfacePresentationAdmissionState::AwaitingPixels {
+            transaction: admission_transaction,
+            geometry: fallback_geometry,
+        }
+    );
+
+    let mut managed_state = committed_state;
+    managed_state.register_surface(firefox, workspace).unwrap();
+    let manage_transaction = TransactionId::from_raw(7);
+    let manage_layers = layout.planning_layers_for_workspace_state(&managed_state);
+    assert_eq!(
+        manage_layers
+            .iter()
+            .map(|layer| layer.surface)
+            .collect::<Vec<_>>(),
+        vec![committed_a, committed_b, firefox]
+    );
+    let manage = LiveWmProposal {
+        transaction: manage_transaction,
+        layers: manage_layers,
+        requested_sizes: BTreeMap::from([(firefox, fallback)]),
+        focus: Some(firefox),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: manage_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![firefox],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Manage(firefox)),
+        effects: Some(crate::commands::live_session::LiveWmCommitEffects {
+            workspace_state: managed_state,
+            transaction: manage_transaction,
+            session_action: None,
+        }),
+    };
+
+    assert!(layout.stage(manage, &mut controls).unwrap().is_none());
+    assert_eq!(controls.pending_len(), 1);
+    assert!(layout.resolve_pending().is_some());
+    assert!(!layout.unmanaged_surfaces.contains(&firefox));
+    assert!(layout.pre_admission_groups.is_empty());
+    assert_eq!(layout.released_admission_groups.len(), 1);
+    assert!(
+        layout
+            .awaiting_visual_commits
+            .exact_candidate(pixel_transaction, firefox, fallback)
+    );
+    assert_eq!(
+        layout.admissions.state(firefox),
+        sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction,
+            visual_transaction: pixel_transaction,
+            geometry: fallback_geometry,
+        }
+    );
+    assert!(layout.complete_visual_commit(pixel_transaction, firefox, fallback));
+    assert!(layout.complete_admission_retirement(firefox, pixel_transaction));
+    assert_eq!(
+        layout.admissions.state(firefox),
+        sophia_engine::SurfacePresentationAdmissionState::Managed
+    );
+    assert_eq!(layout.layout_epochs.pending_target(firefox), Some(tile));
+}
+
+#[test]
 fn recovery_content_extent_stays_behind_the_wm_policy_boundary() {
     let surface = SurfaceId::new(3, 1);
     let workspace = sophia_protocol::WorkspaceId::from_raw(1);
@@ -575,7 +825,10 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
     assert_eq!(observation.new_surfaces, vec![surface]);
     assert_eq!(layout.next_unmanaged_surface(), Some(surface));
     assert!(layout.layers.is_empty());
-    assert_eq!(layout.planning_layers()[0].source, BufferSource::None);
+    assert_eq!(
+        planning_layers_for(&layout, [surface])[0].source,
+        BufferSource::None
+    );
     let chrome = sophia_engine::SurfaceChromeStyle::default();
     let node = live_layout_node_from_facts(
         layout.layout_facts(surface).unwrap(),
@@ -827,7 +1080,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     let transaction = TransactionId::from_raw(13);
     let proposal = LiveWmProposal {
         transaction,
-        layers: layout.planning_layers(),
+        layers: planning_layers_for(&layout, [surface]),
         requested_sizes: BTreeMap::from([(
             surface,
             Size {
@@ -1082,7 +1335,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     let recovery_transaction = TransactionId::from_raw(23);
     let proposal = LiveWmProposal {
         transaction: recovery_transaction,
-        layers: layout.planning_layers(),
+        layers: planning_layers_for(&layout, [surface]),
         requested_sizes: BTreeMap::from([(
             surface,
             Size {
@@ -1280,7 +1533,7 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
     let recovery_transaction = TransactionId::from_raw(72);
     let proposal = LiveWmProposal {
         transaction: recovery_transaction,
-        layers: layout.planning_layers(),
+        layers: planning_layers_for(&layout, [surface]),
         requested_sizes: BTreeMap::new(),
         focus: Some(surface),
         timeout: Duration::from_secs(1),

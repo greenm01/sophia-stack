@@ -6,10 +6,37 @@ SESSION="$ROOT_DIR/tools/fixtures/physical_firefox_session_pass.log"
 GUARD="$ROOT_DIR/tools/fixtures/physical_firefox_guard_pass.log"
 RECOVERY="$ROOT_DIR/tools/fixtures/physical_firefox_recovery_pass.log"
 TEMP_FILE="$(mktemp)"
-trap 'rm -f -- "$TEMP_FILE"' EXIT
+RECOVERY_SESSION="$(mktemp)"
+trap 'rm -f -- "$TEMP_FILE" "$RECOVERY_SESSION"' EXIT
 
 "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$SESSION" "$GUARD" "$RECOVERY"
+awk '
+    { print }
+    /status=surface_observed source=action transaction=15 surface=4$/ {
+        print "sophia_live_wm schema=1 status=layout_timeout transaction=15 preserved_layout=true"
+        print "sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true"
+        print "sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout"
+        print "sophia_live_wm schema=4 status=reseed_queued phase=pending_admission request=manage surface=4"
+        print "sophia_live_wm schema=1 status=layout_committed transaction=16 surfaces=3 moved_surfaces=0 configure_deliveries=2 outcome=Committed"
+    }
+' "$SESSION" | sed 's/wm_restarts=0/wm_restarts=1/' >"$RECOVERY_SESSION"
+"$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$RECOVERY_SESSION" "$GUARD" "$RECOVERY"
+sed '/status=restarted restarts=1 /a sophia_live_wm schema=1 status=restarted restarts=2 preserved_layout=true' \
+    "$RECOVERY_SESSION" | sed 's/wm_restarts=1/wm_restarts=2/' >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a repeated admission restart" >&2
+    exit 1
+fi
+sed '/phase=pending_admission request=manage surface=4/a sophia_live_visual_admission schema=1 status=armed transaction=150 surface=4' \
+    "$RECOVERY_SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted phase-one candidate consumption" >&2
+    exit 1
+fi
 sed '/stage=primary /d' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then

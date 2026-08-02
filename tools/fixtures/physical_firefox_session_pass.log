@@ -52,7 +52,13 @@ sophia_live_seat schema=1 status=acquire_pending
 sophia_live_seat schema=1 status=active source=resume
 sophia_live_native_page_flip schema=1 status=retired output=1 submission=51
 sophia_live_native_page_flip schema=1 status=retired output=2 submission=51
+sophia_session_app schema=2 status=started id=firefox source=action transaction=15
 sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=2 status=surface_observed source=action transaction=15 surface=4
+sophia_live_visual_candidate schema=1 status=selected transaction=150 surface=4 width=1280 height=1040 evidence=PresentedBuffer
+sophia_live_visual_admission schema=1 status=armed transaction=150 surface=4
+sophia_live_visual_admission schema=1 status=presented transaction=150 surface=4
+sophia_session_app schema=2 status=admitted source=action transaction=15 surface=4
 sophia_firefox_m8 schema=1 status=page_ready title_bytes=16 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=loaded index=0 title_bytes=24 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=keyboard index=1 title_bytes=40 content=redacted
@@ -88,7 +94,13 @@ sophia_live_wm schema=1 status=layout_committed transaction=20 surfaces=4 moved_
 sophia_session_app schema=1 status=exited id=firefox source=managed exit_status=exit status: 0
 sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=after_normal_close content=redacted
 sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=after_normal_close content=redacted
+sophia_session_app schema=2 status=started id=firefox source=action transaction=21
 sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=2 status=surface_observed source=action transaction=21 surface=6
+sophia_live_visual_candidate schema=1 status=selected transaction=210 surface=6 width=1280 height=1040 evidence=PresentedBuffer
+sophia_live_visual_admission schema=1 status=armed transaction=210 surface=6
+sophia_live_visual_admission schema=1 status=presented transaction=210 surface=6
+sophia_session_app schema=2 status=admitted source=action transaction=21 surface=6
 sophia_live_wm schema=1 status=session_action_committed transaction=21 action=CloseFocused
 sophia_session_app schema=1 status=exited id=firefox source=managed exit_status=exit status: 0
 sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=after_forced_close content=redacted

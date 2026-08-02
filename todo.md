@@ -1000,8 +1000,19 @@ than adding speculative browser compatibility.
   reconciliation retains the temporary recovery extent. The real-xmonad smoke
   now destroys and recreates its runtime before restoring two committed nodes
   and replaying Firefox, and requires Firefox to remain the tiled master/focus
-  on the following relayout. Repeat the launch and final popup stage; Firefox
-  must remain the full left column.
+  on the following relayout. The next live launch proved that both requests
+  were queued in the right order, but exposed a second ownership leak:
+  response planning rebuilt the committed relayout on every known planning
+  surface, so phase one admitted Firefox and consumed its quarantined
+  1280-by-1040 Present before the queued manage replay could own it. WM
+  proposal layers are now scoped by the response's candidate workspace state,
+  and unresolved admissions remain eligible until their own candidate assigns
+  them. The lifecycle regression requires phase one to preserve the exact
+  visual candidate and phase two to arm, retire, and admit it. The physical
+  verifier accepts a future direct-admission optimization, but if recovery is
+  used it rejects repeated restarts or any phase-one candidate consumption.
+  Repeat the launch and final popup stage; Firefox must admit after at most one
+  restart and remain the full left column.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

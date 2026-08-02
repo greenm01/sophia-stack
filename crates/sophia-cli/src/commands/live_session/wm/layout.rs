@@ -1044,8 +1044,12 @@ impl PersistentLiveLayout {
             })
             .collect();
         self.release_admission_groups(&selected_admission_transactions);
+        // A committed relayout can intentionally exclude admissions queued
+        // behind it. Keep those surfaces eligible for their own ManageSurface
+        // response while they remain in the planning table; only a candidate
+        // workspace assignment consumes WM admission ownership.
         self.unmanaged_surfaces.retain(|surface| {
-            self.layers.contains_key(surface)
+            self.planning_surfaces.contains_key(surface)
                 && pending.effects.as_ref().is_none_or(|effects| {
                     effects.workspace_state.surface_workspace(*surface).is_none()
                 })
