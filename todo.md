@@ -1027,8 +1027,13 @@ than adding speculative browser compatibility.
   visual candidate and phase two to arm, retire, and admit it. The physical
   verifier accepts a future direct-admission optimization, but if recovery is
   used it rejects repeated restarts or any phase-one candidate consumption.
-  Repeat the launch and final modal stage; Firefox must admit after at most one
-  restart and remain the full left column.
+  The focused selection follow-up physically confirmed that the FIFO fix
+  clears the recovery extent through the exact standing target and then
+  repeatedly retires complete 1276-by-1422 Firefox frames in the full left
+  column. A rendering-only canary now locks that invariant without coupling it
+  to browser interaction; its verifier accepts direct admission and bounds
+  fallback admission to one retained extent and at most one WM restart.
+  Repeat the final modal stage separately.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
@@ -1045,9 +1050,13 @@ than adding speculative browser compatibility.
   admission-release FIFO inversion: the current Firefox authority group was
   assembled before older quarantined groups, making the exact standing-target
   Present stale and retaining the short fallback window. Released groups now
-  precede current work, with a same-surface generation regression. Pass that
-  short physical slice, then repeat the complete promotion workflow before
-  closing this item.
+  precede current work, with a same-surface generation regression. Its
+  follow-up physically completed both Firefox/Kitty `CLIPBOARD` directions
+  with seven owner changes and fourteen conversions before the operator ended
+  the mixed workflow at PRIMARY. `CLIPBOARD` is accepted and is no longer part
+  of routine rendering reruns. Keep the remaining PRIMARY handoff as an
+  explicit selection-only proof, then repeat the complete promotion workflow
+  before closing this item.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while

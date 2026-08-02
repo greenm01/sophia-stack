@@ -56,6 +56,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
         "--session-action-app=firefox=firefox".to_owned(),
     ];
     for proof in [
+        "--firefox-m10-rendering-proof",
         "--firefox-m10-selection-proof",
         "--firefox-m10-lifecycle-proof",
     ] {
@@ -68,8 +69,8 @@ fn firefox_physical_slices_are_mutually_exclusive() {
 
     let mut conflicting = base.to_vec();
     conflicting.extend([
+        "--firefox-m10-rendering-proof".to_owned(),
         "--firefox-m10-selection-proof".to_owned(),
-        "--firefox-m10-lifecycle-proof".to_owned(),
     ]);
     assert!(
         PersistentXtermSessionConfig::from_args(&conflicting)

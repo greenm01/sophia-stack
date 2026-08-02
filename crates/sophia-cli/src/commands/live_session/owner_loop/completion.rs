@@ -240,6 +240,14 @@
             selection_conversions,
         );
     }
+    if config.firefox_m10_rendering_proof {
+        if !firefox_m10_rendering_page_ready {
+            return Err("Firefox M10 rendering proof did not observe its ready document".into());
+        }
+        println!(
+            "sophia_firefox_rendering schema=1 status=complete page_ready=true recovery_extents=0 content=redacted"
+        );
+    }
     if config.firefox_m10_proof {
         if !firefox_m10_kitty_proof
             .complete(selection_owner_changes, selection_conversions)

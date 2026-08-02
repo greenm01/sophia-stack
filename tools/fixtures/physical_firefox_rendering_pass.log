@@ -1,0 +1,12 @@
+sophia_session_app schema=1 status=started id=terminal source=startup
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=2 status=surface_observed source=action transaction=2 surface=6291459
+sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true
+sophia_firefox_rendering schema=1 status=page_ready title_bytes=249 content=redacted
+sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=6291459 reason=standing_target_unmet target=1276x1422 content=redacted
+sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface=6291459 reason=standing_target_presented
+sophia_live_resize_epoch schema=3 status=visual_committed transaction=1064 surface=6291459 width=1276 height=1422 source=standing_target_recovery
+sophia_live_session_present schema=2 status=retired transaction=1201 surface=6291459 source=1276x1422 target=1276x1422_2_16 clip=1276x1422_2_16 unit_scale=true
+sophia_firefox_rendering schema=1 status=complete page_ready=true recovery_extents=0 content=redacted
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed

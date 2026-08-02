@@ -15,17 +15,20 @@ DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 FIREFOX_M10_PROOF=false
+FIREFOX_M10_RENDERING_PROOF=false
 FIREFOX_M10_SELECTION_PROOF=false
 FIREFOX_M10_LIFECYCLE_PROOF=false
 for argument in "$@"; do
     case "$argument" in
         --firefox-m10-proof) FIREFOX_M10_PROOF=true ;;
+        --firefox-m10-rendering-proof) FIREFOX_M10_RENDERING_PROOF=true ;;
         --firefox-m10-selection-proof) FIREFOX_M10_SELECTION_PROOF=true ;;
         --firefox-m10-lifecycle-proof) FIREFOX_M10_LIFECYCLE_PROOF=true ;;
     esac
 done
 FIREFOX_M10_ANY_PROOF=false
 if [[ "$FIREFOX_M10_PROOF" == true
+    || "$FIREFOX_M10_RENDERING_PROOF" == true
     || "$FIREFOX_M10_SELECTION_PROOF" == true
     || "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
     FIREFOX_M10_ANY_PROOF=true
@@ -533,7 +536,9 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
     firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
     if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then
         firefox_page="file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
-        if [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
+        if [[ "$FIREFOX_M10_RENDERING_PROOF" == true ]]; then
+            firefox_page="${firefox_page}?rendering_only=1"
+        elif [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
             firefox_page="${firefox_page}?selection_peer=kitty"
         elif [[ "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
             firefox_page="${firefox_page}?lifecycle_only=1"
@@ -576,6 +581,8 @@ if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
         "SOPHIA_FIREFOX_M10_PROOF_SLICE=$(
             if [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
                 echo selection
+            elif [[ "$FIREFOX_M10_RENDERING_PROOF" == true ]]; then
+                echo rendering
             elif [[ "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
                 echo lifecycle
             else

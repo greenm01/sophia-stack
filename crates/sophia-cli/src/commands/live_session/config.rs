@@ -95,6 +95,7 @@ struct PersistentXtermSessionConfig {
     m4_diagnose_first_mixed_export: bool,
     firefox_m8_proof: bool,
     firefox_m10_proof: bool,
+    firefox_m10_rendering_proof: bool,
     firefox_m10_selection_proof: bool,
     firefox_m10_lifecycle_proof: bool,
 }
@@ -411,6 +412,9 @@ impl PersistentXtermSessionConfig {
             .any(|arg| arg == "--m4-diagnose-first-mixed-export");
         let firefox_m8_proof = args.iter().any(|arg| arg == "--firefox-m8-proof");
         let firefox_m10_proof = args.iter().any(|arg| arg == "--firefox-m10-proof");
+        let firefox_m10_rendering_proof = args
+            .iter()
+            .any(|arg| arg == "--firefox-m10-rendering-proof");
         let firefox_m10_selection_proof = args
             .iter()
             .any(|arg| arg == "--firefox-m10-selection-proof");
@@ -420,6 +424,7 @@ impl PersistentXtermSessionConfig {
         let firefox_proof_count = [
             firefox_m8_proof,
             firefox_m10_proof,
+            firefox_m10_rendering_proof,
             firefox_m10_selection_proof,
             firefox_m10_lifecycle_proof,
         ]
@@ -624,6 +629,7 @@ impl PersistentXtermSessionConfig {
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
             firefox_m10_proof,
+            firefox_m10_rendering_proof,
             firefox_m10_selection_proof,
             firefox_m10_lifecycle_proof,
         })
@@ -729,6 +735,7 @@ impl PersistentXtermSessionConfig {
     fn firefox_proof_requested(&self) -> bool {
         self.firefox_m8_proof
             || self.firefox_m10_proof
+            || self.firefox_m10_rendering_proof
             || self.firefox_m10_selection_proof
             || self.firefox_m10_lifecycle_proof
     }

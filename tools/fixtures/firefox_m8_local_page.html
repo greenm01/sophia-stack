@@ -35,6 +35,7 @@
   const parameters = new URLSearchParams(location.search);
   const navigated = parameters.get('navigated') === '1';
   const selectionPeer = parameters.get('selection_peer') === 'kitty';
+  const renderingOnly = parameters.get('rendering_only') === '1';
   const lifecycleOnly = parameters.get('lifecycle_only') === '1';
   let stage = navigated ? 3 : 0;
   let refocusArmed = false;
@@ -181,7 +182,16 @@
       document.title = '0'.repeat(stages[7]);
     }
   });
-  if (navigated) {
+  if (renderingOnly) {
+    // Firefox appends its 20-byte product suffix to file-document titles.
+    document.title = '0'.repeat(229);
+    source.hidden = true;
+    document.querySelector('#clipboard').hidden = true;
+    document.querySelector('#primary').hidden = true;
+    document.querySelector('#dialog').hidden = true;
+    status.textContent = 'Firefox rendering canary ready';
+    next.textContent = 'The browser must fill the left column from top to bottom with no black region. Press Super+Shift+Q to finish.';
+  } else if (navigated) {
     // Use an out-of-band title length so the session can prove that the
     // replacement document is ready without accidentally completing scroll.
     document.title = '0'.repeat(stages[stage] + 1);

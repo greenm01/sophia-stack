@@ -110,6 +110,16 @@
                 }
                 if config.firefox_proof_requested() {
                     for metadata in &batch.metadata {
+                        if config.firefox_m10_rendering_proof
+                            && !firefox_m10_rendering_page_ready
+                            && metadata.property_name == "_NET_WM_NAME"
+                            && metadata.byte_len == 249
+                        {
+                            firefox_m10_rendering_page_ready = true;
+                            println!(
+                                "sophia_firefox_rendering schema=1 status=page_ready title_bytes=249 content=redacted"
+                            );
+                        }
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
                             && metadata.byte_len == 36

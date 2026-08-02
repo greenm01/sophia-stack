@@ -845,6 +845,10 @@ run the same Sophia/X-authority path and isolated Firefox profile as promotion,
 but stop as soon as the affected contract is proved:
 
 ```sh
+# One Kitty, one Firefox, and no page interaction. This is the default canary.
+tools/start_sophia_xmonad_firefox_rendering_tty3.sh
+tools/verify_sophia_firefox_rendering_physical.sh
+
 # One Kitty, one Firefox, four bidirectional CLIPBOARD/PRIMARY transfers.
 tools/start_sophia_xmonad_firefox_selection_tty3.sh
 tools/verify_sophia_firefox_selection_physical.sh
@@ -854,7 +858,18 @@ tools/start_sophia_xmonad_firefox_lifecycle_tty3.sh
 tools/verify_sophia_firefox_lifecycle_physical.sh
 ```
 
-The selection slice uses a distinct token for every direction and requires a
+The rendering canary requires only `Super+F`, a visual check, and
+`Super+Shift+Q`. Its verifier binds the action-created Firefox surface to a
+complete full-height left-column retirement. Direct admission passes; fallback
+admission must clear its temporary extent through the exact standing target
+and may restart the WM at most once. It contains no clipboard, PRIMARY,
+navigation, resize, focus-cycle, or dialog steps.
+
+Cross-window `CLIPBOARD` has already passed on physical hardware. Do not rerun
+the selection slice for rendering changes. Use it only when changing X11
+selection ownership/conversion behavior or when explicitly closing the
+remaining PRIMARY evidence. The selection slice uses a distinct token for
+every direction and requires a
 trusted, complete pointer selection before leaving Firefox for the PRIMARY
 handoff. Its verifier orders an owner change and a conversion inside each of
 the four peer intervals, so same-process reuse and stale selection state cannot
