@@ -7,6 +7,7 @@ use sophia_x_authority::{
     XServerFrontendRouteBroker, XServerFrontendServiceCommand,
     run_x_server_frontend_routed_until_stopped,
     run_x11_core_socket_server_once_config_traced_with_idle_timeout,
+    run_x11_core_socket_server_once_session_channels,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;

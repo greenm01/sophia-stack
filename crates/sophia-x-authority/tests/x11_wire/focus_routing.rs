@@ -56,6 +56,19 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         .unwrap();
     assert_eq!(read_x_record(&mut first)[0], 22);
     first
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            first_window,
+            1 << 21,
+        ))
+        .unwrap();
+    first
+        .write_all(&xi_select_focus_request(
+            XByteOrder::LittleEndian,
+            first_window,
+        ))
+        .unwrap();
+    first
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
             first_window,
@@ -83,6 +96,13 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         ))
         .unwrap();
     assert_eq!(read_x_record(&mut second)[0], 22);
+    second
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            second_window,
+            1 << 21,
+        ))
+        .unwrap();
     second
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
@@ -127,19 +147,24 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
     };
 
     focus(0, 100);
-    assert_focus_event(&mut first, true, first_window);
+    assert_core_focus_event(&mut first, true, first_window);
+    assert_xi_focus_event(&mut first, true, first_window);
+    focus(0, 101);
+    first.write_all(&[43, 0, 1, 0]).unwrap();
+    assert_eq!(read_x_record(&mut first)[0], 1);
 
     control_sender
         .send(XAuthorityClientControlCommand {
             client: routes[1].0,
             command: XAuthorityControlCommand::FocusSurface {
-                transaction: TransactionId::from_raw(101),
+                transaction: TransactionId::from_raw(102),
                 surface: routes[1].1,
             },
         })
         .unwrap();
-    assert_focus_event(&mut first, false, first_window);
-    assert_focus_event(&mut second, true, second_window);
+    assert_core_focus_event(&mut first, false, first_window);
+    assert_xi_focus_event(&mut first, false, first_window);
+    assert_core_focus_event(&mut second, true, second_window);
     assert_eq!(
         acknowledgement_receiver
             .recv_timeout(Duration::from_secs(1))
@@ -149,17 +174,28 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         XAuthorityControlOutcome::Delivered
     );
 
+    second
+        .write_all(&xi_select_focus_request(
+            XByteOrder::LittleEndian,
+            second_window,
+        ))
+        .unwrap();
+    second.write_all(&[43, 0, 1, 0]).unwrap();
+    assert_eq!(read_x_record(&mut second)[0], 1);
+
     control_sender
         .send(XAuthorityClientControlCommand {
             client: routes[0].0,
             command: XAuthorityControlCommand::FocusSurface {
-                transaction: TransactionId::from_raw(102),
+                transaction: TransactionId::from_raw(103),
                 surface: routes[0].1,
             },
         })
         .unwrap();
-    assert_focus_event(&mut second, false, second_window);
-    assert_focus_event(&mut first, true, first_window);
+    assert_core_focus_event(&mut second, false, second_window);
+    assert_xi_focus_event(&mut second, false, second_window);
+    assert_core_focus_event(&mut first, true, first_window);
+    assert_xi_focus_event(&mut first, true, first_window);
     assert_eq!(
         acknowledgement_receiver
             .recv_timeout(Duration::from_secs(1))
@@ -181,7 +217,11 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
 }
 
 #[cfg(unix)]
-fn assert_focus_event(stream: &mut std::os::unix::net::UnixStream, focused: bool, window: u32) {
+fn assert_core_focus_event(
+    stream: &mut std::os::unix::net::UnixStream,
+    focused: bool,
+    window: u32,
+) {
     let event = read_x_record(stream);
     assert_eq!(event[0], if focused { 9 } else { 10 });
     assert_eq!(event[1], 3);
@@ -190,4 +230,44 @@ fn assert_focus_event(stream: &mut std::os::unix::net::UnixStream, focused: bool
         window
     );
     assert_eq!(event[8], 0);
+}
+
+#[cfg(unix)]
+fn assert_xi_focus_event(
+    stream: &mut std::os::unix::net::UnixStream,
+    focused: bool,
+    window: u32,
+) {
+    use std::io::Read;
+
+    let mut event = vec![0; 32];
+    stream.read_exact(&mut event).unwrap();
+    assert_eq!(event[0], 35);
+    assert_eq!(event[1], X_INPUT_MAJOR_OPCODE);
+    let body_len = usize::try_from(read_u32(XByteOrder::LittleEndian, &event[4..8])).unwrap() * 4;
+    event.resize(32 + body_len, 0);
+    stream.read_exact(&mut event[32..]).unwrap();
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[8..10]), if focused { 9 } else { 10 });
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[10..12]), 3);
+    assert_ne!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[16..18]), 3);
+    assert_eq!(event[18], 0);
+    assert_eq!(event[19], 3);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &event[24..28]), window);
+    assert_eq!(event[48], 1);
+    assert_eq!(event[49], 1);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[50..52]), 1);
+}
+
+#[cfg(unix)]
+fn xi_select_focus_request(byte_order: XByteOrder, window: u32) -> Vec<u8> {
+    let mut request = vec![X_INPUT_MAJOR_OPCODE, X_INPUT_SELECT_EVENTS_MINOR_OPCODE];
+    push_u16(&mut request, byte_order, 5);
+    push_u32(&mut request, byte_order, window);
+    push_u16(&mut request, byte_order, 1);
+    push_u16(&mut request, byte_order, 0);
+    push_u16(&mut request, byte_order, 3);
+    push_u16(&mut request, byte_order, 1);
+    push_u32(&mut request, byte_order, (1 << 9) | (1 << 10));
+    request
 }

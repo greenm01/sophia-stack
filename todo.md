@@ -911,7 +911,15 @@ than adding speculative browser compatibility.
   activity fence; only new synthetic `MapRequest` admissions require a reply
   for every window. A process-external three-window focus regression answers
   that fence with one configure and rejects duplicate root notifications.
-  Repeat the popup confirmation and exit stages from this change.
+  The next physical run again committed every `Super+J` cycle but stopped at
+  refocus. The earlier apparent pass had depended on the input writer lazily
+  emitting XI2 focus when some later key arrived; compositor-owned Super
+  chords provide no such Firefox packet. XLibre and yserver both emit selected
+  core and XI2 focus together at the authority mutation. Sophia now does the
+  same from one passive control-time transition, while key delivery retains
+  only pointer crossing work. The two-client wire regression requires repeated
+  transitions without input, and both QEMU and the page have lost the hidden
+  `r` bypass. Repeat the popup confirmation and exit stages from this change.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

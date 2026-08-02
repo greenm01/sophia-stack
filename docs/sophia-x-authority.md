@@ -102,7 +102,14 @@ runs require physical keyboard and pointer input, authenticated RandR delivery,
 configure-plus-pixels resize, two retained CPU layers, and clean KMS teardown.
 Initial Engine focus is
 acknowledged by the owning X11 client before the input proof begins, so
-either focused terminal can demonstrate delivery. X11 map/configure lifecycle
+either focused terminal can demonstrate delivery.
+Focus transitions are authority mutations rather than input-writer side
+effects. A routed physical surface change resolves the old and new client once,
+then emits each mask-selected core Focus event followed by its selected XI2
+Focus event from the same passive transition packet. Repeated focus does not
+emit, cross-client queues retain per-client order, and no later key event is
+required to complete a focus handoff.
+X11 map/configure lifecycle
 updates no longer overwrite a surface's committed-pixel generation. Live setup
 and populated RandR CRTC/output/mode resources use Engine-derived topology
 facts. Each accepted client now gets

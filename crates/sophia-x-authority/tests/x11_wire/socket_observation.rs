@@ -594,7 +594,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             })
             .unwrap();
     }
-    assert_eq!(read_x_record(&mut first)[0], 9);
     let first_key = read_x_record(&mut first);
     assert_eq!(first_key[0], 2);
     assert_eq!(first_key[1], 38);
@@ -628,7 +627,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         read_u32(XByteOrder::LittleEndian, &first_repeat[12..16]),
         0x0020_0701
     );
-    assert_eq!(read_x_record(&mut second)[0], 9);
     let second_key = read_x_record(&mut second);
     assert_eq!(second_key[0], 2);
     assert_eq!(second_key[1], 39);

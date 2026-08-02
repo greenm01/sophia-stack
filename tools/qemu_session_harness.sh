@@ -496,7 +496,6 @@ run_firefox_m8_interactions() {
         if ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$page_focus_baseline" 400; then
             continue
         fi
-        "$ROOT_DIR/tools/qemu_qmp_type.py" "$QMP_SOCKET" --no-return r
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ' 0 40; then
             refocus_complete=true
             break

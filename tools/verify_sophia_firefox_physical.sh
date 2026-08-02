@@ -179,6 +179,34 @@ fi
 grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
     "$SESSION_LOG" || fail "Firefox eight-stage proof did not complete"
 refocus_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ')"
+firefox_surface="$(field "$visual_armed" surface)" || fail "resize evidence has no Firefox surface"
+focus_away_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$resize_line")"
+focus_away_line="$(awk -v first="$focus_away_action" -v last="$refocus_line" -v firefox="$firefox_surface" '
+    NR > first && NR < last && /^sophia_live_wm schema=1 status=focus_reconciled / && $0 !~ ("index: " firefox ",") { print NR; exit }
+' "$SESSION_LOG")"
+[[ -n "$focus_away_line" ]] || fail "Firefox refocus stage lacks a committed focus transition away"
+focus_away_applied="$(line_number_after '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_away_line")"
+focus_return_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$focus_away_applied")"
+focus_return_line="$(line_number_after "^sophia_live_wm schema=1 status=focus_reconciled .* surface=SurfaceId \\{ index: ${firefox_surface}," "$focus_return_action")"
+focus_return_applied="$(line_number_after '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_return_line")"
+xi_focus_out="$(line_number_after "^sophia_x11_focus_delivery schema=1 .* window=${firefox_surface} focused=false .* xi2_selected=true content=redacted$" "$resize_line")"
+xi_focus_in="$(line_number_after "^sophia_x11_focus_delivery schema=1 .* window=${firefox_surface} focused=true .* xi2_selected=true content=redacted$" "$xi_focus_out")"
+[[ -n "$focus_away_action" && -n "$focus_away_applied" && -n "$focus_return_action"
+    && -n "$focus_return_line" && -n "$focus_return_applied" ]] ||
+    fail "Firefox refocus action/control ordering evidence is incomplete"
+[[ -n "$xi_focus_out" && -n "$xi_focus_in" ]] ||
+    fail "Firefox did not receive selected XI2 FocusOut/FocusIn"
+(( resize_line < focus_away_action
+    && focus_away_action < focus_away_line
+    && focus_away_line < focus_away_applied
+    && focus_away_applied < focus_return_action
+    && focus_return_action < focus_return_line
+    && focus_return_line < focus_return_applied
+    && focus_return_applied < refocus_line
+    && resize_line < xi_focus_out
+    && xi_focus_out < xi_focus_in
+    && xi_focus_in < refocus_line )) ||
+    fail "Firefox DOM refocus is not ordered after focus-away, XI2 out/in, and focus return"
 dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox popup document never became ready')"
 dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
 popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=5 .* outcome=Committed$' "$refocus_line")"

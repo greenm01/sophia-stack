@@ -263,7 +263,7 @@ impl X11InputEventReceiver {
                         route.xi_event_window,
                         route.xi_emulated_button_type,
                         route.xi_emulated_button_window,
-                        route.xi_transition_mask,
+                        route.xi_pointer_crossing_mask,
                         route.delivery,
                     )),
                     // Drop one misaddressed route, then let the writer loop
@@ -452,12 +452,12 @@ impl XServerFrontendRouteRegistry {
             };
         let xi_emulated_button_type =
             xi_emulated_button_window.and(xi_emulated_button_selected_type);
-        let transition_types: &[u16] = if xi_device == 3 { &[9, 10] } else { &[7, 8] };
+        let transition_types: &[u16] = if xi_device == 2 { &[7, 8] } else { &[] };
         let authority = self
             .input_authority
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        let xi_transition_mask = transition_types.iter().fold(0u16, |mask, event_type| {
+        let xi_pointer_crossing_mask = transition_types.iter().fold(0u16, |mask, event_type| {
             if event_ancestry.iter().any(|window| {
                 authority.xi_event_selected(
                     namespace,
@@ -480,7 +480,7 @@ impl XServerFrontendRouteRegistry {
             xi_event_window,
             xi_emulated_button_type,
             xi_emulated_button_window,
-            xi_transition_mask,
+            xi_pointer_crossing_mask,
             delivery,
         })
     }

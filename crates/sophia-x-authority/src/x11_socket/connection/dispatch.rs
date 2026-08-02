@@ -160,6 +160,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 focused_surface_window.clone(),
                 surface_windows.clone(),
                 core_event_selections.clone(),
+                xkb_modifiers.clone(),
                 state.atoms.clone(),
                 state.properties.clone(),
                 state.runtime.clone(),

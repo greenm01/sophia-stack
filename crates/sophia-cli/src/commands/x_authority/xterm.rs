@@ -16,13 +16,17 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
         .open(&input_result.path)?;
     let server_path = socket_path.clone();
     let (transaction_sender, transaction_receiver) = sync_channel(256);
-    let (key_sender, key_receiver) = sync_channel(32);
+    let (input_sender, input_receiver) = sync_channel(32);
+    let (control_sender, control_receiver) = sync_channel(8);
+    let (control_ack_sender, control_ack_receiver) = sync_channel(8);
     let server = std::thread::spawn(move || {
-        run_x11_core_socket_server_once_channels(
+        run_x11_core_socket_server_once_session_channels(
             &server_path,
             NamespaceId::from_raw(49),
             transaction_sender,
-            key_receiver,
+            input_receiver,
+            control_receiver,
+            control_ack_sender,
         )
     });
     wait_for_socket_path(&socket_path)?;
@@ -46,12 +50,22 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
         .spawn()?;
 
     let mut cpu_buffers = std::collections::BTreeMap::new();
+    let mut route = None;
     let initial = wait_for_xterm_cpu_state(
         &transaction_receiver,
         &mut child,
         std::time::Instant::now() + Duration::from_secs(6),
         None,
         &mut cpu_buffers,
+        &mut route,
+    )?;
+    let (client, surface) = route.ok_or("xterm input smoke did not observe a client surface route")?;
+    focus_xterm_client(
+        &control_sender,
+        &control_ack_receiver,
+        client,
+        surface,
+        1,
     )?;
     let mut time_msec = 1u32;
     for keycode in b"sophia"
@@ -62,8 +76,9 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
     {
         let keycode = keycode.ok_or("input smoke character has no X keycode")?;
         for pressed in [true, false] {
-            key_sender.send(
-                XAuthorityKeyEvent {
+            input_sender.send(XAuthorityClientInputEvent {
+                client,
+                event: XAuthorityKeyEvent {
                     keycode,
                     pressed,
                     state: 0,
@@ -71,7 +86,14 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
                     time_msec,
                 }
                 .into(),
-            )?;
+                target_window: None,
+                xi_event_type: None,
+                xi_event_window: None,
+                xi_emulated_button_type: None,
+                xi_emulated_button_window: None,
+                xi_pointer_crossing_mask: 0,
+                delivery: None,
+            })?;
             time_msec = time_msec.saturating_add(1);
         }
     }
@@ -81,13 +103,15 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
         std::time::Instant::now() + Duration::from_secs(4),
         Some(initial),
         &mut cpu_buffers,
+        &mut route,
     );
 
     if child.try_wait()?.is_none() {
         let _ = child.kill();
     }
     let output = child.wait_with_output()?;
-    drop(key_sender);
+    drop(input_sender);
+    drop(control_sender);
     let server_result = server
         .join()
         .map_err(|_| "X authority xterm input server thread panicked")?;
@@ -131,7 +155,7 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
     let (display, socket_path) = temp_xauthority_display(152)?;
     let server_path = socket_path.clone();
     let (transaction_sender, transaction_receiver) = sync_channel(256);
-    let (control_ack_sender, _control_ack_receiver) = sync_channel(64);
+    let (control_ack_sender, control_ack_receiver) = sync_channel(64);
     let (input_delivery_sender, input_delivery_receiver) = channel();
     let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(64).unwrap(),
@@ -139,6 +163,7 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
         input_delivery_sender,
     );
     let input_sender = broker.input_sender();
+    let control_sender = broker.control_sender();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
     let config = XServerFrontendConfig::new(&server_path, NamespaceId::from_raw(53))?
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
@@ -175,6 +200,13 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
 
         let mut time_msec = 1u32;
         let mut next_delivery = 1u64;
+        focus_xterm_client(
+            &control_sender,
+            &control_ack_receiver,
+            clients[0],
+            state.surface_for_client(clients[0])?,
+            1,
+        )?;
         let first_deliveries = send_xterm_text_to_client(
             &input_sender,
             clients[0],
@@ -190,6 +222,13 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
             std::time::Instant::now() + Duration::from_secs(5),
             initial,
             &mut state,
+        )?;
+        focus_xterm_client(
+            &control_sender,
+            &control_ack_receiver,
+            clients[1],
+            state.surface_for_client(clients[1])?,
+            2,
         )?;
         let second_deliveries = send_xterm_text_to_client(
             &input_sender,
@@ -238,6 +277,7 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
 struct XtermTwoClientState {
     routes: XAuthorityClientSurfaceRoutes,
     clients: BTreeSet<sophia_x_authority::XServerFrontendClientId>,
+    surfaces: BTreeMap<sophia_x_authority::XServerFrontendClientId, SurfaceId>,
     buffers: BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
 }
 
@@ -250,6 +290,12 @@ impl XtermTwoClientState {
             && (!batch.transactions.is_empty() || !batch.cpu_buffer_updates.is_empty())
         {
             self.clients.insert(client);
+            for transaction in &batch.transactions {
+                self.surfaces.insert(client, transaction.surface);
+            }
+            for intent in &batch.presentation_intents {
+                self.surfaces.insert(client, intent.surface);
+            }
         }
         self.routes.observe(&batch);
         for update in batch.cpu_buffer_updates {
@@ -286,6 +332,48 @@ impl XtermTwoClientState {
             });
         (generation, checksum)
     }
+
+    fn surface_for_client(
+        &self,
+        client: sophia_x_authority::XServerFrontendClientId,
+    ) -> Result<SurfaceId, Box<dyn std::error::Error>> {
+        self.surfaces
+            .get(&client)
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "two-client xterm route has no surface for client {}",
+                    client.raw()
+                )
+                .into()
+            })
+    }
+}
+
+fn focus_xterm_client(
+    sender: &std::sync::mpsc::SyncSender<XAuthorityClientControlCommand>,
+    acknowledgements: &std::sync::mpsc::Receiver<sophia_x_authority::XAuthorityClientControlAck>,
+    client: sophia_x_authority::XServerFrontendClientId,
+    surface: SurfaceId,
+    transaction: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let transaction = TransactionId::from_raw(transaction);
+    sender.send(XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::FocusSurface {
+            transaction,
+            surface,
+        },
+    })?;
+    let acknowledgement = acknowledgements.recv_timeout(Duration::from_secs(2))?;
+    if acknowledgement.client != client
+        || acknowledgement.acknowledgement.transaction != transaction
+        || acknowledgement.acknowledgement.surface != surface
+        || acknowledgement.acknowledgement.outcome != XAuthorityControlOutcome::Delivered
+    {
+        return Err("two-client xterm focus control was not delivered".into());
+    }
+    Ok(())
 }
 
 fn spawn_xterm_two_client_probe(
@@ -428,7 +516,7 @@ fn send_xterm_text_to_client(
                 xi_event_window: None,
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
-                xi_transition_mask: 0,
+                xi_pointer_crossing_mask: 0,
                 delivery: Some(delivery),
             })?;
             *time_msec = time_msec.saturating_add(1);
@@ -483,11 +571,20 @@ fn wait_for_xterm_cpu_state(
     deadline: std::time::Instant,
     previous: Option<(u64, u64)>,
     latest: &mut std::collections::BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
+    route: &mut Option<(sophia_x_authority::XServerFrontendClientId, SurfaceId)>,
 ) -> Result<(u64, u64), Box<dyn std::error::Error>> {
     let mut candidate = None;
     while std::time::Instant::now() < deadline {
         match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(batch) => {
+                if let Some(client) = batch.client {
+                    for transaction in &batch.transactions {
+                        route.get_or_insert((client, transaction.surface));
+                    }
+                    for intent in &batch.presentation_intents {
+                        route.get_or_insert((client, intent.surface));
+                    }
+                }
                 for update in batch.cpu_buffer_updates {
                     update.apply_to(latest)?;
                 }

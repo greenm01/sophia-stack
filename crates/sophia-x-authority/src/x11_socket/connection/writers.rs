@@ -161,6 +161,7 @@ fn spawn_x11_control_writer(
     focused_surface_window: Arc<AtomicU64>,
     surface_windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
     core_event_selections: Arc<Mutex<XCoreEventSelectionState>>,
+    xkb_modifiers: Arc<AtomicU16>,
     atoms: Arc<Mutex<XAtomTable>>,
     properties: Arc<Mutex<XPropertyTable>>,
     runtime: Arc<Mutex<XAuthorityRuntime>>,
@@ -205,21 +206,32 @@ fn spawn_x11_control_writer(
             };
             let (command, focus_transition) = match routed {
                 X11RoutedControl::Authority { command, focus } => (command, focus),
-                X11RoutedControl::FocusOut { window } => {
+                X11RoutedControl::FocusOut { window, time_msec } => {
                     focused_surface_window.store(
                         u64::from(X_SETUP_DEFAULT_ROOT),
                         Ordering::Release,
                     );
+                    let records = x11_focus_records(
+                        byte_order,
+                        sequence.load(Ordering::Acquire),
+                        namespace,
+                        client,
+                        &core_event_selections,
+                        protocol_routing
+                            .as_ref()
+                            .map(|routing| &routing.input_authority),
+                        xkb_modifiers.load(Ordering::Acquire),
+                        X11FocusRecordRequest::Event {
+                            window,
+                            focused: false,
+                            time_msec,
+                        },
+                    )?;
                     write_x11_control_records(
                         &stream,
                         byte_order,
                         &sequence,
-                        vec![x11_focus_event_record(
-                            byte_order,
-                            sequence.load(Ordering::Acquire),
-                            window,
-                            false,
-                        )],
+                        records,
                     )?;
                     continue;
                 }
@@ -431,13 +443,22 @@ fn spawn_x11_control_writer(
                         focused_surface_window.swap(window.local.raw(), Ordering::AcqRel),
                         1,
                     );
-                    x11_focus_surface_records(
+                    x11_focus_records(
                         byte_order,
                         event_sequence,
-                        window,
-                        previous,
-                        previous_routed,
-                        focus_transition,
+                        namespace,
+                        client,
+                        &core_event_selections,
+                        protocol_routing
+                            .as_ref()
+                            .map(|routing| &routing.input_authority),
+                        xkb_modifiers.load(Ordering::Acquire),
+                        X11FocusRecordRequest::Surface {
+                            window,
+                            previous_authority: previous,
+                            previous_routed,
+                            transition: focus_transition,
+                        },
                     )?
                 }
                 XAuthorityControlCommand::ClearFocus { .. } => {
@@ -462,12 +483,21 @@ fn spawn_x11_control_writer(
                         focused_surface_window.swap(root.local.raw(), Ordering::AcqRel),
                         1,
                     );
-                    x11_clear_focus_records(
+                    x11_focus_records(
                         byte_order,
                         event_sequence,
-                        root,
-                        previous_routed,
-                        focus_transition,
+                        namespace,
+                        client,
+                        &core_event_selections,
+                        protocol_routing
+                            .as_ref()
+                            .map(|routing| &routing.input_authority),
+                        xkb_modifiers.load(Ordering::Acquire),
+                        X11FocusRecordRequest::Clear {
+                            root,
+                            previous_routed,
+                            transition: focus_transition,
+                        },
                     )?
                 }
                 XAuthorityControlCommand::WithdrawSurface { .. } => {
@@ -672,7 +702,6 @@ fn spawn_x11_input_event_writer(
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
-        let mut focus_sent_to = None;
         let mut pointer_sent_to = None;
         while !writer_stop.load(Ordering::Acquire) {
             let (
@@ -682,7 +711,7 @@ fn spawn_x11_input_event_writer(
                 mut xi_event_window,
                 mut xi_emulated_button_type,
                 mut xi_emulated_button_window,
-                xi_transition_mask,
+                xi_pointer_crossing_mask,
                 delivery,
             ) =
                 match receiver.recv_timeout(client) {
@@ -926,12 +955,6 @@ fn spawn_x11_input_event_writer(
                     state >> 8,
                 );
             }
-            let delivered_focus = delivered_window;
-            if matches!(event, XAuthorityInputEvent::Key(_))
-                && focused_surface_window.load(Ordering::Acquire) == delivered_focus.local.raw()
-            {
-                focus_sent_to = Some(delivered_focus);
-            }
             let mut record = encode_x_client_event(
                 byte_order,
                 match event {
@@ -1019,9 +1042,6 @@ fn spawn_x11_input_event_writer(
                 let sequence = sequence.load(Ordering::Acquire);
                 write_xi_u16(byte_order, &mut record[2..4], sequence);
                 let transition = match event {
-                    XAuthorityInputEvent::Key(_) if focus_sent_to != Some(delivered_window) => {
-                        Some((focus_sent_to, 10, 9))
-                    }
                     XAuthorityInputEvent::Pointer(_)
                         if pointer_sent_to != Some(delivered_window) =>
                     {
@@ -1091,7 +1111,7 @@ fn spawn_x11_input_event_writer(
                         drop(selections);
                     }
                     if let Some(previous) = previous
-                        && xi_transition_mask & (1 << out_type) != 0
+                        && xi_pointer_crossing_mask & (1 << out_type) != 0
                     {
                         stream
                             .write_all(&encode_xi_crossing_event(
@@ -1103,7 +1123,7 @@ fn spawn_x11_input_event_writer(
                                 ))
                             })?;
                     }
-                    if xi_transition_mask & (1 << in_type) != 0 {
+                    if xi_pointer_crossing_mask & (1 << in_type) != 0 {
                         stream
                             .write_all(&encode_xi_crossing_event(
                                 byte_order,
@@ -1121,26 +1141,6 @@ fn spawn_x11_input_event_writer(
                     if matches!(event, XAuthorityInputEvent::Pointer(_)) {
                         pointer_sent_to = Some(delivered_window);
                     }
-                }
-                if matches!(event, XAuthorityInputEvent::Key(_))
-                    && focus_sent_to != Some(delivered_focus)
-                {
-                    let focus = encode_x_client_event(
-                        byte_order,
-                        XClientEvent::Focus {
-                            sequence,
-                            focused: true,
-                            detail: 3,
-                            event: delivered_focus,
-                            mode: 0,
-                        },
-                    );
-                    stream.write_all(&focus).map_err(|error| {
-                        X11SetupSocketError::new(format!(
-                            "failed to write X11 focus event: {error}"
-                        ))
-                    })?;
-                    focus_sent_to = Some(delivered_focus);
                 }
                 stream.write_all(&record).map_err(|error| {
                     if is_x11_client_disconnect(&error) {

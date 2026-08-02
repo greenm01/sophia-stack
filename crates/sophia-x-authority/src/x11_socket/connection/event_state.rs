@@ -85,6 +85,7 @@ impl XCoreEventSelectionState {
     const POINTER_MOTION_MASK: u32 = 1 << 6;
     const ENTER_WINDOW_MASK: u32 = 1 << 4;
     const LEAVE_WINDOW_MASK: u32 = 1 << 5;
+    const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
     fn update(
         &mut self,
@@ -281,6 +282,12 @@ impl XCoreEventSelectionState {
         self.windows
             .get(&window)
             .is_some_and(|selection| selection.mask & mask != 0)
+    }
+
+    fn focus_selected(&self, window: XResourceId) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(|selection| selection.mask & Self::FOCUS_CHANGE_MASK != 0)
     }
 
     fn pointer_event_coordinates(

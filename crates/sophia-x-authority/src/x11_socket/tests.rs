@@ -378,7 +378,7 @@ fn routed_input_discards_another_clients_event() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: None,
         })
         .unwrap();
@@ -398,7 +398,7 @@ fn routed_input_discards_another_clients_event() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: None,
         })
         .unwrap();
@@ -505,7 +505,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: None,
         })
         .unwrap();
@@ -525,7 +525,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: None,
         }
     );
@@ -567,7 +567,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: None,
         })
         .unwrap();
@@ -779,7 +779,7 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
                 xi_event_window: None,
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
-                xi_transition_mask: 0,
+                xi_pointer_crossing_mask: 0,
                 delivery: None,
             })
             .unwrap();
@@ -822,7 +822,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             xi_event_window: None,
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
-            xi_transition_mask: 0,
+            xi_pointer_crossing_mask: 0,
             delivery: Some(delivery),
         })
         .unwrap();

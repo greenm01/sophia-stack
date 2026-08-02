@@ -70,6 +70,14 @@ sophia_live_resize_epoch schema=3 status=visual_committed transaction=180 surfac
 sophia_live_wm schema=1 status=physical_action_committed action=3
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=18 output=1 workspace=1 visible_surfaces=3 focus=surface
 sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_bytes=104 content=redacted
+sophia_live_wm schema=1 status=physical_action_committed action=1
+sophia_x11_focus_delivery schema=1 client=3 window=4 focused=false core_selected=true xi2_selected=true content=redacted
+sophia_live_wm schema=1 status=focus_reconciled transaction=181 target=surface surface=SurfaceId { index: 2, generation: 1 } outcome=Focused
+sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
+sophia_live_wm schema=1 status=physical_action_committed action=1
+sophia_x11_focus_delivery schema=1 client=3 window=4 focused=true core_selected=true xi2_selected=true content=redacted
+sophia_live_wm schema=1 status=focus_reconciled transaction=182 target=surface surface=SurfaceId { index: 4, generation: 1 } outcome=Focused
+sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
 sophia_firefox_m8 schema=1 status=stage_complete stage=refocus index=6 title_bytes=120 content=redacted
 sophia_firefox_m8 schema=1 status=dialog_ready content=redacted
 sophia_live_wm schema=1 status=layout_committed transaction=19 surfaces=5 moved_surfaces=1 configure_deliveries=2 outcome=Committed

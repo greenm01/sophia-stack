@@ -44,6 +44,30 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted the wrong resize action" >&2
     exit 1
 fi
+sed '/window=4 focused=false core_selected=true xi2_selected=true/d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing XI2 FocusOut" >&2
+    exit 1
+fi
+sed '/window=4 focused=true core_selected=true xi2_selected=true/d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing XI2 FocusIn" >&2
+    exit 1
+fi
+sed 's/index: 2, generation: 1/index: 4, generation: 1/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted no focus transition away" >&2
+    exit 1
+fi
+sed 's/index: 4, generation: 1/index: 2, generation: 1/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted no focus return" >&2
+    exit 1
+fi
 sed '/status=dialog_ready /d' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then

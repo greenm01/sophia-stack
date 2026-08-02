@@ -67,7 +67,11 @@ pub struct XAuthorityClientInputEvent {
     pub xi_event_window: Option<XResourceId>,
     pub xi_emulated_button_type: Option<u16>,
     pub xi_emulated_button_window: Option<XResourceId>,
-    pub xi_transition_mask: u16,
+    /// Selected XI2 pointer Enter/Leave events for this route.
+    ///
+    /// Keyboard FocusIn/FocusOut belongs to the authority focus transition,
+    /// not to a later physical key delivery.
+    pub xi_pointer_crossing_mask: u16,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }
 

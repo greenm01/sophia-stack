@@ -7,6 +7,7 @@ enum X11RoutedControl {
     },
     FocusOut {
         window: XResourceId,
+        time_msec: u32,
     },
 }
 
@@ -24,8 +25,26 @@ impl X11RoutedControl {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum X11FocusTransition {
     Unchanged,
-    Enter { previous: Option<XResourceId> },
-    Clear { previous: Option<XResourceId> },
+    Enter {
+        previous: Option<XResourceId>,
+        time_msec: u32,
+    },
+    Clear {
+        previous: Option<XResourceId>,
+        time_msec: u32,
+    },
+}
+
+#[cfg(unix)]
+fn x11_server_time_msec() -> u32 {
+    let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+    let seconds = u64::try_from(now.tv_sec).unwrap_or_default();
+    let nanos = u64::try_from(now.tv_nsec).unwrap_or_default();
+    let milliseconds = seconds
+        .saturating_mul(1_000)
+        .saturating_add(nanos / 1_000_000);
+    let bytes = milliseconds.to_le_bytes();
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
 
 #[cfg(unix)]
@@ -66,16 +85,24 @@ impl XServerFrontendRouteRegistry {
             .focused_surface
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let time_msec = x11_server_time_msec();
         let transition = match *focused {
             Some(previous) if previous == target => X11FocusTransition::Unchanged,
             Some(previous) if previous.client == target.client => X11FocusTransition::Enter {
                 previous: Some(previous.window),
+                time_msec,
             },
             Some(previous) => {
-                self.route_focus_out(previous)?;
-                X11FocusTransition::Enter { previous: None }
+                self.route_focus_out(previous, time_msec)?;
+                X11FocusTransition::Enter {
+                    previous: None,
+                    time_msec,
+                }
             }
-            None => X11FocusTransition::Enter { previous: None },
+            None => X11FocusTransition::Enter {
+                previous: None,
+                time_msec,
+            },
         };
         self.route_authority_control(route, Some(transition))?;
         *focused = Some(target);
@@ -90,15 +117,23 @@ impl XServerFrontendRouteRegistry {
             .focused_surface
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let time_msec = x11_server_time_msec();
         let transition = match *focused {
             Some(previous) if previous.client == route.client => X11FocusTransition::Clear {
                 previous: Some(previous.window),
+                time_msec,
             },
             Some(previous) => {
-                self.route_focus_out(previous)?;
-                X11FocusTransition::Clear { previous: None }
+                self.route_focus_out(previous, time_msec)?;
+                X11FocusTransition::Clear {
+                    previous: None,
+                    time_msec,
+                }
             }
-            None => X11FocusTransition::Clear { previous: None },
+            None => X11FocusTransition::Clear {
+                previous: None,
+                time_msec,
+            },
         };
         self.route_authority_control(route, Some(transition))?;
         *focused = None;
@@ -108,6 +143,7 @@ impl XServerFrontendRouteRegistry {
     fn route_focus_out(
         &self,
         previous: XServerFrontendSurfaceRoute,
+        time_msec: u32,
     ) -> Result<(), XServerFrontendRouteError> {
         let sender = self.client_senders(previous.client)?.control;
         self.route_to_client(
@@ -115,6 +151,7 @@ impl XServerFrontendRouteRegistry {
             sender,
             X11RoutedControl::FocusOut {
                 window: previous.window,
+                time_msec,
             },
         )
     }
