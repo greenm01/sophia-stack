@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use sophia_protocol::{
-    AxisSpan, NamespaceId, OutputEdge, OutputReservation, Rect, Size, SurfaceConstraints,
+    AxisSpan, LayoutNodeKind, NamespaceId, OutputEdge, OutputReservation, Rect, Size,
+    SurfaceConstraints, SurfacePlacementPreference,
 };
 
 use crate::{
@@ -123,14 +124,33 @@ pub enum XWindowTypeDecodeError {
     InvalidLength,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XWindowTypeFacts {
+    pub kind: LayoutNodeKind,
+    pub placement_preference: SurfacePlacementPreference,
+    /// Desktop and dock windows are frontend-positioned shell surfaces. All
+    /// other non-override-redirect root children remain redirected to policy.
+    pub client_positioned: bool,
+}
+
+impl Default for XWindowTypeFacts {
+    fn default() -> Self {
+        Self {
+            kind: LayoutNodeKind::Toplevel,
+            placement_preference: SurfacePlacementPreference::Default,
+            client_positioned: false,
+        }
+    }
+}
+
 /// Reduces EWMH functional window types to the presentation distinction the
 /// Engine needs. Unknown extension atoms are skipped, as required by EWMH;
 /// a missing recognized type falls back to a normal policy-managed toplevel.
-pub fn decode_x_window_type_client_positioned(
+pub fn decode_x_window_type_facts(
     record: &XPropertyRecord,
     atoms: &XAtomTable,
     byte_order: XByteOrder,
-) -> Option<Result<bool, XWindowTypeDecodeError>> {
+) -> Option<Result<XWindowTypeFacts, XWindowTypeDecodeError>> {
     if atoms.name(record.property) != Some("_NET_WM_WINDOW_TYPE") {
         return None;
     }
@@ -144,27 +164,46 @@ pub fn decode_x_window_type_client_positioned(
         return Some(Err(XWindowTypeDecodeError::InvalidLength));
     }
 
-    let client_positioned = record.bytes.chunks_exact(4).find_map(|bytes| {
+    let facts = record.bytes.chunks_exact(4).find_map(|bytes| {
         let atom = byte_order.u32(bytes);
         match atoms.name(atom) {
-            Some("_NET_WM_WINDOW_TYPE_NORMAL") => Some(false),
-            Some("_NET_WM_WINDOW_TYPE_DESKTOP")
-            | Some("_NET_WM_WINDOW_TYPE_DOCK")
-            | Some("_NET_WM_WINDOW_TYPE_TOOLBAR")
-            | Some("_NET_WM_WINDOW_TYPE_MENU")
-            | Some("_NET_WM_WINDOW_TYPE_UTILITY")
-            | Some("_NET_WM_WINDOW_TYPE_SPLASH")
-            | Some("_NET_WM_WINDOW_TYPE_DIALOG")
+            Some("_NET_WM_WINDOW_TYPE_NORMAL") => Some(XWindowTypeFacts::default()),
+            Some("_NET_WM_WINDOW_TYPE_DESKTOP") | Some("_NET_WM_WINDOW_TYPE_DOCK") => {
+                Some(XWindowTypeFacts {
+                    kind: LayoutNodeKind::Utility,
+                    placement_preference: SurfacePlacementPreference::Default,
+                    client_positioned: true,
+                })
+            }
+            Some("_NET_WM_WINDOW_TYPE_TOOLBAR") | Some("_NET_WM_WINDOW_TYPE_UTILITY") => {
+                Some(XWindowTypeFacts {
+                    kind: LayoutNodeKind::Utility,
+                    placement_preference: SurfacePlacementPreference::Floating,
+                    client_positioned: false,
+                })
+            }
+            Some("_NET_WM_WINDOW_TYPE_SPLASH") | Some("_NET_WM_WINDOW_TYPE_DIALOG") => {
+                Some(XWindowTypeFacts {
+                    kind: LayoutNodeKind::Dialog,
+                    placement_preference: SurfacePlacementPreference::Floating,
+                    client_positioned: false,
+                })
+            }
+            Some("_NET_WM_WINDOW_TYPE_MENU")
             | Some("_NET_WM_WINDOW_TYPE_DROPDOWN_MENU")
             | Some("_NET_WM_WINDOW_TYPE_POPUP_MENU")
             | Some("_NET_WM_WINDOW_TYPE_TOOLTIP")
             | Some("_NET_WM_WINDOW_TYPE_NOTIFICATION")
             | Some("_NET_WM_WINDOW_TYPE_COMBO")
-            | Some("_NET_WM_WINDOW_TYPE_DND") => Some(true),
+            | Some("_NET_WM_WINDOW_TYPE_DND") => Some(XWindowTypeFacts {
+                kind: LayoutNodeKind::Popup,
+                placement_preference: SurfacePlacementPreference::Floating,
+                client_positioned: false,
+            }),
             _ => None,
         }
     });
-    Some(Ok(client_positioned.unwrap_or(false)))
+    Some(Ok(facts.unwrap_or_default()))
 }
 
 pub fn decode_x_transient_for(

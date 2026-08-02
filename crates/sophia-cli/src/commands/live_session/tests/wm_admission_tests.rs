@@ -143,6 +143,9 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            stack_rank: 0,
             owner: None,
             mapped: false,
             geometry,
@@ -159,6 +162,10 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints: SurfaceConstraints {
                 min_size: None,

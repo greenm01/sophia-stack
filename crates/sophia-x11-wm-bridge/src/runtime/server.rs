@@ -253,11 +253,26 @@ struct XServerState {
     sequence: u16,
     root: Rect,
     windows: BTreeMap<u32, WindowState>,
+    /// Root children in X11 bottom-to-top order.
+    stacking: Vec<u32>,
     atoms_by_name: BTreeMap<Vec<u8>, u32>,
     atom_names: BTreeMap<u32, Vec<u8>>,
     next_atom: u32,
     input_focus: u32,
+    pointer_x: i16,
+    pointer_y: i16,
+    pointer_mask: u16,
+    pending_pointer_gesture: Option<PendingPointerGesture>,
     key_grabs: BTreeSet<(u8, u16)>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingPointerGesture {
+    window: SyntheticXWindowId,
+    button: u8,
+    modifiers: u16,
+    delta_x: i16,
+    delta_y: i16,
 }
 
 impl XServerState {
@@ -265,6 +280,14 @@ impl XServerState {
         let atoms_by_name = BTreeMap::from([
             (b"WM_NORMAL_HINTS".to_vec(), 40),
             (b"WM_SIZE_HINTS".to_vec(), 41),
+            (b"WM_TRANSIENT_FOR".to_vec(), 42),
+            (b"WINDOW".to_vec(), 43),
+            (b"_NET_WM_WINDOW_TYPE".to_vec(), 44),
+            (b"ATOM".to_vec(), 45),
+            (b"_NET_WM_WINDOW_TYPE_NORMAL".to_vec(), 46),
+            (b"_NET_WM_WINDOW_TYPE_DIALOG".to_vec(), 47),
+            (b"_NET_WM_WINDOW_TYPE_UTILITY".to_vec(), 48),
+            (b"_NET_WM_WINDOW_TYPE_POPUP_MENU".to_vec(), 49),
         ]);
         let atom_names = atoms_by_name
             .iter()
@@ -274,10 +297,15 @@ impl XServerState {
             sequence: 0,
             root,
             windows: BTreeMap::new(),
+            stacking: Vec::new(),
             atoms_by_name,
             atom_names,
             next_atom: FIRST_DYNAMIC_ATOM,
             input_focus: SYNTHETIC_ROOT_XID,
+            pointer_x: 0,
+            pointer_y: 0,
+            pointer_mask: 0,
+            pending_pointer_gesture: None,
             key_grabs: BTreeSet::new(),
         }
     }

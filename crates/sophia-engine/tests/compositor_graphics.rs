@@ -3,8 +3,8 @@ use sophia_engine::{
     HeadlessOutput, OutputFramePresentationError, OutputFramePresentationState,
     OutputFullRepaintReason, OutputRepaintPlan, OutputRepaintPolicy, SurfaceChromeRole,
     SurfaceChromeStyle, SurfaceFrameStyle, compositor_border_bands, compositor_chrome_summary,
-    compositor_display_list_damage, output_frame_damage_snapshot, plan_output_repaint,
-    surface_chrome_display_list,
+    compositor_display_list_damage, compositor_floating_outline, output_frame_damage_snapshot,
+    plan_output_repaint, surface_chrome_display_list,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Rect, Region, Size, SurfaceId,
@@ -20,6 +20,44 @@ fn committed(surface: SurfaceId, geometry: Rect, generation: u64) -> CommittedSu
         },
         damage: Region::single(geometry),
     }
+}
+
+#[test]
+fn floating_outline_is_compositor_owned_and_does_not_need_new_client_pixels() {
+    let surface = SurfaceId::new(7, 1);
+    let geometry = Rect {
+        x: 120,
+        y: 90,
+        width: 640,
+        height: 480,
+    };
+    let outline = compositor_floating_outline(
+        surface,
+        geometry,
+        2,
+        sophia_engine::CompositorRgb8 {
+            red: 0x70,
+            green: 0xb7,
+            blue: 0xff,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(outline.inner, geometry);
+    assert!(matches!(
+        outline.node,
+        CompositorNodeId::SurfaceChrome {
+            surface: outlined,
+            role: SurfaceChromeRole::FloatingOutline,
+        } if outlined == surface
+    ));
+    assert_eq!(
+        compositor_border_bands(outline)
+            .into_iter()
+            .filter(|band| !band.geometry.is_empty())
+            .count(),
+        4
+    );
 }
 
 fn headless_output(output: OutputId) -> HeadlessOutput {

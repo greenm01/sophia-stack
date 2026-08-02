@@ -134,6 +134,9 @@ fn dispatch_core_window_request(
                             context,
                             window,
                             runtime.window_map_state(context.namespace, window).ok(),
+                            runtime
+                                .window_override_redirect(context.namespace, window)
+                                .unwrap_or(false),
                             &response,
                         )
                     } else {
@@ -323,9 +326,9 @@ fn dispatch_core_window_request(
                                     ) {
                                         return Vec::new();
                                     }
-                                    let override_redirect =
-                                        surface.presentation
-                                            == sophia_protocol::SurfacePresentationRole::ClientPositioned;
+                                    let override_redirect = runtime
+                                        .window_override_redirect(context.namespace, window)
+                                        .unwrap_or(false);
                                     let mut outputs = vec![XClientOutput::Event(
                                         XClientEvent::MapNotify {
                                             sequence: context.sequence,
@@ -403,6 +406,8 @@ fn dispatch_core_window_request(
                     y,
                     width,
                     height,
+                    sibling,
+                    stack_mode,
                     ..
                 } => {
                     let before = runtime.window_geometry(context.namespace, window).ok();
@@ -428,6 +433,18 @@ fn dispatch_core_window_request(
                                 Ok(())
                             }
                         });
+                    let mut restacked = None;
+                    let configure = configure.and_then(|()| {
+                        if client_controls && (sibling.is_some() || stack_mode.is_some()) {
+                            restacked = Some(runtime.restack_window(
+                                context.namespace,
+                                window,
+                                sibling,
+                                stack_mode,
+                            )?);
+                        }
+                        Ok(())
+                    });
                     let outputs = if let Err(error) = configure {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -465,7 +482,13 @@ fn dispatch_core_window_request(
                         }
                     };
                     XDispatchResult {
-                        response: None,
+                        response: restacked.map(|surface| {
+                            let mut response = XAuthorityResponsePacket::accepted(
+                                TransactionId::from_raw(u64::from(context.sequence)),
+                            );
+                            response.surfaces.push(surface);
+                            response
+                        }),
                         outputs,
                         metadata_candidates: Vec::new(),
                     }
@@ -576,6 +599,7 @@ fn outputs_from_map_response(
     context: XDispatchContext,
     window: XResourceId,
     map_state: Option<crate::XMapState>,
+    override_redirect: bool,
     response: &XAuthorityResponsePacket,
 ) -> Vec<XClientOutput> {
     if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
@@ -589,9 +613,6 @@ fn outputs_from_map_response(
     let Some(crate::XMapState::Unviewable | crate::XMapState::Viewable) = map_state else {
         return Vec::new();
     };
-    let override_redirect = response.surfaces.first().is_some_and(|surface| {
-        surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
-    });
     let mut outputs = vec![XClientOutput::Event(XClientEvent::MapNotify {
         sequence: context.sequence,
         event: window,

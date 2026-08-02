@@ -14,6 +14,9 @@
   .navigation-proof #navigate { display: block; position: fixed; inset: 0; z-index: 10; }
   .scroll-proof #scroll-proof { display: block; }
   .dialog-proof #dialog { position: fixed; inset: 0; z-index: 10; margin: 0; }
+  #proof-dialog { width: min(80vw, 720px); padding: 0; border: 4px solid #70b7ff; background: #183252; }
+  #proof-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+  #proof-dialog button { min-height: 30vh; margin: 0; }
 </style>
 <main>
   <h1>Sophia Firefox offline proof</h1>
@@ -21,6 +24,7 @@
   <input id="clipboard" aria-label="clipboard target" placeholder="clipboard target">
   <input id="primary" aria-label="primary target" placeholder="primary target">
   <button id="dialog">Open proof dialog</button>
+  <dialog id="proof-dialog"><button id="confirm" autofocus>Confirm Sophia dialog</button></dialog>
   <div id="status">waiting</div>
   <div id="next">Step 1/8: type <strong>sophia</strong>.</div>
 </main>
@@ -43,7 +47,7 @@
     'Step 4/8: click the full-page navigation target, then scroll vertically through at least two notches on the next document.',
     'Step 5/8: press Super+Space to resize.',
     'Step 6/8: press Super+J away, then Super+J as needed until Firefox returns.',
-    'Step 7/8: click the full-page dialog target, then click the popup confirmation.',
+    'Step 7/8: click the full-page dialog target, then click the modal confirmation.',
     'Step 8/8 complete: press Ctrl+Q for a normal Firefox close.'
   ];
   function advance(label) {
@@ -126,28 +130,18 @@
   });
   document.querySelector('#dialog').addEventListener('click', () => {
     if (stage === 6) {
-      const popup = open('', 'sophia-proof-dialog', 'popup,width=480,height=240');
-      if (!popup) {
-        status.textContent = 'popup blocked; click the dialog target again';
-        return;
-      }
-      popup.document.open();
-      popup.document.write('<!doctype html><title></title><style>html,body{height:100%;margin:0}button{font:28px sans-serif;width:100%;height:100%}</style><button id="confirm" autofocus>Confirm Sophia popup</button>');
-      popup.document.close();
-      const confirmPopup = () => {
-        popup.document.title = '0'.repeat(stages[7]);
-        popup.setTimeout(() => popup.close(), 1000);
-      };
-      const confirmButton = popup.document.querySelector('#confirm');
-      confirmButton.addEventListener('click', confirmPopup);
-      popup.addEventListener('keydown', event => {
-        if (event.key === 'Enter') confirmPopup();
-      });
-      confirmButton.focus();
-      popup.focus();
-      // Publish readiness only after the popup document and its Enter handler
-      // exist. X11 mapping and focus can precede this point in Firefox.
-      popup.document.title = '0'.repeat(stages[6] + 1);
+      const dialog = document.querySelector('#proof-dialog');
+      dialog.showModal();
+      document.querySelector('#confirm').focus();
+      // The out-of-band title proves that the DOM modal is painted and ready
+      // without creating another X11 toplevel.
+      document.title = '0'.repeat(stages[6] + 1);
+    }
+  });
+  document.querySelector('#confirm').addEventListener('click', () => {
+    if (stage === 6) {
+      document.querySelector('#proof-dialog').close();
+      document.title = '0'.repeat(stages[7]);
     }
   });
   if (navigated) {

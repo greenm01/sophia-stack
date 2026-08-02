@@ -38,6 +38,7 @@ pub fn compositor_chrome_summary(
             SurfaceChromeRole::FocusRing => {
                 summary.focus_rings = summary.focus_rings.saturating_add(1);
             }
+            SurfaceChromeRole::FloatingOutline => {}
         }
         summary.primitives = summary.primitives.saturating_add(
             compositor_border_bands(border)
@@ -45,10 +46,12 @@ pub fn compositor_chrome_summary(
                 .filter(|band| !band.geometry.is_empty())
                 .count(),
         );
-        summary.clearance = summary
-            .clearance
-            .max(border.inner.x.saturating_sub(border.outer.x))
-            .max(border.inner.y.saturating_sub(border.outer.y));
+        if role != SurfaceChromeRole::FloatingOutline {
+            summary.clearance = summary
+                .clearance
+                .max(border.inner.x.saturating_sub(border.outer.x))
+                .max(border.inner.y.saturating_sub(border.outer.y));
+        }
         for byte in surface
             .index()
             .to_le_bytes()

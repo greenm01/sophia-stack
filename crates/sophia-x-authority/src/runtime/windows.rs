@@ -143,16 +143,16 @@ impl XAuthorityRuntime {
             .map_err(Into::into)
     }
 
-    pub fn set_window_type_client_positioned(
+    pub fn set_window_type_facts(
         &mut self,
         namespace: NamespaceId,
         window: crate::XResourceId,
-        client_positioned: bool,
+        facts: crate::XWindowTypeFacts,
     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
         self.resources
             .lookup(namespace, window, XResourceKind::Window)?;
         self.windows
-            .set_client_positioned_window_type(window, client_positioned)
+            .set_window_type_facts(window, facts)
             .map_err(Into::into)
     }
 
@@ -169,6 +169,24 @@ impl XAuthorityRuntime {
                  .lookup(namespace, parent, XResourceKind::Window)?;
          }
         self.windows.set_parent(window, parent).map_err(Into::into)
+    }
+
+    pub fn restack_window(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        sibling: Option<crate::XResourceId>,
+        stack_mode: Option<u8>,
+    ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        if let Some(sibling) = sibling {
+            self.resources
+                .lookup(namespace, sibling, XResourceKind::Window)?;
+        }
+        self.windows
+            .restack(window, sibling, stack_mode)
+            .map_err(Into::into)
     }
 
     pub fn window_presentation_root_and_offset(

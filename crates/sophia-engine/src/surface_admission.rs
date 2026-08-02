@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use sophia_protocol::{
-    Rect, SurfaceConstraints, SurfaceId, SurfacePresentationIntent, SurfacePresentationIntentKind,
-    SurfacePresentationRole, TransactionId,
+    LayoutNodeKind, Rect, SurfaceConstraints, SurfaceId, SurfacePlacementPreference,
+    SurfacePresentationIntent, SurfacePresentationIntentKind, SurfacePresentationRole,
+    TransactionId,
 };
 
 /// Passive facts required to plan a surface before it has committed pixels.
@@ -9,6 +10,10 @@ use sophia_protocol::{
 pub struct SurfaceLayoutFacts {
     pub surface: SurfaceId,
     pub role: SurfacePresentationRole,
+    pub kind: LayoutNodeKind,
+    pub placement_preference: SurfacePlacementPreference,
+    pub presentation_owner: Option<SurfaceId>,
+    pub stack_rank: u32,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
     pub generation: u64,
@@ -19,6 +24,10 @@ impl From<SurfacePresentationIntent> for SurfaceLayoutFacts {
         Self {
             surface: intent.surface,
             role: intent.role,
+            kind: intent.surface_kind,
+            placement_preference: intent.placement_preference,
+            presentation_owner: intent.presentation_owner,
+            stack_rank: intent.stack_rank,
             geometry: intent.geometry,
             constraints: intent.constraints,
             generation: intent.generation,

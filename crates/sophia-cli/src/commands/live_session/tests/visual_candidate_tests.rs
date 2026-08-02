@@ -67,6 +67,10 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         kind: SurfacePresentationIntentKind::Request,
         role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry: initial,
         constraints: SurfaceConstraints {
             min_size: None,

@@ -9,6 +9,171 @@ use sophia_x_authority::{
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
+fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {
+    let surface = SurfaceId::new(41, 1);
+    let start = sophia_protocol::WmPointerPosition { x: 120, y: 80 };
+    let end = sophia_protocol::WmPointerPosition { x: 440, y: 300 };
+    let initial_geometry = Rect {
+        x: 100,
+        y: 60,
+        width: 300,
+        height: 200,
+    };
+    let mut state = FloatingPointerGestureState::default();
+
+    let ignored = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: true,
+        },
+        Some(start),
+        Some(surface),
+        Some(sophia_protocol::SurfacePresentationRole::PolicyManaged),
+        Some(initial_geometry),
+        false,
+    );
+    assert!(!ignored.consumed);
+
+    let press = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerButton {
+            button: 0x111,
+            pressed: true,
+        },
+        Some(start),
+        Some(surface),
+        Some(sophia_protocol::SurfacePresentationRole::PolicyManaged),
+        Some(initial_geometry),
+        true,
+    );
+    assert!(press.consumed);
+    assert!(press.completed.is_none());
+    assert_eq!(
+        press.outline,
+        FloatingPointerOutlineUpdate::Set(FloatingPointerOutline {
+            surface,
+            start,
+            geometry: initial_geometry,
+        })
+    );
+
+    let motion = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerMotion,
+        Some(end),
+        Some(surface),
+        Some(sophia_protocol::SurfacePresentationRole::PolicyManaged),
+        Some(initial_geometry),
+        false,
+    );
+    assert!(motion.consumed);
+    assert!(motion.completed.is_none());
+    assert_eq!(
+        motion.outline,
+        FloatingPointerOutlineUpdate::Set(FloatingPointerOutline {
+            surface,
+            start,
+            geometry: Rect {
+                x: 100,
+                y: 60,
+                width: 620,
+                height: 420,
+            },
+        })
+    );
+
+    let release = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerButton {
+            button: 0x111,
+            pressed: false,
+        },
+        Some(end),
+        None,
+        None,
+        None,
+        false,
+    );
+    assert!(release.consumed);
+    assert_eq!(release.outline, FloatingPointerOutlineUpdate::Clear);
+    assert_eq!(
+        release.completed,
+        Some(sophia_protocol::WmPointerGestureCompleted {
+            surface,
+            output: OutputId::INVALID,
+            workspace: sophia_protocol::WorkspaceId::INVALID,
+            mode: sophia_protocol::WmPointerGestureMode::Resize,
+            start,
+            end,
+        })
+    );
+
+    let ordinary_motion = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerMotion,
+        Some(end),
+        None,
+        None,
+        None,
+        false,
+    );
+    assert!(!ordinary_motion.consumed);
+    assert!(ordinary_motion.completed.is_none());
+}
+
+#[test]
+fn floating_outline_stays_wholly_inside_the_gesture_start_output() {
+    let output_one = OutputId::from_raw(1);
+    let output_two = OutputId::from_raw(2);
+    let outline = FloatingPointerOutline {
+        surface: SurfaceId::new(42, 1),
+        start: sophia_protocol::WmPointerPosition { x: 1300, y: 200 },
+        geometry: Rect {
+            x: 700,
+            y: 500,
+            width: 1400,
+            height: 900,
+        },
+    };
+
+    let clamped = clamp_floating_pointer_outline(
+        outline,
+        &[
+            (
+                output_one,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+            ),
+            (
+                output_two,
+                Rect {
+                    x: 1200,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        clamped.geometry,
+        Rect {
+            x: 1200,
+            y: 0,
+            width: 800,
+            height: 600,
+        }
+    );
+}
+
+#[test]
 fn flushed_input_delivery_retires_its_client_key_release_barrier() {
     let delivery = XAuthorityInputDeliveryId::from_raw(7);
     let mut state = InputDeliveryState::default();
@@ -269,6 +434,10 @@ fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_
                 surface,
                 kind: sophia_protocol::SurfacePresentationIntentKind::Request,
                 role: roles[&surface],
+                surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+                placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+                presentation_owner: None,
+                stack_rank: 0,
                 geometry,
                 constraints: sophia_protocol::SurfaceConstraints {
                     min_size: None,

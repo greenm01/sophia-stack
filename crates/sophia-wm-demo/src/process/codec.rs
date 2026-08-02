@@ -6,7 +6,7 @@ use sophia_protocol::{
 use super::error::WmProcessError;
 
 pub(super) fn process_usage() -> &'static str {
-    "usage: sophia-wm-demo <manage|relayout|remove|action|focus> --transaction=N --workspace=N ..."
+    "usage: sophia-wm-demo <manage|relayout|remove|action|focus|pointer> --transaction=N --workspace=N ..."
 }
 
 pub(super) fn required_u64(args: &[String], key: &str) -> Result<u64, WmProcessError> {
@@ -83,6 +83,8 @@ pub(super) fn parse_node(
         surface,
         workspace,
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {

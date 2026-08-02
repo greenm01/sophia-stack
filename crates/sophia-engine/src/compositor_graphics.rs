@@ -15,6 +15,7 @@ pub const MAX_OUTPUT_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
 pub enum SurfaceChromeRole {
     Frame,
     FocusRing,
+    FloatingOutline,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -756,6 +757,25 @@ fn surface_chrome_border(
         inner,
         color,
     })
+}
+
+pub fn compositor_floating_outline(
+    surface: SurfaceId,
+    geometry: Rect,
+    width: i32,
+    color: CompositorRgb8,
+) -> Option<CompositorBorder> {
+    if !surface.is_valid() || geometry.is_empty() || width <= 0 {
+        return None;
+    }
+    let committed = CommittedSurfaceState {
+        surface,
+        committed_generation: 0,
+        geometry,
+        buffer: BufferSource::None,
+        damage: Region::empty(),
+    };
+    surface_chrome_border(&committed, SurfaceChromeRole::FloatingOutline, width, color)
 }
 
 pub fn compositor_border_bands(border: CompositorBorder) -> [CompositorSolidRect; 4] {

@@ -1,6 +1,6 @@
 use crate::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
-    Size, SurfaceConstraints, SurfaceId, Transform, WorkspaceId,
+    Size, SurfaceConstraints, SurfaceId, SurfacePlacementPreference, Transform, WorkspaceId,
 };
 
 use super::cursor::{Cursor, push_i32, push_u8, push_u16, push_u32, push_u64};

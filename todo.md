@@ -771,6 +771,22 @@ QEMU already proves the bounded Firefox protocol workflow. This milestone
 tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
 than adding speculative browser compatibility.
 
+- [x] Establish first-class floating-window policy without application
+  heuristics. X Authority keeps every non-override-redirect application
+  toplevel under WM policy, reduces ICCCM/EWMH dialog facts into opaque
+  `Dialog`/`Floating` layout facts, and reserves client-positioned bypass for
+  override-redirect plus desktop/dock ownership. WM API v7 persists floating
+  state and exposes a transactional toggle; the xmonad profile exports only
+  standard transient/type/size hints and binds `Super+Shift+Space`,
+  `Super+left-drag`, and `Super+right-drag`. Pointer drags render an
+  Engine-owned outline from retained pixels, keep the whole frame on the
+  gesture-start output, suppress client delivery during capture, and commit
+  one final atomic move/resize. Wire, codec, policy, process-external xmonad,
+  stacking, multi-output clamp, and compositor-outline regressions pass.
+  Firefox uses an in-document modal for its deterministic browser workflow;
+  a separate genuine hinted X11 dialog regression owns transient-toplevel
+  coverage.
+
 - [ ] Complete generic Firefox wheel compatibility in the X frontend. Preserve
   protocol-neutral Engine axis routing, translate it through the appropriate
   X11 input semantics, and require a real routed axis event to produce the
@@ -803,9 +819,10 @@ than adding speculative browser compatibility.
   displacement, while the QEMU verifier independently requires both routed
   wheel packets after replacement-document readiness; receiving packets
   without scrolling can no longer pass the fixture. The strengthened QEMU gate
-  passes end to end, including the real Firefox popup's ready, attached,
-  confirmed, detached lifecycle and clean guest shutdown. Repeat the physical
-  stage before closing this item.
+  passes end to end, including ordered Firefox DOM-modal ready/confirm stages
+  and clean guest shutdown. The separate X11 wire regression proves genuine
+  hinted-dialog management and floating placement. Repeat the physical stage
+  before closing this item.
 - [ ] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
@@ -823,20 +840,19 @@ than adding speculative browser compatibility.
   pointer work away from compositor edges; repeat the physical workflow before
   closing this item.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
-  workspace hide/show, refocus, dialog open/close, and status-zero exit. Root-
-  child `WM_TRANSIENT_FOR` windows now cross the frontend/session boundary as
-  protocol-neutral attached client-positioned surfaces, follow their owner's
-  workspace visibility, publish map/unmap snapshots, and remain hidden if the
-  owner disappears. Temporary exact-size recovery constraints clear only after
+  workspace hide/show, refocus, modal open/close, and status-zero exit.
+  Genuine non-override-redirect transient dialogs remain policy-managed with
+  opaque owner and floating-preference facts; only override-redirect windows
+  bypass WM policy. Temporary exact-size recovery constraints clear only after
   matching CPU admission or exact DMA-BUF retirement, queue one coalesced blind-
   WM relayout, and must be zero in the clean layout-health record. The strict
   Firefox verifier now requires action 3 (`Super+Space`), a committed
   three-surface resize epoch/layout, a three-visible-surface workspace
-  projection, replacement-document and popup-document readiness, an ordered
-  five-surface popup-open snapshot followed by a four-surface close snapshot
-  (two Kitty windows, Firefox, and the retained physical xmobar baseline),
-  and clean recovery-constraint teardown. A fresh physical run is still
-  required.
+  projection, replacement-document readiness, ordered DOM-modal ready and
+  confirmation checkpoints without any new X11 toplevel, and clean
+  recovery-constraint teardown. Genuine transient-toplevel semantics remain
+  locked independently by the hinted-dialog wire regression. A fresh physical
+  run is still required.
   A subsequent `Super+F` run exposed a stale five-second application-admission
   deadline below the accepted WM resize bound and a fatal pointer-focus queue
   overflow. Admission now remains open beyond the maximum WM transaction;
@@ -1011,7 +1027,7 @@ than adding speculative browser compatibility.
   visual candidate and phase two to arm, retire, and admit it. The physical
   verifier accepts a future direct-admission optimization, but if recovery is
   used it rejects repeated restarts or any phase-one candidate consumption.
-  Repeat the launch and final popup stage; Firefox must admit after at most one
+  Repeat the launch and final modal stage; Firefox must admit after at most one
   restart and remain the full left column.
   Repeat the complete physical workflow from this change before closing the
   item.

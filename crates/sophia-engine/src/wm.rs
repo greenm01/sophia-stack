@@ -226,6 +226,13 @@ impl WmShortcutRouter {
         self.seats.remove(&seat).is_some()
     }
 
+    pub fn modifier_mask(&self, seat: SeatId) -> WmModifierMask {
+        self.seats
+            .get(&seat)
+            .map(|state| state.modifiers.mask())
+            .unwrap_or(WmModifierMask { bits: 0 })
+    }
+
     pub const fn policy_generation(&self) -> u64 {
         self.registry.policy_generation()
     }

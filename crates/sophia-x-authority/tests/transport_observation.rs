@@ -59,7 +59,10 @@ fn reparent_to_client_positioned_emits_policy_withdrawal() {
         surface,
         namespace: Some(NamespaceId::from_raw(1)),
         presentation: SurfacePresentationRole::ClientPositioned,
+        kind: sophia_protocol::LayoutNodeKind::Popup,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Floating,
         presentation_owner: None,
+        stack_rank: 0,
         mapped: true,
         geometry,
         constraints: SurfaceConstraints {

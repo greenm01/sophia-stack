@@ -1,7 +1,13 @@
+#[path = "input/floating_pointer.rs"]
+mod floating_pointer;
+use floating_pointer::*;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct PhysicalInputRouteReport {
     events: usize,
     wm_actions: Vec<WmActionId>,
+    wm_pointer_gestures: Vec<sophia_protocol::WmPointerGestureCompleted>,
+    floating_outline: FloatingPointerOutlineUpdate,
     keys_observed: usize,
     keys_suppressed_no_focus: usize,
     key_targets: Vec<SurfaceId>,
@@ -84,6 +90,7 @@ struct PhysicalInputRoutingContext<'a> {
     physical_text_proof: Option<&'a mut PhysicalTextProof>,
     pointer_focus_handoff: &'a mut PointerFocusHandoffState,
     applied_client_focus: Option<SurfaceId>,
+    floating_gesture: &'a mut FloatingPointerGestureState,
 }
 
 fn route_physical_input<P: NonBlockingInputPoller>(
@@ -116,6 +123,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         physical_text_proof,
         pointer_focus_handoff,
         applied_client_focus,
+        floating_gesture,
     } = context;
     route_input_events_with_pointer_focus(
         events,
@@ -143,6 +151,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         physical_text_proof,
         Some(pointer_focus_handoff),
         applied_client_focus,
+        Some(floating_gesture),
     )
 }
 
@@ -198,6 +207,7 @@ fn route_input_events(
         physical_text_proof,
         None,
         None,
+        None,
     )
 }
 
@@ -228,10 +238,13 @@ fn route_input_events_with_pointer_focus(
     mut physical_text_proof: Option<&mut PhysicalTextProof>,
     mut pointer_focus_handoff: Option<&mut PointerFocusHandoffState>,
     applied_client_focus: Option<SurfaceId>,
+    mut floating_gesture: Option<&mut FloatingPointerGestureState>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         events: events.len(),
         wm_actions: Vec::new(),
+        wm_pointer_gestures: Vec::new(),
+        floating_outline: FloatingPointerOutlineUpdate::Unchanged,
         keys_observed: 0,
         keys_suppressed_no_focus: 0,
         keys_routed: 0,
@@ -566,6 +579,46 @@ fn route_input_events_with_pointer_focus(
                 record_pointer_boundary_placement(&mut report, kind, placement);
                 if !route_event {
                     continue;
+                }
+                if let Some(gesture) = floating_gesture.as_deref_mut() {
+                    let position = event.global_position.map(|global| {
+                        sophia_protocol::WmPointerPosition {
+                            x: global.x.round() as i32,
+                            y: global.y.round() as i32,
+                        }
+                    });
+                    let super_held = shortcuts.as_deref().is_some_and(|shortcuts| {
+                        shortcuts.modifier_mask(event.seat).bits
+                            & sophia_protocol::WmModifierMask::SUPER
+                            != 0
+                    });
+                    let route =
+                        sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);
+                    let observation = observe_floating_pointer_gesture(
+                        gesture,
+                        kind,
+                        position,
+                        route.target_surface,
+                        route
+                            .target_surface
+                            .and_then(|surface| surface_roles.get(&surface).copied()),
+                        route.target_surface.and_then(|surface| {
+                            input_layers
+                                .iter()
+                                .find(|layer| layer.surface == surface)
+                                .map(|layer| layer.geometry)
+                        }),
+                        super_held,
+                    );
+                    if let Some(completed) = observation.completed {
+                        report.wm_pointer_gestures.push(completed);
+                    }
+                    if observation.outline != FloatingPointerOutlineUpdate::Unchanged {
+                        report.floating_outline = observation.outline;
+                    }
+                    if observation.consumed {
+                        continue;
+                    }
                 }
                 if !pointer_routing_enabled {
                     if is_button {

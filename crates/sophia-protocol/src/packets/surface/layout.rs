@@ -5,6 +5,10 @@ pub struct LayoutNodeSnapshot {
     pub surface: SurfaceId,
     pub workspace: WorkspaceId,
     pub kind: LayoutNodeKind,
+    pub placement_preference: SurfacePlacementPreference,
+    /// Opaque managed-surface owner. Frontend resource identifiers never
+    /// cross this boundary.
+    pub transient_owner: Option<SurfaceId>,
     pub capabilities: LayoutNodeCapabilities,
     pub state: LayoutNodeState,
     pub constraints: SurfaceConstraints,
@@ -12,11 +16,13 @@ pub struct LayoutNodeSnapshot {
     pub generation: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LayoutNodeKind {
+    #[default]
     Toplevel,
     Dialog,
     Utility,
+    Popup,
     Unknown,
 }
 

@@ -19,6 +19,10 @@ fn client_positioned_role_transition_withdraws_surface_from_wm_policy() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints: SurfaceConstraints {
                 min_size: None,
@@ -36,7 +40,10 @@ fn client_positioned_role_transition_withdraws_surface_from_wm_policy() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::ClientPositioned,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
             owner: None,
+            stack_rank: 0,
             mapped: true,
             geometry,
             constraints: SurfaceConstraints {
@@ -82,7 +89,10 @@ fn attached_surface_keeps_removed_owner_as_a_non_visible_dependency() {
             sophia_x_authority::XAuthoritySurfacePresentationObservation {
                 surface,
                 role,
+                kind: sophia_protocol::LayoutNodeKind::Toplevel,
+                placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
                 owner: presentation_owner,
+                stack_rank: 0,
                 mapped: true,
                 geometry,
                 constraints: SurfaceConstraints {

@@ -33,6 +33,7 @@ impl LiveWmLayoutFingerprint {
 enum LiveWmProposalSource {
     Action(WmActionId),
     Focus(SurfaceId),
+    PointerGesture(SurfaceId),
     Manage(SurfaceId),
     Relayout,
 }
@@ -42,6 +43,7 @@ impl LiveWmProposalSource {
         match self {
             Self::Action(_) => "action",
             Self::Focus(_) => "focus",
+            Self::PointerGesture(_) => "pointer_gesture",
             Self::Manage(_) => "manage",
             Self::Relayout => "relayout",
         }
@@ -112,6 +114,7 @@ fn planning_state_for_response(
             .is_none()
     {
         planning_state.register_surface(manage.node.surface, manage.workspace)?;
+        planning_state.set_surface_floating(manage.node.surface, manage.node.state.floating)?;
     }
     Ok(planning_state)
 }
@@ -532,10 +535,11 @@ impl LiveWmSession {
                 (workspace == output_state.workspace).then_some((layer, workspace))
             })
             .map(|(layer, workspace)| {
-                live_layout_node(
-                    layer,
+                persisted_layout_node(
+                    layout,
+                    &self.workspace_state,
+                    layer.surface,
                     workspace,
-                    &layout.layout_epochs,
                     self.candidate_chrome_style(),
                 )
             })
@@ -559,6 +563,51 @@ impl LiveWmSession {
             },
             queued_at: Instant::now(),
         })
+    }
+
+    fn enqueue_pointer_gesture(
+        &mut self,
+        mut gesture: sophia_protocol::WmPointerGestureCompleted,
+        layout: &PersistentLiveLayout,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if !layout.is_policy_managed(gesture.surface) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        let source = LiveWmProposalSource::PointerGesture(gesture.surface);
+        if self.has_request_source(source) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        let workspace = self
+            .workspace_state
+            .surface_workspace(gesture.surface)
+            .ok_or("pointer gesture targeted an unmanaged WM surface")?;
+        let output = self
+            .workspace_state
+            .output_at_point(gesture.start.x, gesture.start.y)
+            .ok_or("pointer gesture started outside every configured WM output")?;
+        let output_state = self
+            .workspace_state
+            .output(output)
+            .ok_or("pointer gesture output is not configured")?;
+        if workspace != output_state.workspace {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        gesture.output = output;
+        gesture.workspace = workspace;
+        let packet = WmRequestPacket {
+            transaction: self.mint_transaction()?,
+            kind: WmRequestKind::PointerGestureCompleted(gesture),
+        };
+        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &self.workspace_state);
+        Ok(self.enqueue_request(LiveWmQueuedRequest {
+            packet,
+            kind: LiveWmQueuedKind::Proposal {
+                base_state: self.workspace_state.clone(),
+                fingerprint,
+                source,
+            },
+            queued_at: Instant::now(),
+        })?)
     }
 
     fn enqueue_focus(
@@ -897,6 +946,29 @@ fn committed_relayout_nodes(
             layout.is_policy_managed(layer.surface)
                 && workspace_state.surface_workspace(layer.surface) == Some(workspace)
         })
-        .map(|layer| live_layout_node(layer, workspace, &layout.layout_epochs, chrome))
+        .map(|layer| {
+            persisted_layout_node(
+                layout,
+                workspace_state,
+                layer.surface,
+                workspace,
+                chrome,
+            )
+        })
         .collect()
+}
+
+fn persisted_layout_node(
+    layout: &PersistentLiveLayout,
+    workspace_state: &WmWorkspaceState,
+    surface: SurfaceId,
+    workspace: WorkspaceId,
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
+    let facts = layout
+        .layout_facts(surface)
+        .expect("known committed surface has layout facts");
+    let mut node = live_layout_node_from_facts(facts, workspace, &layout.layout_epochs, chrome)?;
+    node.state.floating = workspace_state.surface_floating(surface);
+    Ok(node)
 }

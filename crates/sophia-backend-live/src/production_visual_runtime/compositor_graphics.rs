@@ -10,14 +10,60 @@ impl LiveProductionVisualRuntime {
             .outputs
             .primary_output()
             .ok_or(CompositorDisplayListError::InvalidOutput)?;
-        surface_chrome_display_list_for_surfaces(
+        let mut display_list = surface_chrome_display_list_for_surfaces(
             output,
             presentation_order,
             &self.chrome_surfaces,
             committed_surfaces,
             self.focused_surface,
             self.surface_chrome_style,
-        )
+        )?;
+        if let Some(outline) = self.floating_outline {
+            if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
+                return Err(CompositorDisplayListError::CapacityExceeded);
+            }
+            let border = compositor_floating_outline(
+                outline.surface,
+                outline.geometry,
+                self.surface_chrome_style.focus_ring.width.max(2),
+                self.surface_chrome_style.focus_ring.color,
+            )
+            .ok_or(CompositorDisplayListError::InvalidSurface)?;
+            display_list
+                .commands
+                .push(CompositorDisplayCommand::Border(border));
+        }
+        Ok(display_list)
+    }
+
+    pub fn set_floating_outline(
+        &mut self,
+        outline: Option<LiveFloatingOutline>,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.floating_outline == outline {
+            return Ok(false);
+        }
+        self.floating_outline = outline;
+        let cpu_layers = scene.presentation_layers(
+            self.production.committed_surfaces(),
+            &self.presentation_order,
+        );
+        if let (Some(native_scanout), Some(frame)) =
+            (native_scanout, self.retained_mixed_frame(&cpu_layers)?)
+        {
+            let primary = self
+                .outputs
+                .primary_output()
+                .ok_or("persistent backend runtime has no primary output")?;
+            let primary_index = self
+                .outputs
+                .output_index(primary)
+                .ok_or("persistent backend primary output was not registered")?;
+            native_scanout.queue_retained_mixed_frame(primary_index, frame);
+        }
+        Ok(true)
     }
 
     pub(super) fn record_focus_ring_observation(
@@ -117,6 +163,7 @@ impl LiveProductionVisualRuntime {
                     } else if let Some(layer) =
                         cpu_layers.iter().find(|layer| layer.surface == surface)
                     {
+                        retained_client_image = true;
                         layers.push(LiveOwnedMixedCompositionLayer::Cpu {
                             buffer: layer.buffer.clone(),
                             placement: LiveCompositionPlacement {

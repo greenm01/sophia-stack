@@ -111,6 +111,7 @@ fn wm_request_kind_name(kind: &WmRequestKind) -> &'static str {
         WmRequestKind::SurfaceRemoved { .. } => "surface_removed",
         WmRequestKind::ActionActivated(_) => "action_activated",
         WmRequestKind::FocusRequested(_) => "focus_requested",
+        WmRequestKind::PointerGestureCompleted(_) => "pointer_gesture_completed",
     }
 }
 
@@ -121,5 +122,6 @@ fn wm_request_node_count(kind: &WmRequestKind) -> usize {
         WmRequestKind::SurfaceRemoved { .. } => 0,
         WmRequestKind::ActionActivated(activation) => activation.nodes.len(),
         WmRequestKind::FocusRequested(_) => 0,
+        WmRequestKind::PointerGestureCompleted(_) => 0,
     }
 }

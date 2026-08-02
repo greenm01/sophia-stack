@@ -21,10 +21,10 @@ sophia_qemu_firefox_m8 schema=4 status=scroll_complete source=wheel axis_routes=
 sophia_firefox_m8 schema=1 status=stage_complete stage=resize index=5 title_bytes=104 content=redacted
 sophia_firefox_m8 schema=1 status=stage_complete stage=refocus index=6 title_bytes=120 content=redacted
 sophia_firefox_m8 schema=1 status=dialog_ready content=redacted
-sophia_qemu_firefox_m8 schema=5 status=dialog_open surface_snapshot=true
+sophia_qemu_firefox_m8 schema=7 status=dialog_open surface_snapshot=false modality=dom
 sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-dialog-confirmation
 sophia_firefox_m8 schema=1 status=stage_complete stage=dialog index=7 title_bytes=136 content=redacted
-sophia_qemu_firefox_m8 schema=6 status=dialog_closed surface_snapshot=true
+sophia_qemu_firefox_m8 schema=7 status=dialog_closed surface_snapshot=false modality=dom
 sophia_qemu_firefox_m8 schema=3 status=interactions_complete keyboard=true clipboard=true primary=true navigation=true scroll=true resize=true refocus=true pointer=true dialog=true
 sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=2 selection_conversions=2 content=redacted
 sophia_live_wm schema=1 status=session_action_committed transaction=10 action=CloseFocused

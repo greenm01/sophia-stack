@@ -294,10 +294,19 @@ fn encode_authority_surface(surface: &AuthoritySurface, out: &mut Vec<u8>) {
             sophia_protocol::SurfacePresentationRole::ClientPositioned => 2,
         },
     );
+    push_u16(out, encode_surface_kind(surface.kind));
+    push_u16(
+        out,
+        match surface.placement_preference {
+            sophia_protocol::SurfacePlacementPreference::Default => 1,
+            sophia_protocol::SurfacePlacementPreference::Floating => 2,
+        },
+    );
     encode_bool(surface.presentation_owner.is_some(), out);
     if let Some(owner) = surface.presentation_owner {
         encode_surface_id(owner, out);
     }
+    push_u32(out, surface.stack_rank);
     encode_bool(surface.mapped, out);
     encode_rect(surface.geometry, out);
     encode_constraints(surface.constraints, out);
@@ -320,16 +329,52 @@ fn decode_authority_surface(cursor: &mut Cursor<'_>) -> Result<AuthoritySurface,
                 });
             }
         },
+        kind: decode_surface_kind(cursor.u16()?)?,
+        placement_preference: match cursor.u16()? {
+            1 => sophia_protocol::SurfacePlacementPreference::Default,
+            2 => sophia_protocol::SurfacePlacementPreference::Floating,
+            value => {
+                return Err(IpcCodecError::InvalidEnum {
+                    field: "surface_placement_preference",
+                    value: u32::from(value),
+                });
+            }
+        },
         presentation_owner: if decode_bool(cursor)? {
             Some(decode_surface_id(cursor)?)
         } else {
             None
         },
+        stack_rank: cursor.u32()?,
         mapped: decode_bool(cursor)?,
         geometry: decode_rect(cursor)?,
         constraints: decode_constraints(cursor)?,
         generation: cursor.u64()?,
     })
+}
+
+fn encode_surface_kind(kind: sophia_protocol::LayoutNodeKind) -> u16 {
+    match kind {
+        sophia_protocol::LayoutNodeKind::Toplevel => 1,
+        sophia_protocol::LayoutNodeKind::Dialog => 2,
+        sophia_protocol::LayoutNodeKind::Utility => 3,
+        sophia_protocol::LayoutNodeKind::Popup => 4,
+        sophia_protocol::LayoutNodeKind::Unknown => 5,
+    }
+}
+
+fn decode_surface_kind(value: u16) -> Result<sophia_protocol::LayoutNodeKind, IpcCodecError> {
+    match value {
+        1 => Ok(sophia_protocol::LayoutNodeKind::Toplevel),
+        2 => Ok(sophia_protocol::LayoutNodeKind::Dialog),
+        3 => Ok(sophia_protocol::LayoutNodeKind::Utility),
+        4 => Ok(sophia_protocol::LayoutNodeKind::Popup),
+        5 => Ok(sophia_protocol::LayoutNodeKind::Unknown),
+        other => Err(IpcCodecError::InvalidEnum {
+            field: "layout_node_kind",
+            value: u32::from(other),
+        }),
+    }
 }
 
 fn encode_surface_transaction(

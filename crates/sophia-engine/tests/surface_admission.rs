@@ -9,6 +9,10 @@ fn request(surface: SurfaceId) -> SurfacePresentationIntent {
         surface,
         kind: SurfacePresentationIntentKind::Request,
         role: SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry: Rect {
             x: 10,
             y: 20,

@@ -27,7 +27,7 @@ use crate::{
     BridgeEngineUpdate, LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID,
     SyntheticManageProfile, SyntheticXEvent, SyntheticXWindowId, X11WmBridgeError,
     X11WmBridgeState, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
-    XMONAD_ACTION_NEXT_LAYOUT, translate_xmonad_profile_action,
+    XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
 };
 
 const FIRST_DYNAMIC_ATOM: u32 = 256;
@@ -92,7 +92,19 @@ enum ServerCommand {
     Button {
         window: SyntheticXWindowId,
         button: u8,
+        modifiers: u16,
+        root_x: Option<i16>,
+        root_y: Option<i16>,
         pressed: bool,
+    },
+    PointerGesture {
+        window: SyntheticXWindowId,
+        button: u8,
+        modifiers: u16,
+        start_x: i16,
+        start_y: i16,
+        delta_x: i16,
+        delta_y: i16,
     },
     Wake,
     QueryFocus(SyncSender<Option<SyntheticXWindowId>>),
@@ -127,6 +139,13 @@ fn xmonad_profile_chord(action: u64) -> Option<SyntheticKeyChord> {
         keycode,
         modifiers: X11_MOD1_MASK,
     })
+}
+
+#[derive(Clone, Copy, Debug)]
+struct XmonadFloatingToggle {
+    window: SyntheticXWindowId,
+    surface: sophia_protocol::SurfaceId,
+    was_floating: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -332,8 +351,43 @@ impl LegacyX11WmBridgeRuntime {
             WmRequestKind::ActionActivated(activation)
                 if self.profile == LegacyWmProfile::Xmonad =>
             {
-                xmonad_profile_chord(activation.action.raw())
+                if activation.action.raw() == XMONAD_ACTION_TOGGLE_FLOATING {
+                    activation
+                        .focused_surface
+                        .and_then(|surface| {
+                            activation.nodes.iter().find(|node| node.surface == surface)
+                        })
+                        .filter(|node| node.state.floating)
+                        .map(|_| SyntheticKeyChord {
+                            keycode: 116,
+                            modifiers: X11_MOD1_MASK,
+                        })
+                } else {
+                    xmonad_profile_chord(activation.action.raw())
+                }
             }
+            _ => None,
+        };
+        let floating_toggle = match &request.kind {
+            WmRequestKind::ActionActivated(activation)
+                if activation.action.raw() == XMONAD_ACTION_TOGGLE_FLOATING =>
+            {
+                activation.focused_surface.and_then(|surface| {
+                    let node = activation
+                        .nodes
+                        .iter()
+                        .find(|node| node.surface == surface)?;
+                    Some(XmonadFloatingToggle {
+                        window: self.bridge.synthetic_window(surface)?,
+                        surface,
+                        was_floating: node.state.floating,
+                    })
+                })
+            }
+            _ => None,
+        };
+        let pointer_gesture = match request.kind {
+            WmRequestKind::PointerGestureCompleted(gesture) => Some(gesture),
             _ => None,
         };
         let profiled_focus = match &request.kind {
@@ -399,6 +453,57 @@ impl LegacyX11WmBridgeRuntime {
                 .send(ServerCommand::Wake)
                 .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
         }
+        if let Some(toggle) = floating_toggle.filter(|toggle| !toggle.was_floating) {
+            let commands = self
+                .commands
+                .as_ref()
+                .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            for pressed in [true, false] {
+                commands
+                    .send(ServerCommand::Button {
+                        window: toggle.window,
+                        button: 1,
+                        modifiers: X11_MOD1_MASK,
+                        root_x: None,
+                        root_y: None,
+                        pressed,
+                    })
+                    .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            }
+            commands
+                .send(ServerCommand::Wake)
+                .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+        }
+        if let Some(gesture) = pointer_gesture {
+            let window = self
+                .bridge
+                .synthetic_window(gesture.surface)
+                .ok_or_else(|| {
+                    BridgeRuntimeError::new("pointer gesture targeted an unknown surface")
+                })?;
+            let button = match gesture.mode {
+                sophia_protocol::WmPointerGestureMode::Move => 1,
+                sophia_protocol::WmPointerGestureMode::Resize => 3,
+            };
+            let coordinate = |value: i32| {
+                i16::try_from(value).unwrap_or(if value < 0 { i16::MIN } else { i16::MAX })
+            };
+            let commands = self
+                .commands
+                .as_ref()
+                .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            commands
+                .send(ServerCommand::PointerGesture {
+                    window,
+                    button,
+                    modifiers: X11_MOD1_MASK,
+                    start_x: coordinate(gesture.start.x),
+                    start_y: coordinate(gesture.start.y),
+                    delta_x: coordinate(gesture.end.x.saturating_sub(gesture.start.x)),
+                    delta_y: coordinate(gesture.end.y.saturating_sub(gesture.start.y)),
+                })
+                .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+        }
         let synchronized_focus = if self.profile == LegacyWmProfile::Xmonad {
             match request.kind {
                 WmRequestKind::ManageSurface(_) => managed_focus,
@@ -418,12 +523,15 @@ impl LegacyX11WmBridgeRuntime {
                     .send(ServerCommand::Button {
                         window,
                         button: 1,
+                        modifiers: 0,
+                        root_x: None,
+                        root_y: None,
                         pressed,
                     })
                     .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
             }
         }
-        let response_batch = if profiled_chord.is_some() {
+        let response_batch = if profiled_chord.is_some() || pointer_gesture.is_some() {
             self.collect_legacy_responses(&BTreeSet::new(), !self.bridge.mapped_windows.is_empty())?
         } else {
             self.collect_legacy_responses(&expected.configured, false)?
@@ -458,9 +566,28 @@ impl LegacyX11WmBridgeRuntime {
         } else {
             XMONAD_RESIZE_TIMEOUT_MSEC
         };
-        self.bridge
-            .translate_legacy_requests(request.transaction, &requests, resize_timeout_msec)
-            .map_err(Into::into)
+        let mut response = self
+            .bridge
+            .translate_legacy_requests_for_output(
+                request.transaction,
+                &requests,
+                resize_timeout_msec,
+                pointer_gesture.map(|gesture| gesture.output),
+            )
+            .map_err(BridgeRuntimeError::from)?;
+        if let Some(toggle) = floating_toggle {
+            response.commands.push(WmCommand::SetFloating {
+                surface: toggle.surface,
+                floating: !toggle.was_floating,
+            });
+        }
+        if let Some(gesture) = pointer_gesture {
+            response.commands.push(WmCommand::SetFloating {
+                surface: gesture.surface,
+                floating: true,
+            });
+        }
+        Ok(response)
     }
 
     fn collect_legacy_responses(

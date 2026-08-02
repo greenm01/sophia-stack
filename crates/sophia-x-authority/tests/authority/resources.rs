@@ -109,6 +109,20 @@ fn window_lifecycle_creates_authority_surface_records() {
 }
 
 #[test]
+fn authority_restack_preserves_explicit_bottom_to_top_order() {
+    let namespace = NamespaceId::from_raw(8);
+    let first = XResourceId::new(0x41, 1);
+    let second = XResourceId::new(0x42, 1);
+    let mut windows = window_table_with_two_surfaces(first, namespace, second, namespace);
+
+    let raised = windows.restack(first, Some(second), Some(0)).unwrap();
+    assert!(raised.stack_rank > windows.get(second).unwrap().stack_rank);
+
+    let lowered = windows.restack(first, Some(second), Some(1)).unwrap();
+    assert!(lowered.stack_rank < windows.get(second).unwrap().stack_rank);
+}
+
+#[test]
 fn present_pixmap_update_becomes_ready_surface_transaction() {
     let namespace = NamespaceId::from_raw(7);
     let window = XResourceId::new(0x50, 1);

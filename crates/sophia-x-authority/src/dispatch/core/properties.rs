@@ -92,7 +92,7 @@ fn dispatch_core_property_request(
                                     atoms,
                                     context.byte_order,
                                 );
-                                let window_type = decode_x_window_type_client_positioned(
+                                let window_type = decode_x_window_type_facts(
                                     &record,
                                     atoms,
                                     context.byte_order,
@@ -118,18 +118,20 @@ fn dispatch_core_property_request(
                                     }
                                     response
                                 }).or_else(|| window_type.map(|decoded| {
-                                    let client_positioned = decoded.unwrap_or(false);
+                                    let facts = decoded.unwrap_or_default();
                                     let mut response =
                                         XAuthorityResponsePacket::accepted(transaction);
-                                    if let Ok(surface) = runtime.set_window_type_client_positioned(
+                                    if let Ok(surface) = runtime.set_window_type_facts(
                                         context.namespace,
                                         record.window,
-                                        client_positioned,
+                                        facts,
                                     ) {
                                         tracing::debug!(
-                                            "sophia_x11_window_type schema=1 window={} client_positioned={} decode_valid={} content=redacted",
+                                            "sophia_x11_window_type schema=2 window={} client_positioned={} kind={:?} placement={:?} decode_valid={} content=redacted",
                                             record.window.local.raw(),
-                                            client_positioned,
+                                            facts.client_positioned,
+                                            facts.kind,
+                                            facts.placement_preference,
                                             decoded.is_ok(),
                                         );
                                         response.surfaces.push(surface);
@@ -203,10 +205,10 @@ fn dispatch_core_property_request(
                                 Some("_NET_WM_WINDOW_TYPE") => Some({
                                     let mut response =
                                         XAuthorityResponsePacket::accepted(transaction);
-                                    if let Ok(surface) = runtime.set_window_type_client_positioned(
+                                    if let Ok(surface) = runtime.set_window_type_facts(
                                         context.namespace,
                                         window,
-                                        false,
+                                        crate::XWindowTypeFacts::default(),
                                     ) {
                                         response.surfaces.push(surface);
                                     }

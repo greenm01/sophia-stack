@@ -1,7 +1,7 @@
 use super::*;
 use crate::commands::live_session::{
     LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource, PendingLiveWmLayout,
-    PersistentLiveLayout, committed_relayout_nodes, live_layout_node, live_layout_node_from_facts,
+    PersistentLiveLayout, committed_relayout_nodes, live_layout_node_from_facts,
     planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
@@ -26,6 +26,30 @@ fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
         generation: 1,
         resize_sync: ResizeSyncCapability::ImplicitOnly,
     }
+}
+
+fn test_live_layout_node(
+    layer: &LayerSnapshot,
+    workspace: WorkspaceId,
+    coordinator: &sophia_engine::LayoutEpochCoordinator,
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<sophia_protocol::LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
+    live_layout_node_from_facts(
+        sophia_engine::SurfaceLayoutFacts {
+            surface: layer.surface,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: layer.stack_rank,
+            geometry: layer.geometry,
+            constraints: coordinator.declared_constraints(layer.surface),
+            generation: layer.generation,
+        },
+        workspace,
+        coordinator,
+        chrome,
+    )
 }
 
 fn planning_layers_for(
@@ -371,7 +395,7 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
     let request = sophia_protocol::WmRequestPacket {
         transaction: sophia_protocol::TransactionId::from_raw(2),
         kind: sophia_protocol::WmRequestKind::ManageSurface(sophia_protocol::WmManageSurface {
-            node: live_layout_node(
+            node: test_live_layout_node(
                 &test_layer(queued, bounds),
                 workspace,
                 &sophia_engine::LayoutEpochCoordinator::default(),
@@ -509,6 +533,10 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         surface: firefox,
         kind: sophia_protocol::SurfacePresentationIntentKind::Request,
         role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry: fallback_geometry,
         constraints: SurfaceConstraints {
             min_size: None,
@@ -524,7 +552,10 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface: firefox,
             role: intent.role,
+            kind: intent.surface_kind,
+            placement_preference: intent.placement_preference,
             owner: None,
+            stack_rank: intent.stack_rank,
             mapped: true,
             geometry: fallback_geometry,
             constraints: intent.constraints,
@@ -719,7 +750,7 @@ fn recovery_content_extent_stays_behind_the_wm_policy_boundary() {
         ..sophia_engine::SurfaceChromeStyle::default()
     };
 
-    let node = live_layout_node(
+    let node = test_live_layout_node(
         &test_layer(
             surface,
             Rect {
@@ -766,7 +797,7 @@ fn declared_fixed_extent_still_crosses_the_wm_policy_boundary() {
         },
     );
     let style = sophia_engine::SurfaceChromeStyle::default();
-    let node = live_layout_node(
+    let node = test_live_layout_node(
         &test_layer(
             surface,
             Rect {
@@ -807,6 +838,10 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
         surface,
         kind: sophia_protocol::SurfacePresentationIntentKind::Request,
         role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry,
         constraints: SurfaceConstraints {
             min_size: None,
@@ -881,6 +916,9 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            stack_rank: 0,
             owner: None,
             mapped: false,
             geometry,
@@ -894,6 +932,10 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints,
             generation: 1,
@@ -956,6 +998,10 @@ fn no_wm_session_commits_policy_managed_pixels_without_admission() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints,
             generation: 1,
@@ -1046,7 +1092,10 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
             owner: None,
+            stack_rank: 0,
             mapped: false,
             geometry,
             constraints,
@@ -1059,6 +1108,10 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints,
             generation: 1,
@@ -1281,6 +1334,10 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         surface,
         kind: sophia_protocol::SurfacePresentationIntentKind::Request,
         role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry,
         constraints: SurfaceConstraints {
             min_size: None,
@@ -1296,7 +1353,10 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: intent.role,
+            kind: intent.surface_kind,
+            placement_preference: intent.placement_preference,
             owner: None,
+            stack_rank: intent.stack_rank,
             // Admission is an engine lifecycle, not a mutable X mapped-bit
             // predicate. Pixels must remain quarantined even if X already
             // reports the window mapped.
@@ -1490,6 +1550,10 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
         surface,
         kind: sophia_protocol::SurfacePresentationIntentKind::Request,
         role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
         geometry,
         constraints: SurfaceConstraints {
             min_size: None,
@@ -1505,7 +1569,10 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: intent.role,
+            kind: intent.surface_kind,
+            placement_preference: intent.placement_preference,
             owner: None,
+            stack_rank: intent.stack_rank,
             mapped: true,
             geometry,
             constraints: intent.constraints,
@@ -1589,6 +1656,10 @@ fn selected_present_settles_older_present_group_without_committing_it() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints: SurfaceConstraints {
                 min_size: None,
@@ -1667,6 +1738,9 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            stack_rank: 0,
             owner: None,
             mapped: false,
             geometry,
@@ -1683,6 +1757,10 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
             surface,
             kind: sophia_protocol::SurfacePresentationIntentKind::Request,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
             geometry,
             constraints: SurfaceConstraints {
                 min_size: None,

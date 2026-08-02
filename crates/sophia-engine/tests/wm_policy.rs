@@ -18,6 +18,21 @@ fn bounds(x: i32) -> Rect {
 }
 
 #[test]
+fn output_point_lookup_uses_half_open_multi_output_bounds() {
+    let output_one = OutputId::from_raw(1);
+    let output_two = OutputId::from_raw(2);
+    let state =
+        WmWorkspaceState::new([(output_one, bounds(0)), (output_two, bounds(1280))], 9).unwrap();
+
+    assert_eq!(state.output_at_point(0, 0), Some(output_one));
+    assert_eq!(state.output_at_point(1279, 719), Some(output_one));
+    assert_eq!(state.output_at_point(1280, 0), Some(output_two));
+    assert_eq!(state.output_at_point(2559, 719), Some(output_two));
+    assert_eq!(state.output_at_point(2560, 0), None);
+    assert_eq!(state.output_at_point(1280, 720), None);
+}
+
+#[test]
 fn chrome_capability_is_explicit_and_blocks_unadvertised_policy_changes() {
     let chrome = sophia_protocol::WmChromePolicy::default();
     let registry = WmShortcutRegistry::from_hello(&WmHello {
@@ -162,6 +177,45 @@ fn output_bounds_update_preserves_workspace_and_focus_policy() {
         WorkspaceId::from_raw(1)
     );
     assert_eq!(state.output(output).unwrap().focus, Some(surface));
+}
+
+#[test]
+fn floating_state_is_transactional_and_survives_unrelated_policy_updates() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(50, 1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    state
+        .register_surface(surface, WorkspaceId::from_raw(1))
+        .unwrap();
+
+    state = state
+        .plan_response(
+            &WmResponsePacket {
+                transaction: TransactionId::from_raw(11),
+                commands: vec![WmCommand::SetFloating {
+                    surface,
+                    floating: true,
+                }],
+                timeout_msec: 300,
+            },
+            &[],
+        )
+        .unwrap()
+        .candidate;
+    assert!(state.surface_floating(surface));
+
+    let next = state
+        .plan_response(
+            &WmResponsePacket {
+                transaction: TransactionId::from_raw(12),
+                commands: vec![WmCommand::FocusSurface(surface)],
+                timeout_msec: 300,
+            },
+            &[],
+        )
+        .unwrap()
+        .candidate;
+    assert!(next.surface_floating(surface));
 }
 
 #[test]

@@ -24,7 +24,10 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             presentation: SurfacePresentationRole::PolicyManaged,
+            kind: LayoutNodeKind::Toplevel,
+            placement_preference: SurfacePlacementPreference::Default,
             presentation_owner: None,
+            stack_rank: self.stack_rank,
             mapped: self.mapped,
             geometry: self.geometry,
             constraints: SurfaceConstraints {

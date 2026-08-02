@@ -21,8 +21,15 @@ pub struct AuthoritySurface {
     pub surface: SurfaceId,
     pub namespace: Option<NamespaceId>,
     pub presentation: SurfacePresentationRole,
+    /// Protocol-neutral classification supplied by the frontend authority.
+    pub kind: LayoutNodeKind,
+    /// Initial placement preference. Policy remains authoritative over the
+    /// resulting managed state.
+    pub placement_preference: SurfacePlacementPreference,
     /// Opaque owner for an attached client-positioned surface.
     pub presentation_owner: Option<SurfaceId>,
+    /// Authority-local bottom-to-top stacking order.
+    pub stack_rank: u32,
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -34,6 +41,13 @@ pub enum SurfacePresentationRole {
     #[default]
     PolicyManaged,
     ClientPositioned,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SurfacePlacementPreference {
+    #[default]
+    Default,
+    Floating,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

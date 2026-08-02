@@ -234,6 +234,8 @@ pub fn layout_node(surface: SurfaceId, generation: u64, closable: bool) -> Layou
         surface,
         workspace: WorkspaceId::from_raw(1),
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {

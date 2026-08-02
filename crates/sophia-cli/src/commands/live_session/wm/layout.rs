@@ -41,6 +41,10 @@ struct PersistentLiveLayout {
     client_routes: XAuthorityClientSurfaceRoutes,
     presentation_roles: BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     presentation_owners: BTreeMap<SurfaceId, SurfaceId>,
+    surface_kinds: BTreeMap<SurfaceId, sophia_protocol::LayoutNodeKind>,
+    placement_preferences:
+        BTreeMap<SurfaceId, sophia_protocol::SurfacePlacementPreference>,
+    authority_stack_ranks: BTreeMap<SurfaceId, u32>,
     mapped_surfaces: BTreeSet<SurfaceId>,
     pre_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
     released_admission_groups: VecDeque<LiveAdmissionAuthorityGroup>,
@@ -96,6 +100,12 @@ impl PersistentLiveLayout {
             } else {
                 self.presentation_owners.remove(&presentation.surface);
             }
+            self.surface_kinds
+                .insert(presentation.surface, presentation.kind);
+            self.placement_preferences
+                .insert(presentation.surface, presentation.placement_preference);
+            self.authority_stack_ranks
+                .insert(presentation.surface, presentation.stack_rank);
             if previous_role
                 == Some(sophia_protocol::SurfacePresentationRole::PolicyManaged)
                 && presentation.role
@@ -115,6 +125,10 @@ impl PersistentLiveLayout {
                     surface: presentation.surface,
                     kind: sophia_protocol::SurfacePresentationIntentKind::Request,
                     role: presentation.role,
+                    surface_kind: presentation.kind,
+                    placement_preference: presentation.placement_preference,
+                    presentation_owner: presentation.owner,
+                    stack_rank: presentation.stack_rank,
                     geometry: presentation.geometry,
                     constraints: presentation.constraints,
                     generation: presentation.generation,
@@ -143,6 +157,9 @@ impl PersistentLiveLayout {
                     == sophia_protocol::SurfacePresentationRole::ClientPositioned
             {
                 layer.geometry = presentation.geometry;
+                layer.stack_rank = (u32::MAX / 2).saturating_add(
+                    presentation.stack_rank.min(u32::MAX / 2),
+                );
             }
             match presentation.role {
                 sophia_protocol::SurfacePresentationRole::PolicyManaged => {
@@ -322,7 +339,13 @@ impl PersistentLiveLayout {
                         stack_rank: if policy_managed {
                             u32::try_from(index).unwrap_or(u32::MAX - 1)
                         } else {
-                            u32::MAX
+                            (u32::MAX / 2).saturating_add(
+                                self.authority_stack_ranks
+                                    .get(&transaction.surface)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .min(u32::MAX / 2),
+                            )
                         },
                         geometry,
                         source: transaction.target_buffer,
@@ -392,6 +415,12 @@ impl PersistentLiveLayout {
         // a new ownership snapshot; dropping the relation here would promote
         // the transient to an unattached, visible client-positioned surface.
         self.presentation_owners
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.surface_kinds
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.placement_preferences
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.authority_stack_ranks
             .retain(|surface, _| !removed_surfaces.contains(surface));
         self.mapped_surfaces
             .retain(|surface| !removed_surfaces.contains(surface));

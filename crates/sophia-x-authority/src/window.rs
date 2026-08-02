@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use sophia_protocol::{
-    AuthorityKind, AuthoritySurface, NamespaceId, Rect, SurfaceConstraints, SurfaceId,
-    SurfacePresentationRole,
+    AuthorityKind, AuthoritySurface, LayoutNodeKind, NamespaceId, Rect, SurfaceConstraints,
+    SurfaceId, SurfacePlacementPreference, SurfacePresentationRole,
 };
 
 use crate::{XAuthorityAccessError, XMapState, XResourceId};
@@ -17,9 +17,9 @@ pub struct XWindowRecord {
     /// The client published `WM_TRANSIENT_FOR`, even when its owner is the
     /// root window or cannot be reduced to an Engine surface.
     pub transient_for: bool,
-    /// The first recognized EWMH functional type requests popup-like window
-    /// management rather than normal blind-WM tiling.
-    pub client_positioned_window_type: bool,
+    pub window_type_kind: LayoutNodeKind,
+    pub window_type_placement: SurfacePlacementPreference,
+    pub window_type_client_positioned: bool,
     pub presentation_owner: Option<SurfaceId>,
     /// Engine admission is pending for a redirected policy-managed root child.
     /// This is not an X11 map state: the window remains `Unmapped` until the
@@ -29,19 +29,32 @@ pub struct XWindowRecord {
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
     pub generation: u64,
+    pub stack_rank: u32,
 }
 
 impl XWindowRecord {
     pub fn presentation_role(&self) -> SurfacePresentationRole {
         let is_root_child = self.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT);
-        if self.override_redirect
-            || self.transient_for
-            || self.client_positioned_window_type
-            || !is_root_child
-        {
+        if self.override_redirect || self.window_type_client_positioned || !is_root_child {
             SurfacePresentationRole::ClientPositioned
         } else {
             SurfacePresentationRole::PolicyManaged
+        }
+    }
+
+    pub fn kind(&self) -> LayoutNodeKind {
+        if self.transient_for && self.window_type_kind == LayoutNodeKind::Toplevel {
+            LayoutNodeKind::Dialog
+        } else {
+            self.window_type_kind
+        }
+    }
+
+    pub fn placement_preference(&self) -> SurfacePlacementPreference {
+        if self.transient_for {
+            SurfacePlacementPreference::Floating
+        } else {
+            self.window_type_placement
         }
     }
 
@@ -52,7 +65,10 @@ impl XWindowRecord {
             surface: self.surface,
             namespace: Some(self.namespace),
             presentation: self.presentation_role(),
+            kind: self.kind(),
+            placement_preference: self.placement_preference(),
             presentation_owner: self.presentation_owner,
+            stack_rank: self.stack_rank,
             mapped: self.map_state == XMapState::Viewable,
             geometry: self.geometry,
             constraints: self.constraints,
@@ -136,13 +152,16 @@ impl XWindowTable {
                     namespace,
                     override_redirect: false,
                     transient_for: false,
-                    client_positioned_window_type: false,
+                    window_type_kind: LayoutNodeKind::Toplevel,
+                    window_type_placement: SurfacePlacementPreference::Default,
+                    window_type_client_positioned: false,
                     presentation_owner: None,
                     policy_map_pending: false,
                     map_state: XMapState::Unmapped,
                     geometry,
                     constraints,
                     generation,
+                    stack_rank: self.windows.len().try_into().unwrap_or(u32::MAX),
                 };
                 let authority_surface = record.authority_surface();
                 self.windows.insert(id, record);
@@ -291,16 +310,18 @@ impl XWindowTable {
         Ok(record.authority_surface())
     }
 
-    pub fn set_client_positioned_window_type(
+    pub fn set_window_type_facts(
         &mut self,
         id: XResourceId,
-        client_positioned: bool,
+        facts: crate::XWindowTypeFacts,
     ) -> Result<AuthoritySurface, XAuthorityAccessError> {
         let record = self
             .windows
             .get_mut(&id)
             .ok_or(XAuthorityAccessError::UnknownResource)?;
-        record.client_positioned_window_type = client_positioned;
+        record.window_type_kind = facts.kind;
+        record.window_type_placement = facts.placement_preference;
+        record.window_type_client_positioned = facts.client_positioned;
         Ok(record.authority_surface())
     }
 
@@ -325,6 +346,57 @@ impl XWindowTable {
             .parent = parent;
         self.recompute_subtree_viewability(id);
         Ok(())
+    }
+
+    pub fn restack(
+        &mut self,
+        id: XResourceId,
+        sibling: Option<XResourceId>,
+        mode: Option<u8>,
+    ) -> Result<AuthoritySurface, XAuthorityAccessError> {
+        let record = self
+            .windows
+            .get(&id)
+            .ok_or(XAuthorityAccessError::UnknownResource)?;
+        let parent = record.parent;
+        if sibling.is_some_and(|sibling| {
+            sibling == id
+                || self
+                    .windows
+                    .get(&sibling)
+                    .is_none_or(|record| record.parent != parent)
+        }) {
+            return Err(XAuthorityAccessError::InvalidResource);
+        }
+        let mut siblings = self
+            .windows
+            .values()
+            .filter(|record| record.parent == parent && record.id != id)
+            .map(|record| (record.stack_rank, record.id))
+            .collect::<Vec<_>>();
+        siblings.sort_unstable();
+        let sibling_index = sibling.and_then(|sibling| {
+            siblings
+                .iter()
+                .position(|(_, candidate)| *candidate == sibling)
+        });
+        let index = match (mode, sibling_index) {
+            (Some(1 | 3), Some(index)) => index,
+            (Some(1 | 3), None) => 0,
+            (Some(0 | 2 | 4), Some(index)) => index.saturating_add(1),
+            _ => siblings.len(),
+        };
+        siblings.insert(index.min(siblings.len()), (0, id));
+        for (rank, (_, window)) in siblings.into_iter().enumerate() {
+            if let Some(record) = self.windows.get_mut(&window) {
+                record.stack_rank = u32::try_from(rank).unwrap_or(u32::MAX);
+            }
+        }
+        Ok(self
+            .windows
+            .get(&id)
+            .expect("restacked window remains present")
+            .authority_surface())
     }
 
     fn promote_unviewable_descendants(&mut self, parent: XResourceId) {

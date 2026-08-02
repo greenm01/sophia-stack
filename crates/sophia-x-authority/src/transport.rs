@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
 use sophia_protocol::{
-    Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations, SurfacePresentationIntent,
-    SurfacePresentationIntentKind, SurfacePresentationRole, SurfaceTransaction, TransactionId,
+    LayoutNodeKind, Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations,
+    SurfacePlacementPreference, SurfacePresentationIntent, SurfacePresentationIntentKind,
+    SurfacePresentationRole, SurfaceTransaction, TransactionId,
 };
 
 use crate::{
@@ -36,7 +37,10 @@ pub struct XAuthorityMetadataObservation {
 pub struct XAuthoritySurfacePresentationObservation {
     pub surface: SurfaceId,
     pub role: SurfacePresentationRole,
+    pub kind: LayoutNodeKind,
+    pub placement_preference: SurfacePlacementPreference,
     pub owner: Option<SurfaceId>,
+    pub stack_rank: u32,
     pub mapped: bool,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -173,7 +177,10 @@ impl XAuthorityObservedTransactionBatch {
                 .map(|surface| XAuthoritySurfacePresentationObservation {
                     surface: surface.surface,
                     role: surface.presentation,
+                    kind: surface.kind,
+                    placement_preference: surface.placement_preference,
                     owner: surface.presentation_owner,
+                    stack_rank: surface.stack_rank,
                     mapped: surface.mapped,
                     geometry: surface.geometry,
                     constraints: surface.constraints,
@@ -270,7 +277,10 @@ impl XAuthorityObservedTransactionBatch {
                     .map(|surface| XAuthoritySurfacePresentationObservation {
                         surface: surface.surface,
                         role: surface.presentation,
+                        kind: surface.kind,
+                        placement_preference: surface.placement_preference,
                         owner: surface.presentation_owner,
+                        stack_rank: surface.stack_rank,
                         mapped: surface.mapped,
                         geometry: surface.geometry,
                         constraints: surface.constraints,
@@ -304,6 +314,10 @@ impl XAuthorityObservedTransactionBatch {
                     surface: surface.surface,
                     kind,
                     role: surface.role,
+                    surface_kind: surface.kind,
+                    placement_preference: surface.placement_preference,
+                    presentation_owner: surface.owner,
+                    stack_rank: surface.stack_rank,
                     geometry: surface.geometry,
                     constraints: surface.constraints,
                     generation: surface.generation,

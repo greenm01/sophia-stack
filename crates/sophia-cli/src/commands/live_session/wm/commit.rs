@@ -34,6 +34,7 @@ impl LiveWmSession {
                 LiveWmProposalSource::Action(action) => Some(action),
                 LiveWmProposalSource::Focus(_)
                 | LiveWmProposalSource::Manage(_)
+                | LiveWmProposalSource::PointerGesture(_)
                 | LiveWmProposalSource::Relayout => None,
             });
         let mut session_action = None;

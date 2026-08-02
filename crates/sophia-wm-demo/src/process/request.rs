@@ -1,6 +1,7 @@
 use sophia_protocol::{
     OutputId, TransactionId, WmActionActivation, WmActionId, WmFocusRequest, WmManageSurface,
-    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
+    WmPointerGestureCompleted, WmPointerGestureMode, WmPointerPosition, WmRelayoutWorkspace,
+    WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 
 use super::{
@@ -80,6 +81,26 @@ pub fn request_to_process_args(request: &WmRequestPacket) -> Vec<String> {
                 focus.surface.index(),
                 focus.surface.generation()
             ),
+        ],
+        WmRequestKind::PointerGestureCompleted(gesture) => vec![
+            "pointer".to_owned(),
+            format!("--transaction={}", request.transaction.raw()),
+            format!("--output={}", gesture.output.raw()),
+            format!("--workspace={}", gesture.workspace.raw()),
+            format!(
+                "--surface={}:{}",
+                gesture.surface.index(),
+                gesture.surface.generation()
+            ),
+            format!(
+                "--mode={}",
+                match gesture.mode {
+                    WmPointerGestureMode::Move => "move",
+                    WmPointerGestureMode::Resize => "resize",
+                }
+            ),
+            format!("--start={},{}", gesture.start.x, gesture.start.y),
+            format!("--end={},{}", gesture.end.x, gesture.end.y),
         ],
     }
 }
@@ -161,6 +182,41 @@ pub fn parse_process_request(args: &[String]) -> Result<WmRequestPacket, WmProce
                     surface,
                     output,
                     workspace,
+                }),
+            })
+        }
+        "pointer" => {
+            let output = OutputId::from_raw(required_u64(args, "--output")?);
+            let surface = required_surface(args, "--surface")?;
+            let parse_position = |key| -> Result<WmPointerPosition, WmProcessError> {
+                let value = super::codec::required_value(args, key)?;
+                let fields = value.split(',').collect::<Vec<_>>();
+                if fields.len() != 2 {
+                    return Err(WmProcessError::new(format!("invalid {key}: {value}")));
+                }
+                Ok(WmPointerPosition {
+                    x: fields[0]
+                        .parse()
+                        .map_err(|_| WmProcessError::new(format!("invalid {key}: {value}")))?,
+                    y: fields[1]
+                        .parse()
+                        .map_err(|_| WmProcessError::new(format!("invalid {key}: {value}")))?,
+                })
+            };
+            let mode = match super::codec::required_value(args, "--mode")? {
+                "move" => WmPointerGestureMode::Move,
+                "resize" => WmPointerGestureMode::Resize,
+                value => return Err(WmProcessError::new(format!("invalid --mode: {value}"))),
+            };
+            Ok(WmRequestPacket {
+                transaction,
+                kind: WmRequestKind::PointerGestureCompleted(WmPointerGestureCompleted {
+                    surface,
+                    output,
+                    workspace,
+                    mode,
+                    start: parse_position("--start")?,
+                    end: parse_position("--end")?,
                 }),
             })
         }

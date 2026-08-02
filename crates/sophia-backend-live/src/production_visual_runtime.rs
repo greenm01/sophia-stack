@@ -39,6 +39,12 @@ pub struct LiveChromeSetObservation {
     pub clearance: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveFloatingOutline {
+    pub surface: SurfaceId,
+    pub geometry: Rect,
+}
+
 fn replace_displayed_surface(
     displayed_surfaces: &mut BTreeMap<SurfaceId, LiveDisplayedSurface>,
     surface: SurfaceId,
@@ -69,6 +75,7 @@ pub struct LiveProductionVisualRuntime {
     chrome_surfaces: Vec<SurfaceId>,
     focused_surface: Option<SurfaceId>,
     surface_chrome_style: SurfaceChromeStyle,
+    floating_outline: Option<LiveFloatingOutline>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,
@@ -136,6 +143,7 @@ impl LiveProductionVisualRuntime {
             chrome_surfaces: Vec::new(),
             focused_surface: None,
             surface_chrome_style: SurfaceChromeStyle::default(),
+            floating_outline: None,
             pending_focus_ring_observation: None,
             last_focus_ring_observation: None,
             pending_chrome_set_observation: None,

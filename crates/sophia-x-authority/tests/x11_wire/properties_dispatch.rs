@@ -1047,8 +1047,10 @@ fn wm_transient_for_attaches_dialog_and_unmap_publishes_lifecycle_snapshot() {
         attached.response.as_ref().unwrap().surfaces.as_slice(),
         [surface]
             if surface.surface == SurfaceId::new(dialog, 1)
-                && surface.presentation == SurfacePresentationRole::ClientPositioned
+                && surface.presentation == SurfacePresentationRole::PolicyManaged
                 && surface.presentation_owner == Some(SurfaceId::new(owner, 1))
+                && surface.kind == LayoutNodeKind::Dialog
+                && surface.placement_preference == SurfacePlacementPreference::Floating
                 && surface.mapped
     ));
 
@@ -1071,7 +1073,7 @@ fn wm_transient_for_attaches_dialog_and_unmap_publishes_lifecycle_snapshot() {
 }
 
 #[test]
-fn root_transient_stays_client_positioned_without_a_surface_owner() {
+fn root_transient_stays_policy_managed_without_a_surface_owner() {
     let namespace = NamespaceId::from_raw(46);
     let dialog = 0x220022;
     let mut runtime = XAuthorityRuntime::new();
@@ -1125,8 +1127,10 @@ fn root_transient_stays_client_positioned_without_a_surface_owner() {
         attached.response.as_ref().unwrap().surfaces.as_slice(),
         [surface]
             if surface.surface == SurfaceId::new(dialog, 1)
-                && surface.presentation == SurfacePresentationRole::ClientPositioned
+                && surface.presentation == SurfacePresentationRole::PolicyManaged
                 && surface.presentation_owner.is_none()
+                && surface.kind == LayoutNodeKind::Dialog
+                && surface.placement_preference == SurfacePlacementPreference::Floating
                 && surface.mapped
     ));
 
@@ -1150,7 +1154,7 @@ fn root_transient_stays_client_positioned_without_a_surface_owner() {
 }
 
 #[test]
-fn ewmh_dialog_type_is_client_positioned_before_map_and_delete_restores_policy() {
+fn ewmh_dialog_type_is_policy_managed_and_requests_floating_placement() {
     let namespace = NamespaceId::from_raw(47);
     let dialog = 0x220023;
     let mut runtime = XAuthorityRuntime::new();
@@ -1204,7 +1208,9 @@ fn ewmh_dialog_type_is_client_positioned_before_map_and_delete_restores_policy()
     assert!(matches!(
         typed.response.as_ref().unwrap().surfaces.as_slice(),
         [surface]
-            if surface.presentation == SurfacePresentationRole::ClientPositioned
+            if surface.presentation == SurfacePresentationRole::PolicyManaged
+                && surface.kind == LayoutNodeKind::Dialog
+                && surface.placement_preference == SurfacePlacementPreference::Floating
                 && !surface.mapped
     ));
 
@@ -1219,7 +1225,9 @@ fn ewmh_dialog_type_is_client_positioned_before_map_and_delete_restores_policy()
     assert!(matches!(
         mapped.surfaces.as_slice(),
         [surface]
-            if surface.presentation == SurfacePresentationRole::ClientPositioned
+            if surface.presentation == SurfacePresentationRole::PolicyManaged
+                && surface.kind == LayoutNodeKind::Dialog
+                && surface.placement_preference == SurfacePlacementPreference::Floating
                 && surface.mapped
                 && surface.geometry == Rect { x: 30, y: 40, width: 480, height: 281 }
     ));

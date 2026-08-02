@@ -4,6 +4,17 @@ pub(crate) fn encode_layout_node(node: &LayoutNodeSnapshot, out: &mut Vec<u8>) {
     encode_surface_id(node.surface, out);
     encode_workspace_id(node.workspace, out);
     push_u16(out, encode_layout_node_kind(node.kind));
+    push_u16(
+        out,
+        match node.placement_preference {
+            SurfacePlacementPreference::Default => 1,
+            SurfacePlacementPreference::Floating => 2,
+        },
+    );
+    push_u8(out, u8::from(node.transient_owner.is_some()));
+    if let Some(owner) = node.transient_owner {
+        encode_surface_id(owner, out);
+    }
     push_u16(out, encode_capabilities(node.capabilities));
     push_u16(out, encode_node_state(node.state));
     encode_constraints(node.constraints, out);
@@ -18,6 +29,21 @@ pub(crate) fn decode_layout_node(
         surface: decode_surface_id(cursor)?,
         workspace: decode_workspace_id(cursor)?,
         kind: decode_layout_node_kind(cursor.u16()?)?,
+        placement_preference: match cursor.u16()? {
+            1 => SurfacePlacementPreference::Default,
+            2 => SurfacePlacementPreference::Floating,
+            value => {
+                return Err(IpcCodecError::InvalidEnum {
+                    field: "surface_placement_preference",
+                    value: u32::from(value),
+                });
+            }
+        },
+        transient_owner: if cursor.u8()? != 0 {
+            Some(decode_surface_id(cursor)?)
+        } else {
+            None
+        },
         capabilities: decode_capabilities(cursor.u16()?),
         state: decode_node_state(cursor.u16()?),
         constraints: decode_constraints(cursor)?,
@@ -31,7 +57,8 @@ pub(crate) fn encode_layout_node_kind(kind: LayoutNodeKind) -> u16 {
         LayoutNodeKind::Toplevel => 1,
         LayoutNodeKind::Dialog => 2,
         LayoutNodeKind::Utility => 3,
-        LayoutNodeKind::Unknown => 4,
+        LayoutNodeKind::Popup => 4,
+        LayoutNodeKind::Unknown => 5,
     }
 }
 
@@ -40,7 +67,8 @@ pub(crate) fn decode_layout_node_kind(value: u16) -> Result<LayoutNodeKind, IpcC
         1 => Ok(LayoutNodeKind::Toplevel),
         2 => Ok(LayoutNodeKind::Dialog),
         3 => Ok(LayoutNodeKind::Utility),
-        4 => Ok(LayoutNodeKind::Unknown),
+        4 => Ok(LayoutNodeKind::Popup),
+        5 => Ok(LayoutNodeKind::Unknown),
         other => Err(IpcCodecError::InvalidEnum {
             field: "layout_node_kind",
             value: u32::from(other),

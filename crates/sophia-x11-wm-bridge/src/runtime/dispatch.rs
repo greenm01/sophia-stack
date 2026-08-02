@@ -91,6 +91,8 @@ fn apply_server_command(
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, bounds)?;
         }
         ServerCommand::Map(window, geometry, manage_profile) => {
+            state.stacking.retain(|candidate| *candidate != window.raw());
+            state.stacking.push(window.raw());
             state.windows.insert(
                 window.raw(),
                 WindowState {
@@ -135,10 +137,12 @@ fn apply_server_command(
         }
         ServerCommand::Unmap(window) => {
             state.windows.remove(&window.raw());
+            state.stacking.retain(|candidate| *candidate != window.raw());
             write_window_event(stream, state.sequence, 18, window.raw())?;
         }
         ServerCommand::Destroy(window) => {
             state.windows.remove(&window.raw());
+            state.stacking.retain(|candidate| *candidate != window.raw());
             write_window_event(stream, state.sequence, 17, window.raw())?;
         }
         ServerCommand::Key { chord, pressed } => {
@@ -166,6 +170,9 @@ fn apply_server_command(
         ServerCommand::Button {
             window,
             button,
+            modifiers,
+            root_x,
+            root_y,
             pressed,
         } => {
             let geometry = state
@@ -173,10 +180,17 @@ fn apply_server_command(
                 .get(&window.raw())
                 .map(|entry| entry.geometry)
                 .ok_or_else(|| BridgeRuntimeError::new("focus click targeted an unknown window"))?;
-            let root_x = i16::try_from(geometry.x.saturating_add(1))
-                .unwrap_or(if geometry.x < 0 { i16::MIN } else { i16::MAX });
-            let root_y = i16::try_from(geometry.y.saturating_add(1))
-                .unwrap_or(if geometry.y < 0 { i16::MIN } else { i16::MAX });
+            let root_x = root_x.unwrap_or_else(|| {
+                i16::try_from(geometry.x.saturating_add(1))
+                    .unwrap_or(if geometry.x < 0 { i16::MIN } else { i16::MAX })
+            });
+            let root_y = root_y.unwrap_or_else(|| {
+                i16::try_from(geometry.y.saturating_add(1))
+                    .unwrap_or(if geometry.y < 0 { i16::MIN } else { i16::MAX })
+            });
+            state.pointer_x = root_x;
+            state.pointer_y = root_y;
+            state.pointer_mask = if pressed { modifiers | (1 << 8) } else { modifiers };
             let mut event = vec![if pressed { 4 } else { 5 }, button];
             push_u16(&mut event, state.sequence);
             push_u32(&mut event, 0);
@@ -187,10 +201,40 @@ fn apply_server_command(
             push_i16(&mut event, root_y);
             push_i16(&mut event, 1);
             push_i16(&mut event, 1);
-            push_u16(&mut event, 0);
+            push_u16(&mut event, modifiers);
             event.push(1);
             event.push(0);
             write_packet(stream, &event)?;
+        }
+        ServerCommand::PointerGesture {
+            window,
+            button,
+            modifiers,
+            start_x,
+            start_y,
+            delta_x,
+            delta_y,
+        } => {
+            state.pointer_x = start_x;
+            state.pointer_y = start_y;
+            state.pointer_mask = modifiers | (1 << (7 + button));
+            state.pending_pointer_gesture = Some(PendingPointerGesture {
+                window,
+                button,
+                modifiers,
+                delta_x,
+                delta_y,
+            });
+            write_synthetic_pointer_event(
+                stream,
+                state,
+                window,
+                button,
+                modifiers,
+                true,
+                start_x,
+                start_y,
+            )?;
         }
         ServerCommand::Wake => {
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
@@ -210,14 +254,18 @@ fn write_property_notify(
     deleted: bool,
 ) -> Result<(), BridgeRuntimeError> {
     const WM_NORMAL_HINTS: u32 = 40;
-    let mut event = vec![28, 0];
-    push_u16(&mut event, sequence);
-    push_u32(&mut event, window);
-    push_u32(&mut event, WM_NORMAL_HINTS);
-    push_u32(&mut event, 0);
-    event.push(u8::from(deleted));
-    event.resize(32, 0);
-    write_packet(stream, &event)
+    const WM_TRANSIENT_FOR: u32 = 42;
+    for atom in [WM_NORMAL_HINTS, WM_TRANSIENT_FOR] {
+        let mut event = vec![28, 0];
+        push_u16(&mut event, sequence);
+        push_u32(&mut event, window);
+        push_u32(&mut event, atom);
+        push_u32(&mut event, 0);
+        event.push(u8::from(deleted));
+        event.resize(32, 0);
+        write_packet(stream, &event)?;
+    }
+    Ok(())
 }
 
 fn has_matching_key_grab(state: &XServerState, chord: SyntheticKeyChord) -> bool {
@@ -260,7 +308,7 @@ fn dispatch_request(
         21 => reply_list_properties(stream, state, read_u32(body, 0))?,
         22 => {}
         23 => reply_u32(stream, state.sequence, 0, 0)?,
-        25 | 28 | 29 | 30 | 32 | 35 | 36 | 37 | 39 | 41 => {}
+        25 | 28 | 29 | 30 | 32 | 35 | 36 | 37 | 39 => {}
         33 => {
             if read_u32(body, 0) != SYNTHETIC_ROOT_XID {
                 return Err(BridgeRuntimeError::new(
@@ -283,10 +331,14 @@ fn dispatch_request(
                 state.key_grabs.remove(&(detail, modifiers));
             }
         }
-        26 => reply_simple(stream, state.sequence, 0)?,
+        26 => {
+            reply_simple(stream, state.sequence, 0)?;
+            complete_pending_pointer_gesture(stream, state)?;
+        }
         31 => reply_simple(stream, state.sequence, 0)?,
         38 => reply_query_pointer(stream, state)?,
         40 => reply_translate_coordinates(stream, state)?,
+        41 => apply_warp_pointer(state, body),
         42 => {
             let window = read_u32(body, 0);
             state.input_focus = window;
@@ -320,6 +372,96 @@ fn dispatch_request(
     Ok(())
 }
 
+fn apply_warp_pointer(state: &mut XServerState, body: &[u8]) {
+    let destination = read_u32(body, 4);
+    let destination_x = read_u16(body, 16) as i16;
+    let destination_y = read_u16(body, 18) as i16;
+    if let Some(window) = state.windows.get(&destination) {
+        state.pointer_x = i16::try_from(window.geometry.x)
+            .unwrap_or_default()
+            .saturating_add(destination_x);
+        state.pointer_y = i16::try_from(window.geometry.y)
+            .unwrap_or_default()
+            .saturating_add(destination_y);
+    }
+}
+
+fn complete_pending_pointer_gesture(
+    stream: &mut UnixStream,
+    state: &mut XServerState,
+) -> Result<(), BridgeRuntimeError> {
+    let Some(gesture) = state.pending_pointer_gesture.take() else {
+        return Ok(());
+    };
+    let end_x = state.pointer_x.saturating_add(gesture.delta_x);
+    let end_y = state.pointer_y.saturating_add(gesture.delta_y);
+    state.pointer_x = end_x;
+    state.pointer_y = end_y;
+    state.pointer_mask = gesture.modifiers | (1 << (7 + gesture.button));
+    let mut motion = vec![6, 0];
+    push_u16(&mut motion, state.sequence);
+    push_u32(&mut motion, 0);
+    push_u32(&mut motion, SYNTHETIC_ROOT_XID);
+    push_u32(&mut motion, gesture.window.raw());
+    push_u32(&mut motion, 0);
+    push_i16(&mut motion, end_x);
+    push_i16(&mut motion, end_y);
+    push_i16(&mut motion, 0);
+    push_i16(&mut motion, 0);
+    push_u16(&mut motion, state.pointer_mask);
+    motion.push(1);
+    motion.push(0);
+    write_packet(stream, &motion)?;
+    write_synthetic_pointer_event(
+        stream,
+        state,
+        gesture.window,
+        gesture.button,
+        gesture.modifiers,
+        false,
+        end_x,
+        end_y,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_synthetic_pointer_event(
+    stream: &mut UnixStream,
+    state: &XServerState,
+    window: SyntheticXWindowId,
+    button: u8,
+    modifiers: u16,
+    pressed: bool,
+    root_x: i16,
+    root_y: i16,
+) -> Result<(), BridgeRuntimeError> {
+    let geometry = state
+        .windows
+        .get(&window.raw())
+        .map(|entry| entry.geometry)
+        .ok_or_else(|| BridgeRuntimeError::new("pointer gesture targeted an unknown window"))?;
+    let mut event = vec![if pressed { 4 } else { 5 }, button];
+    push_u16(&mut event, state.sequence);
+    push_u32(&mut event, 0);
+    push_u32(&mut event, SYNTHETIC_ROOT_XID);
+    push_u32(&mut event, window.raw());
+    push_u32(&mut event, 0);
+    push_i16(&mut event, root_x);
+    push_i16(&mut event, root_y);
+    push_i16(
+        &mut event,
+        root_x.saturating_sub(i16::try_from(geometry.x).unwrap_or_default()),
+    );
+    push_i16(
+        &mut event,
+        root_y.saturating_sub(i16::try_from(geometry.y).unwrap_or_default()),
+    );
+    push_u16(&mut event, modifiers);
+    event.push(1);
+    event.push(0);
+    write_packet(stream, &event)
+}
+
 fn configure_window(
     state: &mut XServerState,
     legacy: &SyncSender<LegacyWmRequest>,
@@ -330,8 +472,13 @@ fn configure_window(
     let Some(window) = synthetic_id(state, raw) else {
         return Ok(());
     };
-    let entry = state.windows.get_mut(&raw).expect("known synthetic window");
-    let mut geometry = entry.geometry;
+    let mut geometry = state
+        .windows
+        .get(&raw)
+        .expect("known synthetic window")
+        .geometry;
+    let mut sibling = None;
+    let mut stack_mode = None;
     let mut cursor = 8;
     for bit in 0..7 {
         if mask & (1 << bit) == 0 {
@@ -344,15 +491,43 @@ fn configure_window(
             1 => geometry.y = value as i32,
             2 => geometry.width = value as i32,
             3 => geometry.height = value as i32,
+            5 => sibling = Some(value),
+            6 => stack_mode = Some(value as u8),
             _ => {}
         }
     }
-    entry.geometry = geometry;
+    state
+        .windows
+        .get_mut(&raw)
+        .expect("known synthetic window")
+        .geometry = geometry;
+    if stack_mode.is_some() || sibling.is_some() {
+        state.stacking.retain(|candidate| *candidate != raw);
+        let sibling_index = sibling.and_then(|sibling| {
+            state
+                .stacking
+                .iter()
+                .position(|candidate| *candidate == sibling)
+        });
+        let index = match (stack_mode, sibling_index) {
+            (Some(1 | 3), Some(index)) => index,
+            (Some(1 | 3), None) => 0,
+            (Some(0 | 2 | 4), Some(index)) => index.saturating_add(1),
+            _ => state.stacking.len(),
+        };
+        state.stacking.insert(index.min(state.stacking.len()), raw);
+    }
+    let z_index = state
+        .stacking
+        .iter()
+        .position(|candidate| *candidate == raw)
+        .and_then(|index| i32::try_from(index).ok())
+        .unwrap_or_default();
     legacy
         .send(LegacyWmRequest::ConfigureWindow {
             window,
             geometry,
-            z_index: 0,
+            z_index,
         })
         .map_err(|_| BridgeRuntimeError::new("legacy request channel disconnected"))
 }

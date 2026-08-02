@@ -19,6 +19,7 @@ pub struct WmWorkspaceState {
     outputs: BTreeMap<OutputId, WmOutputPolicyState>,
     surfaces: BTreeMap<SurfaceId, WorkspaceId>,
     workspace_focus: BTreeMap<WorkspaceId, Option<SurfaceId>>,
+    floating_surfaces: BTreeSet<SurfaceId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,6 +106,7 @@ impl WmWorkspaceState {
             outputs: configured,
             surfaces: BTreeMap::new(),
             workspace_focus,
+            floating_surfaces: BTreeSet::new(),
         })
     }
 
@@ -139,6 +141,7 @@ impl WmWorkspaceState {
 
     pub fn remove_surface(&mut self, surface: SurfaceId) -> bool {
         let removed = self.surfaces.remove(&surface).is_some();
+        self.floating_surfaces.remove(&surface);
         for focus in self.workspace_focus.values_mut() {
             if *focus == Some(surface) {
                 *focus = None;
@@ -152,8 +155,39 @@ impl WmWorkspaceState {
         self.surfaces.get(&surface).copied()
     }
 
+    pub fn surface_floating(&self, surface: SurfaceId) -> bool {
+        self.floating_surfaces.contains(&surface)
+    }
+
+    pub fn set_surface_floating(
+        &mut self,
+        surface: SurfaceId,
+        floating: bool,
+    ) -> Result<(), WmPolicyError> {
+        self.require_surface(surface)?;
+        if floating {
+            self.floating_surfaces.insert(surface);
+        } else {
+            self.floating_surfaces.remove(&surface);
+        }
+        Ok(())
+    }
+
     pub fn output(&self, output: OutputId) -> Option<WmOutputPolicyState> {
         self.outputs.get(&output).copied()
+    }
+
+    pub fn output_at_point(&self, x: i32, y: i32) -> Option<OutputId> {
+        let x = i64::from(x);
+        let y = i64::from(y);
+        self.outputs.iter().find_map(|(output, state)| {
+            let bounds = state.bounds;
+            let left = i64::from(bounds.x);
+            let top = i64::from(bounds.y);
+            let right = left + i64::from(bounds.width);
+            let bottom = top + i64::from(bounds.height);
+            (x >= left && x < right && y >= top && y < bottom).then_some(*output)
+        })
     }
 
     pub fn update_output_bounds(
@@ -239,6 +273,7 @@ impl WmWorkspaceState {
         let mut focus = None;
         let mut session_action = None;
         let mut assigned = BTreeSet::new();
+        let mut floating_updated = BTreeSet::new();
         let mut activated = BTreeSet::new();
         let mut configured = BTreeSet::new();
         let mut rendered = BTreeSet::new();
@@ -266,6 +301,13 @@ impl WmWorkspaceState {
                         return Err(WmPolicyError::DuplicateSurfaceCommand);
                     }
                     candidate.assign_surface(surface, workspace);
+                }
+                WmCommand::SetFloating { surface, floating } => {
+                    candidate.require_surface(surface)?;
+                    if !floating_updated.insert(surface) {
+                        return Err(WmPolicyError::DuplicateSurfaceCommand);
+                    }
+                    candidate.set_surface_floating(surface, floating)?;
                 }
                 WmCommand::ActivateWorkspace { output, workspace } => {
                     candidate.require_workspace(workspace)?;

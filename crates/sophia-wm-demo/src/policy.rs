@@ -223,6 +223,11 @@ pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
             commands: vec![WmCommand::FocusSurface(focus.surface)],
             timeout_msec: 300,
         },
+        WmRequestKind::PointerGestureCompleted(_) => WmResponsePacket {
+            transaction: request.transaction,
+            commands: Vec::new(),
+            timeout_msec: 300,
+        },
     }
 }
 
@@ -290,6 +295,11 @@ pub fn handle_wm_request_with_config(
         WmRequestKind::FocusRequested(focus) => WmResponsePacket {
             transaction: request.transaction,
             commands: vec![WmCommand::FocusSurface(focus.surface)],
+            timeout_msec: config.timeout_msec,
+        },
+        WmRequestKind::PointerGestureCompleted(_) => WmResponsePacket {
+            transaction: request.transaction,
+            commands: Vec::new(),
             timeout_msec: config.timeout_msec,
         },
     }

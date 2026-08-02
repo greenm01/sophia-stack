@@ -6,9 +6,9 @@ use sophia_protocol::{
     WmSessionDescriptor, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmProfile, LegacyWmRequest, SyntheticXEvent, X11WmBridgeError, X11WmBridgeState,
-    XMONAD_ACTION_APPLICATION_1, XMONAD_ACTION_APPLICATION_2, XMONAD_ACTION_APPLICATION_3,
-    translate_xmonad_profile_action,
+    LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID, SyntheticXEvent, X11WmBridgeError,
+    X11WmBridgeState, XMONAD_ACTION_APPLICATION_1, XMONAD_ACTION_APPLICATION_2,
+    XMONAD_ACTION_APPLICATION_3, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
 };
 
 #[test]
@@ -26,6 +26,8 @@ fn node(raw: u32) -> LayoutNodeSnapshot {
         surface: SurfaceId::new(raw, 1),
         workspace: WorkspaceId::from_raw(1),
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {
@@ -55,6 +57,79 @@ fn xmonad_launches_the_terminal_with_super_enter() {
         .expect("xmonad terminal binding");
     assert_eq!(binding.keycode, 28);
     assert_eq!(binding.modifiers.bits, WmModifierMask::SUPER);
+}
+
+#[test]
+fn xmonad_registers_super_shift_space_as_the_floating_toggle() {
+    let binding = LegacyWmProfile::Xmonad
+        .hello()
+        .bindings
+        .into_iter()
+        .find(|binding| binding.action.raw() == XMONAD_ACTION_TOGGLE_FLOATING)
+        .expect("xmonad floating toggle binding");
+
+    assert_eq!(binding.keycode, 57);
+    assert_eq!(
+        binding.modifiers.bits,
+        WmModifierMask::SUPER | WmModifierMask::SHIFT
+    );
+}
+
+#[test]
+fn hinted_dialog_remains_managed_and_exports_only_opaque_transient_facts() {
+    let mut bridge = X11WmBridgeState::new();
+    let owner = node(30);
+    let mut dialog = node(31);
+    dialog.kind = LayoutNodeKind::Dialog;
+    dialog.placement_preference = sophia_protocol::SurfacePlacementPreference::Floating;
+    dialog.transient_owner = Some(owner.surface);
+    dialog.state.floating = true;
+    let request = WmRequestPacket {
+        transaction: TransactionId::from_raw(76),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            nodes: vec![owner, dialog],
+        }),
+    };
+
+    bridge.apply_engine_request(&request).unwrap();
+    let owner_window = bridge.synthetic_window(SurfaceId::new(30, 1)).unwrap();
+    let dialog_window = bridge.synthetic_window(SurfaceId::new(31, 1)).unwrap();
+    let profile = bridge.synthetic_manage_profile(dialog_window).unwrap();
+
+    assert_eq!(profile.kind, LayoutNodeKind::Dialog);
+    assert_eq!(profile.transient_for, Some(owner_window.raw()));
+
+    let mut unattached = node(32);
+    unattached.kind = LayoutNodeKind::Dialog;
+    unattached.state.floating = true;
+    bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(77),
+            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+                nodes: vec![unattached],
+            }),
+        })
+        .unwrap();
+    let profile = bridge
+        .synthetic_manage_profile(bridge.synthetic_window(SurfaceId::new(32, 1)).unwrap())
+        .unwrap();
+    assert_eq!(profile.transient_for, Some(SYNTHETIC_ROOT_XID));
 }
 
 #[test]
@@ -268,6 +343,84 @@ fn client_size_constraints_bound_both_configure_and_render_geometry() {
         command,
         WmCommand::RenderSurface(placement)
             if placement.geometry == Rect { x: 20, y: 30, width: 320, height: 240 }
+    )));
+}
+
+#[test]
+fn completed_gesture_clamps_the_entire_frame_to_its_current_output() {
+    let output_one = OutputId::from_raw(1);
+    let output_two = OutputId::from_raw(2);
+    let workspace_two = WorkspaceId::from_raw(2);
+    let mut second = node(13);
+    second.workspace = workspace_two;
+    let mut bridge = X11WmBridgeState::new();
+    for (transaction, output, workspace, bounds, nodes) in [
+        (
+            73,
+            output_one,
+            WorkspaceId::from_raw(1),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            vec![node(12)],
+        ),
+        (
+            74,
+            output_two,
+            workspace_two,
+            Rect {
+                x: 1200,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+            vec![second],
+        ),
+    ] {
+        bridge
+            .apply_engine_request(&WmRequestPacket {
+                transaction: TransactionId::from_raw(transaction),
+                kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                    output,
+                    workspace,
+                    bounds,
+                    nodes,
+                }),
+            })
+            .unwrap();
+    }
+    let window = bridge.synthetic_window(SurfaceId::new(13, 1)).unwrap();
+
+    let response = bridge
+        .translate_legacy_requests_for_output(
+            TransactionId::from_raw(75),
+            &[LegacyWmRequest::ConfigureWindow {
+                window,
+                geometry: Rect {
+                    x: -300,
+                    y: 700,
+                    width: 1000,
+                    height: 900,
+                },
+                z_index: 4,
+            }],
+            300,
+            Some(output_two),
+        )
+        .unwrap();
+
+    assert!(response.commands.iter().any(|command| matches!(
+        command,
+        WmCommand::RenderSurface(placement)
+            if placement.geometry == Rect {
+                x: 1200,
+                y: 0,
+                width: 800,
+                height: 600,
+            }
     )));
 }
 

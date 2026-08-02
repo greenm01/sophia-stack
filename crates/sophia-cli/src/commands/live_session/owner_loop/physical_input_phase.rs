@@ -45,6 +45,7 @@ macro_rules! drain_physical_input {
                     physical_text_proof: physical_text_proof.as_mut(),
                     pointer_focus_handoff: &mut pointer_focus_handoff,
                     applied_client_focus,
+                    floating_gesture: &mut floating_pointer_gesture,
                 },
             )?;
             let event_timings = poller.drain_event_timings();
@@ -137,6 +138,48 @@ macro_rules! drain_physical_input {
                 .saturating_add(usize::from(repeat_report.delivery.is_some()));
             if let Some(delivery) = repeat_report.delivery {
                 input_delivery.pending.insert(delivery);
+            }
+            match report.floating_outline {
+                FloatingPointerOutlineUpdate::Unchanged => {}
+                FloatingPointerOutlineUpdate::Set(outline) => {
+                    let outline = clamp_floating_pointer_outline(
+                        outline,
+                        &wm_output_bounds(&outputs),
+                    )
+                    .ok_or("floating outline started outside every Engine output")?;
+                    if let Some(runtime) = runtime.as_mut()
+                        && runtime.set_floating_outline(
+                            Some(sophia_backend_live::LiveFloatingOutline {
+                                surface: outline.surface,
+                                geometry: outline.geometry,
+                            }),
+                            &scene,
+                            native_scanout.as_mut(),
+                        )?
+                    {
+                        println!(
+                            "sophia_live_wm_pointer schema=1 status=outline_presented surface={} geometry={}x{}_{}_{}",
+                            outline.surface.index(),
+                            outline.geometry.width,
+                            outline.geometry.height,
+                            outline.geometry.x,
+                            outline.geometry.y,
+                        );
+                    }
+                }
+                FloatingPointerOutlineUpdate::Clear => {
+                    if let Some(runtime) = runtime.as_mut()
+                        && runtime.set_floating_outline(
+                            None,
+                            &scene,
+                            native_scanout.as_mut(),
+                        )?
+                    {
+                        println!(
+                            "sophia_live_wm_pointer schema=1 status=outline_retired atomic_request=true"
+                        );
+                    }
+                }
             }
             if !report.deliveries.is_empty() && input_proof_started_at.is_some() {
                 input_delivery
@@ -233,6 +276,34 @@ macro_rules! drain_physical_input {
                             action.raw(),
                         );
                     }
+                }
+            }
+            for gesture in report.wm_pointer_gestures.iter().copied() {
+                let wm = wm_session
+                    .as_mut()
+                    .ok_or("WM pointer gesture activated without a live WM session")?;
+                match LivePhysicalWmActionDisposition::from(wm.enqueue_pointer_gesture(
+                    gesture,
+                    &layout,
+                )?) {
+                    LivePhysicalWmActionDisposition::Admitted => {
+                        println!(
+                            "sophia_live_wm_pointer schema=1 status=gesture_released atomic_request=true mode={:?} surface={} start_x={} start_y={} end_x={} end_y={}",
+                            gesture.mode,
+                            gesture.surface.index(),
+                            gesture.start.x,
+                            gesture.start.y,
+                            gesture.end.x,
+                            gesture.end.y,
+                        );
+                    }
+                    LivePhysicalWmActionDisposition::RejectedCapacity => {
+                        eprintln!(
+                            "sophia_live_wm_pointer schema=1 status=request_rejected reason=capacity surface={}",
+                            gesture.surface.index(),
+                        );
+                    }
+                    LivePhysicalWmActionDisposition::Coalesced => {}
                 }
             }
             for surface in report.pointer_focus_targets.iter().copied() {

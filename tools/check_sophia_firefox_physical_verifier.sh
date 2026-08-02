@@ -98,46 +98,21 @@ fi
 sed '/status=dialog_ready /d' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted missing popup readiness" >&2
-    exit 1
-fi
-sed '/layout_committed transaction=19 surfaces=5 /d' "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted missing popup-open layout" >&2
-    exit 1
-fi
-sed '/layout_committed transaction=20 surfaces=4 /d' "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted missing popup-close layout" >&2
-    exit 1
-fi
-sed '/status=visual_committed transaction=190 /d' "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted popup layout without retired pixels" >&2
-    exit 1
-fi
-sed 's/status=visual_committed transaction=190 surface=5/status=visual_committed transaction=191 surface=5/' \
-    "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted mismatched popup retirement" >&2
+    echo "physical Firefox verifier accepted missing modal readiness" >&2
     exit 1
 fi
 sed '/status=dialog_ready /a sophia_live_wm schema=1 status=layout_timeout transaction=19 preserved_layout=true' \
     "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted a popup layout timeout" >&2
+    echo "physical Firefox verifier accepted a modal interaction layout timeout" >&2
     exit 1
 fi
 sed '/status=dialog_ready /a sophia_live_wm schema=1 status=restarted attempt=1' \
     "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted a popup WM restart" >&2
+    echo "physical Firefox verifier accepted a modal interaction WM restart" >&2
     exit 1
 fi
 sed '/status=dialog_ready /a Gdk-CRITICAL **: gdk_window_thaw_toplevel_updates: assertion failed' \

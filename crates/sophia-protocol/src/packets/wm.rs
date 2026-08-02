@@ -17,7 +17,7 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 6;
+pub const WM_API_VERSION: u16 = 7;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -217,6 +217,29 @@ pub enum WmRequestKind {
     },
     ActionActivated(WmActionActivation),
     FocusRequested(WmFocusRequest),
+    PointerGestureCompleted(WmPointerGestureCompleted),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmPointerGestureCompleted {
+    pub surface: SurfaceId,
+    pub output: OutputId,
+    pub workspace: WorkspaceId,
+    pub mode: WmPointerGestureMode,
+    pub start: WmPointerPosition,
+    pub end: WmPointerPosition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmPointerPosition {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmPointerGestureMode {
+    Move,
+    Resize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -253,6 +276,7 @@ impl WmResponsePacket {
                 WmCommand::ConfigureSurface(request) => requested_sizes.push(request),
                 WmCommand::FocusSurface(surface) => focus = Some(surface),
                 WmCommand::AssignWorkspace { .. } => {}
+                WmCommand::SetFloating { .. } => {}
                 WmCommand::RenderSurface(placement) => render_positions.push(placement),
                 WmCommand::ActivateWorkspace { .. } | WmCommand::RequestSessionAction { .. } => {}
             }
@@ -275,6 +299,10 @@ pub enum WmCommand {
     AssignWorkspace {
         surface: SurfaceId,
         workspace: WorkspaceId,
+    },
+    SetFloating {
+        surface: SurfaceId,
+        floating: bool,
     },
     RenderSurface(SurfacePlacement),
     ActivateWorkspace {

@@ -11,8 +11,9 @@ use std::{
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
     SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmActionActivation, WmActionId,
-    WmCommand, WmManageSurface, WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind,
-    WmRequestPacket, WmSessionDescriptor, WorkspaceId,
+    WmCommand, WmManageSurface, WmOutputWorkspace, WmPointerGestureCompleted, WmPointerGestureMode,
+    WmPointerPosition, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmSessionDescriptor,
+    WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_FOCUS_NEXT,
@@ -55,6 +56,13 @@ fn partial_reconciliation_fixture_process() {
 fn manage_focus_fixture_process() {
     if is_private_bridge_child() {
         run_fixture(FixtureBehavior::ManageFocus);
+    }
+}
+
+#[test]
+fn pointer_gesture_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::PointerGesture);
     }
 }
 
@@ -128,6 +136,39 @@ fn manage_focus_remains_the_legacy_wm_focus_at_the_next_relayout() {
             .commands
             .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
     );
+}
+
+#[test]
+fn completed_move_gesture_is_floated_and_committed_atomically() {
+    let mut runtime = fixture_runtime("pointer_gesture_fixture_process");
+    configure_session(&mut runtime);
+    manage_three_surfaces(&mut runtime);
+    let surface = SurfaceId::new(12, 1);
+
+    let response = runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(40),
+            kind: WmRequestKind::PointerGestureCompleted(WmPointerGestureCompleted {
+                surface,
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                mode: WmPointerGestureMode::Move,
+                start: WmPointerPosition { x: 100, y: 100 },
+                end: WmPointerPosition { x: 300, y: 260 },
+            }),
+        })
+        .unwrap();
+
+    assert!(response.commands.contains(&WmCommand::SetFloating {
+        surface,
+        floating: true,
+    }));
+    assert!(response.commands.iter().any(|command| matches!(
+        command,
+        WmCommand::RenderSurface(placement)
+            if placement.surface == surface
+                && placement.geometry == Rect { x: 200, y: 160, width: 640, height: 480 }
+    )));
 }
 
 fn fixture_runtime(test_name: &str) -> LegacyX11WmBridgeRuntime {
@@ -223,6 +264,8 @@ fn node(raw: u32, geometry: Rect) -> LayoutNodeSnapshot {
         surface: SurfaceId::new(raw, 1),
         workspace: WorkspaceId::from_raw(1),
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {
@@ -328,6 +371,7 @@ enum FixtureBehavior {
     MissingLayoutGrab,
     PartialFocusReconciliation,
     ManageFocus,
+    PointerGesture,
 }
 
 fn run_fixture(behavior: FixtureBehavior) {
@@ -342,6 +386,7 @@ fn run_fixture(behavior: FixtureBehavior) {
             write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE)
         }
         FixtureBehavior::ManageFocus => {}
+        FixtureBehavior::PointerGesture => {}
     }
 
     let mut windows = Vec::new();
@@ -380,10 +425,58 @@ fn run_fixture(behavior: FixtureBehavior) {
                 focus_action_seen = true;
                 write_set_input_focus(&mut stream, windows[0]);
             }
+            4 if behavior == FixtureBehavior::PointerGesture => {
+                let window = read_u32(&event, 12);
+                write_query_pointer_and_grab(&mut stream, window);
+            }
             4 => write_set_input_focus(&mut stream, read_u32(&event, 12)),
+            6 if behavior == FixtureBehavior::PointerGesture => {
+                let window = read_u32(&event, 12);
+                write_configure_window(
+                    &mut stream,
+                    window,
+                    Rect {
+                        x: 200,
+                        y: 160,
+                        width: 640,
+                        height: 480,
+                    },
+                );
+                stream.flush().unwrap();
+            }
             5 => {}
             2 | 3 => {}
             event_type => panic!("unexpected synthetic X event {event_type}"),
+        }
+    }
+}
+
+fn write_query_pointer_and_grab(stream: &mut UnixStream, window: u32) {
+    let mut query = vec![38, 0, 2, 0];
+    query.extend_from_slice(&window.to_le_bytes());
+    stream.write_all(&query).unwrap();
+    stream.flush().unwrap();
+    let _ = read_reply_ignoring_events(stream);
+
+    let mut grab = vec![26, 0, 6, 0];
+    grab.extend_from_slice(&ROOT.to_le_bytes());
+    grab.extend_from_slice(&((1_u16 << 3) | (1_u16 << 6)).to_le_bytes());
+    grab.extend_from_slice(&[1, 1]);
+    grab.extend_from_slice(&0_u32.to_le_bytes());
+    grab.extend_from_slice(&0_u32.to_le_bytes());
+    grab.extend_from_slice(&0_u32.to_le_bytes());
+    stream.write_all(&grab).unwrap();
+    stream.flush().unwrap();
+    let reply = read_reply_ignoring_events(stream);
+    assert_eq!(reply[0], 1);
+}
+
+fn read_reply_ignoring_events(stream: &mut UnixStream) -> [u8; 32] {
+    loop {
+        let mut packet = [0_u8; 32];
+        stream.read_exact(&mut packet).unwrap();
+        if packet[0] == 1 {
+            return packet;
         }
     }
 }

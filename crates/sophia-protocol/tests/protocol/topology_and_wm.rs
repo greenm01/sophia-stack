@@ -111,6 +111,8 @@ fn wm_api_v6_negotiation_and_opaque_application_actions_round_trip() {
         surface: SurfaceId::new(4, 1),
         workspace,
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {

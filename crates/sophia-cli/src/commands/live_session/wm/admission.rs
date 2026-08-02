@@ -533,6 +533,22 @@ impl PersistentLiveLayout {
                     .get(&surface)
                     .copied()
                     .unwrap_or_default(),
+                kind: self
+                    .surface_kinds
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or(sophia_protocol::LayoutNodeKind::Toplevel),
+                placement_preference: self
+                    .placement_preferences
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or_default(),
+                presentation_owner: self.presentation_owners.get(&surface).copied(),
+                stack_rank: self
+                    .authority_stack_ranks
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or(layer.stack_rank),
                 geometry: layer.geometry,
                 constraints: self.layout_epochs.declared_constraints(surface),
                 generation: layer.generation,
@@ -621,26 +637,6 @@ impl PersistentLiveLayout {
     }
 }
 
-fn live_layout_node(
-    layer: &LayerSnapshot,
-    workspace: WorkspaceId,
-    coordinator: &LayoutEpochCoordinator,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
-    live_layout_node_from_facts(
-        sophia_engine::SurfaceLayoutFacts {
-            surface: layer.surface,
-            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
-            geometry: layer.geometry,
-            constraints: coordinator.declared_constraints(layer.surface),
-            generation: layer.generation,
-        },
-        workspace,
-        coordinator,
-        chrome,
-    )
-}
-
 fn live_layout_node_from_facts(
     facts: sophia_engine::SurfaceLayoutFacts,
     workspace: WorkspaceId,
@@ -652,9 +648,15 @@ fn live_layout_node_from_facts(
     Ok(LayoutNodeSnapshot {
         surface: facts.surface,
         workspace,
-        kind: LayoutNodeKind::Toplevel,
+        kind: facts.kind,
+        placement_preference: facts.placement_preference,
+        transient_owner: facts.presentation_owner,
         capabilities,
-        state: LayoutNodeState::NORMAL,
+        state: LayoutNodeState {
+            floating: facts.placement_preference
+                == sophia_protocol::SurfacePlacementPreference::Floating,
+            ..LayoutNodeState::NORMAL
+        },
         constraints: sophia_engine::outer_surface_constraints(facts.constraints, chrome)?,
         geometry: sophia_engine::outer_surface_geometry(facts.geometry, chrome)?,
         generation: facts.generation,

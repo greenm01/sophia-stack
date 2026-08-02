@@ -375,6 +375,8 @@ fn layout_node_snapshot_carries_only_opaque_policy_data() {
         surface: SurfaceId::new(7, 1),
         workspace: WorkspaceId::from_raw(2),
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {
@@ -465,4 +467,3 @@ fn broker_health_packet_rejects_unbounded_status_message() {
         })
     );
 }
-

@@ -6,10 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
-    LayoutNodeSnapshot, Rect, SessionApplicationId, Size, SurfaceConstraints, SurfaceId,
-    SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask, WmRequestKind,
-    WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor, WorkspaceId,
+    LayoutNodeKind, LayoutNodeSnapshot, Rect, SessionApplicationId, Size, SurfaceConstraints,
+    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION,
+    WmActionId, WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask,
+    WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor,
+    WorkspaceId,
 };
 
 #[cfg(unix)]
@@ -26,6 +27,7 @@ pub const MAX_LEGACY_WM_REQUESTS: usize = 8_192;
 pub const XMONAD_ACTION_FOCUS_NEXT: u64 = 1;
 pub const XMONAD_ACTION_FOCUS_PREVIOUS: u64 = 2;
 pub const XMONAD_ACTION_NEXT_LAYOUT: u64 = 3;
+pub const XMONAD_ACTION_TOGGLE_FLOATING: u64 = 4;
 pub const XMONAD_ACTION_VIEW_WORKSPACE_BASE: u64 = 0x100;
 pub const XMONAD_ACTION_MOVE_WORKSPACE_BASE: u64 = 0x200;
 pub const XMONAD_ACTION_APPLICATION_1: u64 = 0x300;
@@ -72,6 +74,7 @@ fn xmonad_bindings() -> Vec<WmBindingRegistration> {
         binding(XMONAD_ACTION_FOCUS_NEXT, 36, super_only),
         binding(XMONAD_ACTION_FOCUS_PREVIOUS, 37, super_only),
         binding(XMONAD_ACTION_NEXT_LAYOUT, 57, super_only),
+        binding(XMONAD_ACTION_TOGGLE_FLOATING, 57, super_shift),
         binding(XMONAD_ACTION_APPLICATION_1, 28, super_only),
         binding(XMONAD_ACTION_CLOSE, 46, super_shift),
         binding(XMONAD_ACTION_APPLICATION_2, 25, super_only),
@@ -149,15 +152,19 @@ pub enum SyntheticXEvent {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SyntheticManageProfile {
     pub constraints: Option<SurfaceConstraints>,
+    pub transient_for: Option<u32>,
+    pub kind: LayoutNodeKind,
 }
 
 impl SyntheticManageProfile {
-    fn from_node(node: &LayoutNodeSnapshot) -> Self {
+    fn from_node(node: &LayoutNodeSnapshot, transient_for: Option<u32>) -> Self {
         let constrained = !node.capabilities.resizable
             || node.constraints.min_size.is_some()
             || node.constraints.max_size.is_some();
         Self {
             constraints: constrained.then_some(node.constraints),
+            transient_for,
+            kind: node.kind,
         }
     }
 
@@ -253,7 +260,10 @@ pub fn translate_xmonad_profile_action(
             }
             XMONAD_ACTION_CLOSE => WmSessionAction::CloseFocused,
             XMONAD_ACTION_LOGOUT => WmSessionAction::Logout,
-            XMONAD_ACTION_FOCUS_NEXT | XMONAD_ACTION_FOCUS_PREVIOUS | XMONAD_ACTION_NEXT_LAYOUT => {
+            XMONAD_ACTION_FOCUS_NEXT
+            | XMONAD_ACTION_FOCUS_PREVIOUS
+            | XMONAD_ACTION_NEXT_LAYOUT
+            | XMONAD_ACTION_TOGGLE_FLOATING => {
                 return Ok(None);
             }
             _ => return Err(X11WmBridgeError::UnsupportedAction),
@@ -282,6 +292,7 @@ pub struct X11WmBridgeState {
     window_to_node: BTreeMap<SyntheticXWindowId, LayoutNodeSnapshot>,
     mapped_windows: BTreeSet<SyntheticXWindowId>,
     active_workspace: Option<WorkspaceId>,
+    output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
     root_bounds: Option<Rect>,
 }
 
@@ -293,6 +304,7 @@ impl Default for X11WmBridgeState {
             window_to_node: BTreeMap::new(),
             mapped_windows: BTreeSet::new(),
             active_workspace: None,
+            output_bounds: BTreeMap::new(),
             root_bounds: None,
         }
     }
@@ -335,9 +347,13 @@ impl X11WmBridgeState {
         &self,
         window: SyntheticXWindowId,
     ) -> Option<SyntheticManageProfile> {
-        self.window_to_node
-            .get(&window)
-            .map(SyntheticManageProfile::from_node)
+        let node = self.window_to_node.get(&window)?;
+        let transient_for = node
+            .transient_owner
+            .and_then(|owner| self.surface_to_window.get(&owner).copied())
+            .map(SyntheticXWindowId::raw)
+            .or_else(|| node.state.floating.then_some(SYNTHETIC_ROOT_XID));
+        Some(SyntheticManageProfile::from_node(node, transient_for))
     }
 
     pub fn apply_engine_request(
@@ -347,12 +363,12 @@ impl X11WmBridgeState {
         let mut events = Vec::new();
         match &request.kind {
             WmRequestKind::ManageSurface(manage) => {
-                self.update_root(manage.bounds, &mut events);
+                self.update_output(manage.output, manage.bounds, &mut events);
                 self.active_workspace.get_or_insert(manage.workspace);
                 self.upsert_visible_node(manage.node.clone(), &mut events)?;
             }
             WmRequestKind::RelayoutWorkspace(relayout) => {
-                self.update_root(relayout.bounds, &mut events);
+                self.update_output(relayout.output, relayout.bounds, &mut events);
                 self.activate_workspace_into(relayout.workspace, &mut events);
                 for node in &relayout.nodes {
                     self.upsert_visible_node(node.clone(), &mut events)?;
@@ -371,7 +387,7 @@ impl X11WmBridgeState {
                     self.upsert_visible_node(node.clone(), &mut events)?;
                 }
             }
-            WmRequestKind::FocusRequested(_) => {}
+            WmRequestKind::FocusRequested(_) | WmRequestKind::PointerGestureCompleted(_) => {}
         }
         Ok(BridgeEngineUpdate {
             transaction: request.transaction,
@@ -398,9 +414,22 @@ impl X11WmBridgeState {
         requests: &[LegacyWmRequest],
         timeout_msec: u32,
     ) -> Result<WmResponsePacket, X11WmBridgeError> {
+        self.translate_legacy_requests_for_output(transaction, requests, timeout_msec, None)
+    }
+
+    pub fn translate_legacy_requests_for_output(
+        &self,
+        transaction: TransactionId,
+        requests: &[LegacyWmRequest],
+        timeout_msec: u32,
+        output: Option<sophia_protocol::OutputId>,
+    ) -> Result<WmResponsePacket, X11WmBridgeError> {
         if requests.len() > MAX_LEGACY_WM_REQUESTS {
             return Err(X11WmBridgeError::RequestLimit);
         }
+        let clamp_bounds = output
+            .and_then(|output| self.output_bounds.get(&output).copied())
+            .or(self.root_bounds);
         let mut commands = Vec::with_capacity(requests.len().saturating_mul(2));
         for request in requests {
             match *request {
@@ -424,7 +453,7 @@ impl X11WmBridgeState {
                         node.constraints.min_size,
                         node.constraints.max_size,
                     );
-                    if let Some(bounds) = self.root_bounds {
+                    if let Some(bounds) = clamp_bounds {
                         size.width = size.width.min(bounds.width);
                         size.height = size.height.min(bounds.height);
                     }
@@ -433,7 +462,7 @@ impl X11WmBridgeState {
                         height: size.height,
                         ..geometry
                     };
-                    if let Some(bounds) = self.root_bounds {
+                    if let Some(bounds) = clamp_bounds {
                         geometry.x = geometry
                             .x
                             .clamp(bounds.x, bounds.x + bounds.width - geometry.width);
@@ -471,10 +500,36 @@ impl X11WmBridgeState {
         })
     }
 
-    fn update_root(&mut self, bounds: Rect, events: &mut Vec<SyntheticXEvent>) {
-        if self.root_bounds != Some(bounds) {
-            self.root_bounds = Some(bounds);
-            events.push(SyntheticXEvent::RootConfigured { bounds });
+    fn update_output(
+        &mut self,
+        output: sophia_protocol::OutputId,
+        bounds: Rect,
+        events: &mut Vec<SyntheticXEvent>,
+    ) {
+        self.output_bounds.insert(output, bounds);
+        let root = self.output_bounds.values().copied().reduce(|left, right| {
+            let x = left.x.min(right.x);
+            let y = left.y.min(right.y);
+            let right_edge = left
+                .x
+                .saturating_add(left.width)
+                .max(right.x.saturating_add(right.width));
+            let bottom_edge = left
+                .y
+                .saturating_add(left.height)
+                .max(right.y.saturating_add(right.height));
+            Rect {
+                x,
+                y,
+                width: right_edge.saturating_sub(x),
+                height: bottom_edge.saturating_sub(y),
+            }
+        });
+        if self.root_bounds != root {
+            self.root_bounds = root;
+            if let Some(bounds) = root {
+                events.push(SyntheticXEvent::RootConfigured { bounds });
+            }
         }
     }
 
@@ -509,10 +564,16 @@ impl X11WmBridgeState {
         let profile_changed = self
             .surface_to_window
             .get(&node.surface)
-            .and_then(|window| self.window_to_node.get(window))
-            .is_some_and(|previous| {
-                SyntheticManageProfile::from_node(previous)
-                    != SyntheticManageProfile::from_node(&node)
+            .copied()
+            .is_some_and(|window| {
+                self.synthetic_manage_profile(window)
+                    != Some(SyntheticManageProfile::from_node(
+                        &node,
+                        node.transient_owner
+                            .and_then(|owner| self.surface_to_window.get(&owner).copied())
+                            .map(SyntheticXWindowId::raw)
+                            .or_else(|| node.state.floating.then_some(SYNTHETIC_ROOT_XID)),
+                    ))
             });
         let (window, _) = self.upsert_node(node)?;
         if self.active_workspace == Some(workspace) {

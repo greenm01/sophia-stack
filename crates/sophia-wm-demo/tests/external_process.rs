@@ -91,6 +91,8 @@ fn relayout_request(
                     surface: layer.surface,
                     workspace,
                     kind: LayoutNodeKind::Toplevel,
+                    placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+                    transient_owner: None,
                     capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
                     state: LayoutNodeState::NORMAL,
                     constraints: SurfaceConstraints {

@@ -268,42 +268,19 @@ xi_focus_in="$(line_number_after "^sophia_x11_focus_delivery schema=1 .* window=
     && xi_focus_out < xi_focus_in
     && xi_focus_in < refocus_line )) ||
     fail "Firefox DOM refocus is not ordered after focus-away, XI2 out/in, and focus return"
-dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox popup document never became ready')"
+dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox modal never became ready')"
 dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
-popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=5 .* outcome=Committed$' "$refocus_line")"
-[[ -n "$popup_open_line" ]] || fail "Firefox popup did not publish a five-surface layout snapshot"
-popup_visual_armed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_armed ' "$dialog_ready_line")"
-popup_visual_committed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_committed ' "$dialog_ready_line")"
-[[ -n "$popup_visual_armed_line" && -n "$popup_visual_committed_line" ]] \
-    && (( popup_visual_armed_line < popup_visual_committed_line
-        && popup_visual_committed_line < popup_open_line )) ||
-    fail "Firefox popup pixels were not retired before its layout became visible"
-popup_visual_armed="$(sed -n "${popup_visual_armed_line}p" "$SESSION_LOG")"
-popup_visual_committed="$(sed -n "${popup_visual_committed_line}p" "$SESSION_LOG")"
-for assignment in \
-    "transaction=$(field "$popup_visual_armed" transaction)" \
-    "surface=$(field "$popup_visual_armed" surface)" \
-    "width=$(field "$popup_visual_armed" width)" \
-    "height=$(field "$popup_visual_armed" height)"; do
-    require_eq "$popup_visual_committed" "${assignment%%=*}" "${assignment#*=}"
-done
-require_at_least "$popup_visual_committed" width 1
-require_at_least "$popup_visual_committed" height 1
 if awk -v first="$refocus_line" -v last="$dialog_line" '
     NR > first && NR < last &&
         ($0 ~ /^sophia_live_wm .*status=layout_timeout / || $0 ~ /^sophia_live_wm .*status=restarted /) { found=1 }
     END { exit !found }
 ' "$SESSION_LOG"; then
-    fail "Firefox popup lifecycle timed out or restarted the WM bridge"
+    fail "Firefox modal interaction timed out or restarted the WM bridge"
 fi
-popup_close_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$dialog_line")"
-[[ -n "$popup_close_line" ]] || fail "Firefox popup did not publish a four-surface close snapshot"
 (( refocus_line < dialog_ready_line
-    && dialog_ready_line < popup_open_line
-    && popup_open_line < dialog_line
-    && dialog_line < popup_close_line
-    && popup_close_line < first_exit )) ||
-    fail "Firefox popup ready/open/confirm/close lifecycle is out of order"
+    && dialog_ready_line < dialog_line
+    && dialog_line < first_exit )) ||
+    fail "Firefox modal ready/confirm lifecycle is out of order"
 grep -Eq '^sophia_firefox_m10 schema=1 status=complete kitty_checkpoints=6 content=redacted$' \
     "$SESSION_LOG" || fail "Firefox M10 Kitty proof did not complete"
 

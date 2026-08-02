@@ -182,6 +182,25 @@ fn wm_focus_request_frame_roundtrips_without_client_metadata() {
 }
 
 #[test]
+fn wm_pointer_gesture_frame_roundtrips_without_client_metadata() {
+    let request = WmRequestPacket {
+        transaction: TransactionId::from_raw(44),
+        kind: WmRequestKind::PointerGestureCompleted(WmPointerGestureCompleted {
+            surface: SurfaceId::new(17, 2),
+            output: OutputId::from_raw(7),
+            workspace: WorkspaceId::from_raw(3),
+            mode: WmPointerGestureMode::Resize,
+            start: WmPointerPosition { x: 90, y: 70 },
+            end: WmPointerPosition { x: 760, y: 540 },
+        }),
+    };
+
+    let frame = encode_wm_request_frame(&request).unwrap();
+
+    assert_eq!(decode_wm_request_frame(&frame), Ok(request));
+}
+
+#[test]
 fn wm_response_frame_roundtrips() {
     let surface = SurfaceId::new(4, 9);
     let response = WmResponsePacket {
@@ -191,6 +210,10 @@ fn wm_response_frame_roundtrips() {
             WmCommand::AssignWorkspace {
                 surface,
                 workspace: WorkspaceId::from_raw(5),
+            },
+            WmCommand::SetFloating {
+                surface,
+                floating: true,
             },
             WmCommand::ConfigureSurface(SurfaceSizeRequest {
                 surface,
@@ -411,6 +434,8 @@ fn layout_node(surface: SurfaceId, workspace: WorkspaceId) -> LayoutNodeSnapshot
         surface,
         workspace,
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {
@@ -432,6 +457,8 @@ fn node(index: u32) -> LayoutNodeSnapshot {
         surface: SurfaceId::new(index, 1),
         workspace: WorkspaceId::from_raw(3),
         kind: LayoutNodeKind::Toplevel,
+        placement_preference: SurfacePlacementPreference::Default,
+        transient_owner: None,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         state: LayoutNodeState::NORMAL,
         constraints: SurfaceConstraints {

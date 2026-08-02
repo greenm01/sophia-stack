@@ -2,9 +2,9 @@ use crate::{
     SessionApplicationId, SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId,
     WmActionActivation, WmActionId, WmBindingRegistration, WmCapabilities, WmChromePolicy,
     WmCommand, WmFocusRequest, WmFocusRingStyle, WmFrameStyle, WmHello, WmManageSurface,
-    WmModifierMask, WmOutputWorkspace, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate,
-    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmResponsePacket, WmRgb8, WmSessionAction,
-    WmSessionDescriptor,
+    WmModifierMask, WmOutputWorkspace, WmPointerGestureCompleted, WmPointerGestureMode,
+    WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmRelayoutWorkspace, WmRequestKind,
+    WmRequestPacket, WmResponsePacket, WmRgb8, WmSessionAction, WmSessionDescriptor,
 };
 
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
@@ -423,6 +423,23 @@ fn encode_wm_request_payload(
             encode_output_id(focus.output, out);
             encode_workspace_id(focus.workspace, out);
         }
+        WmRequestKind::PointerGestureCompleted(gesture) => {
+            push_u16(out, 6);
+            encode_surface_id(gesture.surface, out);
+            encode_output_id(gesture.output, out);
+            encode_workspace_id(gesture.workspace, out);
+            push_u16(
+                out,
+                match gesture.mode {
+                    WmPointerGestureMode::Move => 1,
+                    WmPointerGestureMode::Resize => 2,
+                },
+            );
+            push_i32(out, gesture.start.x);
+            push_i32(out, gesture.start.y);
+            push_i32(out, gesture.end.x);
+            push_i32(out, gesture.end.y);
+        }
     }
     Ok(())
 }
@@ -481,6 +498,29 @@ fn decode_wm_request_payload(
             output: decode_output_id(cursor)?,
             workspace: decode_workspace_id(cursor)?,
         }),
+        6 => WmRequestKind::PointerGestureCompleted(WmPointerGestureCompleted {
+            surface: decode_surface_id(cursor)?,
+            output: decode_output_id(cursor)?,
+            workspace: decode_workspace_id(cursor)?,
+            mode: match cursor.u16()? {
+                1 => WmPointerGestureMode::Move,
+                2 => WmPointerGestureMode::Resize,
+                other => {
+                    return Err(IpcCodecError::InvalidEnum {
+                        field: "wm_pointer_gesture_mode",
+                        value: u32::from(other),
+                    });
+                }
+            },
+            start: crate::WmPointerPosition {
+                x: cursor.i32()?,
+                y: cursor.i32()?,
+            },
+            end: crate::WmPointerPosition {
+                x: cursor.i32()?,
+                y: cursor.i32()?,
+            },
+        }),
         other => {
             return Err(IpcCodecError::InvalidEnum {
                 field: "wm_request_kind",
@@ -514,6 +554,11 @@ fn encode_wm_response_payload(
                 push_u16(out, 3);
                 encode_surface_id(*surface, out);
                 encode_workspace_id(*workspace, out);
+            }
+            WmCommand::SetFloating { surface, floating } => {
+                push_u16(out, 7);
+                encode_surface_id(*surface, out);
+                push_u16(out, u16::from(*floating));
             }
             WmCommand::RenderSurface(placement) => {
                 push_u16(out, 4);
@@ -570,6 +615,10 @@ fn decode_wm_response_payload(
             6 => WmCommand::RequestSessionAction {
                 action: decode_session_action(cursor)?,
                 target: decode_option_surface(cursor)?,
+            },
+            7 => WmCommand::SetFloating {
+                surface: decode_surface_id(cursor)?,
+                floating: decode_bool(cursor, "wm_surface_floating")?,
             },
             other => {
                 return Err(IpcCodecError::InvalidEnum {

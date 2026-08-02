@@ -62,7 +62,7 @@ fn reply_query_tree(
     stream: &mut UnixStream,
     state: &XServerState,
 ) -> Result<(), BridgeRuntimeError> {
-    let children = state.windows.keys().copied().collect::<Vec<_>>();
+    let children = state.stacking.clone();
     let mut reply = vec![1, 0];
     push_u16(&mut reply, state.sequence);
     push_u32(&mut reply, children.len() as u32);
@@ -140,17 +140,45 @@ fn reply_window_property(
 ) -> Result<(), BridgeRuntimeError> {
     const WM_NORMAL_HINTS: u32 = 40;
     const WM_SIZE_HINTS: u32 = 41;
+    const WM_TRANSIENT_FOR: u32 = 42;
+    const WINDOW: u32 = 43;
+    const NET_WM_WINDOW_TYPE: u32 = 44;
+    const ATOM: u32 = 45;
 
     let window = read_u32(body, 0);
     let property = read_u32(body, 4);
     let requested_type = read_u32(body, 8);
     let offset = usize::try_from(read_u32(body, 12)).unwrap_or(usize::MAX);
     let length = usize::try_from(read_u32(body, 16)).unwrap_or(usize::MAX);
-    let Some(hints) = state
-        .windows
-        .get(&window)
-        .and_then(|window| window.manage_profile.icccm_normal_hints())
-    else {
+    let Some(window_state) = state.windows.get(&window) else {
+        return reply_empty_property(stream, state.sequence);
+    };
+    if property == WM_TRANSIENT_FOR {
+        return reply_u32_property(
+            stream,
+            state.sequence,
+            requested_type,
+            WINDOW,
+            window_state.manage_profile.transient_for.into_iter(),
+        );
+    }
+    if property == NET_WM_WINDOW_TYPE {
+        let type_atom = match window_state.manage_profile.kind {
+            sophia_protocol::LayoutNodeKind::Toplevel => 46,
+            sophia_protocol::LayoutNodeKind::Dialog => 47,
+            sophia_protocol::LayoutNodeKind::Utility => 48,
+            sophia_protocol::LayoutNodeKind::Popup => 49,
+            sophia_protocol::LayoutNodeKind::Unknown => 46,
+        };
+        return reply_u32_property(
+            stream,
+            state.sequence,
+            requested_type,
+            ATOM,
+            std::iter::once(type_atom),
+        );
+    }
+    let Some(hints) = window_state.manage_profile.icccm_normal_hints() else {
         return reply_empty_property(stream, state.sequence);
     };
     if property != WM_NORMAL_HINTS {
@@ -182,6 +210,38 @@ fn reply_window_property(
     write_packet(stream, &reply)
 }
 
+fn reply_u32_property(
+    stream: &mut UnixStream,
+    sequence: u16,
+    requested_type: u32,
+    actual_type: u32,
+    values: impl IntoIterator<Item = u32>,
+) -> Result<(), BridgeRuntimeError> {
+    if requested_type != 0 && requested_type != actual_type {
+        let mut reply = vec![1, 0];
+        push_u16(&mut reply, sequence);
+        push_u32(&mut reply, 0);
+        push_u32(&mut reply, actual_type);
+        reply.resize(32, 0);
+        return write_packet(stream, &reply);
+    }
+    let values = values.into_iter().collect::<Vec<_>>();
+    if values.is_empty() {
+        return reply_empty_property(stream, sequence);
+    }
+    let mut reply = vec![1, 32];
+    push_u16(&mut reply, sequence);
+    push_u32(&mut reply, values.len() as u32);
+    push_u32(&mut reply, actual_type);
+    push_u32(&mut reply, 0);
+    push_u32(&mut reply, values.len() as u32);
+    reply.resize(32, 0);
+    for value in values {
+        push_u32(&mut reply, value);
+    }
+    write_packet(stream, &reply)
+}
+
 fn reply_list_properties(
     stream: &mut UnixStream,
     state: &XServerState,
@@ -196,6 +256,13 @@ fn reply_list_properties(
     } else {
         Vec::new()
     };
+    let mut properties = properties;
+    if let Some(window) = state.windows.get(&window) {
+        if window.manage_profile.transient_for.is_some() {
+            properties.push(42);
+        }
+        properties.push(44);
+    }
     let mut reply = vec![1, 0];
     push_u16(&mut reply, state.sequence);
     push_u32(&mut reply, properties.len() as u32);
@@ -216,11 +283,11 @@ fn reply_query_pointer(
     push_u32(&mut reply, 0);
     push_u32(&mut reply, SYNTHETIC_ROOT_XID);
     push_u32(&mut reply, 0);
-    push_i16(&mut reply, 0);
-    push_i16(&mut reply, 0);
-    push_i16(&mut reply, 0);
-    push_i16(&mut reply, 0);
-    push_u16(&mut reply, 0);
+    push_i16(&mut reply, state.pointer_x);
+    push_i16(&mut reply, state.pointer_y);
+    push_i16(&mut reply, state.pointer_x);
+    push_i16(&mut reply, state.pointer_y);
+    push_u16(&mut reply, state.pointer_mask);
     reply.resize(32, 0);
     write_packet(stream, &reply)
 }

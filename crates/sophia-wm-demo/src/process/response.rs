@@ -18,6 +18,7 @@ pub fn encode_process_response(response: &WmResponsePacket) -> String {
     let mut render = Vec::new();
     let mut activate = Vec::new();
     let mut session = Vec::new();
+    let mut floating = Vec::new();
 
     for command in &response.commands {
         match command {
@@ -55,11 +56,20 @@ pub fn encode_process_response(response: &WmResponsePacket) -> String {
                 );
                 session.push(format!("{}:{}", encode_session_action(*action), target));
             }
+            WmCommand::SetFloating {
+                surface,
+                floating: value,
+            } => floating.push(format!(
+                "{}:{}:{}",
+                surface.index(),
+                surface.generation(),
+                u8::from(*value)
+            )),
         }
     }
 
     format!(
-        "ok tx={} timeout={} assign={} configure={} focus={} render={} activate={} session={}",
+        "ok tx={} timeout={} assign={} configure={} focus={} render={} activate={} session={} floating={}",
         response.transaction.raw(),
         response.timeout_msec,
         encode_list(&assign),
@@ -67,7 +77,8 @@ pub fn encode_process_response(response: &WmResponsePacket) -> String {
         focus,
         encode_list(&render),
         encode_list(&activate),
-        encode_list(&session)
+        encode_list(&session),
+        encode_list(&floating)
     )
 }
 
@@ -83,6 +94,31 @@ pub fn decode_process_response(line: &str) -> Result<WmResponsePacket, WmProcess
     let timeout_msec = u32::try_from(response_u64(&parts, "timeout")?)
         .map_err(|_| WmProcessError::new("timeout does not fit u32"))?;
     let mut commands = Vec::new();
+
+    for encoded in response_value(&parts, "floating")?.split(';') {
+        if encoded == "-" || encoded.is_empty() {
+            continue;
+        }
+        let fields = encoded.split(':').collect::<Vec<_>>();
+        if fields.len() != 3 {
+            return Err(WmProcessError::new(format!(
+                "invalid floating command: {encoded}"
+            )));
+        }
+        commands.push(WmCommand::SetFloating {
+            surface: parse_surface_pair(fields[0], fields[1])?,
+            floating: match fields[2] {
+                "0" => false,
+                "1" => true,
+                _ => {
+                    return Err(WmProcessError::new(format!(
+                        "invalid floating value: {}",
+                        fields[2]
+                    )));
+                }
+            },
+        });
+    }
 
     for encoded in response_value(&parts, "assign")?.split(';') {
         if encoded == "-" || encoded.is_empty() {
