@@ -90,7 +90,24 @@ fn dispatch_core_window_request(
                             colormap.unwrap_or(XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1)),
                         );
                     }
-                    let outputs = outputs_from_authority_response(context, &kind, &response);
+                    let mut outputs = outputs_from_authority_response(context, &kind, &response);
+                    if response.outcome == XAuthorityResponseOutcome::Accepted
+                        && let XAuthorityRequestKind::CreateWindow {
+                            window, geometry, ..
+                        } = kind
+                    {
+                        outputs.push(XClientOutput::Event(XClientEvent::CreateNotify {
+                            sequence: context.sequence,
+                            parent,
+                            window,
+                            x: clamp_i16(geometry.x),
+                            y: clamp_i16(geometry.y),
+                            width: clamp_u16(geometry.width),
+                            height: clamp_u16(geometry.height),
+                            border_width: 0,
+                            override_redirect,
+                        }));
+                    }
                     XDispatchResult {
                         response: Some(response),
                         outputs,
@@ -112,7 +129,16 @@ fn dispatch_core_window_request(
                     if let XAuthorityRequestKind::RequestSelection { transfer, .. } = &kind {
                         runtime.set_pending_clipboard_byte_order(*transfer, context.byte_order);
                     }
-                    let outputs = outputs_from_authority_response(context, &kind, &response);
+                    let outputs = if let XAuthorityRequestKind::MapWindow { window, .. } = kind {
+                        outputs_from_map_response(
+                            context,
+                            window,
+                            runtime.window_map_state(context.namespace, window).ok(),
+                            &response,
+                        )
+                    } else {
+                        outputs_from_authority_response(context, &kind, &response)
+                    };
                     XDispatchResult {
                         response: Some(response),
                         outputs,
@@ -284,27 +310,39 @@ fn dispatch_core_window_request(
                             response
                                 .surfaces
                                 .iter()
-                                .filter(|surface| surface.mapped)
                                 .flat_map(|surface| {
                                     let window = XResourceId {
                                         local: surface.local_id,
                                     };
+                                    let map_state = runtime
+                                        .window_map_state(context.namespace, window)
+                                        .ok();
+                                    if !matches!(
+                                        map_state,
+                                        Some(crate::XMapState::Unviewable | crate::XMapState::Viewable)
+                                    ) {
+                                        return Vec::new();
+                                    }
                                     let override_redirect =
                                         surface.presentation
                                             == sophia_protocol::SurfacePresentationRole::ClientPositioned;
-                                    vec![
-                                        XClientOutput::Event(XClientEvent::MapNotify {
+                                    let mut outputs = vec![XClientOutput::Event(
+                                        XClientEvent::MapNotify {
                                             sequence: context.sequence,
                                             event: window,
                                             window,
                                             override_redirect,
-                                        }),
-                                        XClientOutput::Event(XClientEvent::VisibilityNotify {
+                                        },
+                                    )];
+                                    if map_state == Some(crate::XMapState::Viewable) {
+                                        outputs.push(XClientOutput::Event(
+                                            XClientEvent::VisibilityNotify {
                                             sequence: context.sequence,
                                             window,
                                             state: 0,
-                                        }),
-                                        XClientOutput::Event(XClientEvent::Expose {
+                                            },
+                                        ));
+                                        outputs.push(XClientOutput::Event(XClientEvent::Expose {
                                             sequence: context.sequence,
                                             window,
                                             x: 0,
@@ -312,8 +350,9 @@ fn dispatch_core_window_request(
                                             width: clamp_u16(surface.geometry.width),
                                             height: clamp_u16(surface.geometry.height),
                                             count: 0,
-                                        }),
-                                    ]
+                                        }));
+                                    }
+                                    outputs
                                 })
                                 .collect()
                         }
@@ -366,6 +405,10 @@ fn dispatch_core_window_request(
                     height,
                     ..
                 } => {
+                    let before = runtime.window_geometry(context.namespace, window).ok();
+                    let client_controls = runtime
+                        .client_controls_window_geometry(context.namespace, window)
+                        .unwrap_or(false);
                     let configure = runtime
                         .client_controls_window_geometry(context.namespace, window)
                         .and_then(|client_controls| {
@@ -394,12 +437,13 @@ fn dispatch_core_window_request(
                         ))]
                     } else {
                         match runtime.window_geometry(context.namespace, window) {
-                            Ok(geometry) => {
+                            Ok(geometry) if before != Some(geometry) || !client_controls => {
                                 let override_redirect = runtime
                                     .window_override_redirect(context.namespace, window)
                                     .unwrap_or(false);
                                 vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
                                     sequence: context.sequence,
+                                    synthetic: !client_controls,
                                     event: window,
                                     window,
                                     above_sibling: None,
@@ -411,6 +455,7 @@ fn dispatch_core_window_request(
                                     override_redirect,
                                 })]
                             }
+                            Ok(_) => Vec::new(),
                             Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
@@ -527,9 +572,57 @@ fn dispatch_core_window_request(
     })
 }
 
+fn outputs_from_map_response(
+    context: XDispatchContext,
+    window: XResourceId,
+    map_state: Option<crate::XMapState>,
+    response: &XAuthorityResponsePacket,
+) -> Vec<XClientOutput> {
+    if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+        return vec![XClientOutput::Error(x_error_from_runtime(
+            error,
+            context.sequence,
+            context.major_opcode,
+            u32::try_from(window.local.raw()).unwrap_or(0),
+        ))];
+    }
+    let Some(crate::XMapState::Unviewable | crate::XMapState::Viewable) = map_state else {
+        return Vec::new();
+    };
+    let override_redirect = response.surfaces.first().is_some_and(|surface| {
+        surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
+    });
+    let mut outputs = vec![XClientOutput::Event(XClientEvent::MapNotify {
+        sequence: context.sequence,
+        event: window,
+        window,
+        override_redirect,
+    })];
+    if map_state == Some(crate::XMapState::Viewable) {
+        outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
+            sequence: context.sequence,
+            window,
+            state: 0,
+        }));
+        if let Some(surface) = response.surfaces.first() {
+            outputs.push(XClientOutput::Event(XClientEvent::Expose {
+                sequence: context.sequence,
+                window,
+                x: 0,
+                y: 0,
+                width: clamp_u16(surface.geometry.width),
+                height: clamp_u16(surface.geometry.height),
+                count: 0,
+            }));
+        }
+    }
+    outputs
+}
+
 fn x11_map_state(state: crate::XMapState) -> u8 {
     match state {
-        crate::XMapState::Unmapped | crate::XMapState::PolicyPending => 0,
-        crate::XMapState::Mapped => 2,
+        crate::XMapState::Unmapped => 0,
+        crate::XMapState::Unviewable => 1,
+        crate::XMapState::Viewable => 2,
     }
 }

@@ -45,4 +45,20 @@ impl XServerFrontendRouteRegistry {
             })
             .collect())
     }
+
+    fn core_event_subscribers(
+        &self,
+        window: XResourceId,
+        required_mask: u32,
+    ) -> Result<Vec<XServerFrontendClientId>, XServerFrontendRouteError> {
+        Ok(self
+            .core_event_subscriptions
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .filter_map(|((client, candidate), mask)| {
+                (*candidate == window && *mask & required_mask != 0).then_some(*client)
+            })
+            .collect())
+    }
 }

@@ -240,6 +240,19 @@ impl XAuthorityRuntime {
              .ok_or(XAuthorityRuntimeError::UnknownResource)
      }
 
+     pub fn window_policy_map_pending(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<bool, XAuthorityRuntimeError> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)?;
+         self.windows
+             .get(window)
+             .map(|record| record.policy_map_pending)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)
+     }
+
      /// Whether an X client may directly mutate this window's geometry.
      /// Once a policy-managed toplevel is mapped, geometry belongs to the
      /// Engine/WM control path; children and override-redirect windows retain
@@ -255,7 +268,7 @@ impl XAuthorityRuntime {
              .windows
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
-         Ok(record.map_state != crate::XMapState::Mapped
+         Ok(record.map_state != crate::XMapState::Viewable
              || record.presentation_role()
                  != sophia_protocol::SurfacePresentationRole::PolicyManaged)
      }
@@ -567,7 +580,7 @@ impl XAuthorityRuntime {
              .windows
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
-         if record.map_state != crate::XMapState::PolicyPending {
+         if !record.policy_map_pending || record.map_state != crate::XMapState::Unmapped {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
          let generation = record.generation;

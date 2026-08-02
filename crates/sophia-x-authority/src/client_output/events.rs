@@ -199,6 +199,27 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[4..8], window);
             out[8] = state;
         }
+        XClientEvent::CreateNotify {
+            sequence,
+            parent,
+            window,
+            x,
+            y,
+            width,
+            height,
+            border_width,
+            override_redirect,
+        } => {
+            write_event_header(byte_order, &mut out, 16, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], parent);
+            put_resource(byte_order, &mut out[8..12], window);
+            put_i16(byte_order, &mut out[12..14], x);
+            put_i16(byte_order, &mut out[14..16], y);
+            put_u16(byte_order, &mut out[16..18], width);
+            put_u16(byte_order, &mut out[18..20], height);
+            put_u16(byte_order, &mut out[20..22], border_width);
+            out[22] = u8::from(override_redirect);
+        }
         XClientEvent::MapNotify {
             sequence,
             event,
@@ -223,6 +244,7 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
         }
         XClientEvent::ConfigureNotify {
             sequence,
+            synthetic,
             event,
             window,
             above_sibling,
@@ -233,7 +255,13 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             border_width,
             override_redirect,
         } => {
-            write_event_header(byte_order, &mut out, X_CONFIGURE_NOTIFY, 0, sequence);
+            write_event_header(
+                byte_order,
+                &mut out,
+                X_CONFIGURE_NOTIFY | if synthetic { 0x80 } else { 0 },
+                0,
+                sequence,
+            );
             put_resource(byte_order, &mut out[4..8], event);
             put_resource(byte_order, &mut out[8..12], window);
             put_u32(

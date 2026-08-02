@@ -416,6 +416,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }) => Some(*window),
                         _ => None,
                     };
+                    let mapped_subwindows = matches!(&request, crate::XWireRequest::MapSubwindows { .. });
                     let destroyed_window = match &request {
                         crate::XWireRequest::DestroyWindow { window } => Some(*window),
                         _ => None,
@@ -524,6 +525,31 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         &mut atoms,
                         &mut properties,
                     );
+                    let mapped_windows = if mapped_subwindows {
+                        output
+                            .response
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|response| response.surfaces.iter())
+                            .filter_map(|surface| {
+                                let window = XResourceId { local: surface.local_id };
+                                runtime
+                                    .window_map_state(namespace, window)
+                                    .ok()
+                                    .filter(|state| *state != crate::XMapState::Unmapped)
+                                    .map(|_| window)
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        mapped_window
+                            .filter(|window| {
+                                runtime
+                                    .window_map_state(namespace, *window)
+                                    .is_ok_and(|state| state != crate::XMapState::Unmapped)
+                            })
+                            .into_iter()
+                            .collect()
+                    };
                     if let Some(window) = queried_pointer_window {
                         let pointer = core_event_selections
                             .lock()
@@ -761,11 +787,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         if let Some((window, x, y, width, height)) = hierarchy_geometry {
                             selections.configure_geometry(window, x, y, width, height);
                         }
-                        if let Some(window) = mapped_window
-                            && output.response.as_ref().is_some_and(|response| {
-                                response.surfaces.iter().any(|surface| surface.mapped)
-                            })
-                        {
+                        for window in mapped_windows {
                             selections.observe_mapped(window);
                         }
                         if let Some(window) = unmapped_window {
@@ -1011,6 +1033,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     client,
                     &mut output,
                 )?;
+            } else {
+                let selections = core_event_selections.lock().map_err(|_| {
+                    X11SetupSocketError::new("X11 core event selection lock poisoned")
+                })?;
+                filter_local_core_lifecycle_events(&selections, &mut output);
             }
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 let replies = output

@@ -559,12 +559,21 @@ Runtime-backed wire requests translate into existing internal
 `XAuthorityRequestPacket` values before they reach `XAuthorityRuntime`;
 property writes and reads land in a minimal namespace-keyed property table.
 
-Minimal client-visible output now covers bounded X error records, 32-byte core
-events for `ConfigureNotify`, `MapNotify`, `PropertyNotify`, and
-`SelectionNotify`, and variable-length replies for `InternAtom` and
-`GetAtomName`/`GetProperty`. The X11 socket smoke completes setup, interns
-atoms, sends synthetic `CreateWindow` and `MapWindow` requests, writes a title
-property, reads it back, and observes the expected events.
+Minimal client-visible output now covers bounded X error records and selected
+core lifecycle events. `CreateWindow` emits only `CreateNotify` to clients that
+selected `SubstructureNotify` on the parent; it never fabricates a
+`ConfigureNotify`. A real geometry change emits `ConfigureNotify` to
+`StructureNotify` selectors on the window and `SubstructureNotify` selectors
+on its parent. Map, visibility, and exposure events follow their corresponding
+per-client masks. Variable-length replies cover `InternAtom` and
+`GetAtomName`/`GetProperty`.
+
+The X11 socket smoke completes setup, interns atoms, creates a window without
+leaving a lifecycle event queued for its owner, selects the desired masks,
+maps it, writes a title property, reads it back, and observes only the selected
+events. A two-client regression separately proves parent-selected
+`CreateNotify`, direct and parent `ConfigureNotify`, and direct and parent
+`MapNotify` delivery.
 
 Atom naming is authority-owned and bounded. Sophia preloads the small predefined
 set needed by the prototype, preloads the X11 predefined atom range, allocates
@@ -580,8 +589,8 @@ Minimal `GetProperty` is now present. The first real-client-library smoke uses
 client-compatible setup reply with one root, one pixmap format, one depth, and
 one TrueColor visual. The smoke connects through the normal X11 setup path,
 interns `_NET_WM_NAME` and `UTF8_STRING`, creates a window, writes and reads a
-bounded title property, maps the window, and observes `ConfigureNotify` and
-`MapNotify`.
+bounded title property, maps the window, and observes the selected map
+lifecycle.
 
 Subsequent external probes remain compatibility drivers. Their first failure
 should drive the next bounded opcode or reply implementation rather than

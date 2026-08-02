@@ -308,6 +308,18 @@ impl XServerFrontendRouteRegistry {
         Ok(ancestry)
     }
 
+    fn window_parent(
+        &self,
+        window: XResourceId,
+    ) -> Result<Option<XResourceId>, XServerFrontendRouteError> {
+        Ok(self
+            .window_parents
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .find_map(|((_, candidate), parent)| (*candidate == window).then_some(*parent)))
+    }
+
     fn select_randr_input(
         &self,
         client: XServerFrontendClientId,

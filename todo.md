@@ -937,6 +937,25 @@ than adding speculative browser compatibility.
   re-entering the same failed resize loop. Repeat the popup recovery, second
   Firefox launch, and exit stages from this change; the new redacted window-
   type trace must confirm the exact live Firefox hint.
+  Three identical follow-up failures disproved popup classification as the
+  remaining root cause. X Authority had emitted a fabricated core
+  `ConfigureNotify` for every successful `CreateWindow`; GTK later consumed
+  the real admission configure against an already-unbalanced toplevel-update
+  freeze and reported `gdk_window_thaw_toplevel_updates` while the owner
+  blanked. Created and policy-pending windows also lacked the protocol's
+  distinct `Unviewable` state, so an early-mapped render child could become
+  falsely visible below an unmapped top-level. X Authority now keeps deferred
+  policy intent separate from `Unmapped`/`Unviewable`/`Viewable`, propagates
+  ancestor viewability through mapped descendants, and routes `CreateNotify`,
+  `MapNotify`, `ConfigureNotify`, `VisibilityNotify`, and `Expose` strictly by
+  each client's selected masks. The Firefox-shaped wire regression maps a
+  child below a deferred top-level and requires child visibility/exposure only
+  after exact admission; a two-client regression covers structure and
+  substructure delivery and proves no create-time configure remains queued.
+  The physical verifier now rejects GDK thaw underflow, popup-era layout
+  timeout or WM restart, and popup layout without a matching retired visual.
+  Repeat the complete physical workflow from this change before closing the
+  item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

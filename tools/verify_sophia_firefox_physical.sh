@@ -69,6 +69,9 @@ if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degrad
         "$SESSION_LOG" | sed 's/^/  cause: /' >&2 || true
     fail "session log contains a Sophia error, panic, or degraded status"
 fi
+if grep -Eqi '(Gdk-CRITICAL|gdk_window_thaw_toplevel_updates)' "$SESSION_LOG"; then
+    fail "Firefox reported an unbalanced GDK toplevel update freeze"
+fi
 if grep -Eq '^sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=' \
     "$SESSION_LOG"; then
     fail "session dropped a pointer focus handoff"
@@ -211,6 +214,30 @@ dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dia
 dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
 popup_open_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=5 .* outcome=Committed$' "$refocus_line")"
 [[ -n "$popup_open_line" ]] || fail "Firefox popup did not publish a five-surface layout snapshot"
+popup_visual_armed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_armed ' "$dialog_ready_line")"
+popup_visual_committed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_committed ' "$dialog_ready_line")"
+[[ -n "$popup_visual_armed_line" && -n "$popup_visual_committed_line" ]] \
+    && (( popup_visual_armed_line < popup_visual_committed_line
+        && popup_visual_committed_line < popup_open_line )) ||
+    fail "Firefox popup pixels were not retired before its layout became visible"
+popup_visual_armed="$(sed -n "${popup_visual_armed_line}p" "$SESSION_LOG")"
+popup_visual_committed="$(sed -n "${popup_visual_committed_line}p" "$SESSION_LOG")"
+for assignment in \
+    "transaction=$(field "$popup_visual_armed" transaction)" \
+    "surface=$(field "$popup_visual_armed" surface)" \
+    "width=$(field "$popup_visual_armed" width)" \
+    "height=$(field "$popup_visual_armed" height)"; do
+    require_eq "$popup_visual_committed" "${assignment%%=*}" "${assignment#*=}"
+done
+require_at_least "$popup_visual_committed" width 1
+require_at_least "$popup_visual_committed" height 1
+if awk -v first="$refocus_line" -v last="$dialog_line" '
+    NR > first && NR < last &&
+        ($0 ~ /^sophia_live_wm .*status=layout_timeout / || $0 ~ /^sophia_live_wm .*status=restarted /) { found=1 }
+    END { exit !found }
+' "$SESSION_LOG"; then
+    fail "Firefox popup lifecycle timed out or restarted the WM bridge"
+fi
 popup_close_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$dialog_line")"
 [[ -n "$popup_close_line" ]] || fail "Firefox popup did not publish a four-surface close snapshot"
 (( refocus_line < dialog_ready_line

@@ -59,7 +59,7 @@ fn override_redirect_window_is_reported_as_client_positioned() {
     ));
     assert!(matches!(
         created.outputs.as_slice(),
-        [XClientOutput::Event(XClientEvent::ConfigureNotify {
+        [XClientOutput::Event(XClientEvent::CreateNotify {
             override_redirect: true,
             ..
         })]

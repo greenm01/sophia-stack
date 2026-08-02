@@ -288,6 +288,15 @@ not admit the requested parent or unrelated namespace windows. Parent links,
 map state, and tree queries remain X authority facts and do not cross the blind
 WM boundary.
 
+X map state is the protocol's three-state value: `Unmapped`, `Unviewable`, or
+`Viewable`. Deferred Engine admission is a separate authority flag and must not
+be encoded as an invented map state. Mapping below a non-viewable ancestor
+produces `Unviewable`; making that ancestor viewable promotes its mapped
+descendants, while unmapping or reparenting an ancestor demotes the viewable
+subtree. `AuthoritySurface::mapped` is true only for `Viewable`, so Engine does
+not receive false visibility while the X authority still owns an incomplete
+ancestor transition.
+
 Software drawing to an X descendant is translated and accumulated into its
 root child's immutable presentation buffer. Engine receives the toplevel
 Sophia surface and translated damage, not a separate WM node for every X child.

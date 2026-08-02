@@ -40,8 +40,6 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut first);
-    assert_eq!(configure[0], 22);
     drop(first);
 
     let mut second = UnixStream::connect(&socket_path).unwrap();
@@ -111,8 +109,6 @@ fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
 
     stream
         .write_all(&create_gc_request(
@@ -184,8 +180,6 @@ fn x11_core_socket_observer_sees_put_image_transaction() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
 
     stream
         .write_all(&create_gc_request(
@@ -273,8 +267,6 @@ fn x11_core_socket_observer_sees_sophia_present_transaction() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
 
     stream
         .write_all(&sophia_present_pixmap_request(
@@ -333,8 +325,6 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
 
     stream
         .write_all(&sophia_present_pixmap_request(
@@ -470,7 +460,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             200,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut first)[0], 22);
     first
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
@@ -512,7 +501,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             200,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut second)[0], 22);
     second
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
@@ -767,7 +755,6 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
             1040,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut stream)[0], 22);
     stream
         .write_all(&create_window_request_with_parent(
             XByteOrder::LittleEndian,
@@ -779,7 +766,6 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
             1040,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut stream)[0], 22);
     stream
         .write_all(&present_select_input_request(
             XByteOrder::LittleEndian,

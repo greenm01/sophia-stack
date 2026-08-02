@@ -54,7 +54,6 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             240,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut first)[0], 22);
     first
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
@@ -95,7 +94,6 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             240,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut second)[0], 22);
     second
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,

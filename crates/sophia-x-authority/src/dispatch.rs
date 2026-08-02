@@ -669,25 +669,12 @@ fn outputs_from_authority_response(
     }
 
     match kind {
-        XAuthorityRequestKind::CreateWindow {
-            window, geometry, ..
-        } => {
-            let override_redirect = response.surfaces.first().is_some_and(|surface| {
-                surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned
-            });
-            vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
-                sequence: context.sequence,
-                event: *window,
-                window: *window,
-                above_sibling: None,
-                x: clamp_i16(geometry.x),
-                y: clamp_i16(geometry.y),
-                width: clamp_u16(geometry.width),
-                height: clamp_u16(geometry.height),
-                border_width: 0,
-                override_redirect,
-            })]
-        }
+        // XLibre dix/window.c::CreateWindow sends CreateNotify only to
+        // SubstructureNotify selectors on the parent. It never fabricates a
+        // ConfigureNotify for the newly-created window. Socket-level parent
+        // fanout owns CreateNotify because this pure dispatch boundary has no
+        // subscriber table.
+        XAuthorityRequestKind::CreateWindow { .. } => Vec::new(),
         XAuthorityRequestKind::MapWindow { window, .. } => {
             let override_redirect = response.surfaces.first().is_some_and(|surface| {
                 surface.presentation == sophia_protocol::SurfacePresentationRole::ClientPositioned

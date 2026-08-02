@@ -57,7 +57,6 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut first)[0], 22);
     first
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
@@ -84,7 +83,6 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut second)[0], 22);
     second
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
@@ -157,7 +155,6 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
             45,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut second)[0], 22);
 
     drop(first);
     drop(second);

@@ -86,6 +86,40 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted missing popup-close layout" >&2
     exit 1
 fi
+sed '/status=visual_committed transaction=190 /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted popup layout without retired pixels" >&2
+    exit 1
+fi
+sed 's/status=visual_committed transaction=190 surface=5/status=visual_committed transaction=191 surface=5/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted mismatched popup retirement" >&2
+    exit 1
+fi
+sed '/status=dialog_ready /a sophia_live_wm schema=1 status=layout_timeout transaction=19 preserved_layout=true' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a popup layout timeout" >&2
+    exit 1
+fi
+sed '/status=dialog_ready /a sophia_live_wm schema=1 status=restarted attempt=1' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a popup WM restart" >&2
+    exit 1
+fi
+sed '/status=dialog_ready /a Gdk-CRITICAL **: gdk_window_thaw_toplevel_updates: assertion failed' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a GDK thaw underflow" >&2
+    exit 1
+fi
 sed 's/matched_surfaces=3/matched_surfaces=2/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then

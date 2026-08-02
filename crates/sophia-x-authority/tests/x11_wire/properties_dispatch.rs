@@ -853,6 +853,7 @@ fn x11_client_event_encoders_emit_32_byte_records() {
         XByteOrder::BigEndian,
         XClientOutput::Event(XClientEvent::ConfigureNotify {
             sequence: 10,
+            synthetic: false,
             event: XResourceId::new(0x220002, 1),
             window: XResourceId::new(0x220002, 1),
             above_sibling: None,

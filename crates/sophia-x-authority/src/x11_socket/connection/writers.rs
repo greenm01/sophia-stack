@@ -65,6 +65,12 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::SelectionRequest { sequence, .. }
         | XClientEvent::SelectionNotify { sequence, .. }
         | XClientEvent::PropertyNotify { sequence, .. }
+        | XClientEvent::CreateNotify { sequence, .. }
+        | XClientEvent::MapNotify { sequence, .. }
+        | XClientEvent::UnmapNotify { sequence, .. }
+        | XClientEvent::ConfigureNotify { sequence, .. }
+        | XClientEvent::VisibilityNotify { sequence, .. }
+        | XClientEvent::Expose { sequence, .. }
         | XClientEvent::RandrScreenChange { sequence, .. }
         | XClientEvent::RandrCrtcChange { sequence, .. }
         | XClientEvent::RandrOutputChange { sequence, .. }
@@ -84,7 +90,9 @@ fn x11_surface_geometry_records(
     window: XResourceId,
     geometry: Rect,
     admit: bool,
+    map_transition: Option<&XCoreMapTransition>,
     present_configure: bool,
+    selections: &XCoreEventSelectionState,
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
     let width = u16::try_from(geometry.width)
@@ -96,17 +104,29 @@ fn x11_surface_geometry_records(
         .map(|routing| route_x11_present_configure(routing, client, event_sequence, window, geometry))
         .transpose()?
         .unwrap_or_default();
-    let mut records =
-        Vec::with_capacity(present_events.len() + if admit { 4 } else { 2 });
+    let mut records = Vec::with_capacity(
+        present_events.len()
+            + if admit {
+                4 + map_transition.map_or(0, |transition| {
+                    transition.promoted_descendants.len().saturating_mul(2)
+                })
+            } else {
+                1
+            },
+    );
     records.extend(
         present_events
             .into_iter()
             .map(|event| encode_x_client_event(byte_order, event)),
     );
-    records.push(encode_x_client_event(
-        byte_order,
-        XClientEvent::ConfigureNotify {
+    let mut core_events = Vec::new();
+    const EXPOSURE_MASK: u32 = 1 << 15;
+    const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
+    const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
+    if protocol_routing.is_some() || selections.selects(window, STRUCTURE_NOTIFY_MASK) {
+        core_events.push(XClientEvent::ConfigureNotify {
             sequence: event_sequence,
+            synthetic: false,
             event: window,
             window,
             above_sibling: None,
@@ -116,39 +136,71 @@ fn x11_surface_geometry_records(
             height,
             border_width: 0,
             override_redirect: false,
-        },
-    ));
+        });
+    }
     if admit {
-        records.push(encode_x_client_event(
-            byte_order,
-            XClientEvent::MapNotify {
+        if protocol_routing.is_some() || selections.selects(window, STRUCTURE_NOTIFY_MASK) {
+            core_events.push(XClientEvent::MapNotify {
                 sequence: event_sequence,
                 event: window,
                 window,
                 override_redirect: false,
-            },
-        ));
-        records.push(encode_x_client_event(
-            byte_order,
-            XClientEvent::VisibilityNotify {
+            });
+        }
+        let viewable_windows = std::iter::once(window).chain(
+            map_transition
+                .into_iter()
+                .flat_map(|transition| transition.promoted_descendants.iter().copied()),
+        );
+        for candidate in viewable_windows.clone() {
+            if protocol_routing.is_some() || selections.selects(candidate, VISIBILITY_CHANGE_MASK) {
+                core_events.push(XClientEvent::VisibilityNotify {
+                    sequence: event_sequence,
+                    window: candidate,
+                    state: 0,
+                });
+            }
+        }
+        for candidate in viewable_windows {
+            if protocol_routing.is_none() && !selections.selects(candidate, EXPOSURE_MASK) {
+                continue;
+            }
+            let candidate_geometry = selections.geometry(candidate).unwrap_or(geometry);
+            core_events.push(XClientEvent::Expose {
                 sequence: event_sequence,
-                window,
-                state: 0,
-            },
-        ));
+                window: candidate,
+                x: 0,
+                y: 0,
+                width: crate::dispatch::clamp_u16(candidate_geometry.width),
+                height: crate::dispatch::clamp_u16(candidate_geometry.height),
+                count: 0,
+            });
+        }
     }
-    records.push(encode_x_client_event(
-        byte_order,
-        XClientEvent::Expose {
-            sequence: event_sequence,
-            window,
-            x: 0,
-            y: 0,
-            width,
-            height,
-            count: 0,
-        },
-    ));
+    if let Some(routing) = protocol_routing {
+        let mut output = crate::XDispatchResult {
+            response: None,
+            outputs: core_events
+                .into_iter()
+                .map(crate::XClientOutput::Event)
+                .collect(),
+            metadata_candidates: Vec::new(),
+        };
+        route_core_lifecycle_events(routing, client, &mut output)?;
+        core_events = output
+            .outputs
+            .into_iter()
+            .filter_map(|output| match output {
+                crate::XClientOutput::Event(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+    }
+    records.extend(
+        core_events
+            .into_iter()
+            .map(|event| encode_x_client_event(byte_order, event)),
+    );
     Ok(records)
 }
 
@@ -286,8 +338,14 @@ fn spawn_x11_control_writer(
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
                     selections.update_geometry(window, geometry);
-                    selections.observe_mapped(window);
-                    drop(selections);
+                    let map_transition = selections.observe_mapped(window);
+                    if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
+                        tracing::debug!(
+                            "sophia_x11_viewability schema=1 status=admitted viewable={} promoted_descendants={}",
+                            map_transition.viewable,
+                            map_transition.promoted_descendants.len(),
+                        );
+                    }
                     x11_surface_geometry_records(
                         byte_order,
                         event_sequence,
@@ -295,7 +353,9 @@ fn spawn_x11_control_writer(
                         window,
                         geometry,
                         true,
+                        Some(&map_transition),
                         true,
+                        &selections,
                         protocol_routing.as_ref(),
                     )?
                 }
@@ -337,12 +397,12 @@ fn spawn_x11_control_writer(
                         }
                     };
                     drop(runtime);
-                    core_event_selections
+                    let mut selections = core_event_selections
                         .lock()
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
-                        .update_geometry(window, geometry);
+                        })?;
+                    selections.update_geometry(window, geometry);
                     x11_surface_geometry_records(
                         byte_order,
                         event_sequence,
@@ -350,7 +410,9 @@ fn spawn_x11_control_writer(
                         window,
                         geometry,
                         false,
+                        None,
                         previous_geometry != Some(geometry),
+                        &selections,
                         protocol_routing.as_ref(),
                     )?
                 }

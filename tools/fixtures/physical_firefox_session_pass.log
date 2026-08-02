@@ -80,6 +80,8 @@ sophia_live_wm schema=1 status=focus_reconciled transaction=182 target=surface s
 sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
 sophia_firefox_m8 schema=1 status=stage_complete stage=refocus index=6 title_bytes=120 content=redacted
 sophia_firefox_m8 schema=1 status=dialog_ready content=redacted
+sophia_live_resize_epoch schema=3 status=visual_armed epoch=19 transaction=190 surface=5 width=640 height=480
+sophia_live_resize_epoch schema=3 status=visual_committed transaction=190 surface=5 width=640 height=480
 sophia_live_wm schema=1 status=layout_committed transaction=19 surfaces=5 moved_surfaces=1 configure_deliveries=2 outcome=Committed
 sophia_firefox_m8 schema=1 status=stage_complete stage=dialog index=7 title_bytes=136 content=redacted
 sophia_live_wm schema=1 status=layout_committed transaction=20 surfaces=4 moved_surfaces=1 configure_deliveries=1 outcome=Committed

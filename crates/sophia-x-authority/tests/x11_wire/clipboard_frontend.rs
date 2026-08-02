@@ -506,7 +506,6 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut first)[0], 22);
 
     let mut second = UnixStream::connect(&socket_path).unwrap();
     second
@@ -590,8 +589,6 @@ fn x_server_frontend_emits_surface_removal_when_a_client_disconnects() {
             90,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
     drop(stream);
 
     assert_eq!(
@@ -760,12 +757,13 @@ fn x11_core_socket_smoke_round_trips_atom_property_and_window_events() {
             200,
         ))
         .unwrap();
-    let configure = read_x_record(&mut stream);
-    assert_eq!(configure[0], 22);
-    assert_eq!(
-        read_u32(XByteOrder::LittleEndian, &configure[8..12]),
-        0x220201
-    );
+    stream
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            0x220201,
+            (1 << 15) | (1 << 16) | (1 << 17),
+        ))
+        .unwrap();
 
     stream
         .write_all(&resource_request(XByteOrder::LittleEndian, 8, 0x220201))

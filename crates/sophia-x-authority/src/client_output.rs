@@ -150,6 +150,17 @@ pub enum XClientEvent {
         window: XResourceId,
         state: u8,
     },
+    CreateNotify {
+        sequence: u16,
+        parent: XResourceId,
+        window: XResourceId,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        border_width: u16,
+        override_redirect: bool,
+    },
     MapNotify {
         sequence: u16,
         event: XResourceId,
@@ -164,6 +175,7 @@ pub enum XClientEvent {
     },
     ConfigureNotify {
         sequence: u16,
+        synthetic: bool,
         event: XResourceId,
         window: XResourceId,
         above_sibling: Option<XResourceId>,

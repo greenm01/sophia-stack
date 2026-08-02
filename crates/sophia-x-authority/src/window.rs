@@ -21,6 +21,10 @@ pub struct XWindowRecord {
     /// management rather than normal blind-WM tiling.
     pub client_positioned_window_type: bool,
     pub presentation_owner: Option<SurfaceId>,
+    /// Engine admission is pending for a redirected policy-managed root child.
+    /// This is not an X11 map state: the window remains `Unmapped` until the
+    /// Engine applies the configure/map decision.
+    pub policy_map_pending: bool,
     pub map_state: XMapState,
     pub geometry: Rect,
     pub constraints: SurfaceConstraints,
@@ -49,7 +53,7 @@ impl XWindowRecord {
             namespace: Some(self.namespace),
             presentation: self.presentation_role(),
             presentation_owner: self.presentation_owner,
-            mapped: self.map_state == XMapState::Mapped,
+            mapped: self.map_state == XMapState::Viewable,
             geometry: self.geometry,
             constraints: self.constraints,
             generation: self.generation,
@@ -134,6 +138,7 @@ impl XWindowTable {
                     transient_for: false,
                     client_positioned_window_type: false,
                     presentation_owner: None,
+                    policy_map_pending: false,
                     map_state: XMapState::Unmapped,
                     geometry,
                     constraints,
@@ -148,25 +153,41 @@ impl XWindowTable {
             // sequence must not overwrite the generation used as the
             // predecessor of the next pixel transaction.
             XWindowLifecycleEvent::Mapped { id, generation: _ } => {
-                let record = self
+                let parent = self
                     .windows
-                    .get_mut(&id)
-                    .ok_or(XAuthorityAccessError::UnknownResource)?;
-                if record.map_state == XMapState::Mapped {
+                    .get(&id)
+                    .ok_or(XAuthorityAccessError::UnknownResource)?
+                    .parent;
+                let parent_viewable = parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT)
+                    || self
+                        .windows
+                        .get(&parent)
+                        .is_some_and(|parent| parent.map_state == XMapState::Viewable);
+                let record = self.windows.get_mut(&id).expect("window checked above");
+                if record.map_state != XMapState::Unmapped {
                     return Ok(None);
                 }
-                record.map_state = XMapState::Mapped;
-                Ok(Some(record.authority_surface()))
+                record.policy_map_pending = false;
+                record.map_state = if parent_viewable {
+                    XMapState::Viewable
+                } else {
+                    XMapState::Unviewable
+                };
+                let surface = record.authority_surface();
+                if parent_viewable {
+                    self.promote_unviewable_descendants(id);
+                }
+                Ok(Some(surface))
             }
             XWindowLifecycleEvent::PolicyPending { id, generation: _ } => {
                 let record = self
                     .windows
                     .get_mut(&id)
                     .ok_or(XAuthorityAccessError::UnknownResource)?;
-                if record.map_state != XMapState::Unmapped {
+                if record.map_state != XMapState::Unmapped || record.policy_map_pending {
                     return Ok(None);
                 }
-                record.map_state = XMapState::PolicyPending;
+                record.policy_map_pending = true;
                 Ok(Some(record.authority_surface()))
             }
             XWindowLifecycleEvent::Unmapped { id, generation: _ } => {
@@ -174,11 +195,14 @@ impl XWindowTable {
                     .windows
                     .get_mut(&id)
                     .ok_or(XAuthorityAccessError::UnknownResource)?;
-                if record.map_state == XMapState::Unmapped {
+                if record.map_state == XMapState::Unmapped && !record.policy_map_pending {
                     return Ok(None);
                 }
+                record.policy_map_pending = false;
                 record.map_state = XMapState::Unmapped;
-                Ok(Some(record.authority_surface()))
+                let surface = record.authority_surface();
+                self.demote_viewable_descendants(id);
+                Ok(Some(surface))
             }
             XWindowLifecycleEvent::Configured {
                 id,
@@ -299,7 +323,83 @@ impl XWindowTable {
             .get_mut(&id)
             .ok_or(XAuthorityAccessError::UnknownResource)?
             .parent = parent;
+        self.recompute_subtree_viewability(id);
         Ok(())
+    }
+
+    fn promote_unviewable_descendants(&mut self, parent: XResourceId) {
+        let children = self.direct_children_any_namespace(parent);
+        for child in children {
+            let promoted = self.windows.get_mut(&child).is_some_and(|record| {
+                if record.map_state == XMapState::Unviewable {
+                    record.map_state = XMapState::Viewable;
+                    true
+                } else {
+                    false
+                }
+            });
+            if promoted
+                || self
+                    .windows
+                    .get(&child)
+                    .is_some_and(|record| record.map_state == XMapState::Viewable)
+            {
+                self.promote_unviewable_descendants(child);
+            }
+        }
+    }
+
+    fn demote_viewable_descendants(&mut self, parent: XResourceId) {
+        let children = self.direct_children_any_namespace(parent);
+        for child in children {
+            let demoted = self.windows.get_mut(&child).is_some_and(|record| {
+                if record.map_state == XMapState::Viewable {
+                    record.map_state = XMapState::Unviewable;
+                    true
+                } else {
+                    false
+                }
+            });
+            if demoted {
+                self.demote_viewable_descendants(child);
+            }
+        }
+    }
+
+    fn recompute_subtree_viewability(&mut self, id: XResourceId) {
+        let Some(record) = self.windows.get(&id) else {
+            return;
+        };
+        if record.map_state == XMapState::Unmapped {
+            self.demote_viewable_descendants(id);
+            return;
+        }
+        let parent = record.parent;
+        let parent_viewable = parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT)
+            || self
+                .windows
+                .get(&parent)
+                .is_some_and(|parent| parent.map_state == XMapState::Viewable);
+        if let Some(record) = self.windows.get_mut(&id) {
+            record.map_state = if parent_viewable {
+                XMapState::Viewable
+            } else {
+                XMapState::Unviewable
+            };
+        }
+        if parent_viewable {
+            self.promote_unviewable_descendants(id);
+        } else {
+            self.demote_viewable_descendants(id);
+        }
+    }
+
+    fn direct_children_any_namespace(&self, parent: XResourceId) -> Vec<XResourceId> {
+        self.windows
+            .values()
+            .filter(|record| record.parent == parent)
+            .map(|record| record.id)
+            .collect()
     }
 
     pub fn direct_children(&self, namespace: NamespaceId, parent: XResourceId) -> Vec<XResourceId> {

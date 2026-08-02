@@ -39,7 +39,6 @@ fn x11_core_socket_channel_emits_complete_strut_replacement_and_clear() {
             28,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut stream)[0], 22);
     stream
         .write_all(&intern_atom_request(
             XByteOrder::LittleEndian,

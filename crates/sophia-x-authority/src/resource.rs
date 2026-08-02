@@ -40,8 +40,8 @@ pub enum XResourceKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XMapState {
     Unmapped,
-    PolicyPending,
-    Mapped,
+    Unviewable,
+    Viewable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -52,6 +52,13 @@ struct XCorePointerQuery {
 }
 
 #[cfg(unix)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct XCoreMapTransition {
+    viewable: bool,
+    promoted_descendants: Vec<XResourceId>,
+}
+
+#[cfg(unix)]
 #[derive(Debug)]
 struct XCoreEventSelectionState {
     windows: BTreeMap<XResourceId, XCoreWindowEventSelection>,
@@ -168,9 +175,24 @@ impl XCoreEventSelectionState {
         self.stacking.insert(index.min(self.stacking.len()), window);
     }
 
-    fn observe_mapped(&mut self, window: XResourceId) {
-        self.mapped.insert(window);
+    fn observe_mapped(&mut self, window: XResourceId) -> XCoreMapTransition {
+        if !self.mapped.insert(window) {
+            return XCoreMapTransition {
+                viewable: self.is_viewable(window),
+                promoted_descendants: Vec::new(),
+            };
+        }
         self.fallback_mapped_window = window;
+        let viewable = self.is_viewable(window);
+        let promoted_descendants = if viewable {
+            self.viewable_descendants(window)
+        } else {
+            Vec::new()
+        };
+        XCoreMapTransition {
+            viewable,
+            promoted_descendants,
+        }
     }
 
     fn observe_unmapped(&mut self, window: XResourceId) {
@@ -184,6 +206,62 @@ impl XCoreEventSelectionState {
                 .find(|candidate| self.mapped.contains(candidate))
                 .unwrap_or_else(|| XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1));
         }
+    }
+
+    fn is_viewable(&self, window: XResourceId) -> bool {
+        if !self.mapped.contains(&window) {
+            return false;
+        }
+        let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+        let mut current = window;
+        while let Some(parent) = self.parents.get(&current).copied() {
+            if parent == root {
+                return true;
+            }
+            if !self.mapped.contains(&parent) {
+                return false;
+            }
+            current = parent;
+        }
+        false
+    }
+
+    fn viewable_descendants(&self, parent: XResourceId) -> Vec<XResourceId> {
+        let mut descendants = Vec::new();
+        self.collect_viewable_descendants(parent, &mut descendants);
+        descendants
+    }
+
+    fn collect_viewable_descendants(
+        &self,
+        parent: XResourceId,
+        descendants: &mut Vec<XResourceId>,
+    ) {
+        for child in self
+            .parents
+            .iter()
+            .filter_map(|(child, candidate)| (*candidate == parent).then_some(*child))
+        {
+            if !self.mapped.contains(&child) {
+                continue;
+            }
+            descendants.push(child);
+            self.collect_viewable_descendants(child, descendants);
+        }
+    }
+
+    fn geometry(&self, window: XResourceId) -> Option<Rect> {
+        self.geometries.get(&window).copied()
+    }
+
+    fn parent(&self, window: XResourceId) -> Option<XResourceId> {
+        self.parents.get(&window).copied()
+    }
+
+    fn selects(&self, window: XResourceId, mask: u32) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(|selection| selection.mask & mask != 0)
     }
 
     fn remove(&mut self, window: XResourceId) {

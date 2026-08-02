@@ -277,7 +277,6 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut first)[0], 22);
 
     let mut second = UnixStream::connect(&socket_path).unwrap();
     second
@@ -521,7 +520,6 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut owner)[0], 22);
     owner
         .write_all(&set_selection_owner_request(
             XByteOrder::LittleEndian,
@@ -547,7 +545,6 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
             90,
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut requestor)[0], 22);
     requestor
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,

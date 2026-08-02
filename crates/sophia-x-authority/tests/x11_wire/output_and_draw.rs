@@ -43,11 +43,10 @@ fn x11_dispatch_emits_configure_map_property_and_selection_failure_outputs() {
         &mut atoms,
         &mut properties,
     );
-    assert_eq!(create.outputs.len(), 1);
-    assert_eq!(
-        encode_x_client_output(XByteOrder::LittleEndian, create.outputs[0].clone())[0],
-        22
-    );
+    assert!(matches!(
+        create.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::CreateNotify { .. })]
+    ));
 
     let map = decode_x11_core_request(
         context(namespace, 602, XByteOrder::LittleEndian),
@@ -106,6 +105,7 @@ fn x11_dispatch_emits_configure_map_property_and_selection_failure_outputs() {
         configure.outputs[0],
         XClientOutput::Event(XClientEvent::ConfigureNotify {
             sequence: 4,
+            synthetic: false,
             event: XResourceId::new(0x220101, 1),
             window: XResourceId::new(0x220101, 1),
             above_sibling: None,

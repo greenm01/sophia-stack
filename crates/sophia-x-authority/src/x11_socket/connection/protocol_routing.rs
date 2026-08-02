@@ -8,7 +8,242 @@ fn route_x11_dispatch_protocol_outputs(
 ) -> Result<(), X11SetupSocketError> {
     capture_clipboard_proxy_payload(state, routing, namespace, output)?;
     route_selection_event(state, routing, client, output)?;
-    route_property_events(routing, client, output)
+    route_property_events(routing, client, output)?;
+    route_core_lifecycle_events(routing, client, output)
+}
+
+#[cfg(unix)]
+fn route_core_lifecycle_events(
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    const EXPOSURE_MASK: u32 = 1 << 15;
+    const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
+    const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
+    const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+
+    let mut candidates = Vec::new();
+    for (index, output) in output.outputs.iter().enumerate() {
+        let crate::XClientOutput::Event(event) = output else {
+            continue;
+        };
+        let candidate = match *event {
+            XClientEvent::CreateNotify { parent, .. } => {
+                Some((index, parent, SUBSTRUCTURE_NOTIFY_MASK, *event))
+            }
+            XClientEvent::MapNotify { event: target, .. }
+            | XClientEvent::UnmapNotify { event: target, .. }
+            | XClientEvent::ConfigureNotify {
+                synthetic: false,
+                event: target,
+                ..
+            } => {
+                Some((index, target, STRUCTURE_NOTIFY_MASK, *event))
+            }
+            XClientEvent::VisibilityNotify { window, .. } => {
+                Some((index, window, VISIBILITY_CHANGE_MASK, *event))
+            }
+            XClientEvent::Expose { window, .. } => {
+                Some((index, window, EXPOSURE_MASK, *event))
+            }
+            _ => None,
+        };
+        if let Some(candidate) = candidate {
+            candidates.push(candidate);
+        }
+    }
+
+    let structure_events = candidates
+        .iter()
+        .filter_map(|(_, _, _, event)| match event {
+            event @ (XClientEvent::MapNotify { window, .. }
+            | XClientEvent::UnmapNotify { window, .. }) => Some((*window, *event)),
+            event @ XClientEvent::ConfigureNotify {
+                synthetic: false,
+                window,
+                ..
+            } => Some((*window, *event)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut remove = Vec::new();
+    for (index, target, required_mask, event) in candidates {
+        let subscribers = routing
+            .core_event_subscribers(target, required_mask)
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to inspect X11 lifecycle subscriptions: {error}"
+                ))
+            })?;
+        for recipient in subscribers.iter().copied().filter(|recipient| *recipient != client) {
+            routing.route_protocol(recipient, event).map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to route X11 lifecycle event: {error}"
+                ))
+            })?;
+        }
+        if !subscribers.contains(&client) {
+            remove.push(index);
+        }
+    }
+    for index in remove.into_iter().rev() {
+        output.outputs.remove(index);
+    }
+
+    // Core structure events are also delivered to SubstructureNotify
+    // selectors on the immediate parent. The direct event above remains
+    // addressed to the window itself.
+    for (window, event) in structure_events {
+        let Some(parent) = routing.window_parent(window).map_err(|error| {
+            X11SetupSocketError::new(format!("failed to resolve X11 lifecycle parent: {error}"))
+        })? else {
+            continue;
+        };
+        let subscribers = routing
+            .core_event_subscribers(parent, SUBSTRUCTURE_NOTIFY_MASK)
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to inspect X11 parent lifecycle subscriptions: {error}"
+                ))
+            })?;
+        for recipient in subscribers {
+            let parent_event = lifecycle_event_for_parent(event, parent);
+            if recipient == client {
+                output.outputs.push(crate::XClientOutput::Event(parent_event));
+            } else {
+                routing.route_protocol(recipient, parent_event).map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to route X11 parent lifecycle event: {error}"
+                    ))
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn filter_local_core_lifecycle_events(
+    selections: &XCoreEventSelectionState,
+    output: &mut XDispatchResult,
+) {
+    const EXPOSURE_MASK: u32 = 1 << 15;
+    const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
+    const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
+    const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+
+    let structure_events = output
+        .outputs
+        .iter()
+        .filter_map(|output| match output {
+            crate::XClientOutput::Event(
+                event @ (XClientEvent::MapNotify { window, .. }
+                | XClientEvent::UnmapNotify { window, .. }),
+            ) => Some((*window, *event)),
+            crate::XClientOutput::Event(
+                event @ XClientEvent::ConfigureNotify {
+                    synthetic: false,
+                    window,
+                    ..
+                },
+            ) => Some((*window, *event)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    output.outputs.retain(|output| {
+        let crate::XClientOutput::Event(event) = output else {
+            return true;
+        };
+        match *event {
+            XClientEvent::CreateNotify { parent, .. } => {
+                selections.selects(parent, SUBSTRUCTURE_NOTIFY_MASK)
+            }
+            XClientEvent::MapNotify { event: target, .. }
+            | XClientEvent::UnmapNotify { event: target, .. }
+            | XClientEvent::ConfigureNotify {
+                synthetic: false,
+                event: target,
+                ..
+            } => selections.selects(target, STRUCTURE_NOTIFY_MASK),
+            XClientEvent::VisibilityNotify { window, .. } => {
+                selections.selects(window, VISIBILITY_CHANGE_MASK)
+            }
+            XClientEvent::Expose { window, .. } => selections.selects(window, EXPOSURE_MASK),
+            // A synthetic ConfigureNotify is the protocol response to a
+            // managed ConfigureWindow request, not a selected structure event.
+            XClientEvent::ConfigureNotify {
+                synthetic: true, ..
+            } => true,
+            _ => true,
+        }
+    });
+
+    for (window, event) in structure_events {
+        let Some(parent) = selections.parent(window) else {
+            continue;
+        };
+        if selections.selects(parent, SUBSTRUCTURE_NOTIFY_MASK) {
+            output.outputs.push(crate::XClientOutput::Event(
+                lifecycle_event_for_parent(event, parent),
+            ));
+        }
+    }
+}
+
+#[cfg(unix)]
+fn lifecycle_event_for_parent(event: XClientEvent, parent: XResourceId) -> XClientEvent {
+    match event {
+        XClientEvent::MapNotify {
+            sequence,
+            window,
+            override_redirect,
+            ..
+        } => XClientEvent::MapNotify {
+            sequence,
+            event: parent,
+            window,
+            override_redirect,
+        },
+        XClientEvent::UnmapNotify {
+            sequence,
+            window,
+            from_configure,
+            ..
+        } => XClientEvent::UnmapNotify {
+            sequence,
+            event: parent,
+            window,
+            from_configure,
+        },
+        XClientEvent::ConfigureNotify {
+            sequence,
+            synthetic,
+            window,
+            above_sibling,
+            x,
+            y,
+            width,
+            height,
+            border_width,
+            override_redirect,
+            ..
+        } => XClientEvent::ConfigureNotify {
+            sequence,
+            synthetic,
+            event: parent,
+            window,
+            above_sibling,
+            x,
+            y,
+            width,
+            height,
+            border_width,
+            override_redirect,
+        },
+        _ => event,
+    }
 }
 
 #[cfg(unix)]
