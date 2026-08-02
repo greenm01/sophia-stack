@@ -1,5 +1,6 @@
 use super::*;
 use crate::commands::live_session::PersistentLiveLayout;
+use sophia_cli::resize_transaction::ResizeVisualCommit;
 use sophia_protocol::{SurfaceConstraints, TransactionId};
 
 #[test]
@@ -89,6 +90,42 @@ fn released_admission_pixels_wait_for_policy_assignment() {
     let (_, released) = layout.projected_batch(&batch);
     assert_eq!(released.len(), 1);
     assert!(layout.released_admission_groups.is_empty());
+}
+
+#[test]
+fn exact_armed_launch_candidate_bypasses_a_different_standing_target() {
+    let surface = SurfaceId::new(64, 1);
+    let transaction = TransactionId::from_raw(373);
+    let other_transaction = TransactionId::from_raw(374);
+    let buffer = sophia_protocol::BufferHandle::from_raw(375);
+    let launch = Size {
+        width: 1280,
+        height: 1040,
+    };
+    let target = Size {
+        width: 1276,
+        height: 1422,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.dma_buf_sizes.insert(buffer, launch);
+    layout.layout_epochs.set_pending_target(surface, target);
+    layout
+        .awaiting_visual_commits
+        .arm(ResizeVisualCommit {
+            transaction,
+            surface,
+            size: launch,
+        })
+        .unwrap();
+
+    assert_eq!(
+        layout.present_layout_disposition(transaction, surface, buffer),
+        sophia_backend_live::LiveProductionPresentDisposition::Immediate
+    );
+    assert_eq!(
+        layout.present_layout_disposition(other_transaction, surface, buffer),
+        sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
+    );
 }
 
 #[test]

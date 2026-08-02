@@ -234,7 +234,11 @@ fn production_authority_batch(
                 acquire_fence: submission.acquire_fence,
                 idle_fence: submission.idle_fence,
                 layout_disposition: layout
-                    .present_layout_disposition(submission.surface, submission.buffer),
+                    .present_layout_disposition(
+                        submission.transaction,
+                        submission.surface,
+                        submission.buffer,
+                    ),
             },
         );
     }
@@ -262,7 +266,11 @@ fn production_authority_batch(
                     let layout_disposition = if released.superseded {
                         sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
                     } else {
-                        layout.present_layout_disposition(submission.surface, submission.buffer)
+                        layout.present_layout_disposition(
+                            submission.transaction,
+                            submission.surface,
+                            submission.buffer,
+                        )
                     };
                     sophia_backend_live::LiveProductionPresentSubmission {
                         transaction: submission.transaction,

@@ -857,8 +857,14 @@ than adding speculative browser compatibility.
   authority work for the same surface. Retirement commits the candidate first,
   then rebases and releases the bounded backlog; unrelated surfaces remain
   runnable. Reducer, Engine-ordering, lifecycle, and fail-closed verifier
-  regressions pass. Repeat the physical launch from this commit before
-  continuing the full workflow.
+  regressions pass. The first physical follow-up selected and armed Firefox's
+  exact 1280-by-1040 recovery frame, but presentation disposition compared it
+  with the retained 1276-by-1422 standing target and rejected it before native
+  submission, so admission timed out. The disposition gate now admits only the
+  exact armed transaction/surface/size identity; later same-surface work stays
+  behind the production content fence and the standing target remains pending.
+  Repeat the physical launch from this commit before continuing the full
+  workflow.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

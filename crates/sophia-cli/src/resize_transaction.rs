@@ -49,6 +49,17 @@ impl ResizeVisualCommitTracker {
             .any(|candidate| candidate.surface == surface)
     }
 
+    pub fn exact_candidate(
+        &self,
+        transaction: TransactionId,
+        surface: SurfaceId,
+        size: Size,
+    ) -> bool {
+        self.awaiting
+            .get(&(transaction, surface))
+            .is_some_and(|candidate| candidate.size == size)
+    }
+
     pub fn complete(
         &mut self,
         transaction: TransactionId,

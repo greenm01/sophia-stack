@@ -27,6 +27,9 @@ fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
     assert_eq!(coordinator.committed_size(surface), Some(launch));
     assert_eq!(coordinator.pending_target(surface), Some(target));
     assert!(visual.surface_awaiting(surface));
+    assert!(visual.exact_candidate(transaction, surface, target));
+    assert!(!visual.exact_candidate(transaction, surface, launch));
+    assert!(!visual.exact_candidate(TransactionId::from_raw(701), surface, target,));
     assert_eq!(visual.complete(transaction, surface, launch), None);
 
     let committed = visual.complete(transaction, surface, target).unwrap();

@@ -566,9 +566,23 @@ impl PersistentLiveLayout {
 
     fn present_layout_disposition(
         &self,
+        transaction: TransactionId,
         surface: SurfaceId,
         buffer: sophia_protocol::BufferHandle,
     ) -> sophia_backend_live::LiveProductionPresentDisposition {
+        let actual = self.dma_buf_sizes.get(&buffer).copied();
+        if actual.is_some_and(|size| {
+            self.awaiting_visual_commits
+                .exact_candidate(transaction, surface, size)
+        }) {
+            // A launch or resize candidate already selected by the layout
+            // epoch must reach exact native retirement before its standing
+            // target becomes committed state. The standing target can differ
+            // from this temporary recovery extent, so admit only the exact
+            // armed identity here; later authority work remains behind the
+            // production surface-content fence.
+            return sophia_backend_live::LiveProductionPresentDisposition::Immediate;
+        }
         let expected = self
             .pending
             .as_ref()
@@ -577,8 +591,8 @@ impl PersistentLiveLayout {
         let Some(expected) = expected else {
             return sophia_backend_live::LiveProductionPresentDisposition::Immediate;
         };
-        match self.dma_buf_sizes.get(&buffer) {
-            Some(actual) if *actual == expected && self.pending.is_some() => {
+        match actual {
+            Some(actual) if actual == expected && self.pending.is_some() => {
                 sophia_backend_live::LiveProductionPresentDisposition::StageLayout {
                     epoch: self
                         .pending
@@ -587,7 +601,7 @@ impl PersistentLiveLayout {
                         .transaction,
                 }
             }
-            Some(actual) if *actual == expected => {
+            Some(actual) if actual == expected => {
                 sophia_backend_live::LiveProductionPresentDisposition::Immediate
             }
             Some(_) => {
