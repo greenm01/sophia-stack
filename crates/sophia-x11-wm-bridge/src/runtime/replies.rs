@@ -309,16 +309,20 @@ fn reply_list_extensions(stream: &mut UnixStream, sequence: u16) -> Result<(), B
 fn reply_keyboard_mapping(
     stream: &mut UnixStream,
     sequence: u16,
-    first_keycode: u8,
     body: &[u8],
 ) -> Result<(), BridgeRuntimeError> {
-    let count = usize::from(body.first().copied().unwrap_or(0));
+    let first_keycode = body.first().copied().unwrap_or(0);
+    let count = usize::from(body.get(1).copied().unwrap_or(0));
+    let end = usize::from(first_keycode)
+        .checked_add(count)
+        .filter(|end| *end <= usize::from(u8::MAX) + 1)
+        .ok_or_else(|| BridgeRuntimeError::new("invalid keyboard mapping range"))?;
     let mut reply = vec![1, 1];
     push_u16(&mut reply, sequence);
     push_u32(&mut reply, count as u32);
     reply.resize(32, 0);
-    for keycode in first_keycode..first_keycode.saturating_add(count as u8) {
-        push_u32(&mut reply, u32::from(keycode));
+    for keycode in usize::from(first_keycode)..end {
+        push_u32(&mut reply, keycode as u32);
     }
     write_packet(stream, &reply)
 }

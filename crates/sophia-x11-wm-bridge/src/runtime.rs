@@ -38,6 +38,9 @@ const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
 const XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
 const FIRST_PRIVATE_X_DISPLAY: u16 = 90;
 const LAST_PRIVATE_X_DISPLAY: u16 = 4_095;
+const X11_ANY_KEY: u8 = 0;
+const X11_ANY_MODIFIER: u16 = 1 << 15;
+const X11_MOD1_MASK: u16 = 1 << 3;
 
 #[derive(Debug)]
 pub struct BridgeRuntimeError(String);
@@ -71,8 +74,12 @@ enum ServerCommand {
     Unmap(SyntheticXWindowId),
     Destroy(SyntheticXWindowId),
     Key {
-        keycode: u8,
+        chord: SyntheticKeyChord,
         pressed: bool,
+    },
+    ValidateKeyGrab {
+        chord: SyntheticKeyChord,
+        reply: SyncSender<bool>,
     },
     Button {
         window: SyntheticXWindowId,
@@ -81,6 +88,31 @@ enum ServerCommand {
     },
     Wake,
     QueryFocus(SyncSender<Option<SyntheticXWindowId>>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SyntheticKeyChord {
+    keycode: u8,
+    modifiers: u16,
+}
+
+#[derive(Debug, Default)]
+struct LegacyResponseBatch {
+    configured: BTreeMap<SyntheticXWindowId, LegacyWmRequest>,
+    focus: Option<LegacyWmRequest>,
+}
+
+fn xmonad_profile_chord(action: u64) -> Option<SyntheticKeyChord> {
+    let keycode = match action {
+        XMONAD_ACTION_FOCUS_NEXT => 106,
+        XMONAD_ACTION_FOCUS_PREVIOUS => 107,
+        XMONAD_ACTION_NEXT_LAYOUT => 32,
+        _ => return None,
+    };
+    Some(SyntheticKeyChord {
+        keycode,
+        modifiers: X11_MOD1_MASK,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -282,16 +314,11 @@ impl LegacyX11WmBridgeRuntime {
             }
         }
 
-        let profiled_key = match &request.kind {
+        let profiled_chord = match &request.kind {
             WmRequestKind::ActionActivated(activation)
                 if self.profile == LegacyWmProfile::Xmonad =>
             {
-                match activation.action.raw() {
-                    XMONAD_ACTION_FOCUS_NEXT => Some(106),
-                    XMONAD_ACTION_FOCUS_PREVIOUS => Some(107),
-                    XMONAD_ACTION_NEXT_LAYOUT => Some(32),
-                    _ => None,
-                }
+                xmonad_profile_chord(activation.action.raw())
             }
             _ => None,
         };
@@ -318,14 +345,34 @@ impl LegacyX11WmBridgeRuntime {
                 .as_ref()
                 .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
         )?;
-        if let Some(keycode) = profiled_key {
+
+        if profiled_chord.is_some() && !expected.is_empty() {
+            self.collect_legacy_responses(&expected, false)?;
+        }
+        if let Some(chord) = profiled_chord {
             let commands = self
                 .commands
                 .as_ref()
                 .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            let (grab_sender, grab_receiver) = mpsc::sync_channel(1);
+            commands
+                .send(ServerCommand::ValidateKeyGrab {
+                    chord,
+                    reply: grab_sender,
+                })
+                .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
+            let grabbed = grab_receiver
+                .recv_timeout(Duration::from_millis(500))
+                .map_err(|_| BridgeRuntimeError::new("legacy WM key-grab query timed out"))?;
+            if !grabbed {
+                return Err(BridgeRuntimeError::new(format!(
+                    "profile key chord was not registered by the legacy WM: keycode={} modifiers=0x{:x}",
+                    chord.keycode, chord.modifiers
+                )));
+            }
             for pressed in [true, false] {
                 commands
-                    .send(ServerCommand::Key { keycode, pressed })
+                    .send(ServerCommand::Key { chord, pressed })
                     .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
             }
             commands
@@ -350,66 +397,15 @@ impl LegacyX11WmBridgeRuntime {
                     .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
             }
         }
-
-        let started = Instant::now();
-        let mut last_activity = started;
-        let mut configured = BTreeMap::new();
-        let mut focus = None;
-        loop {
-            let elapsed = started.elapsed();
-            if elapsed >= BRIDGE_TIMEOUT {
-                break;
-            }
-            let wait = IO_POLL.min(BRIDGE_TIMEOUT.saturating_sub(elapsed));
-            match self.legacy.recv_timeout(wait) {
-                Ok(request) => {
-                    last_activity = Instant::now();
-                    match request {
-                        request @ LegacyWmRequest::ConfigureWindow { window, .. } => {
-                            configured.insert(window, request);
-                        }
-                        request @ LegacyWmRequest::FocusWindow { .. } => focus = Some(request),
-                    }
-                }
-                Err(RecvTimeoutError::Timeout) => {
-                    if expected
-                        .iter()
-                        .all(|window| configured.contains_key(window))
-                        && last_activity.elapsed() >= QUIET_PERIOD
-                    {
-                        break;
-                    }
-                }
-                Err(RecvTimeoutError::Disconnected) => {
-                    let detail = self
-                        .worker
-                        .take()
-                        .and_then(|worker| worker.join().ok())
-                        .and_then(Result::err)
-                        .map_or_else(
-                            || "legacy WM server disconnected".to_owned(),
-                            |error| format!("legacy WM server disconnected: {error}"),
-                        );
-                    return Err(BridgeRuntimeError::new(detail));
-                }
-            }
-        }
-
-        if !expected
-            .iter()
-            .all(|window| configured.contains_key(window))
-        {
-            return Err(BridgeRuntimeError::new(format!(
-                "legacy WM did not configure all {} synthetic windows within {} ms (configured {})",
-                expected.len(),
-                BRIDGE_TIMEOUT.as_millis(),
-                configured.len()
-            )));
-        }
+        let response_batch = if profiled_chord.is_some() {
+            self.collect_legacy_responses(&BTreeSet::new(), !self.bridge.mapped_windows.is_empty())?
+        } else {
+            self.collect_legacy_responses(&expected, false)?
+        };
         let mut requests = if matches!(request.kind, WmRequestKind::FocusRequested(_)) {
             Vec::new()
         } else {
-            configured.into_values().collect::<Vec<_>>()
+            response_batch.configured.into_values().collect::<Vec<_>>()
         };
         let managed_focus = match &request.kind {
             WmRequestKind::ManageSurface(manage) => {
@@ -421,7 +417,7 @@ impl LegacyX11WmBridgeRuntime {
             requests.push(LegacyWmRequest::FocusWindow { window });
         } else if let Some(window) = managed_focus {
             requests.push(LegacyWmRequest::FocusWindow { window });
-        } else if let Some(focus) = focus {
+        } else if let Some(focus) = response_batch.focus {
             requests.push(focus);
         } else {
             let (focus_sender, focus_receiver) = mpsc::sync_channel(1);
@@ -445,6 +441,80 @@ impl LegacyX11WmBridgeRuntime {
         self.bridge
             .translate_legacy_requests(request.transaction, &requests, resize_timeout_msec)
             .map_err(Into::into)
+    }
+
+    fn collect_legacy_responses(
+        &mut self,
+        expected: &BTreeSet<SyntheticXWindowId>,
+        require_activity: bool,
+    ) -> Result<LegacyResponseBatch, BridgeRuntimeError> {
+        let started = Instant::now();
+        let mut last_activity = started;
+        let mut observed_activity = false;
+        let mut batch = LegacyResponseBatch::default();
+        loop {
+            let elapsed = started.elapsed();
+            if elapsed >= BRIDGE_TIMEOUT {
+                break;
+            }
+            let wait = IO_POLL.min(BRIDGE_TIMEOUT.saturating_sub(elapsed));
+            match self.legacy.recv_timeout(wait) {
+                Ok(request) => {
+                    observed_activity = true;
+                    last_activity = Instant::now();
+                    match request {
+                        request @ LegacyWmRequest::ConfigureWindow { window, .. } => {
+                            batch.configured.insert(window, request);
+                        }
+                        request @ LegacyWmRequest::FocusWindow { .. } => {
+                            batch.focus = Some(request)
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    let expected_complete = expected
+                        .iter()
+                        .all(|window| batch.configured.contains_key(window));
+                    if expected_complete
+                        && (!require_activity || observed_activity)
+                        && last_activity.elapsed() >= QUIET_PERIOD
+                    {
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    let detail = self
+                        .worker
+                        .take()
+                        .and_then(|worker| worker.join().ok())
+                        .and_then(Result::err)
+                        .map_or_else(
+                            || "legacy WM server disconnected".to_owned(),
+                            |error| format!("legacy WM server disconnected: {error}"),
+                        );
+                    return Err(BridgeRuntimeError::new(detail));
+                }
+            }
+        }
+
+        let expected_complete = expected
+            .iter()
+            .all(|window| batch.configured.contains_key(window));
+        if !expected_complete {
+            return Err(BridgeRuntimeError::new(format!(
+                "legacy WM did not configure all {} synthetic windows within {} ms (configured {})",
+                expected.len(),
+                BRIDGE_TIMEOUT.as_millis(),
+                batch.configured.len()
+            )));
+        }
+        if require_activity && !observed_activity {
+            return Err(BridgeRuntimeError::new(format!(
+                "legacy WM produced no post-action response within {} ms",
+                BRIDGE_TIMEOUT.as_millis()
+            )));
+        }
+        Ok(batch)
     }
 
     pub fn profile(&self) -> LegacyWmProfile {

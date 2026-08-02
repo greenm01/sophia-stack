@@ -30,6 +30,10 @@ fn serve_legacy_wm(
                     pending_focus_queries.push(reply);
                     last_socket_activity = Instant::now();
                 }
+                Ok(ServerCommand::ValidateKeyGrab { chord, reply }) => {
+                    let _ = reply.send(has_matching_key_grab(&state, chord));
+                    last_socket_activity = Instant::now();
+                }
                 Ok(command) => apply_server_command(stream, &mut state, command)?,
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return Ok(()),
@@ -118,9 +122,14 @@ fn apply_server_command(
             state.windows.remove(&window.raw());
             write_window_event(stream, state.sequence, 17, window.raw())?;
         }
-        ServerCommand::Key { keycode, pressed } => {
-            let modifiers = 1 << 3;
-            let mut event = vec![if pressed { 2 } else { 3 }, keycode];
+        ServerCommand::Key { chord, pressed } => {
+            if !has_matching_key_grab(state, chord) {
+                return Err(BridgeRuntimeError::new(format!(
+                    "profile key chord was not registered by the legacy WM: keycode={} modifiers=0x{:x}",
+                    chord.keycode, chord.modifiers
+                )));
+            }
+            let mut event = vec![if pressed { 2 } else { 3 }, chord.keycode];
             push_u16(&mut event, state.sequence);
             push_u32(&mut event, 0);
             push_u32(&mut event, SYNTHETIC_ROOT_XID);
@@ -130,7 +139,7 @@ fn apply_server_command(
             push_i16(&mut event, 0);
             push_i16(&mut event, 0);
             push_i16(&mut event, 0);
-            push_u16(&mut event, modifiers);
+            push_u16(&mut event, chord.modifiers);
             event.push(1);
             event.push(0);
             write_packet(stream, &event)?;
@@ -168,8 +177,18 @@ fn apply_server_command(
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
         }
         ServerCommand::QueryFocus(_) => unreachable!("focus queries are socket-order barriers"),
+        ServerCommand::ValidateKeyGrab { .. } => {
+            unreachable!("key-grab validation is a socket-order barrier")
+        }
     }
     Ok(())
+}
+
+fn has_matching_key_grab(state: &XServerState, chord: SyntheticKeyChord) -> bool {
+    state.key_grabs.iter().any(|(keycode, modifiers)| {
+        (*keycode == X11_ANY_KEY || *keycode == chord.keycode)
+            && (*modifiers == X11_ANY_MODIFIER || *modifiers == chord.modifiers)
+    })
 }
 
 fn dispatch_request(
@@ -249,7 +268,7 @@ fn dispatch_request(
         91 => reply_best_size(stream, state, body)?,
         98 => reply_query_extension(stream, state.sequence)?,
         99 => reply_list_extensions(stream, state.sequence)?,
-        101 => reply_keyboard_mapping(stream, state.sequence, detail, body)?,
+        101 => reply_keyboard_mapping(stream, state.sequence, body)?,
         103 => reply_keyboard_control(stream, state.sequence)?,
         106 => reply_pointer_control(stream, state.sequence)?,
         108 => reply_screen_saver(stream, state.sequence)?,

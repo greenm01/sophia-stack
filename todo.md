@@ -882,7 +882,21 @@ than adding speculative browser compatibility.
   ordering to real client- and Engine-originated geometry changes, routes every
   matching subscription, and suppresses failed/no-op notifications. Repeat the
   three-window physical launch from this change before continuing the full
-  workflow.
+  workflow. The 2026-08-02 repeat rendered Firefox at the exact 1276-by-1422
+  tile and reached verifier stage 5 of 8, confirming the Present/core
+  ConfigureNotify regression physically. `Super+Space` then produced action 3
+  transaction 6 with `moved_surfaces=0` and `configure_deliveries=0`: the bridge
+  accepted its own pre-action Tall reconciliation before xmonad's later Mirror
+  response. The xmonad profile now drains that baseline before injecting the
+  registered private Mod1+Space chord and requires fresh post-action WM
+  activity. The real-xmonad gate additionally exposed a core-wire prerequisite:
+  `GetKeyboardMapping` parsed its header padding as the first keycode and
+  omitted the inclusive maximum keycode, leaving xmonad with no passive grabs.
+  Correct body parsing and full advertised serialization are now exercised by
+  the fixture before `GrabKey`. Hermetic delayed-response and missing-grab
+  regressions plus the exact real-xmonad Tall-to-Mirror smoke lock this
+  boundary. Repeat the physical workflow from this change before closing the
+  item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

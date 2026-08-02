@@ -69,8 +69,12 @@ capabilities and a bounded action-binding table. Engine validates the complete
 table, rejects reserved or duplicate chords, then returns the configured
 workspace/output and named-session-action descriptor. The bridge translates
 opaque action activations for a selected compatibility profile; it never
-receives raw physical key events. Profiles are bounded adapters, not permission
-to expose arbitrary legacy WM configuration or executable commands.
+receives raw physical key events. For the bounded focus/layout actions that a
+legacy WM must evaluate itself, the selected profile maps the opaque action to
+a synthetic chord delivered only on the WM's private fake-X11 connection and
+only after the WM registers the matching passive grab. Profiles are bounded
+adapters, not permission to expose arbitrary legacy WM configuration or
+executable commands.
 
 The bridge's only authority is translating policy math. Sophia Engine remains
 the compositor authority and validates every returned layout proposal.
@@ -110,6 +114,8 @@ Required baseline:
 - one fake root window per Sophia output/workspace view needed by the bridge;
 - synthetic top-level windows corresponding to opaque Sophia layout nodes;
 - `MapRequest`, `UnmapNotify`, destroy, configure, focus, and structure events;
+- bounded core passive-key registration and profile-owned synthetic action
+  chords on the private WM connection;
 - event-mask registration for substructure redirect/notify and property
   changes;
 - property reads/writes with generic or blackholed data;
@@ -127,10 +133,11 @@ The fake server serves policy objects, not application windows. A synthetic
 window is only a handle that lets a legacy WM calculate rectangles.
 
 The first legacy-WM milestone is policy-only. Sophia retains physical input,
-global keybindings, workspace commands, and focus validation. The bridge does
-not forward raw keyboard events into the legacy WM, so native WM Mod-key
-bindings are outside the first milestone. The server is embedded in the bridge;
-Xvfb is not used.
+global keybindings, workspace commands, and focus validation. The bridge never
+forwards raw keyboard events into the legacy WM. A profiled action may instead
+inject one fixed private chord after Engine has identified and authorized the
+opaque action; arbitrary native WM Mod-key bindings remain outside the
+boundary. The server is embedded in the bridge; Xvfb is not used.
 
 The target operator model is plug-and-play at this boundary: select a compatible
 legacy X11 WM executable and arguments when starting the bridge; Sophia Engine
@@ -166,7 +173,8 @@ creates a private local `DISPLAY` and empty home, clears inherited environment,
 and exposes one synthetic root plus bounded synthetic top-level windows. It
 supplies empty property data and reports rendering/input extensions absent. It
 accepts no X client application connections and never forwards a physical key
-or pointer event.
+or pointer event. A compatibility profile can emit a bounded synthetic key or
+button event solely to the supervised WM on this isolated connection.
 
 `--wm-private-alias=` is an optional relative path below the bridge's private
 `XDG_CONFIG_HOME`. It supports WMs that re-exec a compiled/configured binary;
@@ -190,10 +198,10 @@ tools/xmonad_wm_bridge_smoke.sh
 The xmonad-only proof command is `xmonad-smoke`. The script uses
 `SOPHIA_XMONAD_BIN`, an installed `xmonad`, or the pinned
 `~/src/xmonad` Nix flake in that order. It requires two distinct rectangles from
-real xmonad `ConfigureWindow` requests and translates them into two bounded
-Sophia `RenderSurface` commands in the matching transaction. On the reference
-checkout, the baseline result is two 640 by 720 tiles within a 1280 by 720
-synthetic root. The same smoke then changes one existing opaque node to an
+real xmonad `ConfigureWindow` requests, then manages a third surface and
+requires the exact Tall geometry. It activates opaque action 3 and requires the
+exact three-surface Mirror geometry returned after xmonad processes its private
+Mod1+Space grab. The same smoke then changes one existing opaque node to an
 exact 500 by 500 constraint, requires a new private synthetic window, and
 proves unmodified xmonad returns that floating placement through standard size
 hints. Set `SOPHIA_X11_WM_TRACE=1` to print core request opcodes during
