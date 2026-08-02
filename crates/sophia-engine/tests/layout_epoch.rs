@@ -462,16 +462,3 @@ fn pending_target_matching_committed_size_is_not_an_obligation() {
     coordinator.remove(surface);
     assert_eq!(coordinator.pending_target(surface), None);
 }
-
-#[test]
-fn re_drive_transaction_ids_advance_without_arming_rollback_state() {
-    let surface = SurfaceId::new(11, 1);
-    let mut coordinator = LayoutEpochCoordinator::default();
-    let first = coordinator.next_recovery_transaction().unwrap();
-    let second = coordinator.next_recovery_transaction().unwrap();
-    assert!(second.raw() > first.raw());
-    // A plain re-drive configure must not gate the client's visible
-    // observations the way a rollback configure does.
-    assert!(!coordinator.rollback_pending(surface));
-    assert!(coordinator.accept_observation(surface, size(1276, 1422)));
-}

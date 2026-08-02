@@ -464,56 +464,6 @@ impl PersistentLiveLayout {
         true
     }
 
-    /// Re-drives every unmet standing target obligation. After an aborted
-    /// launch epoch admits a client at whatever extent it first mapped, this
-    /// sends one plain (non-rollback) `ConfigureSurface` at the blind-WM target
-    /// so the client converges without the epoch having to block on its first
-    /// exact-size frame. The configure does not gate the client's visible
-    /// observations, so it keeps showing its current buffer until it resizes.
-    fn redrive_unmet_targets(
-        &mut self,
-        session_controls: &mut SessionControlQueue,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let obligations = self
-            .layout_epochs
-            .pending_target_surfaces()
-            .collect::<Vec<_>>();
-        for (surface, target) in obligations {
-            if self.layout_epochs.recovery_extent(surface).is_some()
-                || self.layout_epochs.committed_size(surface) == Some(target)
-            {
-                continue;
-            }
-            let Some(client) = self.client_routes.client_for_surface(surface) else {
-                continue;
-            };
-            let Some(transaction) = self.layout_epochs.next_recovery_transaction() else {
-                continue;
-            };
-            session_controls
-                .enqueue(
-                    XAuthorityClientControlCommand {
-                        client,
-                        command: XAuthorityControlCommand::ConfigureSurface {
-                            transaction,
-                            surface,
-                            size: target,
-                        },
-                    },
-                    Instant::now(),
-                )
-                .map_err(|error| format!("failed to queue target re-drive control: {error:?}"))?;
-            println!(
-                "sophia_live_resize_epoch schema=2 status=target_redrive_enqueued transaction={} surface={} width={} height={}",
-                transaction.raw(),
-                surface.index(),
-                target.width,
-                target.height,
-            );
-        }
-        Ok(())
-    }
-
     fn constraint_relayout_required(&self) -> bool {
         self.constraint_relayout_required
     }
@@ -555,6 +505,34 @@ impl PersistentLiveLayout {
                 width: layer.geometry.width,
                 height: layer.geometry.height,
             });
+        }
+        // Drive a standing target left by an aborted launch epoch through this
+        // resize transaction rather than out of band. A first-launch client is
+        // fenced and admitted at whatever extent it first mapped; its blind-WM
+        // target is retained as an obligation and injected here so the same
+        // ConfigureSurface, exact-size epoch gate, and record_committed run as
+        // one transaction. That keeps the client, the Engine committed size,
+        // and the WM layer in agreement, so the resized frame is accepted (not
+        // rejected as a stale surface) and a denied reactive client configure
+        // is answered with the target rather than the welded launch size.
+        let standing_targets = self
+            .layout_epochs
+            .pending_target_surfaces()
+            .filter(|(surface, target)| {
+                self.layout_epochs.recovery_extent(*surface).is_none()
+                    && self.layout_epochs.committed_size(*surface) != Some(*target)
+            })
+            .collect::<Vec<_>>();
+        for (surface, target) in standing_targets {
+            if let Some(layer) = proposal
+                .layers
+                .iter_mut()
+                .find(|layer| layer.surface == surface)
+            {
+                layer.geometry.width = target.width;
+                layer.geometry.height = target.height;
+                proposal.requested_sizes.insert(surface, target);
+            }
         }
         for (surface, size) in &proposal.requested_sizes {
             if !self.layout_epochs.request_allowed(*surface, *size)

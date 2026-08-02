@@ -278,15 +278,6 @@ impl LayoutEpochCoordinator {
             .map(|(surface, size)| (*surface, *size))
     }
 
-    /// Allocates the next recovery-namespace transaction id without arming any
-    /// rollback or rejection state. Used to correlate a plain re-drive configure
-    /// that must not gate the client's visible observations.
-    pub fn next_recovery_transaction(&mut self) -> Option<TransactionId> {
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self.next_transaction.checked_add(1)?;
-        Some(transaction)
-    }
-
     /// Records a complete authority buffer extent without claiming that its
     /// pixels have entered committed visual state.
     pub fn record_safe_observation(
