@@ -226,6 +226,12 @@ fn send_engine_update(
                     notify_root: Some(index) == last_configure,
                 }
             }
+            SyntheticXEvent::PropertyNotify { window } => ServerCommand::ManageProfile {
+                window,
+                profile: bridge.synthetic_manage_profile(window).ok_or_else(|| {
+                    BridgeRuntimeError::new("synthetic property update has no manage profile")
+                })?,
+            },
             SyntheticXEvent::UnmapNotify { window } => ServerCommand::Unmap(window),
             SyntheticXEvent::DestroyNotify { window } => ServerCommand::Destroy(window),
         };

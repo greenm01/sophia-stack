@@ -75,6 +75,10 @@ enum ServerCommand {
         geometry: Rect,
         notify_root: bool,
     },
+    ManageProfile {
+        window: SyntheticXWindowId,
+        profile: SyntheticManageProfile,
+    },
     Unmap(SyntheticXWindowId),
     Destroy(SyntheticXWindowId),
     Key {

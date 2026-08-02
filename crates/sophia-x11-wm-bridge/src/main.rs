@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
     SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmActionActivation, WmActionId,
-    WmCommand, WmFocusRequest, WmManageSurface, WmOutputWorkspace, WmRequestKind, WmRequestPacket,
-    WmSessionDescriptor, WorkspaceId,
+    WmCommand, WmFocusRequest, WmManageSurface, WmOutputWorkspace, WmRelayoutWorkspace,
+    WmRequestKind, WmRequestPacket, WmSessionDescriptor, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_NEXT_LAYOUT,
@@ -302,28 +302,74 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         }),
     })?;
     let recovery_placements = response_placements(&recovery);
-    if !recovery_placements.contains(&(12, recovery_geometry))
-        || !recovery.commands.iter().any(|command| {
-            matches!(
-                command,
-                WmCommand::ConfigureSurface(request)
-                    if request.surface == SurfaceId::new(12, 1)
-                        && request.size == recovery_extent
-            )
-        })
-    {
+    if !recovery_placements.iter().any(|(surface, geometry)| {
+        *surface == 12
+            && geometry.width == recovery_extent.width
+            && geometry.height == recovery_extent.height
+    }) || !recovery.commands.iter().any(|command| {
+        matches!(
+            command,
+            WmCommand::ConfigureSurface(request)
+                if request.surface == SurfaceId::new(12, 1)
+                    && request.size == recovery_extent
+        )
+    }) {
         return Err(format!(
             "xmonad did not apply the generic fixed-extent recovery profile: commands={:?}",
             recovery.commands
         )
         .into());
     }
+    let recovery_focus = runtime.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(7),
+        kind: WmRequestKind::FocusRequested(WmFocusRequest {
+            surface: SurfaceId::new(12, 1),
+            output: OutputId::from_raw(1),
+            workspace,
+        }),
+    })?;
+    if !recovery_focus
+        .commands
+        .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
+    {
+        return Err(format!(
+            "xmonad did not focus the recovery surface before constraint release: commands={:?}",
+            recovery_focus.commands
+        )
+        .into());
+    }
+    let released = runtime.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(8),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace,
+            bounds,
+            nodes: recovery_placements
+                .iter()
+                .map(|(raw, geometry)| node(*raw, workspace, *geometry))
+                .collect(),
+        }),
+    })?;
+    let released_placements = response_placements(&released);
+    if released_placements != expected_mirror
+        || !released
+            .commands
+            .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
+    {
+        return Err(format!(
+            "xmonad did not preserve the master/focus stack across recovery-constraint release: commands={:?}",
+            released.commands
+        )
+        .into());
+    }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
+        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} recovery_focus_transaction={} release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
         response.transaction.raw(),
         layout.transaction.raw(),
         focus.transaction.raw(),
         recovery.transaction.raw(),
+        recovery_focus.transaction.raw(),
+        released.transaction.raw(),
         actual[0].1,
         actual[1].1,
         actual[2].1,

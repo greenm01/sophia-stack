@@ -133,6 +133,9 @@ pub enum SyntheticXEvent {
         window: SyntheticXWindowId,
         geometry: Rect,
     },
+    PropertyNotify {
+        window: SyntheticXWindowId,
+    },
     UnmapNotify {
         window: SyntheticXWindowId,
     },
@@ -503,27 +506,22 @@ impl X11WmBridgeState {
     ) -> Result<(), X11WmBridgeError> {
         let geometry = node.geometry;
         let workspace = node.workspace;
-        if let Some(previous_window) = self.surface_to_window.get(&node.surface).copied()
-            && self
-                .window_to_node
-                .get(&previous_window)
-                .is_some_and(|previous| {
-                    SyntheticManageProfile::from_node(previous)
-                        != SyntheticManageProfile::from_node(&node)
-                })
-        {
-            self.surface_to_window.remove(&node.surface);
-            self.window_to_node.remove(&previous_window);
-            self.mapped_windows.remove(&previous_window);
-            events.push(SyntheticXEvent::DestroyNotify {
-                window: previous_window,
+        let profile_changed = self
+            .surface_to_window
+            .get(&node.surface)
+            .and_then(|window| self.window_to_node.get(window))
+            .is_some_and(|previous| {
+                SyntheticManageProfile::from_node(previous)
+                    != SyntheticManageProfile::from_node(&node)
             });
-        }
         let (window, _) = self.upsert_node(node)?;
         if self.active_workspace == Some(workspace) {
             if self.mapped_windows.insert(window) {
                 events.push(SyntheticXEvent::MapRequest { window });
             } else {
+                if profile_changed {
+                    events.push(SyntheticXEvent::PropertyNotify { window });
+                }
                 events.push(SyntheticXEvent::ConfigureNotify { window, geometry });
             }
         } else if self.mapped_windows.remove(&window) {

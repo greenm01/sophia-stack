@@ -121,6 +121,18 @@ fn apply_server_command(
                 write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
             }
         }
+        ServerCommand::ManageProfile { window, profile } => {
+            let entry = state.windows.get_mut(&window.raw()).ok_or_else(|| {
+                BridgeRuntimeError::new("synthetic property update targeted an unknown window")
+            })?;
+            entry.manage_profile = profile;
+            write_property_notify(
+                stream,
+                state.sequence,
+                window.raw(),
+                profile.constraints.is_none(),
+            )?;
+        }
         ServerCommand::Unmap(window) => {
             state.windows.remove(&window.raw());
             write_window_event(stream, state.sequence, 18, window.raw())?;
@@ -189,6 +201,23 @@ fn apply_server_command(
         }
     }
     Ok(())
+}
+
+fn write_property_notify(
+    stream: &mut UnixStream,
+    sequence: u16,
+    window: u32,
+    deleted: bool,
+) -> Result<(), BridgeRuntimeError> {
+    const WM_NORMAL_HINTS: u32 = 40;
+    let mut event = vec![28, 0];
+    push_u16(&mut event, sequence);
+    push_u32(&mut event, window);
+    push_u32(&mut event, WM_NORMAL_HINTS);
+    push_u32(&mut event, 0);
+    event.push(u8::from(deleted));
+    event.resize(32, 0);
+    write_packet(stream, &event)
 }
 
 fn has_matching_key_grab(state: &XServerState, chord: SyntheticKeyChord) -> bool {

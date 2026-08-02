@@ -309,7 +309,7 @@ fn focus_request_preserves_the_existing_blind_synthetic_topology() {
 }
 
 #[test]
-fn exact_constraint_change_remanages_the_synthetic_window_without_metadata() {
+fn exact_constraint_change_updates_the_synthetic_property_in_place() {
     let transaction = TransactionId::from_raw(90);
     let surface = SurfaceId::new(40, 1);
     let mut bridge = X11WmBridgeState::new();
@@ -329,6 +329,7 @@ fn exact_constraint_change_remanages_the_synthetic_window_without_metadata() {
     };
     bridge.apply_engine_request(&initial).unwrap();
     let old_window = bridge.synthetic_window(surface).unwrap();
+    let initial_profile = bridge.synthetic_manage_profile(old_window).unwrap();
 
     let mut fixed = node(40);
     fixed.capabilities.resizable = false;
@@ -359,17 +360,16 @@ fn exact_constraint_change_remanages_the_synthetic_window_without_metadata() {
     let update = bridge.apply_engine_request(&recovery).unwrap();
     let new_window = bridge.synthetic_window(surface).unwrap();
 
-    assert_ne!(new_window, old_window);
+    assert_eq!(new_window, old_window);
     assert!(
         update
             .events
-            .contains(&SyntheticXEvent::DestroyNotify { window: old_window })
+            .contains(&SyntheticXEvent::PropertyNotify { window: old_window })
     );
-    assert!(
-        update
-            .events
-            .contains(&SyntheticXEvent::MapRequest { window: new_window })
-    );
+    assert!(!update.events.iter().any(|event| matches!(
+        event,
+        SyntheticXEvent::DestroyNotify { .. } | SyntheticXEvent::MapRequest { .. }
+    )));
     assert_eq!(
         bridge
             .synthetic_manage_profile(new_window)
@@ -393,4 +393,35 @@ fn exact_constraint_change_remanages_the_synthetic_window_without_metadata() {
         .unwrap();
     assert_eq!(hints[0], (1 << 4) | (1 << 5));
     assert_eq!(&hints[5..9], &[500, 500, 500, 500]);
+
+    let released = WmRequestPacket {
+        transaction: TransactionId::from_raw(92),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            nodes: vec![node(40)],
+        }),
+    };
+    let update = bridge.apply_engine_request(&released).unwrap();
+
+    assert_eq!(bridge.synthetic_window(surface), Some(old_window));
+    assert!(
+        update
+            .events
+            .contains(&SyntheticXEvent::PropertyNotify { window: old_window })
+    );
+    assert!(!update.events.iter().any(|event| matches!(
+        event,
+        SyntheticXEvent::DestroyNotify { .. } | SyntheticXEvent::MapRequest { .. }
+    )));
+    assert_eq!(
+        bridge.synthetic_manage_profile(old_window).unwrap(),
+        initial_profile
+    );
 }

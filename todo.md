@@ -973,8 +973,17 @@ than adding speculative browser compatibility.
   target. Exact native retirement now discharges an unarmed standing target
   only while the same surface retains its temporary recovery extent, queues
   one constraint relayout, and leaves unrelated unarmed frames rejected.
-  Require `recovery_extent_cleared reason=standing_target_presented`, a full
-  1276-by-1422 clip, and successful pointer handoff in the next physical run.
+  The next physical run confirmed
+  `recovery_extent_cleared reason=standing_target_presented`, complete clips,
+  successful pointer handoffs, and proof progress through 7/8. Its cleanup
+  relayout nevertheless moved Firefox from the full master column into the
+  lower-right slave pane because the synthetic bridge destroyed and remapped
+  the window when its temporary fixed `WM_NORMAL_HINTS` became resizable.
+  Recovery-profile changes now update that property in place and emit the core
+  `PropertyNotify` shape verified against XLibre and yserver. Reducer and real-
+  xmonad regressions require stable synthetic identity, focus, and master-stack
+  placement across fixed-to-resizable release. Repeat the launch and final
+  popup stage from this change; Firefox must remain the full left column.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
