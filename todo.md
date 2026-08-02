@@ -960,7 +960,13 @@ than adding speculative browser compatibility.
   That relayout projected only the two existing Kitty surfaces; the later
   Firefox retry was withdrawn. Recovery now prioritizes the pending opaque
   `ManageSurface`, with an allocation-free crate-boundary regression and
-  reduced reseed-order evidence for future queue optimizations.
+  reduced reseed-order evidence for future queue optimizations. The immediate
+  rerun showed the first implementation still emitted `request=relayout`:
+  it reused the ordinary admission selector, which correctly blocks while
+  rollback extents exist. Reseed replay now has a separate candidate query
+  that ignores only that scheduling gate while retaining known-surface and
+  terminal-retry checks. Require `reseed_queued request=manage` in the next
+  physical run.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

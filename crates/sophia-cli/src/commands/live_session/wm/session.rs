@@ -1,4 +1,7 @@
-use sophia_cli::wm_recovery::{WmReseedRequest, select_wm_reseed_request};
+use sophia_cli::wm_recovery::{
+    WmAdmissionSelection, WmReseedAdmissionCandidate, WmReseedRequest, select_wm_admission,
+    select_wm_reseed_request,
+};
 
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 
@@ -361,7 +364,7 @@ impl LiveWmSession {
             self.restarts
         );
         match select_wm_reseed_request(
-            layout.next_unmanaged_surface(),
+            layout.next_reseed_unmanaged_surface(),
             !layout.layers.is_empty(),
         ) {
             Some(WmReseedRequest::ReplayManage(surface)) => {

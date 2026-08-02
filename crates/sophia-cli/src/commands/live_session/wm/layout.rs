@@ -423,16 +423,31 @@ impl PersistentLiveLayout {
     }
 
     fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
-        if self.layout_epochs.rollback_surfaces().next().is_some() {
-            return None;
-        }
-        self.unmanaged_surfaces
-            .iter()
-            .find(|surface| {
-                self.knows_surface(**surface)
-                    && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
-            })
-            .copied()
+        select_wm_admission(
+            self.wm_admission_candidates(),
+            self.layout_epochs.rollback_surfaces().next().is_some(),
+            WmAdmissionSelection::Ordinary,
+        )
+    }
+
+    fn next_reseed_unmanaged_surface(&self) -> Option<SurfaceId> {
+        select_wm_admission(
+            self.wm_admission_candidates(),
+            self.layout_epochs.rollback_surfaces().next().is_some(),
+            WmAdmissionSelection::ReseedReplay,
+        )
+    }
+
+    fn wm_admission_candidates(
+        &self,
+    ) -> impl Iterator<Item = WmReseedAdmissionCandidate> + '_ {
+        self.unmanaged_surfaces.iter().map(|surface| {
+            WmReseedAdmissionCandidate {
+                surface: *surface,
+                known: self.knows_surface(*surface),
+                retries: self.admission_retries.get(surface).copied().unwrap_or(0),
+            }
+        })
     }
 
     fn is_client_positioned(&self, surface: SurfaceId) -> bool {
