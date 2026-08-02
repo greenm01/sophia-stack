@@ -359,6 +359,12 @@ impl LegacyX11WmBridgeRuntime {
                 .as_ref()
                 .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
         )?;
+        let managed_focus = match &request.kind {
+            WmRequestKind::ManageSurface(manage) => {
+                self.bridge.synthetic_window(manage.node.surface)
+            }
+            _ => None,
+        };
 
         if profiled_chord.is_some() && !expected.configured.is_empty() {
             self.collect_legacy_responses(&expected.map_admissions, true)?;
@@ -393,10 +399,16 @@ impl LegacyX11WmBridgeRuntime {
                 .send(ServerCommand::Wake)
                 .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
         }
-        if self.profile == LegacyWmProfile::Xmonad
-            && matches!(request.kind, WmRequestKind::FocusRequested(_))
-            && let Some(window) = profiled_focus
-        {
+        let synchronized_focus = if self.profile == LegacyWmProfile::Xmonad {
+            match request.kind {
+                WmRequestKind::ManageSurface(_) => managed_focus,
+                WmRequestKind::FocusRequested(_) => profiled_focus,
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(window) = synchronized_focus {
             let commands = self
                 .commands
                 .as_ref()
@@ -420,12 +432,6 @@ impl LegacyX11WmBridgeRuntime {
             Vec::new()
         } else {
             response_batch.configured.into_values().collect::<Vec<_>>()
-        };
-        let managed_focus = match &request.kind {
-            WmRequestKind::ManageSurface(manage) => {
-                self.bridge.synthetic_window(manage.node.surface)
-            }
-            _ => None,
         };
         if let Some(window) = profiled_focus {
             requests.push(LegacyWmRequest::FocusWindow { window });

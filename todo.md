@@ -982,8 +982,15 @@ than adding speculative browser compatibility.
   Recovery-profile changes now update that property in place and emit the core
   `PropertyNotify` shape verified against XLibre and yserver. Reducer and real-
   xmonad regressions require stable synthetic identity, focus, and master-stack
-  placement across fixed-to-resizable release. Repeat the launch and final
-  popup stage from this change; Firefox must remain the full left column.
+  placement across fixed-to-resizable release. The next live run falsified the
+  remaining focus assumption: Sophia committed Firefox focused, but the bridge
+  had only appended that focus to its response and had not synchronized the
+  private xmonad instance. The constraint relayout then exposed xmonad's stale
+  Kitty focus and made Kitty master. Manage admission now performs a bounded
+  synthetic pointer-focus transition before returning. The real-xmonad smoke
+  passes without its former explicit-focus workaround, and a process-external
+  fixture requires managed focus to survive the next relayout. Repeat the
+  launch and final popup stage; Firefox must remain the full left column.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

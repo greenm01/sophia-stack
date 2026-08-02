@@ -11,8 +11,8 @@ use std::{
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
     SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmActionActivation, WmActionId,
-    WmCommand, WmManageSurface, WmOutputWorkspace, WmRequestKind, WmRequestPacket,
-    WmSessionDescriptor, WorkspaceId,
+    WmCommand, WmManageSurface, WmOutputWorkspace, WmRelayoutWorkspace, WmRequestKind,
+    WmRequestPacket, WmSessionDescriptor, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_FOCUS_NEXT,
@@ -48,6 +48,13 @@ fn missing_grab_fixture_process() {
 fn partial_reconciliation_fixture_process() {
     if is_private_bridge_child() {
         run_fixture(FixtureBehavior::PartialFocusReconciliation);
+    }
+}
+
+#[test]
+fn manage_focus_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::ManageFocus);
     }
 }
 
@@ -103,6 +110,26 @@ fn focus_action_accepts_partial_pre_action_reconciliation() {
     );
 }
 
+#[test]
+fn manage_focus_remains_the_legacy_wm_focus_at_the_next_relayout() {
+    let mut runtime = fixture_runtime("manage_focus_fixture_process");
+    configure_session(&mut runtime);
+    let tall = manage_three_surfaces(&mut runtime);
+    assert_eq!(tall, tall_layout());
+
+    let response = runtime
+        .handle_request(&relayout_request(TransactionId::from_raw(4)))
+        .unwrap();
+
+    assert_eq!(response.transaction, TransactionId::from_raw(4));
+    assert_eq!(response_placements(&response), tall_layout());
+    assert!(
+        response
+            .commands
+            .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
+    );
+}
+
 fn fixture_runtime(test_name: &str) -> LegacyX11WmBridgeRuntime {
     let executable = env::current_exe().unwrap();
     let launch = LegacyWmLaunchSpec::new(executable)
@@ -152,6 +179,21 @@ fn next_layout_request(transaction: TransactionId) -> WmRequestPacket {
             output: OutputId::from_raw(1),
             workspace: WorkspaceId::from_raw(1),
             focused_surface: Some(SurfaceId::new(12, 1)),
+            nodes: tall_layout()
+                .into_iter()
+                .map(|(raw, geometry)| node(raw, geometry))
+                .collect(),
+        }),
+    }
+}
+
+fn relayout_request(transaction: TransactionId) -> WmRequestPacket {
+    WmRequestPacket {
+        transaction,
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            bounds: BOUNDS,
             nodes: tall_layout()
                 .into_iter()
                 .map(|(raw, geometry)| node(raw, geometry))
@@ -285,6 +327,7 @@ enum FixtureBehavior {
     DelayedLayout,
     MissingLayoutGrab,
     PartialFocusReconciliation,
+    ManageFocus,
 }
 
 fn run_fixture(behavior: FixtureBehavior) {
@@ -298,6 +341,7 @@ fn run_fixture(behavior: FixtureBehavior) {
         FixtureBehavior::PartialFocusReconciliation => {
             write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE)
         }
+        FixtureBehavior::ManageFocus => {}
     }
 
     let mut windows = Vec::new();
@@ -336,6 +380,8 @@ fn run_fixture(behavior: FixtureBehavior) {
                 focus_action_seen = true;
                 write_set_input_focus(&mut stream, windows[0]);
             }
+            4 => write_set_input_focus(&mut stream, read_u32(&event, 12)),
+            5 => {}
             2 | 3 => {}
             event_type => panic!("unexpected synthetic X event {event_type}"),
         }

@@ -320,26 +320,8 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let recovery_focus = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(7),
-        kind: WmRequestKind::FocusRequested(WmFocusRequest {
-            surface: SurfaceId::new(12, 1),
-            output: OutputId::from_raw(1),
-            workspace,
-        }),
-    })?;
-    if !recovery_focus
-        .commands
-        .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
-    {
-        return Err(format!(
-            "xmonad did not focus the recovery surface before constraint release: commands={:?}",
-            recovery_focus.commands
-        )
-        .into());
-    }
     let released = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(8),
+        transaction: TransactionId::from_raw(7),
         kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
             output: OutputId::from_raw(1),
             workspace,
@@ -363,12 +345,11 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} recovery_focus_transaction={} release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
+        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
         response.transaction.raw(),
         layout.transaction.raw(),
         focus.transaction.raw(),
         recovery.transaction.raw(),
-        recovery_focus.transaction.raw(),
         released.transaction.raw(),
         actual[0].1,
         actual[1].1,
