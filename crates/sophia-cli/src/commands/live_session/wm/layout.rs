@@ -251,7 +251,10 @@ impl PersistentLiveLayout {
                         .is_some_and(|selected| {
                             selected.transaction == Some(transaction.transaction)
                         });
-                if staged_for_resize && selected_for_admission {
+                let evidence_allowed = self
+                    .layout_epochs
+                    .resize_evidence_allowed(transaction.surface, visual_evidence);
+                if staged_for_resize && selected_for_admission && evidence_allowed {
                     let pending = self.pending.as_mut().expect("checked above");
                     pending
                         .staged_transactions

@@ -116,6 +116,10 @@ impl SurfaceConstraintState {
 pub struct LayoutEpochCoordinator {
     committed_sizes: BTreeMap<SurfaceId, Size>,
     safe_observations: BTreeMap<SurfaceId, SafeSurfaceObservation>,
+    // Strongest complete visual path observed for each surface. Once a client
+    // has explicitly presented complete buffers, a passive backing snapshot
+    // may remain useful recovery evidence but cannot complete a later resize.
+    visual_evidence_requirements: BTreeMap<SurfaceId, SurfaceVisualEvidence>,
     rollback_sizes: BTreeMap<SurfaceId, Size>,
     rollback_transactions: BTreeMap<SurfaceId, TransactionId>,
     rejected_sizes: BTreeMap<SurfaceId, Size>,
@@ -136,6 +140,7 @@ impl Default for LayoutEpochCoordinator {
         Self {
             committed_sizes: BTreeMap::new(),
             safe_observations: BTreeMap::new(),
+            visual_evidence_requirements: BTreeMap::new(),
             rollback_sizes: BTreeMap::new(),
             rollback_transactions: BTreeMap::new(),
             rejected_sizes: BTreeMap::new(),
@@ -297,6 +302,10 @@ impl LayoutEpochCoordinator {
         extent: Size,
         evidence: SurfaceVisualEvidence,
     ) -> bool {
+        self.visual_evidence_requirements
+            .entry(surface)
+            .and_modify(|required| *required = (*required).max(evidence))
+            .or_insert(evidence);
         let sequence = self.next_observation_sequence;
         self.next_observation_sequence = self.next_observation_sequence.saturating_add(1);
         let candidate = SafeSurfaceObservation {
@@ -326,6 +335,25 @@ impl LayoutEpochCoordinator {
 
     pub fn safe_observation(&self, surface: SurfaceId) -> Option<SafeSurfaceObservation> {
         self.safe_observations.get(&surface).copied()
+    }
+
+    pub fn required_visual_evidence(&self, surface: SurfaceId) -> SurfaceVisualEvidence {
+        self.visual_evidence_requirements
+            .get(&surface)
+            .copied()
+            .unwrap_or(SurfaceVisualEvidence::BackingSnapshot)
+    }
+
+    /// Returns whether an exact-size observation is strong enough to complete
+    /// a resize for this surface. The requirement is monotonic for the
+    /// surface lifetime so passive backing maintenance cannot demote an active
+    /// presentation path.
+    pub fn resize_evidence_allowed(
+        &self,
+        surface: SurfaceId,
+        evidence: SurfaceVisualEvidence,
+    ) -> bool {
+        evidence >= self.required_visual_evidence(surface)
     }
 
     pub fn request_allowed(&self, surface: SurfaceId, size: Size) -> bool {
@@ -487,6 +515,7 @@ impl LayoutEpochCoordinator {
     pub fn remove(&mut self, surface: SurfaceId) {
         self.committed_sizes.remove(&surface);
         self.safe_observations.remove(&surface);
+        self.visual_evidence_requirements.remove(&surface);
         self.rollback_sizes.remove(&surface);
         self.rollback_transactions.remove(&surface);
         self.rejected_sizes.remove(&surface);

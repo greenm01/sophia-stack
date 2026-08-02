@@ -1,11 +1,12 @@
 use super::*;
 use crate::commands::live_session::{
-    LiveWmLayoutFingerprint, LiveWmProposal, PersistentLiveLayout, live_layout_node,
-    live_layout_node_from_facts, planning_state_for_response,
+    LiveWmLayoutFingerprint, LiveWmProposal, PendingLiveWmLayout, PersistentLiveLayout,
+    live_layout_node, live_layout_node_from_facts, planning_state_for_response,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
-    SurfaceConstraints, TransactionCommit, TransactionId, TransactionOutcome, WorkspaceId,
+    BufferHandle, SurfaceConstraints, TransactionCommit, TransactionId, TransactionOutcome,
+    WorkspaceId,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,6 +25,274 @@ fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
         generation: 1,
         resize_sync: ResizeSyncCapability::ImplicitOnly,
     }
+}
+
+fn hold_test_resize(
+    layout: &mut PersistentLiveLayout,
+    surface: SurfaceId,
+    transaction: TransactionId,
+    geometry: Rect,
+) {
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::from([(
+            surface,
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        )]),
+        focus: Some(surface),
+        deadline: Instant::now() + Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::new(),
+        source: None,
+        effects: None,
+    });
+}
+
+#[test]
+fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
+    let surface = SurfaceId::new(83, 1);
+    let launch = Size {
+        width: 1280,
+        height: 1040,
+    };
+    let target = Size {
+        width: 1276,
+        height: 1422,
+    };
+    let target_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: target.width,
+        height: target.height,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.record_safe_observation(
+        surface,
+        TransactionId::from_raw(830),
+        launch,
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+    );
+    layout.layout_epochs.record_committed(surface, launch);
+    layout
+        .layout_epochs
+        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+    layout.layout_epochs.set_pending_target(surface, target);
+    hold_test_resize(
+        &mut layout,
+        surface,
+        TransactionId::from_raw(831),
+        target_geometry,
+    );
+
+    let backing_handle = 832;
+    layout.cpu_buffer_sizes.insert(backing_handle, target);
+    let backing_transaction = TransactionId::from_raw(832);
+    let mut backing =
+        crate::commands::live_session::wm_update_coordinator_batch(backing_transaction);
+    backing.transactions.push(SurfaceTransaction {
+        transaction: backing_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry,
+        target_buffer: BufferSource::CpuBuffer {
+            handle: backing_handle,
+        },
+        damage: Region::single(target_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    });
+    layout.observe_authority_batch(&backing);
+
+    assert!(
+        layout
+            .pending
+            .as_ref()
+            .unwrap()
+            .staged_transactions
+            .is_empty()
+    );
+    assert!(layout.resolve_pending().is_none());
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(launch));
+    assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
+
+    let present_buffer = BufferHandle::from_raw(833);
+    layout.dma_buf_sizes.insert(present_buffer, target);
+    let present_transaction = TransactionId::from_raw(833);
+    let mut present =
+        crate::commands::live_session::wm_update_coordinator_batch(present_transaction);
+    present.transactions.push(SurfaceTransaction {
+        transaction: present_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry,
+        target_buffer: BufferSource::DmaBuf {
+            handle: present_buffer.raw(),
+        },
+        damage: Region::single(target_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    });
+    present
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: present_transaction,
+            surface,
+            buffer: present_buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+    present.presented_surfaces.push(surface);
+    layout.observe_authority_batch(&present);
+
+    assert!(layout.resolve_pending().is_some());
+    assert!(layout.awaiting_visual_commits.surface_awaiting(surface));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(launch));
+    assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
+    assert!(layout.complete_visual_commit(present_transaction, surface, target));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
+}
+
+#[test]
+fn backing_resize_still_commits_for_cpu_only_surface() {
+    let surface = SurfaceId::new(84, 1);
+    let launch = Size {
+        width: 640,
+        height: 480,
+    };
+    let target = Size {
+        width: 800,
+        height: 600,
+    };
+    let target_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: target.width,
+        height: target.height,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.record_committed(surface, launch);
+    layout
+        .layout_epochs
+        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+    layout.layout_epochs.set_pending_target(surface, target);
+    hold_test_resize(
+        &mut layout,
+        surface,
+        TransactionId::from_raw(840),
+        target_geometry,
+    );
+
+    let buffer = 841;
+    layout.cpu_buffer_sizes.insert(buffer, target);
+    let transaction = TransactionId::from_raw(841);
+    let mut backing = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+    backing.transactions.push(SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: buffer },
+        damage: Region::single(target_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    });
+    layout.observe_authority_batch(&backing);
+
+    assert!(layout.resolve_pending().is_some());
+    assert!(!layout.awaiting_visual_commits.surface_awaiting(surface));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
+}
+
+#[test]
+fn explicit_software_present_can_complete_presented_surface_resize() {
+    let surface = SurfaceId::new(85, 1);
+    let launch = Size {
+        width: 640,
+        height: 480,
+    };
+    let target = Size {
+        width: 800,
+        height: 600,
+    };
+    let target_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: target.width,
+        height: target.height,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.record_safe_observation(
+        surface,
+        TransactionId::from_raw(850),
+        launch,
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+    );
+    layout.layout_epochs.record_committed(surface, launch);
+    layout
+        .layout_epochs
+        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+    layout.layout_epochs.set_pending_target(surface, target);
+    hold_test_resize(
+        &mut layout,
+        surface,
+        TransactionId::from_raw(851),
+        target_geometry,
+    );
+
+    let buffer = 852;
+    layout.cpu_buffer_sizes.insert(buffer, target);
+    let transaction = TransactionId::from_raw(852);
+    let mut presented = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+    presented.transactions.push(SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: buffer },
+        damage: Region::single(target_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    });
+    presented.presented_surfaces.push(surface);
+    presented.software_present_submissions.push(
+        sophia_x_authority::XAuthoritySoftwarePresentSubmission {
+            transaction,
+            surface,
+            acquire_fence: None,
+            idle_fence: None,
+        },
+    );
+    layout.observe_authority_batch(&presented);
+
+    assert!(layout.resolve_pending().is_some());
+    assert!(!layout.awaiting_visual_commits.surface_awaiting(surface));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
 }
 
 #[test]

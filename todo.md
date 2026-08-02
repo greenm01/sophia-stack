@@ -863,8 +863,16 @@ than adding speculative browser compatibility.
   submission, so admission timed out. The disposition gate now admits only the
   exact armed transaction/surface/size identity; later same-surface work stays
   behind the production content fence and the standing target remains pending.
-  Repeat the physical launch from this commit before continuing the full
-  workflow.
+  The next physical launch retired that exact admission frame and delivered
+  the standing 1276-by-1422 configure, but then accepted an exact-size passive
+  CPU backing snapshot as resize completion while Firefox's visible DMA-BUF
+  producer continued at 1280-by-1040. The resulting taller layout contained
+  only 1040 rows of browser pixels, leaving a black lower region and clipped
+  content. Engine now retains the strongest visual-evidence requirement for a
+  surface lifetime: once a surface explicitly presents complete buffers, a
+  backing snapshot may inform recovery but cannot satisfy a resize. CPU-only
+  clients and explicit software Presents remain valid. Repeat the physical
+  launch from this commit before continuing the full workflow.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

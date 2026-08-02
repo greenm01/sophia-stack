@@ -132,6 +132,53 @@ fn managed_surface_accepts_the_latest_complete_observation() {
 }
 
 #[test]
+fn presented_surface_requires_presented_evidence_for_later_resizes() {
+    let surface = SurfaceId::new(22, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_admission(surface, SurfaceAdmissionState::Managed);
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(25),
+        size(1280, 1040),
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(26),
+        size(1276, 1422),
+        SurfaceVisualEvidence::BackingSnapshot,
+    );
+
+    assert_eq!(coordinator.safe_size(surface), Some(size(1276, 1422)));
+    assert_eq!(
+        coordinator.required_visual_evidence(surface),
+        SurfaceVisualEvidence::PresentedBuffer
+    );
+    assert!(!coordinator.resize_evidence_allowed(surface, SurfaceVisualEvidence::BackingSnapshot));
+    assert!(coordinator.resize_evidence_allowed(surface, SurfaceVisualEvidence::PresentedBuffer));
+}
+
+#[test]
+fn removing_surface_clears_its_visual_evidence_requirement() {
+    let surface = SurfaceId::new(23, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_safe_observation(
+        surface,
+        TransactionId::from_raw(27),
+        size(800, 600),
+        SurfaceVisualEvidence::PresentedBuffer,
+    );
+
+    coordinator.remove(surface);
+
+    assert_eq!(
+        coordinator.required_visual_evidence(surface),
+        SurfaceVisualEvidence::BackingSnapshot
+    );
+    assert!(coordinator.resize_evidence_allowed(surface, SurfaceVisualEvidence::BackingSnapshot));
+}
+
+#[test]
 fn recovery_preserves_declared_constraints_and_can_be_cleared() {
     let surface = SurfaceId::new(8, 1);
     let declared = SurfaceConstraints {
