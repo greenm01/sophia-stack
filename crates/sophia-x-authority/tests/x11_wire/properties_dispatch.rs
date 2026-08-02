@@ -1068,3 +1068,82 @@ fn wm_transient_for_attaches_dialog_and_unmap_publishes_lifecycle_snapshot() {
                 && !surface.mapped
     ));
 }
+
+#[test]
+fn root_transient_stays_client_positioned_without_a_surface_owner() {
+    let namespace = NamespaceId::from_raw(46);
+    let dialog = 0x220022;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 550, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, dialog, 0, 0, 480, 240),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    runtime
+        .apply(XAuthorityRequestPacket {
+            transaction: TransactionId::from_raw(2),
+            namespace,
+            kind: XAuthorityRequestKind::MapWindow {
+                window: XResourceId::new(u64::from(dialog), 1),
+                generation: 2,
+            },
+        });
+
+    let transient_for = atoms.intern("WM_TRANSIENT_FOR", false).unwrap().unwrap();
+    let window_type = atoms.intern("WINDOW", false).unwrap().unwrap();
+    let change = decode_x11_core_request(
+        context(namespace, 551, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            dialog,
+            transient_for,
+            window_type,
+            32,
+            &X_SETUP_DEFAULT_ROOT.to_le_bytes(),
+        ),
+    )
+    .unwrap();
+    let attached = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 18),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        attached.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.surface == SurfaceId::new(dialog, 1)
+                && surface.presentation == SurfacePresentationRole::ClientPositioned
+                && surface.presentation_owner.is_none()
+                && surface.mapped
+    ));
+
+    let detached = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 19),
+        XWireRequest::DeleteProperty {
+            window: XResourceId::new(u64::from(dialog), 1),
+            property: transient_for,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        detached.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.presentation == SurfacePresentationRole::PolicyManaged
+                && surface.presentation_owner.is_none()
+                && surface.mapped
+    ));
+}

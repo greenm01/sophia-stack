@@ -294,11 +294,13 @@ coordinates relative to that selected window, and carry current button and
 effective modifier masks. Smooth wheel Motion and its compatibility button
 pair use `XIPointerEmulated`; Engine axis packets remain free of X11 policy.
 
-`WM_TRANSIENT_FOR` is reduced at the X boundary to an optional presentation
-owner on `AuthoritySurface`. It changes a root-child dialog from policy-managed
-to client-positioned without teaching Engine ICCCM atoms. The live session
-keeps attached visibility tied to the mapped owner, and explicit unmap or owner
-loss cannot leave a stale popup in composition.
+`WM_TRANSIENT_FOR` is reduced at the X boundary into two protocol-neutral
+facts: property presence makes the root child client-positioned, while a
+resolvable value supplies an optional presentation owner on `AuthoritySurface`.
+A group transient naming the root therefore remains outside blind-WM placement
+without inventing an Engine owner. The live session keeps attached visibility
+tied to a mapped owner when one exists, and explicit unmap, property deletion,
+or owner loss cannot leave a stale popup in composition.
 
 ## Namespace Model
 

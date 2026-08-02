@@ -130,6 +130,7 @@ impl XAuthorityRuntime {
     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
         self.resources
             .lookup(namespace, window, XResourceKind::Window)?;
+        let transient_for = owner.is_some();
         let owner_surface = owner.and_then(|owner| {
             self.resources
                 .lookup(namespace, owner, XResourceKind::Window)
@@ -138,7 +139,7 @@ impl XAuthorityRuntime {
             self.windows.get(root).map(|record| record.surface)
         });
         self.windows
-            .set_presentation_owner(window, owner_surface)
+            .set_transient_for(window, transient_for, owner_surface)
             .map_err(Into::into)
     }
 

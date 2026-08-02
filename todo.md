@@ -924,8 +924,13 @@ than adding speculative browser compatibility.
   popup proposal had been rejected by Engine while remaining in the xmonad
   bridge's speculative model. Rejected WM proposals now retain their source,
   trigger the bounded bridge restart, discard queued/in-flight speculative
-  work, and reseed xmonad from the committed layout. Repeat the popup recovery,
-  second Firefox launch, and exit stages from this change.
+  work, and reseed xmonad from the committed layout. The following run no
+  longer exited, but opening the popup blanked Firefox while xmonad repeatedly
+  attempted to tile it. `WM_TRANSIENT_FOR` presence had been discarded when
+  its owner was the root and therefore had no Engine surface. Transient-hint
+  presence and the optional reduced owner are now separate: root-owned
+  transients stay client-positioned and never enter blind WM admission. Repeat
+  the popup recovery, second Firefox launch, and exit stages from this change.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

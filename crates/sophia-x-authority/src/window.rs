@@ -14,6 +14,9 @@ pub struct XWindowRecord {
     pub surface: SurfaceId,
     pub namespace: NamespaceId,
     pub override_redirect: bool,
+    /// The client published `WM_TRANSIENT_FOR`, even when its owner is the
+    /// root window or cannot be reduced to an Engine surface.
+    pub transient_for: bool,
     pub presentation_owner: Option<SurfaceId>,
     pub map_state: XMapState,
     pub geometry: Rect,
@@ -24,7 +27,7 @@ pub struct XWindowRecord {
 impl XWindowRecord {
     pub fn presentation_role(&self) -> SurfacePresentationRole {
         let is_root_child = self.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT);
-        if self.override_redirect || self.presentation_owner.is_some() || !is_root_child {
+        if self.override_redirect || self.transient_for || !is_root_child {
             SurfacePresentationRole::ClientPositioned
         } else {
             SurfacePresentationRole::PolicyManaged
@@ -121,6 +124,7 @@ impl XWindowTable {
                     surface,
                     namespace,
                     override_redirect: false,
+                    transient_for: false,
                     presentation_owner: None,
                     map_state: XMapState::Unmapped,
                     geometry,
@@ -237,16 +241,21 @@ impl XWindowTable {
         Ok(record.authority_surface())
     }
 
-    pub fn set_presentation_owner(
+    pub fn set_transient_for(
         &mut self,
         id: XResourceId,
+        transient_for: bool,
         owner: Option<SurfaceId>,
     ) -> Result<AuthoritySurface, XAuthorityAccessError> {
         let record = self
             .windows
             .get_mut(&id)
             .ok_or(XAuthorityAccessError::UnknownResource)?;
-        record.presentation_owner = owner.filter(|owner| *owner != record.surface);
+        record.transient_for = transient_for;
+        record.presentation_owner = transient_for
+            .then_some(owner)
+            .flatten()
+            .filter(|owner| *owner != record.surface);
         Ok(record.authority_surface())
     }
 

@@ -125,10 +125,12 @@ or layout policy.
   matching authority pixels complete the atomic visual commit. Override-redirect
   and standalone frontend paths retain their ordinary immediate-map behavior.
 - X root-child transients remain outside blind-WM placement. The X frontend
-  reduces `WM_TRANSIENT_FOR` to an optional protocol-neutral presentation owner;
-  the session composes a mapped client-positioned transient only while that
-  owner is present and visible. Map, unmap, property deletion, and owner removal
-  publish lifecycle snapshots rather than leaving stale popup layers.
+  reduces `WM_TRANSIENT_FOR` presence to the client-positioned role and, when
+  possible, its value to an optional protocol-neutral presentation owner.
+  Group transients which name the root retain the role without inventing an
+  owner edge. The session ties an attached transient to its mapped, visible
+  owner; map, unmap, property deletion, and owner removal publish lifecycle
+  snapshots rather than leaving stale popup layers.
 - `sophia-portal` has deterministic reducers for clipboard, drag-and-drop, file
   handoff, screen capture, URI open, and notifications. Owner-only bounded
   broker IPC, policy-provider IPC, expiry/revocation lifecycle, and the first
