@@ -214,21 +214,24 @@ macro_rules! drain_physical_input {
                 let wm = wm_session
                     .as_mut()
                     .ok_or("WM shortcut activated without a live WM session")?;
-                match wm.enqueue_action(
+                match LivePhysicalWmActionDisposition::from(wm.enqueue_action(
                     action,
                     focus.focused_surface(seat),
                     &layout,
                     output,
-                )? {
-                    LiveWmRequestAdmission::Admitted => {}
-                    LiveWmRequestAdmission::RejectedCapacity => {
+                )?) {
+                    LivePhysicalWmActionDisposition::Admitted => {}
+                    LivePhysicalWmActionDisposition::RejectedCapacity => {
                         eprintln!(
                             "sophia_live_wm schema=2 status=request_rejected source=action reason=capacity action={}",
                             action.raw(),
                         );
                     }
-                    LiveWmRequestAdmission::Duplicate => {
-                        return Err("WM action request was unexpectedly deduplicated".into());
+                    LivePhysicalWmActionDisposition::Coalesced => {
+                        println!(
+                            "sophia_live_wm schema=3 status=request_coalesced source=action reason=in_flight action={}",
+                            action.raw(),
+                        );
                     }
                 }
             }

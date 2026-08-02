@@ -896,7 +896,16 @@ than adding speculative browser compatibility.
   the fixture before `GrabKey`. Hermetic delayed-response and missing-grab
   regressions plus the exact real-xmonad Tall-to-Mirror smoke lock this
   boundary. Repeat the physical workflow from this change before closing the
-  item.
+  item. That repeat confirmed `Super+Space` changed the layout orientation and
+  repeated `Super+J` proposals cycled focus among all three clients, but
+  Firefox never received `FocusOut` when focus moved to another X client. The
+  frontend broker now owns the cross-client old/new route, preserves
+  same-client FIFO delivery, and has a repeated A-to-B-to-A wire regression.
+  The session's apparent crash was a clean status-1 exit caused by treating an
+  expected duplicate in-flight physical action as fatal; action duplicates now
+  coalesce, are counted in the bounded transport summary, and retain capacity
+  rejection as a separate outcome. Repeat the physical refocus stage from this
+  change before continuing the popup and exit stages.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

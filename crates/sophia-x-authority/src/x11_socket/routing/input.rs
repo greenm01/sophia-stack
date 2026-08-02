@@ -308,7 +308,7 @@ enum X11ControlChannels {
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
     },
     ClientBound {
-        receiver: Receiver<XAuthorityControlCommand>,
+        receiver: Receiver<X11RoutedControl>,
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
     },
 }
@@ -318,11 +318,14 @@ impl X11ControlChannels {
     fn recv_timeout(
         &self,
         client: XServerFrontendClientId,
-    ) -> Result<XAuthorityControlCommand, RecvTimeoutError> {
+    ) -> Result<X11RoutedControl, RecvTimeoutError> {
         match self {
             Self::Routed { receiver, .. } => {
                 match receiver.recv_timeout(Duration::from_millis(10)) {
-                    Ok(route) if route.client == client => Ok(route.command),
+                    Ok(route) if route.client == client => Ok(X11RoutedControl::Authority {
+                        command: route.command,
+                        focus: None,
+                    }),
                     // Drop one misaddressed route, then let the writer
                     // loop observe its stop flag before it receives again.
                     Ok(_) => Err(RecvTimeoutError::Timeout),

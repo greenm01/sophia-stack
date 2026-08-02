@@ -67,6 +67,23 @@ enum LiveWmRequestAdmission {
     Duplicate,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LivePhysicalWmActionDisposition {
+    Admitted,
+    Coalesced,
+    RejectedCapacity,
+}
+
+impl From<LiveWmRequestAdmission> for LivePhysicalWmActionDisposition {
+    fn from(admission: LiveWmRequestAdmission) -> Self {
+        match admission {
+            LiveWmRequestAdmission::Admitted => Self::Admitted,
+            LiveWmRequestAdmission::Duplicate => Self::Coalesced,
+            LiveWmRequestAdmission::RejectedCapacity => Self::RejectedCapacity,
+        }
+    }
+}
+
 fn require_wm_request_admission(
     admission: LiveWmRequestAdmission,
     source: &'static str,
@@ -106,6 +123,7 @@ struct LiveWmSession {
     requests: usize,
     request_peak_depth: usize,
     request_rejections: usize,
+    action_requests_coalesced: usize,
     stale_responses: usize,
     work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
@@ -237,6 +255,7 @@ impl LiveWmSession {
             requests: 0,
             request_peak_depth: 0,
             request_rejections: 0,
+            action_requests_coalesced: 0,
             stale_responses: 0,
             work_area_relayout_required: false,
             committed: 0,
@@ -479,6 +498,7 @@ impl LiveWmSession {
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         let source = LiveWmProposalSource::Action(action);
         if self.has_request_source(source) {
+            self.action_requests_coalesced = self.action_requests_coalesced.saturating_add(1);
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
         let output_state = self

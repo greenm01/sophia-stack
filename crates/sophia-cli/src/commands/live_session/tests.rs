@@ -57,6 +57,7 @@ mod presentation_tests;
 mod session_config_tests;
 mod startup_output_tests;
 mod visual_candidate_tests;
+mod wm_action_tests;
 mod wm_admission_tests;
 mod wm_session_tests;
 

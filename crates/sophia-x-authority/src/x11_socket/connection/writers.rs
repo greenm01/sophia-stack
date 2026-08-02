@@ -198,10 +198,31 @@ fn spawn_x11_control_writer(
     }
     let thread = std::thread::spawn(move || {
         while !writer_stop.load(Ordering::Acquire) {
-            let command = match channels.recv_timeout(client) {
-                Ok(command) => command,
+            let routed = match channels.recv_timeout(client) {
+                Ok(routed) => routed,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
+            };
+            let (command, focus_transition) = match routed {
+                X11RoutedControl::Authority { command, focus } => (command, focus),
+                X11RoutedControl::FocusOut { window } => {
+                    focused_surface_window.store(
+                        u64::from(X_SETUP_DEFAULT_ROOT),
+                        Ordering::Release,
+                    );
+                    write_x11_control_records(
+                        &stream,
+                        byte_order,
+                        &sequence,
+                        vec![x11_focus_event_record(
+                            byte_order,
+                            sequence.load(Ordering::Acquire),
+                            window,
+                            false,
+                        )],
+                    )?;
+                    continue;
+                }
             };
             let transaction = command.transaction();
             let surface = command.surface();
@@ -410,44 +431,14 @@ fn spawn_x11_control_writer(
                         focused_surface_window.swap(window.local.raw(), Ordering::AcqRel),
                         1,
                     );
-                    if previous == window && previous_routed == window {
-                        channels.send_ack(
-                            client,
-                            XAuthorityControlAck {
-                                kind,
-                                transaction,
-                                surface,
-                                outcome: XAuthorityControlOutcome::Delivered,
-                            },
-                        )?;
-                        continue;
-                    }
-                    let mut records = Vec::with_capacity(2);
-                    if previous_routed != window
-                        && previous_routed.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
-                    {
-                        records.push(encode_x_client_event(
-                            byte_order,
-                            XClientEvent::Focus {
-                                sequence: event_sequence,
-                                focused: false,
-                                detail: 3,
-                                event: previous_routed,
-                                mode: 0,
-                            },
-                        ));
-                    }
-                    records.push(encode_x_client_event(
+                    x11_focus_surface_records(
                         byte_order,
-                        XClientEvent::Focus {
-                            sequence: event_sequence,
-                            focused: true,
-                            detail: 3,
-                            event: window,
-                            mode: 0,
-                        },
-                    ));
-                    records
+                        event_sequence,
+                        window,
+                        previous,
+                        previous_routed,
+                        focus_transition,
+                    )?
                 }
                 XAuthorityControlCommand::ClearFocus { .. } => {
                     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
@@ -467,24 +458,17 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     }
-                    let previous = XResourceId::new(
+                    let previous_routed = XResourceId::new(
                         focused_surface_window.swap(root.local.raw(), Ordering::AcqRel),
                         1,
                     );
-                    if previous == root {
-                        Vec::new()
-                    } else {
-                        vec![encode_x_client_event(
-                            byte_order,
-                            XClientEvent::Focus {
-                                sequence: event_sequence,
-                                focused: false,
-                                detail: 3,
-                                event: previous,
-                                mode: 0,
-                            },
-                        )]
-                    }
+                    x11_clear_focus_records(
+                        byte_order,
+                        event_sequence,
+                        root,
+                        previous_routed,
+                        focus_transition,
+                    )?
                 }
                 XAuthorityControlCommand::WithdrawSurface { .. } => {
                     let was_active = match lock_x11_control_runtime(
@@ -529,31 +513,7 @@ fn spawn_x11_control_writer(
                 }
             };
 
-            let mut stream = stream
-                .lock()
-                .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
-            let event_sequence = sequence.load(Ordering::Acquire);
-            for mut record in records {
-                write_xi_u16(byte_order, &mut record[2..4], event_sequence);
-                if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
-                    tracing::trace!(
-                        "sophia_x11_socket_write schema=1 writer=control bytes={} payload_redacted=true",
-                        record.len(),
-                    );
-                }
-                if let Err(error) = stream.write_all(&record) {
-                    if is_x11_client_disconnect(&error) {
-                        return Ok(());
-                    }
-                    return Err(X11SetupSocketError::new(format!(
-                        "failed to write X11 control event: {error}"
-                    )));
-                }
-            }
-            stream.flush().map_err(|error| {
-                X11SetupSocketError::new(format!("failed to flush X11 control event: {error}"))
-            })?;
-            drop(stream);
+            write_x11_control_records(&stream, byte_order, &sequence, records)?;
             channels.send_ack(
                 client,
                 XAuthorityControlAck {

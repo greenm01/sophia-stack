@@ -612,13 +612,14 @@ physical-input routing must each remain within 100 ms. Native retirement runs
 before shortcut routing.
 
 It also requires one
-`sophia_live_wm_transport schema=1 status=complete` record. The bounded
+`sophia_live_wm_transport schema=2 status=complete` record. The bounded
 transport must drain with zero pending or capacity-rejected requests, peak at
 no more than sixteen owner entries, reject no more than sixteen stale
-responses, and keep queue dwell and socket round trip within the external
-policy timeout of 500 ms. The socket round trip is intentionally not charged
-to the owner-thread 100 ms budget: the typed worker waits while the owner
-continues input, rendering, and page-flip service.
+responses, report the count of nonfatal repeated physical actions coalesced
+behind an identical in-flight request, and keep queue dwell and socket round
+trip within the external policy timeout of 500 ms. The socket round trip is
+intentionally not charged to the owner-thread 100 ms budget: the typed worker
+waits while the owner continues input, rendering, and page-flip service.
 
 Validate verifier changes with:
 

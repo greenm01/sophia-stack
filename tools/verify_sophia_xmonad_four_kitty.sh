@@ -435,7 +435,7 @@ for key in max_child_reap_msec max_input_phase_msec; do
 done
 
 mapfile -t wm_transport_lines < <(
-    grep -E '^sophia_live_wm_transport schema=1 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_wm_transport schema=2 status=complete ' "$SESSION_LOG"
 )
 (( ${#wm_transport_lines[@]} == 1 )) ||
     fail "expected one WM transport completion record"
@@ -444,7 +444,7 @@ for assignment in pending=0 rejected=0; do
     [[ " $wm_transport " == *" $assignment "* ]] ||
         fail "WM transport ledger was not clean: $assignment"
 done
-for key in peak_depth stale_responses max_queue_dwell_msec max_round_trip_msec; do
+for key in peak_depth action_coalesced stale_responses max_queue_dwell_msec max_round_trip_msec; do
     value="$(field "$wm_transport" "$key")" ||
         fail "WM transport record is missing $key"
     [[ "$value" =~ ^[0-9]+$ ]] ||
@@ -457,6 +457,8 @@ for key in peak_depth stale_responses max_queue_dwell_msec max_round_trip_msec; 
         stale_responses)
             (( value <= 16 )) ||
                 fail "WM transport rejected too many stale responses: $value"
+            ;;
+        action_coalesced)
             ;;
         *)
             (( value <= 500 )) ||

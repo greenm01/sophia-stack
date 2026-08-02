@@ -3,6 +3,7 @@
 struct XServerFrontendRouteRegistry {
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
     window_parents:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
     core_event_subscriptions:
@@ -23,7 +24,7 @@ struct XServerFrontendRouteRegistry {
 }
 
 #[cfg(unix)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct XServerFrontendSurfaceRoute {
     client: XServerFrontendClientId,
     namespace: NamespaceId,
@@ -67,14 +68,14 @@ struct XDeferredRoutedInput {
 #[derive(Clone)]
 struct XServerFrontendClientRouteSenders {
     input: SyncSender<XAuthorityClientInputEvent>,
-    control: SyncSender<XAuthorityControlCommand>,
+    control: SyncSender<X11RoutedControl>,
     protocol: SyncSender<XClientEvent>,
 }
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteChannels {
     input: Receiver<XAuthorityClientInputEvent>,
-    control: Receiver<XAuthorityControlCommand>,
+    control: Receiver<X11RoutedControl>,
     protocol: Receiver<XClientEvent>,
 }
 
@@ -83,6 +84,7 @@ struct XServerFrontendClientRouteRegistration {
     client: XServerFrontendClientId,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
+    focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
     window_parents:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
     core_event_subscriptions:
@@ -212,6 +214,7 @@ impl XServerFrontendRouteRegistry {
                 client,
                 clients: self.clients.clone(),
                 surfaces: self.surfaces.clone(),
+                focused_surface: self.focused_surface.clone(),
                 window_parents: self.window_parents.clone(),
                 core_event_subscriptions: self.core_event_subscriptions.clone(),
                 randr_subscriptions: self.randr_subscriptions.clone(),
@@ -912,8 +915,18 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientControlCommand,
     ) -> Result<(), XServerFrontendRouteError> {
+        if let Some(result) = self.route_focus_control(route) {
+            return result;
+        }
         let sender = self.client_senders(route.client)?.control;
-        self.route_to_client(route.client, sender, route.command)
+        self.route_to_client(
+            route.client,
+            sender,
+            X11RoutedControl::Authority {
+                command: route.command,
+                focus: None,
+            },
+        )
     }
 
     fn acknowledge_stale_control(
@@ -1029,6 +1042,11 @@ impl Drop for XServerFrontendClientRouteRegistration {
         }
         if let Ok(mut surfaces) = self.surfaces.lock() {
             surfaces.retain(|_, route| route.client != self.client);
+        }
+        if let Ok(mut focused) = self.focused_surface.lock()
+            && focused.is_some_and(|route| route.client == self.client)
+        {
+            *focused = None;
         }
         if let Ok(mut parents) = self.window_parents.lock() {
             parents.retain(|(client, _), _| *client != self.client);
