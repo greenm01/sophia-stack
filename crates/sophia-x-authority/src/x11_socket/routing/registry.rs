@@ -350,21 +350,18 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
-    fn present_configure_event_ids(
+    fn present_configure_subscribers(
         &self,
-        client: XServerFrontendClientId,
         window: XResourceId,
-    ) -> Result<Vec<XResourceId>, XServerFrontendRouteError> {
+    ) -> Result<Vec<(XServerFrontendClientId, XResourceId)>, XServerFrontendRouteError> {
         Ok(self
             .present_subscriptions
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
             .iter()
             .filter_map(|((subscription_client, _), subscription)| {
-                (*subscription_client == client
-                    && subscription.window == window
-                    && subscription.mask & 1 != 0)
-                    .then_some(subscription.event_id)
+                (subscription.window == window && subscription.mask & 1 != 0)
+                    .then_some((*subscription_client, subscription.event_id))
             })
             .collect())
     }

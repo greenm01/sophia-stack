@@ -744,9 +744,9 @@ fn present_configure_selection_uses_only_masked_matching_windows() {
     assert_eq!(
         broker
             .registry
-            .present_configure_event_ids(client, window)
+            .present_configure_subscribers(window)
             .unwrap(),
-        vec![configure]
+        vec![(client, configure), (other_client, wrong_client)]
     );
 }
 

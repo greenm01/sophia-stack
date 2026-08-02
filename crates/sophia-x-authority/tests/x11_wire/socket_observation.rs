@@ -479,6 +479,14 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         ))
         .unwrap();
     first
+        .write_all(&present_select_input_request(
+            XByteOrder::LittleEndian,
+            0x0020_0711,
+            0x0020_0701,
+            1,
+        ))
+        .unwrap();
+    first
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
             0x0020_0701,
@@ -523,6 +531,14 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             0x993,
             (0, 0, 16, 16),
             1,
+            1,
+        ))
+        .unwrap();
+    second
+        .write_all(&present_select_input_request(
+            XByteOrder::LittleEndian,
+            0x0040_0712,
+            0x0040_0702,
             1,
         ))
         .unwrap();
@@ -654,8 +670,35 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             },
         }));
     }
+    let first_present = read_x_reply(&mut first, XByteOrder::LittleEndian);
+    assert_eq!(first_present[0], 35);
+    assert_eq!(first_present[1], X_PRESENT_MAJOR_OPCODE);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[8..10]), 0);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &first_present[12..16]),
+        0x0020_0711
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &first_present[16..20]),
+        0x0020_0701
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[24..26]), 301);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[26..28]), 201);
     assert_eq!(read_x_record(&mut first)[0], 22);
     assert_eq!(read_x_record(&mut first)[0], 12);
+    let second_present = read_x_reply(&mut second, XByteOrder::LittleEndian);
+    assert_eq!(second_present[0], 35);
+    assert_eq!(second_present[1], X_PRESENT_MAJOR_OPCODE);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &second_present[12..16]),
+        0x0040_0712
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &second_present[16..20]),
+        0x0040_0702
+    );
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[24..26]), 302);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[26..28]), 202);
     assert_eq!(read_x_record(&mut second)[0], 22);
     assert_eq!(read_x_record(&mut second)[0], 12);
 
@@ -671,6 +714,198 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     let revoked = policy.revoked.lock().unwrap();
     assert_eq!(revoked.len(), 2);
     assert_ne!(revoked[0].namespace.id, revoked[1].namespace.id);
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-present-child-configure-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let (transaction_sender, _transaction_receiver) =
+        std::sync::mpsc::sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(1);
+    let config = XServerFrontendConfig::new(&server_path, NamespaceId::from_raw(855)).unwrap();
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+    let parent = 0x0020_0901;
+    let child = 0x0020_0902;
+    let event_id = 0x0020_0910;
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            parent,
+            0,
+            0,
+            1280,
+            1040,
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut stream)[0], 22);
+    stream
+        .write_all(&create_window_request_with_parent(
+            XByteOrder::LittleEndian,
+            child,
+            parent,
+            0,
+            0,
+            1280,
+            1040,
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut stream)[0], 22);
+    stream
+        .write_all(&present_select_input_request(
+            XByteOrder::LittleEndian,
+            event_id,
+            child,
+            1,
+        ))
+        .unwrap();
+    let mut peer = UnixStream::connect(&socket_path).unwrap();
+    peer.write_all(&setup_request(
+        XByteOrder::LittleEndian,
+        11,
+        0,
+        b"",
+        b"",
+    ))
+    .unwrap();
+    read_setup_success(&mut peer, XByteOrder::LittleEndian);
+    let peer_event_id = 0x0040_0910;
+    peer.write_all(&present_select_input_request(
+        XByteOrder::LittleEndian,
+        peer_event_id,
+        child,
+        1,
+    ))
+    .unwrap();
+    peer.write_all(&resource_request(
+        XByteOrder::LittleEndian,
+        14,
+        child,
+    ))
+    .unwrap();
+    assert_eq!(read_x_reply(&mut peer, XByteOrder::LittleEndian)[0], 1);
+    stream
+        .write_all(&configure_window_request(
+            XByteOrder::LittleEndian,
+            child,
+            0x000f,
+            &[2, 16, 1276, 1422],
+        ))
+        .unwrap();
+
+    let present = read_x_reply(&mut stream, XByteOrder::LittleEndian);
+    assert_eq!(present.len(), 40);
+    assert_eq!(present[0], 35);
+    assert_eq!(present[1], X_PRESENT_MAJOR_OPCODE);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &present[8..10]), 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &present[12..16]), event_id);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &present[16..20]), child);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &present[20..22]), 2);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &present[22..24]), 16);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &present[24..26]), 1276);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &present[26..28]), 1422);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &present[32..34]), 1276);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &present[34..36]), 1422);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &present[36..40]), 0);
+    let peer_present = read_x_reply(&mut peer, XByteOrder::LittleEndian);
+    assert_eq!(peer_present[0], 35);
+    assert_eq!(peer_present[1], X_PRESENT_MAJOR_OPCODE);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &peer_present[12..16]),
+        peer_event_id
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &peer_present[16..20]),
+        child
+    );
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &peer_present[24..26]),
+        1276
+    );
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &peer_present[26..28]),
+        1422
+    );
+    let core = read_x_record(&mut stream);
+    assert_eq!(core[0], 22);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &core[8..12]), child);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &core[20..22]), 1276);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &core[22..24]), 1422);
+
+    stream
+        .write_all(&present_select_input_request(
+            XByteOrder::LittleEndian,
+            event_id,
+            child,
+            1 << 1,
+        ))
+        .unwrap();
+    stream
+        .write_all(&configure_window_request(
+            XByteOrder::LittleEndian,
+            child,
+            0x000c,
+            &[1000, 700],
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut stream)[0], 22);
+
+    stream
+        .write_all(&present_select_input_request(
+            XByteOrder::LittleEndian,
+            event_id,
+            child,
+            1,
+        ))
+        .unwrap();
+    stream
+        .write_all(&configure_window_request(
+            XByteOrder::LittleEndian,
+            child,
+            0x000c,
+            &[1000, 700],
+        ))
+        .unwrap();
+    assert_eq!(read_x_record(&mut stream)[0], 22);
+
+    drop(stream);
+    drop(peer);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
     std::fs::remove_file(&socket_path).unwrap();
 }
 

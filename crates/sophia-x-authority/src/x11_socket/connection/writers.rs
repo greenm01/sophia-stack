@@ -84,23 +84,25 @@ fn x11_surface_geometry_records(
     window: XResourceId,
     geometry: Rect,
     admit: bool,
+    present_configure: bool,
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
     let width = u16::try_from(geometry.width)
         .map_err(|_| X11SetupSocketError::new("X11 control geometry width is invalid"))?;
     let height = u16::try_from(geometry.height)
         .map_err(|_| X11SetupSocketError::new("X11 control geometry height is invalid"))?;
-    let present_event_ids = protocol_routing
-        .map(|routing| routing.present_configure_event_ids(client, window))
-        .transpose()
-        .map_err(|error| {
-            X11SetupSocketError::new(format!(
-                "failed to resolve Present ConfigureNotify subscriptions: {error}"
-            ))
-        })?
+    let present_events = protocol_routing
+        .filter(|_| present_configure)
+        .map(|routing| route_x11_present_configure(routing, client, event_sequence, window, geometry))
+        .transpose()?
         .unwrap_or_default();
     let mut records =
-        Vec::with_capacity(present_event_ids.len() + if admit { 4 } else { 2 });
+        Vec::with_capacity(present_events.len() + if admit { 4 } else { 2 });
+    records.extend(
+        present_events
+            .into_iter()
+            .map(|event| encode_x_client_event(byte_order, event)),
+    );
     records.push(encode_x_client_event(
         byte_order,
         XClientEvent::ConfigureNotify {
@@ -116,23 +118,6 @@ fn x11_surface_geometry_records(
             override_redirect: false,
         },
     ));
-    records.extend(present_event_ids.into_iter().map(|event_id| {
-        encode_x_client_event(
-            byte_order,
-            XClientEvent::PresentConfigureNotify {
-                sequence: event_sequence,
-                event_id,
-                window,
-                x: clamp_engine_i16(geometry.x),
-                y: clamp_engine_i16(geometry.y),
-                width,
-                height,
-                pixmap_width: width,
-                pixmap_height: height,
-                pixmap_flags: 0,
-            },
-        )
-    }));
     if admit {
         records.push(encode_x_client_event(
             byte_order,
@@ -277,6 +262,7 @@ fn spawn_x11_control_writer(
                         window,
                         geometry,
                         true,
+                        true,
                         protocol_routing.as_ref(),
                     )?
                 }
@@ -297,10 +283,10 @@ fn spawn_x11_control_writer(
                         )?;
                         continue;
                     }
-                    let geometry = match lock_x11_control_runtime(
-                        &runtime,
-                        &control_runtime_pending,
-                    )?
+                    let mut runtime =
+                        lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
+                    let previous_geometry = runtime.window_geometry(namespace, window).ok();
+                    let geometry = match runtime
                         .configure_window_size_from_engine(namespace, window, size)
                     {
                         Ok(geometry) => geometry,
@@ -317,6 +303,7 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
+                    drop(runtime);
                     core_event_selections
                         .lock()
                         .map_err(|_| {
@@ -330,6 +317,7 @@ fn spawn_x11_control_writer(
                         window,
                         geometry,
                         false,
+                        previous_geometry != Some(geometry),
                         protocol_routing.as_ref(),
                     )?
                 }

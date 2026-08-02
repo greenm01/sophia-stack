@@ -872,7 +872,17 @@ than adding speculative browser compatibility.
   surface lifetime: once a surface explicitly presents complete buffers, a
   backing snapshot may inform recovery but cannot satisfy a resize. CPU-only
   clients and explicit software Presents remain valid. Repeat the physical
-  launch from this commit before continuing the full workflow.
+  launch from this commit before continuing the full workflow. That repeat
+  preserved the correct 1280-by-1040 recovery extent and exposed the remaining
+  frontend gap: Firefox resized its descendant render window, but Sophia sent
+  only core `ConfigureNotify`, so Mesa retained the old swap-buffer size and no
+  1276-by-1422 PresentedBuffer ever arrived. XLibre's Present screen hook and
+  yserver's independent native-Rust Firefox fix both require exact-window
+  Present `ConfigureNotify` before core delivery. X authority now applies that
+  ordering to real client- and Engine-originated geometry changes, routes every
+  matching subscription, and suppresses failed/no-op notifications. Repeat the
+  three-window physical launch from this change before continuing the full
+  workflow.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

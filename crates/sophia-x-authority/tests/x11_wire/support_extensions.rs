@@ -336,6 +336,20 @@ fn present_pixmap_request(
     out
 }
 
+fn present_select_input_request(
+    byte_order: XByteOrder,
+    event_id: u32,
+    window: u32,
+    event_mask: u32,
+) -> Vec<u8> {
+    let mut out = vec![X_PRESENT_MAJOR_OPCODE, X_PRESENT_SELECT_INPUT_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, event_id);
+    push_u32(&mut out, byte_order, window);
+    push_u32(&mut out, byte_order, event_mask);
+    out
+}
+
 fn randr_select_input_request(byte_order: XByteOrder, window: u32, enable: u16) -> Vec<u8> {
     let mut out = vec![X_RANDR_MAJOR_OPCODE, X_RANDR_SELECT_INPUT_MINOR_OPCODE];
     push_u16(&mut out, byte_order, 3);

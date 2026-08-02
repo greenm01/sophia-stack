@@ -244,6 +244,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 released_fences,
                 mut server_reply_fds,
                 surface_output_reservations,
+                present_configure,
             ) = match decode_x11_core_request(
                 XWireClientContext {
                     byte_order: setup.byte_order,
@@ -510,6 +511,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     });
                     let released_fence = destroyed_fence
                         .and_then(|fence| runtime.dri3_fence_handle(namespace, fence).ok());
+                    let configured_geometry_before = hierarchy_geometry.and_then(
+                        |(window, _, _, _, _)| {
+                            runtime.window_geometry(namespace, window).ok()
+                        },
+                    );
                     let mut output = dispatch_x11_wire_request(
                         dispatch_context,
                         request,
@@ -688,6 +694,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         .outputs
                         .iter()
                         .any(|output| matches!(output, crate::XClientOutput::Error(_)));
+                    let present_configure = dispatch_succeeded
+                        .then_some(hierarchy_geometry)
+                        .flatten()
+                        .and_then(|(window, _, _, _, _)| {
+                            let geometry = runtime.window_geometry(namespace, window).ok()?;
+                            (configured_geometry_before != Some(geometry))
+                                .then_some((window, geometry))
+                        });
                     let hierarchy_geometry = hierarchy_geometry.and_then(
                         |(window, _, _, _, _)| {
                             runtime
@@ -955,6 +969,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         released_fence.into_iter().collect::<Vec<_>>(),
                         server_reply_fds,
                         surface_output_reservations,
+                        present_configure,
                     )
                 }
                 Err(error) => {
@@ -970,10 +985,24 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         Vec::new(),
                         Vec::new(),
                         Vec::new(),
+                        None,
                     )
                 }
             };
             if let Some(routing) = protocol_routing.as_ref() {
+                if let Some((window, geometry)) = present_configure {
+                    let events = route_x11_present_configure(
+                        routing,
+                        client,
+                        sequence,
+                        window,
+                        geometry,
+                    )?;
+                    output.outputs.splice(
+                        0..0,
+                        events.into_iter().map(crate::XClientOutput::Event),
+                    );
+                }
                 route_x11_dispatch_protocol_outputs(
                     state,
                     routing,

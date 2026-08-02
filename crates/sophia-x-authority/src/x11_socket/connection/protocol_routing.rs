@@ -12,6 +12,51 @@ fn route_x11_dispatch_protocol_outputs(
 }
 
 #[cfg(unix)]
+fn route_x11_present_configure(
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    sequence: u16,
+    window: XResourceId,
+    geometry: Rect,
+) -> Result<Vec<XClientEvent>, X11SetupSocketError> {
+    let width = crate::dispatch::clamp_u16(geometry.width);
+    let height = crate::dispatch::clamp_u16(geometry.height);
+    let subscribers = routing
+        .present_configure_subscribers(window)
+        .map_err(|error| {
+            X11SetupSocketError::new(format!(
+                "failed to resolve Present ConfigureNotify subscriptions: {error}"
+            ))
+        })?;
+    let mut local_events = Vec::new();
+    for (target, event_id) in subscribers {
+        let mut event = XClientEvent::PresentConfigureNotify {
+            sequence,
+            event_id,
+            window,
+            x: crate::dispatch::clamp_i16(geometry.x),
+            y: crate::dispatch::clamp_i16(geometry.y),
+            width,
+            height,
+            pixmap_width: width,
+            pixmap_height: height,
+            pixmap_flags: 0,
+        };
+        if target == client {
+            local_events.push(event);
+        } else {
+            set_x11_protocol_event_sequence(&mut event, 0);
+            routing.route_protocol(target, event).map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to route Present ConfigureNotify: {error}"
+                ))
+            })?;
+        }
+    }
+    Ok(local_events)
+}
+
+#[cfg(unix)]
 fn capture_clipboard_proxy_payload(
     state: &X11CoreSocketServerState,
     routing: &XServerFrontendRouteRegistry,
