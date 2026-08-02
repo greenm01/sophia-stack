@@ -78,7 +78,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let launch = LegacyWmLaunchSpec::new(xmonad)
         .with_private_executable_alias("xmonad/xmonad-x86_64-linux")
         .with_profile(LegacyWmProfile::Xmonad);
-    let mut runtime = LegacyX11WmBridgeRuntime::start_with_root(launch, bounds)?;
+    let mut runtime = LegacyX11WmBridgeRuntime::start_with_root(launch.clone(), bounds)?;
     runtime.configure_session(WmSessionDescriptor {
         api_version: WM_API_VERSION,
         workspaces: vec![workspace],
@@ -344,13 +344,138 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+
+    drop(runtime);
+    let mut restarted = LegacyX11WmBridgeRuntime::start_with_root(launch, bounds)?;
+    restarted.configure_session(WmSessionDescriptor {
+        api_version: WM_API_VERSION,
+        workspaces: vec![workspace],
+        active_workspaces: vec![WmOutputWorkspace {
+            output: OutputId::from_raw(1),
+            workspace,
+        }],
+        session_actions: Vec::new(),
+    })?;
+    let committed_seed = restarted.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(8),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace,
+            bounds,
+            nodes: vec![
+                node(
+                    10,
+                    workspace,
+                    Rect {
+                        x: 1280,
+                        y: 14,
+                        width: 1280,
+                        height: 1426,
+                    },
+                ),
+                node(
+                    11,
+                    workspace,
+                    Rect {
+                        x: 0,
+                        y: 14,
+                        width: 1280,
+                        height: 1426,
+                    },
+                ),
+            ],
+        }),
+    })?;
+    if response_placements(&committed_seed)
+        != vec![
+            (
+                11,
+                Rect {
+                    x: 0,
+                    y: 14,
+                    width: 1280,
+                    height: 1426,
+                },
+            ),
+            (
+                10,
+                Rect {
+                    x: 1280,
+                    y: 14,
+                    width: 1280,
+                    height: 1426,
+                },
+            ),
+        ]
+    {
+        return Err(format!(
+            "fresh xmonad did not restore the committed two-window seed: commands={:?}",
+            committed_seed.commands
+        )
+        .into());
+    }
+    let replayed_manage = restarted.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(9),
+        kind: WmRequestKind::ManageSurface(WmManageSurface {
+            output: OutputId::from_raw(1),
+            workspace,
+            bounds,
+            node: node(
+                12,
+                workspace,
+                Rect {
+                    x: 80,
+                    y: 60,
+                    ..bounds
+                },
+            ),
+        }),
+    })?;
+    let restarted_three = response_placements(&replayed_manage);
+    if restarted_three != expected
+        || !replayed_manage
+            .commands
+            .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
+    {
+        return Err(format!(
+            "fresh xmonad did not replay the pending admission after the committed seed: commands={:?}",
+            replayed_manage.commands
+        )
+        .into());
+    }
+    let post_recovery = restarted.handle_request(&WmRequestPacket {
+        transaction: TransactionId::from_raw(10),
+        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+            output: OutputId::from_raw(1),
+            workspace,
+            bounds,
+            nodes: restarted_three
+                .iter()
+                .map(|(raw, geometry)| node(*raw, workspace, *geometry))
+                .collect(),
+        }),
+    })?;
+    if response_placements(&post_recovery) != expected
+        || !post_recovery
+            .commands
+            .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
+    {
+        return Err(format!(
+            "fresh xmonad did not retain the replayed admission as master/focus: commands={:?}",
+            post_recovery.commands
+        )
+        .into());
+    }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
+        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} release_transaction={} restart_seed_transaction={} restart_manage_transaction={} restart_release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
         response.transaction.raw(),
         layout.transaction.raw(),
         focus.transaction.raw(),
         recovery.transaction.raw(),
         released.transaction.raw(),
+        committed_seed.transaction.raw(),
+        replayed_manage.transaction.raw(),
+        post_recovery.transaction.raw(),
         actual[0].1,
         actual[1].1,
         actual[2].1,

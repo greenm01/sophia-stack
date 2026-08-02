@@ -1,6 +1,6 @@
 use sophia_cli::wm_recovery::{
-    WmAdmissionSelection, WmReseedAdmissionCandidate, WmReseedRequest, select_wm_admission,
-    select_wm_reseed_request,
+    WmAdmissionSelection, WmReseedAdmissionCandidate, select_wm_admission,
+    select_wm_reseed_plan,
 };
 
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
@@ -363,30 +363,32 @@ impl LiveWmSession {
             "sophia_live_wm schema=1 status=restarted restarts={} preserved_layout=true",
             self.restarts
         );
-        match select_wm_reseed_request(
+        let has_committed_layout = !self.workspace_state.visible_surfaces(output.id)?.is_empty();
+        let reseed = select_wm_reseed_plan(
             layout.next_reseed_unmanaged_surface(),
-            !layout.layers.is_empty(),
-        ) {
-            Some(WmReseedRequest::ReplayManage(surface)) => {
-                require_wm_request_admission(
-                    self.enqueue_manage(surface, layout, output)?,
-                    "reseed manage",
-                )?;
-                println!(
-                    "sophia_live_wm schema=3 status=reseed_queued request=manage surface={}",
-                    surface.index(),
-                );
-            }
-            Some(WmReseedRequest::Relayout) => {
-                require_wm_request_admission(
-                    self.enqueue_relayout(layout, output)?,
-                    "reseed relayout",
-                )?;
-                println!("sophia_live_wm schema=3 status=reseed_queued request=relayout");
-            }
-            None => {
-                println!("sophia_live_wm schema=3 status=reseed_queued request=none");
-            }
+            has_committed_layout,
+        );
+        if reseed.seed_committed_layout {
+            require_wm_request_admission(
+                self.enqueue_relayout(layout, output)?,
+                "committed-layout reseed",
+            )?;
+            println!(
+                "sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout"
+            );
+        }
+        if let Some(surface) = reseed.replay_manage {
+            require_wm_request_admission(
+                self.enqueue_manage(surface, layout, output)?,
+                "pending-admission reseed",
+            )?;
+            println!(
+                "sophia_live_wm schema=4 status=reseed_queued phase=pending_admission request=manage surface={}",
+                surface.index(),
+            );
+        }
+        if !reseed.seed_committed_layout && reseed.replay_manage.is_none() {
+            println!("sophia_live_wm schema=4 status=reseed_queued phase=none request=none");
         }
         Ok(None)
     }
@@ -463,23 +465,12 @@ impl LiveWmSession {
                 output: output.id,
                 workspace,
                 bounds: output_state.bounds,
-                nodes: layout
-                    .layers
-                    .values()
-                    .filter(|layer| {
-                        layout.is_policy_managed(layer.surface)
-                            && self.workspace_state.surface_workspace(layer.surface)
-                                == Some(workspace)
-                    })
-                    .map(|layer| {
-                        live_layout_node(
-                            layer,
-                            workspace,
-                            &layout.layout_epochs,
-                            self.candidate_chrome_style(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
+                nodes: committed_relayout_nodes(
+                    layout,
+                    &self.workspace_state,
+                    workspace,
+                    self.candidate_chrome_style(),
+                )?,
             }),
         };
         self.enqueue_request(LiveWmQueuedRequest {
@@ -886,5 +877,21 @@ impl LiveWmSession {
         self.committed = self.committed.saturating_add(1);
         self.last_committed_at = Some(Instant::now());
     }
+}
 
+fn committed_relayout_nodes(
+    layout: &PersistentLiveLayout,
+    workspace_state: &WmWorkspaceState,
+    workspace: WorkspaceId,
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<Vec<LayoutNodeSnapshot>, sophia_engine::ChromeLayoutError> {
+    layout
+        .layers
+        .values()
+        .filter(|layer| {
+            layout.is_policy_managed(layer.surface)
+                && workspace_state.surface_workspace(layer.surface) == Some(workspace)
+        })
+        .map(|layer| live_layout_node(layer, workspace, &layout.layout_epochs, chrome))
+        .collect()
 }

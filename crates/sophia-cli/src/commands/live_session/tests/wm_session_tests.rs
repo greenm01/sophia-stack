@@ -1,7 +1,7 @@
 use super::*;
 use crate::commands::live_session::{
     LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource, PendingLiveWmLayout,
-    PersistentLiveLayout, live_layout_node, live_layout_node_from_facts,
+    PersistentLiveLayout, committed_relayout_nodes, live_layout_node, live_layout_node_from_facts,
     planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
@@ -405,7 +405,42 @@ fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
 }
 
 #[test]
-fn recovery_content_extent_crosses_wm_boundary_as_outer_allocation() {
+fn restart_relayout_contains_only_committed_surfaces_in_admission_order() {
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let workspace = WorkspaceId::from_raw(1);
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let first = SurfaceId::new(1, 1);
+    let second = SurfaceId::new(2, 1);
+    let pending = SurfaceId::new(3, 1);
+    let mut layout = PersistentLiveLayout::default();
+    for surface in [first, second, pending] {
+        layout.layers.insert(surface, test_layer(surface, bounds));
+    }
+    let mut workspace_state = WmWorkspaceState::new([(output, bounds)], 1).unwrap();
+    workspace_state.register_surface(first, workspace).unwrap();
+    workspace_state.register_surface(second, workspace).unwrap();
+
+    let nodes = committed_relayout_nodes(
+        &layout,
+        &workspace_state,
+        workspace,
+        sophia_engine::SurfaceChromeStyle::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        nodes.iter().map(|node| node.surface).collect::<Vec<_>>(),
+        vec![first, second]
+    );
+}
+
+#[test]
+fn recovery_content_extent_stays_behind_the_wm_policy_boundary() {
     let surface = SurfaceId::new(3, 1);
     let workspace = sophia_protocol::WorkspaceId::from_raw(1);
     let content = Size {
@@ -450,21 +485,63 @@ fn recovery_content_extent_crosses_wm_boundary_as_outer_allocation() {
     )
     .unwrap();
 
-    let outer = Size {
-        width: 504,
-        height: 504,
-    };
-    assert_eq!(node.constraints.min_size, Some(outer));
-    assert_eq!(node.constraints.max_size, Some(outer));
+    assert_eq!(node.constraints.min_size, None);
+    assert_eq!(node.constraints.max_size, None);
+    assert!(node.capabilities.resizable);
     assert_eq!(
         node.geometry,
         Rect {
             x: 0,
             y: 0,
-            width: outer.width,
-            height: outer.height,
+            width: 504,
+            height: 504,
         }
     );
+}
+
+#[test]
+fn declared_fixed_extent_still_crosses_the_wm_policy_boundary() {
+    let surface = SurfaceId::new(30, 1);
+    let workspace = sophia_protocol::WorkspaceId::from_raw(1);
+    let fixed = Size {
+        width: 500,
+        height: 500,
+    };
+    let mut epochs = sophia_engine::LayoutEpochCoordinator::default();
+    epochs.set_declared_constraints(
+        surface,
+        SurfaceConstraints {
+            min_size: Some(fixed),
+            max_size: Some(fixed),
+        },
+    );
+    let style = sophia_engine::SurfaceChromeStyle::default();
+    let node = live_layout_node(
+        &test_layer(
+            surface,
+            Rect {
+                x: 0,
+                y: 0,
+                width: fixed.width,
+                height: fixed.height,
+            },
+        ),
+        workspace,
+        &epochs,
+        style,
+    )
+    .unwrap();
+
+    let outer = sophia_engine::outer_surface_constraints(
+        SurfaceConstraints {
+            min_size: Some(fixed),
+            max_size: Some(fixed),
+        },
+        style,
+    )
+    .unwrap();
+    assert_eq!(node.constraints, outer);
+    assert!(!node.capabilities.resizable);
 }
 
 #[test]

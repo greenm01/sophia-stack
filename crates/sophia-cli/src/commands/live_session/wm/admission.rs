@@ -534,7 +534,7 @@ impl PersistentLiveLayout {
                     .copied()
                     .unwrap_or_default(),
                 geometry: layer.geometry,
-                constraints: self.layout_epochs.effective_constraints(surface),
+                constraints: self.layout_epochs.declared_constraints(surface),
                 generation: layer.generation,
             })
         })
@@ -627,7 +627,7 @@ fn live_layout_node(
             surface: layer.surface,
             role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
             geometry: layer.geometry,
-            constraints: coordinator.effective_constraints(layer.surface),
+            constraints: coordinator.declared_constraints(layer.surface),
             generation: layer.generation,
         },
         workspace,
@@ -643,7 +643,7 @@ fn live_layout_node_from_facts(
     chrome: sophia_engine::SurfaceChromeStyle,
 ) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
     let mut capabilities = LayoutNodeCapabilities::STANDARD_TOPLEVEL;
-    capabilities.resizable = coordinator.surface_resizable(facts.surface);
+    capabilities.resizable = coordinator.surface_declared_resizable(facts.surface);
     Ok(LayoutNodeSnapshot {
         surface: facts.surface,
         workspace,

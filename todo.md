@@ -989,8 +989,19 @@ than adding speculative browser compatibility.
   Kitty focus and made Kitty master. Manage admission now performs a bounded
   synthetic pointer-focus transition before returning. The real-xmonad smoke
   passes without its former explicit-focus workaround, and a process-external
-  fixture requires managed focus to survive the next relayout. Repeat the
-  launch and final popup stage; Firefox must remain the full left column.
+  fixture requires managed focus to survive the next relayout. The immediate
+  live repeat falsified that single-runtime model: the timeout restarted the
+  complete bridge/xmonad process, then replayed only Firefox with its temporary
+  recovery extent exposed as fixed `WM_NORMAL_HINTS`. Fresh xmonad therefore
+  lacked the committed Kitty stack and classified Firefox as floating; the
+  next relayout admitted Kitty afterward and made it master. Restart recovery
+  now queues the committed workspace seed before the pending manage replay,
+  and external-WM nodes project only client-declared constraints while Engine
+  reconciliation retains the temporary recovery extent. The real-xmonad smoke
+  now destroys and recreates its runtime before restoring two committed nodes
+  and replaying Firefox, and requires Firefox to remain the tiled master/focus
+  on the following relayout. Repeat the launch and final popup stage; Firefox
+  must remain the full left column.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

@@ -22,6 +22,13 @@ fn timed_out_admission_replans_at_the_safe_content_extent() {
     assert_eq!(configures[0].size, size(500, 500));
     assert_eq!(coordinator.recovery_extent(surface), Some(size(500, 500)));
     assert_eq!(
+        coordinator.declared_constraints(surface),
+        SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        }
+    );
+    assert_eq!(
         coordinator.effective_constraints(surface),
         SurfaceConstraints {
             min_size: Some(size(500, 500)),
@@ -29,6 +36,7 @@ fn timed_out_admission_replans_at_the_safe_content_extent() {
         }
     );
     assert!(!coordinator.surface_resizable(surface));
+    assert!(coordinator.surface_declared_resizable(surface));
     assert_eq!(
         coordinator.admission(surface),
         SurfaceAdmissionState::PendingLayout
@@ -193,6 +201,8 @@ fn recovery_preserves_declared_constraints_and_can_be_cleared() {
         .unwrap();
 
     assert_eq!(coordinator.recovery_extent_count(), 1);
+    assert_eq!(coordinator.declared_constraints(surface), declared);
+    assert!(coordinator.surface_declared_resizable(surface));
     assert!(coordinator.clear_recovery_extent(surface));
     assert_eq!(coordinator.recovery_extent_count(), 0);
     assert_eq!(coordinator.effective_constraints(surface), declared);

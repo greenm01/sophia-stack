@@ -13,10 +13,10 @@ pub enum WmAdmissionSelection {
     ReseedReplay,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WmReseedRequest {
-    ReplayManage(SurfaceId),
-    Relayout,
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WmReseedPlan {
+    pub seed_committed_layout: bool,
+    pub replay_manage: Option<SurfaceId>,
 }
 
 pub fn select_wm_admission(
@@ -33,13 +33,12 @@ pub fn select_wm_admission(
         .map(|candidate| candidate.surface)
 }
 
-pub const fn select_wm_reseed_request(
+pub const fn select_wm_reseed_plan(
     pending_admission: Option<SurfaceId>,
     has_committed_layout: bool,
-) -> Option<WmReseedRequest> {
-    match pending_admission {
-        Some(surface) => Some(WmReseedRequest::ReplayManage(surface)),
-        None if has_committed_layout => Some(WmReseedRequest::Relayout),
-        None => None,
+) -> WmReseedPlan {
+    WmReseedPlan {
+        seed_committed_layout: has_committed_layout,
+        replay_manage: pending_admission,
     }
 }

@@ -101,12 +101,15 @@ impl SurfaceConstraintState {
     }
 
     pub const fn resizable(self) -> bool {
-        self.recovery_extent.is_none()
-            && !matches!(
-                (self.declared.min_size, self.declared.max_size),
-                (Some(minimum), Some(maximum)) if minimum.width == maximum.width
-                    && minimum.height == maximum.height
-            )
+        self.recovery_extent.is_none() && self.declared_resizable()
+    }
+
+    pub const fn declared_resizable(self) -> bool {
+        !matches!(
+            (self.declared.min_size, self.declared.max_size),
+            (Some(minimum), Some(maximum)) if minimum.width == maximum.width
+                && minimum.height == maximum.height
+        )
     }
 }
 
@@ -477,10 +480,29 @@ impl LayoutEpochCoordinator {
         )
     }
 
+    /// Returns application-declared constraints without Engine-owned recovery
+    /// extents. External policy peers consume this view so temporary visual
+    /// recovery never changes the client's policy identity.
+    pub fn declared_constraints(&self, surface: SurfaceId) -> SurfaceConstraints {
+        self.constraints.get(&surface).map_or(
+            SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            |state| state.declared,
+        )
+    }
+
     pub fn surface_resizable(&self, surface: SurfaceId) -> bool {
         self.constraints
             .get(&surface)
             .is_none_or(|state| state.resizable())
+    }
+
+    pub fn surface_declared_resizable(&self, surface: SurfaceId) -> bool {
+        self.constraints
+            .get(&surface)
+            .is_none_or(|state| state.declared_resizable())
     }
 
     pub fn recovery_extent(&self, surface: SurfaceId) -> Option<Size> {
