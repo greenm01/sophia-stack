@@ -7,3 +7,4 @@ pub mod session_actions;
 pub mod session_control;
 pub mod session_keyboard;
 pub mod session_startup;
+pub mod wm_recovery;

@@ -954,6 +954,13 @@ than adding speculative browser compatibility.
   substructure delivery and proves no create-time configure remains queued.
   The physical verifier now rejects GDK thaw underflow, popup-era layout
   timeout or WM restart, and popup layout without a matching retired visual.
+  The next run proved `Super+F` and process launch still succeeded, but the
+  first Firefox admission timeout restarted xmonad and incorrectly queued a
+  committed-state relayout before replaying the uncommitted manage operation.
+  That relayout projected only the two existing Kitty surfaces; the later
+  Firefox retry was withdrawn. Recovery now prioritizes the pending opaque
+  `ManageSurface`, with an allocation-free crate-boundary regression and
+  reduced reseed-order evidence for future queue optimizations.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`

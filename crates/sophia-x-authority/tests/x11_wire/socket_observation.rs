@@ -447,6 +447,9 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     wait_for_socket(&socket_path);
     let mut first = UnixStream::connect(&socket_path).unwrap();
     first
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     read_setup_success(&mut first, XByteOrder::LittleEndian);
@@ -464,7 +467,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
             0x0020_0701,
-            0b11,
+            0b11 | (1 << 15) | (1 << 17),
         ))
         .unwrap();
     first
@@ -487,6 +490,9 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         .unwrap();
 
     let mut second = UnixStream::connect(&socket_path).unwrap();
+    second
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -512,6 +518,13 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     second.read_exact(&mut error).unwrap();
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
+    second
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            0x0040_0702,
+            0b11 | (1 << 15) | (1 << 17),
+        ))
+        .unwrap();
     second
         .write_all(&sophia_present_pixmap_request(
             XByteOrder::LittleEndian,
@@ -671,7 +684,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[24..26]), 301);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[26..28]), 201);
     assert_eq!(read_x_record(&mut first)[0], 22);
-    assert_eq!(read_x_record(&mut first)[0], 12);
     let second_present = read_x_reply(&mut second, XByteOrder::LittleEndian);
     assert_eq!(second_present[0], 35);
     assert_eq!(second_present[1], X_PRESENT_MAJOR_OPCODE);
@@ -686,7 +698,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[24..26]), 302);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[26..28]), 202);
     assert_eq!(read_x_record(&mut second)[0], 22);
-    assert_eq!(read_x_record(&mut second)[0], 12);
 
     drop(first);
     drop(second);
@@ -706,11 +717,11 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
 #[cfg(unix)]
 #[test]
 fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::num::NonZeroUsize;
     use std::os::unix::net::UnixStream;
     use std::thread;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-present-child-configure-test-{}-{}.sock",
@@ -738,6 +749,9 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
 
     wait_for_socket(&socket_path);
     let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -767,6 +781,13 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
         ))
         .unwrap();
     stream
+        .write_all(&change_window_event_mask_request(
+            XByteOrder::LittleEndian,
+            child,
+            1 << 17,
+        ))
+        .unwrap();
+    stream
         .write_all(&present_select_input_request(
             XByteOrder::LittleEndian,
             event_id,
@@ -775,6 +796,8 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
         ))
         .unwrap();
     let mut peer = UnixStream::connect(&socket_path).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
     peer.write_all(&setup_request(
         XByteOrder::LittleEndian,
         11,
@@ -881,7 +904,12 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
             &[1000, 700],
         ))
         .unwrap();
-    assert_eq!(read_x_record(&mut stream)[0], 22);
+    let mut unexpected = [0_u8; 1];
+    let error = stream.read(&mut unexpected).unwrap_err();
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ));
 
     drop(stream);
     drop(peer);

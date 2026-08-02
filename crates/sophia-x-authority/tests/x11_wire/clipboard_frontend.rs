@@ -7,7 +7,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
     use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-cross-selection-test-{}-{}.sock",
@@ -131,6 +131,9 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
     wait_for_socket(&portal_path);
     let mut owner = UnixStream::connect(&socket_path).unwrap();
     owner
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    owner
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     let owner_window = read_setup_resource_id_base(&mut owner, XByteOrder::LittleEndian) + 1;
@@ -144,7 +147,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             60,
         ))
         .unwrap();
-    read_x_record(&mut owner);
     owner
         .write_all(&intern_atom_request(
             XByteOrder::LittleEndian,
@@ -173,6 +175,9 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
 
     let mut requestor = UnixStream::connect(&socket_path).unwrap();
     requestor
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    requestor
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     let requestor_window =
@@ -187,7 +192,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
             60,
         ))
         .unwrap();
-    read_x_record(&mut requestor);
     requestor
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
@@ -444,7 +448,7 @@ fn x_server_frontend_assigns_distinct_connection_identities() {
 #[test]
 fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     use std::{
-        io::{Read, Write},
+        io::Write,
         num::NonZeroUsize,
         os::unix::net::UnixStream,
         sync::{Arc, Mutex},
@@ -518,9 +522,12 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     second
         .write_all(&resource_request(XByteOrder::LittleEndian, 8, first_window))
         .unwrap();
-    let mut map_notify = [0; 32];
-    second.read_exact(&mut map_notify).unwrap();
-    assert_eq!(map_notify[0], 19);
+    second
+        .write_all(&resource_request(XByteOrder::LittleEndian, 3, first_window))
+        .unwrap();
+    let attributes = read_x_reply(&mut second, XByteOrder::LittleEndian);
+    assert_eq!(attributes[0], 1);
+    assert_eq!(attributes[26], 2);
 
     drop(first);
     drop(second);
@@ -528,7 +535,7 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     assert_eq!(server.join().unwrap(), 0);
     assert_eq!(
         observations.lock().unwrap().as_slice(),
-        &[(1, 1), (2, 8), (1, 0)]
+        &[(1, 1), (2, 8), (2, 3), (1, 0)]
     );
     std::fs::remove_file(&socket_path).unwrap();
 }

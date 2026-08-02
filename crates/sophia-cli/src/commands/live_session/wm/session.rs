@@ -1,3 +1,5 @@
+use sophia_cli::wm_recovery::{WmReseedRequest, select_wm_reseed_request};
+
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -358,12 +360,32 @@ impl LiveWmSession {
             "sophia_live_wm schema=1 status=restarted restarts={} preserved_layout=true",
             self.restarts
         );
-        if layout.layers.is_empty() {
-            Ok(None)
-        } else {
-            let _ = self.enqueue_relayout(layout, output)?;
-            Ok(None)
+        match select_wm_reseed_request(
+            layout.next_unmanaged_surface(),
+            !layout.layers.is_empty(),
+        ) {
+            Some(WmReseedRequest::ReplayManage(surface)) => {
+                require_wm_request_admission(
+                    self.enqueue_manage(surface, layout, output)?,
+                    "reseed manage",
+                )?;
+                println!(
+                    "sophia_live_wm schema=3 status=reseed_queued request=manage surface={}",
+                    surface.index(),
+                );
+            }
+            Some(WmReseedRequest::Relayout) => {
+                require_wm_request_admission(
+                    self.enqueue_relayout(layout, output)?,
+                    "reseed relayout",
+                )?;
+                println!("sophia_live_wm schema=3 status=reseed_queued request=relayout");
+            }
+            None => {
+                println!("sophia_live_wm schema=3 status=reseed_queued request=none");
+            }
         }
+        Ok(None)
     }
 
     fn enqueue_manage(
