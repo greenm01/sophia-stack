@@ -725,9 +725,12 @@ struct FirefoxM10KittyProof {
 }
 
 impl FirefoxM10KittyProof {
-    const CHECKPOINTS: [(usize, &'static str, &'static str); 6] = [
+    const REQUIRED_SELECTION_OPERATIONS: usize = 4;
+    const CHECKPOINTS: [(usize, &'static str, &'static str); 8] = [
         (193, "a", "before"),
         (194, "b", "before"),
+        (202, "b", "clipboard_peer"),
+        (203, "b", "primary_peer"),
         (211, "a", "after_normal_close"),
         (212, "b", "after_normal_close"),
         (229, "a", "after_forced_close"),
@@ -753,8 +756,10 @@ impl FirefoxM10KittyProof {
         Some((*terminal, *checkpoint))
     }
 
-    fn complete(&self) -> bool {
+    fn complete(&self, selection_owner_changes: usize, selection_conversions: usize) -> bool {
         self.observed.iter().all(|observed| *observed)
+            && selection_owner_changes >= Self::REQUIRED_SELECTION_OPERATIONS
+            && selection_conversions >= Self::REQUIRED_SELECTION_OPERATIONS
     }
 
     fn completed(&self) -> usize {

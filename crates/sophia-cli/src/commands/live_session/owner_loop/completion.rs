@@ -241,17 +241,23 @@
         );
     }
     if config.firefox_m10_proof {
-        if !firefox_m10_kitty_proof.complete() {
+        if !firefox_m10_kitty_proof
+            .complete(selection_owner_changes, selection_conversions)
+        {
             return Err(format!(
-                "Firefox M10 Kitty proof incomplete: checkpoints={}/{}",
+                "Firefox M10 Kitty proof incomplete: checkpoints={}/{} selection_owner_changes={} selection_conversions={}",
                 firefox_m10_kitty_proof.completed(),
                 FirefoxM10KittyProof::CHECKPOINTS.len(),
+                selection_owner_changes,
+                selection_conversions,
             )
             .into());
         }
         println!(
-            "sophia_firefox_m10 schema=1 status=complete kitty_checkpoints={} content=redacted",
+            "sophia_firefox_m10 schema=2 status=complete kitty_checkpoints={} selection_owner_changes={} selection_conversions={} content=redacted",
             firefox_m10_kitty_proof.completed(),
+            selection_owner_changes,
+            selection_conversions,
         );
     }
     if config.inject_surface_resize.is_some() && !resize_proof_complete {

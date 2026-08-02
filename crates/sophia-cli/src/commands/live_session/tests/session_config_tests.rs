@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn firefox_m10_kitty_proof_requires_peer_selection_checkpoints() {
+    let mut proof = FirefoxM10KittyProof::default();
+    let expected = [
+        (193, "a", "before"),
+        (194, "b", "before"),
+        (202, "b", "clipboard_peer"),
+        (203, "b", "primary_peer"),
+        (211, "a", "after_normal_close"),
+        (212, "b", "after_normal_close"),
+        (229, "a", "after_forced_close"),
+        (230, "b", "after_forced_close"),
+    ];
+
+    for (index, (title_bytes, terminal, checkpoint)) in expected.iter().enumerate() {
+        assert_eq!(
+            proof.observe("_NET_WM_NAME", *title_bytes),
+            Some((*terminal, *checkpoint)),
+        );
+        assert_eq!(proof.completed(), index + 1);
+        assert_eq!(proof.observe("_NET_WM_NAME", *title_bytes), None);
+    }
+    assert!(!proof.complete(3, 4));
+    assert!(!proof.complete(4, 3));
+    assert!(proof.complete(4, 4));
+}
+
+#[test]
 fn live_x_session_profiles_are_explicit_and_fail_closed() {
     let classic = PersistentXtermSessionConfig::from_args(&[]).unwrap();
     assert_eq!(classic.namespace_profile, NamespaceProfile::ClassicShared);

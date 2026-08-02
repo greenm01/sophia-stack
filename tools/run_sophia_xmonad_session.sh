@@ -519,6 +519,10 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
     fi
     firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
     if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then
+        firefox_page="file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
+        if [[ "$FIREFOX_M10_PROOF" == true ]]; then
+            firefox_page="${firefox_page}?selection_peer=kitty"
+        fi
         session_args+=(
             "--session-app=firefox=$firefox_bin"
             --session-action-app=firefox=firefox
@@ -532,7 +536,7 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             )
         fi
         session_args+=(
-            "--session-app-arg=firefox=file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
+            "--session-app-arg=firefox=$firefox_page"
         )
     fi
 elif [[ "$SESSION_PROFILE" == native ]]; then

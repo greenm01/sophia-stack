@@ -32,9 +32,12 @@
 <div id="scroll-proof">Continue scrolling down this real document.</div>
 <script>
   const stages = [16, 32, 48, 64, 80, 96, 112, 128];
-  const navigated = new URLSearchParams(location.search).get('navigated') === '1';
+  const parameters = new URLSearchParams(location.search);
+  const navigated = parameters.get('navigated') === '1';
+  const selectionPeer = parameters.get('selection_peer') === 'kitty';
   let stage = navigated ? 3 : 0;
   let refocusArmed = false;
+  let selectionPeerAway = false;
   let verticalWheelEvents = 0;
   const status = document.querySelector('#status');
   const next = document.querySelector('#next');
@@ -42,8 +45,12 @@
   let typed = '';
   const nextSteps = [
     'Step 1/8: type sophia.',
-    'Step 2/8: Ctrl+A, Ctrl+C, Tab, Ctrl+V.',
-    'Step 3/8: move the pointer well inside this colored page, away from every screen edge, then middle-click.',
+    selectionPeer
+      ? 'Step 2/8: Ctrl+A and Ctrl+C. Cycle with Super+J to Kitty B, follow its CLIPBOARD prompt, copy its returned sophia, cycle back here, then press Ctrl+V.'
+      : 'Step 2/8: Ctrl+A, Ctrl+C, Tab, Ctrl+V.',
+    selectionPeer
+      ? 'Step 3/8: drag-select sophia in the source field. Cycle to Kitty B, follow its PRIMARY prompt, select its returned sophia, cycle back here, then middle-click.'
+      : 'Step 3/8: move the pointer well inside this colored page, away from every screen edge, then middle-click.',
     'Step 4/8: click the full-page navigation target, then scroll vertically through at least two notches on the next document.',
     'Step 5/8: press Super+Space to resize.',
     'Step 6/8: press Super+J away, then Super+J as needed until Firefox returns.',
@@ -52,7 +59,7 @@
   ];
   function advance(label) {
     stage += 1;
-    document.body.classList.toggle('primary-proof', stage === 2);
+    document.body.classList.toggle('primary-proof', stage === 2 && !selectionPeer);
     document.body.classList.toggle('navigation-proof', stage === 3 && !navigated);
     document.body.classList.toggle('dialog-proof', stage === 6);
     document.title = '0'.repeat(stages[stage]);
@@ -65,7 +72,14 @@
     }
   }
   addEventListener('focus', () => {
-    if (stage === 1 || stage === 2) {
+    if (selectionPeer && selectionPeerAway && stage === 1) {
+      selectionPeerAway = false;
+      document.querySelector('#clipboard').focus();
+    } else if (selectionPeer && selectionPeerAway && stage === 2) {
+      selectionPeerAway = false;
+      document.body.classList.add('primary-proof');
+      document.querySelector('#primary').focus();
+    } else if (stage === 1 || stage === 2) {
       source.focus();
       source.select();
     } else if (stage === 5 && refocusArmed) {
@@ -73,6 +87,7 @@
     }
   });
   addEventListener('blur', () => {
+    if (selectionPeer && (stage === 1 || stage === 2)) selectionPeerAway = true;
     if (stage === 5) refocusArmed = true;
   });
   source.addEventListener('input', event => {
@@ -87,6 +102,7 @@
     }
   });
   addEventListener('paste', event => {
+    if (selectionPeer) return;
     if (stage === 1) {
       event.preventDefault();
       document.querySelector('#clipboard').value = 'sophia';
@@ -151,6 +167,8 @@
     document.body.classList.add('scroll-proof');
     status.textContent = 'navigation complete';
     next.textContent = nextSteps[stage];
+  } else if (selectionPeer) {
+    document.querySelector('#navigate').href = '?navigated=1&selection_peer=kitty';
   }
 </script>
 </html>

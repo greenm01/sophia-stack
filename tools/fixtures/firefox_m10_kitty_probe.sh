@@ -54,7 +54,19 @@ await_token() {
     done
 }
 
-clear
+await_selection_transfer() {
+    local kind="$1" gesture="$2" reply
+    while true; do
+        printf '\nKitty B %s transfer: %s, then press Enter: ' "$kind" "$gesture"
+        IFS= read -r reply
+        if [[ "$reply" == sophia ]]; then
+            return 0
+        fi
+        echo 'Expected SOPHIA; try again.'
+    done
+}
+
+clear 2>/dev/null || true
 printf 'Sophia Milestone 10 — Kitty %s\n\n' "${terminal^^}"
 echo 'This window keeps every checkpoint visible; do not close it.'
 await_token "${tokens[0]}"
@@ -66,6 +78,16 @@ if [[ "$terminal" == a ]]; then
 else
     await_both_checkpoints 1
     echo 'Both Kitty windows are ready. Press Super+F and follow the instructions inside Firefox.'
+    await_selection_transfer CLIPBOARD 'press Ctrl+Shift+V once'
+    set_redacted_title 202
+    mark_checkpoint clipboard
+    printf '\nCLIPBOARD received exactly. Select and copy this exact line with Ctrl+Shift+C:\n%s\n' sophia
+    echo 'Cycle back to Firefox and paste it there. Return when Firefox shows its PRIMARY step.'
+    await_selection_transfer PRIMARY 'middle-click once'
+    set_redacted_title 203
+    mark_checkpoint primary
+    printf '\nPRIMARY received exactly. Select this exact line with the pointer:\n%s\n' sophia
+    echo 'Cycle back to Firefox and middle-click its full-page PRIMARY target.'
 fi
 
 echo "Do not type ${tokens[1]^^} until Firefox completes and Ctrl+Q closes it."

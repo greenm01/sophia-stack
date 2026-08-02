@@ -56,6 +56,15 @@ require_at_least() {
     [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
     (( actual >= minimum )) || fail "$key is $actual, expected at least $minimum"
 }
+require_selection_interval() {
+    local first="$1" last="$2" description="$3" owner conversion
+    owner="$(line_number_after '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$first")"
+    [[ -n "$owner" ]] || fail "$description lacks a selection owner change"
+    conversion="$(line_number_after '^sophia_firefox_m8 schema=1 status=selection_observed kind=conversion ' "$owner")"
+    [[ -n "$conversion" ]] || fail "$description lacks a selection conversion"
+    (( owner < conversion && conversion < last )) ||
+        fail "$description lacks an ordered owner-to-requestor transfer"
+}
 
 require_file "$SESSION_LOG"
 require_file "$GUARD_LOG"
@@ -65,7 +74,7 @@ if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degrad
     "$SESSION_LOG"; then
     # Surface the specific proof/stage failure before the generic verdict so a
     # run self-reports (e.g. "died on resize") without a manual log read.
-    grep -E '(Firefox M[0-9]+ proof incomplete: [^"]*|status=failed reason=[a-z_]+( stage=[a-z]+)?)' \
+    grep -E '(Firefox M[0-9]+( Kitty)? proof incomplete: [^"]*|status=failed reason=[a-z_]+( stage=[a-z]+)?)' \
         "$SESSION_LOG" | sed 's/^/  cause: /' >&2 || true
     fail "session log contains a Sophia error, panic, or degraded status"
 fi
@@ -94,6 +103,8 @@ done
 
 kitty_before_a="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=before content=redacted$' 'Kitty A pre-Firefox checkpoint is missing')"
 kitty_before_b="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=before content=redacted$' 'Kitty B pre-Firefox checkpoint is missing')"
+kitty_clipboard="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=clipboard_peer content=redacted$' 'Kitty B did not receive Firefox CLIPBOARD content')"
+kitty_primary="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=primary_peer content=redacted$' 'Kitty B did not receive Firefox PRIMARY content')"
 kitty_normal_a="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=after_normal_close content=redacted$' 'Kitty A normal-close checkpoint is missing')"
 kitty_normal_b="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=b checkpoint=after_normal_close content=redacted$' 'Kitty B normal-close checkpoint is missing')"
 kitty_forced_a="$(require_line_number '^sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal=a checkpoint=after_forced_close content=redacted$' 'Kitty A forced-close checkpoint is missing')"
@@ -107,6 +118,8 @@ second_exit="$(line_number '^sophia_session_app schema=1 status=exited id=firefo
 (( kitty_before_a < first_start && kitty_before_b < first_start )) ||
     fail "both Kitty windows were not interactive before Firefox"
 (( first_start < first_exit
+    && first_start < kitty_clipboard && kitty_clipboard < kitty_primary
+    && kitty_primary < first_exit
     && first_exit < kitty_normal_a && first_exit < kitty_normal_b
     && kitty_normal_a < second_start && kitty_normal_b < second_start
     && second_start < second_exit
@@ -186,7 +199,13 @@ for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
     [[ "$(count "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage ")" == 1 ]] ||
         fail "Firefox stage did not complete exactly once: $stage"
 done
+keyboard_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=keyboard ')"
+clipboard_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=clipboard ')"
 primary_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=primary ')"
+require_selection_interval "$keyboard_line" "$kitty_clipboard" 'Firefox-to-Kitty CLIPBOARD handoff'
+require_selection_interval "$kitty_clipboard" "$clipboard_line" 'Kitty-to-Firefox CLIPBOARD handoff'
+require_selection_interval "$clipboard_line" "$kitty_primary" 'Firefox-to-Kitty PRIMARY handoff'
+require_selection_interval "$kitty_primary" "$primary_line" 'Kitty-to-Firefox PRIMARY handoff'
 navigation_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=navigation_ready content=redacted$' 'replacement Firefox document never became ready')"
 scroll_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=scroll ')"
 (( primary_line < navigation_ready_line && navigation_ready_line < scroll_line )) ||
@@ -237,8 +256,10 @@ fi
     fail "the Firefox resize stage lacks an ordered Super+Space layout action"
 [[ -n "$resize_projection" ]] && (( resize_action < resize_projection && resize_projection < resize_line )) ||
     fail "the Firefox resize stage did not retain all three managed surfaces"
-grep -Eq '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[2-9][0-9]* selection_conversions=[2-9][0-9]* content=redacted$' \
-    "$SESSION_LOG" || fail "Firefox eight-stage proof did not complete"
+m8_completion="$(grep -E '^sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=[0-9]+ selection_conversions=[0-9]+ content=redacted$' "$SESSION_LOG" | tail -n 1)"
+[[ -n "$m8_completion" ]] || fail "Firefox eight-stage proof did not complete"
+require_at_least "$m8_completion" selection_owner_changes 4
+require_at_least "$m8_completion" selection_conversions 4
 refocus_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ')"
 firefox_surface="$(field "$visual_armed" surface)" || fail "resize evidence has no Firefox surface"
 focus_away_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$resize_line")"
@@ -281,8 +302,11 @@ fi
     && dialog_ready_line < dialog_line
     && dialog_line < first_exit )) ||
     fail "Firefox modal ready/confirm lifecycle is out of order"
-grep -Eq '^sophia_firefox_m10 schema=1 status=complete kitty_checkpoints=6 content=redacted$' \
-    "$SESSION_LOG" || fail "Firefox M10 Kitty proof did not complete"
+m10_completion="$(grep -E '^sophia_firefox_m10 schema=2 status=complete kitty_checkpoints=[0-9]+ selection_owner_changes=[0-9]+ selection_conversions=[0-9]+ content=redacted$' "$SESSION_LOG" | tail -n 1)"
+[[ -n "$m10_completion" ]] || fail "Firefox M10 Kitty proof did not complete"
+require_eq "$m10_completion" kitty_checkpoints 8
+require_at_least "$m10_completion" selection_owner_changes 4
+require_at_least "$m10_completion" selection_conversions 4
 
 grep -Eq '^sophia_live_wm schema=1 status=session_action_committed .* action=Logout$' \
     "$SESSION_LOG" || fail "normal logout was not committed"
@@ -290,8 +314,8 @@ grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpect
     "$SESSION_LOG" || fail "unexpected X protocol errors were observed"
 selection="$(grep -E '^sophia_live_selection schema=1 status=complete ' "$SESSION_LOG" | tail -n 1)"
 [[ -n "$selection" ]] || fail "selection summary is missing"
-require_at_least "$selection" owner_changes 2
-require_at_least "$selection" conversions 2
+require_at_least "$selection" owner_changes 4
+require_at_least "$selection" conversions 4
 health="$(grep -E '^sophia_live_session_health schema=1 status=clean ' "$SESSION_LOG" | tail -n 1)"
 [[ -n "$health" ]] || fail "clean session health summary is missing"
 for assignment in protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false; do

@@ -1032,7 +1032,14 @@ than adding speculative browser compatibility.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
-  between Firefox and Kitty.
+  between Firefox and Kitty. The prior page could complete from a synthetic
+  paste handler while Firefox legitimately reused same-process selection data
+  without core `ConvertSelection`. The physical M10 mode now performs real
+  bidirectional Firefox/Kitty handoffs for both selections, advances only from
+  exact default-paste input, publishes two peer checkpoints, and requires an
+  ordered owner-change/conversion pair in all four directions. Offline
+  coordinator, reducer, and fail-closed verifier regressions pass; repeat the
+  complete physical workflow before closing this item.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity.
 - [ ] Audit only the desktop services observed by this run—such as DBus,

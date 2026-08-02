@@ -43,6 +43,40 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted a missing PRIMARY stage" >&2
     exit 1
 fi
+for checkpoint in clipboard_peer primary_peer; do
+    sed "/checkpoint=${checkpoint} /d" "$SESSION" >"$TEMP_FILE"
+    if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+        "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+        echo "physical Firefox verifier accepted a missing $checkpoint checkpoint" >&2
+        exit 1
+    fi
+done
+for operation in owner_change conversion; do
+    for ordinal in 1 2 3 4; do
+        awk -v operation="$operation" -v ordinal="$ordinal" '
+            $0 ~ ("status=selection_observed kind=" operation " ") {
+                seen++
+                if (seen == ordinal) next
+            }
+            { print }
+        ' "$SESSION" >"$TEMP_FILE"
+        if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+            "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+            echo "physical Firefox verifier accepted missing $operation in transfer interval $ordinal" >&2
+            exit 1
+        fi
+    done
+done
+awk '
+    /status=selection_observed kind=owner_change count=1 / { owner=$0; next }
+    /status=selection_observed kind=conversion count=1 / { print; print owner; next }
+    { print }
+' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted conversion before ownership" >&2
+    exit 1
+fi
 grep -Fv 'status=axis_batch' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
