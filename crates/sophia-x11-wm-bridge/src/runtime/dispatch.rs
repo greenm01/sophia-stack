@@ -106,13 +106,20 @@ fn apply_server_command(
             event.resize(32, 0);
             write_packet(stream, &event)?;
         }
-        ServerCommand::Configure(window, geometry) => {
+        ServerCommand::Configure {
+            window,
+            geometry,
+            notify_root,
+        } => {
             if let Some(entry) = state.windows.get_mut(&window.raw()) {
                 entry.geometry = geometry;
             }
             // A root ConfigureNotify is the bounded, metadata-free signal that
-            // makes compatible WMs re-run their current layout for an existing set.
-            write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
+            // makes compatible WMs re-run their current layout for an existing
+            // set. One notification covers the complete ordered geometry batch.
+            if notify_root {
+                write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, state.root)?;
+            }
         }
         ServerCommand::Unmap(window) => {
             state.windows.remove(&window.raw());

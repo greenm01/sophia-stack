@@ -15,10 +15,12 @@ use sophia_protocol::{
     WmSessionDescriptor, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_NEXT_LAYOUT,
+    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_FOCUS_NEXT,
+    XMONAD_ACTION_NEXT_LAYOUT,
 };
 
 const ROOT: u32 = 0x20;
+const FOCUS_NEXT_KEYCODE: u8 = 106;
 const NEXT_LAYOUT_KEYCODE: u8 = 32;
 const MOD1_MASK: u16 = 1 << 3;
 const BOUNDS: Rect = Rect {
@@ -31,14 +33,21 @@ const BOUNDS: Rect = Rect {
 #[test]
 fn delayed_next_layout_fixture_process() {
     if is_private_bridge_child() {
-        run_fixture(true);
+        run_fixture(FixtureBehavior::DelayedLayout);
     }
 }
 
 #[test]
 fn missing_grab_fixture_process() {
     if is_private_bridge_child() {
-        run_fixture(false);
+        run_fixture(FixtureBehavior::MissingLayoutGrab);
+    }
+}
+
+#[test]
+fn partial_reconciliation_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::PartialFocusReconciliation);
     }
 }
 
@@ -72,6 +81,25 @@ fn next_layout_fails_closed_when_the_wm_did_not_grab_its_profile_chord() {
             .to_string()
             .contains("profile key chord was not registered by the legacy WM"),
         "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn focus_action_accepts_partial_pre_action_reconciliation() {
+    let mut runtime = fixture_runtime("partial_reconciliation_fixture_process");
+    configure_session(&mut runtime);
+    let tall = manage_three_surfaces(&mut runtime);
+    assert_eq!(tall, tall_layout());
+
+    let response = runtime
+        .handle_request(&focus_next_request(TransactionId::from_raw(4)))
+        .unwrap();
+
+    assert_eq!(response.transaction, TransactionId::from_raw(4));
+    assert!(
+        response
+            .commands
+            .contains(&WmCommand::FocusSurface(SurfaceId::new(10, 1)))
     );
 }
 
@@ -121,6 +149,22 @@ fn next_layout_request(transaction: TransactionId) -> WmRequestPacket {
         transaction,
         kind: WmRequestKind::ActionActivated(WmActionActivation {
             action: WmActionId::from_raw(XMONAD_ACTION_NEXT_LAYOUT),
+            output: OutputId::from_raw(1),
+            workspace: WorkspaceId::from_raw(1),
+            focused_surface: Some(SurfaceId::new(12, 1)),
+            nodes: tall_layout()
+                .into_iter()
+                .map(|(raw, geometry)| node(raw, geometry))
+                .collect(),
+        }),
+    }
+}
+
+fn focus_next_request(transaction: TransactionId) -> WmRequestPacket {
+    WmRequestPacket {
+        transaction,
+        kind: WmRequestKind::ActionActivated(WmActionActivation {
+            action: WmActionId::from_raw(XMONAD_ACTION_FOCUS_NEXT),
             output: OutputId::from_raw(1),
             workspace: WorkspaceId::from_raw(1),
             focused_surface: Some(SurfaceId::new(12, 1)),
@@ -236,17 +280,30 @@ fn is_private_bridge_child() -> bool {
         .is_some_and(|name| name.starts_with("sophia-x11-wm-bridge-"))
 }
 
-fn run_fixture(register_grab: bool) {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FixtureBehavior {
+    DelayedLayout,
+    MissingLayoutGrab,
+    PartialFocusReconciliation,
+}
+
+fn run_fixture(behavior: FixtureBehavior) {
     let mut stream = connect_private_display();
     let (next_layout_keycode, mut pending_events) =
         query_keycode(&mut stream, u32::from(NEXT_LAYOUT_KEYCODE));
     assert_eq!(next_layout_keycode, NEXT_LAYOUT_KEYCODE);
-    if register_grab {
-        write_grab_key(&mut stream, next_layout_keycode);
+    match behavior {
+        FixtureBehavior::DelayedLayout => write_grab_key(&mut stream, next_layout_keycode),
+        FixtureBehavior::MissingLayoutGrab => {}
+        FixtureBehavior::PartialFocusReconciliation => {
+            write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE)
+        }
     }
 
     let mut windows = Vec::new();
     let mut mirror = false;
+    let mut partial_reconciliation_sent = false;
+    let mut focus_action_seen = false;
     loop {
         let event = pending_events.pop_front().unwrap_or_else(|| {
             let mut event = [0_u8; 32];
@@ -259,11 +316,25 @@ fn run_fixture(register_grab: bool) {
                 windows.push(window);
                 write_layout(&mut stream, &windows, mirror);
             }
+            22 if behavior == FixtureBehavior::PartialFocusReconciliation => {
+                if windows.len() == 3 && partial_reconciliation_sent && !focus_action_seen {
+                    panic!("existing-node reconciliation was not coalesced");
+                }
+                if windows.len() == 3 && !focus_action_seen {
+                    write_configure_window(&mut stream, windows[0], tall_geometries(3)[0]);
+                    stream.flush().unwrap();
+                    partial_reconciliation_sent = true;
+                }
+            }
             22 => write_layout(&mut stream, &windows, mirror),
             2 if event[1] == NEXT_LAYOUT_KEYCODE && read_u16(&event, 28) == MOD1_MASK => {
                 thread::sleep(Duration::from_millis(160));
                 mirror = true;
                 write_layout(&mut stream, &windows, mirror);
+            }
+            2 if event[1] == FOCUS_NEXT_KEYCODE && read_u16(&event, 28) == MOD1_MASK => {
+                focus_action_seen = true;
+                write_set_input_focus(&mut stream, windows[0]);
             }
             2 | 3 => {}
             event_type => panic!("unexpected synthetic X event {event_type}"),
@@ -331,6 +402,14 @@ fn write_grab_key(stream: &mut UnixStream, keycode: u8) {
     request.extend_from_slice(&MOD1_MASK.to_le_bytes());
     request.push(keycode);
     request.extend_from_slice(&[1, 1, 0, 0, 0]);
+    stream.write_all(&request).unwrap();
+    stream.flush().unwrap();
+}
+
+fn write_set_input_focus(stream: &mut UnixStream, window: u32) {
+    let mut request = vec![42, 0, 3, 0];
+    request.extend_from_slice(&window.to_le_bytes());
+    request.extend_from_slice(&0_u32.to_le_bytes());
     stream.write_all(&request).unwrap();
     stream.flush().unwrap();
 }

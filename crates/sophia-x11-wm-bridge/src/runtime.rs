@@ -70,7 +70,11 @@ impl From<X11WmBridgeError> for BridgeRuntimeError {
 enum ServerCommand {
     Root(Rect),
     Map(SyntheticXWindowId, Rect, SyntheticManageProfile),
-    Configure(SyntheticXWindowId, Rect),
+    Configure {
+        window: SyntheticXWindowId,
+        geometry: Rect,
+        notify_root: bool,
+    },
     Unmap(SyntheticXWindowId),
     Destroy(SyntheticXWindowId),
     Key {
@@ -100,6 +104,12 @@ struct SyntheticKeyChord {
 struct LegacyResponseBatch {
     configured: BTreeMap<SyntheticXWindowId, LegacyWmRequest>,
     focus: Option<LegacyWmRequest>,
+}
+
+#[derive(Debug, Default)]
+struct LegacyResponseExpectation {
+    configured: BTreeSet<SyntheticXWindowId>,
+    map_admissions: BTreeSet<SyntheticXWindowId>,
 }
 
 fn xmonad_profile_chord(action: u64) -> Option<SyntheticKeyChord> {
@@ -346,8 +356,8 @@ impl LegacyX11WmBridgeRuntime {
                 .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
         )?;
 
-        if profiled_chord.is_some() && !expected.is_empty() {
-            self.collect_legacy_responses(&expected, false)?;
+        if profiled_chord.is_some() && !expected.configured.is_empty() {
+            self.collect_legacy_responses(&expected.map_admissions, true)?;
         }
         if let Some(chord) = profiled_chord {
             let commands = self
@@ -400,7 +410,7 @@ impl LegacyX11WmBridgeRuntime {
         let response_batch = if profiled_chord.is_some() {
             self.collect_legacy_responses(&BTreeSet::new(), !self.bridge.mapped_windows.is_empty())?
         } else {
-            self.collect_legacy_responses(&expected, false)?
+            self.collect_legacy_responses(&expected.configured, false)?
         };
         let mut requests = if matches!(request.kind, WmRequestKind::FocusRequested(_)) {
             Vec::new()

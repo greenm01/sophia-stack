@@ -904,8 +904,14 @@ than adding speculative browser compatibility.
   The session's apparent crash was a clean status-1 exit caused by treating an
   expected duplicate in-flight physical action as fatal; action duplicates now
   coalesce, are counted in the bounded transport summary, and retain capacity
-  rejection as a separate outcome. Repeat the physical refocus stage from this
-  change before continuing the popup and exit stages.
+  rejection as a separate outcome. The following repeat reached the refocus
+  checkpoint and created the attached popup, but a later focus action restarted
+  the bridge after xmonad answered only one of three synthetic root
+  `ConfigureNotify` signals. Existing-node reconciliation is now one coalesced
+  activity fence; only new synthetic `MapRequest` admissions require a reply
+  for every window. A process-external three-window focus regression answers
+  that fence with one configure and rejects duplicate root notifications.
+  Repeat the popup confirmation and exit stages from this change.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

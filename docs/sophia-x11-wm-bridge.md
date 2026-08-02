@@ -237,6 +237,14 @@ For `RelayoutWorkspace`:
 4. Wait for resulting legacy WM requests and translate them back to Sophia
    commands.
 
+Existing-node geometry updates are applied in order and coalesced into one root
+`ConfigureNotify` reconciliation signal per engine update. A profiled action
+uses the resulting activity plus a quiet boundary as its pre-injection fence;
+X11 does not require a WM to answer that notification with one
+`ConfigureWindow` per mapped window. A new synthetic `MapRequest` remains an
+admission boundary and must receive its own configure reply before the action
+can proceed.
+
 If a node's manage-time constraint profile changes, the bridge destroys and
 recreates only its private synthetic window before the next `MapRequest`.
 This makes an unmodified legacy WM reevaluate standard `WM_NORMAL_HINTS`.

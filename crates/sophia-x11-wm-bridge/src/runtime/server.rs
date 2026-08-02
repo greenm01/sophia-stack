@@ -196,13 +196,18 @@ fn send_engine_update(
     bridge: &X11WmBridgeState,
     update: &BridgeEngineUpdate,
     commands: &SyncSender<ServerCommand>,
-) -> Result<BTreeSet<SyntheticXWindowId>, BridgeRuntimeError> {
-    let mut expected = BTreeSet::new();
-    for event in &update.events {
+) -> Result<LegacyResponseExpectation, BridgeRuntimeError> {
+    let mut expected = LegacyResponseExpectation::default();
+    let last_configure = update
+        .events
+        .iter()
+        .rposition(|event| matches!(event, SyntheticXEvent::ConfigureNotify { .. }));
+    for (index, event) in update.events.iter().enumerate() {
         let command = match *event {
             SyntheticXEvent::RootConfigured { bounds } => ServerCommand::Root(bounds),
             SyntheticXEvent::MapRequest { window } => {
-                expected.insert(window);
+                expected.configured.insert(window);
+                expected.map_admissions.insert(window);
                 ServerCommand::Map(
                     window,
                     bridge
@@ -214,8 +219,12 @@ fn send_engine_update(
                 )
             }
             SyntheticXEvent::ConfigureNotify { window, geometry } => {
-                expected.insert(window);
-                ServerCommand::Configure(window, geometry)
+                expected.configured.insert(window);
+                ServerCommand::Configure {
+                    window,
+                    geometry,
+                    notify_root: Some(index) == last_configure,
+                }
             }
             SyntheticXEvent::UnmapNotify { window } => ServerCommand::Unmap(window),
             SyntheticXEvent::DestroyNotify { window } => ServerCommand::Destroy(window),
