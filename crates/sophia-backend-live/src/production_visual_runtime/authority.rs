@@ -1,6 +1,37 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
+    pub(super) fn finish_surface_content_fence(
+        &mut self,
+        surface: SurfaceId,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let deferred = self.surface_content_fence.finish(surface)?;
+        if deferred.is_empty() {
+            return Ok(0);
+        }
+        let deferred = rebase_authority_groups_to_committed(
+            &LiveProductionAuthorityBatch {
+                groups: deferred,
+                dma_buf_registrations: Vec::new(),
+                fence_registrations: Vec::new(),
+                released_dma_bufs: Vec::new(),
+                released_fences: Vec::new(),
+            },
+            self.production.committed_surfaces(),
+        );
+        let count = deferred.len();
+        self.enqueue_software_presents(&deferred)?;
+        let _ = self.prepare_authority_groups(&deferred)?;
+        self.outputs
+            .project_committed(self.production.committed_surfaces());
+        tracing::debug!(
+            surface = surface.index(),
+            groups = count,
+            "released authority groups behind retired surface Present"
+        );
+        Ok(count)
+    }
+
     pub(super) fn enqueue_software_presents(
         &mut self,
         groups: &[LiveProductionAuthorityGroup],
@@ -154,6 +185,13 @@ impl LiveProductionVisualRuntime {
         }
         if let Some(rendering) = self.present_scheduler.take_rendering() {
             self.reject_gpu_presentation(rendering.transaction, 0, 0);
+        }
+        let discarded = self.surface_content_fence.discard();
+        if discarded != 0 {
+            tracing::debug!(
+                deferred_groups = discarded,
+                "discarded fenced surface authority during presentation shutdown"
+            );
         }
         let displayed = std::mem::take(&mut self.displayed_surfaces);
         for transaction in displayed

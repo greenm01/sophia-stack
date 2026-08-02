@@ -65,11 +65,11 @@ impl LiveProductionVisualRuntime {
         let skipped_present = self
             .present_scheduler
             .take_submitted()
-            .or_else(|| self.present_scheduler.take_rendering())
-            .map(|present| present.transaction);
+            .or_else(|| self.present_scheduler.take_rendering());
         self.reject_software_presents(0, 0);
-        if let Some(transaction) = skipped_present {
-            self.reject_gpu_presentation(transaction, 0, 0);
+        if let Some(present) = skipped_present.as_ref() {
+            self.reject_gpu_presentation(present.transaction, 0, 0);
+            self.finish_surface_content_fence(present.surface)?;
         }
         self.outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
@@ -80,7 +80,7 @@ impl LiveProductionVisualRuntime {
         Ok(LiveProductionNativeSuspendReport {
             outcome,
             abandoned_scanouts,
-            skipped_present,
+            skipped_present: skipped_present.map(|present| present.transaction),
         })
     }
 
@@ -208,6 +208,7 @@ impl LiveProductionVisualRuntime {
             Some(_) => {
                 if let Some(rendering) = self.present_scheduler.take_rendering() {
                     self.reject_gpu_presentation(rendering.transaction, 0, 0);
+                    self.finish_surface_content_fence(rendering.surface)?;
                 }
             }
         }
@@ -284,6 +285,15 @@ impl LiveProductionVisualRuntime {
         self.outputs
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);
+        let deferred_groups = self.finish_surface_content_fence(submitted.surface)?;
+        if deferred_groups != 0 {
+            tracing::debug!(
+                transaction = submitted.transaction.raw(),
+                surface = submitted.surface.index(),
+                deferred_groups,
+                "retired Present released its ordered surface authority backlog"
+            );
+        }
         if completion.commit.outcome != TransactionOutcome::Committed {
             self.settle_software_present_frame(ust, msc)?;
             tracing::warn!(

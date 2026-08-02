@@ -2,9 +2,99 @@ use std::collections::BTreeMap;
 
 use sophia_cli::resize_transaction::{
     PendingLayoutGeometryAuthority, PendingLayoutObservationMerge, ResizeRollbackCoordinator,
-    merge_unrequested_layout_observation, present_pixels_conflict_with_requested_sizes,
-    project_authority_batch_onto_layout,
+    ResizeVisualCommit, ResizeVisualCommitTracker, merge_unrequested_layout_observation,
+    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
 };
+
+#[test]
+fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
+    let surface = SurfaceId::new(70, 1);
+    let transaction = TransactionId::from_raw(700);
+    let launch = size(1280, 1040);
+    let target = size(1276, 1422);
+    let mut coordinator = ResizeRollbackCoordinator::default();
+    let mut visual = ResizeVisualCommitTracker::default();
+    coordinator.record_committed(surface, launch);
+    coordinator.set_pending_target(surface, target);
+    visual
+        .arm(ResizeVisualCommit {
+            transaction,
+            surface,
+            size: target,
+        })
+        .unwrap();
+
+    assert_eq!(coordinator.committed_size(surface), Some(launch));
+    assert_eq!(coordinator.pending_target(surface), Some(target));
+    assert!(visual.surface_awaiting(surface));
+    assert_eq!(visual.complete(transaction, surface, launch), None);
+
+    let committed = visual.complete(transaction, surface, target).unwrap();
+    coordinator.record_committed(committed.surface, committed.size);
+    assert_eq!(coordinator.committed_size(surface), Some(target));
+    assert_eq!(coordinator.pending_target(surface), None);
+    assert!(visual.is_empty());
+}
+
+#[test]
+fn removing_a_surface_cancels_only_its_awaiting_visual_commits() {
+    let first = SurfaceId::new(71, 1);
+    let second = SurfaceId::new(72, 1);
+    let target = size(1276, 1422);
+    let mut visual = ResizeVisualCommitTracker::default();
+    for (raw, surface) in [(701, first), (702, second)] {
+        visual
+            .arm(ResizeVisualCommit {
+                transaction: TransactionId::from_raw(raw),
+                surface,
+                size: target,
+            })
+            .unwrap();
+    }
+
+    assert_eq!(visual.remove_surface(first), 1);
+    assert!(!visual.surface_awaiting(first));
+    assert!(visual.surface_awaiting(second));
+    assert_eq!(visual.len(), 1);
+}
+
+#[test]
+fn one_layout_transaction_tracks_multiple_surface_retirements_independently() {
+    let transaction = TransactionId::from_raw(920);
+    let firefox = SurfaceId::new(92, 1);
+    let kitty = SurfaceId::new(93, 1);
+    let size = Size {
+        width: 1276,
+        height: 1422,
+    };
+    let mut tracker = ResizeVisualCommitTracker::default();
+    tracker
+        .arm(ResizeVisualCommit {
+            transaction,
+            surface: firefox,
+            size,
+        })
+        .unwrap();
+    tracker
+        .arm(ResizeVisualCommit {
+            transaction,
+            surface: kitty,
+            size,
+        })
+        .unwrap();
+
+    assert_eq!(tracker.len(), 2);
+    assert_eq!(
+        tracker.complete(transaction, firefox, size),
+        Some(ResizeVisualCommit {
+            transaction,
+            surface: firefox,
+            size,
+        })
+    );
+    assert!(tracker.surface_awaiting(kitty));
+    assert_eq!(tracker.len(), 1);
+}
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
     Size, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,

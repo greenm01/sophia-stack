@@ -68,6 +68,19 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted an incomplete resize epoch" >&2
     exit 1
 fi
+sed '/status=visual_committed /d' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted resize pixels without retirement" >&2
+    exit 1
+fi
+sed '/status=visual_committed /i sophia_live_native_retirement schema=1 status=settled outcome=RejectedStaleSurface' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a stale resize Present" >&2
+    exit 1
+fi
 grep -Fv 'sophia_live_layout_health' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then

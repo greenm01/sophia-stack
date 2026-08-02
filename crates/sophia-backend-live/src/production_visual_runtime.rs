@@ -61,6 +61,7 @@ pub struct LiveProductionVisualRuntime {
     input_layers: Vec<LayerSnapshot>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
+    surface_content_fence: LiveProductionSurfaceContentFence,
     software_presents_waiting_submit: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     software_presents_submitted: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
@@ -127,6 +128,7 @@ impl LiveProductionVisualRuntime {
             input_layers: Vec::new(),
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
+            surface_content_fence: LiveProductionSurfaceContentFence::default(),
             software_presents_waiting_submit: VecDeque::new(),
             software_presents_submitted: VecDeque::new(),
             displayed_surfaces: BTreeMap::new(),
@@ -267,6 +269,15 @@ impl LiveProductionVisualRuntime {
         self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
         let rebased_groups =
             rebase_authority_groups_to_committed(batch, self.production.committed_surfaces());
+        let mut immediate_groups = Vec::with_capacity(rebased_groups.len());
+        for group in rebased_groups {
+            if self.surface_content_fence.should_defer(&group) {
+                self.surface_content_fence.defer(group)?;
+            } else {
+                immediate_groups.push(group);
+            }
+        }
+        let rebased_groups = immediate_groups;
         self.enqueue_software_presents(&rebased_groups)?;
         for group in &rebased_groups {
             self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
@@ -547,7 +558,11 @@ impl LiveProductionVisualRuntime {
         let mut has_present_submissions = false;
         for group in &batch.groups {
             if group.present_submissions.is_empty() {
-                authority_groups.push(group.clone());
+                if self.surface_content_fence.should_defer(group) {
+                    self.surface_content_fence.defer(group.clone())?;
+                } else {
+                    authority_groups.push(group.clone());
+                }
             } else {
                 has_present_submissions = true;
                 let superseded = self.present_scheduler.enqueue_group(
@@ -583,9 +598,12 @@ impl LiveProductionVisualRuntime {
             }
             return self.drive_gpu_presentation(native_scanout.as_deref_mut());
         }
+        if authority_groups.is_empty() {
+            return self.run_observation_tick();
+        }
         self.run_authority_transactions(LiveAuthorityTransactionRun {
-            groups: &batch.groups,
-            event_count: batch.transaction_count(),
+            event_count: authority_transaction_count_for_groups(&authority_groups),
+            groups: &authority_groups,
             native_scanout,
             native_frames,
             wm_update,

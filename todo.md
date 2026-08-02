@@ -847,8 +847,18 @@ than adding speculative browser compatibility.
   already committed by Engine, and recovery drained its selected frame before
   WM assignment made the surface visible. Mapped policy toplevel geometry is
   now Engine-owned, released admission pixels wait for policy assignment, and
-  the xmonad admission fallback is back to two seconds. Repeat the physical
-  launch before continuing the full workflow.
+  the xmonad admission fallback is back to two seconds. That launch produced
+  the exact 1276-by-1422 Firefox resize candidate, but the native page flip
+  later rejected it as stale: layout had declared the candidate committed when
+  it was only observed, and subsequent same-surface backing transactions
+  advanced the Engine generation before scanout retirement. DMA-BUF layout
+  candidates now keep the standing target until their exact native retirement,
+  reject old-size Presents throughout that interval, and fence only later
+  authority work for the same surface. Retirement commits the candidate first,
+  then rebases and releases the bounded backlog; unrelated surfaces remain
+  runnable. Reducer, Engine-ordering, lifecycle, and fail-closed verifier
+  regressions pass. Repeat the physical launch from this commit before
+  continuing the full workflow.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

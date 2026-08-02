@@ -569,17 +569,26 @@ impl PersistentLiveLayout {
         surface: SurfaceId,
         buffer: sophia_protocol::BufferHandle,
     ) -> sophia_backend_live::LiveProductionPresentDisposition {
-        let Some(pending) = self.pending.as_ref() else {
-            return sophia_backend_live::LiveProductionPresentDisposition::Immediate;
-        };
-        let Some(expected) = pending.requested_sizes.get(&surface) else {
+        let expected = self
+            .pending
+            .as_ref()
+            .and_then(|pending| pending.requested_sizes.get(&surface).copied())
+            .or_else(|| self.layout_epochs.pending_target(surface));
+        let Some(expected) = expected else {
             return sophia_backend_live::LiveProductionPresentDisposition::Immediate;
         };
         match self.dma_buf_sizes.get(&buffer) {
-            Some(actual) if actual == expected => {
+            Some(actual) if *actual == expected && self.pending.is_some() => {
                 sophia_backend_live::LiveProductionPresentDisposition::StageLayout {
-                    epoch: pending.transaction,
+                    epoch: self
+                        .pending
+                        .as_ref()
+                        .expect("checked above")
+                        .transaction,
                 }
+            }
+            Some(actual) if *actual == expected => {
+                sophia_backend_live::LiveProductionPresentDisposition::Immediate
             }
             Some(_) => {
                 sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch

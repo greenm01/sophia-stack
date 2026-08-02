@@ -8,6 +8,7 @@ use super::{
     LiveProductionCpuScene, LiveProductionVisualRuntime, LiveXAuthorityFile,
     PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
     PhysicalTextProof, Rect, Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
+    SESSION_APP_ADMISSION_TIMEOUT_MSEC, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
     SessionPointerPlacement, SessionProcessGuard, Size, Transform, XPresentCadence,
     authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
     clear_client_pressed_keys_state_only, current_cpu_frame_is_presented,

@@ -148,9 +148,30 @@ resize_epoch="$(line_number_after '^sophia_live_resize_epoch schema=1 status=com
 resize_layout="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$scroll_line")"
 resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=3$' "$scroll_line")"
 resize_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=3 focus=surface$' "$scroll_line")"
+visual_armed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_armed ' "$scroll_line")"
+visual_committed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_committed ' "$scroll_line")"
 [[ -n "$resize_epoch" && -n "$resize_layout" && -n "$resize_action" ]] \
     && (( resize_epoch < resize_action && resize_layout < resize_action )) ||
     fail "the Firefox resize stage lacks a committed three-surface layout epoch"
+[[ -n "$visual_armed_line" && -n "$visual_committed_line" ]] \
+    && (( visual_armed_line < visual_committed_line && visual_committed_line < resize_line )) ||
+    fail "the Firefox resize target was not visually committed by exact Present retirement"
+visual_armed="$(sed -n "${visual_armed_line}p" "$SESSION_LOG")"
+visual_committed="$(sed -n "${visual_committed_line}p" "$SESSION_LOG")"
+for assignment in \
+    "transaction=$(field "$visual_armed" transaction)" \
+    "surface=$(field "$visual_armed" surface)" \
+    "width=$(field "$visual_armed" width)" \
+    "height=$(field "$visual_armed" height)"; do
+    require_eq "$visual_committed" "${assignment%%=*}" "${assignment#*=}"
+done
+require_at_least "$visual_committed" width 1
+require_at_least "$visual_committed" height 1
+if awk -v first="$visual_armed_line" -v last="$visual_committed_line" \
+    'NR >= first && NR <= last && /outcome=RejectedStaleSurface/ { found=1 } END { exit !found }' \
+    "$SESSION_LOG"; then
+    fail "the Firefox resize Present became stale before visual retirement"
+fi
 [[ -n "$resize_action" ]] && (( resize_action < resize_line )) ||
     fail "the Firefox resize stage lacks an ordered Super+Space layout action"
 [[ -n "$resize_projection" ]] && (( resize_action < resize_projection && resize_projection < resize_line )) ||

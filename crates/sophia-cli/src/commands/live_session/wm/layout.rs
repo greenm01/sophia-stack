@@ -54,6 +54,7 @@ struct PersistentLiveLayout {
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
     constraint_relayout_required: bool,
+    awaiting_visual_commits: ResizeVisualCommitTracker,
 }
 
 impl PersistentLiveLayout {
@@ -232,7 +233,13 @@ impl PersistentLiveLayout {
             }
             let resize_owned = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.contains_key(&transaction.surface)
-            });
+            }) || self
+                .awaiting_visual_commits
+                .surface_awaiting(transaction.surface)
+                || self
+                    .layout_epochs
+                    .pending_target(transaction.surface)
+                    .is_some();
             let staged_for_resize = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.get(&transaction.surface) == Some(&observed_size)
             });
@@ -369,6 +376,7 @@ impl PersistentLiveLayout {
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
             self.layout_epochs.remove(*surface);
+            self.awaiting_visual_commits.remove_surface(*surface);
             self.admissions.remove(*surface);
             self.admission_retries.remove(surface);
         }
@@ -464,6 +472,30 @@ impl PersistentLiveLayout {
         true
     }
 
+    fn complete_visual_commit(
+        &mut self,
+        transaction: TransactionId,
+        surface: SurfaceId,
+        size: Size,
+    ) -> bool {
+        let Some(candidate) = self
+            .awaiting_visual_commits
+            .complete(transaction, surface, size)
+        else {
+            return false;
+        };
+        self.layout_epochs
+            .record_committed(candidate.surface, candidate.size);
+        println!(
+            "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
+            candidate.transaction.raw(),
+            candidate.surface.index(),
+            candidate.size.width,
+            candidate.size.height,
+        );
+        true
+    }
+
     fn constraint_relayout_required(&self) -> bool {
         self.constraint_relayout_required
     }
@@ -520,6 +552,7 @@ impl PersistentLiveLayout {
             .pending_target_surfaces()
             .filter(|(surface, target)| {
                 self.layout_epochs.recovery_extent(*surface).is_none()
+                    && !self.awaiting_visual_commits.surface_awaiting(*surface)
                     && self.layout_epochs.committed_size(*surface) != Some(*target)
             })
             .collect::<Vec<_>>();
@@ -897,8 +930,26 @@ impl PersistentLiveLayout {
                     &self.dma_buf_sizes,
                     &self.cpu_buffer_sizes,
                 ) {
-                    self.layout_epochs
-                        .record_committed(transaction.surface, size);
+                    if matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }) {
+                        self.awaiting_visual_commits
+                            .arm(ResizeVisualCommit {
+                                transaction: transaction.transaction,
+                                surface: transaction.surface,
+                                size,
+                            })
+                            .expect("a staged layout owns one bounded visual candidate");
+                        println!(
+                            "sophia_live_resize_epoch schema=3 status=visual_armed epoch={} transaction={} surface={} width={} height={}",
+                            pending.transaction.raw(),
+                            transaction.transaction.raw(),
+                            transaction.surface.index(),
+                            size.width,
+                            size.height,
+                        );
+                    } else {
+                        self.layout_epochs
+                            .record_committed(transaction.surface, size);
+                    }
                 }
             }
         }

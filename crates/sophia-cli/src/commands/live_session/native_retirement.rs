@@ -17,6 +17,8 @@ pub(super) fn record_native_present_retirement(
     startup_surface_presentations: &mut StartupSurfacePresentationEvidence,
     startup_readiness: &mut SessionStartupReadiness,
 ) -> NativePresentRetirementObservation {
+    let _ =
+        layout.complete_visual_commit(retired.transaction, retired.surface, retired.source_size);
     layout.complete_admission_retirement(retired.surface, retired.transaction);
     let stable = runtime.stable_present(native_scanout, retired.transaction);
     retired_present_surfaces.insert(retired.surface, retired.transaction);

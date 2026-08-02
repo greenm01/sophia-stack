@@ -481,6 +481,11 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
 
     assert!(projected.transactions.is_empty());
     assert!(projected.present_submissions.is_empty());
+    assert!(released.is_empty());
+    layout.unmanaged_surfaces.remove(&surface);
+    let empty =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(14));
+    let (_, released) = layout.projected_batch(&empty);
     assert_eq!(released.len(), 1);
     assert_eq!(released[0].transactions.len(), 1);
     assert_eq!(released[0].transactions[0].surface, surface);
@@ -735,6 +740,9 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     let (projected, released) = layout.projected_batch(&empty);
     assert!(projected.transactions.is_empty());
     assert!(projected.present_submissions.is_empty());
+    assert!(released.is_empty());
+    layout.unmanaged_surfaces.remove(&surface);
+    let (projected, released) = layout.projected_batch(&empty);
     assert_eq!(released.len(), 1);
     assert_eq!(released[0].transactions.len(), 1);
     assert_eq!(released[0].transactions[0].transaction, pixel_transaction);

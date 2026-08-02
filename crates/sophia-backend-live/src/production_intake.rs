@@ -2,8 +2,11 @@ use sophia_protocol::{
     BufferHandle, DmaBufDescriptor, FenceHandle, LayerSnapshot, SurfaceId, SurfaceTransaction,
     TransactionId,
 };
+use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
+
+pub const LIVE_PRODUCTION_SURFACE_FENCE_CAPACITY: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct LiveProductionDmaBufRegistration {
@@ -64,6 +67,85 @@ pub struct LiveProductionAuthorityGroup {
     pub removed_surfaces: Vec<SurfaceId>,
     pub present_submissions: Vec<LiveProductionPresentSubmission>,
     pub software_present_submissions: Vec<LiveProductionSoftwarePresentSubmission>,
+}
+
+/// Ordered authority work held while an asynchronous Present owns a surface's
+/// next Engine generation. Unrelated surfaces remain independently runnable.
+#[derive(Debug, Default)]
+pub struct LiveProductionSurfaceContentFence {
+    surface: Option<SurfaceId>,
+    deferred: VecDeque<LiveProductionAuthorityGroup>,
+}
+
+impl LiveProductionSurfaceContentFence {
+    pub fn begin(&mut self, surface: SurfaceId) -> Result<(), &'static str> {
+        if !surface.is_valid() {
+            return Err("surface content fence has an invalid surface");
+        }
+        match self.surface {
+            Some(current) if current != surface => {
+                Err("surface content fence already owns another surface")
+            }
+            Some(_) => Ok(()),
+            None => {
+                self.surface = Some(surface);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn should_defer(&self, group: &LiveProductionAuthorityGroup) -> bool {
+        let Some(surface) = self.surface else {
+            return false;
+        };
+        if group.removed_surfaces.contains(&surface) {
+            return false;
+        }
+        group
+            .transactions
+            .iter()
+            .any(|transaction| transaction.surface == surface)
+    }
+
+    pub fn defer(&mut self, group: LiveProductionAuthorityGroup) -> Result<(), &'static str> {
+        if !self.should_defer(&group) {
+            return Err("authority group does not belong behind the surface content fence");
+        }
+        if self.deferred.len() == LIVE_PRODUCTION_SURFACE_FENCE_CAPACITY {
+            return Err("surface content fence capacity exceeded");
+        }
+        self.deferred.push_back(group);
+        Ok(())
+    }
+
+    pub fn finish(
+        &mut self,
+        surface: SurfaceId,
+    ) -> Result<Vec<LiveProductionAuthorityGroup>, &'static str> {
+        if self.surface != Some(surface) {
+            return Err("surface content fence completion does not match its owner");
+        }
+        self.surface = None;
+        Ok(self.deferred.drain(..).collect())
+    }
+
+    /// Drops the ordered backlog when the presentation runtime itself is
+    /// shutting down. Normal rejection paths must use `finish` so later work
+    /// is rebased and committed against the last visible Engine state.
+    pub fn discard(&mut self) -> usize {
+        self.surface = None;
+        let discarded = self.deferred.len();
+        self.deferred.clear();
+        discarded
+    }
+
+    pub fn surface(&self) -> Option<SurfaceId> {
+        self.surface
+    }
+
+    pub fn deferred_len(&self) -> usize {
+        self.deferred.len()
+    }
 }
 
 impl LiveProductionAuthorityGroup {

@@ -265,6 +265,7 @@ impl LiveProductionVisualRuntime {
                     .resources_mut()
                     .mark_submitted(transaction)?;
                 self.present_scheduler.pop_front();
+                self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_submitted(LiveProductionSubmittedPresent {
                         transaction,
@@ -275,6 +276,7 @@ impl LiveProductionVisualRuntime {
             }
             Some(Status::ScanoutExportPending) => {
                 self.present_scheduler.pop_front();
+                self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_rendering(LiveProductionSubmittedPresent {
                         transaction,

@@ -9,8 +9,8 @@ use sophia_backend_live::{
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
-    PendingLayoutGeometryAuthority, merge_unrequested_layout_observation,
-    project_authority_batch_onto_layout,
+    PendingLayoutGeometryAuthority, ResizeVisualCommit, ResizeVisualCommitTracker,
+    merge_unrequested_layout_observation, project_authority_batch_onto_layout,
 };
 use sophia_cli::session_actions::{
     SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome,
