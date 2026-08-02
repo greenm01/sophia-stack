@@ -1147,3 +1147,96 @@ fn root_transient_stays_client_positioned_without_a_surface_owner() {
                 && surface.mapped
     ));
 }
+
+#[test]
+fn ewmh_dialog_type_is_client_positioned_before_map_and_delete_restores_policy() {
+    let namespace = NamespaceId::from_raw(47);
+    let dialog = 0x220023;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let create = decode_x11_core_request(
+        context(namespace, 560, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, dialog, 30, 40, 480, 281),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let window_type = atoms
+        .intern("_NET_WM_WINDOW_TYPE", false)
+        .unwrap()
+        .unwrap();
+    let extension_type = atoms.intern("_SOPHIA_TEST_TYPE", false).unwrap().unwrap();
+    let dialog_type = atoms
+        .intern("_NET_WM_WINDOW_TYPE_DIALOG", false)
+        .unwrap()
+        .unwrap();
+    let mut types = Vec::new();
+    types.extend_from_slice(&extension_type.to_le_bytes());
+    types.extend_from_slice(&dialog_type.to_le_bytes());
+    let change = decode_x11_core_request(
+        context(namespace, 561, XByteOrder::LittleEndian),
+        &change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            dialog,
+            window_type,
+            crate::X_ATOM_ATOM,
+            32,
+            &types,
+        ),
+    )
+    .unwrap();
+    let typed = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 18),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        typed.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.presentation == SurfacePresentationRole::ClientPositioned
+                && !surface.mapped
+    ));
+
+    let mapped = runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(3),
+        namespace,
+        kind: XAuthorityRequestKind::MapWindow {
+            window: XResourceId::new(u64::from(dialog), 1),
+            generation: 3,
+        },
+    });
+    assert!(matches!(
+        mapped.surfaces.as_slice(),
+        [surface]
+            if surface.presentation == SurfacePresentationRole::ClientPositioned
+                && surface.mapped
+                && surface.geometry == Rect { x: 30, y: 40, width: 480, height: 281 }
+    ));
+
+    let deleted = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 19),
+        XWireRequest::DeleteProperty {
+            window: XResourceId::new(u64::from(dialog), 1),
+            property: window_type,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        deleted.response.as_ref().unwrap().surfaces.as_slice(),
+        [surface]
+            if surface.presentation == SurfacePresentationRole::PolicyManaged
+                && surface.mapped
+    ));
+}

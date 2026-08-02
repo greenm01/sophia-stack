@@ -421,7 +421,11 @@ impl PersistentLiveLayout {
         self.admission_retries.remove(&surface);
         self.layout_epochs
             .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
-        self.release_recovery_extent(surface, "dma_buf_retired");
+        self.release_recovery_extent_after_commit(
+            surface,
+            self.layout_epochs.committed_size(surface),
+            "dma_buf_retired",
+        );
         self.release_managed_admission_groups();
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
             && expected == visual_transaction

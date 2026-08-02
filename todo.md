@@ -926,11 +926,17 @@ than adding speculative browser compatibility.
   trigger the bounded bridge restart, discard queued/in-flight speculative
   work, and reseed xmonad from the committed layout. The following run no
   longer exited, but opening the popup blanked Firefox while xmonad repeatedly
-  attempted to tile it. `WM_TRANSIENT_FOR` presence had been discarded when
-  its owner was the root and therefore had no Engine surface. Transient-hint
-  presence and the optional reduced owner are now separate: root-owned
-  transients stay client-positioned and never enter blind WM admission. Repeat
-  the popup recovery, second Firefox launch, and exit stages from this change.
+  attempted to tile it. Separating `WM_TRANSIENT_FOR` presence from its
+  optional owner did not fix the physical workload: the freshly built repeat
+  still admitted the popup, proving that it produced no valid transient
+  reduction. X Authority now also reduces the ordered EWMH
+  `_NET_WM_WINDOW_TYPE` list, keeping normal toplevels managed while excluding
+  dialog/menu/utility/splash/popup-like types from blind-WM admission. The
+  fallback path also retains its safe fixed extent while a different standing
+  target remains unmet, preventing an admitted initial frame from immediately
+  re-entering the same failed resize loop. Repeat the popup recovery, second
+  Firefox launch, and exit stages from this change; the new redacted window-
+  type trace must confirm the exact live Firefox hint.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

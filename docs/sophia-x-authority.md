@@ -302,6 +302,13 @@ without inventing an Engine owner. The live session keeps attached visibility
 tied to a mapped owner when one exists, and explicit unmap, property deletion,
 or owner loss cannot leave a stale popup in composition.
 
+`_NET_WM_WINDOW_TYPE` is reduced at the same boundary because the external
+blind WM never receives application properties. The decoder honors the EWMH
+ordered ATOM list, skips unknown extension types, leaves `NORMAL` under policy,
+and maps recognized dialog/menu/utility/splash/popup-like functional types to
+`ClientPositioned`. Property replacement or deletion publishes the resulting
+role change; no X atom crosses into Engine state.
+
 ## Namespace Model
 
 The normative identity, profile, admission, capability, and grant contract is

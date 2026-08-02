@@ -92,18 +92,50 @@ fn dispatch_core_property_request(
                                     atoms,
                                     context.byte_order,
                                 );
+                                let window_type = decode_x_window_type_client_positioned(
+                                    &record,
+                                    atoms,
+                                    context.byte_order,
+                                );
                                 let response = transient.map(|decoded| {
+                                    let decode_valid = decoded.is_ok();
+                                    let owner = decoded.ok();
                                     let mut response =
                                         XAuthorityResponsePacket::accepted(transaction);
                                     if let Ok(surface) = runtime.set_window_transient_for(
                                         context.namespace,
                                         record.window,
-                                        decoded.ok(),
+                                        owner,
                                     ) {
+                                        tracing::debug!(
+                                            "sophia_x11_transient_for schema=1 window={} present=true decode_valid={} owner_is_root={} owner_reduced={} content=redacted",
+                                            record.window.local.raw(),
+                                            decode_valid,
+                                            owner.is_some_and(|owner| owner.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT)),
+                                            surface.presentation_owner.is_some(),
+                                        );
                                         response.surfaces.push(surface);
                                     }
                                     response
-                                });
+                                }).or_else(|| window_type.map(|decoded| {
+                                    let client_positioned = decoded.unwrap_or(false);
+                                    let mut response =
+                                        XAuthorityResponsePacket::accepted(transaction);
+                                    if let Ok(surface) = runtime.set_window_type_client_positioned(
+                                        context.namespace,
+                                        record.window,
+                                        client_positioned,
+                                    ) {
+                                        tracing::debug!(
+                                            "sophia_x11_window_type schema=1 window={} client_positioned={} decode_valid={} content=redacted",
+                                            record.window.local.raw(),
+                                            client_positioned,
+                                            decoded.is_ok(),
+                                        );
+                                        response.surfaces.push(surface);
+                                    }
+                                    response
+                                }));
                                 let candidate = metadata_property_candidate(&record, atoms);
                                 (
                                     XClientOutput::Event(XClientEvent::PropertyNotify {
@@ -155,8 +187,8 @@ fn dispatch_core_property_request(
                         ),
                         Ok(()) => {
                             let removed = properties.remove(context.namespace, window, property);
-                            let response = (atoms.name(property) == Some("WM_TRANSIENT_FOR"))
-                                .then(|| {
+                            let response = match atoms.name(property) {
+                                Some("WM_TRANSIENT_FOR") => Some({
                                     let mut response =
                                         XAuthorityResponsePacket::accepted(transaction);
                                     if let Ok(surface) = runtime.set_window_transient_for(
@@ -167,7 +199,21 @@ fn dispatch_core_property_request(
                                         response.surfaces.push(surface);
                                     }
                                     response
-                                });
+                                }),
+                                Some("_NET_WM_WINDOW_TYPE") => Some({
+                                    let mut response =
+                                        XAuthorityResponsePacket::accepted(transaction);
+                                    if let Ok(surface) = runtime.set_window_type_client_positioned(
+                                        context.namespace,
+                                        window,
+                                        false,
+                                    ) {
+                                        response.surfaces.push(surface);
+                                    }
+                                    response
+                                }),
+                                _ => None,
+                            };
                             let outputs = removed
                             .map(|_| {
                                 if atoms.name(property) == Some("WM_NORMAL_HINTS") {

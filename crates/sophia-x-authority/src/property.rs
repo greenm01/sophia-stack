@@ -116,6 +116,57 @@ pub enum XTransientForDecodeError {
     InvalidWindow,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XWindowTypeDecodeError {
+    InvalidType,
+    InvalidFormat,
+    InvalidLength,
+}
+
+/// Reduces EWMH functional window types to the presentation distinction the
+/// Engine needs. Unknown extension atoms are skipped, as required by EWMH;
+/// a missing recognized type falls back to a normal policy-managed toplevel.
+pub fn decode_x_window_type_client_positioned(
+    record: &XPropertyRecord,
+    atoms: &XAtomTable,
+    byte_order: XByteOrder,
+) -> Option<Result<bool, XWindowTypeDecodeError>> {
+    if atoms.name(record.property) != Some("_NET_WM_WINDOW_TYPE") {
+        return None;
+    }
+    if atoms.name(record.property_type) != Some("ATOM") {
+        return Some(Err(XWindowTypeDecodeError::InvalidType));
+    }
+    if record.format != 32 {
+        return Some(Err(XWindowTypeDecodeError::InvalidFormat));
+    }
+    if record.bytes.is_empty() || record.bytes.len() % 4 != 0 {
+        return Some(Err(XWindowTypeDecodeError::InvalidLength));
+    }
+
+    let client_positioned = record.bytes.chunks_exact(4).find_map(|bytes| {
+        let atom = byte_order.u32(bytes);
+        match atoms.name(atom) {
+            Some("_NET_WM_WINDOW_TYPE_NORMAL") => Some(false),
+            Some("_NET_WM_WINDOW_TYPE_DESKTOP")
+            | Some("_NET_WM_WINDOW_TYPE_DOCK")
+            | Some("_NET_WM_WINDOW_TYPE_TOOLBAR")
+            | Some("_NET_WM_WINDOW_TYPE_MENU")
+            | Some("_NET_WM_WINDOW_TYPE_UTILITY")
+            | Some("_NET_WM_WINDOW_TYPE_SPLASH")
+            | Some("_NET_WM_WINDOW_TYPE_DIALOG")
+            | Some("_NET_WM_WINDOW_TYPE_DROPDOWN_MENU")
+            | Some("_NET_WM_WINDOW_TYPE_POPUP_MENU")
+            | Some("_NET_WM_WINDOW_TYPE_TOOLTIP")
+            | Some("_NET_WM_WINDOW_TYPE_NOTIFICATION")
+            | Some("_NET_WM_WINDOW_TYPE_COMBO")
+            | Some("_NET_WM_WINDOW_TYPE_DND") => Some(true),
+            _ => None,
+        }
+    });
+    Some(Ok(client_positioned.unwrap_or(false)))
+}
+
 pub fn decode_x_transient_for(
     record: &XPropertyRecord,
     atoms: &XAtomTable,

@@ -1086,6 +1086,36 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
 }
 
 #[test]
+fn fallback_admission_keeps_recovery_extent_until_the_standing_target_commits() {
+    let surface = SurfaceId::new(69, 1);
+    let fallback = Size {
+        width: 480,
+        height: 281,
+    };
+    let target = Size {
+        width: 1276,
+        height: 709,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.set_recovery_extent(surface, fallback);
+    layout.layout_epochs.set_pending_target(surface, target);
+
+    assert!(
+        !layout.release_recovery_extent_after_commit(surface, Some(fallback), "test_fallback",)
+    );
+    assert_eq!(
+        layout.layout_epochs.recovery_extent(surface),
+        Some(fallback)
+    );
+    assert!(!layout.constraint_relayout_required());
+
+    layout.layout_epochs.record_committed(surface, target);
+    assert!(layout.release_recovery_extent_after_commit(surface, Some(target), "test_target",));
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+    assert!(layout.constraint_relayout_required());
+}
+
+#[test]
 fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() {
     let surface = SurfaceId::new(70, 1);
     let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);

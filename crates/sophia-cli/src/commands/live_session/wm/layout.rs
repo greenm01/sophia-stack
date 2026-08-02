@@ -475,6 +475,26 @@ impl PersistentLiveLayout {
         true
     }
 
+    fn release_recovery_extent_after_commit(
+        &mut self,
+        surface: SurfaceId,
+        committed_size: Option<Size>,
+        reason: &'static str,
+    ) -> bool {
+        if let Some(target) = self.layout_epochs.pending_target(surface)
+            && committed_size != Some(target)
+        {
+            println!(
+                "sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface={} reason=standing_target_unmet target={}x{} content=redacted",
+                surface.index(),
+                target.width,
+                target.height,
+            );
+            return false;
+        }
+        self.release_recovery_extent(surface, reason)
+    }
+
     fn complete_visual_commit(
         &mut self,
         transaction: TransactionId,
@@ -913,7 +933,16 @@ impl PersistentLiveLayout {
                 BufferSource::CpuBuffer { .. } => {
                     if self.admissions.mark_managed(*surface) {
                         self.planning_surfaces.remove(surface);
-                        self.release_recovery_extent(*surface, "cpu_admission_committed");
+                        let committed_size = live_transaction_pixel_size(
+                            transaction.target_buffer,
+                            &self.dma_buf_sizes,
+                            &self.cpu_buffer_sizes,
+                        );
+                        self.release_recovery_extent_after_commit(
+                            *surface,
+                            committed_size,
+                            "cpu_admission_committed",
+                        );
                         println!(
                             "sophia_live_visual_admission schema=1 status=committed transaction={} surface={} source=cpu_snapshot",
                             transaction.transaction.raw(),
@@ -924,7 +953,11 @@ impl PersistentLiveLayout {
                 _ => {
                     if self.admissions.mark_managed(*surface) {
                         self.planning_surfaces.remove(surface);
-                        self.release_recovery_extent(*surface, "admission_committed");
+                        self.release_recovery_extent_after_commit(
+                            *surface,
+                            None,
+                            "admission_committed",
+                        );
                     }
                 }
             }

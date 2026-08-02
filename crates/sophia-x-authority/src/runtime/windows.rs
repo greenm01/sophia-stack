@@ -143,6 +143,19 @@ impl XAuthorityRuntime {
             .map_err(Into::into)
     }
 
+    pub fn set_window_type_client_positioned(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        client_positioned: bool,
+    ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        self.windows
+            .set_client_positioned_window_type(window, client_positioned)
+            .map_err(Into::into)
+    }
+
     pub fn set_window_parent(
          &mut self,
          namespace: NamespaceId,
