@@ -1200,47 +1200,47 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
 }
 
 #[test]
-fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
-    let current_surface = SurfaceId::new(60, 1);
-    let admitted_surface = SurfaceId::new(61, 1);
+fn released_admission_precedes_newer_same_surface_current_batch() {
+    let surface = SurfaceId::new(60, 1);
     let geometry = Rect {
         x: 0,
         y: 0,
         width: 640,
         height: 480,
     };
-    let transaction = |transaction, surface, target_buffer| SurfaceTransaction {
-        transaction,
-        authority: sophia_protocol::AuthorityKind::SophiaX,
-        surface,
-        namespace: None,
-        target_geometry: geometry,
-        target_buffer,
-        damage: Region::single(geometry),
-        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
-        timeout_msec: 250,
-        previous_committed_generation: 0,
-    };
-    let current_transaction = TransactionId::from_raw(367);
-    let admitted_transaction = TransactionId::from_raw(858);
+    let transaction =
+        |transaction, previous_committed_generation, target_buffer| SurfaceTransaction {
+            transaction,
+            authority: sophia_protocol::AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: geometry,
+            target_buffer,
+            damage: Region::single(geometry),
+            readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation,
+        };
+    let admitted_transaction = TransactionId::from_raw(367);
+    let current_transaction = TransactionId::from_raw(858);
     let mut current =
         crate::commands::live_session::wm_update_coordinator_batch(current_transaction);
     current.transactions.push(transaction(
         current_transaction,
-        current_surface,
-        BufferSource::CpuBuffer { handle: 367 },
+        1,
+        BufferSource::CpuBuffer { handle: 858 },
     ));
     let released = [crate::commands::live_session::LiveAdmissionAuthorityGroup {
         transaction: admitted_transaction,
         transactions: vec![transaction(
             admitted_transaction,
-            admitted_surface,
-            BufferSource::DmaBuf { handle: 858 },
+            0,
+            BufferSource::DmaBuf { handle: 367 },
         )],
         present_submissions: vec![sophia_x_authority::XAuthorityPresentSubmission {
             transaction: admitted_transaction,
-            surface: admitted_surface,
-            buffer: sophia_protocol::BufferHandle::from_raw(858),
+            surface,
+            buffer: sophia_protocol::BufferHandle::from_raw(367),
             x_offset: 0,
             y_offset: 0,
             acquire_fence: None,
@@ -1262,18 +1262,18 @@ fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
             .iter()
             .map(|group| group.transaction)
             .collect::<Vec<_>>(),
-        vec![current_transaction, admitted_transaction]
+        vec![admitted_transaction, current_transaction]
     );
     assert_eq!(
         production.groups[0].transactions[0].transaction,
-        current_transaction
-    );
-    assert_eq!(
-        production.groups[1].transactions[0].transaction,
         admitted_transaction
     );
     assert_eq!(
-        production.groups[1].present_submissions[0].transaction,
+        production.groups[1].transactions[0].transaction,
+        current_transaction
+    );
+    assert_eq!(
+        production.groups[0].present_submissions[0].transaction,
         admitted_transaction
     );
 
@@ -1296,6 +1296,14 @@ fn released_admission_keeps_its_transaction_separate_from_the_current_batch() {
             .authority_commits
             .iter()
             .all(|commit| { commit.outcome == sophia_protocol::TransactionOutcome::Committed })
+    );
+    assert_eq!(
+        runtime
+            .committed_surfaces()
+            .iter()
+            .find(|state| state.surface == surface)
+            .map(|state| state.committed_generation),
+        Some(2)
     );
 }
 

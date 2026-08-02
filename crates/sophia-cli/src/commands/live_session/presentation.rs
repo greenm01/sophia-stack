@@ -212,47 +212,11 @@ fn production_authority_batch(
     layout: &PersistentLiveLayout,
 ) -> LiveProductionAuthorityBatch {
     let mut groups = Vec::<sophia_backend_live::LiveProductionAuthorityGroup>::new();
-    for transaction in &batch.transactions {
-        let index = production_authority_group_index(&mut groups, transaction.transaction);
-        groups[index].transactions.push(transaction.clone());
-    }
-    if !batch.removed_surfaces.is_empty() {
-        let index = production_authority_group_index(&mut groups, batch.transaction);
-        groups[index]
-            .removed_surfaces
-            .extend(batch.removed_surfaces.iter().copied());
-    }
-    for submission in &batch.present_submissions {
-        let index = production_authority_group_index(&mut groups, submission.transaction);
-        groups[index].present_submissions.push(
-            sophia_backend_live::LiveProductionPresentSubmission {
-                transaction: submission.transaction,
-                surface: submission.surface,
-                buffer: submission.buffer,
-                x_offset: submission.x_offset,
-                y_offset: submission.y_offset,
-                acquire_fence: submission.acquire_fence,
-                idle_fence: submission.idle_fence,
-                layout_disposition: layout
-                    .present_layout_disposition(
-                        submission.transaction,
-                        submission.surface,
-                        submission.buffer,
-                    ),
-            },
-        );
-    }
-    for submission in &batch.software_present_submissions {
-        let index = production_authority_group_index(&mut groups, submission.transaction);
-        groups[index].software_present_submissions.push(
-            sophia_backend_live::LiveProductionSoftwarePresentSubmission {
-                transaction: submission.transaction,
-                surface: submission.surface,
-                acquire_fence: submission.acquire_fence,
-                idle_fence: submission.idle_fence,
-            },
-        );
-    }
+    // Admission groups were quarantined before the current authority batch.
+    // Release them first so same-surface generations remain FIFO. Appending
+    // them after current work lets a newer generation reach Engine first and
+    // makes the entire retained chain stale, including an exact recovery
+    // target Present that arrived while its fallback was retiring.
     for released in released_admission_groups {
         let index = production_authority_group_index(&mut groups, released.transaction);
         groups[index]
@@ -296,6 +260,47 @@ fn production_authority_batch(
                         idle_fence: submission.idle_fence,
                     }
                 }),
+        );
+    }
+    for transaction in &batch.transactions {
+        let index = production_authority_group_index(&mut groups, transaction.transaction);
+        groups[index].transactions.push(transaction.clone());
+    }
+    if !batch.removed_surfaces.is_empty() {
+        let index = production_authority_group_index(&mut groups, batch.transaction);
+        groups[index]
+            .removed_surfaces
+            .extend(batch.removed_surfaces.iter().copied());
+    }
+    for submission in &batch.present_submissions {
+        let index = production_authority_group_index(&mut groups, submission.transaction);
+        groups[index].present_submissions.push(
+            sophia_backend_live::LiveProductionPresentSubmission {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                buffer: submission.buffer,
+                x_offset: submission.x_offset,
+                y_offset: submission.y_offset,
+                acquire_fence: submission.acquire_fence,
+                idle_fence: submission.idle_fence,
+                layout_disposition: layout
+                    .present_layout_disposition(
+                        submission.transaction,
+                        submission.surface,
+                        submission.buffer,
+                    ),
+            },
+        );
+    }
+    for submission in &batch.software_present_submissions {
+        let index = production_authority_group_index(&mut groups, submission.transaction);
+        groups[index].software_present_submissions.push(
+            sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+                transaction: submission.transaction,
+                surface: submission.surface,
+                acquire_fence: submission.acquire_fence,
+                idle_fence: submission.idle_fence,
+            },
         );
     }
     LiveProductionAuthorityBatch {

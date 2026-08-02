@@ -1041,8 +1041,13 @@ than adding speculative browser compatibility.
   coordinator, reducer, and fail-closed verifier regressions pass. A focused
   one-Kitty/one-Firefox slice now stops immediately after the four directional
   transfers, uses direction-specific tokens, and requires a trusted full-field
-  PRIMARY selection before leaving Firefox. Pass that short physical slice,
-  then repeat the complete promotion workflow before closing this item.
+  PRIMARY selection before leaving Firefox. Its first physical run exposed an
+  admission-release FIFO inversion: the current Firefox authority group was
+  assembled before older quarantined groups, making the exact standing-target
+  Present stale and retaining the short fallback window. Released groups now
+  precede current work, with a same-surface generation regression. Pass that
+  short physical slice, then repeat the complete promotion workflow before
+  closing this item.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while
