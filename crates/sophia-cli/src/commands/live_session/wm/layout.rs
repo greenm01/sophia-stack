@@ -866,7 +866,10 @@ impl PersistentLiveLayout {
                 },
                 ipc_error: None,
             },
-            source: None,
+            // The external WM has already applied the request that produced
+            // this proposal. Retain its source so the owner can restart and
+            // reseed that speculative peer after rejecting the layout.
+            source: pending.source,
             effects: None,
         }))
     }

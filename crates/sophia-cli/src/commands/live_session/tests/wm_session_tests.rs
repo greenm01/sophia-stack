@@ -1,7 +1,8 @@
 use super::*;
 use crate::commands::live_session::{
-    LiveWmLayoutFingerprint, LiveWmProposal, PendingLiveWmLayout, PersistentLiveLayout,
-    live_layout_node, live_layout_node_from_facts, planning_state_for_response,
+    LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource, PendingLiveWmLayout,
+    PersistentLiveLayout, live_layout_node, live_layout_node_from_facts,
+    planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
@@ -359,6 +360,48 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
     let rebased = planning_state_for_response(&current, &request).unwrap();
     assert_eq!(rebased.surface_workspace(first), Some(workspace));
     assert_eq!(rebased.surface_workspace(queued), Some(workspace));
+}
+
+#[test]
+fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
+    let surface = SurfaceId::new(3, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let transaction = TransactionId::from_raw(3);
+    let mut layout = PersistentLiveLayout::default();
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::new(),
+        focus: None,
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::new(),
+        source: Some(LiveWmProposalSource::Manage(surface)),
+        effects: None,
+    });
+
+    let result = layout
+        .expire_pending(&mut sophia_cli::session_control::SessionControlQueue::default())
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+    assert_eq!(result.source, Some(LiveWmProposalSource::Manage(surface)));
+    assert!(wm_transport_requires_reseed(&result));
 }
 
 #[test]

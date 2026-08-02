@@ -919,7 +919,13 @@ than adding speculative browser compatibility.
   same from one passive control-time transition, while key delivery retains
   only pointer crossing work. The two-client wire regression requires repeated
   transitions without input, and both QEMU and the page have lost the hidden
-  `r` bypass. Repeat the popup confirmation and exit stages from this change.
+  `r` bypass. That repeat proved the focus handoffs, then exposed a clean
+  status-1 `UnknownSurface` exit during the second Firefox launch. A timed-out
+  popup proposal had been rejected by Engine while remaining in the xmonad
+  bridge's speculative model. Rejected WM proposals now retain their source,
+  trigger the bounded bridge restart, discard queued/in-flight speculative
+  work, and reseed xmonad from the committed layout. Repeat the popup recovery,
+  second Firefox launch, and exit stages from this change.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
   between Firefox and Kitty.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain

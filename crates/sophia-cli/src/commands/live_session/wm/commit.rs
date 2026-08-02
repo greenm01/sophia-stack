@@ -26,6 +26,7 @@ impl LiveWmSession {
         output: sophia_protocol::OutputId,
     ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
         let committed = result.update.commit.outcome == TransactionOutcome::Committed;
+        let restart_speculative_transport = wm_transport_requires_reseed(&result);
         let physical_action = committed
             .then_some(result.source)
             .flatten()
@@ -85,9 +86,22 @@ impl LiveWmSession {
             clear_focus,
             restore_focus,
         };
-        self.pump_transport()?;
+        if restart_speculative_transport {
+            // A legacy WM mutates its private model before Sophia can prove
+            // and commit the proposed layout. If that proof fails, restart
+            // the bridge and seed it from the preserved committed layout;
+            // otherwise later responses can name speculative surfaces which
+            // do not exist in the Engine's workspace state.
+            self.request_transport_restart("uncommitted_proposal", None);
+        } else {
+            self.pump_transport()?;
+        }
         Ok(owner_commit)
     }
+}
+
+fn wm_transport_requires_reseed(result: &LiveWmCommitResult) -> bool {
+    result.update.commit.outcome != TransactionOutcome::Committed && result.source.is_some()
 }
 
 impl Drop for LiveWmSession {
