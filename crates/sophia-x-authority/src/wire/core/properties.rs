@@ -206,6 +206,9 @@ fn decode_send_event(
         event_mask: context.byte_order.u32(&bytes[8..12]),
         event: XClientEvent::SelectionNotify {
             sequence: 0,
+            // X11 SendEvent always marks the delivered event synthetic,
+            // regardless of the bit supplied in the client's template.
+            synthetic: true,
             time: context.byte_order.u32(&bytes[16..20]),
             requestor,
             selection: context.byte_order.u32(&bytes[24..28]),
@@ -214,4 +217,3 @@ fn decode_send_event(
         },
     })
 }
-

@@ -319,13 +319,20 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
         }
         XClientEvent::SelectionNotify {
             sequence,
+            synthetic,
             time,
             requestor,
             selection,
             target,
             property,
         } => {
-            write_event_header(byte_order, &mut out, X_SELECTION_NOTIFY, 0, sequence);
+            write_event_header(
+                byte_order,
+                &mut out,
+                X_SELECTION_NOTIFY | if synthetic { 0x80 } else { 0 },
+                0,
+                sequence,
+            );
             put_u32(byte_order, &mut out[4..8], time);
             put_resource(byte_order, &mut out[8..12], requestor);
             put_u32(byte_order, &mut out[12..16], selection);

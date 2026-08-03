@@ -1079,10 +1079,14 @@ than adding speculative browser compatibility.
   Firefox-to-Kitty PRIMARY direction, then stalled after Kitty selected its
   return token and Firefox issued conversions. The generic same-namespace wire
   regression now performs the transfer in both directions without resetting
-  either client. The focused launcher enables redacted request/property/notify
-  tracing, and the page distinguishes no paste from a nonempty token mismatch;
-  use that evidence to close only the Kitty-to-Firefox seam. Pass that short
-  gate, then retain PRIMARY in the later complete promotion workflow.
+  either client. The 20:49 follow-up routed Kitty's property writes and
+  SelectionNotify to Firefox, but Firefox issued no property read. XLibre and
+  yserver both set the `SendEvent` bit on client-sent events; Sophia had erased
+  that bit while decoding and re-encoding the owner's SelectionNotify. The X
+  authority now retains the synthetic-event semantic, and the bidirectional
+  wire regression asserts the complete `0x9f` event type in both directions.
+  Re-run only this short physical gate to accept the fix, then retain PRIMARY
+  in the later complete promotion workflow.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while

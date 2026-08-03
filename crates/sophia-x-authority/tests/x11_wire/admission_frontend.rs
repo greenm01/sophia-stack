@@ -618,7 +618,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     let event = read_x_record(&mut requestor);
-    assert_eq!(event[0] & 0x7f, 31);
+    assert_eq!(event[0], 31 | 0x80);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &event[2..4]), 3);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &event[8..12]),
@@ -749,7 +749,11 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     let reverse_event = read_x_record(&mut owner);
-    assert_eq!(reverse_event[0] & 0x7f, 31);
+    // XLibre ProcSendEvent and yserver both set the SendEvent bit for the
+    // recipient. Firefox rejects a selection owner's notify when it is
+    // replayed as an ordinary server-generated event, so assert the complete
+    // wire byte in both transfer directions.
+    assert_eq!(reverse_event[0], 31 | 0x80);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &reverse_event[8..12]),
         owner_window

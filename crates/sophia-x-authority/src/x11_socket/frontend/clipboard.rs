@@ -128,6 +128,7 @@ impl XServerFrontendClipboardExecutor {
                 target,
                 XClientEvent::SelectionNotify {
                     sequence: 0,
+                    synthetic: false,
                     time: notify.time,
                     requestor: notify.requestor,
                     selection: notify.selection,
@@ -198,4 +199,3 @@ pub fn coordinate_x11_clipboard_transfer(
     }
     Ok(session.into_response())
 }
-

@@ -234,7 +234,7 @@ fn visibility_notify_uses_the_core_x11_layout() {
 }
 
 #[test]
-fn selection_request_and_clear_events_use_core_x11_layout() {
+fn selection_events_use_core_x11_layout_and_preserve_send_event() {
     let owner = XResourceId::new(0x200001, 1);
     let requestor = XResourceId::new(0x400001, 1);
     for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
@@ -270,6 +270,27 @@ fn selection_request_and_clear_events_use_core_x11_layout() {
         assert_eq!(read_u32(byte_order, &request[16..20]), 14);
         assert_eq!(read_u32(byte_order, &request[20..24]), 15);
         assert_eq!(read_u32(byte_order, &request[24..28]), 16);
+
+        for (synthetic, expected_type) in [(false, 31), (true, 31 | 0x80)] {
+            let notify = encode_x_client_event(
+                byte_order,
+                XClientEvent::SelectionNotify {
+                    sequence: 17,
+                    synthetic,
+                    time: 18,
+                    requestor,
+                    selection: 19,
+                    target: 20,
+                    property: 21,
+                },
+            );
+            assert_eq!(notify[0], expected_type);
+            assert_eq!(read_u16(byte_order, &notify[2..4]), 17);
+            assert_eq!(read_u32(byte_order, &notify[8..12]), 0x400001);
+            assert_eq!(read_u32(byte_order, &notify[12..16]), 19);
+            assert_eq!(read_u32(byte_order, &notify[16..20]), 20);
+            assert_eq!(read_u32(byte_order, &notify[20..24]), 21);
+        }
     }
 }
 
@@ -295,6 +316,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
             event_mask: 0,
             event: XClientEvent::SelectionNotify {
                 sequence: 0,
+                synthetic: true,
                 time: 17,
                 requestor: XResourceId::new(0x200001, 1),
                 selection: 18,

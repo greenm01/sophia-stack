@@ -65,6 +65,7 @@ pub fn x_selection_failure_event(
 ) -> XClientEvent {
     XClientEvent::SelectionNotify {
         sequence,
+        synthetic: false,
         time,
         requestor,
         selection,
@@ -72,4 +73,3 @@ pub fn x_selection_failure_event(
         property: X_ATOM_NONE,
     }
 }
-

@@ -210,6 +210,7 @@ pub enum XClientEvent {
     },
     SelectionNotify {
         sequence: u16,
+        synthetic: bool,
         time: XTimestamp,
         requestor: XResourceId,
         selection: u32,
