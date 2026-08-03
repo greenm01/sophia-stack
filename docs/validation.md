@@ -892,8 +892,10 @@ one owner change and one conversion inside each peer interval and rejects any
 replayed CLIPBOARD checkpoint. The lifecycle slice
 removes clipboard, scroll, resize, refocus, and dialog work; its verifier still
 requires two independent Kitty processes, two status-zero Firefox exits, an
-ordered `CloseFocused`, clean health, and clean frontend teardown. These slices
-are diagnostic evidence, not promotion runs.
+ordered `CloseFocused`, clean health, and clean frontend teardown. That slice
+passed physically on 2026-08-03 with all six Kitty checkpoints, both status-zero
+Firefox exits, and clean session/layout/frontend teardown. These slices are
+diagnostic evidence, not promotion runs.
 
 After the affected slice passes and the normal xmonad input gate remains clean,
 run the content-redacted physical Firefox promotion workflow from TTY3:

@@ -1049,11 +1049,11 @@ than adding speculative browser compatibility.
   - [x] full-height Firefox rendering and recovery cleanup;
   - [x] bidirectional cross-window `CLIPBOARD` transfer;
   - [x] DOM modal open/confirm with stable full-height rendering;
-  - [x] bidirectional cross-window `PRIMARY` transfer.
+  - [x] bidirectional cross-window `PRIMARY` transfer;
+  - [x] normal close, restart, and WM-forced close lifecycle.
 
   Do not rerun those gates unless a later change touches their causal boundary.
-  The remaining physical evidence is the focused lifecycle gate and then final
-  integrated promotion.
+  The remaining physical evidence is final integrated promotion.
 - [x] Prove the remaining bounded UTF-8 `PRIMARY` transfers between Firefox
   and Kitty. The prior page could complete from a synthetic
   paste handler while Firefox legitimately reused same-process selection data
@@ -1101,12 +1101,16 @@ than adding speculative browser compatibility.
   that Firefox coalesced before observation. That redundant checkpoint is now
   removed; the three retained checkpoints are causal, monotonic, and bracketed
   by the two protocol transfers.
-- [ ] Close, restart, and force-close Firefox while both Kitty windows retain
+- [x] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while
   retaining two Kitty processes, two status-zero Firefox exits, and ordered
-  normal/WM-forced close checkpoints. Pass that short physical slice before
-  rerunning the complete promotion workflow.
+  normal/WM-forced close checkpoints. The 2026-08-03 physical run completed all
+  six Kitty checkpoints around two action-launched Firefox processes. `Ctrl+Q`
+  and the committed `CloseFocused` action each produced status-zero exits, and
+  session, layout, application, frontend, namespace, and Xauthority cleanup
+  drained cleanly with zero protocol errors or pending input, action, or WM
+  work.
 - [ ] Audit only the desktop services observed by this run—such as DBus,
   PipeWire, or portal helpers—and add session integration only for evidenced
   failures.

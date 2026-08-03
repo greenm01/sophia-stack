@@ -6942,3 +6942,17 @@ acknowledgement ordering.
   owner change, conversion, and socket-flushed synthetic notification, so
   removing the unobservable initialization marker does not weaken selection
   authority coverage and avoids coupling the gate to property-update timing.
+
+## 2026-08-03: close the focused Firefox lifecycle gate
+
+- The one-purpose physical slice launched two independent Kitty processes and
+  two Firefox processes. Six ordered Kitty checkpoints bracketed the first
+  Firefox's normal `Ctrl+Q` exit, the second launch, and its WM-forced close.
+- Both Firefox processes reported managed status-zero exits. The forced path
+  included the committed `CloseFocused` action before process retirement, so
+  it did not pass through a page or harness shortcut.
+- The strict verifier passed with zero protocol errors, pending WM/actions/input,
+  recovery extents, or constraint relayout. Application groups and frontend
+  workers drained, and the namespace and Xauthority were revoked. All focused
+  Firefox gates are now closed; only the same-commit integrated promotion runs
+  remain for Milestone 10.
