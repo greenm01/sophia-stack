@@ -837,8 +837,10 @@ than adding speculative browser compatibility.
   browser placement plus keyboard and clipboard interaction, then exposed an
   edge-target instruction and an unsynchronized two-Kitty prompt race in the
   proof harness. Those prompts now coordinate exactly one restart and direct
-  pointer work away from compositor edges; repeat the physical workflow before
-  closing this item.
+  pointer work away from compositor edges. Later focused rendering,
+  cross-window `CLIPBOARD`, and DOM-dialog gates passed; retain this history
+  without replaying the obsolete combined workflow. Final closure comes from
+  promotion after the remaining focused gates.
 - [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
   workspace hide/show, refocus, modal open/close, and status-zero exit.
   Genuine non-override-redirect transient dialogs remain policy-managed with
@@ -1042,10 +1044,17 @@ than adding speculative browser compatibility.
   ordered checkpoints, both routed click transitions, complete 1276-by-1422
   retirements, and clean session/layout teardown. Do not replay its operator
   sequence as a separate proof requirement.
-  Repeat the complete physical workflow from this change before closing the
-  item.
-- [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
-  between Firefox and Kitty. The prior page could complete from a synthetic
+  Current focused-gate state is authoritative:
+
+  - [x] full-height Firefox rendering and recovery cleanup;
+  - [x] bidirectional cross-window `CLIPBOARD` transfer;
+  - [x] DOM modal open/confirm with stable full-height rendering.
+
+  Do not rerun those gates unless a later change touches their causal boundary.
+  The remaining physical evidence is the PRIMARY-only selection gate, the
+  focused lifecycle gate, and then final integrated promotion.
+- [ ] Prove the remaining bounded UTF-8 `PRIMARY` transfers between Firefox
+  and Kitty. The prior page could complete from a synthetic
   paste handler while Firefox legitimately reused same-process selection data
   without core `ConvertSelection`. The physical M10 mode now performs real
   bidirectional Firefox/Kitty handoffs for both selections, advances only from
