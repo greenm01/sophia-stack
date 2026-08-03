@@ -849,6 +849,10 @@ but stop as soon as the affected contract is proved:
 tools/start_sophia_xmonad_firefox_rendering_tty3.sh
 tools/verify_sophia_firefox_rendering_physical.sh
 
+# One Kitty, one Firefox, and two trusted clicks through the DOM modal.
+tools/start_sophia_xmonad_firefox_dialog_tty3.sh
+tools/verify_sophia_firefox_dialog_physical.sh
+
 # One Kitty, one Firefox, four bidirectional CLIPBOARD/PRIMARY transfers.
 tools/start_sophia_xmonad_firefox_selection_tty3.sh
 tools/verify_sophia_firefox_selection_physical.sh
@@ -864,6 +868,15 @@ complete full-height left-column retirement. Direct admission passes; fallback
 admission must clear its temporary extent through the exact standing target
 and may restart the WM at most once. It contains no clipboard, PRIMARY,
 navigation, resize, focus-cycle, or dialog steps.
+
+The dialog canary starts only after Firefox has a complete full-height frame.
+Click the full-page `Open proof dialog` button and then `Confirm Sophia dialog`.
+Its verifier orders an independently routed pointer batch and a complete native
+Firefox retirement around each redacted DOM checkpoint. It also rejects a new
+X11 toplevel, post-admission WM restart, layout timeout, recovery extent, short
+clip, GDK freeze error, or dirty teardown. The `<dialog>` remains part of the
+existing Firefox toplevel; genuine X11 transient/floating windows retain their
+separate wire and policy regressions.
 
 Cross-window `CLIPBOARD` has already passed on physical hardware. Do not rerun
 the selection slice for rendering changes. Use it only when changing X11

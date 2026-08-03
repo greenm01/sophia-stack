@@ -49,6 +49,21 @@ fn focused_selection_kitty_proof_requires_all_three_checkpoints() {
 }
 
 #[test]
+fn focused_dialog_proof_requires_ordered_unique_checkpoints() {
+    let mut proof = FirefoxM10DialogProof::default();
+    assert_eq!(proof.observe("_NET_WM_NAME", 246), None);
+    for (title_bytes, checkpoint) in [
+        (245, "page_ready"),
+        (246, "modal_ready"),
+        (247, "confirmed"),
+    ] {
+        assert_eq!(proof.observe("_NET_WM_NAME", title_bytes), Some(checkpoint));
+    }
+    assert!(proof.complete());
+    assert_eq!(proof.observe("_NET_WM_NAME", 247), None);
+}
+
+#[test]
 fn firefox_physical_slices_are_mutually_exclusive() {
     let base = [
         "--session-mode=normal".to_owned(),
@@ -57,6 +72,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
     ];
     for proof in [
         "--firefox-m10-rendering-proof",
+        "--firefox-m10-dialog-proof",
         "--firefox-m10-selection-proof",
         "--firefox-m10-lifecycle-proof",
     ] {
@@ -69,7 +85,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
 
     let mut conflicting = base.to_vec();
     conflicting.extend([
-        "--firefox-m10-rendering-proof".to_owned(),
+        "--firefox-m10-dialog-proof".to_owned(),
         "--firefox-m10-selection-proof".to_owned(),
     ]);
     assert!(

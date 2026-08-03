@@ -440,6 +440,13 @@ macro_rules! drain_physical_input {
                 );
                 input_observations.pointer_button_routed = true;
             }
+            if config.firefox_m10_dialog_proof && report.pointer_buttons_routed > 0 {
+                println!(
+                    "sophia_firefox_dialog schema=1 status=pointer_batch routed={} total={} content=redacted",
+                    report.pointer_buttons_routed,
+                    metrics.physical_pointer_buttons_routed,
+                );
+            }
             if !input_observations.client_positioned_pointer_button_routed
                 && report
                     .pointer_button_targets

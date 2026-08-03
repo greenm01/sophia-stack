@@ -36,8 +36,9 @@
   const navigated = parameters.get('navigated') === '1';
   const selectionPeer = parameters.get('selection_peer') === 'kitty';
   const renderingOnly = parameters.get('rendering_only') === '1';
+  const dialogOnly = parameters.get('dialog_only') === '1';
   const lifecycleOnly = parameters.get('lifecycle_only') === '1';
-  let stage = navigated ? 3 : 0;
+  let stage = dialogOnly ? 6 : navigated ? 3 : 0;
   let refocusArmed = false;
   let selectionPeerAway = false;
   let primarySourceArmed = false;
@@ -166,23 +167,37 @@
   addEventListener('resize', () => {
     if (stage === 4) advance('resize complete');
   });
-  document.querySelector('#dialog').addEventListener('click', () => {
-    if (stage === 6) {
+  document.querySelector('#dialog').addEventListener('click', event => {
+    if (stage === 6 && (!dialogOnly || event.isTrusted)) {
       const dialog = document.querySelector('#proof-dialog');
       dialog.showModal();
       document.querySelector('#confirm').focus();
       // The out-of-band title proves that the DOM modal is painted and ready
       // without creating another X11 toplevel.
-      document.title = '0'.repeat(stages[6] + 1);
+      document.title = '0'.repeat(dialogOnly ? 226 : stages[6] + 1);
     }
   });
-  document.querySelector('#confirm').addEventListener('click', () => {
-    if (stage === 6) {
+  document.querySelector('#confirm').addEventListener('click', event => {
+    if (stage === 6 && (!dialogOnly || event.isTrusted)) {
       document.querySelector('#proof-dialog').close();
-      document.title = '0'.repeat(stages[7]);
+      document.title = '0'.repeat(dialogOnly ? 227 : stages[7]);
+      if (dialogOnly) {
+        document.body.classList.remove('dialog-proof');
+        status.textContent = 'Firefox dialog canary complete';
+        next.textContent = 'Press Super+Shift+Q to finish.';
+      }
     }
   });
-  if (renderingOnly) {
+  if (dialogOnly) {
+    // Firefox appends its 20-byte product suffix to file-document titles.
+    document.title = '0'.repeat(225);
+    source.hidden = true;
+    document.querySelector('#clipboard').hidden = true;
+    document.querySelector('#primary').hidden = true;
+    document.body.classList.add('dialog-proof');
+    status.textContent = 'Firefox dialog canary ready';
+    next.textContent = 'Click Open proof dialog, then click Confirm Sophia dialog.';
+  } else if (renderingOnly) {
     // Firefox appends its 20-byte product suffix to file-document titles.
     document.title = '0'.repeat(229);
     source.hidden = true;

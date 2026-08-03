@@ -120,6 +120,15 @@
                                 "sophia_firefox_rendering schema=1 status=page_ready title_bytes=249 content=redacted"
                             );
                         }
+                        if config.firefox_m10_dialog_proof
+                            && let Some(checkpoint) = firefox_m10_dialog_proof
+                                .observe(&metadata.property_name, metadata.byte_len)
+                        {
+                            println!(
+                                "sophia_firefox_dialog schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
+                                metadata.byte_len,
+                            );
+                        }
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
                             && metadata.byte_len == 36

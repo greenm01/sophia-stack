@@ -96,6 +96,7 @@ struct PersistentXtermSessionConfig {
     firefox_m8_proof: bool,
     firefox_m10_proof: bool,
     firefox_m10_rendering_proof: bool,
+    firefox_m10_dialog_proof: bool,
     firefox_m10_selection_proof: bool,
     firefox_m10_lifecycle_proof: bool,
 }
@@ -415,6 +416,9 @@ impl PersistentXtermSessionConfig {
         let firefox_m10_rendering_proof = args
             .iter()
             .any(|arg| arg == "--firefox-m10-rendering-proof");
+        let firefox_m10_dialog_proof = args
+            .iter()
+            .any(|arg| arg == "--firefox-m10-dialog-proof");
         let firefox_m10_selection_proof = args
             .iter()
             .any(|arg| arg == "--firefox-m10-selection-proof");
@@ -425,6 +429,7 @@ impl PersistentXtermSessionConfig {
             firefox_m8_proof,
             firefox_m10_proof,
             firefox_m10_rendering_proof,
+            firefox_m10_dialog_proof,
             firefox_m10_selection_proof,
             firefox_m10_lifecycle_proof,
         ]
@@ -630,6 +635,7 @@ impl PersistentXtermSessionConfig {
             firefox_m8_proof,
             firefox_m10_proof,
             firefox_m10_rendering_proof,
+            firefox_m10_dialog_proof,
             firefox_m10_selection_proof,
             firefox_m10_lifecycle_proof,
         })
@@ -736,6 +742,7 @@ impl PersistentXtermSessionConfig {
         self.firefox_m8_proof
             || self.firefox_m10_proof
             || self.firefox_m10_rendering_proof
+            || self.firefox_m10_dialog_proof
             || self.firefox_m10_selection_proof
             || self.firefox_m10_lifecycle_proof
     }
@@ -760,6 +767,35 @@ struct FirefoxM10KittyProof {
 #[derive(Default)]
 struct FirefoxM10SelectionKittyProof {
     observed: [bool; Self::CHECKPOINTS.len()],
+}
+
+#[derive(Default)]
+struct FirefoxM10DialogProof {
+    completed: usize,
+}
+
+impl FirefoxM10DialogProof {
+    const CHECKPOINTS: [(usize, &'static str); 3] = [
+        (245, "page_ready"),
+        (246, "modal_ready"),
+        (247, "confirmed"),
+    ];
+
+    fn observe(&mut self, property_name: &str, byte_len: usize) -> Option<&'static str> {
+        if property_name != "_NET_WM_NAME" {
+            return None;
+        }
+        let (expected, checkpoint) = Self::CHECKPOINTS.get(self.completed)?;
+        if byte_len != *expected {
+            return None;
+        }
+        self.completed += 1;
+        Some(*checkpoint)
+    }
+
+    fn complete(&self) -> bool {
+        self.completed == Self::CHECKPOINTS.len()
+    }
 }
 
 impl FirefoxM10SelectionKittyProof {

@@ -4,12 +4,12 @@ use super::startup_readiness::{
     startup_surface_visual_detail,
 };
 use super::{
-    BufferSource, CommittedSurfaceState, FirefoxM10KittyProof, FirefoxM10SelectionKittyProof,
-    FloatingPointerGestureState, FloatingPointerOutline, FloatingPointerOutlineUpdate,
-    LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene, LiveProductionVisualRuntime,
-    LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig,
-    PhysicalInputRoutingMode, PhysicalTextProof, Rect, Region, ResizeSyncCapability,
-    SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
+    BufferSource, CommittedSurfaceState, FirefoxM10DialogProof, FirefoxM10KittyProof,
+    FirefoxM10SelectionKittyProof, FloatingPointerGestureState, FloatingPointerOutline,
+    FloatingPointerOutlineUpdate, LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene,
+    LiveProductionVisualRuntime, LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT,
+    PersistentXtermSessionConfig, PhysicalInputRoutingMode, PhysicalTextProof, Rect, Region,
+    ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
     SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SessionPointerPlacement, SessionProcessGuard, Size,
     Transform, XPresentCadence, authority_transaction_count, authority_wait_timeout,
     center_geometry_without_scaling, clamp_floating_pointer_outline,

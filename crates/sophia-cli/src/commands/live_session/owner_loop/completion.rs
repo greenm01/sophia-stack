@@ -248,6 +248,19 @@
             "sophia_firefox_rendering schema=1 status=complete page_ready=true recovery_extents=0 content=redacted"
         );
     }
+    if config.firefox_m10_dialog_proof {
+        if !firefox_m10_dialog_proof.complete() || physical_pointer_buttons_routed < 4 {
+            return Err(format!(
+                "Firefox M10 dialog proof incomplete: checkpoints={}/{} pointer_buttons={physical_pointer_buttons_routed}",
+                firefox_m10_dialog_proof.completed,
+                FirefoxM10DialogProof::CHECKPOINTS.len(),
+            )
+            .into());
+        }
+        println!(
+            "sophia_firefox_dialog schema=1 status=complete checkpoints=3 pointer_buttons={physical_pointer_buttons_routed} recovery_extents=0 content=redacted"
+        );
+    }
     if config.firefox_m10_proof {
         if !firefox_m10_kitty_proof
             .complete(selection_owner_changes, selection_conversions)

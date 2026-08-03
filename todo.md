@@ -1033,7 +1033,15 @@ than adding speculative browser compatibility.
   column. A rendering-only canary now locks that invariant without coupling it
   to browser interaction; its verifier accepts direct admission and bounds
   fallback admission to one retained extent and at most one WM restart.
-  Repeat the final modal stage separately.
+  The final modal now has its own one-Kitty/one-Firefox canary with only two
+  trusted clicks. Its reducer requires ordered page-ready, modal-ready, and
+  confirmed checkpoints; its verifier requires a routed pointer batch and a
+  complete full-height native retirement for both transitions while rejecting
+  a new X11 toplevel, post-admission WM restart, layout timeout, GDK freeze, or
+  retained recovery constraint. The 2026-08-02 physical gate passed all three
+  ordered checkpoints, both routed click transitions, complete 1276-by-1422
+  retirements, and clean session/layout teardown. Do not replay its operator
+  sequence as a separate proof requirement.
   Repeat the complete physical workflow from this change before closing the
   item.
 - [ ] Prove bounded UTF-8 text transfers through `CLIPBOARD` and `PRIMARY`
