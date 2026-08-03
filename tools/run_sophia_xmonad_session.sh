@@ -552,7 +552,9 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             firefox_page="${firefox_page}?primary_only=1"
         elif [[ "$FIREFOX_M10_RENDERING_PROOF" == true ]]; then
             firefox_page="${firefox_page}?rendering_only=1"
-        elif [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
+        elif [[ "$FIREFOX_M10_PROOF" == true ]]; then
+            firefox_page="${firefox_page}?promotion_only=1"
+        elif [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
             firefox_page="${firefox_page}?selection_peer=kitty"
         elif [[ "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
             firefox_page="${firefox_page}?lifecycle_only=1"

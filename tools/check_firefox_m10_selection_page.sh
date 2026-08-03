@@ -11,13 +11,13 @@ require() {
     }
 }
 
-require "const selectionPeer = parameters.get('selection_peer') === 'kitty';"
+require "const selectionPeer = parameters.get('selection_peer') === 'kitty' || primaryOnly;"
 require "source.value = 'sophia-firefox-primary';"
 require "if (!selectionPeer || stage !== 2 || !event.isTrusted) return;"
 require "source.selectionStart !== 0 || source.selectionEnd !== source.value.length"
 require "const expected = selectionPeer ? 'sophia-kitty-clipboard' : 'sophia';"
 require "const expected = selectionPeer ? 'sophia-kitty-primary' : 'sophia';"
-require "if (selectionPeer) return;"
+require "if (selectionPeer || promotionOnly) return;"
 require "document.querySelector('#navigate').href = '?navigated=1&selection_peer=kitty';"
 
 echo 'Firefox M10 selection page contract passed'

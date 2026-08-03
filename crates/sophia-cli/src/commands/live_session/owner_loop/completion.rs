@@ -220,25 +220,41 @@
         .into());
     }
     if config.firefox_full_proof_requested() {
-        if !firefox_m8_proof.complete()
-            || selection_owner_changes < 2
-            || selection_conversions < 2
+        if config.firefox_m10_proof && !firefox_m8_proof.complete() {
+            return Err(format!(
+                "Firefox M10 promotion proof incomplete: stages={}/{}",
+                firefox_m8_proof.completed(),
+                firefox_m8_proof.stage_count(),
+            )
+            .into());
+        }
+        if config.firefox_m8_proof
+            && (!firefox_m8_proof.complete()
+                || selection_owner_changes < 2
+                || selection_conversions < 2)
         {
             return Err(format!(
                 "Firefox M8 proof incomplete: stages={}/{} selection_owner_changes={} selection_conversions={}",
-                firefox_m8_proof.completed_stage,
-                FirefoxM8StageProof::STAGES.len(),
+                firefox_m8_proof.completed(),
+                firefox_m8_proof.stage_count(),
                 selection_owner_changes,
                 selection_conversions,
             )
             .into());
         }
-        println!(
-            "sophia_firefox_m8 schema=1 status=complete stages={} selection_owner_changes={} selection_conversions={} content=redacted",
-            firefox_m8_proof.completed_stage,
-            selection_owner_changes,
-            selection_conversions,
-        );
+        if config.firefox_m10_proof {
+            println!(
+                "sophia_firefox_promotion schema=1 status=complete stages={} selection_gates=focused content=redacted",
+                firefox_m8_proof.completed(),
+            );
+        } else {
+            println!(
+                "sophia_firefox_m8 schema=1 status=complete stages={} selection_owner_changes={} selection_conversions={} content=redacted",
+                firefox_m8_proof.completed(),
+                selection_owner_changes,
+                selection_conversions,
+            );
+        }
     }
     if config.firefox_m10_rendering_proof {
         if !firefox_m10_rendering_page_ready {
@@ -280,34 +296,28 @@
         );
     }
     if config.firefox_m10_proof {
-        if !firefox_m10_kitty_proof
-            .complete(selection_owner_changes, selection_conversions)
-        {
+        if !firefox_m10_kitty_proof.complete() {
             return Err(format!(
-                "Firefox M10 Kitty proof incomplete: checkpoints={}/{} selection_owner_changes={} selection_conversions={}",
+                "Firefox M10 Kitty proof incomplete: checkpoints={}/{}",
                 firefox_m10_kitty_proof.completed(),
                 FirefoxM10KittyProof::CHECKPOINTS.len(),
-                selection_owner_changes,
-                selection_conversions,
             )
             .into());
         }
         println!(
-            "sophia_firefox_m10 schema=2 status=complete kitty_checkpoints={} selection_owner_changes={} selection_conversions={} content=redacted",
+            "sophia_firefox_m10 schema=3 status=complete kitty_checkpoints={} selection_gates=focused content=redacted",
             firefox_m10_kitty_proof.completed(),
-            selection_owner_changes,
-            selection_conversions,
         );
     }
     if config.firefox_m10_selection_proof {
-        if firefox_m8_proof.completed_stage < 4
+        if firefox_m8_proof.completed() < 4
             || !firefox_m10_selection_kitty_proof.complete()
             || selection_owner_changes < 4
             || selection_conversions < 4
         {
             return Err(format!(
                 "Firefox M10 selection proof incomplete: stages={}/4 checkpoints={}/3 selection_owner_changes={} selection_conversions={}",
-                firefox_m8_proof.completed_stage.min(4),
+                firefox_m8_proof.completed().min(4),
                 firefox_m10_selection_kitty_proof.completed(),
                 selection_owner_changes,
                 selection_conversions,

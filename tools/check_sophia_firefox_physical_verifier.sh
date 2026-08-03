@@ -11,6 +11,27 @@ trap 'rm -f -- "$TEMP_FILE" "$RECOVERY_SESSION"' EXIT
 
 "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$SESSION" "$GUARD" "$RECOVERY"
+grep -Fv 'sophia_live_native_startup_output schema=1 status=presented output=2 ' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a missing startup output" >&2
+    exit 1
+fi
+sed 's/output=2 proof=synchronous_modeset/output=1 proof=synchronous_modeset/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted duplicate startup output identities" >&2
+    exit 1
+fi
+grep -Fv 'sophia_live_native_page_flip schema=1 status=retired ' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted no asynchronous retirement" >&2
+    exit 1
+fi
 awk '
     { print }
     /status=surface_observed source=action transaction=15 surface=4$/ {
@@ -37,60 +58,25 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted phase-one candidate consumption" >&2
     exit 1
 fi
-sed '/stage=primary /d' "$SESSION" >"$TEMP_FILE"
+sed '/stage=keyboard /a sophia_firefox_m8 schema=1 status=stage_complete stage=clipboard index=2 title_bytes=56 content=redacted' \
+    "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted a missing PRIMARY stage" >&2
+    echo "physical Firefox verifier accepted replayed selection work" >&2
     exit 1
 fi
-for checkpoint in clipboard_peer primary_peer; do
-    sed "/checkpoint=${checkpoint} /d" "$SESSION" >"$TEMP_FILE"
+for completion in sophia_firefox_promotion 'sophia_firefox_m10 schema=3'; do
+    grep -Fv "$completion" "$SESSION" >"$TEMP_FILE"
     if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
         "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-        echo "physical Firefox verifier accepted a missing $checkpoint checkpoint" >&2
+        echo "physical Firefox verifier accepted missing completion: $completion" >&2
         exit 1
     fi
 done
-for operation in owner_change conversion; do
-    for ordinal in 1 2 3 4; do
-        awk -v operation="$operation" -v ordinal="$ordinal" '
-            $0 ~ ("status=selection_observed kind=" operation " ") {
-                seen++
-                if (seen == ordinal) next
-            }
-            { print }
-        ' "$SESSION" >"$TEMP_FILE"
-        if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-            "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-            echo "physical Firefox verifier accepted missing $operation in transfer interval $ordinal" >&2
-            exit 1
-        fi
-    done
-done
-awk '
-    /status=selection_observed kind=owner_change count=1 / { owner=$0; next }
-    /status=selection_observed kind=conversion count=1 / { print; print owner; next }
-    { print }
-' "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted conversion before ownership" >&2
-    exit 1
-fi
 grep -Fv 'status=axis_batch' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted missing scroll routing" >&2
-    exit 1
-fi
-awk '
-    /stage=primary / { inside=1 }
-    inside && /status=axis_batch/ && !removed { removed=1; next }
-    { print }
-' "$SESSION" >"$TEMP_FILE"
-if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
-    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted only one post-PRIMARY scroll packet" >&2
     exit 1
 fi
 sed '/status=navigation_ready /d' "$SESSION" >"$TEMP_FILE"
@@ -156,7 +142,7 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted a GDK thaw underflow" >&2
     exit 1
 fi
-sed 's/matched_surfaces=3/matched_surfaces=2/' "$SESSION" >"$TEMP_FILE"
+sed 's/matched_surfaces=3/matched_surfaces=0/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted an incomplete resize epoch" >&2

@@ -16,7 +16,7 @@ for _ in $(seq 1 100); do
     sleep 0.01
 done
 [[ -d "$TEMP_DIR/kitty-a" ]]
-printf 'b1\nwrong\nsophia\nwrong\nsophia-firefox-primary\nb2\nb3\n' |
+printf 'b1\nb2\nb3\n' |
     env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$TEMP_DIR" "$PROBE" \
         >"$TEMP_DIR/second.out" &
 second_pid=$!
@@ -34,10 +34,10 @@ for checkpoint in 1 2 3; do
     [[ -e "$TEMP_DIR/checkpoint-a-$checkpoint" ]]
     [[ -e "$TEMP_DIR/checkpoint-b-$checkpoint" ]]
 done
-[[ -e "$TEMP_DIR/checkpoint-b-clipboard" ]]
-[[ -e "$TEMP_DIR/checkpoint-b-primary" ]]
-[[ "$(grep -Fc 'Expected SOPHIA; try again.' "$b_output")" == 2 ]]
-[[ "$(grep -Fc 'received exactly' "$b_output")" == 2 ]]
+[[ ! -e "$TEMP_DIR/checkpoint-b-clipboard" ]]
+[[ ! -e "$TEMP_DIR/checkpoint-b-primary" ]]
+[[ "$(grep -hc 'transfer:' "$TEMP_DIR"/*.out | awk '{ sum += $1 } END { print sum + 0 }')" == 0 ]]
+grep -Fq 'Promotion: complete the short Firefox keyboard, scroll, resize, focus, and dialog sequence' "$b_output"
 
 printf 'a1\na2\na3\n' |
     env SOPHIA_FIREFOX_M10_KITTY_PROBE_DIR="$LIFECYCLE_TEMP_DIR" \

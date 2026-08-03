@@ -1,13 +1,11 @@
 use super::*;
 
 #[test]
-fn firefox_m10_kitty_proof_requires_peer_selection_checkpoints() {
+fn firefox_m10_kitty_proof_requires_only_retention_checkpoints() {
     let mut proof = FirefoxM10KittyProof::default();
     let expected = [
         (193, "a", "before"),
         (194, "b", "before"),
-        (202, "b", "clipboard_peer"),
-        (203, "b", "primary_peer"),
         (211, "a", "after_normal_close"),
         (212, "b", "after_normal_close"),
         (229, "a", "after_forced_close"),
@@ -22,16 +20,53 @@ fn firefox_m10_kitty_proof_requires_peer_selection_checkpoints() {
         assert_eq!(proof.completed(), index + 1);
         assert_eq!(proof.observe("_NET_WM_NAME", *title_bytes), None);
     }
-    assert!(!proof.complete(3, 4));
-    assert!(!proof.complete(4, 3));
-    assert!(proof.complete(4, 4));
+    assert!(proof.complete());
+    assert!(proof.lifecycle_complete());
+}
 
-    let mut lifecycle = FirefoxM10KittyProof::default();
-    for title_bytes in [193, 194, 211, 212, 229, 230] {
-        assert!(lifecycle.observe("_NET_WM_NAME", title_bytes).is_some());
+#[test]
+fn firefox_promotion_stage_proof_skips_focused_selection_stages() {
+    let mut proof = FirefoxM8StageProof::promotion();
+    assert!(proof.observe("_NET_WM_NAME", 24).is_empty());
+    assert_eq!(
+        proof.observe("_NET_WM_NAME", 40),
+        vec![("loaded", 0, 24), ("keyboard", 1, 40)]
+    );
+    assert!(proof.navigation_ready("_NET_WM_NAME", 73));
+    for (title_bytes, stage, index) in [(88, "scroll", 2), (104, "resize", 3), (120, "refocus", 4)]
+    {
+        assert_eq!(
+            proof.observe("_NET_WM_NAME", title_bytes),
+            vec![(stage, index, title_bytes)]
+        );
     }
-    assert!(lifecycle.lifecycle_complete());
-    assert!(!lifecycle.complete(4, 4));
+    assert!(proof.dialog_ready("_NET_WM_NAME", 121));
+    assert_eq!(proof.observe("_NET_WM_NAME", 136), vec![("dialog", 5, 136)]);
+    assert!(proof.complete());
+}
+
+#[test]
+fn firefox_full_stage_proof_retains_selection_stages() {
+    let mut proof = FirefoxM8StageProof::default();
+    assert!(proof.observe("_NET_WM_NAME", 24).is_empty());
+    assert_eq!(
+        proof.observe("_NET_WM_NAME", 40),
+        vec![("loaded", 0, 24), ("keyboard", 1, 40)]
+    );
+    for (title_bytes, stage, index) in [
+        (56, "clipboard", 2),
+        (72, "primary", 3),
+        (88, "scroll", 4),
+        (104, "resize", 5),
+        (120, "refocus", 6),
+        (136, "dialog", 7),
+    ] {
+        assert_eq!(
+            proof.observe("_NET_WM_NAME", title_bytes),
+            vec![(stage, index, title_bytes)]
+        );
+    }
+    assert!(proof.complete());
 }
 
 #[test]

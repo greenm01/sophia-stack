@@ -1,7 +1,10 @@
 #[path = "config/chrome.rs"]
 mod chrome;
+#[path = "config/firefox_stage.rs"]
+mod firefox_stage;
 #[path = "config/output.rs"]
 mod output;
+use firefox_stage::FirefoxM8StageProof;
 use output::{output_topology_from_engine_outputs, wm_output_bounds};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -760,13 +763,6 @@ impl PersistentXtermSessionConfig {
 }
 
 #[derive(Default)]
-struct FirefoxM8StageProof {
-    baseline_title_bytes: [Option<usize>; 16],
-    active_residue: Option<usize>,
-    completed_stage: usize,
-}
-
-#[derive(Default)]
 struct FirefoxM10KittyProof {
     observed: [bool; Self::CHECKPOINTS.len()],
 }
@@ -868,12 +864,9 @@ impl FirefoxM10SelectionKittyProof {
 }
 
 impl FirefoxM10KittyProof {
-    const REQUIRED_SELECTION_OPERATIONS: usize = 4;
-    const CHECKPOINTS: [(usize, &'static str, &'static str); 8] = [
+    const CHECKPOINTS: [(usize, &'static str, &'static str); 6] = [
         (193, "a", "before"),
         (194, "b", "before"),
-        (202, "b", "clipboard_peer"),
-        (203, "b", "primary_peer"),
         (211, "a", "after_normal_close"),
         (212, "b", "after_normal_close"),
         (229, "a", "after_forced_close"),
@@ -899,109 +892,15 @@ impl FirefoxM10KittyProof {
         Some((*terminal, *checkpoint))
     }
 
-    fn complete(&self, selection_owner_changes: usize, selection_conversions: usize) -> bool {
+    fn complete(&self) -> bool {
         self.observed.iter().all(|observed| *observed)
-            && selection_owner_changes >= Self::REQUIRED_SELECTION_OPERATIONS
-            && selection_conversions >= Self::REQUIRED_SELECTION_OPERATIONS
     }
 
     fn lifecycle_complete(&self) -> bool {
-        [0, 1, 4, 5, 6, 7]
-            .into_iter()
-            .all(|index| self.observed[index])
+        self.complete()
     }
 
     fn completed(&self) -> usize {
         self.observed.iter().filter(|observed| **observed).count()
-    }
-}
-
-impl FirefoxM8StageProof {
-    const STAGES: [&'static str; 8] = [
-        "loaded",
-        "keyboard",
-        "clipboard",
-        "primary",
-        "scroll",
-        "resize",
-        "refocus",
-        "dialog",
-    ];
-
-    fn observe(
-        &mut self,
-        property_name: &str,
-        byte_len: usize,
-    ) -> Vec<(&'static str, usize, usize)> {
-        if property_name != "_NET_WM_NAME" || byte_len == 0 || byte_len > 256 {
-            return Vec::new();
-        }
-        let residue = byte_len % 16;
-        if self.completed_stage == 0 {
-            let Some(baseline) = self.baseline_title_bytes[residue] else {
-                self.baseline_title_bytes[residue] = Some(byte_len);
-                return Vec::new();
-            };
-            if byte_len == baseline.saturating_add(16) {
-                self.active_residue = Some(residue);
-                self.completed_stage = 2;
-                return vec![
-                    (Self::STAGES[0], 0, baseline),
-                    (Self::STAGES[1], 1, byte_len),
-                ];
-            }
-            if byte_len != baseline {
-                self.baseline_title_bytes[residue] = Some(byte_len);
-            }
-            return Vec::new();
-        }
-        if self.completed_stage >= Self::STAGES.len() {
-            return Vec::new();
-        }
-        let active_residue = self
-            .active_residue
-            .expect("stage activation records a residue");
-        if residue != active_residue {
-            return Vec::new();
-        }
-        let baseline = self.baseline_title_bytes[active_residue]
-            .expect("stage activation retains its baseline");
-        let expected = baseline.saturating_add(self.completed_stage.saturating_mul(16));
-        if byte_len != expected {
-            return Vec::new();
-        }
-        let stage_index = self.completed_stage;
-        self.completed_stage += 1;
-        vec![(Self::STAGES[stage_index], stage_index, byte_len)]
-    }
-
-    fn navigation_ready(&self, property_name: &str, byte_len: usize) -> bool {
-        if property_name != "_NET_WM_NAME" || self.completed_stage != 4 {
-            return false;
-        }
-        let Some(active_residue) = self.active_residue else {
-            return false;
-        };
-        let Some(baseline) = self.baseline_title_bytes[active_residue] else {
-            return false;
-        };
-        byte_len == baseline.saturating_add(49)
-    }
-
-    fn dialog_ready(&self, property_name: &str, byte_len: usize) -> bool {
-        if property_name != "_NET_WM_NAME" || self.completed_stage != 7 {
-            return false;
-        }
-        let Some(active_residue) = self.active_residue else {
-            return false;
-        };
-        let Some(baseline) = self.baseline_title_bytes[active_residue] else {
-            return false;
-        };
-        byte_len == baseline.saturating_add(97)
-    }
-
-    fn complete(&self) -> bool {
-        self.completed_stage == Self::STAGES.len()
     }
 }

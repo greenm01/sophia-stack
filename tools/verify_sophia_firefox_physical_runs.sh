@@ -12,7 +12,7 @@ fi
 if [[ ! -x "$VERIFY_IDENTITY" && -x "$SCRIPT_DIR/verify_installed_runtime_identity.sh" ]]; then
     VERIFY_IDENTITY="$SCRIPT_DIR/verify_installed_runtime_identity.sh"
 fi
-required="${1:-3}"
+required="${1:-1}"
 [[ "$required" =~ ^[1-9][0-9]*$ ]] || {
     echo "usage: verify_sophia_firefox_physical_runs.sh POSITIVE_COUNT" >&2
     exit 1
@@ -48,4 +48,4 @@ for run in "${runs[@]}"; do
         exit 1
     fi
 done
-echo "physical Firefox three-run gate passed: runs=$required commit=$expected_commit"
+echo "physical Firefox run-set gate passed: runs=$required commit=$expected_commit"

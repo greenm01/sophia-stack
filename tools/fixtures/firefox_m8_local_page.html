@@ -36,6 +36,7 @@
   const parameters = new URLSearchParams(location.search);
   const navigated = parameters.get('navigated') === '1';
   const primaryOnly = parameters.get('primary_only') === '1';
+  const promotionOnly = parameters.get('promotion_only') === '1';
   const selectionPeer = parameters.get('selection_peer') === 'kitty' || primaryOnly;
   const renderingOnly = parameters.get('rendering_only') === '1';
   const dialogOnly = parameters.get('dialog_only') === '1';
@@ -63,14 +64,27 @@
     'Step 7/8: click the full-page dialog target, then click the modal confirmation.',
     'Step 8/8 complete: press Ctrl+Q for a normal Firefox close.'
   ];
+  function nextStep(stage) {
+    if (!promotionOnly) return nextSteps[stage];
+    switch (stage) {
+      case 0: return 'Step 1/6: type sophia.';
+      case 1:
+      case 3: return 'Step 2/6: click the full-page navigation target, then scroll vertically on the next document.';
+      case 4: return 'Step 3/6: press Super+Space to resize.';
+      case 5: return 'Step 4/6: press Super+J away, then Super+J as needed until Firefox returns.';
+      case 6: return 'Step 5/6: click the full-page dialog target, then click the modal confirmation.';
+      case 7: return 'Step 6/6 complete: press Ctrl+Q for a normal Firefox close.';
+      default: return 'Continue the Firefox promotion workflow.';
+    }
+  }
   function advance(label) {
     stage += 1;
     document.body.classList.toggle('primary-proof', stage === 2 && !selectionPeer);
-    document.body.classList.toggle('navigation-proof', stage === 3 && !navigated);
+    document.body.classList.toggle('navigation-proof', (stage === 3 || (promotionOnly && stage === 1)) && !navigated);
     document.body.classList.toggle('dialog-proof', stage === 6);
     document.title = '0'.repeat(stages[stage]);
     status.textContent = label;
-    next.textContent = nextSteps[stage];
+    next.textContent = nextStep(stage);
     document.body.style.background = `hsl(${stage * 47} 55% 24%)`;
     if (selectionPeer && stage === 2) {
       source.value = 'sophia-firefox-primary';
@@ -126,7 +140,7 @@
     }
   });
   addEventListener('paste', event => {
-    if (selectionPeer) return;
+    if (selectionPeer || promotionOnly) return;
     if (stage === 1) {
       event.preventDefault();
       document.querySelector('#clipboard').value = 'sophia';
@@ -161,9 +175,10 @@
     }
   });
   function completeScrollIfReady() {
-    // XI2's first absolute-axis value establishes GTK's baseline and does not
-    // become a DOM wheel event. The harness separately proves both routed
-    // notches; this page proves the resulting DOM event and displacement.
+    // XI2's first absolute-axis value establishes GTK's device-scoped
+    // baseline and does not become a DOM wheel event. Focused protocol gates
+    // prove baseline creation; this page proves a subsequent DOM event and
+    // document displacement.
     if (stage === 3 && navigated && verticalWheelEvents >= 1 && scrollY > 0) {
       advance('navigation and document scroll complete');
     }
@@ -201,6 +216,10 @@
         document.body.classList.remove('dialog-proof');
         status.textContent = 'Firefox dialog canary complete';
         next.textContent = 'Press Super+Shift+Q to finish.';
+      } else if (promotionOnly) {
+        document.body.classList.remove('dialog-proof');
+        status.textContent = 'dialog complete';
+        next.textContent = nextStep(7);
       }
     }
   });
@@ -238,7 +257,17 @@
     document.title = '0'.repeat(stages[stage] + 1);
     document.body.classList.add('scroll-proof');
     status.textContent = 'navigation complete';
-    next.textContent = nextSteps[stage];
+    next.textContent = nextStep(stage);
+    if (promotionOnly) {
+      document.querySelector('#clipboard').hidden = true;
+      document.querySelector('#primary').hidden = true;
+    }
+  } else if (promotionOnly) {
+    document.querySelector('#clipboard').hidden = true;
+    document.querySelector('#primary').hidden = true;
+    document.querySelector('#navigate').href = '?navigated=1&promotion_only=1';
+    status.textContent = 'Firefox promotion ready';
+    next.textContent = nextStep(stage);
   } else if (selectionPeer) {
     document.querySelector('#navigate').href = '?navigated=1&selection_peer=kitty';
   } else if (lifecycleOnly) {

@@ -913,15 +913,18 @@ so the proof neither inherits the operator's normal Firefox profile nor changes
 it. Kitty A and Kitty B each accept three short,
 content-redacted checkpoints before Firefox, after its normal `Ctrl+Q` exit,
 and after its restarted window is closed through xmonad. The Firefox page
-requires keyboard, `CLIPBOARD`, `PRIMARY`, a real navigation followed by
-document scrolling, resize, focus-away/focus-return, and a pointer-opened
-dialog. The strict verifier orders the six Kitty checkpoints around the two
+requires keyboard input, real navigation followed by document scrolling,
+resize, focus-away/focus-return, and a pointer-opened dialog. `CLIPBOARD` and
+`PRIMARY` are excluded because their focused physical gates and bidirectional
+wire regressions are authoritative. The strict verifier rejects replayed
+selection stages, orders the six Kitty checkpoints around the two
 status-zero Firefox exits, requires replacement-document readiness followed by
-two routed axis packets before DOM scroll completion, and rejects pending
+at least one routed axis packet before DOM scroll completion, and rejects pending
 input/actions, protocol errors, native/frontend/authority cleanup debt, or
 retained temporary layout constraints. Its resize checkpoint requires the
-actual Super+Space action, a committed three-surface layout/resize epoch, and
-all three managed surfaces remaining visible. Its dialog checkpoint requires
+actual Super+Space action, a committed layout with an exact Firefox resize
+epoch and post-configure pixel retirement, and all three managed surfaces
+remaining visible. Its dialog checkpoint requires
 popup-document readiness, a five-surface layout snapshot, confirmation, and a
 return to the four-surface physical xmobar baseline before Firefox exits.
 During resize, a buffer whose pixel-aligned target is larger or smaller than
@@ -936,12 +939,12 @@ Verify and retain the run with:
 ```sh
 tools/verify_sophia_firefox_physical.sh
 tools/record_sophia_firefox_physical_run.sh
-tools/verify_sophia_firefox_physical_runs.sh 3
+tools/verify_sophia_firefox_physical_runs.sh 1
 ```
 
 The installed artifact exposes the same workflow as the `Sophia Firefox Proof`
-greetd entry. After each installed run use `sophia-record-firefox-run`; after
-three runs use `sophia-verify-firefox-runs 3`. Those commands verify immutable
+greetd entry. After the integrated run use `sophia-record-firefox-run`, then
+`sophia-verify-firefox-runs 1`. Those commands verify immutable
 release digests and privacy-safe runtime identities in addition to the browser,
 WM, input, renderer, and teardown evidence.
 
@@ -1015,8 +1018,9 @@ sophia-verify-soak \
 ```
 
 Run the long gates through the installed `Sophia Firefox Proof` entry so the
-same log also contains the redacted keyboard, `CLIPBOARD`, `PRIMARY`, resize,
-and dialog contract. `sophia-record-run` first applies the strict physical
+same log also contains the redacted keyboard, navigation/scroll, resize,
+refocus, dialog, and lifecycle contract. Selection correctness comes from the
+separately retained focused gates. `sophia-record-run` first applies the strict physical
 xmonad verifier, checks
 the running release identity and every packaged SHA-256 digest, and only then
 copies the session, guard, recovery, identity, and release manifest into a

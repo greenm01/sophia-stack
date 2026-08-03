@@ -250,7 +250,11 @@ fn run_session_loop(
     let mut post_startup_exit_pointer_reported = false;
     let mut application_surface_missing_since: Option<Instant> = None;
     let mut client_stdout = Vec::new();
-    let mut firefox_m8_proof = FirefoxM8StageProof::default();
+    let mut firefox_m8_proof = if config.firefox_m10_proof {
+        FirefoxM8StageProof::promotion()
+    } else {
+        FirefoxM8StageProof::default()
+    };
     let mut firefox_m10_kitty_proof = FirefoxM10KittyProof::default();
     let mut firefox_m10_selection_kitty_proof = FirefoxM10SelectionKittyProof::default();
     let mut firefox_m10_dialog_proof = FirefoxM10DialogProof::default();

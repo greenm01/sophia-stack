@@ -42,9 +42,9 @@ has its own completion record, fail-closed verifier, and negative fixture.
 
 The validation ladder is therefore: offline reducer/coordinator/verifier
 regressions, the affected focused physical slice, then one complete physical
-promotion run. Only the complete workflow is recorded toward the three-run
-Milestone 10 exit gate. This separation enables future automation and timing
-optimization without weakening the release contract.
+promotion run. Repetition belongs to the unattended installed-session soak,
+not repeated manual choreography. This separation enables future automation
+and timing optimization without weakening the release contract.
 
 ## 2026-08-02: selection conversion requires an independent requestor
 
@@ -6954,5 +6954,56 @@ acknowledgement ordering.
 - The strict verifier passed with zero protocol errors, pending WM/actions/input,
   recovery extents, or constraint relayout. Application groups and frontend
   workers drained, and the namespace and Xauthority were revoked. All focused
-  Firefox gates are now closed; only the same-commit integrated promotion runs
-  remain for Milestone 10.
+  Firefox gates are now closed; only the integrated promotion run remains for
+  Milestone 10.
+
+## 2026-08-03: remove selection choreography from Firefox promotion
+
+- The combined promotion script still made the operator shuttle four payloads
+  between Firefox and Kitty even after the focused CLIPBOARD and PRIMARY gates
+  had closed those boundaries. Repeating exact-token ownership work inside the
+  integrated run tested instruction following, not an additional Sophia seam.
+- Promotion now has six browser stages: loaded keyboard input, navigated
+  document scroll, resize, focus away/return, and dialog confirmation. Its two
+  Kitty peers retain only the six before/normal-close/forced-close checkpoints.
+  The completion schemas explicitly record `selection_gates=focused`, and the
+  verifier rejects any replayed clipboard/primary stage or peer checkpoint.
+- The original eight-stage reducer remains authoritative for the QEMU M8 and
+  focused selection profiles. Promotion uses a profile-specific source-stage
+  mapping, preserving the established title canaries for scroll through dialog
+  while reporting compact indices zero through five. This keeps future reducer
+  optimization independent from page presentation and avoids falsifying skipped
+  selection stages.
+- Milestone 10 now requires one integrated physical run after its focused gates.
+  Repetition and flake detection move to the unattended installed-session soak
+  rather than multiplying a manual release ritual.
+
+## 2026-08-03: complete the shortened physical Firefox promotion
+
+- The first shortened integrated run completed all six Firefox stages and all
+  six Kitty retention checkpoints around normal and WM-forced status-zero
+  Firefox exits. Session health reported zero protocol errors or pending work,
+  layout health was clean, and application, frontend, namespace, and
+  Xauthority teardown drained completely.
+- The verifier exposed two stale assumptions rather than product failures. A
+  damage-idle secondary output retained its proven synchronous startup modeset
+  and correctly issued no redundant asynchronous page flip; output liveness is
+  now proved per output at startup while the gate separately requires at least
+  one asynchronous retirement. This preserves future damage-skip optimization.
+- Firefox completed real DOM wheel handling and document displacement after
+  one causally ordered post-navigation packet because GTK's XI2 absolute-axis
+  baseline had already been established earlier in the same device session.
+  The integrated gate now requires that causal packet plus browser-observed
+  DOM completion. Focused protocol gates retain the stricter fresh-baseline
+  coverage, without forcing redundant operator notches in promotion.
+- Super+Space moved two surfaces but resized only Firefox, so the resize epoch
+  correctly matched one configured surface while the workspace projection
+  retained all three managed windows. Firefox reported its DOM resize after
+  receiving ConfigureNotify and presented the exact new-size pixels shortly
+  afterward. The verifier now keeps those distinct causal facts instead of
+  requiring three resized surfaces or demanding pixel retirement before the
+  client could report receiving the configure.
+- Native page-flip and X11 focus diagnostics are tracing records and therefore
+  carry timestamp/level prefixes in the production log, unlike owner-loop
+  proof records. The verifier fixture now models that prefix and matches the
+  embedded structured marker, preventing another fixture-only anchoring bug.

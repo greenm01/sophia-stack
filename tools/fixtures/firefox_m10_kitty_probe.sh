@@ -55,18 +55,6 @@ await_token() {
     done
 }
 
-await_selection_transfer() {
-    local kind="$1" gesture="$2" expected="$3" reply
-    while true; do
-        printf '\nKitty B %s transfer: %s, then press Enter: ' "$kind" "$gesture"
-        IFS= read -r reply
-        if [[ "$reply" == "$expected" ]]; then
-            return 0
-        fi
-        echo 'Expected SOPHIA; try again.'
-    done
-}
-
 clear 2>/dev/null || true
 printf 'Sophia Milestone 10 — Kitty %s\n\n' "${terminal^^}"
 echo 'This window keeps every checkpoint visible; do not close it.'
@@ -79,19 +67,10 @@ if [[ "$terminal" == a ]]; then
 else
     await_both_checkpoints 1
     echo 'Both Kitty windows are ready. Press Super+F and follow the instructions inside Firefox.'
-    if [[ "$proof_slice" == promotion ]]; then
-        await_selection_transfer CLIPBOARD 'press Ctrl+Shift+V once' sophia
-        set_redacted_title 202
-        mark_checkpoint clipboard
-        printf '\nCLIPBOARD received exactly. Select and copy this exact line with Ctrl+Shift+C:\n%s\n' sophia-kitty-clipboard
-        echo 'Cycle back to Firefox and paste it there. Return when Firefox shows its PRIMARY step.'
-        await_selection_transfer PRIMARY 'middle-click once' sophia-firefox-primary
-        set_redacted_title 203
-        mark_checkpoint primary
-        printf '\nPRIMARY received exactly. Select this exact line with the pointer:\n%s\n' sophia-kitty-primary
-        echo 'Cycle back to Firefox and middle-click its full-page PRIMARY target.'
-    else
+    if [[ "$proof_slice" == lifecycle ]]; then
         echo 'Lifecycle slice: wait for the Firefox page, then press Ctrl+Q and return here.'
+    else
+        echo 'Promotion: complete the short Firefox keyboard, scroll, resize, focus, and dialog sequence, then press Ctrl+Q and return here.'
     fi
 fi
 

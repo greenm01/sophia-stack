@@ -132,6 +132,8 @@ bash -n tools/check_firefox_m10_primary_kitty_probe.sh
 tools/check_firefox_m10_primary_kitty_probe.sh
 bash -n tools/check_firefox_m10_selection_page.sh
 tools/check_firefox_m10_selection_page.sh
+bash -n tools/check_firefox_m10_promotion_page.sh
+tools/check_firefox_m10_promotion_page.sh
 bash -n tools/check_firefox_m10_primary_page.sh
 tools/check_firefox_m10_primary_page.sh
 bash -n tools/check_firefox_m10_rendering_page.sh

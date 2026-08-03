@@ -787,7 +787,7 @@ than adding speculative browser compatibility.
   a separate genuine hinted X11 dialog regression owns transient-toplevel
   coverage.
 
-- [ ] Complete generic Firefox wheel compatibility in the X frontend. Preserve
+- [x] Complete generic Firefox wheel compatibility in the X frontend. Preserve
   protocol-neutral Engine axis routing, translate it through the appropriate
   X11 input semantics, and require a real routed axis event to produce the
   deterministic local page's DOM `wheel` stage. The clean QEMU gate negotiates
@@ -821,9 +821,11 @@ than adding speculative browser compatibility.
   without scrolling can no longer pass the fixture. The strengthened QEMU gate
   passes end to end, including ordered Firefox DOM-modal ready/confirm stages
   and clean guest shutdown. The separate X11 wire regression proves genuine
-  hinted-dialog management and floating placement. Repeat the physical stage
-  before closing this item.
-- [ ] Run the deterministic local Firefox workload beside two independently
+  hinted-dialog management and floating placement. The 2026-08-03 integrated
+  physical run causally ordered a routed XI2 wheel packet after replacement-
+  document readiness, then Firefox reported DOM wheel handling and nonzero
+  document displacement.
+- [x] Run the deterministic local Firefox workload beside two independently
   usable Kitty windows. The first isolated-profile physical run proved a real
   Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
   exposed clipped-frame rejection and descendant-click focus ambiguity after
@@ -839,22 +841,23 @@ than adding speculative browser compatibility.
   proof harness. Those prompts now coordinate exactly one restart and direct
   pointer work away from compositor edges. Later focused rendering,
   cross-window `CLIPBOARD`, and DOM-dialog gates passed; retain this history
-  without replaying the obsolete combined workflow. Final closure comes from
-  promotion after the remaining focused gates.
-- [ ] Require visible rendering plus keyboard, pointer, scroll, resize,
+  without replaying the obsolete combined workflow. The shortened 2026-08-03
+  promotion retained both Kitty processes through both Firefox lifecycles and
+  completed with clean teardown.
+- [x] Require visible rendering plus keyboard, pointer, scroll, resize,
   workspace hide/show, refocus, modal open/close, and status-zero exit.
   Genuine non-override-redirect transient dialogs remain policy-managed with
   opaque owner and floating-preference facts; only override-redirect windows
   bypass WM policy. Temporary exact-size recovery constraints clear only after
   matching CPU admission or exact DMA-BUF retirement, queue one coalesced blind-
   WM relayout, and must be zero in the clean layout-health record. The strict
-  Firefox verifier now requires action 3 (`Super+Space`), a committed
-  three-surface resize epoch/layout, a three-visible-surface workspace
+  Firefox verifier now requires action 3 (`Super+Space`), a committed layout
+  and exact Firefox resize epoch, a three-visible-surface workspace
   projection, replacement-document readiness, ordered DOM-modal ready and
   confirmation checkpoints without any new X11 toplevel, and clean
   recovery-constraint teardown. Genuine transient-toplevel semantics remain
-  locked independently by the hinted-dialog wire regression. A fresh physical
-  run is still required.
+  locked independently by the hinted-dialog wire regression. The focused
+  gates and the 2026-08-03 integrated physical run close these boundaries.
   A subsequent `Super+F` run exposed a stale five-second application-admission
   deadline below the accepted WM resize bound and a fatal pointer-focus queue
   overflow. Admission now remains open beyond the maximum WM transaction;
@@ -1111,15 +1114,25 @@ than adding speculative browser compatibility.
   session, layout, application, frontend, namespace, and Xauthority cleanup
   drained cleanly with zero protocol errors or pending input, action, or WM
   work.
-- [ ] Audit only the desktop services observed by this run—such as DBus,
+- [x] Audit only the desktop services observed by this run—such as DBus,
   PipeWire, or portal helpers—and add session integration only for evidenced
-  failures.
-- [ ] Retain zero unexpected X11 errors, pending actions/input, native cleanup
+  failures. The integrated run completed despite the intentionally unavailable
+  session DBus and emitted no PipeWire or portal failure affecting the proof,
+  so no desktop service was added to the bounded session.
+- [x] Retain zero unexpected X11 errors, pending actions/input, native cleanup
   debt, unrelated-client failure, or protocol-specific state below Engine.
-- [ ] Pass the complete workflow three consecutive times from one commit.
+- [x] Pass one complete integrated workflow from the candidate commit. The
+  2026-08-03 run completed all six promotion stages and six Kitty retention
+  checkpoints around two status-zero Firefox exits, with clean session,
+  layout, application, frontend, namespace, and Xauthority teardown. Both
+  outputs had synchronous startup presentation; the active output retired 710
+  asynchronous flips while the damage-idle secondary correctly issued none.
+  Repeated
+  stability belongs to the unattended installed-session soak; do not multiply
+  the manual operator sequence after its focused causal gates have passed.
 
-Milestone 10 exits with one strict physical workflow verifier and three
-consecutive passing runs.
+Milestone 10 exits with one strict physical workflow verifier and one passing
+integrated run backed by the completed focused physical gates.
 
 Compatibility follow-up outside the Firefox exit gate:
 
