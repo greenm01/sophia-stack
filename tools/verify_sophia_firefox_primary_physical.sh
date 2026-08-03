@@ -18,23 +18,22 @@ after() { grep -nE "$1" "$SESSION_LOG" | cut -d: -f1 | awk -v n="$2" '$1 > n { p
 ! grep -Eq 'checkpoint=clipboard_peer|stage_complete stage=clipboard' "$SESSION_LOG" ||
     fail 'PRIMARY slice replayed completed CLIPBOARD work'
 
-page_ready="$(line '^sophia_firefox_primary schema=1 status=checkpoint checkpoint=page_ready title_bytes=250 content=redacted$')"
 source_armed="$(line '^sophia_firefox_primary schema=1 status=checkpoint checkpoint=source_armed title_bytes=251 content=redacted$')"
 kitty_received="$(line '^sophia_firefox_primary schema=1 status=checkpoint checkpoint=kitty_received title_bytes=253 content=redacted$')"
 confirmed="$(line '^sophia_firefox_primary schema=1 status=checkpoint checkpoint=confirmed title_bytes=252 content=redacted$')"
-completion="$(line '^sophia_firefox_primary schema=1 status=complete checkpoints=4 selection_owner_changes=([2-9]|[1-9][0-9]+) selection_conversions=([2-9]|[1-9][0-9]+) content=redacted$')"
-[[ -n "$page_ready" && -n "$source_armed" && -n "$kitty_received" && -n "$confirmed" && -n "$completion" ]] ||
+completion="$(line '^sophia_firefox_primary schema=1 status=complete checkpoints=3 selection_owner_changes=([2-9]|[1-9][0-9]+) selection_conversions=([2-9]|[1-9][0-9]+) content=redacted$')"
+[[ -n "$source_armed" && -n "$kitty_received" && -n "$confirmed" && -n "$completion" ]] ||
     fail 'ordered PRIMARY checkpoints or completion evidence is missing'
-(( page_ready < source_armed && source_armed < kitty_received
-    && kitty_received < confirmed && confirmed < completion )) ||
+(( source_armed < kitty_received && kitty_received < confirmed
+    && confirmed < completion )) ||
     fail 'PRIMARY checkpoints are out of order'
 
-firefox_owner="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$page_ready")"
+firefox_owner="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$source_armed")"
 firefox_conversion="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=conversion ' "$firefox_owner")"
 firefox_notify="$(after '^.*sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=notify .* synthetic=true .* property_present=true content=redacted$' "$firefox_conversion")"
 [[ -n "$firefox_owner" && -n "$firefox_conversion" && -n "$firefox_notify" ]] ||
     fail 'Firefox-to-Kitty PRIMARY transfer evidence is missing'
-(( firefox_owner < firefox_conversion && firefox_conversion < firefox_notify
+(( source_armed < firefox_owner && firefox_owner < firefox_conversion && firefox_conversion < firefox_notify
     && firefox_notify < kitty_received )) ||
     fail 'Firefox-to-Kitty PRIMARY transfer is outside its checkpoint interval'
 

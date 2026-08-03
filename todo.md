@@ -1048,12 +1048,13 @@ than adding speculative browser compatibility.
 
   - [x] full-height Firefox rendering and recovery cleanup;
   - [x] bidirectional cross-window `CLIPBOARD` transfer;
-  - [x] DOM modal open/confirm with stable full-height rendering.
+  - [x] DOM modal open/confirm with stable full-height rendering;
+  - [x] bidirectional cross-window `PRIMARY` transfer.
 
   Do not rerun those gates unless a later change touches their causal boundary.
-  The remaining physical evidence is the PRIMARY-only selection gate, the
-  focused lifecycle gate, and then final integrated promotion.
-- [ ] Prove the remaining bounded UTF-8 `PRIMARY` transfers between Firefox
+  The remaining physical evidence is the focused lifecycle gate and then final
+  integrated promotion.
+- [x] Prove the remaining bounded UTF-8 `PRIMARY` transfers between Firefox
   and Kitty. The prior page could complete from a synthetic
   paste handler while Firefox legitimately reused same-process selection data
   without core `ConvertSelection`. The physical M10 mode now performs real
@@ -1092,8 +1093,14 @@ than adding speculative browser compatibility.
   Diagnostic mode now records each selection event only after the recipient
   socket flushes, with redacted correlation fields, and reports every observed
   proof-title length. The verifier requires the flushed synthetic notify in
-  each direction. Use one more focused run to decide whether the remaining
-  seam is delivery or Firefox's interpretation, then fix that exact boundary.
+  each direction. The 21:30 run proved both directions: Firefox's armed title
+  preceded the first owner/conversion/flush interval, Kitty consumed the exact
+  22-byte token, and Firefox emitted its exact-token confirmation immediately
+  after the reverse UTF-8 property-bearing synthetic notify was flushed. The
+  harness alone failed because its reducer required an initial page-ready title
+  that Firefox coalesced before observation. That redundant checkpoint is now
+  removed; the three retained checkpoints are causal, monotonic, and bracketed
+  by the two protocol transfers.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while

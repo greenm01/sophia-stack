@@ -886,8 +886,10 @@ Cross-window `CLIPBOARD` has already passed on physical hardware. Do not rerun
 the combined selection slice for rendering changes or PRIMARY closure. The
 PRIMARY-only slice starts at the Firefox source token, requires a trusted full-
 field pointer selection, and accepts only exact direction-specific tokens. Its
-verifier orders one owner change and one conversion inside each of the two peer
-intervals and rejects any replayed CLIPBOARD checkpoint. The lifecycle slice
+three checkpoints begin only once the source is armed, then record Kitty's
+exact-token receipt and Firefox's exact-token confirmation. Its verifier orders
+one owner change and one conversion inside each peer interval and rejects any
+replayed CLIPBOARD checkpoint. The lifecycle slice
 removes clipboard, scroll, resize, refocus, and dialog work; its verifier still
 requires two independent Kitty processes, two status-zero Firefox exits, an
 ordered `CloseFocused`, clean health, and clean frontend teardown. These slices

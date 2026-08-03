@@ -276,7 +276,7 @@
             .into());
         }
         println!(
-            "sophia_firefox_primary schema=1 status=complete checkpoints=4 selection_owner_changes={selection_owner_changes} selection_conversions={selection_conversions} content=redacted"
+            "sophia_firefox_primary schema=1 status=complete checkpoints=3 selection_owner_changes={selection_owner_changes} selection_conversions={selection_conversions} content=redacted"
         );
     }
     if config.firefox_m10_proof {

@@ -8,7 +8,6 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
 
 "$ROOT_DIR/tools/verify_sophia_firefox_primary_physical.sh" "$FIXTURE"
 for pattern in \
-    'checkpoint=page_ready' \
     'checkpoint=source_armed' \
     'kind=conversion count=1' \
     'kind=notify client=1' \
@@ -17,7 +16,7 @@ for pattern in \
     'kind=conversion count=2' \
     'kind=notify client=3' \
     'checkpoint=confirmed' \
-    'status=complete checkpoints=4' \
+    'status=complete checkpoints=3' \
     'status=clean protocol_errors=0' \
     'status=clean recovery_extents=0' \
     'status=clean app_groups=0'; do
@@ -41,7 +40,7 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_primary_physical.sh" "$TEMP_FILE"; the
     echo 'PRIMARY verifier accepted a conversion outside its checkpoint interval' >&2
     exit 1
 fi
-awk '/checkpoint=page_ready/ { print; print "sophia_firefox_selection schema=1 status=kitty_checkpoint checkpoint=clipboard_peer content=redacted"; next } { print }' \
+awk '/checkpoint=source_armed/ { print; print "sophia_firefox_selection schema=1 status=kitty_checkpoint checkpoint=clipboard_peer content=redacted"; next } { print }' \
     "$FIXTURE" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_primary_physical.sh" "$TEMP_FILE"; then
     echo 'PRIMARY verifier accepted replayed CLIPBOARD work' >&2

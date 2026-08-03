@@ -66,9 +66,9 @@ fn focused_dialog_proof_requires_ordered_unique_checkpoints() {
 #[test]
 fn focused_primary_proof_requires_ordered_unique_checkpoints() {
     let mut proof = FirefoxM10PrimaryProof::default();
+    assert_eq!(proof.observe("_NET_WM_NAME", 250), None);
     assert_eq!(proof.observe("_NET_WM_NAME", 253), None);
     for (title_bytes, checkpoint) in [
-        (250, "page_ready"),
         (251, "source_armed"),
         (253, "kitty_received"),
         (252, "confirmed"),

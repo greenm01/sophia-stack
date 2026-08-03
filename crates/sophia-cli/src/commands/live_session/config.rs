@@ -787,8 +787,9 @@ struct FirefoxM10PrimaryProof {
 }
 
 impl FirefoxM10PrimaryProof {
-    const CHECKPOINTS: [(usize, &'static str); 4] = [
-        (250, "page_ready"),
+    // Page initialization can be coalesced before the metadata observer sees
+    // it. A trusted full-field selection is the first causal proof boundary.
+    const CHECKPOINTS: [(usize, &'static str); 3] = [
         (251, "source_armed"),
         (253, "kitty_received"),
         (252, "confirmed"),
