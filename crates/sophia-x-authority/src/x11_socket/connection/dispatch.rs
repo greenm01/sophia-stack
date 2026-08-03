@@ -179,6 +179,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 output_stream.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
+                client,
                 receiver,
             )
         })

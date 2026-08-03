@@ -11,9 +11,11 @@ for pattern in \
     'checkpoint=page_ready' \
     'checkpoint=source_armed' \
     'kind=conversion count=1' \
+    'kind=notify client=1' \
     'checkpoint=kitty_received' \
     'kind=owner_change count=2' \
     'kind=conversion count=2' \
+    'kind=notify client=3' \
     'checkpoint=confirmed' \
     'status=complete checkpoints=4' \
     'status=clean protocol_errors=0' \

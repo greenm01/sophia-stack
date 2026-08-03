@@ -19,6 +19,7 @@ fn spawn_x11_protocol_event_writer(
     stream: Arc<Mutex<UnixStream>>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
+    client: XServerFrontendClientId,
     receiver: Receiver<XClientEvent>,
 ) -> Result<X11ProtocolEventWriter, X11SetupSocketError> {
     let stop = Arc::new(AtomicBool::new(false));
@@ -52,10 +53,73 @@ fn spawn_x11_protocol_event_writer(
             stream.flush().map_err(|error| {
                 X11SetupSocketError::new(format!("failed to flush X11 protocol event: {error}"))
             })?;
+            trace_written_selection_event(client, event);
         }
         Ok(())
     });
     Ok(X11ProtocolEventWriter { stop, thread })
+}
+
+#[cfg(unix)]
+fn trace_written_selection_event(client: XServerFrontendClientId, event: XClientEvent) {
+    if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_none() {
+        return;
+    }
+    match event {
+        XClientEvent::SelectionClear {
+            sequence,
+            time,
+            owner,
+            selection,
+        } => tracing::info!(
+            "sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=clear client={} sequence={} time={} owner={} selection={} content=redacted",
+            client.raw(),
+            sequence,
+            time,
+            owner.local.raw(),
+            selection,
+        ),
+        XClientEvent::SelectionRequest {
+            sequence,
+            time,
+            owner,
+            requestor,
+            selection,
+            target,
+            property,
+        } => tracing::info!(
+            "sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=request client={} sequence={} time={} owner={} requestor={} selection={} target={} property={} content=redacted",
+            client.raw(),
+            sequence,
+            time,
+            owner.local.raw(),
+            requestor.local.raw(),
+            selection,
+            target,
+            property,
+        ),
+        XClientEvent::SelectionNotify {
+            sequence,
+            synthetic,
+            time,
+            requestor,
+            selection,
+            target,
+            property,
+        } => tracing::info!(
+            "sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=notify client={} sequence={} synthetic={} time={} requestor={} selection={} target={} property={} property_present={} content=redacted",
+            client.raw(),
+            sequence,
+            synthetic,
+            time,
+            requestor.local.raw(),
+            selection,
+            target,
+            property,
+            property != crate::X_ATOM_NONE,
+        ),
+        _ => {}
+    }
 }
 
 #[cfg(unix)]

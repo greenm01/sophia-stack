@@ -31,16 +31,20 @@ completion="$(line '^sophia_firefox_primary schema=1 status=complete checkpoints
 
 firefox_owner="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$page_ready")"
 firefox_conversion="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=conversion ' "$firefox_owner")"
-[[ -n "$firefox_owner" && -n "$firefox_conversion" ]] ||
+firefox_notify="$(after '^.*sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=notify .* synthetic=true .* property_present=true content=redacted$' "$firefox_conversion")"
+[[ -n "$firefox_owner" && -n "$firefox_conversion" && -n "$firefox_notify" ]] ||
     fail 'Firefox-to-Kitty PRIMARY transfer evidence is missing'
-(( firefox_owner < firefox_conversion && firefox_conversion < kitty_received )) ||
+(( firefox_owner < firefox_conversion && firefox_conversion < firefox_notify
+    && firefox_notify < kitty_received )) ||
     fail 'Firefox-to-Kitty PRIMARY transfer is outside its checkpoint interval'
 
 kitty_owner="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$kitty_received")"
 kitty_conversion="$(after '^sophia_firefox_m8 schema=1 status=selection_observed kind=conversion ' "$kitty_owner")"
-[[ -n "$kitty_owner" && -n "$kitty_conversion" ]] ||
+kitty_notify="$(after '^.*sophia_x11_selection_delivery schema=1 stage=socket_flushed kind=notify .* synthetic=true .* property_present=true content=redacted$' "$kitty_conversion")"
+[[ -n "$kitty_owner" && -n "$kitty_conversion" && -n "$kitty_notify" ]] ||
     fail 'Kitty-to-Firefox PRIMARY transfer evidence is missing'
-(( kitty_owner < kitty_conversion && kitty_conversion < confirmed )) ||
+(( kitty_owner < kitty_conversion && kitty_conversion < kitty_notify
+    && kitty_notify < confirmed )) ||
     fail 'Kitty-to-Firefox PRIMARY transfer is outside its checkpoint interval'
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pending_actions=0 pending_input=0 .*wm_degraded=false' "$SESSION_LOG" ||

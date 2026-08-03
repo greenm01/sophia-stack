@@ -1085,8 +1085,15 @@ than adding speculative browser compatibility.
   that bit while decoding and re-encoding the owner's SelectionNotify. The X
   authority now retains the synthetic-event semantic, and the bidirectional
   wire regression asserts the complete `0x9f` event type in both directions.
-  Re-run only this short physical gate to accept the fix, then retain PRIMARY
-  in the later complete promotion workflow.
+  The 21:14 physical follow-up used one Firefox and reached the reverse
+  property writes plus two successful routed notifications, but Firefox still
+  issued no property read; preserving `SendEvent` was necessary but not the
+  complete real-client fix. Routing previously proved only queue acceptance.
+  Diagnostic mode now records each selection event only after the recipient
+  socket flushes, with redacted correlation fields, and reports every observed
+  proof-title length. The verifier requires the flushed synthetic notify in
+  each direction. Use one more focused run to decide whether the remaining
+  seam is delivery or Firefox's interpretation, then fix that exact boundary.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while

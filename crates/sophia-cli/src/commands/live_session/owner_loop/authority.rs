@@ -130,13 +130,20 @@
                             );
                         }
                         if config.firefox_m10_primary_proof
-                            && let Some(checkpoint) = firefox_m10_primary_proof
-                                .observe(&metadata.property_name, metadata.byte_len)
+                            && metadata.property_name == "_NET_WM_NAME"
                         {
                             println!(
-                                "sophia_firefox_primary schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
-                                metadata.byte_len,
+                                "sophia_firefox_primary schema=1 status=title_observed title_bytes={} content=redacted",
+                                metadata.byte_len
                             );
+                            if let Some(checkpoint) = firefox_m10_primary_proof
+                                .observe(&metadata.property_name, metadata.byte_len)
+                            {
+                                println!(
+                                    "sophia_firefox_primary schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
+                                    metadata.byte_len,
+                                );
+                            }
                         }
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
