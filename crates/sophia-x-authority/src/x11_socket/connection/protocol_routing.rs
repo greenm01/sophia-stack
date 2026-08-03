@@ -386,9 +386,11 @@ fn route_selection_event(
         return Ok(());
     };
     let Some(target) = state.client_for_resource(destination)? else {
+        trace_selection_transfer("destination_missing", property_present);
         return Ok(());
     };
     if target == client {
+        trace_selection_transfer("notify_local", property_present);
         return Ok(());
     }
     routing.route_protocol(target, event).map_err(|error| {

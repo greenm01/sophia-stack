@@ -1,0 +1,14 @@
+sophia_session_app schema=1 status=started id=terminal source=startup
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_firefox_primary schema=1 status=checkpoint checkpoint=page_ready title_bytes=250 content=redacted
+sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count=1 content=redacted
+sophia_firefox_primary schema=1 status=checkpoint checkpoint=source_armed title_bytes=251 content=redacted
+sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count=1 content=redacted
+sophia_firefox_primary schema=1 status=checkpoint checkpoint=kitty_received title_bytes=253 content=redacted
+sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count=2 content=redacted
+sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count=2 content=redacted
+sophia_firefox_primary schema=1 status=checkpoint checkpoint=confirmed title_bytes=252 content=redacted
+sophia_firefox_primary schema=1 status=complete checkpoints=4 selection_owner_changes=2 selection_conversions=2 content=redacted
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_layout_health schema=1 status=clean recovery_extents=0 constraint_relayout_pending=false
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed

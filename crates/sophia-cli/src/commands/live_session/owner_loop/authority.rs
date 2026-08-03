@@ -129,6 +129,15 @@
                                 metadata.byte_len,
                             );
                         }
+                        if config.firefox_m10_primary_proof
+                            && let Some(checkpoint) = firefox_m10_primary_proof
+                                .observe(&metadata.property_name, metadata.byte_len)
+                        {
+                            println!(
+                                "sophia_firefox_primary schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
+                                metadata.byte_len,
+                            );
+                        }
                         if !firefox_m8_page_ready_reported
                             && metadata.property_name == "_NET_WM_NAME"
                             && metadata.byte_len == 36

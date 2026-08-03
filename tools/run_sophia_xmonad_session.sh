@@ -17,6 +17,7 @@ SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 FIREFOX_M10_PROOF=false
 FIREFOX_M10_RENDERING_PROOF=false
 FIREFOX_M10_DIALOG_PROOF=false
+FIREFOX_M10_PRIMARY_PROOF=false
 FIREFOX_M10_SELECTION_PROOF=false
 FIREFOX_M10_LIFECYCLE_PROOF=false
 for argument in "$@"; do
@@ -24,6 +25,7 @@ for argument in "$@"; do
         --firefox-m10-proof) FIREFOX_M10_PROOF=true ;;
         --firefox-m10-rendering-proof) FIREFOX_M10_RENDERING_PROOF=true ;;
         --firefox-m10-dialog-proof) FIREFOX_M10_DIALOG_PROOF=true ;;
+        --firefox-m10-primary-proof) FIREFOX_M10_PRIMARY_PROOF=true ;;
         --firefox-m10-selection-proof) FIREFOX_M10_SELECTION_PROOF=true ;;
         --firefox-m10-lifecycle-proof) FIREFOX_M10_LIFECYCLE_PROOF=true ;;
     esac
@@ -32,6 +34,7 @@ FIREFOX_M10_ANY_PROOF=false
 if [[ "$FIREFOX_M10_PROOF" == true
     || "$FIREFOX_M10_RENDERING_PROOF" == true
     || "$FIREFOX_M10_DIALOG_PROOF" == true
+    || "$FIREFOX_M10_PRIMARY_PROOF" == true
     || "$FIREFOX_M10_SELECTION_PROOF" == true
     || "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
     FIREFOX_M10_ANY_PROOF=true
@@ -500,7 +503,11 @@ else
         --session-app-arg=terminal=--override
         --session-app-arg=terminal=background_opacity=1
     )
-    if [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
+    if [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
+        session_args+=(
+            "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_primary_kitty_probe.sh"
+        )
+    elif [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
         session_args+=(
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
         )
@@ -541,6 +548,8 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         firefox_page="file://$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html"
         if [[ "$FIREFOX_M10_DIALOG_PROOF" == true ]]; then
             firefox_page="${firefox_page}?dialog_only=1"
+        elif [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
+            firefox_page="${firefox_page}?primary_only=1"
         elif [[ "$FIREFOX_M10_RENDERING_PROOF" == true ]]; then
             firefox_page="${firefox_page}?rendering_only=1"
         elif [[ "$FIREFOX_M10_PROOF" == true || "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
@@ -586,6 +595,8 @@ if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
         "SOPHIA_FIREFOX_M10_PROOF_SLICE=$(
             if [[ "$FIREFOX_M10_SELECTION_PROOF" == true ]]; then
                 echo selection
+            elif [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
+                echo primary
             elif [[ "$FIREFOX_M10_DIALOG_PROOF" == true ]]; then
                 echo dialog
             elif [[ "$FIREFOX_M10_RENDERING_PROOF" == true ]]; then

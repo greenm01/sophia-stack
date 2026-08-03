@@ -261,6 +261,24 @@
             "sophia_firefox_dialog schema=1 status=complete checkpoints=3 pointer_buttons={physical_pointer_buttons_routed} recovery_extents=0 content=redacted"
         );
     }
+    if config.firefox_m10_primary_proof {
+        if !firefox_m10_primary_proof.complete()
+            || selection_owner_changes < 2
+            || selection_conversions < 2
+        {
+            return Err(format!(
+                "Firefox M10 PRIMARY proof incomplete: checkpoints={}/{} selection_owner_changes={} selection_conversions={}",
+                firefox_m10_primary_proof.completed,
+                FirefoxM10PrimaryProof::CHECKPOINTS.len(),
+                selection_owner_changes,
+                selection_conversions,
+            )
+            .into());
+        }
+        println!(
+            "sophia_firefox_primary schema=1 status=complete checkpoints=4 selection_owner_changes={selection_owner_changes} selection_conversions={selection_conversions} content=redacted"
+        );
+    }
     if config.firefox_m10_proof {
         if !firefox_m10_kitty_proof
             .complete(selection_owner_changes, selection_conversions)

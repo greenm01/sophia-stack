@@ -853,7 +853,11 @@ tools/verify_sophia_firefox_rendering_physical.sh
 tools/start_sophia_xmonad_firefox_dialog_tty3.sh
 tools/verify_sophia_firefox_dialog_physical.sh
 
-# One Kitty, one Firefox, four bidirectional CLIPBOARD/PRIMARY transfers.
+# One Kitty, one Firefox, and only the two remaining PRIMARY transfers.
+tools/start_sophia_xmonad_firefox_primary_tty3.sh
+tools/verify_sophia_firefox_primary_physical.sh
+
+# Legacy combined selection diagnostic; not required after CLIPBOARD passes.
 tools/start_sophia_xmonad_firefox_selection_tty3.sh
 tools/verify_sophia_firefox_selection_physical.sh
 
@@ -879,17 +883,15 @@ existing Firefox toplevel; genuine X11 transient/floating windows retain their
 separate wire and policy regressions.
 
 Cross-window `CLIPBOARD` has already passed on physical hardware. Do not rerun
-the selection slice for rendering changes. Use it only when changing X11
-selection ownership/conversion behavior or when explicitly closing the
-remaining PRIMARY evidence. The selection slice uses a distinct token for
-every direction and requires a
-trusted, complete pointer selection before leaving Firefox for the PRIMARY
-handoff. Its verifier orders an owner change and a conversion inside each of
-the four peer intervals, so same-process reuse and stale selection state cannot
-advance it. The lifecycle slice removes clipboard, scroll, resize, refocus, and
-dialog work; its verifier still requires two independent Kitty processes, two
-status-zero Firefox exits, an ordered `CloseFocused`, clean health, and clean
-frontend teardown. These slices are diagnostic evidence, not promotion runs.
+the combined selection slice for rendering changes or PRIMARY closure. The
+PRIMARY-only slice starts at the Firefox source token, requires a trusted full-
+field pointer selection, and accepts only exact direction-specific tokens. Its
+verifier orders one owner change and one conversion inside each of the two peer
+intervals and rejects any replayed CLIPBOARD checkpoint. The lifecycle slice
+removes clipboard, scroll, resize, refocus, and dialog work; its verifier still
+requires two independent Kitty processes, two status-zero Firefox exits, an
+ordered `CloseFocused`, clean health, and clean frontend teardown. These slices
+are diagnostic evidence, not promotion runs.
 
 After the affected slice passes and the normal xmonad input gate remains clean,
 run the content-redacted physical Firefox promotion workflow from TTY3:

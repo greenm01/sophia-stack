@@ -254,6 +254,7 @@ fn run_session_loop(
     let mut firefox_m10_kitty_proof = FirefoxM10KittyProof::default();
     let mut firefox_m10_selection_kitty_proof = FirefoxM10SelectionKittyProof::default();
     let mut firefox_m10_dialog_proof = FirefoxM10DialogProof::default();
+    let mut firefox_m10_primary_proof = FirefoxM10PrimaryProof::default();
     let mut firefox_m10_rendering_page_ready = false;
     let mut firefox_m8_page_ready_reported = false;
     let mut firefox_m8_navigation_ready_reported = false;

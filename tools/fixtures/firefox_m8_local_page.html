@@ -11,6 +11,7 @@
   #navigate { display: none; box-sizing: border-box; padding: 35vh 10vw; background: #183252; color: #fff; text-align: center; }
   #scroll-proof { display: none; height: 160vh; padding: 10vh; background: linear-gradient(#183252, #624070); }
   .primary-proof #primary { position: fixed; inset: 0; z-index: 10; margin: 0; }
+  .primary-only:not(.primary-proof) #primary { display: none; }
   .navigation-proof #navigate { display: block; position: fixed; inset: 0; z-index: 10; }
   .scroll-proof #scroll-proof { display: block; }
   .dialog-proof #dialog { position: fixed; inset: 0; z-index: 10; margin: 0; }
@@ -34,11 +35,12 @@
   const stages = [16, 32, 48, 64, 80, 96, 112, 128];
   const parameters = new URLSearchParams(location.search);
   const navigated = parameters.get('navigated') === '1';
-  const selectionPeer = parameters.get('selection_peer') === 'kitty';
+  const primaryOnly = parameters.get('primary_only') === '1';
+  const selectionPeer = parameters.get('selection_peer') === 'kitty' || primaryOnly;
   const renderingOnly = parameters.get('rendering_only') === '1';
   const dialogOnly = parameters.get('dialog_only') === '1';
   const lifecycleOnly = parameters.get('lifecycle_only') === '1';
-  let stage = dialogOnly ? 6 : navigated ? 3 : 0;
+  let stage = dialogOnly ? 6 : primaryOnly ? 2 : navigated ? 3 : 0;
   let refocusArmed = false;
   let selectionPeerAway = false;
   let primarySourceArmed = false;
@@ -111,6 +113,7 @@
     if (!selectionPeer || stage !== 2 || !event.isTrusted) return;
     if (source.selectionStart !== 0 || source.selectionEnd !== source.value.length) return;
     primarySourceArmed = true;
+    if (primaryOnly) document.title = '0'.repeat(231);
     status.textContent = 'PRIMARY armed';
     next.textContent = 'Cycle to the selection Kitty and follow its PRIMARY prompt.';
   });
@@ -142,7 +145,20 @@
   });
   document.querySelector('#primary').addEventListener('input', event => {
     const expected = selectionPeer ? 'sophia-kitty-primary' : 'sophia';
-    if (stage === 2 && event.target.value === expected) advance('primary complete');
+    if (stage === 2 && event.target.value === expected) {
+      if (primaryOnly) {
+        document.title = '0'.repeat(232);
+        document.body.classList.remove('primary-proof');
+        document.querySelector('#primary').hidden = true;
+        status.textContent = 'Firefox PRIMARY canary complete';
+        next.textContent = 'Press Super+Shift+Q to finish.';
+      } else {
+        advance('primary complete');
+      }
+    } else if (primaryOnly && stage === 2 && event.target.value.length > 0) {
+      status.textContent = 'PRIMARY arrived with a token mismatch';
+      next.textContent = 'Clear this field, reselect only the Kitty return token, and middle-click once.';
+    }
   });
   function completeScrollIfReady() {
     // XI2's first absolute-axis value establishes GTK's baseline and does not
@@ -188,7 +204,17 @@
       }
     }
   });
-  if (dialogOnly) {
+  if (primaryOnly) {
+    // Firefox appends its 20-byte product suffix to file-document titles.
+    document.title = '0'.repeat(230);
+    source.value = 'sophia-firefox-primary';
+    source.focus();
+    document.querySelector('#clipboard').hidden = true;
+    document.querySelector('#dialog').hidden = true;
+    document.body.classList.add('primary-only');
+    status.textContent = 'Firefox PRIMARY canary ready';
+    next.textContent = 'Physically drag-select the entire Firefox token, then cycle to Kitty.';
+  } else if (dialogOnly) {
     // Firefox appends its 20-byte product suffix to file-document titles.
     document.title = '0'.repeat(225);
     source.hidden = true;

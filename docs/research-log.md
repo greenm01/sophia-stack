@@ -6838,3 +6838,45 @@ acknowledgement ordering.
   stable page frame; and session, layout, and frontend cleanup were clean. The
   gate result closes the modal seam without requiring another replay of the
   operator sequence.
+
+## 2026-08-02: isolate the remaining PRIMARY authority gate
+
+- Cross-window `CLIPBOARD` and the Firefox dialog seam are accepted physical
+  gates. Replaying them inside the old four-transfer selection script adds
+  operator cost without increasing evidence for the remaining PRIMARY
+  boundary.
+- The PRIMARY-only slice starts with a dedicated Firefox source token. Its page
+  checkpoint advances only after a trusted DOM selection event covers the
+  complete field. Kitty accepts only that exact token through middle-click,
+  publishes a redacted receipt checkpoint, and exposes a distinct return
+  token; Firefox completes only after the exact return arrives through its
+  PRIMARY target.
+- The verifier binds each direction to its own ordered selection-owner change
+  and conversion interval. Four monotonic redacted checkpoints make stale or
+  out-of-order transfers fail closed, while an explicit negative fixture
+  rejects any CLIPBOARD checkpoint. This leaves one short physical authority
+  test rather than another combined browser workflow.
+
+## 2026-08-02: the focused PRIMARY run isolated the reverse direction
+
+- The live pointer trace delivered physical button 2 to Kitty after the focus
+  handoff. Kitty issued PRIMARY conversions; its GLFW diagnostic therefore did
+  not implicate the evdev-to-core-button mapping. More importantly, the
+  focused coordinator wrote `checkpoint-primary-received` at 20:28:00. That
+  checkpoint is emitted only after Kitty reads the exact Firefox token, so the
+  Firefox-to-Kitty same-namespace transfer passed during the run.
+- After Kitty exposed and selected its return token, owner-change evidence
+  advanced and Firefox issued new conversions, but the Firefox confirmed-title
+  checkpoint never appeared. `Ctrl+Shift+C/V` exercised CLIPBOARD and was not
+  evidence for this remaining PRIMARY direction. The old value-free counters
+  cannot distinguish a negative SelectionNotify, a completed property read, or
+  an exact-token mismatch.
+- XLibre `ProcConvertSelection` and yserver `handle_convert_selection` both
+  route SelectionRequest to the current owner and rely on the owner to change
+  the requestor property and send SelectionNotify. Sophia's existing wire test
+  covered that sequence only in one direction. It now reverses ownership and
+  performs the complete property/notify/read/delete sequence back through the
+  original requestor. The focused launcher also enables the already-redacted
+  live stages (`request_routed`, property notification, notify, and property
+  read), while the page reports a nonempty mismatched token separately from no
+  paste. This preserves exact-token acceptance without another combined gate.

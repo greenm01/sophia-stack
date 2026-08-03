@@ -118,16 +118,22 @@ tools/check_sophia_xmonad_focused_border_verifier.sh
 bash -n tools/start_sophia_xmonad_firefox_proof_tty3.sh
 bash -n tools/start_sophia_xmonad_firefox_rendering_tty3.sh \
     tools/start_sophia_xmonad_firefox_dialog_tty3.sh \
+    tools/start_sophia_xmonad_firefox_primary_tty3.sh \
     tools/start_sophia_xmonad_firefox_selection_tty3.sh \
     tools/start_sophia_xmonad_firefox_lifecycle_tty3.sh
 bash -n tools/fixtures/firefox_m10_kitty_probe.sh \
+    tools/fixtures/firefox_m10_primary_kitty_probe.sh \
     tools/fixtures/firefox_m10_selection_kitty_probe.sh
 bash -n tools/check_firefox_m10_kitty_probe.sh
 tools/check_firefox_m10_kitty_probe.sh
 bash -n tools/check_firefox_m10_selection_kitty_probe.sh
 tools/check_firefox_m10_selection_kitty_probe.sh
+bash -n tools/check_firefox_m10_primary_kitty_probe.sh
+tools/check_firefox_m10_primary_kitty_probe.sh
 bash -n tools/check_firefox_m10_selection_page.sh
 tools/check_firefox_m10_selection_page.sh
+bash -n tools/check_firefox_m10_primary_page.sh
+tools/check_firefox_m10_primary_page.sh
 bash -n tools/check_firefox_m10_rendering_page.sh
 tools/check_firefox_m10_rendering_page.sh
 bash -n tools/check_firefox_m10_dialog_page.sh
@@ -147,14 +153,17 @@ bash -n tools/verify_sophia_firefox_physical_runs.sh
 bash -n tools/check_sophia_firefox_physical_verifier.sh
 tools/check_sophia_firefox_physical_verifier.sh
 bash -n tools/verify_sophia_firefox_selection_physical.sh \
+    tools/verify_sophia_firefox_primary_physical.sh \
     tools/verify_sophia_firefox_rendering_physical.sh \
     tools/verify_sophia_firefox_dialog_physical.sh \
     tools/check_sophia_firefox_rendering_verifier.sh \
     tools/check_sophia_firefox_dialog_verifier.sh \
+    tools/check_sophia_firefox_primary_verifier.sh \
     tools/check_sophia_firefox_selection_verifier.sh \
     tools/verify_sophia_firefox_lifecycle_physical.sh \
     tools/check_sophia_firefox_lifecycle_verifier.sh
 tools/check_sophia_firefox_selection_verifier.sh
+tools/check_sophia_firefox_primary_verifier.sh
 tools/check_sophia_firefox_rendering_verifier.sh
 tools/check_sophia_firefox_dialog_verifier.sh
 tools/check_sophia_firefox_lifecycle_verifier.sh

@@ -692,6 +692,93 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     );
     assert_eq!(read_u32(XByteOrder::LittleEndian, &clear[12..16]), 1);
 
+    // Exercise the same selection in the reverse direction without resetting
+    // either client. Real PRIMARY workflows switch ownership as users select
+    // the return token, so a one-way transfer does not cover this boundary.
+    owner
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    requestor
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    owner
+        .write_all(&convert_selection_request(
+            XByteOrder::LittleEndian,
+            owner_window,
+            1,
+            TARGET,
+            PROPERTY,
+            12,
+        ))
+        .unwrap();
+    let reverse_request = read_x_record(&mut requestor);
+    assert_eq!(reverse_request[0], 30);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_request[8..12]),
+        requestor_window
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_request[12..16]),
+        owner_window
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_request[20..24]),
+        TARGET
+    );
+
+    let reverse_bytes = b"reverse same namespace";
+    requestor
+        .write_all(&change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            owner_window,
+            PROPERTY,
+            TARGET,
+            8,
+            reverse_bytes,
+        ))
+        .unwrap();
+    requestor
+        .write_all(&send_selection_notify_request(
+            XByteOrder::LittleEndian,
+            owner_window,
+            read_u32(XByteOrder::LittleEndian, &reverse_request[4..8]),
+            read_u32(XByteOrder::LittleEndian, &reverse_request[16..20]),
+            read_u32(XByteOrder::LittleEndian, &reverse_request[20..24]),
+            read_u32(XByteOrder::LittleEndian, &reverse_request[24..28]),
+        ))
+        .unwrap();
+    let reverse_event = read_x_record(&mut owner);
+    assert_eq!(reverse_event[0] & 0x7f, 31);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_event[8..12]),
+        owner_window
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_event[20..24]),
+        PROPERTY
+    );
+    owner
+        .write_all(&get_property_request(
+            XByteOrder::LittleEndian,
+            true,
+            owner_window,
+            PROPERTY,
+            X_PROPERTY_ANY_TYPE,
+            0,
+            u32::MAX,
+        ))
+        .unwrap();
+    let reverse_reply = read_x_reply(&mut owner, XByteOrder::LittleEndian);
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &reverse_reply[8..12]),
+        TARGET
+    );
+    assert_eq!(reverse_reply[1], 8);
+    assert_eq!(
+        &reverse_reply[32..32 + reverse_bytes.len()],
+        reverse_bytes
+    );
     owner
         .set_read_timeout(Some(Duration::from_millis(20)))
         .unwrap();

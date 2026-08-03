@@ -1071,9 +1071,18 @@ than adding speculative browser compatibility.
   follow-up physically completed both Firefox/Kitty `CLIPBOARD` directions
   with seven owner changes and fourteen conversions before the operator ended
   the mixed workflow at PRIMARY. `CLIPBOARD` is accepted and is no longer part
-  of routine rendering reruns. Keep the remaining PRIMARY handoff as an
-  explicit selection-only proof, then repeat the complete promotion workflow
-  before closing this item.
+  of routine rendering reruns. A new PRIMARY-only slice begins directly at a
+  trusted full-field Firefox pointer selection, uses exact direction-specific
+  tokens, and requires an owner-change-to-conversion interval in both
+  directions while rejecting any CLIPBOARD checkpoint. The 2026-08-02 focused
+  run reached Kitty's exact Firefox-token checkpoint, proving the
+  Firefox-to-Kitty PRIMARY direction, then stalled after Kitty selected its
+  return token and Firefox issued conversions. The generic same-namespace wire
+  regression now performs the transfer in both directions without resetting
+  either client. The focused launcher enables redacted request/property/notify
+  tracing, and the page distinguishes no paste from a nonempty token mismatch;
+  use that evidence to close only the Kitty-to-Firefox seam. Pass that short
+  gate, then retain PRIMARY in the later complete promotion workflow.
 - [ ] Close, restart, and force-close Firefox while both Kitty windows retain
   their content, focus, workspaces, and interactivity. A focused lifecycle
   slice removes clipboard, scroll, resize, refocus, and dialog work while
