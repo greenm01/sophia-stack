@@ -7,6 +7,7 @@ mod persistent_native_scanout {
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
+    mod cursor;
     mod frame_damage;
     mod renderer_images;
     mod state;
@@ -38,8 +39,10 @@ mod persistent_native_scanout {
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
         pub cursor_hidden_updates: usize,
-        pub cursor_deferred_primary_in_flight: usize,
+        pub cursor_initialization_deferrals: usize,
+        pub cursor_updates_primary_in_flight: usize,
         pub cursor_update_failures: usize,
+        pub max_cursor_initialization: Duration,
         pub max_cursor_update: Duration,
     }
 
@@ -290,68 +293,11 @@ mod persistent_native_scanout {
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
                 cursor_hidden_updates: 0,
-                cursor_deferred_primary_in_flight: 0,
+                cursor_initialization_deferrals: 0,
+                cursor_updates_primary_in_flight: 0,
                 cursor_update_failures: 0,
+                max_cursor_initialization: Duration::ZERO,
                 max_cursor_update: Duration::ZERO,
-            })
-        }
-
-        pub fn update_classic_hardware_cursor(
-            &mut self,
-            position: sophia_protocol::Point,
-        ) -> Result<crate::ClassicHardwareCursorUpdate, Box<dyn std::error::Error>> {
-            if !position.x.is_finite() || !position.y.is_finite() {
-                return Ok(crate::ClassicHardwareCursorUpdate::Hidden);
-            }
-            if self.heads.iter().any(|head| head.submitted_at.is_some()) {
-                self.cursor_deferred_primary_in_flight =
-                    self.cursor_deferred_primary_in_flight.saturating_add(1);
-                return Ok(crate::ClassicHardwareCursorUpdate::Deferred);
-            }
-            let update_started = Instant::now();
-            let mut offset_x = 0_i32;
-            let mut target = None;
-            for head in &self.heads {
-                let width = head.output.size.width;
-                let height = head.output.size.height;
-                let x = position.x.floor() as i32;
-                let y = position.y.floor() as i32;
-                if x >= offset_x && x < offset_x.saturating_add(width) && y >= 0 && y < height {
-                    target = Some((head.group, head.selection, x.saturating_sub(offset_x), y));
-                    break;
-                }
-                offset_x = offset_x.saturating_add(width);
-            }
-
-            let mut visible = false;
-            let mut deferred = false;
-            for (group_index, group) in self.groups.iter_mut().enumerate() {
-                let group_target = target
-                    .filter(|(target_group, _, _, _)| *target_group == group_index)
-                    .map(|(_, selection, x, y)| (selection, x, y));
-                match group.session.update_classic_hardware_cursor(group_target) {
-                    Ok(crate::ClassicHardwareCursorUpdate::Visible) => visible = true,
-                    Ok(crate::ClassicHardwareCursorUpdate::Deferred) => deferred = true,
-                    Ok(crate::ClassicHardwareCursorUpdate::Hidden) => {}
-                    Err(error) => {
-                        self.max_cursor_update =
-                            self.max_cursor_update.max(update_started.elapsed());
-                        self.cursor_update_failures = self.cursor_update_failures.saturating_add(1);
-                        return Err(format!("hardware cursor update failed: {error}").into());
-                    }
-                }
-            }
-            self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
-            if visible {
-                self.cursor_updates = self.cursor_updates.saturating_add(1);
-            }
-            Ok(if deferred {
-                crate::ClassicHardwareCursorUpdate::Deferred
-            } else if visible {
-                crate::ClassicHardwareCursorUpdate::Visible
-            } else {
-                self.cursor_hidden_updates = self.cursor_hidden_updates.saturating_add(1);
-                crate::ClassicHardwareCursorUpdate::Hidden
             })
         }
 

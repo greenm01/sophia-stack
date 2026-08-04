@@ -17,6 +17,8 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" present_complete_flip=3 "* ]]
 [[ "$report" == *" import_cache_imports=3 "* ]]
 [[ "$report" == *" import_cache_hits=2 "* ]]
+[[ "$report" == *" cursor_updates_primary_in_flight=80 "* ]]
+[[ "$report" == *" cursor_max_update_msec=1" ]]
 
 grep -v '^GL_RENDERER' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
@@ -66,6 +68,25 @@ fi
 sed 's/import_cache_imports=3/import_cache_imports=0/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     echo "glxgears reporter accepted missing DMA-BUF import evidence" >&2
+    exit 1
+fi
+
+sed 's/updates_primary_in_flight=80/updates_primary_in_flight=0/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted no cursor updates overlapping primary flips" >&2
+    exit 1
+fi
+
+sed 's/max_update_msec=1/max_update_msec=21/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted a blocking legacy cursor update" >&2
+    exit 1
+fi
+
+sed 's/mean_fps=59.999/mean_fps=54.999/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted pointer-motion cadence below 55 FPS" >&2
     exit 1
 fi
 

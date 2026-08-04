@@ -21,7 +21,7 @@ unset SOPHIA_STANDALONE_FRAME_COUNT
 printf '%s\n' \
     "Starting bounded Sophia glxgears (${SOPHIA_GLXGEARS_DURATION_SECONDS} seconds, ${SOPHIA_GLXGEARS_WIDTH}x${SOPHIA_GLXGEARS_HEIGHT}, swap interval 1)." \
     'First checking the direct GLX/DRI3/Present path without taking over the TTY.' \
-    'Confirm that a centered window shows three smoothly rotating gears.' \
+    'Move the pointer continuously over the window and confirm that all three gears remain smooth.' \
     'The application and Sophia exit automatically when the timer completes.' \
     "An independent ${SOPHIA_SESSION_WATCHDOG_SECONDS}-second deadline restores the TTY if Sophia locks." \
     'Ctrl+Alt+Backspace remains available for emergency recovery.'

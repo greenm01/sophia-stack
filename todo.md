@@ -109,6 +109,12 @@ reopen the completed Milestone 9 exit gate.
 - [x] Serialize cursor-plane updates against primary page flips: defer while a
   primary commit is in flight, complete admitted cursor-only commits before
   returning to the owner, and report cursor update latency and deferral.
+- [x] Replace that bounded standalone-atomic repair after animated GLX exposed
+  its vblank serialization cost. Sanitize inherited cursor-plane state once,
+  query driver cursor dimensions, then use legacy set/move ioctls for steady
+  hardware-cursor motion. Evidence distinguishes initialization deferral from
+  successful steady updates that overlap primary flips and gates animated
+  pointer-motion cadence at 55 FPS with a 25 ms p95 frame interval.
 - [x] Re-run the four-Kitty gate after cursor/primary serialization. The
   workspace-stress cycle recorded zero native submit failures and a 12 ms
   maximum cursor update; it then exposed an independent workspace-visibility
@@ -1282,6 +1288,11 @@ references rather than Sophia runtime components.
   layer, followed by a hardware cursor plane; retain mixed composition as the
   fail-closed fallback. Its direct-scanout-bypass proof is the 9.4 Tier 3
   workload.
+- [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
+  transaction owner can combine primary and cursor plane state in the same
+  atomic request. It must schedule bounded cursor-only work while primary
+  content is idle, expose no independent atomic cursor commit path, and retain
+  the pointer-motion GLX cadence gate.
 - [ ] Compare identical Kitty, Firefox, resize, launch-burst, and soak
   workloads against separate XLibre+xmonad and mature Wayland-compositor
   sessions on the same hardware. Comparative results are diagnostic; Sophia's

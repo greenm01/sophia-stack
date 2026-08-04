@@ -15,13 +15,11 @@ pub struct RealAtomicScanoutPageFlipSession {
     #[cfg(feature = "gbm-probe")]
     cursor_buffer: Option<drm::control::dumbbuffer::DumbBuffer>,
     #[cfg(feature = "gbm-probe")]
-    cursor_framebuffer: Option<drm::control::framebuffer::Handle>,
+    cursor_dimensions: Option<LegacyHardwareCursorDimensions>,
     #[cfg(feature = "gbm-probe")]
     cursor_planes: Option<Vec<RealAtomicCursorPlane>>,
     #[cfg(feature = "gbm-probe")]
-    cursor_plane: Option<drm::control::plane::Handle>,
-    #[cfg(feature = "gbm-probe")]
-    cursor_crtc: Option<drm::control::crtc::Handle>,
+    cursor_controller: LegacyHardwareCursorController<drm::control::crtc::Handle>,
     #[cfg(feature = "gbm-probe")]
     cursor_crtcs_sanitized: bool,
 }
@@ -30,25 +28,41 @@ pub struct RealAtomicScanoutPageFlipSession {
 #[derive(Clone, Debug)]
 struct RealAtomicCursorPlane {
     plane: drm::control::plane::Handle,
-    crtcs: Vec<drm::control::crtc::Handle>,
     fb_id: drm::control::property::Handle,
     crtc_id: drm::control::property::Handle,
-    src_x: drm::control::property::Handle,
-    src_y: drm::control::property::Handle,
-    src_w: drm::control::property::Handle,
-    src_h: drm::control::property::Handle,
-    crtc_x: drm::control::property::Handle,
-    crtc_y: drm::control::property::Handle,
-    crtc_w: drm::control::property::Handle,
-    crtc_h: drm::control::property::Handle,
 }
 
 #[cfg(feature = "gbm-probe")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ClassicHardwareCursorUpdate {
-    Visible,
-    Hidden,
-    Deferred,
+struct RealLegacyHardwareCursorDevice<'a> {
+    card: &'a RealAtomicScanoutCard,
+    buffer: &'a drm::control::dumbbuffer::DumbBuffer,
+}
+
+#[cfg(feature = "gbm-probe")]
+impl LegacyHardwareCursorDevice for RealLegacyHardwareCursorDevice<'_> {
+    type Crtc = drm::control::crtc::Handle;
+
+    #[allow(deprecated)]
+    fn hide_cursor(&mut self, crtc: Self::Crtc) -> io::Result<()> {
+        use drm::control::Device as _;
+
+        self.card
+            .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(crtc, None)
+    }
+
+    #[allow(deprecated)]
+    fn install_cursor(&mut self, crtc: Self::Crtc) -> io::Result<()> {
+        use drm::control::Device as _;
+
+        self.card.set_cursor2(crtc, Some(self.buffer), (0, 0))
+    }
+
+    #[allow(deprecated)]
+    fn move_cursor(&mut self, crtc: Self::Crtc, x: i32, y: i32) -> io::Result<()> {
+        use drm::control::Device as _;
+
+        self.card.move_cursor(crtc, (x, y))
+    }
 }
 
 impl RealAtomicScanoutPageFlipSession {
@@ -83,29 +97,20 @@ impl RealAtomicScanoutPageFlipSession {
             };
             cursor_planes.push(RealAtomicCursorPlane {
                 plane,
-                crtcs,
                 fb_id: required("FB_ID")?,
                 crtc_id: required("CRTC_ID")?,
-                src_x: required("SRC_X")?,
-                src_y: required("SRC_Y")?,
-                src_w: required("SRC_W")?,
-                src_h: required("SRC_H")?,
-                crtc_x: required("CRTC_X")?,
-                crtc_y: required("CRTC_Y")?,
-                crtc_w: required("CRTC_W")?,
-                crtc_h: required("CRTC_H")?,
             });
         }
         Ok(cursor_planes)
     }
 
     #[cfg(feature = "gbm-probe")]
-    fn detach_atomic_cursor_planes(
-        &self,
-        planes: &[RealAtomicCursorPlane],
-    ) -> io::Result<ClassicHardwareCursorUpdate> {
+    fn detach_atomic_cursor_planes(&self, planes: &[RealAtomicCursorPlane]) -> io::Result<()> {
         use drm::control::Device as _;
 
+        if planes.is_empty() {
+            return Ok(());
+        }
         let mut request = drm::control::atomic::AtomicModeReq::new();
         for cursor in planes {
             request.add_property(
@@ -119,41 +124,61 @@ impl RealAtomicScanoutPageFlipSession {
                 drm::control::property::Value::CRTC(None),
             );
         }
-        match self
-            .card
+        self.card
             .atomic_commit(drm::control::AtomicCommitFlags::empty(), request)
-        {
-            Ok(()) => Ok(ClassicHardwareCursorUpdate::Hidden),
-            Err(error) => Err(error),
-        }
     }
 
     #[cfg(feature = "gbm-probe")]
-    pub fn update_classic_hardware_cursor(
-        &mut self,
-        target: Option<(LibdrmNativePrimaryPlaneSelection, i32, i32)>,
-    ) -> io::Result<ClassicHardwareCursorUpdate> {
-        use drm::control::Device as _;
+    pub fn classic_hardware_cursor_initialized(&self) -> bool {
+        self.cursor_controller.is_initialized()
+    }
 
-        const EDGE: u32 = 64;
+    #[cfg(feature = "gbm-probe")]
+    pub fn initialize_classic_hardware_cursor(&mut self) -> io::Result<()> {
+        use drm::{Device as _, control::Device as _};
+
+        if self.cursor_controller.is_initialized() {
+            return Ok(());
+        }
         if self.cursor_planes.is_none() {
             self.cursor_planes = Some(self.discover_atomic_cursor_planes()?);
         }
-        let legacy_cursor = self.cursor_planes.as_ref().is_some_and(Vec::is_empty);
-        if !legacy_cursor && !self.cursor_crtcs_sanitized {
+        if !self.cursor_crtcs_sanitized {
             let planes = self
                 .cursor_planes
                 .as_deref()
                 .ok_or_else(|| io::Error::other("atomic cursor planes disappeared"))?;
-            if self.detach_atomic_cursor_planes(planes)? == ClassicHardwareCursorUpdate::Deferred {
-                return Ok(ClassicHardwareCursorUpdate::Deferred);
-            }
+            self.detach_atomic_cursor_planes(planes)?;
             self.cursor_crtcs_sanitized = true;
         }
+        if self.cursor_dimensions.is_none() {
+            let width = self
+                .card
+                .get_driver_capability(drm::DriverCapability::CursorWidth)
+                .ok();
+            let height = self
+                .card
+                .get_driver_capability(drm::DriverCapability::CursorHeight)
+                .ok();
+            self.cursor_dimensions = Some(resolve_legacy_hardware_cursor_dimensions(width, height));
+        }
         if self.cursor_buffer.is_none() {
-            let mut buffer =
-                self.card
-                    .create_dumb_buffer((EDGE, EDGE), drm::buffer::DrmFourcc::Argb8888, 32)?;
+            let dimensions = self
+                .cursor_dimensions
+                .ok_or_else(|| io::Error::other("hardware cursor dimensions are unavailable"))?;
+            let raster_edge = u32::try_from(sophia_renderer_live::DEFAULT_CURSOR_EDGE)
+                .map_err(|_| io::Error::other("cursor raster edge exceeds u32"))?;
+            if dimensions.width < raster_edge || dimensions.height < raster_edge {
+                return Err(io::Error::other(format!(
+                    "driver cursor dimensions {}x{} are smaller than the {}x{} cursor raster",
+                    dimensions.width, dimensions.height, raster_edge, raster_edge,
+                )));
+            }
+            let mut buffer = self.card.create_dumb_buffer(
+                (dimensions.width, dimensions.height),
+                drm::buffer::DrmFourcc::Argb8888,
+                32,
+            )?;
             let pitch = usize::try_from(drm::buffer::Buffer::pitch(&buffer))
                 .map_err(|_| io::Error::other("cursor pitch exceeds address space"))?;
             {
@@ -176,165 +201,48 @@ impl RealAtomicScanoutPageFlipSession {
             }
             self.cursor_buffer = Some(buffer);
         }
-        if !legacy_cursor && self.cursor_framebuffer.is_none() {
-            let buffer = self
-                .cursor_buffer
-                .as_ref()
-                .ok_or_else(|| io::Error::other("hardware cursor buffer is unavailable"))?;
-            self.cursor_framebuffer = Some(self.card.add_framebuffer(buffer, 32, 32)?);
-        }
 
-        let target = target.filter(|(selection, _, _)| {
-            self.selections
-                .iter()
-                .any(|candidate| candidate.crtc == selection.crtc)
-        });
-        if legacy_cursor {
-            return self.update_legacy_hardware_cursor(target);
-        }
-        let Some((selection, x, y)) = target else {
-            let Some(previous_plane) = self.cursor_plane else {
-                return Ok(ClassicHardwareCursorUpdate::Hidden);
-            };
-            let cursor = self
-                .cursor_planes
-                .as_deref()
-                .and_then(|planes| planes.iter().find(|cursor| cursor.plane == previous_plane))
-                .cloned()
-                .ok_or_else(|| io::Error::other("active atomic cursor plane disappeared"))?;
-            let outcome = self.detach_atomic_cursor_planes(&[cursor])?;
-            if outcome != ClassicHardwareCursorUpdate::Deferred {
-                self.cursor_plane = None;
-                self.cursor_crtc = None;
-            }
-            return Ok(outcome);
+        let crtcs = self
+            .selections
+            .iter()
+            .map(|selection| selection.crtc)
+            .collect::<Vec<_>>();
+        let buffer = self
+            .cursor_buffer
+            .as_ref()
+            .ok_or_else(|| io::Error::other("legacy hardware cursor buffer is unavailable"))?;
+        let mut device = RealLegacyHardwareCursorDevice {
+            card: &self.card,
+            buffer,
         };
-        let cursor = self
-            .cursor_planes
-            .as_deref()
-            .and_then(|planes| {
-                planes
-                    .iter()
-                    .find(|cursor| cursor.crtcs.contains(&selection.crtc))
-            })
-            .cloned()
-            .ok_or_else(|| io::Error::other("target CRTC has no atomic cursor plane"))?;
-        let framebuffer = self
-            .cursor_framebuffer
-            .ok_or_else(|| io::Error::other("atomic cursor framebuffer is unavailable"))?;
-        let mut request = drm::control::atomic::AtomicModeReq::new();
-        if self.cursor_plane.is_some_and(|plane| plane != cursor.plane)
-            && let Some(previous) = self.cursor_plane
-            && let Some(previous) = self
-                .cursor_planes
-                .as_deref()
-                .and_then(|planes| planes.iter().find(|cursor| cursor.plane == previous))
-        {
-            request.add_property(
-                previous.plane,
-                previous.fb_id,
-                drm::control::property::Value::Framebuffer(None),
-            );
-            request.add_property(
-                previous.plane,
-                previous.crtc_id,
-                drm::control::property::Value::CRTC(None),
-            );
-        }
-        request.add_property(
-            cursor.plane,
-            cursor.fb_id,
-            drm::control::property::Value::Framebuffer(Some(framebuffer)),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.crtc_id,
-            drm::control::property::Value::CRTC(Some(selection.crtc)),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.src_x,
-            drm::control::property::Value::UnsignedRange(0),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.src_y,
-            drm::control::property::Value::UnsignedRange(0),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.src_w,
-            drm::control::property::Value::UnsignedRange(u64::from(EDGE) << 16),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.src_h,
-            drm::control::property::Value::UnsignedRange(u64::from(EDGE) << 16),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.crtc_x,
-            drm::control::property::Value::SignedRange(i64::from(x)),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.crtc_y,
-            drm::control::property::Value::SignedRange(i64::from(y)),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.crtc_w,
-            drm::control::property::Value::UnsignedRange(u64::from(EDGE)),
-        );
-        request.add_property(
-            cursor.plane,
-            cursor.crtc_h,
-            drm::control::property::Value::UnsignedRange(u64::from(EDGE)),
-        );
-        match self
-            .card
-            .atomic_commit(drm::control::AtomicCommitFlags::empty(), request)
-        {
-            Ok(()) => {
-                self.cursor_plane = Some(cursor.plane);
-                self.cursor_crtc = Some(selection.crtc);
-                Ok(ClassicHardwareCursorUpdate::Visible)
-            }
-            Err(error) => Err(error),
-        }
+        self.cursor_controller.initialize(&mut device, &crtcs)
     }
 
     #[cfg(feature = "gbm-probe")]
-    #[allow(deprecated)]
-    fn update_legacy_hardware_cursor(
+    pub fn update_classic_hardware_cursor(
         &mut self,
         target: Option<(LibdrmNativePrimaryPlaneSelection, i32, i32)>,
     ) -> io::Result<ClassicHardwareCursorUpdate> {
-        use drm::control::Device as _;
-
-        let Some((selection, x, y)) = target else {
-            let Some(previous) = self.cursor_crtc.take() else {
-                return Ok(ClassicHardwareCursorUpdate::Hidden);
-            };
-            self.card
-                .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(previous, None)?;
-            return Ok(ClassicHardwareCursorUpdate::Hidden);
+        let target = target
+            .filter(|(selection, _, _)| {
+                self.selections
+                    .iter()
+                    .any(|candidate| candidate.crtc == selection.crtc)
+            })
+            .map(|(selection, x, y)| LegacyHardwareCursorTarget {
+                crtc: selection.crtc,
+                x,
+                y,
+            });
+        let buffer = self
+            .cursor_buffer
+            .as_ref()
+            .ok_or_else(|| io::Error::other("legacy hardware cursor buffer is unavailable"))?;
+        let mut device = RealLegacyHardwareCursorDevice {
+            card: &self.card,
+            buffer,
         };
-        if self.cursor_crtc != Some(selection.crtc) {
-            if let Some(previous) = self.cursor_crtc {
-                self.card
-                    .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(previous, None)?;
-            }
-            let buffer = self
-                .cursor_buffer
-                .as_ref()
-                .ok_or_else(|| io::Error::other("legacy hardware cursor buffer is unavailable"))?;
-            self.card
-                .set_cursor2(selection.crtc, Some(buffer), (0, 0))?;
-            self.cursor_crtc = Some(selection.crtc);
-        }
-        self.card.move_cursor(selection.crtc, (x, y))?;
-        Ok(ClassicHardwareCursorUpdate::Visible)
+        self.cursor_controller.update(&mut device, target)
     }
 
     pub fn card(&self) -> &RealAtomicScanoutCard {
@@ -516,22 +424,12 @@ impl Drop for RealAtomicScanoutPageFlipSession {
         #[cfg(feature = "gbm-probe")]
         {
             use drm::control::Device as _;
-            if let Some(planes) = self.cursor_planes.as_deref() {
-                if planes.is_empty() {
-                    if let Some(crtc) = self.cursor_crtc {
-                        #[allow(deprecated)]
-                        let _ = self
-                            .card
-                            .set_cursor::<drm::control::dumbbuffer::DumbBuffer>(crtc, None);
-                    }
-                } else {
-                    let _ = self.detach_atomic_cursor_planes(planes);
-                }
-            }
-            self.cursor_plane = None;
-            self.cursor_crtc = None;
-            if let Some(framebuffer) = self.cursor_framebuffer.take() {
-                let _ = self.card.destroy_framebuffer(framebuffer);
+            if let Some(buffer) = self.cursor_buffer.as_ref() {
+                let mut device = RealLegacyHardwareCursorDevice {
+                    card: &self.card,
+                    buffer,
+                };
+                let _ = self.cursor_controller.hide_for_teardown(&mut device);
             }
             if let Some(buffer) = self.cursor_buffer.take() {
                 let _ = self.card.destroy_dumb_buffer(buffer);
@@ -625,13 +523,11 @@ impl RealAtomicScanoutCardSelection {
                 #[cfg(feature = "gbm-probe")]
                 cursor_buffer: None,
                 #[cfg(feature = "gbm-probe")]
-                cursor_framebuffer: None,
+                cursor_dimensions: None,
                 #[cfg(feature = "gbm-probe")]
                 cursor_planes: None,
                 #[cfg(feature = "gbm-probe")]
-                cursor_plane: None,
-                #[cfg(feature = "gbm-probe")]
-                cursor_crtc: None,
+                cursor_controller: LegacyHardwareCursorController::default(),
                 #[cfg(feature = "gbm-probe")]
                 cursor_crtcs_sanitized: false,
             }),
@@ -710,13 +606,11 @@ impl RealAtomicScanoutSelectionSet {
                 #[cfg(feature = "gbm-probe")]
                 cursor_buffer: None,
                 #[cfg(feature = "gbm-probe")]
-                cursor_framebuffer: None,
+                cursor_dimensions: None,
                 #[cfg(feature = "gbm-probe")]
                 cursor_planes: None,
                 #[cfg(feature = "gbm-probe")]
-                cursor_plane: None,
-                #[cfg(feature = "gbm-probe")]
-                cursor_crtc: None,
+                cursor_controller: LegacyHardwareCursorController::default(),
                 #[cfg(feature = "gbm-probe")]
                 cursor_crtcs_sanitized: false,
             });

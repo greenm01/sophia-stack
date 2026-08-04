@@ -480,15 +480,21 @@
         );
     }
     println!(
-        "sophia_live_session_cursor schema=3 moves_coalesced={} max_motion_to_submit_msec={} max_update_msec={} deferred_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
+        "sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.as_millis(),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.max_cursor_initialization.as_millis()),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_initialization_deferrals),
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.max_cursor_update.as_millis()),
         native_scanout
             .as_ref()
-            .map_or(0, |scanout| scanout.cursor_deferred_primary_in_flight),
+            .map_or(0, |scanout| scanout.cursor_updates_primary_in_flight),
         physical_pointer_buttons_routed,
         native_scanout
             .as_ref()

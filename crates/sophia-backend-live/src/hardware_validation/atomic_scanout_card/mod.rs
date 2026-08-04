@@ -1,4 +1,6 @@
 mod card;
+#[cfg(feature = "gbm-probe")]
+mod cursor;
 mod page_flip_wait;
 mod readiness;
 #[cfg(feature = "gbm-probe")]
@@ -11,6 +13,8 @@ mod selection;
 mod session;
 
 pub use card::*;
+#[cfg(feature = "gbm-probe")]
+pub use cursor::*;
 pub use page_flip_wait::*;
 pub(crate) use readiness::*;
 #[cfg(feature = "gbm-probe")]

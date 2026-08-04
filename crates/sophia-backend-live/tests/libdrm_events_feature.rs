@@ -119,6 +119,7 @@ use sophia_renderer_live::{
 };
 
 include!("libdrm_events_feature/evidence_gates.rs");
+include!("libdrm_events_feature/legacy_cursor.rs");
 include!("libdrm_events_feature/fake_devices.rs");
 include!("libdrm_events_feature/fixtures_and_outputs.rs");
 include!("libdrm_events_feature/native_selection.rs");

@@ -122,8 +122,8 @@ p95_msec="$(rendering_performance_field "$cadence" p95_frame_msec)" ||
 ((nonadvancing == 0)) || fail "cadence summary contains nonadvancing timestamps"
 [[ "$overflowed" == false ]] || fail "cadence summary overflowed"
 awk -v fps="$present_fps" -v p95="$p95_msec" \
-    'BEGIN { exit !(fps > 0 && p95 > 0) }' ||
-    fail "cadence FPS and p95 frame time must be positive"
+    'BEGIN { exit !(fps >= 55 && p95 > 0 && p95 <= 25) }' ||
+    fail "cadence under pointer motion must remain at least 55 FPS with p95 at most 25 ms"
 
 duration_seconds="$(rendering_performance_field "$benchmark" duration_seconds)" ||
     fail "benchmark metadata lacks duration_seconds"
@@ -186,5 +186,19 @@ for assignment in \
         fail "native resource metrics do not contain $assignment"
 done
 
+cursor="$(
+    grep -E '^sophia_live_session_cursor schema=4 path=legacy_ioctl ' "$SESSION_LOG" |
+        tail -n 1 || true
+)"
+[[ -n "$cursor" ]] || fail "missing legacy hardware-cursor metrics"
+cursor_updates_primary_in_flight="$(
+    positive_field "$cursor" updates_primary_in_flight
+)"
+cursor_max_update_msec="$(nonnegative_field "$cursor" max_update_msec)"
+cursor_hardware_failures="$(nonnegative_field "$cursor" hardware_failures)"
+((cursor_max_update_msec <= 20)) ||
+    fail "legacy cursor ioctl exceeded the 20 ms steady-update budget"
+((cursor_hardware_failures == 0)) || fail "hardware cursor update failed"
+
 printf '%s\n' \
-    "sophia_glxgears_performance schema=3 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_flip=$present_complete_flip present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec"
+    "sophia_glxgears_performance schema=4 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_flip=$present_complete_flip present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec cursor_updates_primary_in_flight=$cursor_updates_primary_in_flight cursor_max_update_msec=$cursor_max_update_msec"

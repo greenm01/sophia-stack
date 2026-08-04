@@ -28,7 +28,7 @@ for mutation in \
     'schema=1 status=active source=resume' \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
     'sophia_live_selection schema=1 status=complete ' \
-    'sophia_live_session_cursor schema=3 ' \
+    'sophia_live_session_cursor schema=4 path=legacy_ioctl ' \
     'status=output_edge_confined axis=horizontal side=minimum' \
     'status=edge_reverse_immediate axis=vertical side=maximum' \
     'sophia_live_session_keys schema=2 '; do
@@ -58,6 +58,13 @@ sed 's/max_update_msec=9/max_update_msec=101/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "xmonad verifier accepted a blocking cursor update above the owner budget" >&2
+    exit 1
+fi
+
+sed 's/updates_primary_in_flight=2/updates_primary_in_flight=0/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted no legacy cursor updates during primary flips" >&2
     exit 1
 fi
 
