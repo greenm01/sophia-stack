@@ -259,10 +259,13 @@
         }
         client_key_release_barrier
             .retain(|delivery| input_delivery.pending.contains(delivery));
-        if logout_requested
-            && input_delivery.pending.is_empty()
-            && client_key_release_barrier.is_empty()
-            && session_controls.pending_len() == 0
+        if session_logout_drain_decision(SessionLogoutDrainState {
+            requested: logout_requested,
+            pending_input_deliveries: input_delivery.pending.len(),
+            pending_key_release_barriers: client_key_release_barrier.len(),
+            pending_controls: session_controls.pending_len(),
+            pending_wm_update: pending_wm_update.is_some(),
+        }) == SessionLogoutDrainDecision::Complete
         {
             break;
         }

@@ -344,8 +344,10 @@ It starts `glxgears` directly in the standalone natural-layout profile, without
 Kitty, xmonad, or xmobar. The default 500-by-500, swap-interval-one workload
 runs for 20 seconds and exits automatically. Before graphics takeover, a
 bounded external-client preflight must reach classic visual discovery, direct
-context creation, DRI3 import, and Present submission. Confirm
-that the centered window shows three smoothly rotating gears. The trailing
+context creation, DRI3 import, and Present submission. Move the pointer over
+the centered window and confirm that the three gears remain smooth, then let
+the bounded client end the session automatically; Super-Shift-Q intentionally
+preempts the benchmark completion. The trailing
 `sophia_glxgears_performance` record reports the client's sampled FPS
 separately from Sophia's routed post-KMS Copy FPS and p95 interval. It also
 requires an identified GL renderer, positive DRI3/mixed-composition evidence,

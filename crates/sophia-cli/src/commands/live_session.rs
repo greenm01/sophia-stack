@@ -20,6 +20,9 @@ use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState,
     SessionClientPressedKey, VirtualTerminalChordAction, VirtualTerminalChordState,
 };
+use sophia_cli::session_shutdown::{
+    SessionLogoutDrainDecision, SessionLogoutDrainState, session_logout_drain_decision,
+};
 use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };

@@ -115,6 +115,11 @@ reopen the completed Milestone 9 exit gate.
   hardware-cursor motion. Evidence distinguishes initialization deferral from
   successful steady updates that overlap primary flips and gates animated
   pointer-motion cadence at 55 FPS with a 25 ms p95 frame interval.
+- [x] Keep a Logout-bearing WM transaction alive until its already-committed
+  Engine update crosses the authority/runtime boundary. The physical GLX run
+  exposed the old premature exit with every other queue drained and exactly
+  one `pending_wm_update`; the shutdown reducer now treats that slot like the
+  existing input, key-release, and X-control drain boundaries.
 - [x] Re-run the four-Kitty gate after cursor/primary serialization. The
   workspace-stress cycle recorded zero native submit failures and a 12 ms
   maximum cursor update; it then exposed an independent workspace-visibility
