@@ -253,7 +253,16 @@ reopen the completed Milestone 9 exit gate.
   pre-pixel admission (using bounded fixed-extent recovery only if the client
   misses the accepted resize), and normal shutdown with no stale Present,
   control, input, or native-resource debt. Use
-  `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run.
+  `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run. An
+  installed interactive run on `e360b4b0` displayed one static 500-by-500
+  frame: its queued Present was skipped during layout rollback with synthetic
+  `UST=0, MSC=0`, then its CPU snapshot became visible. XLibre settles skips
+  on the current CRTC clock, and yserver independently rejects zero-clock
+  Present completion events. The live feedback coordinator now retains the
+  last kernel display sample and all asynchronous scheduler/rollback skips
+  reuse it; the public-API regression locks nonzero timeline continuity.
+  Repeat the physical vkcube gate from the packaged fix before closing this
+  item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
   logical-window content stream. Follow Xserver's copy/clip semantics without

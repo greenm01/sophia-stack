@@ -273,6 +273,7 @@ impl std::error::Error for LivePresentFeedbackError {}
 #[derive(Debug, Default)]
 pub struct LiveProductionPresentFeedbackCoordinator {
     resources: crate::LivePresentationResourceSession,
+    last_display_sample: Option<(u64, u64)>,
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -339,6 +340,7 @@ impl LiveProductionPresentFeedbackCoordinator {
             .resources
             .retire_page_flip(transaction)
             .ok_or(LivePresentFeedbackError::UnknownPresentation { transaction })?;
+        self.last_display_sample = Some((ust, msc));
         Ok(Self::outcome(
             transaction,
             ust,
@@ -349,14 +351,18 @@ impl LiveProductionPresentFeedbackCoordinator {
     }
 
     pub fn complete_retained_without_idle(
-        &self,
+        &mut self,
         transaction: TransactionId,
         ust: u64,
         msc: u64,
     ) -> Result<LivePresentFeedbackOutcome, LivePresentFeedbackError> {
-        (self.resources.state(transaction)
-            == Some(sophia_renderer_live::LiveBufferState::Submitted))
-        .then(|| LivePresentFeedbackOutcome {
+        if self.resources.state(transaction)
+            != Some(sophia_renderer_live::LiveBufferState::Submitted)
+        {
+            return Err(LivePresentFeedbackError::UnknownPresentation { transaction });
+        }
+        self.last_display_sample = Some((ust, msc));
+        Ok(LivePresentFeedbackOutcome {
             feedback: vec![LivePresentProtocolFeedback::Complete {
                 transaction,
                 ust,
@@ -365,7 +371,6 @@ impl LiveProductionPresentFeedbackCoordinator {
             }],
             idle_fence_triggered: false,
         })
-        .ok_or(LivePresentFeedbackError::UnknownPresentation { transaction })
     }
 
     pub fn idle_displayed(
@@ -393,6 +398,9 @@ impl LiveProductionPresentFeedbackCoordinator {
             .resources
             .reject(transaction)
             .ok_or(LivePresentFeedbackError::UnknownPresentation { transaction })?;
+        if ust != 0 || msc != 0 {
+            self.last_display_sample = Some((ust, msc));
+        }
         Ok(Self::outcome(
             transaction,
             ust,
@@ -400,6 +408,14 @@ impl LiveProductionPresentFeedbackCoordinator {
             LivePresentBufferDisposition::Skipped,
             retirement.idle_fence == sophia_renderer_live::LiveIdleFenceStatus::Triggered,
         ))
+    }
+
+    pub fn reject_skip_at_last_display(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<LivePresentFeedbackOutcome, LivePresentFeedbackError> {
+        let (ust, msc) = self.last_display_sample.unwrap_or_default();
+        self.reject_skip(transaction, ust, msc)
     }
 
     pub fn disconnect(&mut self) -> sophia_renderer_live::LivePresentationDisconnectReport {

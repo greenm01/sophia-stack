@@ -93,7 +93,7 @@ impl LiveProductionVisualRuntime {
         Ok(())
     }
 
-    pub(super) fn reject_software_presents(&mut self, ust: u64, msc: u64) {
+    pub(super) fn reject_software_presents(&mut self) {
         let transactions = self
             .software_presents_waiting_submit
             .drain(..)
@@ -104,17 +104,17 @@ impl LiveProductionVisualRuntime {
         for transaction in transactions {
             if let Ok(outcome) = self
                 .presentation_feedback
-                .reject_skip(transaction, ust, msc)
+                .reject_skip_at_last_display(transaction)
             {
                 self.route_present_feedback(outcome);
             }
         }
     }
 
-    pub fn reject_gpu_presentation(&mut self, transaction: TransactionId, ust: u64, msc: u64) {
+    pub fn reject_gpu_presentation(&mut self, transaction: TransactionId) {
         if let Ok(outcome) = self
             .presentation_feedback
-            .reject_skip(transaction, ust, msc)
+            .reject_skip_at_last_display(transaction)
         {
             self.route_present_feedback(outcome);
         }
@@ -128,7 +128,7 @@ impl LiveProductionVisualRuntime {
         let transactions = self.present_scheduler.drain_layout_deferred_transactions();
         let rejected = transactions.len();
         for transaction in transactions {
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
         }
         rejected
     }
@@ -175,16 +175,16 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn shutdown_presentations(&mut self) -> crate::LivePresentationDisconnectReport {
-        self.reject_software_presents(0, 0);
+        self.reject_software_presents();
         let queued = self.present_scheduler.drain_transactions();
         for transaction in queued {
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
         }
         if let Some(submitted) = self.present_scheduler.take_submitted() {
-            self.reject_gpu_presentation(submitted.transaction, 0, 0);
+            self.reject_gpu_presentation(submitted.transaction);
         }
         if let Some(rendering) = self.present_scheduler.take_rendering() {
-            self.reject_gpu_presentation(rendering.transaction, 0, 0);
+            self.reject_gpu_presentation(rendering.transaction);
         }
         let discarded = self.surface_content_fence.discard();
         if discarded != 0 {

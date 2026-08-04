@@ -420,6 +420,57 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
 }
 
 #[test]
+fn asynchronous_skip_retains_the_last_display_clock_sample() {
+    let displayed_handle = BufferHandle::from_raw(40);
+    let skipped_handle = BufferHandle::from_raw(41);
+    let displayed = TransactionId::from_raw(42);
+    let skipped = TransactionId::from_raw(43);
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    for handle in [displayed_handle, skipped_handle] {
+        coordinator
+            .resources_mut()
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    for (transaction, buffer) in [(displayed, displayed_handle), (skipped, skipped_handle)] {
+        coordinator
+            .resources_mut()
+            .begin(LivePresentationSubmission {
+                transaction,
+                buffer,
+                acquire_fence: None,
+                idle_fence: None,
+            })
+            .unwrap();
+    }
+    coordinator
+        .resources_mut()
+        .mark_submitted(displayed)
+        .unwrap();
+    coordinator.complete_copy(displayed, 44_000, 45).unwrap();
+
+    let outcome = coordinator
+        .reject_skip_at_last_display(skipped)
+        .expect("a policy skip after a displayed frame must retain its display timeline");
+
+    assert_eq!(
+        outcome.feedback,
+        [
+            LivePresentProtocolFeedback::Complete {
+                transaction: skipped,
+                ust: 44_000,
+                msc: 45,
+                disposition: LivePresentBufferDisposition::Skipped,
+            },
+            LivePresentProtocolFeedback::Idle {
+                transaction: skipped,
+            },
+        ]
+    );
+    assert_eq!(coordinator.resources().presentation_count(), 0);
+}
+
+#[test]
 fn displayed_feedback_delays_idle_until_surface_buffer_replacement() {
     let handle = BufferHandle::from_raw(19);
     let transaction = TransactionId::from_raw(20);

@@ -15,14 +15,14 @@ impl LiveProductionVisualRuntime {
                 return self.run_observation_tick();
             }
             LiveProductionPresentGate::Reject(transaction) => {
-                self.reject_gpu_presentation(transaction, 0, 0);
+                self.reject_gpu_presentation(transaction);
                 return self.run_observation_tick();
             }
             LiveProductionPresentGate::Ready(transaction) => transaction,
         };
         let Some(native_scanout) = native_scanout else {
             self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         };
         let queued = self
@@ -32,7 +32,7 @@ impl LiveProductionVisualRuntime {
         let queued_surface = queued.surface;
         if !self.presentation_order.contains(&queued_surface) {
             self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         }
 
@@ -48,7 +48,7 @@ impl LiveProductionVisualRuntime {
             .prepare_present_transaction(&queued.candidate);
         if !prepared.is_ready() {
             self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         }
         let primary_output = self
@@ -116,7 +116,7 @@ impl LiveProductionVisualRuntime {
                     .height,
                 "rejected Present whose pixels do not match the logical X11 surface"
             );
-            self.reject_gpu_presentation(transaction, 0, 0);
+            self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         }
         let mut current_owned = Some(
@@ -288,7 +288,7 @@ impl LiveProductionVisualRuntime {
             Some(Status::AlreadyInFlight | Status::CleanupPending) | None => {}
             Some(_) => {
                 self.present_scheduler.pop_front();
-                self.reject_gpu_presentation(transaction, 0, 0);
+                self.reject_gpu_presentation(transaction);
             }
         }
         Ok(report)

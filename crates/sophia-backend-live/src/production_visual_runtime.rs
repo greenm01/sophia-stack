@@ -581,7 +581,7 @@ impl LiveProductionVisualRuntime {
                     Instant::now(),
                 )?;
                 for transaction in superseded {
-                    self.reject_gpu_presentation(transaction, 0, 0);
+                    self.reject_gpu_presentation(transaction);
                 }
             }
         }

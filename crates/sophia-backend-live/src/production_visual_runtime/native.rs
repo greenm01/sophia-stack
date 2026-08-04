@@ -66,9 +66,9 @@ impl LiveProductionVisualRuntime {
             .present_scheduler
             .take_submitted()
             .or_else(|| self.present_scheduler.take_rendering());
-        self.reject_software_presents(0, 0);
+        self.reject_software_presents();
         if let Some(present) = skipped_present.as_ref() {
-            self.reject_gpu_presentation(present.transaction, 0, 0);
+            self.reject_gpu_presentation(present.transaction);
             self.finish_surface_content_fence(present.surface)?;
         }
         self.outputs = LiveProductionOutputRuntimeSet::new(
@@ -207,7 +207,7 @@ impl LiveProductionVisualRuntime {
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
             Some(_) => {
                 if let Some(rendering) = self.present_scheduler.take_rendering() {
-                    self.reject_gpu_presentation(rendering.transaction, 0, 0);
+                    self.reject_gpu_presentation(rendering.transaction);
                     self.finish_surface_content_fence(rendering.surface)?;
                 }
             }
