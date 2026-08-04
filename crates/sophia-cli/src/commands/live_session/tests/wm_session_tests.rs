@@ -1473,8 +1473,19 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         },
     );
     assert_eq!(layout.recovery_extent_count(), 1);
+    assert_eq!(
+        layout.recovery_extents(),
+        [(
+            surface,
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        )]
+    );
     assert!(layout.complete_admission_retirement(surface, pixel_transaction));
     assert_eq!(layout.recovery_extent_count(), 0);
+    assert!(layout.recovery_extents().is_empty());
     assert!(layout.constraint_relayout_required());
     assert_eq!(
         layout.admissions.state(surface),

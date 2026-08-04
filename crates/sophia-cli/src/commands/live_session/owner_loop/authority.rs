@@ -414,9 +414,17 @@
                 if resize_epoch_aborted
                     && let Some(runtime) = runtime.as_mut()
                 {
-                    let rejected = runtime.abort_queued_presentations();
+                    // A fixed first-admission extent is still coherent after
+                    // blind-WM rollback. Keep its exact Present fenced until
+                    // admission publishes the surface; reject every other
+                    // staged resize Present as stale.
+                    let recovery_extents = layout.recovery_extents();
+                    let report = runtime.reconcile_rollback_presentations(&recovery_extents);
                     println!(
-                        "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
+                        "sophia_live_resize_epoch schema=2 status=queue_reconciled rejected_presents={} preserved_presents={} recovery_extents={}",
+                        report.rejected.len(),
+                        report.preserved,
+                        recovery_extents.len(),
                     );
                 }
                 layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
@@ -713,9 +721,17 @@
                     update.update.commit.outcome == TransactionOutcome::TimedOut
                 }) && let Some(runtime) = runtime.as_mut()
                 {
-                    let rejected = runtime.abort_queued_presentations();
+                    // Timeout polling owns the same rollback boundary as the
+                    // authority-driven path above; keep their reconciliation
+                    // rules identical so scheduling cadence cannot change the
+                    // client-visible Present result.
+                    let recovery_extents = layout.recovery_extents();
+                    let report = runtime.reconcile_rollback_presentations(&recovery_extents);
                     println!(
-                        "sophia_live_resize_epoch schema=1 status=queue_aborted rejected_presents={rejected}"
+                        "sophia_live_resize_epoch schema=2 status=queue_reconciled rejected_presents={} preserved_presents={} recovery_extents={}",
+                        report.rejected.len(),
+                        report.preserved,
+                        recovery_extents.len(),
                     );
                 }
                 if let Some(result) = expired {

@@ -4,7 +4,8 @@ use crate::{
 };
 use sophia_engine::PreparedSurfaceCommit;
 use sophia_protocol::{
-    BufferSource, LayerSnapshot, Rect, SurfaceId, SurfaceTransaction, TransactionId,
+    BufferSource, CommittedSurfaceState, LayerSnapshot, Rect, Size, SurfaceId, SurfaceTransaction,
+    TransactionId,
 };
 use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
@@ -48,6 +49,12 @@ pub enum LiveProductionPresentGate {
     WaitingAcquire,
     Reject(TransactionId),
     Ready(TransactionId),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LiveProductionLayoutRollbackReport {
+    pub rejected: Vec<TransactionId>,
+    pub preserved: usize,
 }
 
 #[derive(Debug, Default)]
@@ -322,10 +329,80 @@ impl LiveProductionPresentScheduler {
         self.queued.iter().any(|queued| queued.deferred_by_layout)
     }
 
-    pub fn release_layout_deferred(&mut self) {
+    /// Releases staged Presents only after their surfaces enter the committed
+    /// presentation projection. A rollback-preserved admission Present can be
+    /// pixel-coherent before it is visible; releasing it earlier would make
+    /// `drive_gpu_presentation` reject it as an absent surface.
+    pub fn release_layout_deferred_for_surfaces(
+        &mut self,
+        visible: &[SurfaceId],
+        committed: &[CommittedSurfaceState],
+    ) -> usize {
+        let mut released = 0usize;
         for queued in &mut self.queued {
-            queued.deferred_by_layout = false;
+            if queued.deferred_by_layout && visible.contains(&queued.surface) {
+                // Recovery admission may first commit a CPU snapshot for this
+                // surface. The preserved DMA-BUF is the successor to that
+                // snapshot, not a competing candidate for the old generation.
+                queued.candidate.previous_committed_generation = committed
+                    .iter()
+                    .find(|state| state.surface == queued.surface)
+                    .map_or(0, |state| state.committed_generation);
+                queued.deferred_by_layout = false;
+                released = released.saturating_add(1);
+            }
         }
+        released
+    }
+
+    /// Reconciles staged Presents against Engine-owned fixed recovery extents.
+    ///
+    /// Managed resize candidates are stale after rollback and must be
+    /// rejected. A first-admission candidate is different: when its exact
+    /// buffer extent is the fixed recovery extent, those pixels remain the
+    /// coherent content selected for admission. Preserve that Present behind
+    /// the layout fence so it can receive normal KMS Complete/Idle feedback
+    /// once the recovered surface becomes visible.
+    pub fn reconcile_layout_rollback(
+        &mut self,
+        recovery_extents: &[(SurfaceId, Size)],
+        resources: &LivePresentationResourceSession,
+    ) -> LiveProductionLayoutRollbackReport {
+        let mut retained = VecDeque::with_capacity(self.queued.len());
+        let mut report = LiveProductionLayoutRollbackReport::default();
+        while let Some(mut queued) = self.queued.pop_front() {
+            if !queued.deferred_by_layout {
+                retained.push_back(queued);
+                continue;
+            }
+            let recovery = recovery_extents
+                .iter()
+                .find_map(|(surface, size)| (*surface == queued.surface).then_some(*size));
+            let source_size = resources
+                .source_descriptor(queued.submission.buffer)
+                .map(|descriptor| descriptor.size);
+            if recovery.is_some() && recovery == source_size {
+                let recovery = recovery.expect("checked above");
+                let geometry = Rect {
+                    width: recovery.width,
+                    height: recovery.height,
+                    ..queued.surface_clip
+                };
+                queued.target = Rect {
+                    x: geometry.x.saturating_add(queued.x_offset),
+                    y: geometry.y.saturating_add(queued.y_offset),
+                    ..geometry
+                };
+                queued.surface_clip = geometry;
+                queued.candidate.target_geometry = geometry;
+                report.preserved = report.preserved.saturating_add(1);
+                retained.push_back(queued);
+            } else {
+                report.rejected.push(queued.submission.transaction);
+            }
+        }
+        self.queued = retained;
+        report
     }
 
     pub fn take_diagnose_first_mixed_export(&mut self) -> bool {
@@ -337,20 +414,6 @@ impl LiveProductionPresentScheduler {
             .drain(..)
             .map(|queued| queued.submission.transaction)
             .collect()
-    }
-
-    pub fn drain_layout_deferred_transactions(&mut self) -> Vec<TransactionId> {
-        let mut retained = VecDeque::with_capacity(self.queued.len());
-        let mut drained = Vec::new();
-        while let Some(queued) = self.queued.pop_front() {
-            if queued.deferred_by_layout {
-                drained.push(queued.submission.transaction);
-            } else {
-                retained.push_back(queued);
-            }
-        }
-        self.queued = retained;
-        drained
     }
 
     pub const fn acquire_waits(&self) -> usize {

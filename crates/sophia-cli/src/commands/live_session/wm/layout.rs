@@ -596,6 +596,22 @@ impl PersistentLiveLayout {
         self.layout_epochs.recovery_extent_count()
     }
 
+    fn recovery_extents(&self) -> Vec<(SurfaceId, Size)> {
+        self.layers
+            .keys()
+            .chain(self.planning_surfaces.keys())
+            .chain(self.unmanaged_surfaces.iter())
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|surface| {
+                self.layout_epochs
+                    .recovery_extent(surface)
+                    .map(|extent| (surface, extent))
+            })
+            .collect()
+    }
+
     fn client_positioned_mapped(&self, surface: SurfaceId) -> bool {
         self.is_client_positioned(surface) && self.mapped_surfaces.contains(&surface)
     }

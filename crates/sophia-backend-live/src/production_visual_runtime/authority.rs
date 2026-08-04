@@ -121,16 +121,29 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn release_layout_deferred_presentations(&mut self) {
-        self.present_scheduler.release_layout_deferred();
+        // `presentation_order` is the last projection applied at the Engine
+        // boundary. It deliberately lags pre-admission recovery state until
+        // the CPU snapshot transaction makes the surface scene-visible.
+        self.present_scheduler.release_layout_deferred_for_surfaces(
+            &self.presentation_order,
+            self.production.committed_surfaces(),
+        );
     }
 
-    pub fn abort_queued_presentations(&mut self) -> usize {
-        let transactions = self.present_scheduler.drain_layout_deferred_transactions();
-        let rejected = transactions.len();
-        for transaction in transactions {
+    /// Settles stale rollback work while retaining exact fixed-recovery
+    /// Presents for normal native retirement.
+    pub fn reconcile_rollback_presentations(
+        &mut self,
+        recovery_extents: &[(SurfaceId, Size)],
+    ) -> crate::LiveProductionLayoutRollbackReport {
+        let report = self
+            .present_scheduler
+            .reconcile_layout_rollback(recovery_extents, self.presentation_feedback.resources());
+        for transaction in &report.rejected {
+            let transaction = *transaction;
             self.reject_gpu_presentation(transaction);
         }
-        rejected
+        report
     }
 
     pub fn route_present_feedback(&mut self, outcome: crate::LivePresentFeedbackOutcome) {

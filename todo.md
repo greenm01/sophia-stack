@@ -260,9 +260,16 @@ reopen the completed Milestone 9 exit gate.
   on the current CRTC clock, and yserver independently rejects zero-clock
   Present completion events. The live feedback coordinator now retains the
   last kernel display sample and all asynchronous scheduler/rollback skips
-  reuse it; the public-API regression locks nonzero timeline continuity.
-  Repeat the physical vkcube gate from the packaged fix before closing this
-  item.
+  reuse it; the public-API regression locks nonzero timeline continuity. A
+  physical rerun on `f007757a` disproved that as the complete fix: vkcube
+  remained alive with its FIFO queue and main thread parked after Sophia
+  destroyed its first Present during admission rollback. The scheduler now
+  rejects stale managed-resize Presents but preserves an admission Present
+  whose source exactly matches Engine's fixed recovery extent. It remains
+  fenced until the surface enters the committed presentation projection, is
+  rebased after any recovery CPU snapshot, and then receives ordinary KMS
+  completion. Repeat the physical vkcube gate from the packaged fix before
+  closing this item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
   logical-window content stream. Follow Xserver's copy/clip semantics without

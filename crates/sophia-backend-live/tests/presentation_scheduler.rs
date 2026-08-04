@@ -478,37 +478,25 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
 }
 
 #[test]
-fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
-    let retained_handle = BufferHandle::from_raw(57);
-    let deferred_handle = BufferHandle::from_raw(58);
-    let retained_transaction = TransactionId::from_raw(59);
-    let deferred_transaction = TransactionId::from_raw(60);
-    let surface = SurfaceId::new(61, 1);
+fn rollback_preserves_exact_recovery_present_until_surface_is_visible() {
+    let handle = BufferHandle::from_raw(90);
+    let transaction = TransactionId::from_raw(91);
+    let surface = SurfaceId::new(92, 1);
+    let epoch = TransactionId::from_raw(93);
+    let batch = scheduler_batch_with_disposition(
+        transaction,
+        surface,
+        handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
     let mut resources = LivePresentationResourceSession::default();
     resources
-        .register_source(descriptor(retained_handle), vec![fd()])
-        .unwrap();
-    resources
-        .register_source(descriptor(deferred_handle), vec![fd()])
+        .register_source(descriptor(handle), vec![fd()])
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
         .enqueue_group(
-            &scheduler_batch(retained_transaction, surface, retained_handle).groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
-        .unwrap();
-    let mut deferred_batch = scheduler_batch(deferred_transaction, surface, deferred_handle);
-    deferred_batch.groups[0].present_submissions[0].layout_disposition =
-        LiveProductionPresentDisposition::StageLayout {
-            epoch: TransactionId::from_raw(1),
-        };
-    scheduler
-        .enqueue_group(
-            &deferred_batch.groups[0],
+            &batch.groups[0],
             &[],
             Vec::new(),
             &mut resources,
@@ -516,16 +504,95 @@ fn aborting_layout_epoch_drains_only_layout_deferred_presents() {
         )
         .unwrap();
 
-    assert_eq!(
-        scheduler.drain_layout_deferred_transactions(),
-        [deferred_transaction]
+    let report = scheduler.reconcile_layout_rollback(
+        &[(
+            surface,
+            Size {
+                width: 64,
+                height: 48,
+            },
+        )],
+        &resources,
     );
+
+    assert_eq!(report.preserved, 1);
+    assert!(report.rejected.is_empty());
+    assert!(scheduler.has_layout_deferred());
+    assert!(!scheduler.has_eligible());
+    assert_eq!(scheduler.release_layout_deferred_for_surfaces(&[], &[]), 0);
+    assert!(!scheduler.has_eligible());
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 7,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 48,
+        },
+        buffer: BufferSource::CpuBuffer { handle: 98 },
+        damage: Region::empty(),
+    }];
+    assert_eq!(
+        scheduler.release_layout_deferred_for_surfaces(&[surface], &committed),
+        1
+    );
+    assert!(scheduler.has_eligible());
     assert_eq!(
         scheduler
             .front()
             .map(|queued| queued.submission.transaction),
-        Some(retained_transaction)
+        Some(transaction)
     );
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.candidate.previous_committed_generation),
+        Some(7)
+    );
+}
+
+#[test]
+fn rollback_rejects_staged_present_without_an_exact_recovery_extent() {
+    let handle = BufferHandle::from_raw(94);
+    let transaction = TransactionId::from_raw(95);
+    let surface = SurfaceId::new(96, 1);
+    let epoch = TransactionId::from_raw(97);
+    let batch = scheduler_batch_with_disposition(
+        transaction,
+        surface,
+        handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_group(
+            &batch.groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    let report = scheduler.reconcile_layout_rollback(
+        &[(
+            surface,
+            Size {
+                width: 65,
+                height: 48,
+            },
+        )],
+        &resources,
+    );
+
+    assert_eq!(report.rejected, [transaction]);
+    assert_eq!(report.preserved, 0);
+    assert!(!scheduler.has_queued());
 }
 
 #[test]
@@ -641,10 +708,18 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
             .map(|queued| queued.submission.transaction),
         Some(second_transaction)
     );
-    assert_eq!(
-        scheduler.drain_layout_deferred_transactions(),
-        [second_transaction]
+    let report = scheduler.reconcile_layout_rollback(
+        &[(
+            surface,
+            Size {
+                width: 64,
+                height: 48,
+            },
+        )],
+        &resources,
     );
+    assert_eq!(report.preserved, 1);
+    assert!(report.rejected.is_empty());
 }
 
 #[test]

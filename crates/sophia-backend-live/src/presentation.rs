@@ -222,6 +222,10 @@ impl LivePresentationResourceSession {
         self.registry.state(transaction)
     }
 
+    pub fn source_descriptor(&self, handle: BufferHandle) -> Option<DmaBufDescriptor> {
+        self.registry.descriptor(handle)
+    }
+
     pub fn mark_submitted(
         &mut self,
         transaction: TransactionId,
