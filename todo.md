@@ -1184,7 +1184,7 @@ Compatibility follow-up outside the Firefox exit gate:
   runner is `tools/start_sophia_xmonad_config_reload_tty3.sh`. Both have
   ordered sequence logs and negative-fixture verifiers. Their commit-pinned
   physical captures remain.
-- [ ] Promote one immutable, versioned release and greetd entry that uses no
+- [x] Promote one immutable, versioned release and greetd entry that uses no
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.
 - [ ] Preserve the independent emergency path, a known-good fallback session,
