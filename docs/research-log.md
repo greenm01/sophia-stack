@@ -7119,3 +7119,10 @@ acknowledgement ordering.
   allowed phase values, rejects an invalid phase, and proves the status output
   retains no duplicated diagnostic. Packaging carries the helper inside the
   immutable artifact instead of reaching back into the repository.
+- Signed commit `09113a7da149a57558deea8076529913f9a62705` was packaged as
+  `0.1.0-09113a7da149` and promoted to `/opt/sophia/current`. The complete
+  installed digest ledger passes, `/usr/local/bin/sophia-status` resolves into
+  that release, the packaged lifecycle helper is present, and
+  `0.1.0-ff8cb2f9aa76` remains the immutable rollback target. This closes the
+  diagnostic mechanism item; the next installed login supplies its physical
+  lifecycle observation without a separate operator sequence.

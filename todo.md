@@ -1192,7 +1192,7 @@ Compatibility follow-up outside the Firefox exit gate:
   an opt-in process-external wall-clock deadline, and the bounded GLX proof
   enables it automatically; the installed session still needs an
   installation-owned equivalent and physical recovery proof.
-- [ ] Add startup diagnostics that identify the installed version and exact
+- [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
 - [ ] Validate three consecutive installed logins, normal logouts, one
