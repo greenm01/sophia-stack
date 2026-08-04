@@ -975,10 +975,14 @@ WM, input, renderer, and teardown evidence.
 An installed release is built and frozen separately from login:
 
 ```sh
-tools/install_current_live_session.sh
+tools/install_live_session.sh
 ```
 
-Packaging refuses a dirty worktree, builds optimized Sophia and the generic WM
+With no argument, this one-shot command resolves the current Git commit,
+packages it when necessary, verifies the exact artifact and every digest,
+requests privilege only for the system installation, and verifies the installed
+commit. An explicit artifact directory remains available for staged tests and
+recovery tooling. Packaging refuses a dirty worktree, builds optimized Sophia and the generic WM
 bridge, resolves the tested xmonad binary, and records SHA-256 digests plus the
 exact Git commit in an immutable release directory. Installation verifies
 those digests, copies the release below `/opt/sophia/releases/`, atomically

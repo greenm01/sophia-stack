@@ -75,4 +75,31 @@ env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-rollback"
 status_output="$(env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-status")"
 grep -Fq 'release_id=0001' <<<"$status_output"
 
+current_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+current_version="$(awk -F'"' '$1 ~ /^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
+current_release="$current_version-${current_commit:0:12}"
+current_artifact_root="$TEMP_DIR/current-artifacts"
+current_artifact="$current_artifact_root/sophia-$current_release"
+current_prefix="$TEMP_DIR/current/install/prefix"
+current_session_dir="$TEMP_DIR/current/share/wayland-sessions"
+current_command_dir="$TEMP_DIR/current/commands"
+install -d -m 755 "$current_artifact_root"
+cp -a "$first" "$current_artifact"
+sed -i \
+    -e "s/^commit=.*/commit=$current_commit/" \
+    -e "s/^release_id=.*/release_id=$current_release/" \
+    "$current_artifact/manifest"
+(
+    cd "$current_artifact"
+    find bin share -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+)
+env \
+    SOPHIA_ARTIFACT_ROOT="$current_artifact_root" \
+    SOPHIA_INSTALL_PREFIX="$current_prefix" \
+    SOPHIA_SESSION_DIR="$current_session_dir" \
+    SOPHIA_COMMAND_DIR="$current_command_dir" \
+    "$ROOT_DIR/tools/install_live_session.sh"
+[[ "$(readlink "$current_prefix/current")" == "releases/$current_release" ]]
+grep -Fxq "commit=$current_commit" "$current_prefix/current/manifest"
+
 echo "live-session staged install and rollback checks passed"

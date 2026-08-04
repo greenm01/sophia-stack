@@ -118,4 +118,4 @@ printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
 )
 
 echo "Packaged immutable Sophia release: $artifact"
-echo "Install with: sudo tools/install_live_session.sh $artifact"
+echo "Install with: tools/install_live_session.sh"

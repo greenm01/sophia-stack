@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${SOPHIA_ARTIFACT_ROOT:-$ROOT_DIR/.artifacts}"
+PREFIX="${SOPHIA_INSTALL_PREFIX:-/opt/sophia}"
 
 cd "$ROOT_DIR"
 commit="$(git rev-parse HEAD)"
@@ -38,6 +39,9 @@ artifact_commit="$(sed -n 's/^commit=//p' "$artifact/manifest" | head -n 1)"
 echo "Installing current Sophia commit: $commit"
 echo "Release artifact: $artifact"
 if [[ "$(id -u)" == 0 ]]; then
+    exec "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
+fi
+if [[ "$PREFIX" != /opt/sophia ]]; then
     exec "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
 fi
 exec sudo "$ROOT_DIR/tools/install_live_session.sh" "$artifact"

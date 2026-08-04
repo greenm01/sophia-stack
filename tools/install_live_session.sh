@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-artifact="${1:-}"
-[[ -n "$artifact" && -d "$artifact" ]] || {
-    echo "usage: tools/install_live_session.sh ARTIFACT_DIR" >&2
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if (( $# == 0 )); then
+    exec "$ROOT_DIR/tools/install_current_live_session.sh"
+fi
+(( $# == 1 )) || {
+    echo "usage: tools/install_live_session.sh [ARTIFACT_DIR]" >&2
+    exit 1
+}
+artifact="$1"
+[[ -d "$artifact" ]] || {
+    echo "Artifact directory does not exist: $artifact" >&2
     exit 1
 }
 artifact="$(cd "$artifact" && pwd)"
