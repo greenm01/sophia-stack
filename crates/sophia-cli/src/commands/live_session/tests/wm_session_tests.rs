@@ -28,6 +28,20 @@ fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     }
 }
 
+fn dma_candidate(
+    transaction: TransactionId,
+    surface: SurfaceId,
+    buffer: BufferHandle,
+) -> sophia_protocol::SurfaceTransactionKey {
+    sophia_protocol::SurfaceTransactionKey {
+        transaction,
+        surface,
+        target_buffer: BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        },
+    }
+}
+
 fn test_live_layout_node(
     layer: &LayerSnapshot,
     workspace: WorkspaceId,
@@ -132,8 +146,11 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
     };
     let mut layout = PersistentLiveLayout::default();
     layout.layout_epochs.record_safe_observation(
-        surface,
-        TransactionId::from_raw(830),
+        dma_candidate(
+            TransactionId::from_raw(830),
+            surface,
+            BufferHandle::from_raw(830),
+        ),
         launch,
         sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
     );
@@ -212,14 +229,16 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
             acquire_fence: None,
             idle_fence: None,
         });
-    present.presented_surfaces.push(surface);
     layout.observe_authority_batch(&present);
 
     assert!(layout.resolve_pending().is_some());
     assert!(layout.awaiting_visual_commits.surface_awaiting(surface));
     assert_eq!(layout.layout_epochs.committed_size(surface), Some(launch));
     assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
-    assert!(layout.complete_visual_commit(present_transaction, surface, target));
+    assert!(layout.complete_visual_commit(
+        dma_candidate(present_transaction, surface, present_buffer),
+        target,
+    ));
     assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
     assert_eq!(layout.layout_epochs.pending_target(surface), None);
 }
@@ -297,8 +316,11 @@ fn explicit_software_present_can_complete_presented_surface_resize() {
     };
     let mut layout = PersistentLiveLayout::default();
     layout.layout_epochs.record_safe_observation(
-        surface,
-        TransactionId::from_raw(850),
+        dma_candidate(
+            TransactionId::from_raw(850),
+            surface,
+            BufferHandle::from_raw(850),
+        ),
         launch,
         sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
     );
@@ -330,7 +352,6 @@ fn explicit_software_present_can_complete_presented_surface_resize() {
         timeout_msec: 250,
         previous_committed_generation: 1,
     });
-    presented.presented_surfaces.push(surface);
     presented.software_present_submissions.push(
         sophia_x_authority::XAuthoritySoftwarePresentSubmission {
             transaction,
@@ -587,7 +608,6 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
             acquire_fence: None,
             idle_fence: None,
         });
-    observed.presented_surfaces.push(firefox);
     layout.observe_authority_batch(&observed);
     assert!(
         layout
@@ -661,6 +681,7 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
     let mut managed_state = committed_state;
     managed_state.register_surface(firefox, workspace).unwrap();
     let manage_transaction = TransactionId::from_raw(7);
+    let pixel_candidate = dma_candidate(pixel_transaction, firefox, pixel_buffer);
     let manage_layers = layout.planning_layers_for_workspace_state(&managed_state);
     assert_eq!(
         manage_layers
@@ -701,18 +722,18 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
     assert!(
         layout
             .awaiting_visual_commits
-            .exact_candidate(pixel_transaction, firefox, fallback)
+            .exact_candidate(pixel_candidate, fallback)
     );
     assert_eq!(
         layout.admissions.state(firefox),
         sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
             admission_transaction,
-            visual_transaction: pixel_transaction,
+            visual_candidate: pixel_candidate,
             geometry: fallback_geometry,
         }
     );
-    assert!(layout.complete_visual_commit(pixel_transaction, firefox, fallback));
-    assert!(layout.complete_admission_retirement(firefox, pixel_transaction));
+    assert!(layout.complete_visual_commit(pixel_candidate, fallback));
+    assert!(layout.complete_admission_retirement(pixel_candidate));
     assert_eq!(
         layout.admissions.state(firefox),
         sophia_engine::SurfacePresentationAdmissionState::Managed
@@ -1436,11 +1457,12 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         Some(&BTreeSet::from([surface]))
     );
     assert!(layout.resolve_pending().is_some());
+    let pixel_candidate = dma_candidate(pixel_transaction, surface, buffer);
     assert_eq!(
         layout.admissions.state(surface),
         sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
             admission_transaction: original_admission,
-            visual_transaction: pixel_transaction,
+            visual_candidate: pixel_candidate,
             geometry,
         }
     );
@@ -1474,18 +1496,15 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     );
     assert_eq!(layout.recovery_extent_count(), 1);
     assert_eq!(
-        layout.recovery_extents(),
-        [(
-            surface,
-            Size {
-                width: geometry.width,
-                height: geometry.height,
-            },
-        )]
+        layout.layout_epochs.recovery_extent(surface),
+        Some(Size {
+            width: geometry.width,
+            height: geometry.height,
+        })
     );
-    assert!(layout.complete_admission_retirement(surface, pixel_transaction));
+    assert!(layout.complete_admission_retirement(pixel_candidate));
     assert_eq!(layout.recovery_extent_count(), 0);
-    assert!(layout.recovery_extents().is_empty());
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
     assert!(layout.constraint_relayout_required());
     assert_eq!(
         layout.admissions.state(surface),
@@ -1518,14 +1537,28 @@ fn fallback_admission_keeps_recovery_extent_until_the_standing_target_commits() 
     );
     assert!(!layout.constraint_relayout_required());
 
-    assert!(!layout.complete_visual_commit(TransactionId::from_raw(690), surface, fallback,));
+    assert!(!layout.complete_visual_commit(
+        dma_candidate(
+            TransactionId::from_raw(690),
+            surface,
+            BufferHandle::from_raw(690),
+        ),
+        fallback,
+    ));
     assert_eq!(
         layout.layout_epochs.recovery_extent(surface),
         Some(fallback)
     );
     assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
 
-    assert!(layout.complete_visual_commit(TransactionId::from_raw(691), surface, target,));
+    assert!(layout.complete_visual_commit(
+        dma_candidate(
+            TransactionId::from_raw(691),
+            surface,
+            BufferHandle::from_raw(691),
+        ),
+        target,
+    ));
     assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
     assert_eq!(layout.layout_epochs.pending_target(surface), None);
     assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
@@ -1549,7 +1582,14 @@ fn unarmed_target_without_a_recovery_extent_cannot_bypass_the_layout_epoch() {
     let mut layout = PersistentLiveLayout::default();
     layout.layout_epochs.set_pending_target(surface, target);
 
-    assert!(!layout.complete_visual_commit(TransactionId::from_raw(700), surface, target,));
+    assert!(!layout.complete_visual_commit(
+        dma_candidate(
+            TransactionId::from_raw(700),
+            surface,
+            BufferHandle::from_raw(700),
+        ),
+        target,
+    ));
     assert_eq!(layout.layout_epochs.committed_size(surface), None);
     assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
     assert!(!layout.constraint_relayout_required());

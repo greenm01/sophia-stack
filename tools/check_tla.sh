@@ -39,15 +39,16 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-cp "$MODEL_DIR/VisualRetirement.tla" "$TEMP_DIR/"
-cp "$MODEL_DIR/VisualRetirement.cfg" "$TEMP_DIR/"
-
-(
-    cd "$TEMP_DIR"
-    java -XX:+UseParallelGC -jar "$JAR_PATH" \
-        -deadlock \
-        -workers 1 \
-        -fp 0 \
-        -config VisualRetirement.cfg \
-        VisualRetirement.tla
-)
+for model in VisualRetirement AdmissionRecovery; do
+    cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
+    cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
+    (
+        cd "$TEMP_DIR"
+        java -XX:+UseParallelGC -jar "$JAR_PATH" \
+            -deadlock \
+            -workers 1 \
+            -fp 0 \
+            -config "$model.cfg" \
+            "$model.tla"
+    )
+done

@@ -326,6 +326,7 @@ impl LiveProductionVisualRuntime {
         }
         self.settle_software_present_frame(ust, msc)?;
         Ok(Some(LiveProductionRetiredPresent {
+            candidate: submitted.candidate,
             transaction: submitted.transaction,
             surface: submitted.surface,
             source_size,

@@ -1,0 +1,15 @@
+sophia_live_visual_candidate schema=1 status=selected transaction=683 surface=6291456 width=500 height=500 evidence=PresentedBuffer
+sophia_live_visual_candidate_identity schema=1 status=selected transaction=683 surface=6291456 source=dma_buf buffer=800
+sophia_live_visual_admission schema=1 status=armed transaction=683 surface=6291456
+sophia_live_visual_admission schema=1 status=presented transaction=683 surface=6291456
+sophia_live_session_present schema=2 status=retired transaction=683 surface=6291456 source=500x500 target=500x500_0_0 clip=500x500_0_0 unit_scale=true
+sophia_live_session_present_feedback schema=1 kind=complete transaction=683 routed=true mode=Flip ust=1000 msc=10
+sophia_live_session_present_feedback schema=1 kind=idle transaction=683 routed=true
+sophia_live_session_present schema=2 status=retired transaction=688 surface=6291456 source=500x500 target=500x500_0_0 clip=500x500_0_0 unit_scale=true
+sophia_live_session_present_feedback schema=1 kind=complete transaction=688 routed=true mode=Flip ust=2000 msc=11
+sophia_live_session_present_feedback schema=1 kind=idle transaction=688 routed=true
+sophia_live_session_present schema=2 status=retired transaction=693 surface=6291456 source=500x500 target=500x500_0_0 clip=500x500_0_0 unit_scale=true
+sophia_live_session_present_feedback schema=1 kind=complete transaction=693 routed=true mode=Flip ust=3000 msc=12
+sophia_live_session_present_feedback schema=1 kind=idle transaction=693 routed=true
+sophia_live_session_cleanup schema=1 status=clean debt=0
+sophia_live_session schema=16 status=bounded_complete display=:90

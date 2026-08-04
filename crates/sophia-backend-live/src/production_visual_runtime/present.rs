@@ -30,6 +30,7 @@ impl LiveProductionVisualRuntime {
             .front()
             .ok_or("ready Present gate has no queued presentation")?;
         let queued_surface = queued.surface;
+        let queued_candidate = queued.candidate.key();
         if !self.presentation_order.contains(&queued_surface) {
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction);
@@ -268,6 +269,7 @@ impl LiveProductionVisualRuntime {
                 self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_submitted(LiveProductionSubmittedPresent {
+                        candidate: queued_candidate,
                         transaction,
                         surface: queued_surface,
                         prepared,
@@ -279,6 +281,7 @@ impl LiveProductionVisualRuntime {
                 self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_rendering(LiveProductionSubmittedPresent {
+                        candidate: queued_candidate,
                         transaction,
                         surface: queued_surface,
                         prepared,

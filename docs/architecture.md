@@ -317,13 +317,15 @@ resources, begins presentation ownership, then applies release. These cold-path
 records do not add buffers to the passive Engine admission table.
 
 Present scheduling is classified per submission. A buffer matching the pending
-layout epoch is staged with that epoch. A known wrong-size buffer for an
-already-managed surface is rejected, while a complete pre-admission Present is
-retained as recovery evidence at its natural extent. Submissions for unrelated
-surfaces remain immediately eligible. A layout epoch must not become a
-session-wide Present barrier. The scheduler shares one immutable authority
-batch and retains only bounded submission records rather than cloning the full
-batch per queued Present.
+layout epoch is staged with that epoch. Another valid buffer for an
+already-managed surface updates the committed geometry through the renderer's
+pixel-aligned copy-and-clip path, but it cannot satisfy or promote the pending
+resize. Malformed or superseded submissions are rejected. A complete
+pre-admission Present remains recovery evidence at its natural extent, and
+submissions for unrelated surfaces remain immediately eligible. A layout epoch
+must not become a session-wide Present barrier. The scheduler shares one
+immutable authority batch and retains only bounded submission records rather
+than cloning the full batch per queued Present.
 
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and
@@ -375,13 +377,14 @@ authority-observed buffer is not rendered merely because its extent is known.
 ```
 
 The Engine reduces complete authority observations into one passive
-`SafeSurfaceObservation` per surface. The record carries extent, evidence
-class, source transaction, and Engine observation sequence. During admission,
-a complete presented buffer outranks an accumulated software-backing snapshot
-regardless of arrival order. This prevents a policy-sized background clear
-from replacing the natural extent and transaction of a client frame. Within
-one evidence class the newest observation wins. After admission, normal
-committed ordering resumes.
+`SafeSurfaceObservation` per surface. The record carries the exact transaction,
+surface, and target-buffer identity, plus extent, evidence class, and Engine
+observation sequence. During admission, a complete presented buffer outranks
+an accumulated software-backing snapshot regardless of arrival order. The
+buffer identity prevents a policy-sized background clear in the same authority
+transaction from impersonating the client frame. Within one evidence class
+the newest observation wins. After admission, normal committed ordering
+resumes.
 
 This reducer does not make the Engine understand X11. The X authority owns the
 meaning and order of Present, core drawing, SHM drawing, clears, and backing

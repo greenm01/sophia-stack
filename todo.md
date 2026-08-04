@@ -177,8 +177,9 @@ reopen the completed Milestone 9 exit gate.
   Retain a real-Kitty deferred-map probe that requires a presentation intent,
   delivered admission, continued Present feedback, focus, and routed text.
 - [x] Replace the session-wide layout/Present barrier with per-submission
-  dispositions. Stage only submissions owned by the pending epoch, reject known
-  wrong-size buffers without contaminating visible layers, and keep unrelated
+  dispositions. Stage only submissions owned by the pending epoch, route other
+  valid buffers against committed geometry without letting them satisfy the
+  pending resize, reject malformed or superseded work, and keep unrelated
   surfaces eligible. Retain bounded queue storage with one shared immutable
   authority batch.
 - [x] Separate queued Present ownership from persistent scene projection.
@@ -263,13 +264,17 @@ reopen the completed Milestone 9 exit gate.
   reuse it; the public-API regression locks nonzero timeline continuity. A
   physical rerun on `f007757a` disproved that as the complete fix: vkcube
   remained alive with its FIFO queue and main thread parked after Sophia
-  destroyed its first Present during admission rollback. The scheduler now
-  rejects stale managed-resize Presents but preserves an admission Present
-  whose source exactly matches Engine's fixed recovery extent. It remains
-  fenced until the surface enters the committed presentation projection, is
-  rebased after any recovery CPU snapshot, and then receives ordinary KMS
-  completion. Repeat the physical vkcube gate from the packaged fix before
-  closing this item.
+  destroyed its first Present during admission rollback. A later live trace
+  exposed the deeper identity error: transaction 683 carried both the exact
+  DMA-BUF Present and a same-surface CPU backing snapshot, and the surface-level
+  evidence flag let the snapshot impersonate the Present. Safe observations,
+  admission retirement, and scheduler ownership now carry the exact
+  transaction/surface/target-buffer key. Layout commit and abort are explicit
+  epoch transitions; abort rejects only that epoch, while valid nonmatching
+  content continues against committed geometry. The Rust regression and
+  `AdmissionRecovery.tla` lock selection, timeout recovery, retirement, and
+  Complete/Idle feedback. Repeat the physical vkcube gate from the packaged fix
+  before closing this item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
   logical-window content stream. Follow Xserver's copy/clip semantics without
@@ -773,9 +778,9 @@ promotes one to a hard M9 exit gate.
   accumulated buffer-age history across coalesced generations.
 - [ ] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
-  no admission staging offset after `layout_committed`, no wrong-size buffer
-  reaching scanout, no resize timeout, and bounded recovery with resources
-  retired exactly once.
+  no admission staging offset after `layout_committed`, no nonmatching buffer
+  satisfying the pending resize, no resize timeout, and bounded recovery with
+  resources retired exactly once.
 - [ ] Multi-producer concurrent present. Present N DMA-BUF clients beside one
   CPU-composited bar and measure per-output frame-service fairness, import-cache
   pressure and eviction, and single renderer-worker request latency under

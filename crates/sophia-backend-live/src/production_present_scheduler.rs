@@ -4,8 +4,8 @@ use crate::{
 };
 use sophia_engine::PreparedSurfaceCommit;
 use sophia_protocol::{
-    BufferSource, CommittedSurfaceState, LayerSnapshot, Rect, Size, SurfaceId, SurfaceTransaction,
-    TransactionId,
+    BufferSource, CommittedSurfaceState, LayerSnapshot, Rect, SurfaceId, SurfaceTransaction,
+    SurfaceTransactionKey, TransactionId,
 };
 use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::VecDeque;
@@ -21,15 +21,29 @@ pub struct LiveProductionQueuedPresent {
     pub cpu_layers: Arc<[LiveCpuPresentationLayer]>,
     pub target: Rect,
     pub surface_clip: Rect,
-    deferred_by_layout: bool,
+    layout_state: LiveProductionPresentLayoutState,
     x_offset: i32,
     y_offset: i32,
     deadline: Instant,
     not_before: Instant,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveProductionPresentLayoutState {
+    Runnable,
+    Staged { epoch: TransactionId },
+    AwaitingVisibility { epoch: TransactionId },
+}
+
+impl LiveProductionPresentLayoutState {
+    const fn runnable(self) -> bool {
+        matches!(self, Self::Runnable)
+    }
+}
+
 #[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
+    pub candidate: SurfaceTransactionKey,
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
@@ -54,7 +68,6 @@ pub enum LiveProductionPresentGate {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LiveProductionLayoutRollbackReport {
     pub rejected: Vec<TransactionId>,
-    pub preserved: usize,
 }
 
 #[derive(Debug, Default)]
@@ -94,13 +107,20 @@ impl LiveProductionPresentScheduler {
         let cpu_layers: Arc<[LiveCpuPresentationLayer]> = cpu_layers.into();
         group.validate()?;
         for submission in &group.present_submissions {
-            let deferred_by_layout = matches!(
-                submission.layout_disposition,
-                LiveProductionPresentDisposition::StageLayout { .. }
-            );
+            let layout_state = match submission.layout_disposition {
+                LiveProductionPresentDisposition::Immediate => {
+                    LiveProductionPresentLayoutState::Runnable
+                }
+                LiveProductionPresentDisposition::StageLayout { epoch } => {
+                    LiveProductionPresentLayoutState::Staged { epoch }
+                }
+                LiveProductionPresentDisposition::RejectSuperseded => {
+                    LiveProductionPresentLayoutState::Runnable
+                }
+            };
             let reject_for_layout = matches!(
                 submission.layout_disposition,
-                LiveProductionPresentDisposition::RejectLayoutMismatch
+                LiveProductionPresentDisposition::RejectSuperseded
             );
             let surface = submission.surface;
             let x_offset = submission.x_offset;
@@ -149,10 +169,10 @@ impl LiveProductionPresentScheduler {
                     Duration::ZERO
                 };
             let not_before = now + acquire_delay;
-            if deferred_by_layout {
+            if !layout_state.runnable() {
                 let mut retained = VecDeque::with_capacity(self.queued.len());
                 while let Some(queued) = self.queued.pop_front() {
-                    if queued.deferred_by_layout && queued.surface == surface {
+                    if !queued.layout_state.runnable() && queued.surface == surface {
                         superseded.push(queued.submission.transaction);
                     } else {
                         retained.push_back(queued);
@@ -172,7 +192,7 @@ impl LiveProductionPresentScheduler {
                     ..geometry
                 },
                 surface_clip: geometry,
-                deferred_by_layout,
+                layout_state,
                 x_offset,
                 y_offset,
                 deadline: not_before + Duration::from_millis(u64::from(timeout_msec)),
@@ -208,7 +228,7 @@ impl LiveProductionPresentScheduler {
         let Some(eligible) = self
             .queued
             .iter()
-            .position(|queued| !queued.deferred_by_layout)
+            .position(|queued| queued.layout_state.runnable())
         else {
             return Ok(LiveProductionPresentGate::Idle);
         };
@@ -322,11 +342,29 @@ impl LiveProductionPresentScheduler {
     }
 
     pub fn has_eligible(&self) -> bool {
-        self.queued.iter().any(|queued| !queued.deferred_by_layout)
+        self.queued
+            .iter()
+            .any(|queued| queued.layout_state.runnable())
     }
 
     pub fn has_layout_deferred(&self) -> bool {
-        self.queued.iter().any(|queued| queued.deferred_by_layout)
+        self.queued
+            .iter()
+            .any(|queued| !queued.layout_state.runnable())
+    }
+
+    /// Records that one layout epoch committed. Its Presents remain fenced
+    /// until the committed projection contains their surfaces.
+    pub fn commit_layout_epoch(&mut self, epoch: TransactionId) -> usize {
+        let mut committed = 0usize;
+        for queued in &mut self.queued {
+            if queued.layout_state == (LiveProductionPresentLayoutState::Staged { epoch }) {
+                queued.layout_state =
+                    LiveProductionPresentLayoutState::AwaitingVisibility { epoch };
+                committed = committed.saturating_add(1);
+            }
+        }
+        committed
     }
 
     /// Releases staged Presents only after their surfaces enter the committed
@@ -340,7 +378,11 @@ impl LiveProductionPresentScheduler {
     ) -> usize {
         let mut released = 0usize;
         for queued in &mut self.queued {
-            if queued.deferred_by_layout && visible.contains(&queued.surface) {
+            if matches!(
+                queued.layout_state,
+                LiveProductionPresentLayoutState::AwaitingVisibility { .. }
+            ) && visible.contains(&queued.surface)
+            {
                 // Recovery admission may first commit a CPU snapshot for this
                 // surface. The preserved DMA-BUF is the successor to that
                 // snapshot, not a competing candidate for the old generation.
@@ -348,57 +390,25 @@ impl LiveProductionPresentScheduler {
                     .iter()
                     .find(|state| state.surface == queued.surface)
                     .map_or(0, |state| state.committed_generation);
-                queued.deferred_by_layout = false;
+                queued.layout_state = LiveProductionPresentLayoutState::Runnable;
                 released = released.saturating_add(1);
             }
         }
         released
     }
 
-    /// Reconciles staged Presents against Engine-owned fixed recovery extents.
-    ///
-    /// Managed resize candidates are stale after rollback and must be
-    /// rejected. A first-admission candidate is different: when its exact
-    /// buffer extent is the fixed recovery extent, those pixels remain the
-    /// coherent content selected for admission. Preserve that Present behind
-    /// the layout fence so it can receive normal KMS Complete/Idle feedback
-    /// once the recovered surface becomes visible.
-    pub fn reconcile_layout_rollback(
+    /// Rejects only Presents staged by the epoch that actually aborted.
+    pub fn abort_layout_epoch(
         &mut self,
-        recovery_extents: &[(SurfaceId, Size)],
-        resources: &LivePresentationResourceSession,
+        epoch: TransactionId,
     ) -> LiveProductionLayoutRollbackReport {
         let mut retained = VecDeque::with_capacity(self.queued.len());
         let mut report = LiveProductionLayoutRollbackReport::default();
-        while let Some(mut queued) = self.queued.pop_front() {
-            if !queued.deferred_by_layout {
-                retained.push_back(queued);
-                continue;
-            }
-            let recovery = recovery_extents
-                .iter()
-                .find_map(|(surface, size)| (*surface == queued.surface).then_some(*size));
-            let source_size = resources
-                .source_descriptor(queued.submission.buffer)
-                .map(|descriptor| descriptor.size);
-            if recovery.is_some() && recovery == source_size {
-                let recovery = recovery.expect("checked above");
-                let geometry = Rect {
-                    width: recovery.width,
-                    height: recovery.height,
-                    ..queued.surface_clip
-                };
-                queued.target = Rect {
-                    x: geometry.x.saturating_add(queued.x_offset),
-                    y: geometry.y.saturating_add(queued.y_offset),
-                    ..geometry
-                };
-                queued.surface_clip = geometry;
-                queued.candidate.target_geometry = geometry;
-                report.preserved = report.preserved.saturating_add(1);
-                retained.push_back(queued);
-            } else {
+        while let Some(queued) = self.queued.pop_front() {
+            if queued.layout_state == (LiveProductionPresentLayoutState::Staged { epoch }) {
                 report.rejected.push(queued.submission.transaction);
+            } else {
+                retained.push_back(queued);
             }
         }
         self.queued = retained;

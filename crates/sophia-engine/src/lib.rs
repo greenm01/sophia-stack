@@ -22,8 +22,9 @@ mod prelude {
         RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
         SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SeatId, Size, SurfaceId,
         SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
-        SurfaceTransactionReadiness, TransactionCommit, TransactionId, TransactionOutcome,
-        TrustLevel, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
+        SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
+        TransactionOutcome, TrustLevel, WmRequestKind, WmRequestPacket, WmResponsePacket,
+        WorkspaceId,
     };
     pub(crate) use sophia_runtime::{
         RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,

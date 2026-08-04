@@ -77,31 +77,41 @@ fn dma_buf_admission_becomes_managed_only_after_exact_visual_retirement() {
     let surface = SurfaceId::new(9, 1);
     let admission = TransactionId::from_raw(44);
     let visual = TransactionId::from_raw(45);
+    let visual_candidate = sophia_protocol::SurfaceTransactionKey {
+        transaction: visual,
+        surface,
+        target_buffer: sophia_protocol::BufferSource::DmaBuf { handle: 450 },
+    };
     let intent = request(surface);
     let mut table = SurfaceAdmissionTable::default();
 
     table.observe_intent(intent);
     assert!(table.begin_control(surface, admission, intent.geometry));
     assert!(table.acknowledge_control(surface, admission));
-    assert!(table.begin_retirement(surface, visual));
+    assert!(table.begin_retirement(surface, visual_candidate));
     assert_eq!(
         table.state(surface),
         SurfacePresentationAdmissionState::AwaitingRetirement {
             admission_transaction: admission,
-            visual_transaction: visual,
+            visual_candidate,
             geometry: intent.geometry,
         }
     );
-    assert!(!table.complete_retirement(surface, TransactionId::from_raw(46)));
+    assert!(
+        !table.complete_retirement(sophia_protocol::SurfaceTransactionKey {
+            transaction: TransactionId::from_raw(46),
+            ..visual_candidate
+        })
+    );
     assert_eq!(
         table.state(surface),
         SurfacePresentationAdmissionState::AwaitingRetirement {
             admission_transaction: admission,
-            visual_transaction: visual,
+            visual_candidate,
             geometry: intent.geometry,
         }
     );
-    assert!(table.complete_retirement(surface, visual));
+    assert!(table.complete_retirement(visual_candidate));
     assert_eq!(
         table.state(surface),
         SurfacePresentationAdmissionState::Managed

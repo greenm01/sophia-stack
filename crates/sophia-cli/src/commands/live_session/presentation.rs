@@ -228,7 +228,7 @@ fn production_authority_batch(
                 .iter()
                 .map(|submission| {
                     let layout_disposition = if released.superseded {
-                        sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
+                        sophia_backend_live::LiveProductionPresentDisposition::RejectSuperseded
                     } else {
                         layout.present_layout_disposition(
                             submission.transaction,

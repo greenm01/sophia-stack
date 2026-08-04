@@ -53,7 +53,8 @@ struct PersistentLiveLayout {
     admission_retries: BTreeMap<SurfaceId, u8>,
     pending: Option<PendingLiveWmLayout>,
     focus_to_apply: Option<(TransactionId, SurfaceId)>,
-    retirement_focus: BTreeMap<SurfaceId, (TransactionId, TransactionId)>,
+    retirement_focus:
+        BTreeMap<SurfaceId, (sophia_protocol::SurfaceTransactionKey, TransactionId)>,
     bypass_policy_admission: bool,
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
@@ -228,13 +229,9 @@ impl PersistentLiveLayout {
             {
                 continue;
             }
-            let visual_evidence = live_transaction_visual_evidence(
-                transaction,
-                batch.presented_surfaces.contains(&transaction.surface),
-            );
+            let visual_evidence = live_transaction_visual_evidence(transaction, batch);
             let candidate_selected = self.layout_epochs.record_safe_observation(
-                transaction.surface,
-                transaction.transaction,
+                transaction.key(),
                 observed_size,
                 visual_evidence,
             );
@@ -246,6 +243,17 @@ impl PersistentLiveLayout {
                     observed_size.width,
                     observed_size.height,
                     visual_evidence,
+                );
+                let (source, buffer) = match transaction.target_buffer {
+                    BufferSource::DmaBuf { handle } => ("dma_buf", handle),
+                    BufferSource::CpuBuffer { handle } => ("cpu_buffer", handle),
+                    BufferSource::XPixmap { pixmap } => ("x_pixmap", u64::from(pixmap)),
+                    BufferSource::None => ("none", 0),
+                };
+                println!(
+                    "sophia_live_visual_candidate_identity schema=1 status=selected transaction={} surface={} source={source} buffer={buffer}",
+                    transaction.transaction.raw(),
+                    transaction.surface.index(),
                 );
             }
             let resize_owned = self.pending.as_ref().is_some_and(|pending| {
@@ -266,7 +274,7 @@ impl PersistentLiveLayout {
                         .layout_epochs
                         .safe_observation(transaction.surface)
                         .is_some_and(|selected| {
-                            selected.transaction == Some(transaction.transaction)
+                            selected.candidate == Some(transaction.key())
                         });
                 let evidence_allowed = self
                     .layout_epochs
@@ -541,20 +549,19 @@ impl PersistentLiveLayout {
 
     fn complete_visual_commit(
         &mut self,
-        transaction: TransactionId,
-        surface: SurfaceId,
+        visual_candidate: sophia_protocol::SurfaceTransactionKey,
         size: Size,
     ) -> bool {
         if let Some(candidate) = self
             .awaiting_visual_commits
-            .complete(transaction, surface, size)
+            .complete(visual_candidate, size)
         {
             self.layout_epochs
-                .record_committed(candidate.surface, candidate.size);
+                .record_committed(candidate.candidate.surface, candidate.size);
             println!(
                 "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
-                candidate.transaction.raw(),
-                candidate.surface.index(),
+                candidate.candidate.transaction.raw(),
+                candidate.candidate.surface.index(),
                 candidate.size.width,
                 candidate.size.height,
             );
@@ -567,17 +574,21 @@ impl PersistentLiveLayout {
         // retirement is still exact visual proof. Accept only the outstanding
         // target while its temporary recovery extent is active; unrelated or
         // old-sized unarmed Presents remain unable to mutate committed state.
-        if self.layout_epochs.recovery_extent(surface).is_none()
-            || self.layout_epochs.pending_target(surface) != Some(size)
+        if self
+            .layout_epochs
+            .recovery_extent(visual_candidate.surface)
+            .is_none()
+            || self.layout_epochs.pending_target(visual_candidate.surface) != Some(size)
         {
             return false;
         }
-        self.layout_epochs.record_committed(surface, size);
-        self.release_recovery_extent(surface, "standing_target_presented");
+        self.layout_epochs
+            .record_committed(visual_candidate.surface, size);
+        self.release_recovery_extent(visual_candidate.surface, "standing_target_presented");
         println!(
             "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={} source=standing_target_recovery",
-            transaction.raw(),
-            surface.index(),
+            visual_candidate.transaction.raw(),
+            visual_candidate.surface.index(),
             size.width,
             size.height,
         );
@@ -594,22 +605,6 @@ impl PersistentLiveLayout {
 
     fn recovery_extent_count(&self) -> usize {
         self.layout_epochs.recovery_extent_count()
-    }
-
-    fn recovery_extents(&self) -> Vec<(SurfaceId, Size)> {
-        self.layers
-            .keys()
-            .chain(self.planning_surfaces.keys())
-            .chain(self.unmanaged_surfaces.iter())
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter_map(|surface| {
-                self.layout_epochs
-                    .recovery_extent(surface)
-                    .map(|extent| (surface, extent))
-            })
-            .collect()
     }
 
     fn client_positioned_mapped(&self, surface: SurfaceId) -> bool {
@@ -1002,7 +997,7 @@ impl PersistentLiveLayout {
                 BufferSource::DmaBuf { .. } => {
                     if self
                         .admissions
-                        .begin_retirement(*surface, transaction.transaction)
+                        .begin_retirement(*surface, transaction.key())
                     {
                         println!(
                             "sophia_live_visual_admission schema=1 status=armed transaction={} surface={}",
@@ -1053,8 +1048,7 @@ impl PersistentLiveLayout {
                     if matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }) {
                         self.awaiting_visual_commits
                             .arm(ResizeVisualCommit {
-                                transaction: transaction.transaction,
-                                surface: transaction.surface,
+                                candidate: transaction.key(),
                                 size,
                             })
                             .expect("a staged layout owns one bounded visual candidate");
@@ -1116,11 +1110,11 @@ impl PersistentLiveLayout {
         if let Some(surface) = pending.focus {
             match self.admissions.state(surface) {
                 sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
-                    visual_transaction,
+                    visual_candidate,
                     ..
                 } => {
                     self.retirement_focus
-                        .insert(surface, (visual_transaction, pending.transaction));
+                        .insert(surface, (visual_candidate, pending.transaction));
                 }
                 _ => self.focus_to_apply = Some((pending.transaction, surface)),
             }

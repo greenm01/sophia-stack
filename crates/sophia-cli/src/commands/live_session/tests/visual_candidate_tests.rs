@@ -28,9 +28,12 @@ fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
         timeout_msec: 250,
         previous_committed_generation: 0,
     };
+    let mut batch =
+        crate::commands::live_session::wm_update_coordinator_batch(transaction.transaction);
+    batch.transactions.push(transaction.clone());
 
     assert_eq!(
-        live_transaction_visual_evidence(&transaction, false),
+        live_transaction_visual_evidence(&transaction, &batch),
         sophia_engine::SurfaceVisualEvidence::BackingSnapshot
     );
 }
@@ -49,10 +52,88 @@ fn presented_cpu_snapshot_is_complete_present_evidence() {
         timeout_msec: 250,
         previous_committed_generation: 0,
     };
+    let mut batch =
+        crate::commands::live_session::wm_update_coordinator_batch(transaction.transaction);
+    batch.transactions.push(transaction.clone());
+    batch.software_present_submissions.push(
+        sophia_x_authority::XAuthoritySoftwarePresentSubmission {
+            transaction: transaction.transaction,
+            surface: transaction.surface,
+            acquire_fence: None,
+            idle_fence: None,
+        },
+    );
 
     assert_eq!(
-        live_transaction_visual_evidence(&transaction, true),
+        live_transaction_visual_evidence(&transaction, &batch),
         sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+    );
+}
+
+#[test]
+fn backing_snapshot_cannot_impersonate_same_transaction_present() {
+    let surface = SurfaceId::new(80, 1);
+    let transaction = TransactionId::from_raw(80);
+    let geometry = rect(500, 500);
+    let dma_buffer = BufferHandle::from_raw(800);
+    let cpu_handle = 801;
+    let dma = SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::DmaBuf {
+            handle: dma_buffer.raw(),
+        },
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let backing = SurfaceTransaction {
+        target_buffer: BufferSource::CpuBuffer { handle: cpu_handle },
+        ..dma.clone()
+    };
+    let mut batch = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+    batch.transactions.extend([dma.clone(), backing.clone()]);
+    batch
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction,
+            surface,
+            buffer: dma_buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+
+    assert_eq!(
+        live_transaction_visual_evidence(&dma, &batch),
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+    );
+    assert_eq!(
+        live_transaction_visual_evidence(&backing, &batch),
+        sophia_engine::SurfaceVisualEvidence::BackingSnapshot
+    );
+
+    let mut layout = PersistentLiveLayout::default();
+    let extent = Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    layout.dma_buf_sizes.insert(dma_buffer, extent);
+    layout.cpu_buffer_sizes.insert(cpu_handle, extent);
+    layout.observe_authority_batch(&batch);
+    assert_eq!(
+        layout.layout_epochs.safe_observation(surface),
+        Some(sophia_engine::SafeSurfaceObservation {
+            candidate: Some(dma.key()),
+            extent,
+            evidence: sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+            sequence: 1,
+        })
     );
 }
 
@@ -145,7 +226,16 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
     layout.observe_authority_batch(&backing);
 
     let selected = layout.layout_epochs.safe_observation(surface).unwrap();
-    assert_eq!(selected.transaction, Some(present_id));
+    assert_eq!(
+        selected.candidate,
+        Some(sophia_protocol::SurfaceTransactionKey {
+            transaction: present_id,
+            surface,
+            target_buffer: BufferSource::DmaBuf {
+                handle: present_buffer.raw(),
+            },
+        })
+    );
     assert_eq!(selected.extent.width, initial.width);
     assert_eq!(selected.extent.height, initial.height);
     assert_eq!(

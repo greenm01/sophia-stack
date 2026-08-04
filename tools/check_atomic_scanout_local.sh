@@ -65,7 +65,10 @@ bash -n tools/start_sophia_xmonad_xmobar_tty3.sh \
     tools/verify_sophia_xmonad_xmobar_hardware_smoke.sh \
     tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
 tools/check_sophia_xmonad_xmobar_hardware_smoke_verifier.sh
-bash -n tools/start_sophia_xmonad_vkcube_recovery_tty3.sh
+bash -n tools/start_sophia_xmonad_vkcube_recovery_tty3.sh \
+    tools/verify_sophia_xmonad_vkcube_recovery.sh \
+    tools/check_sophia_xmonad_vkcube_recovery_verifier.sh
+tools/check_sophia_xmonad_vkcube_recovery_verifier.sh
 bash -n tools/start_sophia_vkcube_standalone_tty3.sh \
     tools/benchmark_sophia_vkcube_tty3.sh \
     tools/benchmark_sophia_glxgears_tty3.sh \

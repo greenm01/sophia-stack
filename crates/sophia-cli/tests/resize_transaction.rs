@@ -6,6 +6,19 @@ use sophia_cli::resize_transaction::{
     present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
 };
 
+fn visual_candidate(
+    transaction: TransactionId,
+    surface: SurfaceId,
+) -> sophia_protocol::SurfaceTransactionKey {
+    sophia_protocol::SurfaceTransactionKey {
+        transaction,
+        surface,
+        target_buffer: BufferSource::DmaBuf {
+            handle: transaction.raw(),
+        },
+    }
+}
+
 #[test]
 fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
     let surface = SurfaceId::new(70, 1);
@@ -16,10 +29,10 @@ fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
     let mut visual = ResizeVisualCommitTracker::default();
     coordinator.record_committed(surface, launch);
     coordinator.set_pending_target(surface, target);
+    let candidate = visual_candidate(transaction, surface);
     visual
         .arm(ResizeVisualCommit {
-            transaction,
-            surface,
+            candidate,
             size: target,
         })
         .unwrap();
@@ -27,13 +40,16 @@ fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
     assert_eq!(coordinator.committed_size(surface), Some(launch));
     assert_eq!(coordinator.pending_target(surface), Some(target));
     assert!(visual.surface_awaiting(surface));
-    assert!(visual.exact_candidate(transaction, surface, target));
-    assert!(!visual.exact_candidate(transaction, surface, launch));
-    assert!(!visual.exact_candidate(TransactionId::from_raw(701), surface, target,));
-    assert_eq!(visual.complete(transaction, surface, launch), None);
+    assert!(visual.exact_candidate(candidate, target));
+    assert!(!visual.exact_candidate(candidate, launch));
+    assert!(!visual.exact_candidate(
+        visual_candidate(TransactionId::from_raw(701), surface),
+        target,
+    ));
+    assert_eq!(visual.complete(candidate, launch), None);
 
-    let committed = visual.complete(transaction, surface, target).unwrap();
-    coordinator.record_committed(committed.surface, committed.size);
+    let committed = visual.complete(candidate, target).unwrap();
+    coordinator.record_committed(committed.candidate.surface, committed.size);
     assert_eq!(coordinator.committed_size(surface), Some(target));
     assert_eq!(coordinator.pending_target(surface), None);
     assert!(visual.is_empty());
@@ -48,8 +64,7 @@ fn removing_a_surface_cancels_only_its_awaiting_visual_commits() {
     for (raw, surface) in [(701, first), (702, second)] {
         visual
             .arm(ResizeVisualCommit {
-                transaction: TransactionId::from_raw(raw),
-                surface,
+                candidate: visual_candidate(TransactionId::from_raw(raw), surface),
                 size: target,
             })
             .unwrap();
@@ -71,27 +86,26 @@ fn one_layout_transaction_tracks_multiple_surface_retirements_independently() {
         height: 1422,
     };
     let mut tracker = ResizeVisualCommitTracker::default();
+    let firefox_candidate = visual_candidate(transaction, firefox);
+    let kitty_candidate = visual_candidate(transaction, kitty);
     tracker
         .arm(ResizeVisualCommit {
-            transaction,
-            surface: firefox,
+            candidate: firefox_candidate,
             size,
         })
         .unwrap();
     tracker
         .arm(ResizeVisualCommit {
-            transaction,
-            surface: kitty,
+            candidate: kitty_candidate,
             size,
         })
         .unwrap();
 
     assert_eq!(tracker.len(), 2);
     assert_eq!(
-        tracker.complete(transaction, firefox, size),
+        tracker.complete(firefox_candidate, size),
         Some(ResizeVisualCommit {
-            transaction,
-            surface: firefox,
+            candidate: firefox_candidate,
             size,
         })
     );
@@ -231,7 +245,6 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
         client: None,
         transaction: transaction.transaction,
         transactions: vec![transaction.clone()],
-        presented_surfaces: Vec::new(),
         surface_presentations: Vec::new(),
         presentation_intents: Vec::new(),
         removed_surfaces: Vec::new(),
@@ -295,7 +308,6 @@ fn wrong_size_present_conflicts_but_matching_pixels_can_enter_resize_quarantine(
         client: None,
         transaction: TransactionId::from_raw(119),
         transactions: Vec::new(),
-        presented_surfaces: Vec::new(),
         surface_presentations: Vec::new(),
         presentation_intents: Vec::new(),
         removed_surfaces: Vec::new(),

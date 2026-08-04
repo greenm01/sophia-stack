@@ -91,10 +91,10 @@ another authority's state, and its result returns as a new typed observation.
 A transition system describes behavior as a sequence of states connected by
 named actions. TLA+ is one practical language for specifying those actions and
 checking safety and liveness across many possible interleavings. Sophia carries
-a bounded executable [visual-retirement model](../validation/tla/README.md);
-the transition system remains the architectural foundation, while TLA+ is a
-validation tool for selected domains rather than a universal Engine execution
-model.
+bounded executable [visual-retirement and admission-recovery
+models](../validation/tla/README.md); the transition system remains the
+architectural foundation, while TLA+ is a validation tool for selected domains
+rather than a universal Engine execution model.
 
 Sophia's visual lifecycle is naturally expressed in this form:
 

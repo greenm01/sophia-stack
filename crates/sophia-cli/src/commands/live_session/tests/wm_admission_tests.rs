@@ -112,8 +112,13 @@ fn exact_armed_launch_candidate_bypasses_a_different_standing_target() {
     layout
         .awaiting_visual_commits
         .arm(ResizeVisualCommit {
-            transaction,
-            surface,
+            candidate: sophia_protocol::SurfaceTransactionKey {
+                transaction,
+                surface,
+                target_buffer: BufferSource::DmaBuf {
+                    handle: buffer.raw(),
+                },
+            },
             size: launch,
         })
         .unwrap();
@@ -124,7 +129,7 @@ fn exact_armed_launch_candidate_bypasses_a_different_standing_target() {
     );
     assert_eq!(
         layout.present_layout_disposition(other_transaction, surface, buffer),
-        sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
+        sophia_backend_live::LiveProductionPresentDisposition::Immediate
     );
 }
 

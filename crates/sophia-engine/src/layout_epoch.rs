@@ -116,7 +116,7 @@ pub const fn classify_surface_visual_extent(
 /// Latest safe visual extent selected by the Engine's evidence reducer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SafeSurfaceObservation {
-    pub transaction: Option<TransactionId>,
+    pub candidate: Option<SurfaceTransactionKey>,
     pub extent: Size,
     pub evidence: SurfaceVisualEvidence,
     pub sequence: u64,
@@ -329,18 +329,17 @@ impl LayoutEpochCoordinator {
     /// pixels have entered committed visual state.
     pub fn record_safe_observation(
         &mut self,
-        surface: SurfaceId,
-        transaction: TransactionId,
+        candidate: SurfaceTransactionKey,
         extent: Size,
         evidence: SurfaceVisualEvidence,
     ) -> bool {
-        self.reduce_safe_observation(surface, Some(transaction), extent, evidence)
+        self.reduce_safe_observation(candidate.surface, Some(candidate), extent, evidence)
     }
 
     fn reduce_safe_observation(
         &mut self,
         surface: SurfaceId,
-        transaction: Option<TransactionId>,
+        candidate: Option<SurfaceTransactionKey>,
         extent: Size,
         evidence: SurfaceVisualEvidence,
     ) -> bool {
@@ -351,7 +350,7 @@ impl LayoutEpochCoordinator {
         let sequence = self.next_observation_sequence;
         self.next_observation_sequence = self.next_observation_sequence.saturating_add(1);
         let candidate = SafeSurfaceObservation {
-            transaction,
+            candidate,
             extent,
             evidence,
             sequence,

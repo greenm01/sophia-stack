@@ -130,15 +130,15 @@ impl LiveProductionVisualRuntime {
         );
     }
 
-    /// Settles stale rollback work while retaining exact fixed-recovery
-    /// Presents for normal native retirement.
-    pub fn reconcile_rollback_presentations(
+    pub fn commit_layout_epoch(&mut self, epoch: TransactionId) -> usize {
+        self.present_scheduler.commit_layout_epoch(epoch)
+    }
+
+    pub fn abort_layout_epoch(
         &mut self,
-        recovery_extents: &[(SurfaceId, Size)],
+        epoch: TransactionId,
     ) -> crate::LiveProductionLayoutRollbackReport {
-        let report = self
-            .present_scheduler
-            .reconcile_layout_rollback(recovery_extents, self.presentation_feedback.resources());
+        let report = self.present_scheduler.abort_layout_epoch(epoch);
         for transaction in &report.rejected {
             let transaction = *transaction;
             self.reject_gpu_presentation(transaction);

@@ -14,6 +14,18 @@ pub struct SurfaceTransaction {
     pub previous_committed_generation: u64,
 }
 
+/// Exact passive identity for one surface-content candidate.
+///
+/// A transaction may carry more than one source for a surface. Keeping the
+/// buffer in the key prevents a backing snapshot from impersonating a Present
+/// merely because both share a transaction and extent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SurfaceTransactionKey {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub target_buffer: BufferSource,
+}
+
 /// Passive identity joining one DMA-BUF surface transaction to its Present.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DmaBufPresentKey {
@@ -61,6 +73,14 @@ pub fn dma_buf_present_pairs_are_exact(
 }
 
 impl SurfaceTransaction {
+    pub const fn key(&self) -> SurfaceTransactionKey {
+        SurfaceTransactionKey {
+            transaction: self.transaction,
+            surface: self.surface,
+            target_buffer: self.target_buffer,
+        }
+    }
+
     pub fn from_layer_snapshot(
         transaction: TransactionId,
         authority: AuthorityKind,

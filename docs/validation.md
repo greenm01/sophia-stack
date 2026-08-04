@@ -25,10 +25,10 @@ cargo test --workspace --offline
 
 ### Bounded Formal Transition Model
 
-Milestone 12 adds one unattended TLA+ gate for visual candidate preparation,
-submission, output-scoped retirement, terminal settlement, and resource
-release. It is not a Milestone 11 installed-session requirement and adds no
-physical operator steps.
+Milestone 12 adds unattended TLA+ gates for visual candidate preparation,
+submission, output-scoped retirement, terminal settlement, resource release,
+and X11 admission recovery. They are not Milestone 11 installed-session
+requirements and add no physical operator steps.
 
 The model and its action-to-Rust boundary map live under `validation/tla`.
 Sophia pins the command-line TLA+ Tools v1.7.4 jar by SHA-256. Once that
@@ -39,11 +39,12 @@ state in a temporary directory:
 SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
 ```
 
-The bounded two-output, two-generation configuration explores retirement and
-supersession ordering while remaining suitable for routine validation. A TLC
-counterexample that changes implementation behavior must become a deterministic
-Rust regression before the model or implementation is corrected. The model is
-not a refinement proof and must not be weakened to accept a known Rust shortcut.
+The bounded configurations explore retirement and supersession ordering plus
+exact PresentedBuffer selection through timeout recovery and feedback. They
+remain suitable for routine validation. A TLC counterexample that changes
+implementation behavior must become a deterministic Rust regression before the
+model or implementation is corrected. The models are not refinement proofs and
+must not be weakened to accept a known Rust shortcut.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
@@ -391,14 +392,16 @@ For the visible xmonad/KMS proof, run
 tools/verify_sophia_xmonad_vkcube_recovery.sh
 ```
 
-The verifier joins every armed visual admission to the same surface and
-transaction at both Engine admission completion and native page-flip
-retirement. Before the admission may arm, the same transaction must appear as
-an Engine-selected `PresentedBuffer` visual candidate with a concrete natural
-extent. This rejects the historical failure where a later tile-sized software
-backing clear replaced the Vulkan frame as recovery evidence. The verifier also
-requires bounded clean teardown and rejects malformed, overflowed, mismatched,
-or degraded intake.
+The verifier joins every armed visual admission to the exact DMA-BUF candidate
+at Engine admission completion and native page-flip retirement. Before the
+admission may arm, that transaction, surface, and target buffer must appear as
+the Engine-selected `PresentedBuffer` candidate with a concrete natural extent.
+The selected transaction must never be committed from a CPU snapshot. At least
+three increasing Present transactions must then receive routed Complete events
+with nonzero UST/MSC followed by routed Idle events. These checks reject both
+the historical backing-clear substitution and a static first-frame success.
+The verifier also requires bounded clean teardown and rejects malformed,
+overflowed, mismatched, or degraded intake.
 
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,

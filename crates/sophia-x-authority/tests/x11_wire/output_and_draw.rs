@@ -271,7 +271,6 @@ fn x11_dispatch_accepts_destroy_window_for_known_namespace_window() {
             client: None,
             transaction: TransactionId::from_raw(2),
             transactions: Vec::new(),
-            presented_surfaces: Vec::new(),
             surface_presentations: Vec::new(),
             presentation_intents: Vec::new(),
             removed_surfaces: vec![surface],

@@ -407,15 +407,12 @@ impl PersistentLiveLayout {
 
     fn complete_admission_retirement(
         &mut self,
-        surface: SurfaceId,
-        visual_transaction: TransactionId,
+        visual_candidate: sophia_protocol::SurfaceTransactionKey,
     ) -> bool {
-        if !self
-            .admissions
-            .complete_retirement(surface, visual_transaction)
-        {
+        if !self.admissions.complete_retirement(visual_candidate) {
             return false;
         }
+        let surface = visual_candidate.surface;
         self.planning_surfaces.remove(&surface);
         self.unmanaged_surfaces.remove(&surface);
         self.admission_retries.remove(&surface);
@@ -428,13 +425,13 @@ impl PersistentLiveLayout {
         );
         self.release_managed_admission_groups();
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
-            && expected == visual_transaction
+            && expected == visual_candidate
         {
             self.focus_to_apply = Some((wm_transaction, surface));
         }
         println!(
             "sophia_live_visual_admission schema=1 status=presented transaction={} surface={}",
-            visual_transaction.raw(),
+            visual_candidate.transaction.raw(),
             surface.index(),
         );
         true
@@ -596,9 +593,16 @@ impl PersistentLiveLayout {
         buffer: sophia_protocol::BufferHandle,
     ) -> sophia_backend_live::LiveProductionPresentDisposition {
         let actual = self.dma_buf_sizes.get(&buffer).copied();
+        let candidate = sophia_protocol::SurfaceTransactionKey {
+            transaction,
+            surface,
+            target_buffer: BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+        };
         if actual.is_some_and(|size| {
             self.awaiting_visual_commits
-                .exact_candidate(transaction, surface, size)
+                .exact_candidate(candidate, size)
         }) {
             // A launch or resize candidate already selected by the layout
             // epoch must reach exact native retirement before its standing
@@ -629,14 +633,12 @@ impl PersistentLiveLayout {
             }
             sophia_engine::SurfaceVisualExtentDisposition::Expected
             | sophia_engine::SurfaceVisualExtentDisposition::RetainedRecovery
-            | sophia_engine::SurfaceVisualExtentDisposition::Unconstrained => {
-                // Newer buffers at an explicitly retained extent are content
-                // updates, not geometry commits. Keep them animating while a
-                // different standing target continues to drive reallocation.
+            | sophia_engine::SurfaceVisualExtentDisposition::Unconstrained
+            | sophia_engine::SurfaceVisualExtentDisposition::Mismatch => {
+                // A valid Present that does not satisfy the pending resize is
+                // still content for the committed X11 window. The renderer
+                // clips it without promoting speculative layout geometry.
                 sophia_backend_live::LiveProductionPresentDisposition::Immediate
-            }
-            sophia_engine::SurfaceVisualExtentDisposition::Mismatch => {
-                sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
             }
         }
     }

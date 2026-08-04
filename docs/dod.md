@@ -401,8 +401,8 @@ Fields should describe:
 - timeout policy
 - committed content extent per affected surface
 - one evidence-ranked `SafeSurfaceObservation` per affected surface:
-  source transaction, content extent, evidence class, and Engine observation
-  sequence
+  exact `SurfaceTransactionKey` (transaction, surface, and target buffer),
+  content extent, evidence class, and Engine observation sequence
 - declared and temporary effective constraints
 - resize participation state: unmanaged, pending-layout, or managed
 - bounded recovery-attempt state

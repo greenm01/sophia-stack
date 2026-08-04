@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use sophia_protocol::{BufferHandle, LayerSnapshot, Size, SurfaceId, TransactionId};
+use sophia_protocol::{
+    BufferHandle, LayerSnapshot, Size, SurfaceId, SurfaceTransactionKey, TransactionId,
+};
 use sophia_x_authority::XAuthorityObservedTransactionBatch;
 
 pub use sophia_engine::{
@@ -12,8 +14,7 @@ pub const RESIZE_VISUAL_COMMIT_CAPACITY: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResizeVisualCommit {
-    pub transaction: TransactionId,
-    pub surface: SurfaceId,
+    pub candidate: SurfaceTransactionKey,
     pub size: Size,
 }
 
@@ -26,13 +27,13 @@ pub struct ResizeVisualCommitTracker {
 
 impl ResizeVisualCommitTracker {
     pub fn arm(&mut self, candidate: ResizeVisualCommit) -> Result<(), &'static str> {
-        if !candidate.transaction.is_valid() || !candidate.surface.is_valid() {
+        if !candidate.candidate.transaction.is_valid() || !candidate.candidate.surface.is_valid() {
             return Err("resize visual commit candidate has an invalid identity");
         }
         if candidate.size.width <= 0 || candidate.size.height <= 0 {
             return Err("resize visual commit candidate has an invalid size");
         }
-        let key = (candidate.transaction, candidate.surface);
+        let key = (candidate.candidate.transaction, candidate.candidate.surface);
         if self.awaiting.contains_key(&key) {
             return Err("resize visual commit candidate identity is duplicated");
         }
@@ -46,29 +47,23 @@ impl ResizeVisualCommitTracker {
     pub fn surface_awaiting(&self, surface: SurfaceId) -> bool {
         self.awaiting
             .values()
-            .any(|candidate| candidate.surface == surface)
+            .any(|candidate| candidate.candidate.surface == surface)
     }
 
-    pub fn exact_candidate(
-        &self,
-        transaction: TransactionId,
-        surface: SurfaceId,
-        size: Size,
-    ) -> bool {
+    pub fn exact_candidate(&self, candidate: SurfaceTransactionKey, size: Size) -> bool {
         self.awaiting
-            .get(&(transaction, surface))
-            .is_some_and(|candidate| candidate.size == size)
+            .get(&(candidate.transaction, candidate.surface))
+            .is_some_and(|awaiting| awaiting.candidate == candidate && awaiting.size == size)
     }
 
     pub fn complete(
         &mut self,
-        transaction: TransactionId,
-        surface: SurfaceId,
+        candidate: SurfaceTransactionKey,
         size: Size,
     ) -> Option<ResizeVisualCommit> {
-        let key = (transaction, surface);
-        let candidate = self.awaiting.get(&key).copied()?;
-        if candidate.size != size {
+        let key = (candidate.transaction, candidate.surface);
+        let awaiting = self.awaiting.get(&key).copied()?;
+        if awaiting.candidate != candidate || awaiting.size != size {
             return None;
         }
         self.awaiting.remove(&key)
@@ -77,7 +72,7 @@ impl ResizeVisualCommitTracker {
     pub fn remove_surface(&mut self, surface: SurfaceId) -> usize {
         let before = self.awaiting.len();
         self.awaiting
-            .retain(|_, candidate| candidate.surface != surface);
+            .retain(|_, candidate| candidate.candidate.surface != surface);
         before.saturating_sub(self.awaiting.len())
     }
 

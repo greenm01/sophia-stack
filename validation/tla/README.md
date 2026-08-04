@@ -67,3 +67,11 @@ is:
 TLC's deadlock error is disabled because a fully settled session with no newer
 generation is valid quiescence. Safety invariants and the explicit liveness
 property remain enabled.
+
+`AdmissionRecovery.tla` covers exact PresentedBuffer selection, a later
+backing observation, layout timeout, recovery commit, quarantine release,
+native retirement, and Complete/Idle feedback. Its actions map to
+`LayoutEpochCoordinator`, pre-admission group ownership, the production Present
+scheduler, and native retirement. Content identity remains distinct from
+geometry: an extent can choose a rendering path without choosing which
+candidate owns admission.

@@ -25,7 +25,7 @@ pub struct LiveProductionFenceRegistration {
 pub enum LiveProductionPresentDisposition {
     Immediate,
     StageLayout { epoch: TransactionId },
-    RejectLayoutMismatch,
+    RejectSuperseded,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

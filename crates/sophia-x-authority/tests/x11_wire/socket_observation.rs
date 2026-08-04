@@ -363,7 +363,6 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
         client: None,
         transaction: TransactionId::from_raw(3),
         transactions: Vec::new(),
-        presented_surfaces: Vec::new(),
         surface_presentations: Vec::new(),
         presentation_intents: Vec::new(),
         removed_surfaces: vec![surface],

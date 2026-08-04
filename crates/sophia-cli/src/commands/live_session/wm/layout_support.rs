@@ -22,7 +22,6 @@ fn wm_update_coordinator_batch(
         client: None,
         transaction,
         transactions: Vec::new(),
-        presented_surfaces: Vec::new(),
         surface_presentations: Vec::new(),
         presentation_intents: Vec::new(),
         removed_surfaces: Vec::new(),

@@ -54,6 +54,15 @@ for record in "${armed[@]}"; do
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction was not selected from presented-buffer evidence"
     grep -Eq \
+        "^sophia_live_visual_candidate_identity schema=1 status=selected transaction=${transaction} surface=${surface} source=dma_buf buffer=[1-9][0-9]*$" \
+        "$SESSION_LOG" ||
+        fail "surface $surface transaction $transaction was not selected by exact DMA-BUF identity"
+    if grep -Eq \
+        "^sophia_live_visual_admission schema=1 status=committed transaction=${transaction} surface=${surface} source=cpu_snapshot$" \
+        "$SESSION_LOG"; then
+        fail "surface $surface transaction $transaction was replaced by a CPU snapshot"
+    fi
+    grep -Eq \
         "^sophia_live_visual_admission schema=1 status=presented transaction=${transaction} surface=${surface}$" \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction never completed visual admission"
@@ -61,6 +70,30 @@ for record in "${armed[@]}"; do
         "^sophia_live_session_present schema=2 status=retired transaction=${transaction} surface=${surface} " \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction has no matching page-flip retirement"
+
+    mapfile -t retired < <(
+        grep -E \
+            "^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=${surface} " \
+            "$SESSION_LOG"
+    )
+    ((${#retired[@]} >= 3)) ||
+        fail "surface $surface retired only ${#retired[@]} Presents; animation requires at least 3"
+    previous=0
+    for retired_record in "${retired[@]}"; do
+        retired_transaction="$(field "$retired_record" transaction)" ||
+            fail "retired Present lacks a transaction"
+        ((retired_transaction > previous)) ||
+            fail "surface $surface Present transactions did not advance"
+        previous="$retired_transaction"
+        grep -Eq \
+            "^sophia_live_session_present_feedback schema=1 kind=complete transaction=${retired_transaction} routed=true mode=(Copy|Flip) ust=[1-9][0-9]* msc=[1-9][0-9]*$" \
+            "$SESSION_LOG" ||
+            fail "transaction $retired_transaction lacks nonzero Complete feedback"
+        grep -Eq \
+            "^sophia_live_session_present_feedback schema=1 kind=idle transaction=${retired_transaction} routed=true$" \
+            "$SESSION_LOG" ||
+            fail "transaction $retired_transaction lacks Idle feedback"
+    done
 done
 
 grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||

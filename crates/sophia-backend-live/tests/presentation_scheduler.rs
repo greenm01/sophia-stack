@@ -142,6 +142,11 @@ fn in_flight_present(
         previous_committed_generation: 1,
     });
     LiveProductionSubmittedPresent {
+        candidate: sophia_protocol::SurfaceTransactionKey {
+            transaction,
+            surface,
+            target_buffer: buffer,
+        },
         transaction,
         surface,
         prepared,
@@ -478,7 +483,7 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
 }
 
 #[test]
-fn rollback_preserves_exact_recovery_present_until_surface_is_visible() {
+fn committed_epoch_present_waits_until_surface_is_visible() {
     let handle = BufferHandle::from_raw(90);
     let transaction = TransactionId::from_raw(91);
     let surface = SurfaceId::new(92, 1);
@@ -504,19 +509,7 @@ fn rollback_preserves_exact_recovery_present_until_surface_is_visible() {
         )
         .unwrap();
 
-    let report = scheduler.reconcile_layout_rollback(
-        &[(
-            surface,
-            Size {
-                width: 64,
-                height: 48,
-            },
-        )],
-        &resources,
-    );
-
-    assert_eq!(report.preserved, 1);
-    assert!(report.rejected.is_empty());
+    assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
     assert!(scheduler.has_layout_deferred());
     assert!(!scheduler.has_eligible());
     assert_eq!(scheduler.release_layout_deferred_for_surfaces(&[], &[]), 0);
@@ -553,7 +546,7 @@ fn rollback_preserves_exact_recovery_present_until_surface_is_visible() {
 }
 
 #[test]
-fn rollback_rejects_staged_present_without_an_exact_recovery_extent() {
+fn aborted_epoch_rejects_its_staged_present() {
     let handle = BufferHandle::from_raw(94);
     let transaction = TransactionId::from_raw(95);
     let surface = SurfaceId::new(96, 1);
@@ -579,20 +572,63 @@ fn rollback_rejects_staged_present_without_an_exact_recovery_extent() {
         )
         .unwrap();
 
-    let report = scheduler.reconcile_layout_rollback(
-        &[(
-            surface,
-            Size {
-                width: 65,
-                height: 48,
-            },
-        )],
-        &resources,
-    );
+    let report = scheduler.abort_layout_epoch(epoch);
 
     assert_eq!(report.rejected, [transaction]);
-    assert_eq!(report.preserved, 0);
     assert!(!scheduler.has_queued());
+}
+
+#[test]
+fn aborting_one_epoch_does_not_settle_another_epoch() {
+    let first_epoch = TransactionId::from_raw(980);
+    let second_epoch = TransactionId::from_raw(981);
+    let first_transaction = TransactionId::from_raw(982);
+    let second_transaction = TransactionId::from_raw(983);
+    let first_surface = SurfaceId::new(984, 1);
+    let second_surface = SurfaceId::new(985, 1);
+    let first_handle = BufferHandle::from_raw(986);
+    let second_handle = BufferHandle::from_raw(987);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(first_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(second_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    for batch in [
+        scheduler_batch_with_disposition(
+            first_transaction,
+            first_surface,
+            first_handle,
+            LiveProductionPresentDisposition::StageLayout { epoch: first_epoch },
+        ),
+        scheduler_batch_with_disposition(
+            second_transaction,
+            second_surface,
+            second_handle,
+            LiveProductionPresentDisposition::StageLayout {
+                epoch: second_epoch,
+            },
+        ),
+    ] {
+        scheduler
+            .enqueue_group(
+                &batch.groups[0],
+                &[],
+                Vec::new(),
+                &mut resources,
+                Instant::now(),
+            )
+            .unwrap();
+    }
+
+    assert_eq!(
+        scheduler.abort_layout_epoch(first_epoch).rejected,
+        [first_transaction]
+    );
+    assert!(scheduler.has_layout_deferred());
+    assert_eq!(scheduler.commit_layout_epoch(second_epoch), 1);
 }
 
 #[test]
@@ -708,22 +744,11 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
             .map(|queued| queued.submission.transaction),
         Some(second_transaction)
     );
-    let report = scheduler.reconcile_layout_rollback(
-        &[(
-            surface,
-            Size {
-                width: 64,
-                height: 48,
-            },
-        )],
-        &resources,
-    );
-    assert_eq!(report.preserved, 1);
-    assert!(report.rejected.is_empty());
+    assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
 }
 
 #[test]
-fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
+fn superseded_present_is_rejected_without_evicting_matching_candidate() {
     let matching_handle = BufferHandle::from_raw(77);
     let rejected_handle = BufferHandle::from_raw(78);
     let matching_transaction = TransactionId::from_raw(79);
@@ -758,7 +783,7 @@ fn wrong_size_epoch_present_is_rejected_without_evicting_matching_candidate() {
         rejected_transaction,
         surface,
         rejected_handle,
-        LiveProductionPresentDisposition::RejectLayoutMismatch,
+        LiveProductionPresentDisposition::RejectSuperseded,
     );
     let rejected = scheduler
         .enqueue_group(

@@ -50,7 +50,7 @@ pub enum SurfacePresentationAdmissionState {
     },
     AwaitingRetirement {
         admission_transaction: TransactionId,
-        visual_transaction: TransactionId,
+        visual_candidate: SurfaceTransactionKey,
         geometry: Rect,
     },
     Managed,
@@ -143,7 +143,7 @@ impl SurfaceAdmissionTable {
     pub fn begin_retirement(
         &mut self,
         surface: SurfaceId,
-        visual_transaction: TransactionId,
+        visual_candidate: SurfaceTransactionKey,
     ) -> bool {
         let SurfacePresentationAdmissionState::AwaitingPixels {
             transaction: admission_transaction,
@@ -152,37 +152,35 @@ impl SurfaceAdmissionTable {
         else {
             return false;
         };
-        if !visual_transaction.is_valid() {
+        if !visual_candidate.transaction.is_valid() || visual_candidate.surface != surface {
             return false;
         }
         self.states.insert(
             surface,
             SurfacePresentationAdmissionState::AwaitingRetirement {
                 admission_transaction,
-                visual_transaction,
+                visual_candidate,
                 geometry,
             },
         );
         true
     }
 
-    pub fn complete_retirement(
-        &mut self,
-        surface: SurfaceId,
-        visual_transaction: TransactionId,
-    ) -> bool {
+    pub fn complete_retirement(&mut self, visual_candidate: SurfaceTransactionKey) -> bool {
         let SurfacePresentationAdmissionState::AwaitingRetirement {
-            visual_transaction: expected,
+            visual_candidate: expected,
             ..
-        } = self.state(surface)
+        } = self.state(visual_candidate.surface)
         else {
             return false;
         };
-        if visual_transaction != expected {
+        if visual_candidate != expected {
             return false;
         }
-        self.states
-            .insert(surface, SurfacePresentationAdmissionState::Managed);
+        self.states.insert(
+            visual_candidate.surface,
+            SurfacePresentationAdmissionState::Managed,
+        );
         true
     }
 

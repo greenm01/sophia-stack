@@ -29,20 +29,50 @@ fn live_transaction_observed_size(
 
 fn live_transaction_visual_evidence(
     transaction: &SurfaceTransaction,
-    explicitly_presented: bool,
+    batch: &sophia_x_authority::XAuthorityObservedTransactionBatch,
 ) -> sophia_engine::SurfaceVisualEvidence {
-    match (transaction.target_buffer, explicitly_presented) {
-        (_, true) | (sophia_protocol::BufferSource::DmaBuf { .. }, false) => {
-            sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+    let presented = match transaction.target_buffer {
+        sophia_protocol::BufferSource::DmaBuf { handle } => batch
+            .present_submissions
+            .iter()
+            .filter(|submission| {
+                submission.transaction == transaction.transaction
+                    && submission.surface == transaction.surface
+                    && submission.buffer.raw() == handle
+            })
+            .count()
+            == 1,
+        sophia_protocol::BufferSource::CpuBuffer { .. } => {
+            batch
+                .software_present_submissions
+                .iter()
+                .filter(|submission| {
+                    submission.transaction == transaction.transaction
+                        && submission.surface == transaction.surface
+                })
+                .count()
+                == 1
+                && batch
+                    .transactions
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.transaction == transaction.transaction
+                            && candidate.surface == transaction.surface
+                            && matches!(
+                                candidate.target_buffer,
+                                sophia_protocol::BufferSource::CpuBuffer { .. }
+                            )
+                    })
+                    .count()
+                    == 1
         }
-        (
-            sophia_protocol::BufferSource::XPixmap { .. }
-            | sophia_protocol::BufferSource::CpuBuffer { .. }
-            | sophia_protocol::BufferSource::None,
-            false,
-        ) => {
-            sophia_engine::SurfaceVisualEvidence::BackingSnapshot
-        }
+        sophia_protocol::BufferSource::XPixmap { .. }
+        | sophia_protocol::BufferSource::None => false,
+    };
+    if presented {
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+    } else {
+        sophia_engine::SurfaceVisualEvidence::BackingSnapshot
     }
 }
 
@@ -60,8 +90,7 @@ impl PersistentLiveLayout {
             .iter()
             .flat_map(|group| group.transactions.iter())
             .find(|transaction| {
-                transaction.surface == surface
-                    && selected.transaction == Some(transaction.transaction)
+                selected.candidate == Some(transaction.key())
                     && live_transaction_observed_size(
                         transaction,
                         &self.dma_buf_sizes,

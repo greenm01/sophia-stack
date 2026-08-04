@@ -408,25 +408,6 @@
                         size.height,
                     );
                 }
-                let resize_epoch_aborted = wm_update.as_ref().is_some_and(|update| {
-                    update.commit.outcome == TransactionOutcome::TimedOut
-                });
-                if resize_epoch_aborted
-                    && let Some(runtime) = runtime.as_mut()
-                {
-                    // A fixed first-admission extent is still coherent after
-                    // blind-WM rollback. Keep its exact Present fenced until
-                    // admission publishes the surface; reject every other
-                    // staged resize Present as stale.
-                    let recovery_extents = layout.recovery_extents();
-                    let report = runtime.reconcile_rollback_presentations(&recovery_extents);
-                    println!(
-                        "sophia_live_resize_epoch schema=2 status=queue_reconciled rejected_presents={} preserved_presents={} recovery_extents={}",
-                        report.rejected.len(),
-                        report.preserved,
-                        recovery_extents.len(),
-                    );
-                }
                 layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
                 let (batch, released_admission_groups) = layout.projected_batch(&batch);
                 let production_batch =
@@ -450,6 +431,29 @@
                 let runtime = runtime
                     .as_mut()
                     .expect("persistent backend runtime was initialized above");
+                if let Some(update) = wm_update.as_ref() {
+                    match update.commit.outcome {
+                        TransactionOutcome::Committed => {
+                            let staged = runtime.commit_layout_epoch(update.commit.transaction);
+                            if staged != 0 {
+                                println!(
+                                    "sophia_live_resize_epoch schema=3 status=queue_committed epoch={} staged_presents={staged}",
+                                    update.commit.transaction.raw(),
+                                );
+                            }
+                        }
+                        TransactionOutcome::TimedOut => {
+                            let report = runtime.abort_layout_epoch(update.commit.transaction);
+                            println!(
+                                "sophia_live_resize_epoch schema=3 status=queue_aborted epoch={} rejected_presents={} recovery_extents={}",
+                                update.commit.transaction.raw(),
+                                report.rejected.len(),
+                                layout.recovery_extent_count(),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
                 // Layout progress can promote staged WM chrome after the
                 // earlier WM phase. Synchronize again at the production
                 // boundary so the committed clearance and rendered chrome
@@ -717,23 +721,6 @@
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 let expired = layout.expire_pending(&mut session_controls)?;
-                if expired.as_ref().is_some_and(|update| {
-                    update.update.commit.outcome == TransactionOutcome::TimedOut
-                }) && let Some(runtime) = runtime.as_mut()
-                {
-                    // Timeout polling owns the same rollback boundary as the
-                    // authority-driven path above; keep their reconciliation
-                    // rules identical so scheduling cadence cannot change the
-                    // client-visible Present result.
-                    let recovery_extents = layout.recovery_extents();
-                    let report = runtime.reconcile_rollback_presentations(&recovery_extents);
-                    println!(
-                        "sophia_live_resize_epoch schema=2 status=queue_reconciled rejected_presents={} preserved_presents={} recovery_extents={}",
-                        report.rejected.len(),
-                        report.preserved,
-                        recovery_extents.len(),
-                    );
-                }
                 if let Some(result) = expired {
                     pending_wm_update = Some(apply_wm_commit_result!(
                         result,

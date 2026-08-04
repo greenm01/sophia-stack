@@ -220,7 +220,6 @@ fn present_request_preserves_complete_frame_evidence_for_cpu_storage() {
     let batch = XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace)
         .expect("Present transaction produces an observation batch");
 
-    assert_eq!(batch.presented_surfaces, vec![surface]);
     assert_eq!(
         batch.software_present_submissions,
         [XAuthoritySoftwarePresentSubmission {
