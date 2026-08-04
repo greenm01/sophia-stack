@@ -1059,7 +1059,7 @@ emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived
 lifecycle and rejects mixed commits, modified evidence, emergency exits,
 incomplete input/WM/native cleanup, or fewer than the requested number of runs.
 `sophia-verify-soak`
-requires one clean schema-14 completion, the requested elapsed time and action
+requires one clean supported schema-14 through schema-16 completion, the requested elapsed time and action
 counts, and zero WM, Present, callback, native, or cleanup debt.
 Each installed launch also rotates a content-free runtime identity record with
 the kernel and Mesa versions, Kitty/Firefox/xmonad binary digests, a hashed

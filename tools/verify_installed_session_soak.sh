@@ -20,10 +20,10 @@ if grep -Eqi '(^|[[:space:]])(panic|error:|status=(failed|degraded))' "$session_
     exit 1
 fi
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=(14|15) status=bounded_complete ' "$session_log" || true
+    grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' "$session_log" || true
 )
 (( ${#completions[@]} == 1 )) || {
-    echo "soak requires exactly one schema-14 completion; found ${#completions[@]}" >&2
+    echo "soak requires exactly one supported completion; found ${#completions[@]}" >&2
     exit 1
 }
 completion="${completions[0]}"

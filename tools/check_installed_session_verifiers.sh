@@ -8,6 +8,9 @@ TEMP_FILE="$(mktemp)"
 trap 'rm -f -- "$TEMP_FILE"' EXIT
 
 "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200000 2 2
+sed 's/^sophia_live_session schema=14 status=bounded_complete /sophia_live_session schema=16 status=bounded_complete /' \
+    "$PASS" >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2
 "$ROOT_DIR/tools/verify_installed_runtime_identity.sh" "$IDENTITY_PASS"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200001 2 2; then
     echo "installed soak verifier accepted an undersized duration" >&2
