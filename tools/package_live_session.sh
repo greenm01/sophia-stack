@@ -30,6 +30,7 @@ install -d -m 755 \
     "$artifact/bin" \
     "$artifact/target/release" \
     "$artifact/tools/fixtures" \
+    "$artifact/tools/lib" \
     "$artifact/share/wayland-sessions"
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
 install -m 755 target/release/sophia-x11-wm-bridge \
@@ -70,6 +71,8 @@ install -m 755 tools/verify_sophia_firefox_physical_runs.sh \
 install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmonad.sh \
     tools/resolve_sophia_xmobar.sh "$artifact/tools/"
+install -m 644 tools/lib/session_lifecycle.sh \
+    "$artifact/tools/lib/session_lifecycle.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
 install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"

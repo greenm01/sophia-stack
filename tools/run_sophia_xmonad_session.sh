@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
 SOPHIA_NATIVE_WM_BIN="${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
@@ -9,6 +10,10 @@ TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
 INSTALLED_SESSION="${SOPHIA_INSTALLED_SESSION:-false}"
+INSTALLED_VERSION="${SOPHIA_INSTALLED_VERSION:-unknown}"
+INSTALLED_COMMIT="${SOPHIA_INSTALLED_COMMIT:-unknown}"
+[[ "$INSTALLED_VERSION" =~ ^[0-9A-Za-z._-]+$ ]] || INSTALLED_VERSION=unknown
+[[ "$INSTALLED_COMMIT" =~ ^[0-9A-Za-z._-]+$ ]] || INSTALLED_COMMIT=unknown
 REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
@@ -53,11 +58,46 @@ if [[ -n "$SESSION_WATCHDOG_SECONDS"
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
 runtime_root="${XDG_RUNTIME_DIR:-/tmp}"
+tty_name="$(tty 2>/dev/null || true)"
+LOG_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/sophia/${SESSION_PROFILE}-session"
+GUARD_LOG="$LOG_DIR/input-guard.log"
+RECOVERY_LOG="$LOG_DIR/recovery.log"
+SESSION_LOG="$LOG_DIR/session.log"
+LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
+mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR"
+[[ ! -f "$LIFECYCLE_LOG" ]] || mv -f "$LIFECYCLE_LOG" "$LIFECYCLE_LOG.previous"
+: >"$LIFECYCLE_LOG"
+chmod 600 "$LIFECYCLE_LOG"
+lifecycle_phase() {
+    printf 'sophia_session_lifecycle schema=1 status=%s phase=%s installed=%s build=%s manual_service=%s runtime=%s vt=%s\n' \
+        "$1" "$2" "$INSTALLED_SESSION" "$BUILD_SESSION" "$MANAGE_KEYD" \
+        "$([[ "$runtime_root" == /tmp ]] && echo temporary || echo owner)" \
+        "$([[ "$tty_name" =~ ^/dev/tty[0-9]+$ ]] && echo local || echo other)" \
+        >>"$LIFECYCLE_LOG"
+}
+lifecycle_current_phase=preflight
+lifecycle_diagnostic_written=false
+record_lifecycle_failure() {
+    local phase="$1" status="$2"
+    if [[ "$lifecycle_diagnostic_written" == false && "$status" != 0 ]]; then
+        sophia_session_record_failure \
+            "$LIFECYCLE_LOG" "$phase" "$INSTALLED_SESSION" \
+            "$INSTALLED_VERSION" "$INSTALLED_COMMIT" "$status"
+        lifecycle_diagnostic_written=true
+    fi
+}
+record_early_lifecycle_failure() {
+    local status=$?
+    record_lifecycle_failure "$lifecycle_current_phase" "$status"
+    return "$status"
+}
+lifecycle_phase entering preflight
+trap record_early_lifecycle_failure EXIT
 if [[ ! -t 0 ]]; then
     echo "Run this interactively from a dedicated local TTY." >&2
     exit 1
 fi
-tty_name="$(tty 2>/dev/null || true)"
 if [[ "$REQUIRE_RUNTIME_DIR" == true ]]; then
     [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]] || {
         echo "Installed Sophia requires an existing XDG_RUNTIME_DIR." >&2
@@ -79,11 +119,6 @@ if [[ "$INSTALLED_SESSION" == true
 fi
 STATE_DIR="$runtime_root/sophia-${SESSION_PROFILE}-session-${UID}"
 PID_FILE="$STATE_DIR/wrapper.pid"
-LOG_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/sophia/${SESSION_PROFILE}-session"
-GUARD_LOG="$LOG_DIR/input-guard.log"
-RECOVERY_LOG="$LOG_DIR/recovery.log"
-SESSION_LOG="$LOG_DIR/session.log"
-LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
 GUARD_ARMED_FILE="$STATE_DIR/input-guard.armed"
 GUARD_TRIGGERED_FILE="$STATE_DIR/input-guard.triggered"
 WATCHDOG_TRIGGERED_FILE="$STATE_DIR/session-watchdog.triggered"
@@ -106,19 +141,6 @@ if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
         >"$firefox_m10_profile_dir/user.js"
     chmod 600 "$firefox_m10_profile_dir/user.js"
 fi
-mkdir -p "$LOG_DIR"
-chmod 700 "$LOG_DIR"
-[[ ! -f "$LIFECYCLE_LOG" ]] || mv -f "$LIFECYCLE_LOG" "$LIFECYCLE_LOG.previous"
-: >"$LIFECYCLE_LOG"
-chmod 600 "$LIFECYCLE_LOG"
-lifecycle_phase() {
-    printf 'sophia_session_lifecycle schema=1 status=%s phase=%s installed=%s build=%s manual_service=%s runtime=%s vt=%s\n' \
-        "$1" "$2" "$INSTALLED_SESSION" "$BUILD_SESSION" "$MANAGE_KEYD" \
-        "$([[ "$runtime_root" == /tmp ]] && echo temporary || echo owner)" \
-        "$([[ "$tty_name" =~ ^/dev/tty[0-9]+$ ]] && echo local || echo other)" \
-        >>"$LIFECYCLE_LOG"
-}
-lifecycle_phase entering preflight
 if [[ -s "$PID_FILE" ]]; then
     previous_pid="$(<"$PID_FILE")"
     if [[ "$previous_pid" =~ ^[0-9]+$ ]] && kill -0 "$previous_pid" 2>/dev/null; then
@@ -232,8 +254,10 @@ cleanup() {
         return "$status"
     fi
     cleanup_done=true
-    local emergency=false
-    if [[ -s "$GUARD_TRIGGERED_FILE" || -s "$WATCHDOG_TRIGGERED_FILE" ]]; then
+    local emergency=false handoff_failed=false operator_emergency=false watchdog_failure=false
+    [[ ! -s "$GUARD_TRIGGERED_FILE" ]] || operator_emergency=true
+    [[ ! -s "$WATCHDOG_TRIGGERED_FILE" ]] || watchdog_failure=true
+    if [[ "$operator_emergency" == true || "$watchdog_failure" == true ]]; then
         emergency=true
     fi
     [[ -z "$watchdog_pid" ]] || terminate_bounded "$watchdog_pid" "Sophia session watchdog"
@@ -243,14 +267,18 @@ cleanup() {
     [[ -z "$guard_pid" ]] || terminate_bounded "$guard_pid" "Sophia input guard"
     guard_pid=""
     rm -f "$PID_FILE"
-    if [[ -n "$kd_mode" ]]; then
-        python3 "$TTY_MODE_HELPER" "$kd_mode" 2>/dev/null || status=1
+    if [[ -n "$kd_mode" ]] && ! python3 "$TTY_MODE_HELPER" "$kd_mode" 2>/dev/null; then
+        status=1
+        handoff_failed=true
     fi
-    if [[ -n "$keyboard_mode" ]]; then
-        python3 "$TTY_MODE_HELPER" "keyboard-$keyboard_mode" 2>/dev/null || status=1
+    if [[ -n "$keyboard_mode" ]] \
+        && ! python3 "$TTY_MODE_HELPER" "keyboard-$keyboard_mode" 2>/dev/null; then
+        status=1
+        handoff_failed=true
     fi
-    if [[ -n "$tty_state" ]]; then
-        stty "$tty_state" 2>/dev/null || status=1
+    if [[ -n "$tty_state" ]] && ! stty "$tty_state" 2>/dev/null; then
+        status=1
+        handoff_failed=true
     fi
     if [[ "$keyd_was_running" == true ]]; then
         echo
@@ -258,6 +286,7 @@ cleanup() {
         if ! sudo sv up keyd; then
             echo "WARNING: keyd could not be restored; run: sudo sv up keyd" >&2
             status=1
+            handoff_failed=true
         fi
     fi
     rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
@@ -274,7 +303,14 @@ cleanup() {
             "$emergency_session_exit_status" >>"$RECOVERY_LOG"
         if [[ "$restored_kd" != "$kd_mode" || "$restored_termios" != "$tty_state" ]]; then
             status=1
+            handoff_failed=true
         fi
+    fi
+    if [[ "$handoff_failed" == true ]]; then
+        record_lifecycle_failure handoff "$status"
+    elif [[ "$status" != 0 \
+        && ( "$operator_emergency" == false || "$watchdog_failure" == true ) ]]; then
+        record_lifecycle_failure "$lifecycle_current_phase" "$status"
     fi
     printf 'sophia_session_lifecycle schema=1 status=returned phase=handoff installed=%s exit_status=%s emergency=%s handoff=display_manager\n' \
         "$INSTALLED_SESSION" "$status" "$emergency" >>"$LIFECYCLE_LOG"
@@ -304,6 +340,7 @@ fi
 : >"$GUARD_LOG"
 chmod 600 "$GUARD_LOG"
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
+lifecycle_current_phase=input_guard
 lifecycle_phase entering input_guard
 "$SOPHIA_BIN" sophia-session-input-guard \
     "${input_source_args[@]}" \
@@ -647,6 +684,7 @@ elif [[ "$SESSION_PROFILE" == standalone
         "$xterm_duration" "$xterm_width" "$xterm_height" \
         "$xterm_lines" "$xterm_interval_msec" >>"$SESSION_LOG"
 fi
+lifecycle_current_phase=graphics_takeover
 python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off
 stty raw -echo
@@ -669,6 +707,7 @@ if [[ -n "$SESSION_WATCHDOG_SECONDS" ]]; then
     echo "Independent session watchdog armed for ${SESSION_WATCHDOG_SECONDS} seconds."
 fi
 lifecycle_phase complete graphics_takeover
+lifecycle_current_phase=session
 lifecycle_phase entering session
 set +e
 wait_targets=("$session_pid" "$guard_pid")

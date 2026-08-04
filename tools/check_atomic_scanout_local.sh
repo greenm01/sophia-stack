@@ -212,6 +212,8 @@ bash -n tools/package_live_session.sh tools/install_live_session.sh \
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
+bash -n tools/lib/session_lifecycle.sh tools/check_session_lifecycle_diagnostics.sh
+tools/check_session_lifecycle_diagnostics.sh
 bash -n tools/installed/sophia-session
 bash -n tools/installed/sophia-kitty-session
 bash -n tools/installed/sophia-firefox-proof

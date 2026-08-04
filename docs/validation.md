@@ -996,7 +996,13 @@ same guarded session lifecycle. It fails closed unless greetd supplies
 an existing, absolute, user-owned `XDG_RUNTIME_DIR` and a real local Linux VT.
 The lifecycle log records ordered preflight, input-guard, graphics-takeover,
 session, and bounded display-manager-handoff phases without application
-content. Inspect the latest phase or roll back the installation with:
+content. A failed launch adds exactly one `sophia_session_diagnostic` record
+with the installed version and commit, exit status, and exact `preflight`,
+`input_guard`, `graphics_takeover`, `session`, or `handoff` phase. It contains
+no command arguments, application identity, typed content, or window metadata.
+`sophia-status` prints that record once alongside the verified current manifest
+and final lifecycle outcome. Inspect the latest phase or roll back the
+installation with:
 
 ```sh
 sophia-status

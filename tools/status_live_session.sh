@@ -23,8 +23,17 @@ done
 [[ "$found_graphical" == true ]] || echo none
 for profile in xmonad kitty; do
     state="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/$profile-session"
+    lifecycle="$state/lifecycle.log"
     printf '%s_logs=%s\n' "$profile" "$state"
-    tail -n 1 "$state/lifecycle.log" 2>/dev/null || true
+    latest_diagnostic="$(
+        grep '^sophia_session_diagnostic schema=1 ' "$lifecycle" 2>/dev/null |
+            tail -n 1 || true
+    )"
+    latest_lifecycle="$(tail -n 1 "$lifecycle" 2>/dev/null || true)"
+    [[ -z "$latest_diagnostic" ]] || printf '%s\n' "$latest_diagnostic"
+    if [[ -n "$latest_lifecycle" && "$latest_lifecycle" != "$latest_diagnostic" ]]; then
+        printf '%s\n' "$latest_lifecycle"
+    fi
     tail -n 1 "$state/recovery.log" 2>/dev/null || true
 done
 runtime_identity="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/installed-session/runtime-identity.log"

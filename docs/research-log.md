@@ -7094,3 +7094,28 @@ acknowledgement ordering.
   The installed release still needs the retained chrome proof, normal login
   and logout captures, independent recovery and fallback evidence, and the
   documented operator handoff required by the remaining Milestone 11 items.
+
+## 2026-08-03: make installed startup failure phases explicit
+
+- Installed launch already emitted ordered entering/complete lifecycle phases,
+  but every nonzero exit ended with the same handoff record. `sophia-status`
+  tailed that record, so an operator could not distinguish preflight, input
+  guard, graphics takeover, session, or restoration failure without reading
+  the complete log.
+- The session wrapper now carries the verified manifest version and commit into
+  the runner. A shared lifecycle helper emits one bounded diagnostic containing
+  only that release identity, the exact enumerated phase, installed flag, and
+  exit status. The current phase advances before each phase's first side
+  effect, while a failed TTY, keyboard, keyd, or termios restoration overrides
+  the source phase with `handoff`.
+- User-requested Ctrl-Alt-Backspace recovery remains an expected emergency and
+  is not mislabeled as a startup failure. A watchdog deadline remains a session
+  failure even though it follows the emergency cleanup path. The ordinary
+  lifecycle and recovery schemas are unchanged, preserving the existing
+  promotion verifiers.
+- `sophia-status` now prints the newest diagnostic exactly once beside the
+  verified installed manifest and final lifecycle result. The regression drives
+  an installed-style noninteractive preflight failure, exercises all five
+  allowed phase values, rejects an invalid phase, and proves the status output
+  retains no duplicated diagnostic. Packaging carries the helper inside the
+  immutable artifact instead of reaching back into the repository.
