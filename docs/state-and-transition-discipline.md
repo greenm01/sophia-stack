@@ -17,14 +17,16 @@ failure boundaries.
 
 Four foundations keep that cost bounded:
 
-1. transition systems and TLA+ describe legal state changes and the safety and
-   liveness properties that must survive every ordering;
+1. transition systems describe legal state changes and the safety and
+   liveness properties that must survive every ordering; bounded TLA+ models
+   provide executable checks for selected transition domains;
 2. I/O automata describe independently owned components that communicate by
    observations, proposals, and outcomes;
 3. single-writer authority and explicit linearization points prevent
    split-brain state; and
-4. the CALM principle identifies which facts can flow without coordination and
-   which decisions require serialization.
+4. the CALM principle identifies which facts can flow without coordination,
+   which decisions must be ordered by their owning authority, and which
+   cross-authority decisions require coordination.
 
 The State-Action-Model pattern provides useful vocabulary for a subset of this
 shape, but it is not the foundation of Sophia and is not a universal Engine
@@ -46,127 +48,13 @@ Sophia's process and authority boundaries create several deliberate risks:
 The answer is not to merge these roles. It is to refuse to distribute one
 kind of authoritative truth among them.
 
-## Current Conformance and Known Gaps
+## Relationship to Current Status
 
-As of 2026-08-01, Sophia already implements much of this discipline:
-
-- `PreparedSurfaceCommit` separates a candidate from committed state;
-- retirement-time baseline validation rejects stale candidates while retaining
-  unrelated newer commits;
-- WM policy is planned against a cloned candidate and applied atomically;
-- typed IDs, generations, bounded packets, immutable snapshots, and explicit
-  outcomes are established boundary conventions;
-- the central portal lifecycle rejects duplicate IDs, enforces capacity, and
-  ties grants to generations; and
-- deterministic tests cover stale transactions, timeout preservation,
-  unrelated commit retention, portal revocation, focus validity, and output
-  retirement ordering.
-
-The remaining gaps are architectural hardening work, not a reason to replace
-Engine with a global SAM, TEA, actor, or message-loop abstraction.
-
-### 1. The Retirement Gate Is Not Yet Universal
-
-The prepared Present path promotes a candidate only after matching page-flip
-retirement. Some general authority paths can still advance a value named
-`committed_surfaces` before composition and physical retirement:
-
-- `AuthorityTransactionIntake::commit` calls the direct
-  `HeadlessEngine::commit_surface_transactions` helper;
-- `ProductionSessionCoordinator::commit_authority_batches` runs before frame
-  composition and KMS submission; and
-- `ProductionSessionCoordinator::replace_committed_surfaces` and the matching
-  backend-assembly method permit wholesale snapshot replacement.
-
-The target is one visible transition for every application visual source,
-including software-rendered X11 content:
-
-```text
-observe -> prepare -> compose candidate -> submit -> retire -> commit
-```
-
-If an implementation needs accepted logical state before retirement, that
-state must be named and stored as accepted or prepared state. It is not
-committed visual truth and cannot drive hit-testing, committed focus,
-successful presentation feedback, or resource release.
-
-### 2. Commit Authority Is Not Yet Sealed by a Retirement Witness
-
-The current apply APIs accept a `PreparedSurfaceCommit`, but the type itself
-does not prove that its exact output frame retired. Correct call order is
-maintained by the production coordinator rather than enforced by the type
-boundary.
-
-The retirement reducer should produce a typed witness carrying the output,
-frame serial, transaction, submission generation, and retirement outcome.
-Only the owning Engine coordinator should be able to consume that witness with
-the matching prepared candidate. Direct commit and apply helpers should then be
-restricted to that owner.
-
-### 3. Output State Copies Still Resemble Alternate Writers
-
-Per-output live runtimes currently install copied committed-surface vectors
-through replacement methods. These copies are intended as projections, but
-their mutable API shape resembles another source of truth and permits callers
-to manufacture a replacement snapshot.
-
-Engine should publish one immutable, generation-tagged committed scene
-snapshot. Output, rendering, and backend consumers may retain or project that
-snapshot read-only. If a consumer needs local installation state, its type and
-method names must identify it as a projection that cannot flow back into
-Engine authority.
-
-### 4. Boundary Outcomes Need Complete Dispositions
-
-Sophia's packets already distinguish commit, stale rejection, invalid
-rejection, and timeout. Some internal paths still collapse failed readiness,
-supersession, disconnect, backpressure, and other terminal causes into broader
-outcomes.
-
-Each I/O-automaton boundary needs an explicit disposition for accepted,
-duplicate or idempotent retry, stale, superseded, malformed, unauthorized, not
-ready, timed out, disconnected, and backpressured work. Public wire enums need
-not grow without compatibility evidence, but Engine must retain an exact
-internal reason for tests, settlement, and privacy-safe diagnostics.
-
-### 5. Portal Reducers Can Bypass Central Lifecycle Rules
-
-`PortalLifecycleCoordinator` provides bounded capacity, duplicate rejection,
-generation checks, and single-use grants. Individual portal reducers also own
-public maps and currently insert a request by transfer ID directly, which can
-replace an existing record if those reducers are used outside the coordinator.
-
-The lifecycle coordinator should become the sole public admission path, or
-every reducer must enforce the same uniqueness, capacity, generation, and
-terminal-state rules. No portal entry point may weaken the central lifecycle by
-being easier to call.
-
-### 6. The Formal Model Does Not Yet Exist
-
-The repository has deterministic transaction and integration tests but no TLA+
-module or equivalent executable state-machine model. The first model should be
-small: propose, prepare, submit, retire, reject, timeout, disconnect, remove,
-and release. It should model bounded surfaces, candidates, submissions,
-committed generations, focus, and referenced buffers rather than implementation
-types or graphics details.
-
-The model should check the safety and liveness properties listed below and
-produce counterexample traces that can be translated into deterministic Rust
-regressions. It belongs in validation only after its toolchain and reproducible
-command are documented.
-
-### 7. Transition Replay Is Not Yet a First-Class Diagnostic
-
-Sophia has structured logs and deterministic frame-command replay, but not one
-bounded authority-transition trace spanning proposal, preparation, submission,
-retirement, rejection, and release.
-
-A privacy-safe trace should retain only the owning authority, opaque target,
-previous and candidate generations, action, outcome, internal reason, and
-related submission identity. It must not retain namespace identity, XIDs,
-application metadata, portal payloads, or pixel content. Such traces would
-connect physical failures, deterministic regression tests, and the formal
-model without weakening isolation.
+This rationale is intentionally evergreen. Current conformance, implementation
+gaps, and candidate hardening work belong in the dated
+[Research Log](research-log.md) and the admitted roadmap in [Todo](../todo.md).
+A gap recorded during an audit is not roadmap work until the todo admits and
+orders it.
 
 ## Common Transition Shape
 
@@ -182,13 +70,13 @@ bounded proposals
 owning authority validates and reduces
           |
           v
-prepared candidate and explicit effects
+accepted or prepared state and explicit effects
           |
           v
-external execution and returned observation
+external execution and tagged observation
           |
           v
-commit or reject, then publish snapshots and feedback
+terminal settlement, then authoritative snapshots and feedback
 ```
 
 This is a reasoning model, not a requirement that every subsystem use one
@@ -198,11 +86,15 @@ protocol frontend retains the private tables and sequencing needed to honor
 its native protocol. What stays constant is ownership: an effect cannot mutate
 another authority's state, and its result returns as a new typed observation.
 
-## 1. Transition Systems and TLA+
+## 1. Transition Systems and Bounded TLA+ Formalization
 
 A transition system describes behavior as a sequence of states connected by
-named actions. TLA+ adds a practical language for specifying those actions and
-checking safety and liveness across many possible interleavings.
+named actions. TLA+ is one practical language for specifying those actions and
+checking safety and liveness across many possible interleavings. Sophia carries
+a bounded executable [visual-retirement model](../validation/tla/README.md);
+the transition system remains the architectural foundation, while TLA+ is a
+validation tool for selected domains rather than a universal Engine execution
+model.
 
 Sophia's visual lifecycle is naturally expressed in this form:
 
@@ -213,10 +105,13 @@ proposed -> validated -> prepared -> submitted -> retired -> committed
                             or timed out
 ```
 
-The diagram is intentionally abstract. A real transaction can contain several
-surfaces and output frames, and domain-local facts may advance while its visual
-candidate waits. The essential distinction is that a proposal, a prepared
-candidate, a submitted frame, and committed visual state are different facts.
+The diagram is intentionally abstract. Here, `committed` specifically means
+committed visual state after retirement; an authority may accept domain-local
+nonvisual state earlier when its own contract permits that. A real transaction
+can contain several surfaces and output frames, and domain-local facts may
+advance while its visual candidate waits. The essential distinction is that a
+proposal, accepted state, a prepared candidate, a submitted frame, and
+committed visual state are different facts.
 
 Useful abstract variables include:
 
@@ -260,15 +155,16 @@ The table describes logical authorities, not required process boundaries. Two
 automata may temporarily share a process without gaining access to each
 other's state.
 
-Every cross-automaton contract should make these cases explicit:
+Every cross-automaton contract should make the cases applicable to it explicit:
 
 - identity and generation of the target;
 - bounded size and cardinality;
 - duplicate and retry behavior;
 - stale or out-of-order handling;
-- rejection and timeout outcomes;
-- disconnect and restart behavior; and
-- backpressure when the receiver cannot accept more work.
+- acceptance and rejection outcomes;
+- timeout, disconnect, and restart behavior when work can outlive either end;
+- backpressure when the receiver cannot accept more work; and
+- exactly one relevant terminal settlement for every admitted item.
 
 This foundation controls hidden synchrony. A frontend must not assume that the
 next Engine message answers its newest request. Engine must not assume that a
@@ -308,10 +204,15 @@ globally linearizable.
 
 For application visuals, proposal acceptance and candidate preparation are not
 visibility. The live backend executes a prepared output submission and returns
-a tagged observation. Page-flip retirement is the transition that promotes the
-prepared candidate into committed visual and input state and permits successful
-protocol feedback. Until then, the previous coherent committed state remains
-authoritative.
+a tagged observation. Page-flip retirement is the output-scoped transition
+that validates presentation of the exact candidate submitted for that output.
+Engine may then promote state and feedback whose contract depends only on that
+output. State or effects that span several required outputs wait until the
+owning coordinator has settled every required, tagged output-retirement
+observation. Sophia does not claim one globally simultaneous retirement instant
+across outputs. Until the applicable retirement set is complete, the previous
+coherent committed state remains authoritative wherever retirement is still
+pending.
 
 This foundation controls split brain. A WM cannot believe its requested layout
 is already displayed, a frontend cannot infer visibility from client traffic,
@@ -323,7 +224,9 @@ buffer.
 The CALM principle connects consistency with monotonicity. A monotonic
 computation only accumulates conclusions as it learns more facts. A
 non-monotonic computation may retract or replace an earlier conclusion and
-therefore needs an ordering or coordination point.
+therefore must be ordered by the authority that owns the affected fact. It
+requires cross-authority coordination only when the decision spans authority
+domains.
 
 Sophia should classify monotonicity inside an explicit generation or epoch.
 Crossing that boundary may invalidate facts that were monotonic within it.
@@ -349,11 +252,13 @@ Examples of non-monotonic decisions are:
 The observations that motivate these decisions may arrive independently. The
 decision itself must pass through the authority that owns the affected fact.
 
-This foundation controls over-coordination. Engine does not need to serialize
-every readiness bit, log entry, or protocol-local operation. It serializes the
-non-monotonic decisions that change visual truth, security authority, routing,
-or resource lifetime. The result is a coordination budget: centralize only
-where accepting one conclusion invalidates another.
+This foundation controls over-coordination. Each authority orders only the
+non-monotonic decisions that change facts it owns; Engine does not need to
+serialize every readiness bit, log entry, portal decision, or protocol-local
+operation. Coordination crosses authorities only where one decision must bind
+facts from several ownership domains. The result is a coordination budget:
+centralize only where accepting one conclusion invalidates another across the
+same authoritative decision.
 
 ## Worked Example: Atomic Resize
 
@@ -375,9 +280,12 @@ Consider a managed X11 surface moving to a new allocation:
 6. The renderer and live backend execute the immutable plan. Import or KMS
    failure returns a tagged observation and leaves the previous committed
    visual state intact.
-7. Page-flip retirement linearizes the visible change. Engine promotes the
-   matching prepared candidate, advances input geometry with it, and emits
-   successful presentation feedback.
+7. Each page-flip retirement linearizes the visible change for its output.
+   Engine accepts only the observation for the matching prepared candidate. It
+   advances input geometry and emits feedback when their applicable retirement
+   requirements are complete. If the scene requires several outputs, full
+   presentation is the conjunction of those output-scoped observations, not a
+   globally simultaneous instant.
 8. A late completion, timeout, disconnect, or older authority observation is
    reduced against transaction and generation identity. It cannot overwrite
    the committed result.
@@ -461,8 +369,10 @@ Every new boundary, packet, or stateful feature should answer:
 1. **Who is the sole writer?** Name the authority and the exact fact it owns.
 2. **Is the update monotonic within its generation?** If not, name the
    serialization or decision point.
-3. **Which automaton receives and emits it?** Define identities, stale handling,
-   rejection, timeout, disconnect, and backpressure.
+3. **Which automaton receives and emits it?** Define the applicable identity or
+   generation, duplicate and retry behavior, and how every admitted item
+   reaches exactly one relevant terminal settlement. A boundary need not
+   expose dispositions that cannot occur in its contract.
 4. **Which safety or liveness property covers it?** State the failure that must
    remain impossible or the progress that must remain bounded.
 

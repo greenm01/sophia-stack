@@ -1207,6 +1207,14 @@ work without a repository checkout or development takeover script.
 
 ## Milestone 12: Stability And Workday Soak
 
+- [x] Establish one bounded, unattended formal-transition gate before the soak:
+  pin an offline TLC toolchain, model visual proposal, preparation, submission,
+  output-scoped retirement, terminal failure, disconnect, removal, and resource
+  release, and check the committed-state, exact-retirement, input-generation,
+  and resource-lifetime invariants. Map every modeled action to its current
+  Rust authority boundary, explicitly record any missing universal reducer,
+  and turn every counterexample that changes implementation behavior into a
+  deterministic Rust regression before accepting the model correction.
 - [ ] Pass ten consecutive installed login/startup/logout cycles without
   emergency recovery, stale graphical processes, or display-manager repair.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
@@ -1223,7 +1231,8 @@ work without a repository checkout or development takeover script.
 
 Failures create the next smallest evidence-driven compatibility or lifecycle
 slice. They do not justify broad X11 conformance work. Milestone 12 exits when
-the installed path—not a repository launcher—passes the complete Daily-Driver
+the bounded transition model and its mapped Rust regressions pass and the
+installed path—not a repository launcher—passes the complete Daily-Driver
 Promotion Contract.
 
 ---
@@ -1234,6 +1243,11 @@ This milestone starts only after the installed workday soak. It optimizes the
 same native-X product; XLibre and Wayland remain external performance
 references rather than Sophia runtime components.
 
+- [ ] Extend the bounded visual-retirement model before changing frame-slot,
+  coalescing, multi-output, shared-worker, direct-scanout, or buffer-lifetime
+  semantics. Check out-of-order output retirement, supersession, fallback, and
+  release safety, and retain a deterministic Rust regression for every
+  implementation-relevant counterexample.
 - [ ] Recycle three generational frame-surface slots per output through
   explicit page-flip retirement, with bounded deferral when all slots are
   leased.

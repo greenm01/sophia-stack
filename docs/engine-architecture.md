@@ -70,7 +70,7 @@ The diagram is intentionally plain text so it remains readable on a TTY.
  |  Output Domain + Authoritative Visual State                      |
  |  topology, work areas, surfaces, focus, stacking, damage         |
  |                │                                                 |
- |                │ atomic committed snapshot                       |
+ |                │ immutable baseline / prepared candidate         |
  |                ▼                                                 |
  |  =================== COMPOSITOR CORE ==========================  |
  |  Frame Domain -> Render Planning -> Live Backend Boundary        |
@@ -84,9 +84,9 @@ The diagram is intentionally plain text so it remains readable on a TTY.
 ```
 
 Facts enter Engine as bounded, typed records. No external component mutates
-Engine state directly. Engine validates proposals, applies accepted changes to
-private authoritative state, publishes a committed visual snapshot, and builds
-frames only from that snapshot.
+Engine state directly. Engine validates proposals, retains the coherent
+committed baseline, builds frames from one immutable prepared candidate, and
+publishes committed visual state only after matching retirement.
 
 ## Domain Ownership
 
@@ -161,16 +161,18 @@ backend executes those effects and reobserves native state; it does not infer
 scheduling policy from aggregate readiness booleans.
 
 The presentation queue, prepared Engine candidate, and submitted output frame
-are separate lifetimes. Page-flip retirement is the only transition that
-promotes a prepared candidate into committed visual and input state and permits
-successful protocol feedback.
+are separate lifetimes. A matching page-flip retirement is the only observation
+that can satisfy presentation for its output. Engine promotes visual and input
+state and permits successful protocol feedback only when their applicable
+output-retirement requirements are complete.
 
 ### Render Planning
 
-Render planning lowers one committed visual snapshot into renderer-neutral
+Render planning lowers one immutable visual snapshot -- either the committed
+baseline or a validated prepared candidate -- into renderer-neutral
 composition work: client-buffer placements, Engine-owned display-list
-primitives, clips, opacity, and damage. It does not perform protocol requests,
-layout policy, or kernel I/O.
+primitives, clips, opacity, and damage. It never observes a partially updated
+scene and does not perform protocol requests, layout policy, or kernel I/O.
 
 ### Live Backend Boundary
 
@@ -190,22 +192,31 @@ observations/proposals
  validate and reduce
         │
         ▼
- private state transition
-        │
-        ▼
- committed visual snapshot
+ accepted state / prepared visual candidate
         │
         ▼
  frame decision -> render plan -> backend execution
         │
         ▼
- presentation observation -> retirement
+ tagged presentation observation
+        │
+        ▼
+ retirement validation
+        │
+        ▼
+ committed visual snapshot + input/feedback/resource effects
 ```
 
 This ordering is the architectural invariant behind flicker-free multi-window
-updates. Input, output reservations, WM layouts, surface buffers, and
-Engine-owned chrome join the same committed snapshot before frame planning.
-Subsystem-specific shortcuts around that path are forbidden.
+updates. Domain-local nonvisual state may advance earlier under its owning
+contract. Visual geometry, buffers, focus, hit-testing, successful presentation
+feedback, and retirement-dependent resource release cannot advance from a
+prepared candidate. Input, output reservations, WM layouts, surface buffers,
+and Engine-owned chrome join one immutable candidate before frame planning and
+become committed visual truth only through matching retirement. Presentation
+is output-scoped; Sophia does not claim a globally simultaneous multi-output
+retirement instant. Subsystem-specific shortcuts around that path are
+forbidden.
 
 ## Current Rust Module Map
 

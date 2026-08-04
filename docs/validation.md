@@ -23,6 +23,28 @@ tools/audit_source_layout.sh
 cargo test --workspace --offline
 ```
 
+### Bounded Formal Transition Model
+
+Milestone 12 adds one unattended TLA+ gate for visual candidate preparation,
+submission, output-scoped retirement, terminal settlement, and resource
+release. It is not a Milestone 11 installed-session requirement and adds no
+physical operator steps.
+
+The model and its action-to-Rust boundary map live under `validation/tla`.
+Sophia pins the command-line TLA+ Tools v1.7.4 jar by SHA-256. Once that
+artifact has been obtained, the check is entirely offline and leaves its TLC
+state in a temporary directory:
+
+```sh
+SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
+```
+
+The bounded two-output, two-generation configuration explores retirement and
+supersession ordering while remaining suitable for routine validation. A TLC
+counterexample that changes implementation behavior must become a deterministic
+Rust regression before the model or implementation is corrected. The model is
+not a refinement proof and must not be weakened to accept a known Rust shortcut.
+
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
 [X11 compatibility matrix](x11-compatibility-matrix.md) identifies each

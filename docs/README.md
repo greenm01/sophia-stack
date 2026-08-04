@@ -40,7 +40,8 @@ unimplemented target behavior explicitly.
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
   limited explanatory relationship to State-Action-Model. Rationale explains
-  the normative architecture but does not override it.
+  the normative architecture but does not override it; current conformance and
+  implementation gaps belong in the dated research log and admitted todo.
 
 ## Subsystem Contracts And Current Status
 
@@ -59,7 +60,8 @@ override the ownership and trust rules in the normative architecture.
 
 - [X11 Compatibility Matrix](x11-compatibility-matrix.md) is the admission
   record for native X11 client behavior.
-- [Validation](validation.md) lists reproducible validation commands and gates.
+- [Validation](validation.md) lists reproducible validation commands and gates,
+  including the bounded formal transition model under `validation/tla`.
 - [Active Roadmap](../todo.md) contains current milestone progress, incomplete
   work, and measurable exits.
 - [Active Research Log](research-log.md) contains current investigations and
