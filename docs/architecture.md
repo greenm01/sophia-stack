@@ -268,13 +268,15 @@ Admission is a state machine beside, not inside, committed visual state:
 the committed scene.
 An admission control acknowledgement proves only that protocol configure/map
 effects were delivered; visual admission still waits for a concrete buffer at
-the accepted content extent. DMA-BUF admission selects one exact
-surface/transaction/buffer Present group and remains unfocusable until its
-page flip retires. A retained extent or previously committed size may guide a
-recovery proposal, but it cannot satisfy an admission surface's visual
-readiness: every admission-finalization proposal must own a newly staged
-concrete transaction for that surface. A layout timeout does not reset that
-lifecycle:
+the accepted content extent. Presented admission selects one exact
+surface/transaction/target-buffer key and remains unfocusable until its native
+frame retires. This rule is independent of whether the authority exports a
+DMA-BUF or materializes immutable CPU storage. Only non-Present backing
+snapshots may commit synchronously. A retained extent or previously committed
+size may guide a recovery proposal, but it cannot satisfy an admission
+surface's visual readiness: every admission-finalization proposal must own a
+newly staged concrete transaction for that surface. A layout timeout does not
+reset that lifecycle:
 retry epochs retain `ControlPending` or `AwaitingPixels` surfaces in their
 admission-finalization set; an `AwaitingRetirement` surface is already owned by
 its exact visual candidate and cannot be replanned. Only the eventual matching
@@ -326,6 +328,13 @@ submissions for unrelated surfaces remain immediately eligible. A layout epoch
 must not become a session-wide Present barrier. The scheduler shares one
 immutable authority batch and retains only bounded submission records rather
 than cloning the full batch per queued Present.
+
+Storage classification is per atomic authority group, not per owner envelope.
+One owner batch may contain a software Present group and an unrelated DMA-BUF
+Present group. The GPU production path registers the software group before the
+DMA-BUF group drives their shared native frame; the page flip settles each
+group with its original transaction and storage-appropriate feedback. A single
+group that claims both storage paths is malformed and fails closed.
 
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and

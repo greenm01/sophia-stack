@@ -89,7 +89,29 @@ impl LiveProductionVisualRuntime {
                 self.presentation_feedback
                     .complete_copy(submission.transaction, ust, msc)?;
             self.route_present_feedback(outcome);
+            if self.retired_software_presents.len() == PRESENT_FEEDBACK_CAPACITY {
+                self.retired_software_presents_overflowed = true;
+            } else {
+                self.retired_software_presents
+                    .push_back(LiveProductionRetiredSoftwarePresent {
+                        candidate: submission.candidate,
+                        source_size: submission.source_size,
+                        ust_usec: ust,
+                        msc,
+                    });
+            }
         }
+        Ok(())
+    }
+
+    pub fn drain_retired_software_presents_into(
+        &mut self,
+        retired: &mut Vec<LiveProductionRetiredSoftwarePresent>,
+    ) -> Result<(), &'static str> {
+        if self.retired_software_presents_overflowed {
+            return Err("production software Present retirement queue overflowed");
+        }
+        retired.extend(self.retired_software_presents.drain(..));
         Ok(())
     }
 

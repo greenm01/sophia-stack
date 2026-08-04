@@ -319,6 +319,13 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
     observed.transactions.push(pixels.clone());
     observed.software_present_submissions.push(software_present);
     let mut layout = PersistentLiveLayout::default();
+    layout.cpu_buffer_sizes.insert(
+        192,
+        Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    );
     layout
         .released_admission_groups
         .push_back(LiveAdmissionAuthorityGroup {
@@ -330,7 +337,7 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
         });
 
     let (projected, released) = layout.projected_batch(&observed);
-    let production = production_authority_batch(&projected, &released, &layout);
+    let production = production_authority_batch(&projected, &released, &layout).unwrap();
 
     assert!(projected.transactions.is_empty());
     assert!(projected.software_present_submissions.is_empty());
@@ -364,6 +371,11 @@ fn duplicate_software_present_fails_before_renderer_registration() {
         previous_committed_generation: 0,
     };
     let submission = sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+        candidate: pixels.key(),
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         transaction,
         surface,
         acquire_fence: None,

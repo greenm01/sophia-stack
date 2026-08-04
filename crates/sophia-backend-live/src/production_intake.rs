@@ -1,6 +1,6 @@
 use sophia_protocol::{
-    BufferHandle, DmaBufDescriptor, FenceHandle, LayerSnapshot, SurfaceId, SurfaceTransaction,
-    TransactionId,
+    BufferHandle, DmaBufDescriptor, FenceHandle, LayerSnapshot, Size, SurfaceId,
+    SurfaceTransaction, SurfaceTransactionKey, TransactionId,
 };
 use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
@@ -42,6 +42,8 @@ pub struct LiveProductionPresentSubmission {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveProductionSoftwarePresentSubmission {
+    pub candidate: SurfaceTransactionKey,
+    pub source_size: Size,
     pub transaction: TransactionId,
     pub surface: SurfaceId,
     pub acquire_fence: Option<FenceHandle>,
@@ -167,14 +169,19 @@ impl LiveProductionAuthorityGroup {
         {
             return Err("production authority group contains a mismatched Present submission");
         }
-        if self
-            .software_present_submissions
-            .iter()
-            .any(|submission| submission.transaction != self.transaction)
-        {
+        if self.software_present_submissions.iter().any(|submission| {
+            submission.transaction != self.transaction
+                || submission.candidate.transaction != submission.transaction
+                || submission.candidate.surface != submission.surface
+                || submission.source_size.width <= 0
+                || submission.source_size.height <= 0
+        }) {
             return Err(
                 "production authority group contains a mismatched software Present submission",
             );
+        }
+        if !self.present_submissions.is_empty() && !self.software_present_submissions.is_empty() {
+            return Err("production authority group mixes DMA-BUF and software Presents");
         }
         let present_keys = self
             .present_submissions
@@ -201,6 +208,7 @@ impl LiveProductionAuthorityGroup {
                 .filter(|transaction| {
                     transaction.transaction == submission.transaction
                         && transaction.surface == submission.surface
+                        && transaction.key() == submission.candidate
                         && matches!(
                             transaction.target_buffer,
                             sophia_protocol::BufferSource::CpuBuffer { .. }

@@ -65,6 +65,23 @@ pub(super) fn record_native_present_retirement(
     }
 }
 
+pub(super) fn record_native_software_present_retirement(
+    layout: &mut PersistentLiveLayout,
+    retired: sophia_backend_live::LiveProductionRetiredSoftwarePresent,
+) {
+    let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
+    layout.complete_admission_retirement(retired.candidate);
+    println!(
+        "sophia_live_session_present schema=3 status=retired transaction={} surface={} source={}x{} kind=software ust={} msc={}",
+        retired.candidate.transaction.raw(),
+        retired.candidate.surface.index(),
+        retired.source_size.width,
+        retired.source_size.height,
+        retired.ust_usec,
+        retired.msc,
+    );
+}
+
 pub(super) fn correlate_physical_input_page_flip(
     input_delivery_complete: bool,
     input_pixel_change: bool,

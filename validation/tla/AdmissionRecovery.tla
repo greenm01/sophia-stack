@@ -14,16 +14,18 @@ ASSUME /\ PresentCandidate # BackingCandidate
 
 Candidates == {PresentCandidate, BackingCandidate}
 Owners == {"none", "quarantine", "scheduler", "inflight", "retired"}
+Storages == {"dma", "cpu"}
 LayoutPhases == {"pending", "recovery", "committed"}
 AdmissionPhases == {"pending", "awaiting_retirement", "managed"}
 Outcomes == {"none", "complete", "skip"}
 
-VARIABLES selected, owner, layout, admission, outcome, feedback
+VARIABLES selected, storage, owner, layout, admission, outcome, feedback
 
-vars == <<selected, owner, layout, admission, outcome, feedback>>
+vars == <<selected, storage, owner, layout, admission, outcome, feedback>>
 
 Init ==
     /\ selected = NoCandidate
+    /\ storage = "none"
     /\ owner = "none"
     /\ layout = "pending"
     /\ admission = "pending"
@@ -34,6 +36,7 @@ ObservePresent ==
     /\ admission # "managed"
     /\ selected # PresentCandidate
     /\ selected' = PresentCandidate
+    /\ storage' \in Storages
     /\ owner' = "quarantine"
     /\ UNCHANGED <<layout, admission, outcome, feedback>>
 
@@ -41,15 +44,17 @@ ObserveBacking ==
     /\ admission # "managed"
     /\ IF selected = NoCandidate
           THEN /\ selected' = BackingCandidate
+               /\ storage' = "cpu"
                /\ owner' = "quarantine"
           ELSE /\ selected' = selected
+               /\ storage' = storage
                /\ owner' = owner
     /\ UNCHANGED <<layout, admission, outcome, feedback>>
 
 Timeout ==
     /\ layout = "pending"
     /\ layout' = "recovery"
-    /\ UNCHANGED <<selected, owner, admission, outcome, feedback>>
+    /\ UNCHANGED <<selected, storage, owner, admission, outcome, feedback>>
 
 CommitRecovery ==
     /\ layout = "recovery"
@@ -58,7 +63,7 @@ CommitRecovery ==
     /\ IF selected = PresentCandidate
           THEN admission' = "awaiting_retirement"
           ELSE admission' = "managed"
-    /\ UNCHANGED <<selected, owner, outcome, feedback>>
+    /\ UNCHANGED <<selected, storage, owner, outcome, feedback>>
 
 ReleaseSelectedPresent ==
     /\ selected = PresentCandidate
@@ -66,12 +71,12 @@ ReleaseSelectedPresent ==
     /\ admission = "awaiting_retirement"
     /\ owner = "quarantine"
     /\ owner' = "scheduler"
-    /\ UNCHANGED <<selected, layout, admission, outcome, feedback>>
+    /\ UNCHANGED <<selected, storage, layout, admission, outcome, feedback>>
 
 SubmitPresent ==
     /\ owner = "scheduler"
     /\ owner' = "inflight"
-    /\ UNCHANGED <<selected, layout, admission, outcome, feedback>>
+    /\ UNCHANGED <<selected, storage, layout, admission, outcome, feedback>>
 
 RetirePresent ==
     /\ owner = "inflight"
@@ -79,7 +84,7 @@ RetirePresent ==
     /\ admission' = "managed"
     /\ outcome' = "complete"
     /\ feedback' = {"complete", "idle"}
-    /\ UNCHANGED <<selected, layout>>
+    /\ UNCHANGED <<selected, storage, layout>>
 
 Progress == ReleaseSelectedPresent \/ SubmitPresent \/ RetirePresent
 
@@ -95,6 +100,7 @@ FairSpec == Spec /\ WF_vars(Progress)
 
 TypeOK ==
     /\ selected \in Candidates \cup {NoCandidate}
+    /\ storage \in Storages \cup {"none"}
     /\ owner \in Owners
     /\ layout \in LayoutPhases
     /\ admission \in AdmissionPhases
@@ -107,6 +113,7 @@ BackingCannotReplacePresent ==
 AdmissionUsesExactPresent ==
     admission = "awaiting_retirement" =>
         /\ selected = PresentCandidate
+        /\ storage \in Storages
         /\ owner \in {"quarantine", "scheduler", "inflight"}
 
 ManagedPresentRetired ==
@@ -116,7 +123,9 @@ FeedbackMatchesRetirement ==
     (feedback = {"complete", "idle"}) <=> (outcome = "complete")
 
 ReleasedCandidateIsPresent ==
-    owner \in {"scheduler", "inflight", "retired"} => selected = PresentCandidate
+    owner \in {"scheduler", "inflight", "retired"} =>
+        /\ selected = PresentCandidate
+        /\ storage \in Storages
 
 SelectedPresentEventuallySettles ==
     (selected = PresentCandidate /\ layout = "committed") ~> (outcome = "complete")

@@ -392,16 +392,17 @@ For the visible xmonad/KMS proof, run
 tools/verify_sophia_xmonad_vkcube_recovery.sh
 ```
 
-The verifier joins every armed visual admission to the exact DMA-BUF candidate
+The verifier joins every armed visual admission to the exact Present candidate
 at Engine admission completion and native page-flip retirement. Before the
 admission may arm, that transaction, surface, and target buffer must appear as
 the Engine-selected `PresentedBuffer` candidate with a concrete natural extent.
-The selected transaction must never be committed from a CPU snapshot. At least
-three increasing Present transactions must then receive routed Complete events
-with nonzero UST/MSC followed by routed Idle events. These checks reject both
-the historical backing-clear substitution and a static first-frame success.
-The verifier also requires bounded clean teardown and rejects malformed,
-overflowed, mismatched, or degraded intake.
+The target may use imported DMA-BUF storage or an immutable CPU materialization;
+neither may bypass retirement as a backing snapshot. At least three increasing
+Present transactions must then receive routed Complete events with nonzero
+UST/MSC followed by routed Idle events. These checks reject the historical
+backing-clear substitution, the mixed-batch software-registration omission,
+and a static first-frame success. The verifier also requires bounded clean
+teardown and rejects malformed, overflowed, mismatched, or degraded intake.
 
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,

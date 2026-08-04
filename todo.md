@@ -271,10 +271,18 @@ reopen the completed Milestone 9 exit gate.
   admission retirement, and scheduler ownership now carry the exact
   transaction/surface/target-buffer key. Layout commit and abort are explicit
   epoch transitions; abort rejects only that epoch, while valid nonmatching
-  content continues against committed geometry. The Rust regression and
-  `AdmissionRecovery.tla` lock selection, timeout recovery, retirement, and
-  Complete/Idle feedback. Repeat the physical vkcube gate from the packaged fix
-  before closing this item.
+  content continues against committed geometry. A fresh installed run then
+  selected exact CPU-backed Present transaction 626 but committed it as a
+  backing snapshot; because an unrelated Kitty DMA-BUF Present selected the GPU
+  path for that owner batch, the software submission was never registered or
+  retired. Present semantics are now storage-independent: every selected
+  `PresentedBuffer` waits for exact native retirement, mixed batches queue
+  separate CPU and DMA-BUF groups on the same output frame, and software
+  retirement returns its exact key and page-flip clock to admission. The Rust
+  regressions, `AdmissionRecovery.tla`, and physical verifier lock selection,
+  storage choice, timeout recovery, retirement, and Complete/Idle feedback.
+  Repeat the physical vkcube gate from the packaged fix before closing this
+  item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
   logical-window content stream. Follow Xserver's copy/clip semantics without

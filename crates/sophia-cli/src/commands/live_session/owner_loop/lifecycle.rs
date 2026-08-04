@@ -471,6 +471,9 @@
                 runtime.release_layout_deferred_presentations();
             }
             let service = runtime.service_native(native_scanout)?;
+            for retired in service.retired_software_presents {
+                record_native_software_present_retirement(&mut layout, retired);
+            }
             if let Some(retired) = service.retired_present {
                 let NativePresentRetirementObservation {
                     surface,

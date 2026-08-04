@@ -72,6 +72,8 @@ property remain enabled.
 backing observation, layout timeout, recovery commit, quarantine release,
 native retirement, and Complete/Idle feedback. Its actions map to
 `LayoutEpochCoordinator`, pre-admission group ownership, the production Present
-scheduler, and native retirement. Content identity remains distinct from
-geometry: an extent can choose a rendering path without choosing which
-candidate owns admission.
+scheduler, and native retirement. The model nondeterministically gives the
+selected Present DMA or CPU storage and requires the same retirement lifecycle
+for either choice. Content identity remains distinct from geometry and storage:
+an extent or materialization can choose a rendering path without choosing
+which candidate owns admission.

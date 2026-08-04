@@ -56,6 +56,7 @@ use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
 
 mod input_policy_tests;
+mod present_retirement_tests;
 mod presentation_role_tests;
 mod presentation_tests;
 mod session_config_tests;

@@ -3,17 +3,23 @@
 use sophia_backend_live::{
     LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
     LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
-    LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
+    LiveProductionDmaBufRegistration, LiveProductionPresentDisposition,
+    LiveProductionPresentSubmission, LiveProductionSoftwarePresentSubmission,
+    LiveProductionVisualRuntime,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
-    AuthorityKind, BufferSource, LayerSnapshot, OutputId, Rect, Region, ResizeSyncCapability, Size,
+    AuthorityKind, BufferHandle, BufferSource, DRM_FORMAT_MOD_INVALID, DmaBufDescriptor,
+    DmaBufPlaneDescriptor, LayerSnapshot, OutputId, Rect, Region, ResizeSyncCapability, Size,
     SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
 };
 use sophia_renderer_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferSource,
     LiveCpuBufferUpdate, LiveProductionCpuScene,
 };
+use std::fs::File;
+use std::os::fd::OwnedFd;
+use std::sync::Arc;
 
 #[test]
 fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
@@ -152,6 +158,8 @@ fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),
             software_present_submissions: vec![LiveProductionSoftwarePresentSubmission {
+                candidate: surface_transaction.key(),
+                source_size: size,
                 transaction,
                 surface,
                 acquire_fence: None,
@@ -250,5 +258,138 @@ fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
             LivePresentProtocolFeedback::Idle { transaction },
         ]
     );
+    assert_eq!(runtime.diagnostics().live_presentations, 0);
+    let mut retired = Vec::new();
+    runtime
+        .drain_retired_software_presents_into(&mut retired)
+        .unwrap();
+    assert_eq!(
+        retired,
+        [sophia_backend_live::LiveProductionRetiredSoftwarePresent {
+            candidate: surface_transaction.key(),
+            source_size: size,
+            ust_usec: 0,
+            msc: 0,
+        }]
+    );
+}
+
+#[test]
+fn gpu_owner_batch_registers_its_separate_software_present_group() {
+    let size = Size {
+        width: 64,
+        height: 48,
+    };
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size,
+        scale: 1,
+    };
+    let cpu_transaction = TransactionId::from_raw(80);
+    let cpu_surface = SurfaceId::new(81, 1);
+    let cpu_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
+    let cpu_candidate = SurfaceTransaction {
+        transaction: cpu_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface: cpu_surface,
+        namespace: None,
+        target_geometry: cpu_geometry,
+        target_buffer: BufferSource::CpuBuffer { handle: 82 },
+        damage: Region::single(cpu_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let dma_transaction = TransactionId::from_raw(90);
+    let dma_surface = SurfaceId::new(91, 1);
+    let dma_handle = BufferHandle::from_raw(92);
+    let dma_candidate = SurfaceTransaction {
+        transaction: dma_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface: dma_surface,
+        namespace: None,
+        target_geometry: cpu_geometry,
+        target_buffer: BufferSource::DmaBuf {
+            handle: dma_handle.raw(),
+        },
+        damage: Region::single(cpu_geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let batch = LiveProductionAuthorityBatch {
+        groups: vec![
+            LiveProductionAuthorityGroup {
+                transaction: cpu_transaction,
+                transactions: vec![cpu_candidate.clone()],
+                removed_surfaces: Vec::new(),
+                present_submissions: Vec::new(),
+                software_present_submissions: vec![LiveProductionSoftwarePresentSubmission {
+                    candidate: cpu_candidate.key(),
+                    source_size: size,
+                    transaction: cpu_transaction,
+                    surface: cpu_surface,
+                    acquire_fence: None,
+                    idle_fence: None,
+                }],
+            },
+            LiveProductionAuthorityGroup {
+                transaction: dma_transaction,
+                transactions: vec![dma_candidate],
+                removed_surfaces: Vec::new(),
+                present_submissions: vec![LiveProductionPresentSubmission {
+                    transaction: dma_transaction,
+                    surface: dma_surface,
+                    buffer: dma_handle,
+                    x_offset: 0,
+                    y_offset: 0,
+                    acquire_fence: None,
+                    idle_fence: None,
+                    layout_disposition: LiveProductionPresentDisposition::Immediate,
+                }],
+                software_present_submissions: Vec::new(),
+            },
+        ],
+        dma_buf_registrations: vec![LiveProductionDmaBufRegistration {
+            descriptor: DmaBufDescriptor {
+                handle: dma_handle,
+                size,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                modifier: DRM_FORMAT_MOD_INVALID,
+                plane_count: 1,
+                planes: [
+                    Some(DmaBufPlaneDescriptor {
+                        offset: 0,
+                        stride: 256,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            plane_fds: vec![Arc::new(OwnedFd::from(
+                File::open("/dev/null").expect("DMA-BUF fixture FD"),
+            ))],
+        }],
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+
+    runtime
+        .run_batch(&batch, &[], None, None, Vec::new(), None)
+        .unwrap();
+
+    let diagnostics = runtime.diagnostics();
+    assert_eq!(diagnostics.software_present_frames_waiting, 1);
+    assert_eq!(diagnostics.software_present_frames_submitted, 0);
+    assert_eq!(diagnostics.live_presentations, 1);
+    runtime.shutdown_presentations();
     assert_eq!(runtime.diagnostics().live_presentations, 0);
 }

@@ -275,6 +275,7 @@ impl LiveProductionVisualRuntime {
                         prepared,
                         displayed_layer: current_layer,
                     });
+                self.mark_software_present_frame_submitted()?;
             }
             Some(Status::ScanoutExportPending) => {
                 self.present_scheduler.pop_front();

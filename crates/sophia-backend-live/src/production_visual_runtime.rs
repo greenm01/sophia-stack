@@ -70,6 +70,8 @@ pub struct LiveProductionVisualRuntime {
     surface_content_fence: LiveProductionSurfaceContentFence,
     software_presents_waiting_submit: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     software_presents_submitted: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
+    retired_software_presents: VecDeque<LiveProductionRetiredSoftwarePresent>,
+    retired_software_presents_overflowed: bool,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
     chrome_surfaces: Vec<SurfaceId>,
@@ -138,6 +140,8 @@ impl LiveProductionVisualRuntime {
             surface_content_fence: LiveProductionSurfaceContentFence::default(),
             software_presents_waiting_submit: VecDeque::new(),
             software_presents_submitted: VecDeque::new(),
+            retired_software_presents: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
+            retired_software_presents_overflowed: false,
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
             chrome_surfaces: Vec::new(),
@@ -585,6 +589,11 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
+        // Software and DMA-BUF Presents can arrive in separate authority
+        // groups in one owner batch. Queue the software feedback before the
+        // GPU group drives the shared native frame so both retire on its
+        // page-flip clock.
+        self.enqueue_software_presents(&authority_groups)?;
         self.presentation_feedback
             .observe_authority_resource_releases(batch);
         if has_present_submissions && !authority_groups.is_empty() {

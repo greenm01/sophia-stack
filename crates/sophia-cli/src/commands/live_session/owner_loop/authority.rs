@@ -411,7 +411,7 @@
                 layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
                 let (batch, released_admission_groups) = layout.projected_batch(&batch);
                 let production_batch =
-                    production_authority_batch(&batch, &released_admission_groups, &layout);
+                    production_authority_batch(&batch, &released_admission_groups, &layout)?;
                 if runtime.is_none() {
                     runtime = Some(
                         LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut(), None)?
@@ -782,6 +782,9 @@
                         ) {
                             input_pixel_change = true;
                         }
+                    }
+                    for retired in service.retired_software_presents {
+                        record_native_software_present_retirement(&mut layout, retired);
                     }
                     correlate_physical_input_page_flip(
                         input_proof_started_at.is_some(),

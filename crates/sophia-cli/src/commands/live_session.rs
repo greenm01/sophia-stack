@@ -72,7 +72,7 @@ mod x_frontend;
 use authority_file::{LiveXAuthorityFile, fill_session_random};
 use native_retirement::{
     NativePresentRetirementObservation, correlate_physical_input_page_flip,
-    record_native_present_retirement,
+    record_native_present_retirement, record_native_software_present_retirement,
 };
 use process_supervision::{
     ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal,

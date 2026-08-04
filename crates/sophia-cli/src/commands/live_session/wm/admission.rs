@@ -421,7 +421,7 @@ impl PersistentLiveLayout {
         self.release_recovery_extent_after_commit(
             surface,
             self.layout_epochs.committed_size(surface),
-            "dma_buf_retired",
+            "present_retired",
         );
         self.release_managed_admission_groups();
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)

@@ -298,77 +298,6 @@ fn backing_resize_still_commits_for_cpu_only_surface() {
 }
 
 #[test]
-fn explicit_software_present_can_complete_presented_surface_resize() {
-    let surface = SurfaceId::new(85, 1);
-    let launch = Size {
-        width: 640,
-        height: 480,
-    };
-    let target = Size {
-        width: 800,
-        height: 600,
-    };
-    let target_geometry = Rect {
-        x: 0,
-        y: 0,
-        width: target.width,
-        height: target.height,
-    };
-    let mut layout = PersistentLiveLayout::default();
-    layout.layout_epochs.record_safe_observation(
-        dma_candidate(
-            TransactionId::from_raw(850),
-            surface,
-            BufferHandle::from_raw(850),
-        ),
-        launch,
-        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
-    );
-    layout.layout_epochs.record_committed(surface, launch);
-    layout
-        .layout_epochs
-        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
-    layout.layout_epochs.set_pending_target(surface, target);
-    hold_test_resize(
-        &mut layout,
-        surface,
-        TransactionId::from_raw(851),
-        target_geometry,
-    );
-
-    let buffer = 852;
-    layout.cpu_buffer_sizes.insert(buffer, target);
-    let transaction = TransactionId::from_raw(852);
-    let mut presented = crate::commands::live_session::wm_update_coordinator_batch(transaction);
-    presented.transactions.push(SurfaceTransaction {
-        transaction,
-        authority: AuthorityKind::SophiaX,
-        surface,
-        namespace: None,
-        target_geometry,
-        target_buffer: BufferSource::CpuBuffer { handle: buffer },
-        damage: Region::single(target_geometry),
-        readiness: SurfaceTransactionReadiness::Ready,
-        timeout_msec: 250,
-        previous_committed_generation: 1,
-    });
-    presented.software_present_submissions.push(
-        sophia_x_authority::XAuthoritySoftwarePresentSubmission {
-            transaction,
-            surface,
-            acquire_fence: None,
-            idle_fence: None,
-        },
-    );
-    layout.observe_authority_batch(&presented);
-
-    assert!(layout.resolve_pending().is_some());
-    assert!(!layout.awaiting_visual_commits.surface_awaiting(surface));
-    assert_eq!(layout.layout_epochs.committed_size(surface), Some(target));
-    assert_eq!(layout.layout_epochs.pending_target(surface), None);
-}
-
-#[test]
 fn wm_layout_fingerprint_tracks_planned_surface_lifetimes_only() {
     let managed = SurfaceId::new(1, 1);
     let concurrent = SurfaceId::new(2, 1);
@@ -1274,7 +1203,8 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
         &current,
         &released,
         &PersistentLiveLayout::default(),
-    );
+    )
+    .unwrap();
 
     production.validate().unwrap();
     assert_eq!(

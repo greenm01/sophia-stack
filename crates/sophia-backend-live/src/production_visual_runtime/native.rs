@@ -199,9 +199,8 @@ impl LiveProductionVisualRuntime {
                     self.presentation_feedback
                         .resources_mut()
                         .mark_submitted(transaction)?;
-                } else {
-                    self.mark_software_present_frame_submitted()?;
                 }
+                self.mark_software_present_frame_submitted()?;
             }
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}

@@ -22,6 +22,9 @@ pub struct LiveProductionVisualDiagnostics {
     pub live_sources: usize,
     pub live_fences: usize,
     pub live_presentations: usize,
+    pub software_present_frames_waiting: usize,
+    pub software_present_frames_submitted: usize,
+    pub software_present_retirements_pending: usize,
     pub acquire_waits: usize,
     pub controlled_rejections: usize,
 }
@@ -35,6 +38,9 @@ impl LiveProductionVisualRuntime {
             live_sources: self.presentation_feedback.resources().source_count(),
             live_fences: self.presentation_feedback.resources().fence_count(),
             live_presentations: self.presentation_feedback.resources().presentation_count(),
+            software_present_frames_waiting: self.software_presents_waiting_submit.len(),
+            software_present_frames_submitted: self.software_presents_submitted.len(),
+            software_present_retirements_pending: self.retired_software_presents.len(),
             acquire_waits: self.present_scheduler.acquire_waits(),
             controlled_rejections: self.present_scheduler.controlled_rejections(),
         }
@@ -69,10 +75,19 @@ pub struct LiveProductionRetiredPresent {
     pub msc: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionRetiredSoftwarePresent {
+    pub candidate: SurfaceTransactionKey,
+    pub source_size: Size,
+    pub ust_usec: u64,
+    pub msc: u64,
+}
+
 #[derive(Debug)]
 pub struct LiveProductionNativeServiceReport {
     pub ticks: Vec<LiveBackendRuntimeTickReport>,
     pub retired_present: Option<LiveProductionRetiredPresent>,
+    pub retired_software_presents: Vec<LiveProductionRetiredSoftwarePresent>,
     pub effects: Vec<OutputFrameServiceEffect>,
 }
 
@@ -166,9 +181,12 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
+        let mut retired_software_presents = Vec::new();
+        self.drain_retired_software_presents_into(&mut retired_software_presents)?;
         Ok(LiveProductionNativeServiceReport {
             ticks,
             retired_present,
+            retired_software_presents,
             effects,
         })
     }

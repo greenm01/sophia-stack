@@ -54,26 +54,26 @@ for record in "${armed[@]}"; do
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction was not selected from presented-buffer evidence"
     grep -Eq \
-        "^sophia_live_visual_candidate_identity schema=1 status=selected transaction=${transaction} surface=${surface} source=dma_buf buffer=[1-9][0-9]*$" \
+        "^sophia_live_visual_candidate_identity schema=1 status=selected transaction=${transaction} surface=${surface} source=(dma_buf|cpu_buffer) buffer=[1-9][0-9]*$" \
         "$SESSION_LOG" ||
-        fail "surface $surface transaction $transaction was not selected by exact DMA-BUF identity"
+        fail "surface $surface transaction $transaction was not selected by exact Present identity"
     if grep -Eq \
-        "^sophia_live_visual_admission schema=1 status=committed transaction=${transaction} surface=${surface} source=cpu_snapshot$" \
+        "^sophia_live_visual_admission schema=1 status=committed transaction=${transaction} surface=${surface} " \
         "$SESSION_LOG"; then
-        fail "surface $surface transaction $transaction was replaced by a CPU snapshot"
+        fail "surface $surface transaction $transaction bypassed native retirement"
     fi
     grep -Eq \
         "^sophia_live_visual_admission schema=1 status=presented transaction=${transaction} surface=${surface}$" \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction never completed visual admission"
     grep -Eq \
-        "^sophia_live_session_present schema=2 status=retired transaction=${transaction} surface=${surface} " \
+        "^sophia_live_session_present schema=(2|3) status=retired transaction=${transaction} surface=${surface} " \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction has no matching page-flip retirement"
 
     mapfile -t retired < <(
         grep -E \
-            "^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=${surface} " \
+            "^sophia_live_session_present schema=(2|3) status=retired transaction=[0-9]+ surface=${surface} " \
             "$SESSION_LOG"
     )
     ((${#retired[@]} >= 3)) ||

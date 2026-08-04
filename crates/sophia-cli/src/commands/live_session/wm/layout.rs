@@ -993,48 +993,53 @@ impl PersistentLiveLayout {
             let Some(transaction) = pending.staged_transactions.get(surface) else {
                 continue;
             };
-            match transaction.target_buffer {
-                BufferSource::DmaBuf { .. } => {
-                    if self
-                        .admissions
-                        .begin_retirement(*surface, transaction.key())
-                    {
-                        println!(
-                            "sophia_live_visual_admission schema=1 status=armed transaction={} surface={}",
-                            transaction.transaction.raw(),
-                            surface.index(),
-                        );
-                    }
+            if self.visual_candidate_requires_retirement(transaction) {
+                // Present semantics do not depend on whether the authority
+                // could export the pixmap as a DMA-BUF. A materialized CPU
+                // Present remains fenced until its composed frame retires.
+                if self
+                    .admissions
+                    .begin_retirement(*surface, transaction.key())
+                {
+                    println!(
+                        "sophia_live_visual_admission schema=1 status=armed transaction={} surface={}",
+                        transaction.transaction.raw(),
+                        surface.index(),
+                    );
                 }
-                BufferSource::CpuBuffer { .. } => {
-                    if self.admissions.mark_managed(*surface) {
-                        self.planning_surfaces.remove(surface);
-                        let committed_size = live_transaction_pixel_size(
-                            transaction.target_buffer,
-                            &self.dma_buf_sizes,
-                            &self.cpu_buffer_sizes,
-                        );
-                        self.release_recovery_extent_after_commit(
-                            *surface,
-                            committed_size,
-                            "cpu_admission_committed",
-                        );
-                        println!(
-                            "sophia_live_visual_admission schema=1 status=committed transaction={} surface={} source=cpu_snapshot",
-                            transaction.transaction.raw(),
-                            surface.index(),
-                        );
+            } else {
+                match transaction.target_buffer {
+                    BufferSource::CpuBuffer { .. } => {
+                        if self.admissions.mark_managed(*surface) {
+                            self.planning_surfaces.remove(surface);
+                            let committed_size = live_transaction_pixel_size(
+                                transaction.target_buffer,
+                                &self.dma_buf_sizes,
+                                &self.cpu_buffer_sizes,
+                            );
+                            self.release_recovery_extent_after_commit(
+                                *surface,
+                                committed_size,
+                                "cpu_admission_committed",
+                            );
+                            println!(
+                                "sophia_live_visual_admission schema=1 status=committed transaction={} surface={} source=cpu_backing_snapshot",
+                                transaction.transaction.raw(),
+                                surface.index(),
+                            );
+                        }
                     }
-                }
-                _ => {
-                    if self.admissions.mark_managed(*surface) {
-                        self.planning_surfaces.remove(surface);
-                        self.release_recovery_extent_after_commit(
-                            *surface,
-                            None,
-                            "admission_committed",
-                        );
+                    BufferSource::XPixmap { .. } | BufferSource::None => {
+                        if self.admissions.mark_managed(*surface) {
+                            self.planning_surfaces.remove(surface);
+                            self.release_recovery_extent_after_commit(
+                                *surface,
+                                None,
+                                "admission_committed",
+                            );
+                        }
                     }
+                    BufferSource::DmaBuf { .. } => {}
                 }
             }
         }
@@ -1045,7 +1050,7 @@ impl PersistentLiveLayout {
                     &self.dma_buf_sizes,
                     &self.cpu_buffer_sizes,
                 ) {
-                    if matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }) {
+                    if self.visual_candidate_requires_retirement(transaction) {
                         self.awaiting_visual_commits
                             .arm(ResizeVisualCommit {
                                 candidate: transaction.key(),
@@ -1137,6 +1142,16 @@ impl PersistentLiveLayout {
             source: pending.source,
             effects: pending.effects,
         }
+    }
+
+    fn visual_candidate_requires_retirement(&self, transaction: &SurfaceTransaction) -> bool {
+        self.layout_epochs
+            .safe_observation(transaction.surface)
+            .is_some_and(|observation| {
+                observation.candidate == Some(transaction.key())
+                    && observation.evidence
+                        == sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+            })
     }
 
     fn projected_batch(

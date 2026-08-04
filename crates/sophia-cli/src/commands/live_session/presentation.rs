@@ -210,7 +210,7 @@ fn production_authority_batch(
     batch: &XAuthorityObservedTransactionBatch,
     released_admission_groups: &[LiveAdmissionAuthorityGroup],
     layout: &PersistentLiveLayout,
-) -> LiveProductionAuthorityBatch {
+) -> Result<LiveProductionAuthorityBatch, &'static str> {
     let mut groups = Vec::<sophia_backend_live::LiveProductionAuthorityGroup>::new();
     // Admission groups were quarantined before the current authority batch.
     // Release them first so same-surface generations remain FIFO. Appending
@@ -248,19 +248,20 @@ fn production_authority_batch(
                     }
                 }),
         );
-        groups[index].software_present_submissions.extend(
-            released
-                .software_present_submissions
-                .iter()
-                .map(|submission| {
-                    sophia_backend_live::LiveProductionSoftwarePresentSubmission {
-                        transaction: submission.transaction,
-                        surface: submission.surface,
-                        acquire_fence: submission.acquire_fence,
-                        idle_fence: submission.idle_fence,
-                    }
-                }),
-        );
+        let software_presents = released
+            .software_present_submissions
+            .iter()
+            .map(|submission| {
+                production_software_present_submission(
+                    &released.transactions,
+                    *submission,
+                    layout,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        groups[index]
+            .software_present_submissions
+            .extend(software_presents);
     }
     for transaction in &batch.transactions {
         let index = production_authority_group_index(&mut groups, transaction.transaction);
@@ -294,16 +295,15 @@ fn production_authority_batch(
     }
     for submission in &batch.software_present_submissions {
         let index = production_authority_group_index(&mut groups, submission.transaction);
-        groups[index].software_present_submissions.push(
-            sophia_backend_live::LiveProductionSoftwarePresentSubmission {
-                transaction: submission.transaction,
-                surface: submission.surface,
-                acquire_fence: submission.acquire_fence,
-                idle_fence: submission.idle_fence,
-            },
-        );
+        groups[index]
+            .software_present_submissions
+            .push(production_software_present_submission(
+                &batch.transactions,
+                *submission,
+                layout,
+            )?);
     }
-    LiveProductionAuthorityBatch {
+    Ok(LiveProductionAuthorityBatch {
         groups,
         dma_buf_registrations: batch
             .dma_buf_registrations
@@ -324,7 +324,39 @@ fn production_authority_batch(
             .collect(),
         released_dma_bufs: batch.released_dma_bufs.clone(),
         released_fences: batch.released_fences.clone(),
+    })
+}
+
+fn production_software_present_submission(
+    transactions: &[sophia_protocol::SurfaceTransaction],
+    submission: sophia_x_authority::XAuthoritySoftwarePresentSubmission,
+    layout: &PersistentLiveLayout,
+) -> Result<sophia_backend_live::LiveProductionSoftwarePresentSubmission, &'static str> {
+    let mut candidates = transactions.iter().filter(|transaction| {
+        transaction.transaction == submission.transaction
+            && transaction.surface == submission.surface
+            && matches!(transaction.target_buffer, BufferSource::CpuBuffer { .. })
+    });
+    let candidate = candidates
+        .next()
+        .ok_or("software Present has no exact CPU transaction")?;
+    if candidates.next().is_some() {
+        return Err("software Present has multiple CPU transactions");
     }
+    let source_size = live_transaction_pixel_size(
+        candidate.target_buffer,
+        &layout.dma_buf_sizes,
+        &layout.cpu_buffer_sizes,
+    )
+    .ok_or("software Present CPU buffer has no known extent")?;
+    Ok(sophia_backend_live::LiveProductionSoftwarePresentSubmission {
+        candidate: candidate.key(),
+        source_size,
+        transaction: submission.transaction,
+        surface: submission.surface,
+        acquire_fence: submission.acquire_fence,
+        idle_fence: submission.idle_fence,
+    })
 }
 
 fn production_authority_group_index(

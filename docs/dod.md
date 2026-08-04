@@ -458,9 +458,10 @@ The phases are:
   keyed configure/map control;
 - `AwaitingPixels`: the frontend acknowledged that protocol control, while
   visual state still waits for a matching concrete buffer;
-- `AwaitingRetirement`: an exact DMA-BUF surface/transaction/buffer Present
+- `AwaitingRetirement`: an exact surface/transaction/target-buffer Present
   group owns the candidate, while visual focus and managed state wait for its
-  page-flip retirement;
+  native frame retirement, regardless of whether its storage is DMA-BUF or an
+  immutable CPU materialization;
 - `Managed`: matching geometry and pixels retired atomically.
 
 The X authority classifies only non-override-redirect root children as
@@ -481,14 +482,15 @@ and associated Present submissions; it may update safe observed extents, but
 it cannot enter the committed layer table or renderer intake. The matching
 admission commit moves the evidence-selected complete group across the visual
 boundary once, at accepted geometry and a rebased Engine generation.
-Each DMA-BUF surface transaction has exactly one matching Present submission
-with the same surface and buffer, and every Present has exactly one matching
-DMA-BUF transaction. Partial groups are never split or relabelled. Buffer and
-fence releases remain deferred while any quarantined or just-released group
-references them; renderer ownership begins before release is observed. The
-FIFO holds at most 256 groups; capacity exhaustion or a mismatched member is an
-explicit terminal error, never an unbounded allocation or an immediate GPU
-submission.
+Each PresentedBuffer transaction has exactly one matching Present submission
+with the same surface and target buffer. DMA-BUF and software submissions use
+the same exact key even though their renderer resources differ. Partial groups
+are never split or relabelled, and one atomic group cannot claim both storage
+paths. Buffer and fence releases remain deferred while any quarantined or
+just-released group references them; renderer ownership begins before release
+is observed. The FIFO holds at most 256 groups; capacity exhaustion or a
+mismatched member is an explicit terminal error, never an unbounded allocation
+or an immediate GPU submission.
 
 A selected complete presented buffer covers older admission groups for that
 surface. Older Present groups cross intake only for explicit Skip/Idle
