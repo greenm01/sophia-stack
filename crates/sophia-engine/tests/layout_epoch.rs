@@ -1,4 +1,7 @@
-use sophia_engine::{LayoutEpochCoordinator, SurfaceAdmissionState, SurfaceVisualEvidence};
+use sophia_engine::{
+    LayoutEpochCoordinator, SurfaceAdmissionState, SurfaceVisualEvidence,
+    SurfaceVisualExtentDisposition, classify_surface_visual_extent,
+};
 use sophia_protocol::{
     LayoutTransaction, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
     SurfaceSizeRequest, TransactionId, Transform,
@@ -518,4 +521,54 @@ fn pending_target_matching_committed_size_is_not_an_obligation() {
     assert_eq!(coordinator.pending_target(surface), Some(size(1000, 700)));
     coordinator.remove(surface);
     assert_eq!(coordinator.pending_target(surface), None);
+}
+
+#[test]
+fn retained_extent_updates_remain_presentable_while_a_standing_target_is_pending() {
+    let surface = SurfaceId::new(24, 1);
+    let recovery = size(300, 300);
+    let target = size(1276, 709);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_recovery_extent(surface, recovery);
+    coordinator.set_pending_target(surface, target);
+
+    for _ in 0..3 {
+        assert_eq!(
+            classify_surface_visual_extent(
+                Some(recovery),
+                coordinator.pending_target(surface),
+                coordinator.recovery_extent(surface),
+            ),
+            SurfaceVisualExtentDisposition::RetainedRecovery,
+        );
+    }
+    assert_eq!(
+        classify_surface_visual_extent(
+            Some(target),
+            coordinator.pending_target(surface),
+            coordinator.recovery_extent(surface),
+        ),
+        SurfaceVisualExtentDisposition::Expected,
+    );
+    assert_eq!(
+        classify_surface_visual_extent(
+            Some(size(640, 480)),
+            coordinator.pending_target(surface),
+            coordinator.recovery_extent(surface),
+        ),
+        SurfaceVisualExtentDisposition::Mismatch,
+    );
+    assert_eq!(coordinator.recovery_extent(surface), Some(recovery));
+    assert_eq!(coordinator.pending_target(surface), Some(target));
+
+    assert!(coordinator.clear_recovery_extent(surface));
+    assert_eq!(
+        classify_surface_visual_extent(
+            Some(recovery),
+            coordinator.pending_target(surface),
+            coordinator.recovery_extent(surface),
+        ),
+        SurfaceVisualExtentDisposition::Mismatch,
+    );
+    assert_eq!(coordinator.pending_target(surface), Some(target));
 }

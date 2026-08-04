@@ -300,9 +300,17 @@ reopen the completed Milestone 9 exit gate.
   descriptor mismatch/capacity rejection, clean retirement, and the same
   renderer provider under the reference Xserver. Cache hits are reported but
   are not required when every application frame carries a new buffer
-  generation. Record client and
-  presentation cadence separately and keep this a compatibility diagnostic,
-  not a substitute for the fixed Vulkan acceptance workload.
+  generation. An installed interactive run on `09113a7d` exposed a distinct
+  recovery-path freeze: the first 300-by-300 GLX frame retired, then a retained
+  1276-by-709 standing target caused 188,148 later 300-by-300 Presents to be
+  rejected even though 300-by-300 remained the coherent recovery extent.
+  Engine now classifies expected, retained-recovery, mismatched, and
+  unconstrained pixel extents without mutating layout state; the live gate
+  schedules newer retained-extent buffers while preserving the standing
+  target. The deterministic transition regression passes; repeat the bounded
+  physical proof from the packaged fix before closing this item. Record client
+  and presentation cadence separately and keep this a compatibility
+  diagnostic, not a substitute for the fixed Vulkan acceptance workload.
 - [x] Promote renderer-image residency from Milestone 13 into the GLX
   correctness path. Mixed DMA-BUF layers now carry opaque image generations;
   each native output context imports a generation once, validates descriptor

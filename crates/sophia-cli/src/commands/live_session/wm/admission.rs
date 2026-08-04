@@ -613,11 +613,12 @@ impl PersistentLiveLayout {
             .as_ref()
             .and_then(|pending| pending.requested_sizes.get(&surface).copied())
             .or_else(|| self.layout_epochs.pending_target(surface));
-        let Some(expected) = expected else {
-            return sophia_backend_live::LiveProductionPresentDisposition::Immediate;
-        };
-        match actual {
-            Some(actual) if actual == expected && self.pending.is_some() => {
+        match sophia_engine::classify_surface_visual_extent(
+            actual,
+            expected,
+            self.layout_epochs.recovery_extent(surface),
+        ) {
+            sophia_engine::SurfaceVisualExtentDisposition::Expected if self.pending.is_some() => {
                 sophia_backend_live::LiveProductionPresentDisposition::StageLayout {
                     epoch: self
                         .pending
@@ -626,13 +627,17 @@ impl PersistentLiveLayout {
                         .transaction,
                 }
             }
-            Some(actual) if actual == expected => {
+            sophia_engine::SurfaceVisualExtentDisposition::Expected
+            | sophia_engine::SurfaceVisualExtentDisposition::RetainedRecovery
+            | sophia_engine::SurfaceVisualExtentDisposition::Unconstrained => {
+                // Newer buffers at an explicitly retained extent are content
+                // updates, not geometry commits. Keep them animating while a
+                // different standing target continues to drive reallocation.
                 sophia_backend_live::LiveProductionPresentDisposition::Immediate
             }
-            Some(_) => {
+            sophia_engine::SurfaceVisualExtentDisposition::Mismatch => {
                 sophia_backend_live::LiveProductionPresentDisposition::RejectLayoutMismatch
             }
-            None => sophia_backend_live::LiveProductionPresentDisposition::Immediate,
         }
     }
 }

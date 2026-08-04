@@ -74,6 +74,45 @@ pub enum SurfaceVisualEvidence {
     PresentedBuffer,
 }
 
+/// Protocol-neutral relationship between a complete pixel extent and the
+/// geometry an outstanding layout transition is trying to establish.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SurfaceVisualExtentDisposition {
+    Unconstrained,
+    Expected,
+    RetainedRecovery,
+    Mismatch,
+}
+
+/// Classifies pixels without mutating either committed geometry or the
+/// standing layout target. A retained recovery extent is coherent content
+/// that may continue changing while a client converges on `expected`.
+pub const fn classify_surface_visual_extent(
+    actual: Option<Size>,
+    expected: Option<Size>,
+    retained_recovery: Option<Size>,
+) -> SurfaceVisualExtentDisposition {
+    let Some(expected) = expected else {
+        return SurfaceVisualExtentDisposition::Unconstrained;
+    };
+    match actual {
+        Some(actual) if actual.width == expected.width && actual.height == expected.height => {
+            SurfaceVisualExtentDisposition::Expected
+        }
+        Some(actual)
+            if matches!(
+                retained_recovery,
+                Some(retained)
+                    if actual.width == retained.width && actual.height == retained.height
+            ) =>
+        {
+            SurfaceVisualExtentDisposition::RetainedRecovery
+        }
+        Some(_) => SurfaceVisualExtentDisposition::Mismatch,
+        None => SurfaceVisualExtentDisposition::Unconstrained,
+    }
+}
+
 /// Latest safe visual extent selected by the Engine's evidence reducer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SafeSurfaceObservation {
