@@ -152,6 +152,11 @@ bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
 bash -n tools/check_sophia_xmonad_emergency_verifier.sh
 bash -n tools/verify_installed_session_lifecycle.sh
 bash -n tools/check_installed_session_lifecycle_verifier.sh
+bash -n tools/verify_installed_login_cycle.sh \
+    tools/check_installed_login_cycle_verifier.sh \
+    tools/check_installed_cycle_ledger.sh
+tools/check_installed_login_cycle_verifier.sh
+tools/check_installed_cycle_ledger.sh
 bash -n tools/check_sophia_session_watchdog.sh
 bash -n tools/verify_installed_watchdog_recovery.sh
 bash -n tools/check_installed_watchdog_recovery.sh

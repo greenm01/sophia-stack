@@ -1295,7 +1295,11 @@ Compatibility follow-up outside the Firefox exit gate:
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
 - [ ] Validate three consecutive installed logins, normal logouts, one
-  emergency recovery, and successful fallback-session login.
+  emergency recovery, and successful fallback-session login. Normal-cycle
+  recording now uses a dedicated login/startup/logout verifier instead of the
+  obsolete full operator choreography. Every archive carries a checksummed,
+  unique launch identity, and the cycle gate rejects duplicated sessions and
+  mixed commits. Three physical installed cycles remain.
 - [ ] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 

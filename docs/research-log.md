@@ -3,6 +3,30 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: installed cycles identify launches, not operator rituals
+
+The Milestone 11 cycle recorder reused the complete xmonad promotion verifier.
+That made each ordinary login repeat workspace, VT, pointer-edge, clipboard,
+close, and relaunch choreography already retained by earlier physical gates.
+It was simultaneously too weak about the requirement it claimed to prove:
+three archives copied from one launch had distinct directory numbers and could
+pass as three cycles.
+
+Installed cycles now have a focused boundary. A passing cycle requires
+automatic Kitty startup, two-output readiness within eight seconds, native
+retirement, normal logout, clean protocol and session health, drained native
+and application state, an armed but untriggered guard, exact TTY restoration,
+the installed lifecycle, and the release identity. The full xmonad and Firefox
+interaction proofs remain separate and are not multiplied to count logins.
+
+Each recorded cycle carries the launch timestamp and SHA-256 digest of its
+installed launch-identity record. The recorder rejects an identity already in
+the ledger, and the aggregate verifier recomputes every digest and rejects
+duplicates or mixed commits. Mutation fixtures cover missing logout, one-output
+startup, slow readiness, native debt, emergency recovery, repeat recording,
+and a copied archive. The staged immutable installer carries the new verifier;
+three distinct physical installed cycles remain the acceptance boundary.
+
 ## 2026-08-05: mixed-session control handoffs have explicit boundaries
 
 The complete M8 workload exposed four races after the earlier presentation and

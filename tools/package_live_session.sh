@@ -60,6 +60,8 @@ install -m 755 tools/verify_installed_session_soak.sh \
     "$artifact/bin/sophia-verify-soak"
 install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
+install -m 755 tools/verify_installed_login_cycle.sh \
+    "$artifact/bin/sophia-verify-login-cycle"
 install -m 755 tools/verify_sophia_xmonad_emergency_tty3.sh \
     "$artifact/bin/sophia-verify-emergency-run"
 install -m 755 tools/verify_installed_runtime_identity.sh \

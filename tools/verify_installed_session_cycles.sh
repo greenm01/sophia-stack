@@ -3,11 +3,11 @@ set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-VERIFY_XMONAD="${SOPHIA_VERIFY_XMONAD_BIN:-$SCRIPT_DIR/sophia-verify-xmonad-run}"
+VERIFY_LOGIN="${SOPHIA_VERIFY_LOGIN_BIN:-$SCRIPT_DIR/sophia-verify-login-cycle}"
 VERIFY_IDENTITY="${SOPHIA_VERIFY_IDENTITY_BIN:-$SCRIPT_DIR/sophia-verify-runtime-identity}"
 VERIFY_LIFECYCLE="${SOPHIA_VERIFY_LIFECYCLE_BIN:-$SCRIPT_DIR/sophia-verify-lifecycle}"
-if [[ ! -x "$VERIFY_XMONAD" && -x "$SCRIPT_DIR/verify_sophia_xmonad_tty3.sh" ]]; then
-    VERIFY_XMONAD="$SCRIPT_DIR/verify_sophia_xmonad_tty3.sh"
+if [[ ! -x "$VERIFY_LOGIN" && -x "$SCRIPT_DIR/verify_installed_login_cycle.sh" ]]; then
+    VERIFY_LOGIN="$SCRIPT_DIR/verify_installed_login_cycle.sh"
 fi
 if [[ ! -x "$VERIFY_IDENTITY" && -x "$SCRIPT_DIR/verify_installed_runtime_identity.sh" ]]; then
     VERIFY_IDENTITY="$SCRIPT_DIR/verify_installed_runtime_identity.sh"
@@ -33,15 +33,20 @@ mapfile -t runs < <(find "$RUN_ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
 }
 runs=("${runs[@]: -required}")
 expected_commit=""
+declare -A seen_launch_identities=()
 for run in "${runs[@]}"; do
     (
         cd "$run"
         sha256sum -c SHA256SUMS
     )
-    "$VERIFY_XMONAD" \
+    "$VERIFY_LOGIN" \
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     "$VERIFY_IDENTITY" "$run/runtime-identity.log"
     "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
+    [[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 1 ]] || {
+        echo "run has no supported record schema: $run" >&2
+        exit 1
+    }
     commit="$(sed -n 's/^commit=//p' "$run/manifest" | head -n 1)"
     [[ -n "$commit" ]] || {
         echo "run has no release commit: $run" >&2
@@ -53,6 +58,28 @@ for run in "${runs[@]}"; do
         echo "installed cycle gate spans multiple commits" >&2
         exit 1
     fi
+    identity="$(tail -n 1 "$run/identity.log")"
+    [[ "$identity" == "sophia_installed_session schema=1 status=starting "* \
+        && " $identity " == *" commit=$commit "* ]] || {
+        echo "run identity does not match its release manifest: $run" >&2
+        exit 1
+    }
+    started_at_utc="$(sed -n 's/^session_started_at_utc=//p' "$run/manifest")"
+    [[ -n "$started_at_utc" && " $identity " == *" started_at_utc=$started_at_utc "* ]] || {
+        echo "run start time does not match its launch identity: $run" >&2
+        exit 1
+    }
+    launch_identity_sha256="$(sed -n 's/^launch_identity_sha256=//p' "$run/manifest")"
+    observed_sha256="$(sha256sum "$run/identity.log" | awk '{ print $1 }')"
+    [[ "$launch_identity_sha256" == "$observed_sha256" ]] || {
+        echo "run launch-identity digest does not match: $run" >&2
+        exit 1
+    }
+    [[ -z "${seen_launch_identities[$launch_identity_sha256]:-}" ]] || {
+        echo "installed cycle gate contains a duplicate launch identity" >&2
+        exit 1
+    }
+    seen_launch_identities[$launch_identity_sha256]="$run"
 done
 
 echo "installed Sophia cycle gate passed: runs=$required commit=$expected_commit"

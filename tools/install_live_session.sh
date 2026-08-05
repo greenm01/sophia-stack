@@ -70,6 +70,7 @@ commands=(
     sophia-record-emergency-run
     sophia-record-watchdog-run
     sophia-record-firefox-run
+    sophia-verify-login-cycle
     sophia-verify-cycles
     sophia-verify-firefox-runs
     sophia-verify-soak
