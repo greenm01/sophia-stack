@@ -27,7 +27,17 @@ from a committed epoch runs when its surface is already visible or waits only
 for visibility. An outcome older than the bounded exact history fails closed
 instead of recreating an epoch that cannot progress. Crate-boundary regressions
 cover both delayed abort and delayed commit. A fresh installed vkcube run
-remains the physical acceptance boundary.
+remained the physical acceptance boundary.
+
+Installed commit `663934ca` passed that boundary. The run reproduced the
+important recovery shape: vkcube's first 500-by-500 software Present arrived
+during epoch 2, the blind-WM resize timed out, and one staged Kitty Present was
+aborted. Kitty then resumed native retirement, epoch 4 committed both visible
+surfaces, and vkcube's exact transaction 574 retired on native frame 20. The
+cube continued for 665 clocked software retirements with increasing kernel
+MSC values. Normal logout reported 691 Complete events and 691 Idle/fence
+signals, 132 native retirements, no protocol or native failure, no live
+presentation resource, clean layout health, and clean frontend teardown.
 
 ## 2026-08-04: software Present feedback owns an exact native frame
 

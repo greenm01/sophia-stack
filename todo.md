@@ -317,10 +317,13 @@ reopen the completed Milestone 9 exit gate.
   epoch, and runs committed work once its surface is visible. Crate-boundary
   regressions cover both outcomes without depending on unrelated client
   traffic.
-- [ ] Install the corrected release and rerun one focused xmonad/Kitty/vkcube
-  cycle. Require vkcube to become visible and animate, at least three clocked
-  software retirements, continued Kitty presentation, and clean layout,
-  Present, content-stream, native, and protocol teardown.
+- [x] Install the corrected release and rerun one focused xmonad/Kitty/vkcube
+  cycle. Installed commit `663934ca` recovered from the first blind-WM timeout,
+  committed vkcube into a two-surface projection, and retired 665 clocked
+  software frames while Kitty continued DMA-BUF presentation. Normal logout
+  completed with 691 Present Idle/fence signals, 132 native retirements, zero
+  protocol or native failures, zero live Present resources, clean layout
+  health, and clean frontend/session teardown.
 - [x] Optimize the proven software-Present fallback after correctness is
   retained. X authority now owns bounded reusable read-only SysV mappings,
   resolves XFixes valid/update regions with source clipping and fixed capacity,
