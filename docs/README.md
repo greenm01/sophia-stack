@@ -52,6 +52,8 @@ unimplemented target behavior explicitly.
 - [Renderer Import Boundary](renderer-import-boundary.md), [Live Backend
   Dependency Policy](live-backend-dependency-policy.md), and [Live Session
   Bootstrap](live-session-bootstrap.md) define backend/runtime seams.
+- [Installed Operations](operations.md) defines the supported installed-host
+  boundary and the status, stop, recovery, fallback, and rollback procedures.
 
 Subsystem documents may describe implementation details, but they may not
 override the ownership and trust rules in the normative architecture.

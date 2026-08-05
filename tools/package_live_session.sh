@@ -31,6 +31,7 @@ install -d -m 755 \
     "$artifact/target/release" \
     "$artifact/tools/fixtures" \
     "$artifact/tools/lib" \
+    "$artifact/share/doc/sophia" \
     "$artifact/share/wayland-sessions"
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
 install -m 755 target/release/sophia-x11-wm-bridge \
@@ -78,7 +79,8 @@ install -m 755 tools/verify_sophia_firefox_physical_runs.sh \
     "$artifact/bin/sophia-verify-firefox-runs"
 install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmonad.sh \
-    tools/resolve_sophia_xmobar.sh "$artifact/tools/"
+    tools/resolve_sophia_xmobar.sh \
+    tools/stop_sophia_session.sh "$artifact/tools/"
 install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
@@ -90,6 +92,7 @@ install -m 755 tools/fixtures/firefox_m10_selection_kitty_probe.sh \
     "$artifact/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
 install -m 644 tools/fixtures/xmobar_sophia.config \
     "$artifact/tools/fixtures/xmobar_sophia.config"
+install -m 644 docs/operations.md "$artifact/share/doc/sophia/operations.md"
 
 printf '%s\n' \
     '[Desktop Entry]' \

@@ -26,7 +26,7 @@ RUN_ROOT="${SOPHIA_PROMOTION_RUN_ROOT:-$STATE_HOME/sophia/promotion/runs}"
     echo "installed cycle evidence directory is missing: $RUN_ROOT" >&2
     exit 1
 }
-mapfile -t runs < <(find "$RUN_ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
+mapfile -t runs < <(find "$RUN_ROOT" -mindepth 1 -maxdepth 1 -type d | sort -V)
 (( ${#runs[@]} >= required )) || {
     echo "installed cycle gate has ${#runs[@]} runs; $required required" >&2
     exit 1

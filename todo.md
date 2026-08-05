@@ -1302,7 +1302,7 @@ Compatibility follow-up outside the Firefox exit gate:
   entries therefore interrupt the latest-three gate. Every archive carries a
   checksummed, unique launch identity, and the cycle gate rejects duplicated
   sessions and mixed commits. Three physical installed cycles remain.
-- [ ] Document supported hardware, required services, known limitations, and
+- [x] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 
 Milestone 11 exits when three normal logins and the independent recovery path

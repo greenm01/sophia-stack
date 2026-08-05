@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: installed operations have one packaged source of truth
+
+The immutable release now carries its own operator runbook instead of relying
+on a checkout after installation. The guide records the single retained AMD
+two-output support boundary, required greetd, runtime-directory, libseat,
+DRM/input, runtime-library, and application contracts, plus the exact status,
+log, stop, emergency, fallback, evidence, and atomic rollback procedures. It
+also labels native X11 scope, desktop-service isolation, physical coverage,
+VRR, direct-scanout, cursor-plane, and rollback-retention limitations.
+
+`sophia-status` reports the packaged guide and latest automatic cycle attempt.
+The installed stop command discovers `/run/user/$UID` when a control-TTY shell
+does not export `XDG_RUNTIME_DIR`, preserving the documented independent-stop
+path. Installer fixtures verify that the runbook is checksummed, survives
+install and rollback, and remains discoverable without the source tree.
+
 ## 2026-08-05: installed cycles identify launches, not operator rituals
 
 The Milestone 11 cycle recorder reused the complete xmonad promotion verifier.

@@ -992,6 +992,10 @@ WM, input, renderer, and teardown evidence.
 
 ## Installed Daily-Driver Candidate
 
+The packaged [installed operations runbook](operations.md) is the canonical
+reference for the supported host boundary, status and log locations, normal
+stop, independent recovery, fallback login, and rollback.
+
 An installed release is built and frozen separately from login:
 
 ```sh

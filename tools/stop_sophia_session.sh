@@ -10,7 +10,16 @@ case "$profile" in
         ;;
 esac
 
-state_dir="${XDG_RUNTIME_DIR:-/tmp}/sophia-${profile}-session-${UID}"
+runtime_root="${XDG_RUNTIME_DIR:-}"
+if [[ -z "$runtime_root" ]]; then
+    user_runtime="/run/user/$UID"
+    if [[ -d "$user_runtime" && "$(stat -c %u "$user_runtime")" == "$UID" ]]; then
+        runtime_root="$user_runtime"
+    else
+        runtime_root=/tmp
+    fi
+fi
+state_dir="$runtime_root/sophia-${profile}-session-${UID}"
 pid_file="$state_dir/wrapper.pid"
 
 if [[ ! -s "$pid_file" ]]; then

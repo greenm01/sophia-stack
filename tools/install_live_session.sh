@@ -94,6 +94,7 @@ trap - EXIT
 
 echo "Installed Sophia release: $release_id"
 echo "Current: $PREFIX/current"
+echo "Operator guide: $PREFIX/current/share/doc/sophia/operations.md"
 echo "Session entries:"
 for desktop in sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof; do
     echo "  $SESSION_DIR/$desktop.desktop"
