@@ -50,6 +50,7 @@ mod render;
 mod runtime_driver;
 mod session;
 mod surface_admission;
+mod surface_content_stream;
 mod visual_state;
 mod wm;
 
@@ -69,6 +70,7 @@ pub use render::*;
 pub use runtime_driver::*;
 pub use session::*;
 pub use surface_admission::*;
+pub use surface_content_stream::*;
 pub use visual_state::*;
 pub use wm::*;
 

@@ -1187,6 +1187,7 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
             0,
             BufferSource::DmaBuf { handle: 367 },
         )],
+        cpu_buffer_updates: Vec::new(),
         present_submissions: vec![sophia_x_authority::XAuthorityPresentSubmission {
             transaction: admitted_transaction,
             surface,

@@ -7,6 +7,7 @@ struct LiveSurfaceControlStage {
 struct LiveAdmissionAuthorityGroup {
     transaction: TransactionId,
     transactions: Vec<SurfaceTransaction>,
+    cpu_buffer_updates: Vec<sophia_x_authority::XAuthorityCpuBufferUpdate>,
     present_submissions: Vec<sophia_x_authority::XAuthorityPresentSubmission>,
     software_present_submissions: Vec<sophia_x_authority::XAuthoritySoftwarePresentSubmission>,
     superseded: bool,
@@ -23,6 +24,21 @@ impl LiveAdmissionAuthorityGroup {
             .any(|transaction| transaction.transaction != self.transaction)
         {
             return Err("pre-admission authority group contains a mismatched transaction");
+        }
+        for update in &self.cpu_buffer_updates {
+            let matches = self
+                .transactions
+                .iter()
+                .filter(|transaction| {
+                    matches!(
+                        transaction.target_buffer,
+                        BufferSource::CpuBuffer { handle } if handle == update.handle()
+                    )
+                })
+                .count();
+            if matches != 1 {
+                return Err("pre-admission CPU update has no exact surface transaction");
+            }
         }
         if self
             .present_submissions
@@ -214,6 +230,19 @@ impl PersistentLiveLayout {
             .filter(|submission| self.surface_requires_admission(submission.surface))
             .copied()
             .collect::<Vec<_>>();
+        let cpu_handles = transactions
+            .iter()
+            .filter_map(|transaction| match transaction.target_buffer {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let cpu_buffer_updates = batch
+            .cpu_buffer_updates
+            .iter()
+            .filter(|update| cpu_handles.contains(&update.handle()))
+            .cloned()
+            .collect::<Vec<_>>();
         if transactions.is_empty()
             && present_submissions.is_empty()
             && software_present_submissions.is_empty()
@@ -223,6 +252,7 @@ impl PersistentLiveLayout {
         let group = LiveAdmissionAuthorityGroup {
             transaction: batch.transaction,
             transactions,
+            cpu_buffer_updates,
             present_submissions,
             software_present_submissions,
             superseded: false,

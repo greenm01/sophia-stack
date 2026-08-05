@@ -45,6 +45,13 @@
                         wm_update_coordinator_batch(update.commit.transaction)
                     })
                 })
+                .or_else(|| {
+                    runtime.as_ref().and_then(|runtime| {
+                        runtime
+                            .released_surface_content_transaction()
+                            .map(wm_update_coordinator_batch)
+                    })
+                })
                 .map_or_else(
                     || {
                         authority_receiver.recv_timeout(authority_wait_timeout(
@@ -212,7 +219,10 @@
                     || !batch.fence_registrations.is_empty()
                     || !batch.present_submissions.is_empty()
                     || !batch.released_dma_bufs.is_empty()
-                    || !batch.released_fences.is_empty();
+                    || !batch.released_fences.is_empty()
+                    || runtime
+                        .as_ref()
+                        .is_some_and(LiveProductionVisualRuntime::has_released_surface_content);
                 if !has_engine_work && pending_wm_update.is_none() {
                     continue;
                 }
@@ -470,11 +480,6 @@
                     .top_client_positioned_surface()
                     .or_else(|| focus.focused_surface(seat));
                 let focused_surface = focus.focused_surface(seat);
-                let updates = batch
-                    .cpu_buffer_updates
-                    .iter()
-                    .map(renderer_cpu_buffer_update)
-                    .collect::<Vec<_>>();
                 let cursor_presentation = if native_scanout.is_some() {
                     LiveProductionCursorPresentation::HardwarePlane
                 } else {
@@ -511,12 +516,13 @@
                     .map(|layer| layer.surface)
                     .collect::<Vec<_>>();
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
-                    if !production_batch.has_dma_buf_present_submissions() {
+                    if !production_batch.has_dma_buf_present_submissions()
+                        && !runtime.released_surface_content_requires_gpu()
+                    {
                         let (submission, committed_surfaces) =
                             runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
                                 scene: &mut scene,
-                                updates,
                                 raised_surface,
                                 focused_surface,
                                 cursor_presentation,
@@ -544,7 +550,6 @@
                             runtime.run_gpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
                                 scene: &mut scene,
-                                updates,
                                 raised_surface,
                                 focused_surface,
                                 cursor_presentation,

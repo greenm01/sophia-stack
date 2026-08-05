@@ -922,6 +922,117 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
 }
 
 #[test]
+fn present_shm_clear_and_core_draw_share_one_surface_generation_stream() {
+    let namespace = NamespaceId::from_raw(22);
+    let window = XResourceId::new(0x68, 1);
+    let pixmap = XResourceId::new(0x69, 1);
+    let surface = SurfaceId::new(22, 1);
+    let size = Size {
+        width: 8,
+        height: 8,
+    };
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(90),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface,
+            geometry: full,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime.create_pixmap(namespace, pixmap, size, 1).unwrap();
+    runtime.apply_put_image(
+        TransactionId::from_raw(91),
+        namespace,
+        pixmap,
+        Region::single(full),
+        Some(&vec![0x21; 8 * 8 * 4]),
+    );
+
+    let present = runtime.present_standard_pixmap(
+        TransactionId::from_raw(92),
+        namespace,
+        window,
+        pixmap,
+        0,
+        0,
+        None,
+        None,
+    );
+    let present_update = runtime.take_cpu_buffer_update().unwrap();
+    let shm = runtime.apply_put_image(
+        TransactionId::from_raw(93),
+        namespace,
+        window,
+        Region::single(full),
+        Some(&vec![0x42; 8 * 8 * 4]),
+    );
+    let shm_update = runtime.take_cpu_buffer_update().unwrap();
+    let clear = runtime.apply_clear(
+        TransactionId::from_raw(94),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 1,
+            y: 1,
+            width: 3,
+            height: 3,
+        }),
+    );
+    let clear_update = runtime.take_cpu_buffer_update().unwrap();
+    let core = runtime.apply_core_draw(
+        TransactionId::from_raw(95),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 4,
+            y: 4,
+            width: 2,
+            height: 2,
+        }),
+    );
+    let core_update = runtime.take_cpu_buffer_update().unwrap();
+
+    let responses = [&present, &shm, &clear, &core];
+    for (index, response) in responses.into_iter().enumerate() {
+        assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+        assert_eq!(response.transactions.len(), 1);
+        assert_eq!(response.transactions[0].surface, surface);
+        assert_eq!(
+            response.transactions[0].previous_committed_generation,
+            index as u64 + 1
+        );
+    }
+    let updates = [present_update, shm_update, clear_update, core_update];
+    assert!(matches!(updates[0], XAuthorityCpuBufferUpdate::Replace(_)));
+    assert!(updates[1..]
+        .iter()
+        .all(|update| matches!(update, XAuthorityCpuBufferUpdate::PatchBatch(_))));
+    assert!(updates
+        .iter()
+        .all(|update| update.handle() == updates[0].handle()));
+    assert_eq!(
+        updates
+            .iter()
+            .map(XAuthorityCpuBufferUpdate::generation)
+            .collect::<Vec<_>>(),
+        [1, 2, 3, 4]
+    );
+}
+
+#[test]
 fn software_present_rejects_pixmap_without_materialized_pixels() {
     let namespace = NamespaceId::from_raw(22);
     let window = XResourceId::new(0x68, 1);

@@ -298,11 +298,17 @@ reopen the completed Milestone 9 exit gate.
   Present resources, and no native or protocol failures. The corrected
   verifier passes that retained session and its fixture now covers the
   unrelated Kitty admission plus the frame-30/frame-31 overlap.
-- [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
+- [x] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
-  logical-window content stream. Follow Xserver's copy/clip semantics without
-  GPU readback, keep river-style configured/rendering state separate, and
-  preserve one hot-path representation for future protocol authorities.
+  logical-window content stream. Engine now owns a protocol-neutral
+  `SurfaceContentStream` keyed by exact surface candidates; live authority
+  groups carry their CPU mutations with their transactions, and DMA or software
+  Present retirement releases later groups in FIFO order for sequential
+  generation rebasing. X authority retains copy/clip semantics and never reads
+  pixels back from the GPU. Rust regressions cover multi-surface ordering,
+  bounds, exact settlement, grouped pixels, and the Present/SHM/clear/core
+  generation chain; `SurfaceContentStream.tla` checks no-overtake and eventual
+  drain while unrelated work progresses.
 - [x] Optimize the proven software-Present fallback after correctness is
   retained. X authority now owns bounded reusable read-only SysV mappings,
   resolves XFixes valid/update regions with source clipping and fixed capacity,

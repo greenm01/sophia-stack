@@ -61,6 +61,7 @@ impl LiveProductionVisualRuntime {
                         msc: 0,
                     });
             }
+            self.finish_surface_content_owner(submission.candidate)?;
         }
         Ok(())
     }
@@ -230,12 +231,13 @@ impl LiveProductionVisualRuntime {
                         msc: retirement.msc,
                     });
             }
+            self.finish_surface_content_owner(submission.candidate)?;
         }
         Ok(())
     }
 
     pub(super) fn reject_software_present_frames(&mut self) {
-        let transactions = self
+        let submissions = self
             .software_presents_unframed
             .drain(..)
             .flatten()
@@ -249,14 +251,20 @@ impl LiveProductionVisualRuntime {
                     .into_values()
                     .flat_map(|binding| binding.submissions),
             )
-            .map(|submission| submission.transaction)
             .collect::<Vec<_>>();
-        for transaction in transactions {
+        for submission in submissions {
             if let Ok(outcome) = self
                 .presentation_feedback
-                .reject_skip_at_last_display(transaction)
+                .reject_skip_at_last_display(submission.transaction)
             {
                 self.route_present_feedback(outcome);
+            }
+            if let Err(error) = self.finish_surface_content_owner(submission.candidate) {
+                tracing::error!(
+                    transaction = submission.transaction.raw(),
+                    %error,
+                    "failed to release rejected software Present content owner"
+                );
             }
         }
     }

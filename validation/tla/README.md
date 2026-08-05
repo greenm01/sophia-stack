@@ -28,6 +28,13 @@ after observing the Present retirement but before reducing its feedback. That
 successor cannot steal or block the captured retirement. Under weak fairness,
 waiting Present work eventually reaches settlement.
 
+`SurfaceContentStream.tla` models a Present followed by the three representative
+software operations in the X11 content stream: SHM, clear, and core drawing.
+It requires those operations to remain bounded and FIFO until the exact Present
+retires, while unrelated work may progress. Retirement publishes the Present
+generation before any deferred operation can advance the visible generation;
+weak fairness then requires the complete backlog to drain.
+
 ## Rust Boundary Map
 
 The model is deliberately smaller than the implementation. Its actions map to
@@ -43,6 +50,9 @@ the current owning Rust boundaries as follows:
 | `Settle(..., "disconnected")` | `AuthorityTransactionInbox::drain_ready` reports disconnect; universal visual settlement remains a gap |
 | `Settle(..., "removed")` | ordered `AuthorityTransactionIntake::removed_surfaces` handling, currently on the direct-commit path |
 | `Release` | output retirement plus backend-specific lease teardown; a universal release reducer remains deferred |
+| `QueueNext` | `SurfaceContentStream::admit` carrying a complete `LiveProductionAuthorityGroup` |
+| `RetirePresent` | `finish_surface_content_owner` after exact DMA or software frame retirement |
+| `ApplyReady` | the next production cycle's sequential rebase, CPU update, and authority commit |
 
 The frame-ownership model maps `QueuePresent` to
 `queue_software_present_frame` and `stage_software_present_frame`,

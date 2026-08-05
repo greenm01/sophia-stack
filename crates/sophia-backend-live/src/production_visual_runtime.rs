@@ -2,7 +2,7 @@ use crate::*;
 use sophia_engine::*;
 use sophia_protocol::*;
 use sophia_renderer_live::*;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 mod authority;
@@ -68,7 +68,10 @@ pub struct LiveProductionVisualRuntime {
     input_layers: Vec<LayerSnapshot>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
-    surface_content_fence: LiveProductionSurfaceContentFence,
+    surface_content_stream: SurfaceContentStream<LiveProductionAuthorityGroup>,
+    released_surface_content: VecDeque<LiveProductionAuthorityGroup>,
+    deferred_content_dma_buf_releases: BTreeSet<BufferHandle>,
+    deferred_content_fence_releases: BTreeSet<FenceHandle>,
     software_present_frames_waiting: VecDeque<software_present::LiveProductionSoftwarePresentFrame>,
     software_present_frames_bound: BTreeMap<
         LiveProductionNativeFrameId,
@@ -99,7 +102,6 @@ const RECENT_CPU_BUFFER_UPDATE_CAPACITY: usize = 16;
 pub struct LiveProductionCycleRequest<'a> {
     pub batch: &'a LiveProductionAuthorityBatch,
     pub scene: &'a mut LiveProductionCpuScene,
-    pub updates: Vec<crate::LiveCpuBufferUpdate>,
     pub raised_surface: Option<SurfaceId>,
     pub focused_surface: Option<SurfaceId>,
     pub cursor_presentation: LiveProductionCursorPresentation,
@@ -142,7 +144,10 @@ impl LiveProductionVisualRuntime {
             input_layers: Vec::new(),
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
-            surface_content_fence: LiveProductionSurfaceContentFence::default(),
+            surface_content_stream: SurfaceContentStream::default(),
+            released_surface_content: VecDeque::new(),
+            deferred_content_dma_buf_releases: BTreeSet::new(),
+            deferred_content_fence_releases: BTreeSet::new(),
             software_present_frames_waiting: VecDeque::new(),
             software_present_frames_bound: BTreeMap::new(),
             software_presents_unframed: VecDeque::new(),
@@ -226,7 +231,6 @@ impl LiveProductionVisualRuntime {
         let LiveProductionCycleRequest {
             batch,
             scene,
-            mut updates,
             raised_surface,
             focused_surface,
             cursor_presentation,
@@ -238,11 +242,20 @@ impl LiveProductionVisualRuntime {
             chrome_surfaces,
             staged_cpu_buffer_handles,
         } = request;
+        let authority_envelope = batch;
+        authority_envelope.validate()?;
+        self.presentation_feedback
+            .observe_authority_resource_registrations(authority_envelope)?;
+        let batch = self.ready_surface_content_batch(authority_envelope)?;
+        let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
             &mut self.cpu_buffer_residency,
             self.production.committed_surfaces(),
-            batch,
+            &batch,
+            self.surface_content_stream
+                .deferred_items()
+                .chain(self.released_surface_content.iter()),
             staged_cpu_buffer_handles,
             &self.recent_cpu_buffer_updates,
         );
@@ -280,22 +293,9 @@ impl LiveProductionVisualRuntime {
         } else {
             false
         };
-        batch.validate()?;
-        self.presentation_feedback
-            .observe_authority_resource_registrations(batch)?;
-        let removed_surfaces = authority_batch_removed_surfaces(batch);
+        let removed_surfaces = authority_batch_removed_surfaces(&batch);
         self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
-        let rebased_groups =
-            rebase_authority_groups_to_committed(batch, self.production.committed_surfaces());
-        let mut immediate_groups = Vec::with_capacity(rebased_groups.len());
-        for group in rebased_groups {
-            if self.surface_content_fence.should_defer(&group) {
-                self.surface_content_fence.defer(group)?;
-            } else {
-                immediate_groups.push(group);
-            }
-        }
-        let rebased_groups = immediate_groups;
+        let rebased_groups = batch.groups;
         self.enqueue_software_presents(&rebased_groups)?;
         let software_present_frame_required = !self.software_presents_unframed.is_empty();
         for group in &rebased_groups {
@@ -334,11 +334,10 @@ impl LiveProductionVisualRuntime {
                     .with_surface_removals(group.removed_surfaces.clone())
             })
             .collect::<Vec<_>>();
-        self.presentation_feedback
-            .observe_authority_resource_releases(batch);
+        self.observe_content_ordered_resource_releases(authority_envelope);
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
-        let event_count = batch.transaction_count();
+        let event_count = authority_transaction_count_for_groups(&rebased_groups);
         let surface_metadata = self.surface_metadata.clone();
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
@@ -435,7 +434,6 @@ impl LiveProductionVisualRuntime {
         let LiveProductionCycleRequest {
             batch,
             scene,
-            mut updates,
             raised_surface,
             focused_surface,
             cursor_presentation,
@@ -448,11 +446,16 @@ impl LiveProductionVisualRuntime {
             staged_cpu_buffer_handles,
         } = request;
         let native_enabled = native_scanout.is_some();
+        let batch = self.ready_surface_content_batch(batch)?;
+        let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
             &mut self.cpu_buffer_residency,
             self.production.committed_surfaces(),
-            batch,
+            &batch,
+            self.surface_content_stream
+                .deferred_items()
+                .chain(self.released_surface_content.iter()),
             staged_cpu_buffer_handles,
             &self.recent_cpu_buffer_updates,
         );
@@ -511,7 +514,7 @@ impl LiveProductionVisualRuntime {
             self.initialize_native_scanout(native_scanout, frames)?;
         }
         let tick = self.run_batch(
-            batch,
+            &batch,
             presentation_layout,
             if defer_frame { None } else { native_scanout },
             native_frames,
@@ -606,11 +609,7 @@ impl LiveProductionVisualRuntime {
         let mut has_present_submissions = false;
         for group in &batch.groups {
             if group.present_submissions.is_empty() {
-                if self.surface_content_fence.should_defer(group) {
-                    self.surface_content_fence.defer(group.clone())?;
-                } else {
-                    authority_groups.push(group.clone());
-                }
+                authority_groups.push(group.clone());
             } else {
                 has_present_submissions = true;
                 let superseded = self.present_scheduler.enqueue_group(
@@ -630,8 +629,7 @@ impl LiveProductionVisualRuntime {
         // GPU group drives the shared native frame so both retire on its
         // page-flip clock.
         self.enqueue_software_presents(&authority_groups)?;
-        self.presentation_feedback
-            .observe_authority_resource_releases(batch);
+        self.observe_content_ordered_resource_releases(batch);
         if has_present_submissions && !authority_groups.is_empty() {
             let prepared = self.prepare_authority_groups(&authority_groups)?;
             let _ = self.run_prepared_authority_transactions(
@@ -759,29 +757,34 @@ fn authority_transaction_count_for_groups(groups: &[LiveProductionAuthorityGroup
 }
 
 fn rebase_authority_groups_to_committed(
-    batch: &LiveProductionAuthorityBatch,
+    groups: Vec<LiveProductionAuthorityGroup>,
     committed: &[CommittedSurfaceState],
 ) -> Vec<LiveProductionAuthorityGroup> {
-    batch
-        .groups
+    let mut generations = committed
         .iter()
-        .map(|group| {
-            let mut group = group.clone();
+        .map(|state| (state.surface, state.committed_generation))
+        .collect::<BTreeMap<_, _>>();
+    groups
+        .into_iter()
+        .map(|mut group| {
             for transaction in &mut group.transactions {
-                transaction.previous_committed_generation = committed
-                    .iter()
-                    .find(|state| state.surface == transaction.surface)
-                    .map_or(0, |state| state.committed_generation);
+                let generation = generations.get(&transaction.surface).copied().unwrap_or(0);
+                transaction.previous_committed_generation = generation;
+                generations.insert(transaction.surface, generation.saturating_add(1));
+            }
+            for surface in &group.removed_surfaces {
+                generations.remove(surface);
             }
             group
         })
         .collect()
 }
 
-fn write_cpu_buffer_residency(
+fn write_cpu_buffer_residency<'a>(
     handles: &mut Vec<u64>,
     committed: &[CommittedSurfaceState],
     batch: &LiveProductionAuthorityBatch,
+    pending_groups: impl Iterator<Item = &'a LiveProductionAuthorityGroup>,
     staged: &[u64],
     recent_updates: &VecDeque<u64>,
 ) {
@@ -800,10 +803,57 @@ fn write_cpu_buffer_residency(
                 _ => None,
             }),
     );
+    handles.extend(
+        pending_groups
+            .flat_map(|group| group.transactions.iter())
+            .filter_map(|transaction| match transaction.target_buffer {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            }),
+    );
     handles.extend_from_slice(staged);
     handles.extend(recent_updates);
     handles.sort_unstable();
     handles.dedup();
+}
+
+fn authority_batch_cpu_buffer_updates(
+    batch: &LiveProductionAuthorityBatch,
+) -> Vec<crate::LiveCpuBufferUpdate> {
+    batch
+        .groups
+        .iter()
+        .flat_map(|group| group.cpu_buffer_updates.iter().cloned())
+        .collect()
+}
+
+fn authority_group_present_owners(
+    group: &LiveProductionAuthorityGroup,
+) -> Result<Vec<SurfaceTransactionKey>, &'static str> {
+    let mut owners = group
+        .software_present_submissions
+        .iter()
+        .map(|submission| submission.candidate)
+        .collect::<Vec<_>>();
+    for submission in &group.present_submissions {
+        let mut candidates = group.transactions.iter().filter(|transaction| {
+            transaction.transaction == submission.transaction
+                && transaction.surface == submission.surface
+                && transaction.target_buffer
+                    == BufferSource::DmaBuf {
+                        handle: submission.buffer.raw(),
+                    }
+        });
+        let owner = candidates
+            .next()
+            .ok_or("DMA-BUF Present has no exact content owner")?
+            .key();
+        if candidates.next().is_some() {
+            return Err("DMA-BUF Present has multiple content owners");
+        }
+        owners.push(owner);
+    }
+    Ok(owners)
 }
 
 fn record_recent_cpu_buffer_updates(

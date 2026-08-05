@@ -412,6 +412,17 @@ Xserver is the reference for the longer-term content rule: those operations
 form one ordered logical window stream rather than unrelated whole-window
 owners.
 
+Engine enforces that order through the protocol-neutral
+`SurfaceContentStream`. The stream sees only exact `SurfaceTransactionKey`
+owners, touched surfaces, removals, and opaque authority-group payloads. It does
+not see X requests or renderer resources. A ready production group carries its
+CPU mutations and transactions through the same admission decision; an
+asynchronous DMA or software Present owns the surface until exact retirement or
+rejection. Newly unblocked groups reenter the ordinary production cycle in FIFO
+order and are rebased sequentially against committed generations. Unrelated
+surfaces remain independently runnable, and configured geometry remains
+separate from rendering state.
+
 Niri supplies a compatible policy precedent, not Sophia's transaction model:
 fixed client constraints can cause a window to open floating. Sophia publishes
 generic exact constraints through the blind WM API; an unmodified legacy WM

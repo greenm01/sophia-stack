@@ -1181,6 +1181,17 @@ impl PersistentLiveLayout {
         projected.software_present_submissions.retain(|submission| {
             !quarantined_transactions.contains(&submission.transaction)
         });
+        let projected_cpu_handles = projected
+            .transactions
+            .iter()
+            .filter_map(|transaction| match transaction.target_buffer {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        projected
+            .cpu_buffer_updates
+            .retain(|update| projected_cpu_handles.contains(&update.handle()));
         let referenced_dma_bufs = self.admission_group_dma_bufs();
         let referenced_fences = self.admission_group_fences();
         projected

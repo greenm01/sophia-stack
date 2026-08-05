@@ -222,6 +222,12 @@ fn production_authority_batch(
         groups[index]
             .transactions
             .extend(released.transactions.iter().cloned());
+        groups[index].cpu_buffer_updates.extend(
+            released
+                .cpu_buffer_updates
+                .iter()
+                .map(renderer_cpu_buffer_update),
+        );
         groups[index].present_submissions.extend(
             released
                 .present_submissions
@@ -266,6 +272,22 @@ fn production_authority_batch(
     for transaction in &batch.transactions {
         let index = production_authority_group_index(&mut groups, transaction.transaction);
         groups[index].transactions.push(transaction.clone());
+    }
+    for update in &batch.cpu_buffer_updates {
+        let transaction = batch
+            .transactions
+            .iter()
+            .find(|transaction| {
+                matches!(
+                    transaction.target_buffer,
+                    BufferSource::CpuBuffer { handle } if handle == update.handle()
+                )
+            })
+            .ok_or("CPU update has no surface transaction")?;
+        let index = production_authority_group_index(&mut groups, transaction.transaction);
+        groups[index]
+            .cpu_buffer_updates
+            .push(renderer_cpu_buffer_update(update));
     }
     if !batch.removed_surfaces.is_empty() {
         let index = production_authority_group_index(&mut groups, batch.transaction);
@@ -372,6 +394,7 @@ fn production_authority_group_index(
     groups.push(sophia_backend_live::LiveProductionAuthorityGroup {
         transaction,
         transactions: Vec::new(),
+        cpu_buffer_updates: Vec::new(),
         removed_surfaces: Vec::new(),
         present_submissions: Vec::new(),
         software_present_submissions: Vec::new(),

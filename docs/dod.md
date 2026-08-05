@@ -372,8 +372,11 @@ until page-flip retirement promotes the candidate.
 The live intake envelope may carry several ordered atomic transaction groups,
 for example when a quarantined admission becomes ready while an unrelated
 frontend batch arrives. Every group retains its own `TransactionId`; surface
-transactions, removals, and Present submissions are validated against that ID
-before Engine preparation. Native buffer and fence registrations remain on the
+transactions, CPU pixel mutations, removals, and Present submissions are
+validated together before Engine preparation. A CPU mutation must have exactly
+one matching CPU-buffer transaction in its group, so deferred pixels cannot
+change a renderer buffer before their logical operation commits. Native buffer
+and fence registrations remain on the
 bounded envelope because their protocol requests may precede the Present that
 consumes them. An envelope is batching, never authority to relabel one group's
 transactions with another group's ID.

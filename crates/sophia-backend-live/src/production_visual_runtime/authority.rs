@@ -1,35 +1,156 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
-    pub(super) fn finish_surface_content_fence(
+    /// Whether retirement released ordered content that needs another cycle.
+    pub fn has_released_surface_content(&self) -> bool {
+        !self.released_surface_content.is_empty()
+    }
+
+    pub fn released_surface_content_requires_gpu(&self) -> bool {
+        self.released_surface_content
+            .iter()
+            .any(|group| !group.present_submissions.is_empty())
+    }
+
+    pub fn released_surface_content_transaction(&self) -> Option<TransactionId> {
+        self.released_surface_content
+            .front()
+            .map(|group| group.transaction)
+    }
+
+    pub(super) fn ready_surface_content_batch(
         &mut self,
-        surface: SurfaceId,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let deferred = self.surface_content_fence.finish(surface)?;
-        if deferred.is_empty() {
-            return Ok(0);
+        batch: &LiveProductionAuthorityBatch,
+    ) -> Result<LiveProductionAuthorityBatch, Box<dyn std::error::Error>> {
+        batch.validate()?;
+        let mut ordered = self.released_surface_content.drain(..).collect::<Vec<_>>();
+        ordered.extend(batch.groups.iter().cloned());
+        let ordered =
+            rebase_authority_groups_to_committed(ordered, self.production.committed_surfaces());
+        let mut groups = Vec::with_capacity(ordered.len());
+        for group in ordered {
+            let touched = group
+                .transactions
+                .iter()
+                .map(|transaction| transaction.surface)
+                .collect::<Vec<_>>();
+            let removed = group.removed_surfaces.clone();
+            match self.surface_content_stream.admit(group, touched, removed)? {
+                SurfaceContentAdmission::Ready(group) => {
+                    for owner in authority_group_present_owners(&group)? {
+                        self.surface_content_stream.begin(owner)?;
+                    }
+                    groups.push(group);
+                }
+                SurfaceContentAdmission::Deferred => {}
+            }
         }
-        let deferred = rebase_authority_groups_to_committed(
-            &LiveProductionAuthorityBatch {
-                groups: deferred,
-                dma_buf_registrations: Vec::new(),
-                fence_registrations: Vec::new(),
-                released_dma_bufs: Vec::new(),
-                released_fences: Vec::new(),
-            },
-            self.production.committed_surfaces(),
-        );
-        let count = deferred.len();
-        self.enqueue_software_presents(&deferred)?;
-        let _ = self.prepare_authority_groups(&deferred)?;
-        self.outputs
-            .project_committed(self.production.committed_surfaces());
-        tracing::debug!(
-            surface = surface.index(),
-            groups = count,
-            "released authority groups behind retired surface Present"
-        );
+        Ok(LiveProductionAuthorityBatch {
+            groups,
+            dma_buf_registrations: batch.dma_buf_registrations.clone(),
+            fence_registrations: batch.fence_registrations.clone(),
+            released_dma_bufs: batch.released_dma_bufs.clone(),
+            released_fences: batch.released_fences.clone(),
+        })
+    }
+
+    pub(super) fn finish_surface_content_owner(
+        &mut self,
+        owner: SurfaceTransactionKey,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let ready = self.surface_content_stream.finish(owner)?;
+        let count = ready.len();
+        self.released_surface_content.extend(ready);
         Ok(count)
+    }
+
+    fn finish_surface_content_transaction(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let Some(owner) = self
+            .surface_content_stream
+            .owner_for_transaction(transaction)
+        else {
+            return Ok(0);
+        };
+        self.finish_surface_content_owner(owner)
+    }
+
+    pub(super) fn observe_content_ordered_resource_releases(
+        &mut self,
+        batch: &LiveProductionAuthorityBatch,
+    ) {
+        for handle in &batch.released_dma_bufs {
+            if self.pending_surface_content_references_dma_buf(*handle) {
+                self.deferred_content_dma_buf_releases.insert(*handle);
+            } else {
+                let _ = self
+                    .presentation_feedback
+                    .resources_mut()
+                    .release_source(*handle);
+            }
+        }
+        for handle in &batch.released_fences {
+            if self.pending_surface_content_references_fence(*handle) {
+                self.deferred_content_fence_releases.insert(*handle);
+            } else {
+                let _ = self
+                    .presentation_feedback
+                    .resources_mut()
+                    .release_fence(*handle);
+            }
+        }
+
+        let dma_bufs = self
+            .deferred_content_dma_buf_releases
+            .iter()
+            .filter(|handle| !self.pending_surface_content_references_dma_buf(**handle))
+            .copied()
+            .collect::<Vec<_>>();
+        for handle in dma_bufs {
+            self.deferred_content_dma_buf_releases.remove(&handle);
+            let _ = self
+                .presentation_feedback
+                .resources_mut()
+                .release_source(handle);
+        }
+        let fences = self
+            .deferred_content_fence_releases
+            .iter()
+            .filter(|handle| !self.pending_surface_content_references_fence(**handle))
+            .copied()
+            .collect::<Vec<_>>();
+        for handle in fences {
+            self.deferred_content_fence_releases.remove(&handle);
+            let _ = self
+                .presentation_feedback
+                .resources_mut()
+                .release_fence(handle);
+        }
+    }
+
+    fn pending_surface_content_references_dma_buf(&self, handle: BufferHandle) -> bool {
+        self.surface_content_stream
+            .deferred_items()
+            .chain(self.released_surface_content.iter())
+            .flat_map(|group| group.present_submissions.iter())
+            .any(|submission| submission.buffer == handle)
+    }
+
+    fn pending_surface_content_references_fence(&self, handle: FenceHandle) -> bool {
+        self.surface_content_stream
+            .deferred_items()
+            .chain(self.released_surface_content.iter())
+            .any(|group| {
+                group.present_submissions.iter().any(|submission| {
+                    submission.acquire_fence == Some(handle)
+                        || submission.idle_fence == Some(handle)
+                }) || group.software_present_submissions.iter().any(|submission| {
+                    submission.acquire_fence == Some(handle)
+                        || submission.idle_fence == Some(handle)
+                })
+            })
     }
 
     pub(super) fn enqueue_software_presents(
@@ -82,6 +203,19 @@ impl LiveProductionVisualRuntime {
             .reject_skip_at_last_display(transaction)
         {
             self.route_present_feedback(outcome);
+        }
+        match self.finish_surface_content_transaction(transaction) {
+            Ok(released) if released != 0 => tracing::debug!(
+                transaction = transaction.raw(),
+                groups = released,
+                "rejected Present released ordered surface content"
+            ),
+            Ok(_) => {}
+            Err(error) => tracing::error!(
+                transaction = transaction.raw(),
+                %error,
+                "failed to release rejected Present content owner"
+            ),
         }
     }
 
@@ -164,7 +298,13 @@ impl LiveProductionVisualRuntime {
         if let Some(rendering) = self.present_scheduler.take_rendering() {
             self.reject_gpu_presentation(rendering.transaction);
         }
-        let discarded = self.surface_content_fence.discard();
+        let discarded = self
+            .surface_content_stream
+            .discard()
+            .saturating_add(self.released_surface_content.len());
+        self.released_surface_content.clear();
+        self.deferred_content_dma_buf_releases.clear();
+        self.deferred_content_fence_releases.clear();
         if discarded != 0 {
             tracing::debug!(
                 deferred_groups = discarded,

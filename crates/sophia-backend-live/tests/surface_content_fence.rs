@@ -1,5 +1,11 @@
-use sophia_backend_live::{LiveProductionAuthorityGroup, LiveProductionSurfaceContentFence};
-use sophia_engine::{AuthorityTransactionIntake, HeadlessEngine, ProductionSessionCoordinator};
+use sophia_backend_live::{
+    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
+    LiveProductionAuthorityGroup,
+};
+use sophia_engine::{
+    AuthorityTransactionIntake, HeadlessEngine, ProductionSessionCoordinator,
+    SurfaceContentAdmission, SurfaceContentStream,
+};
 use sophia_protocol::{
     AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, SurfaceId,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
@@ -28,6 +34,7 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
             timeout_msec: 250,
             previous_committed_generation: 1,
         }],
+        cpu_buffer_updates: Vec::new(),
         removed_surfaces: Vec::new(),
         present_submissions: Vec::new(),
         software_present_submissions: Vec::new(),
@@ -38,18 +45,40 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
 fn in_flight_present_defers_only_later_work_for_the_same_surface() {
     let firefox = SurfaceId::new(80, 1);
     let kitty = SurfaceId::new(81, 1);
-    let mut fence = LiveProductionSurfaceContentFence::default();
-    fence.begin(firefox).unwrap();
+    let mut fence = SurfaceContentStream::default();
+    let owner = group(799, firefox).transactions[0].key();
+    fence.begin(owner).unwrap();
 
-    let later_firefox = group(800, firefox);
+    let mut later_firefox = group(800, firefox);
+    later_firefox
+        .cpu_buffer_updates
+        .push(LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 800,
+            size: sophia_protocol::Size {
+                width: 1,
+                height: 1,
+            },
+            stride: 4,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 2,
+            bytes: vec![1, 2, 3, 4],
+        }));
+    later_firefox.validate().unwrap();
     let unrelated_kitty = group(801, kitty);
-    assert!(fence.should_defer(&later_firefox));
-    assert!(!fence.should_defer(&unrelated_kitty));
-    fence.defer(later_firefox.clone()).unwrap();
+    assert_eq!(
+        fence.admit(later_firefox.clone(), [firefox], []).unwrap(),
+        SurfaceContentAdmission::Deferred
+    );
+    assert_eq!(
+        fence.admit(unrelated_kitty.clone(), [kitty], []).unwrap(),
+        SurfaceContentAdmission::Ready(unrelated_kitty)
+    );
 
     assert_eq!(fence.deferred_len(), 1);
-    assert_eq!(fence.finish(firefox).unwrap(), vec![later_firefox]);
-    assert_eq!(fence.surface(), None);
+    let released = fence.finish(owner).unwrap();
+    assert_eq!(released, vec![later_firefox]);
+    assert_eq!(released[0].cpu_buffer_updates.len(), 1);
+    assert_eq!(fence.owner(firefox), None);
 }
 
 #[test]
@@ -59,29 +88,42 @@ fn surface_removal_can_invalidate_an_in_flight_present_without_deadlock() {
     let mut removal = LiveProductionAuthorityGroup {
         transaction,
         transactions: Vec::new(),
+        cpu_buffer_updates: Vec::new(),
         removed_surfaces: vec![firefox],
         present_submissions: Vec::new(),
         software_present_submissions: Vec::new(),
     };
-    let mut fence = LiveProductionSurfaceContentFence::default();
-    fence.begin(firefox).unwrap();
+    let mut fence = SurfaceContentStream::default();
+    fence
+        .begin(group(801, firefox).transactions[0].key())
+        .unwrap();
 
-    assert!(!fence.should_defer(&removal));
+    assert!(matches!(
+        fence.admit(removal.clone(), [], [firefox]).unwrap(),
+        SurfaceContentAdmission::Ready(_)
+    ));
     removal
         .transactions
         .push(group(802, SurfaceId::new(83, 1)).transactions.remove(0));
-    assert!(!fence.should_defer(&removal));
+    assert!(matches!(
+        fence
+            .admit(removal, [SurfaceId::new(83, 1)], [firefox])
+            .unwrap(),
+        SurfaceContentAdmission::Ready(_)
+    ));
 }
 
 #[test]
 fn shutdown_discards_the_owned_backlog_and_resets_the_fence() {
     let firefox = SurfaceId::new(84, 1);
-    let mut fence = LiveProductionSurfaceContentFence::default();
-    fence.begin(firefox).unwrap();
-    fence.defer(group(803, firefox)).unwrap();
+    let mut fence = SurfaceContentStream::default();
+    fence
+        .begin(group(802, firefox).transactions[0].key())
+        .unwrap();
+    fence.admit(group(803, firefox), [firefox], []).unwrap();
 
     assert_eq!(fence.discard(), 1);
-    assert_eq!(fence.surface(), None);
+    assert_eq!(fence.owner(firefox), None);
     assert_eq!(fence.deferred_len(), 0);
     assert_eq!(fence.discard(), 0);
 }
@@ -123,10 +165,11 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
         previous_committed_generation: 1,
     });
 
-    let mut fence = LiveProductionSurfaceContentFence::default();
-    fence.begin(firefox).unwrap();
+    let mut fence = SurfaceContentStream::default();
+    let owner = group(805, firefox).transactions[0].key();
+    fence.begin(owner).unwrap();
     let later_group = group(806, firefox);
-    fence.defer(later_group).unwrap();
+    fence.admit(later_group, [firefox], []).unwrap();
 
     let retirement = production
         .settle_prepared_retirement(prepared_resize, |commit| {
@@ -137,7 +180,7 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
     assert_eq!(production.committed_surfaces()[0].committed_generation, 2);
     assert_eq!(production.committed_surfaces()[0].geometry, target_geometry);
 
-    let mut released = fence.finish(firefox).unwrap();
+    let mut released = fence.finish(owner).unwrap();
     released[0].transactions[0].previous_committed_generation = 2;
     let later_commit = production.commit_authority_batches(&[AuthorityTransactionIntake::new(
         released[0].transaction,

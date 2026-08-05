@@ -217,10 +217,7 @@ impl LiveProductionVisualRuntime {
                     });
             let (status, detail) = native_scanout.diagnose_mixed_frame(primary_index, mixed);
             self.present_scheduler.pop_front();
-            let _ = self
-                .presentation_feedback
-                .resources_mut()
-                .reject(transaction);
+            self.reject_gpu_presentation(transaction);
             let _ = self.presentation_feedback.disconnect();
             return Err(Box::new(crate::LiveNativeMixedDiagnosticComplete {
                 status,
@@ -266,7 +263,6 @@ impl LiveProductionVisualRuntime {
                     .resources_mut()
                     .mark_submitted(transaction)?;
                 self.present_scheduler.pop_front();
-                self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_submitted(LiveProductionSubmittedPresent {
                         frame,
@@ -280,7 +276,6 @@ impl LiveProductionVisualRuntime {
             }
             Some(Status::ScanoutExportPending) => {
                 self.present_scheduler.pop_front();
-                self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_rendering(LiveProductionSubmittedPresent {
                         frame,

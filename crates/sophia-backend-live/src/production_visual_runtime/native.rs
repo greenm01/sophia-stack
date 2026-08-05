@@ -97,7 +97,6 @@ impl LiveProductionVisualRuntime {
         self.reject_software_presents();
         if let Some(present) = skipped_present.as_ref() {
             self.reject_gpu_presentation(present.transaction);
-            self.finish_surface_content_fence(present.surface)?;
         }
         self.outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
@@ -241,7 +240,6 @@ impl LiveProductionVisualRuntime {
             Some(_) => {
                 if let Some(rendering) = self.present_scheduler.take_rendering() {
                     self.reject_gpu_presentation(rendering.transaction);
-                    self.finish_surface_content_fence(rendering.surface)?;
                 }
             }
         }
@@ -344,7 +342,7 @@ impl LiveProductionVisualRuntime {
         self.outputs
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);
-        let deferred_groups = self.finish_surface_content_fence(submitted.surface)?;
+        let deferred_groups = self.finish_surface_content_owner(submitted.candidate)?;
         if deferred_groups != 0 {
             tracing::debug!(
                 transaction = submitted.transaction.raw(),

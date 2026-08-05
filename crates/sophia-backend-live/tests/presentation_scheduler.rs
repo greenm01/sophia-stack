@@ -79,6 +79,7 @@ fn scheduler_batch(
                 timeout_msec: 250,
                 previous_committed_generation: 0,
             }],
+            cpu_buffer_updates: Vec::new(),
             removed_surfaces: Vec::new(),
             present_submissions: vec![LiveProductionPresentSubmission {
                 transaction,
@@ -362,6 +363,7 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
                 timeout_msec: 250,
                 previous_committed_generation: 1,
             }],
+            cpu_buffer_updates: Vec::new(),
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),
             software_present_submissions: Vec::new(),

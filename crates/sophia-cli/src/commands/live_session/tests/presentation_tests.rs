@@ -256,6 +256,7 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
     let group = sophia_backend_live::LiveProductionAuthorityGroup {
         transaction: sophia_protocol::TransactionId::from_raw(90),
         transactions: vec![transaction],
+        cpu_buffer_updates: Vec::new(),
         removed_surfaces: Vec::new(),
         present_submissions: Vec::new(),
         software_present_submissions: Vec::new(),
@@ -318,6 +319,21 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
     let mut observed = wm_update_coordinator_batch(transaction);
     observed.transactions.push(pixels.clone());
     observed.software_present_submissions.push(software_present);
+    let cpu_update = sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(
+        sophia_x_authority::XAuthorityCpuBufferSnapshot {
+            handle: 192,
+            drawable: sophia_x_authority::XResourceId::new(192, 1),
+            size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+            stride: u32::try_from(geometry.width * 4).unwrap(),
+            format: sophia_backend_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: vec![0; usize::try_from(geometry.width * geometry.height * 4).unwrap()],
+        },
+    );
+    observed.cpu_buffer_updates.push(cpu_update.clone());
     let mut layout = PersistentLiveLayout::default();
     layout.cpu_buffer_sizes.insert(
         192,
@@ -331,6 +347,7 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
         .push_back(LiveAdmissionAuthorityGroup {
             transaction,
             transactions: vec![pixels],
+            cpu_buffer_updates: vec![cpu_update],
             present_submissions: Vec::new(),
             software_present_submissions: vec![software_present],
             superseded: false,
@@ -340,10 +357,12 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
     let production = production_authority_batch(&projected, &released, &layout).unwrap();
 
     assert!(projected.transactions.is_empty());
+    assert!(projected.cpu_buffer_updates.is_empty());
     assert!(projected.software_present_submissions.is_empty());
     assert_eq!(released.len(), 1);
     assert_eq!(production.groups.len(), 1);
     assert_eq!(production.groups[0].transactions.len(), 1);
+    assert_eq!(production.groups[0].cpu_buffer_updates.len(), 1);
     assert_eq!(production.groups[0].software_present_submissions.len(), 1);
     production.validate().unwrap();
 }
@@ -385,6 +404,7 @@ fn duplicate_software_present_fails_before_renderer_registration() {
         groups: vec![sophia_backend_live::LiveProductionAuthorityGroup {
             transaction,
             transactions: vec![pixels],
+            cpu_buffer_updates: Vec::new(),
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),
             software_present_submissions: vec![submission, submission],
