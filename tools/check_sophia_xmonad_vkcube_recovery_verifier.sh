@@ -9,6 +9,22 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 
 SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$PASS" >/dev/null
 
+sed '/sophia_live_session_present_feedback/d' "$PASS" >"$TEMP_DIR/aggregate.log"
+SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/aggregate.log" >/dev/null
+
+sed 's/present_complete_copy=3/present_complete_copy=2/' \
+    "$TEMP_DIR/aggregate.log" >"$TEMP_DIR/short-aggregate.log"
+if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/short-aggregate.log" >/dev/null 2>&1; then
+    echo "vkcube verifier accepted aggregate feedback below the software retirements" >&2
+    exit 1
+fi
+
+sed '/transaction=626/d' "$PASS" >"$TEMP_DIR/unrelated-only.log"
+if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/unrelated-only.log" >/dev/null 2>&1; then
+    echo "vkcube verifier accepted an unrelated DMA admission as the software proof" >&2
+    exit 1
+fi
+
 sed '/transaction=634/d' "$PASS" >"$TEMP_DIR/static.log"
 if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/static.log" >/dev/null 2>&1; then
     echo "vkcube verifier accepted fewer than three retired Presents" >&2
@@ -34,9 +50,16 @@ if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/skip.log" >/dev/null 2>&1; 
     exit 1
 fi
 
-sed '0,/frame=41/{s/frame=41/frame=99/}' "$PASS" >"$TEMP_DIR/wrong-frame.log"
+sed '0,/frame=30/{s/frame=30/frame=99/}' "$PASS" >"$TEMP_DIR/wrong-frame.log"
 if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/wrong-frame.log" >/dev/null 2>&1; then
     echo "vkcube verifier accepted software feedback without exact native-frame ownership" >&2
+    exit 1
+fi
+
+sed 's/kind=software frame=30 native_submission=16/kind=software frame=31 native_submission=17/' \
+    "$PASS" >"$TEMP_DIR/stolen-successor.log"
+if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/stolen-successor.log" >/dev/null 2>&1; then
+    echo "vkcube verifier let software feedback steal a DMA successor frame" >&2
     exit 1
 fi
 

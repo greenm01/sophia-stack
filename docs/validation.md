@@ -395,19 +395,26 @@ For the visible xmonad/KMS proof, run
 tools/verify_sophia_xmonad_vkcube_recovery.sh
 ```
 
-The verifier joins every armed visual admission to the exact Present candidate
-at Engine admission completion and native page-flip retirement. Before the
-admission may arm, that transaction, surface, and target buffer must appear as
-the Engine-selected `PresentedBuffer` candidate with a concrete natural extent.
-The target may use imported DMA-BUF storage or an immutable CPU materialization;
-neither may bypass retirement as a backing snapshot. At least three increasing
-Present transactions must then receive routed Complete events with nonzero
-UST/MSC followed by routed Idle events. These checks reject the historical
-backing-clear substitution, the mixed-batch software-registration omission,
-and a static first-frame success. A software retirement additionally names its
-nonzero native frame and submission, and the verifier joins both to the exact
-native submit/retire pair. The verifier also requires bounded clean teardown
-and rejects malformed, overflowed, mismatched, or degraded intake.
+The verifier selects an armed visual admission only when its exact transaction
+and surface later produce a schema-4 software retirement. Unrelated imported
+DMA-BUF admissions, including the startup Kitty, cannot satisfy this recovery
+proof. Before the admission may arm, its transaction, surface, and target
+buffer must appear as the Engine-selected `PresentedBuffer` candidate with a
+concrete natural extent. The target identity may originate in imported DMA-BUF
+storage or an immutable CPU materialization, but it may not bypass retirement
+as a backing snapshot.
+
+At least three increasing software Present transactions must carry nonzero
+UST/MSC and exact native frame/submission ownership. The native submission must
+be an independent CPU or retained-mixed frame, so feedback cannot steal a newer
+DMA Present frame. Diagnostic logs join each transaction to routed Complete and
+Idle events. Ordinary installed-session logs suppress those verbose lines; for
+them, the verifier requires aggregate Copy, Idle, and idle-fence counts to cover
+every exact software retirement. These checks reject the historical
+backing-clear substitution, mixed-batch registration omission, callback and
+successor confusion, and static first-frame success. The verifier also requires
+bounded clean teardown and rejects malformed, overflowed, mismatched, or
+degraded intake.
 
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,

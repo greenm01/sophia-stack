@@ -245,11 +245,13 @@ reopen the completed Milestone 9 exit gate.
   487 native retirements, Complete/Idle pairs, and idle-fence triggers; it had
   zero native failures, protocol errors, or live presentation resources at
   clean teardown.
-- [ ] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
+- [x] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
   committed runtime surfaces, a focused and interactive Kitty, successful
   Present retirement, zero mismatched-transaction warnings, and clean teardown
-  before returning to the `vkcube` recovery proof.
-- [ ] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
+  before returning to the `vkcube` recovery proof. The retained `ad84d88a`
+  session launched vkcube from the focused Kitty, kept both desktop surfaces
+  live, reported no mismatched transaction, and completed cleanly.
+- [x] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
   existing desktop to remain responsive, the cube to become visible through
   pre-pixel admission (using bounded fixed-extent recovery only if the client
   misses the accepted resize), and normal shutdown with no stale Present,
@@ -291,8 +293,11 @@ reopen the completed Milestone 9 exit gate.
   scheduler state and exited. Retirement reduction now permits this legal
   overlap for CPU/retained content while preserving fail-closed DMA ownership,
   with matching Rust and TLA+ regressions.
-  Repeat the physical vkcube gate from the packaged fix before closing this
-  item.
+  The installed `ad84d88a` rerun visibly animated and exited cleanly with 411
+  Copy completions, 21 Flip completions, 435 Idle/fence signals, zero live
+  Present resources, and no native or protocol failures. The corrected
+  verifier passes that retained session and its fixture now covers the
+  unrelated Kitty admission plus the frame-30/frame-31 overlap.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11
   Present, SHM, clear, and core-drawing operations as one bounded ordered
   logical-window content stream. Follow Xserver's copy/clip semantics without

@@ -1,21 +1,28 @@
+sophia_live_visual_candidate schema=1 status=selected transaction=410 surface=2097168 width=1276 height=1422 evidence=PresentedBuffer
+sophia_live_visual_candidate_identity schema=1 status=selected transaction=410 surface=2097168 source=dma_buf buffer=7
+sophia_live_visual_admission schema=1 status=armed transaction=410 surface=2097168
+sophia_live_visual_admission schema=1 status=presented transaction=410 surface=2097168
+sophia_live_session_present schema=2 status=retired transaction=410 surface=2097168 source=1276x1422 kind=dma ust=500 msc=9
 sophia_live_visual_candidate schema=1 status=selected transaction=626 surface=6291456 width=500 height=500 evidence=PresentedBuffer
 sophia_live_visual_candidate_identity schema=1 status=selected transaction=626 surface=6291456 source=cpu_buffer buffer=28
 sophia_live_visual_admission schema=1 status=armed transaction=626 surface=6291456
 sophia_live_visual_admission schema=1 status=presented transaction=626 surface=6291456
-sophia_live_native_page_flip schema=1 status=submitted output=1 submission=16 content=Some(RetainedMixed) frame=41
-sophia_live_native_page_flip schema=1 status=retired output=1 submission=16 frame=41
-sophia_live_session_present schema=4 status=retired transaction=626 surface=6291456 source=500x500 kind=software frame=41 native_submission=16 ust=1000 msc=10
+sophia_live_native_page_flip schema=1 status=submitted output=1 submission=16 content=Some(RetainedMixed) frame=30
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=16 frame=30
+sophia_live_native_page_flip schema=1 status=submitted output=1 submission=17 content=Some(MixedPresent) frame=31
+sophia_live_session_present schema=4 status=retired transaction=626 surface=6291456 source=500x500 kind=software frame=30 native_submission=16 ust=1000 msc=10
 sophia_live_session_present_feedback schema=1 kind=complete transaction=626 routed=true mode=Copy ust=1000 msc=10
 sophia_live_session_present_feedback schema=1 kind=idle transaction=626 routed=true
-sophia_live_native_page_flip schema=1 status=submitted output=1 submission=17 content=Some(RetainedMixed) frame=42
-sophia_live_native_page_flip schema=1 status=retired output=1 submission=17 frame=42
-sophia_live_session_present schema=4 status=retired transaction=630 surface=6291456 source=500x500 kind=software frame=42 native_submission=17 ust=2000 msc=11
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=17 frame=31
+sophia_live_native_page_flip schema=1 status=submitted output=1 submission=18 content=Some(RetainedMixed) frame=32
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=18 frame=32
+sophia_live_session_present schema=4 status=retired transaction=630 surface=6291456 source=500x500 kind=software frame=32 native_submission=18 ust=2000 msc=11
 sophia_live_session_present_feedback schema=1 kind=complete transaction=630 routed=true mode=Copy ust=2000 msc=11
 sophia_live_session_present_feedback schema=1 kind=idle transaction=630 routed=true
-sophia_live_native_page_flip schema=1 status=submitted output=1 submission=18 content=Some(RetainedMixed) frame=43
-sophia_live_native_page_flip schema=1 status=retired output=1 submission=18 frame=43
-sophia_live_session_present schema=4 status=retired transaction=634 surface=6291456 source=500x500 kind=software frame=43 native_submission=18 ust=3000 msc=12
+sophia_live_native_page_flip schema=1 status=submitted output=1 submission=19 content=Some(RetainedMixed) frame=33
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=19 frame=33
+sophia_live_session_present schema=4 status=retired transaction=634 surface=6291456 source=500x500 kind=software frame=33 native_submission=19 ust=3000 msc=12
 sophia_live_session_present_feedback schema=1 kind=complete transaction=634 routed=true mode=Copy ust=3000 msc=12
 sophia_live_session_present_feedback schema=1 kind=idle transaction=634 routed=true
 sophia_live_session_cleanup schema=1 status=clean debt=0
-sophia_live_session schema=16 status=bounded_complete display=:90
+sophia_live_session schema=16 status=bounded_complete display=:90 present_complete_copy=3 present_idle=3 present_idle_fence_triggers=3

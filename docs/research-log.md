@@ -44,6 +44,18 @@ regression reproduces frames 30 and 31, and `PresentFrameOwnership.tla` now
 allows successor submission between native retirement observation and feedback
 settlement.
 
+The installed `ad84d88a` rerun visibly animated vkcube and shut down cleanly
+after 411 Copy completions, 21 Flip completions, and 435 Idle/fence signals,
+with zero live Present resources, native failures, or protocol errors. The
+first verifier result was a false failure: it enrolled startup Kitty DMA
+transaction 410 and demanded software feedback records from it. The verifier
+now enrolls only an armed admission with an exact schema-4 software retirement.
+Its pass fixture includes the unrelated DMA admission and the legal sequence in
+which frame 30 retires, DMA successor 31 submits, and frame 30 then settles. It
+also rejects an unrelated-only log, a successor frame stolen for software
+feedback, short animation, and insufficient diagnostic or aggregate feedback.
+The corrected verifier passes the retained physical session.
+
 ## 2026-08-04: Present retirement is independent of storage
 
 The fresh installed xmonad/vkcube run disproved the remaining DMA-only
