@@ -172,7 +172,7 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
-    pub(super) fn mark_software_present_frame_submitted(
+    pub(super) fn observe_software_present_frame_submitted(
         &mut self,
         frame: LiveProductionNativeFrameId,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -184,15 +184,17 @@ impl LiveProductionVisualRuntime {
             binding.phase,
             LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(frame),
         ) {
-            LiveProductionSoftwarePresentFrameTransition::Submitted => {}
-            _ => return Err("software Present frame was submitted twice".into()),
+            LiveProductionSoftwarePresentFrameTransition::Submitted => {
+                for submission in &binding.submissions {
+                    self.presentation_feedback
+                        .resources_mut()
+                        .mark_submitted(submission.transaction)?;
+                }
+                binding.phase = LiveProductionSoftwarePresentFramePhase::Submitted;
+            }
+            LiveProductionSoftwarePresentFrameTransition::AlreadySubmitted => {}
+            _ => return Err("software Present frame submission identity is invalid".into()),
         }
-        for submission in &binding.submissions {
-            self.presentation_feedback
-                .resources_mut()
-                .mark_submitted(submission.transaction)?;
-        }
-        binding.phase = LiveProductionSoftwarePresentFramePhase::Submitted;
         Ok(())
     }
 

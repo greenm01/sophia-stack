@@ -40,7 +40,6 @@ impl LiveWmSession {
         let mut session_action = None;
         let mut workspace_projection = None;
         let mut clear_focus = None;
-        let mut restore_focus = None;
         if committed && let Some(effects) = result.effects.take() {
             let mut candidate = effects.workspace_state;
             let retained_newer_bounds =
@@ -69,14 +68,7 @@ impl LiveWmSession {
             session_action = effects
                 .session_action
                 .map(|action| (transaction, action.0, action.1));
-            if policy_focus.is_none() && let Some(surface) = previous_focus {
-                clear_focus = Some((transaction, surface));
-            }
-            if let Some(surface) = policy_focus
-                && policy_focus != previous_focus
-            {
-                restore_focus = Some((transaction, surface));
-            }
+            clear_focus = hidden_wm_focus_to_clear(transaction, previous_focus, policy_focus);
             self.mark_committed();
         }
         let owner_commit = LiveWmOwnerCommit {
@@ -85,7 +77,6 @@ impl LiveWmSession {
             session_action,
             workspace_projection,
             clear_focus,
-            restore_focus,
         };
         if restart_speculative_transport {
             // A legacy WM mutates its private model before Sophia can prove
@@ -99,6 +90,21 @@ impl LiveWmSession {
         }
         Ok(owner_commit)
     }
+}
+
+fn hidden_wm_focus_to_clear(
+    transaction: TransactionId,
+    previous_focus: Option<SurfaceId>,
+    policy_focus: Option<SurfaceId>,
+) -> Option<(TransactionId, SurfaceId)> {
+    // Positive focus has one Engine-owned handoff in PersistentLiveLayout.
+    // That path can wait for a presented admission to retire; this projection
+    // adapter only clears an old focus when policy leaves no visible target.
+    policy_focus
+        .is_none()
+        .then_some(previous_focus)
+        .flatten()
+        .map(|surface| (transaction, surface))
 }
 
 fn wm_transport_requires_reseed(result: &LiveWmCommitResult) -> bool {

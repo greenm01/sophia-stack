@@ -219,7 +219,10 @@ if [ -n "$input_devices" ]; then
 if [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     (
         while ! pidof sophia-x11-wm-bridge >/dev/null 2>&1; do sleep 0.05; done
-        sleep 9
+        # The host proves the initial focus, pointer, workspace, and layout
+        # sequence before it observes this fault. Keep injection beyond that
+        # bounded prelude so it cannot bisect an authority transaction.
+        sleep 30
         while :; do
             wm_pid="$(pidof xmonad 2>/dev/null || true)"
             bridge_pid="$(pidof sophia-x11-wm-bridge 2>/dev/null || true)"

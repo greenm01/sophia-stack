@@ -3,6 +3,56 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: mixed-session handoffs are bounded and snapshot-owned
+
+The commit-pinned M8 proof exposed three independent handoff errors. Software
+Present submission observation rejected a legal repeated observation after an
+exact native frame had already been marked submitted. Presented admission let
+both layout retirement and workspace projection synthesize the same positive
+focus. Finally, the asynchronous WM worker repeatedly polled for ten
+milliseconds without enforcing its configured aggregate 500 ms response
+deadline, so an unanswered compatibility request could block all later policy
+work.
+
+Software submission is now idempotent only for the exact already-submitted
+frame, and retirement observes the retained scanout identity before removing
+its binding. Positive focus has one layout-owned writer, while action packets
+use the committed WM snapshot instead of temporarily older physical focus.
+The worker enforces the aggregate transport deadline; failure restarts and
+reseeds the bridge from committed state. The xmonad adapter drains replies
+before every request, accepts a one-window focus cycle as a valid no-event
+operation, and derives that sole target from the action packet rather than a
+timing-dependent synthetic-X cache.
+
+Reducer, worker, and private-xmonad regressions cover exact submission,
+single-writer focus, deadline expiry, a silent one-window focus cycle, and the
+move/view/focus sequence with no initial focus. The rebuilt M8 proof passed
+workspace restoration, resize, refocus, the second Firefox isolation, and
+dialog opening. Its remaining acceptance boundary is the final DOM dialog
+confirmation click, which timed out after the dialog-ready witness; no earlier
+workspace or focus timeout recurred.
+
+## 2026-08-05: presented admission has one positive-focus writer
+
+The first mixed-application QEMU run after the CPU admission repair reached
+vkcube's exact presented candidate, then terminated on a duplicate X-authority
+focus control. The layout state machine had correctly deferred positive focus
+until that candidate retired. Independently, the WM workspace-projection
+adapter queued the same transaction and surface immediately. Retirement could
+therefore reproduce a control that was still awaiting its frontend
+acknowledgement.
+
+Positive focus now has one owner: `PersistentLiveLayout` queues it immediately
+for committed backing snapshots or after the exact retirement for presented
+admissions. The projection adapter only clears an old focus when policy leaves
+no visible target. Focus evidence remains ordered after workspace projection
+for immediate transitions and is emitted at retirement for deferred ones. A
+pure projection regression rejects positive-focus synthesis, while the
+presented-admission regression proves that no focus is available before the
+matching retirement. The mutation-tested xmonad verifier, source audit, and
+complete all-features suite pass; the commit-pinned QEMU gate remains the
+acceptance boundary.
+
 ## 2026-08-05: CPU admission releases the replacement before its patches
 
 The first QEMU run past the repaired semantic preflight admitted a third xterm

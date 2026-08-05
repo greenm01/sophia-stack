@@ -489,7 +489,12 @@ impl PersistentLiveLayout {
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
             && expected == visual_candidate
         {
-            self.focus_to_apply = Some((wm_transaction, surface));
+            self.queue_focus_handoff(wm_transaction, surface);
+            println!(
+                "sophia_live_wm schema=1 status=workspace_focus_restore_queued transaction={} surface={}",
+                wm_transaction.raw(),
+                surface.index(),
+            );
         }
         println!(
             "sophia_live_visual_admission schema=1 status=presented transaction={} surface={}",

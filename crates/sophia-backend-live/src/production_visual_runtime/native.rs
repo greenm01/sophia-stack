@@ -243,7 +243,7 @@ impl LiveProductionVisualRuntime {
                 let submitted = native_scanout
                     .submitted_content(index)
                     .ok_or("native submit did not retain its frame identity")?;
-                self.mark_software_present_frame_submitted(submitted.frame())?;
+                self.observe_software_present_frame_submitted(submitted.frame())?;
             }
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
@@ -282,6 +282,12 @@ impl LiveProductionVisualRuntime {
             .outputs
             .output_index(selected_output)
             .ok_or("frame service selected an unknown retirement output")?;
+        // Authority and repaint cycles may submit a staged frame between
+        // frame-service passes. The scanout owner retains that exact identity
+        // until retirement, so observe it before consuming the callback.
+        if let Some(submitted) = native_scanout.submitted_content(index) {
+            self.observe_software_present_frame_submitted(submitted.frame())?;
+        }
         let committed = self.production.committed_surfaces().to_vec();
         let output = self
             .outputs

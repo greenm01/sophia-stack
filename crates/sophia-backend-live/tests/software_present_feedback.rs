@@ -67,6 +67,14 @@ fn software_present_feedback_requires_its_own_native_frame() {
         reduce_software_present_frame_observation(
             owned,
             LiveProductionSoftwarePresentFramePhase::Submitted,
+            LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(owned),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::AlreadySubmitted
+    );
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Submitted,
             LiveProductionSoftwarePresentFrameObservation::NativeRetired(owned),
         ),
         LiveProductionSoftwarePresentFrameTransition::Retired

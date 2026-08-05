@@ -259,7 +259,6 @@ macro_rules! drain_physical_input {
                     .ok_or("WM shortcut activated without a live WM session")?;
                 match LivePhysicalWmActionDisposition::from(wm.enqueue_action(
                     action,
-                    focus.focused_surface(seat),
                     &layout,
                     output,
                 )?) {

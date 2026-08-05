@@ -320,6 +320,11 @@ impl LegacyX11WmBridgeRuntime {
         &mut self,
         request: &WmRequestPacket,
     ) -> Result<WmResponsePacket, BridgeRuntimeError> {
+        // Direct workspace commands return without consulting the legacy WM.
+        // Drain replies from their preceding synthetic X events before any
+        // later command can fill the bounded legacy-response channel.
+        while self.legacy.try_recv().is_ok() {}
+
         if self.profile == LegacyWmProfile::Xmonad {
             let session = self
                 .session
@@ -394,17 +399,31 @@ impl LegacyX11WmBridgeRuntime {
             WmRequestKind::ActionActivated(activation) => match activation.action.raw() {
                 XMONAD_ACTION_FOCUS_NEXT => activation
                     .focused_surface
-                    .and_then(|surface| self.bridge.cycle_focus_window(surface, true)),
+                    .and_then(|surface| self.bridge.cycle_focus_window(surface, true))
+                    // Moving the focused window clears Engine focus before a
+                    // later workspace view. A one-window workspace still has
+                    // one exact xmonad target and needs no X11 event to find it.
+                    .or_else(|| {
+                        let [node] = activation.nodes.as_slice() else {
+                            return None;
+                        };
+                        self.bridge.synthetic_window(node.surface)
+                    }),
                 XMONAD_ACTION_FOCUS_PREVIOUS => activation
                     .focused_surface
-                    .and_then(|surface| self.bridge.cycle_focus_window(surface, false)),
+                    .and_then(|surface| self.bridge.cycle_focus_window(surface, false))
+                    .or_else(|| {
+                        let [node] = activation.nodes.as_slice() else {
+                            return None;
+                        };
+                        self.bridge.synthetic_window(node.surface)
+                    }),
                 _ => None,
             },
             WmRequestKind::FocusRequested(focus) => self.bridge.synthetic_window(focus.surface),
             _ => None,
         };
 
-        while self.legacy.try_recv().is_ok() {}
         let update = self.bridge.apply_engine_request(request)?;
         let expected = send_engine_update(
             &self.bridge,
@@ -532,7 +551,14 @@ impl LegacyX11WmBridgeRuntime {
             }
         }
         let response_batch = if profiled_chord.is_some() || pointer_gesture.is_some() {
-            self.collect_legacy_responses(&BTreeSet::new(), !self.bridge.mapped_windows.is_empty())?
+            // Focus cycling has a deterministic target. With one mapped
+            // window xmonad may correctly emit no event, so that no-op must
+            // not consume the bridge's three-second failure bound.
+            let require_activity = pointer_gesture.is_some()
+                || (profiled_chord.is_some()
+                    && profiled_focus.is_none()
+                    && !self.bridge.mapped_windows.is_empty());
+            self.collect_legacy_responses(&BTreeSet::new(), require_activity)?
         } else {
             self.collect_legacy_responses(&expected.configured, false)?
         };

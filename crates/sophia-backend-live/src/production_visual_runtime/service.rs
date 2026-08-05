@@ -118,6 +118,7 @@ pub enum LiveProductionSoftwarePresentFrameObservation {
 pub enum LiveProductionSoftwarePresentFrameTransition {
     Unrelated,
     Submitted,
+    AlreadySubmitted,
     Retired,
     InvalidRetirement,
 }
@@ -133,6 +134,12 @@ pub fn reduce_software_present_frame_observation(
                 && matches!(phase, LiveProductionSoftwarePresentFramePhase::Pending) =>
         {
             LiveProductionSoftwarePresentFrameTransition::Submitted
+        }
+        LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(frame)
+            if frame == owned_frame
+                && matches!(phase, LiveProductionSoftwarePresentFramePhase::Submitted) =>
+        {
+            LiveProductionSoftwarePresentFrameTransition::AlreadySubmitted
         }
         LiveProductionSoftwarePresentFrameObservation::NativeRetired(frame)
             if frame == owned_frame

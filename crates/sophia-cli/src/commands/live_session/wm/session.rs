@@ -182,7 +182,6 @@ struct LiveWmOwnerCommit {
     session_action: Option<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
     workspace_projection: Option<LiveWmWorkspaceProjection>,
     clear_focus: Option<(TransactionId, SurfaceId)>,
-    restore_focus: Option<(TransactionId, SurfaceId)>,
 }
 
 #[derive(Clone, Copy)]
@@ -511,7 +510,6 @@ impl LiveWmSession {
     fn enqueue_action(
         &mut self,
         action: WmActionId,
-        focused_surface: Option<SurfaceId>,
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
@@ -550,7 +548,10 @@ impl LiveWmSession {
                 action,
                 output: output.id,
                 workspace: output_state.workspace,
-                focused_surface,
+                // Presented admission may defer the Engine focus handoff.
+                // Actions still belong to this committed WM snapshot, so do
+                // not mix in the temporarily older physical-focus state.
+                focused_surface: output_state.focus,
                 nodes,
             }),
         };
@@ -719,9 +720,16 @@ impl LiveWmSession {
         }
         self.max_request = self.max_request.max(completion.elapsed);
         self.requests = self.requests.saturating_add(1);
-        let response = completion
-            .result
-            .map_err(|error| format!("WM transport request failed: {error}"))?;
+        let response = match completion.result {
+            Ok(response) => response,
+            Err(error) => {
+                // The peer may have applied a request before its response was
+                // lost. Restart and reseed from committed state before asking
+                // it to plan another transaction.
+                self.request_transport_restart("request_failed", Some(&error));
+                return Ok(None);
+            }
+        };
         if response.commands.len() > 8_192 {
             return Err("WM response exceeds the live command limit".into());
         }

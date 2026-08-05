@@ -28,8 +28,11 @@ macro_rules! service_session_controls {
                     continue;
                 }
                 return Err(format!(
-                    "X Authority control {:?} failed for surface {:?}: {failure:?}",
-                    completion.key.kind, completion.key.surface
+                    "X Authority control {:?} failed for surface {:?}: {failure:?} (queue_dwell_msec={} acknowledgement_latency_msec={})",
+                    completion.key.kind,
+                    completion.key.surface,
+                    completion.queue_dwell.as_millis(),
+                    completion.acknowledgement_latency.as_millis(),
                 )
                 .into());
             }
@@ -332,6 +335,15 @@ macro_rules! apply_wm_commit_result {
                 projection.visible_surfaces,
                 if projection.focus_present { "surface" } else { "none" },
             );
+            if let Some((transaction, surface)) = layout.focus_to_apply
+                && transaction == projection.transaction
+            {
+                println!(
+                    "sophia_live_wm schema=1 status=workspace_focus_restore_queued transaction={} surface={}",
+                    transaction.raw(),
+                    surface.index(),
+                );
+            }
         }
         if let Some((transaction, surface)) = owner_commit.clear_focus {
             let client = layout
@@ -359,14 +371,6 @@ macro_rules! apply_wm_commit_result {
             println!(
                 "sophia_live_wm schema=1 status=hidden_focus_cleared transaction={}",
                 transaction.raw(),
-            );
-        }
-        if let Some((transaction, surface)) = owner_commit.restore_focus {
-            layout.focus_to_apply = Some((transaction, surface));
-            println!(
-                "sophia_live_wm schema=1 status=workspace_focus_restore_queued transaction={} surface={}",
-                transaction.raw(),
-                surface.index(),
             );
         }
         owner_commit.update

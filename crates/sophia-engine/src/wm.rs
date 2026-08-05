@@ -429,6 +429,10 @@ impl WmSocketTransport {
         Self { stream, config }
     }
 
+    pub const fn response_timeout(&self) -> Duration {
+        self.config.response_timeout
+    }
+
     pub fn negotiate(
         &mut self,
         descriptor: &WmSessionDescriptor,

@@ -72,6 +72,10 @@ impl PersistentLiveLayout {
         }
     }
 
+    fn queue_focus_handoff(&mut self, transaction: TransactionId, surface: SurfaceId) {
+        self.focus_to_apply = Some((transaction, surface));
+    }
+
     fn observe_authority_batch(
         &mut self,
         batch: &XAuthorityObservedTransactionBatch,

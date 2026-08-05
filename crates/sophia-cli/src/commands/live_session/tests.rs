@@ -15,7 +15,7 @@ use super::{
     Transform, XPresentCadence, authority_transaction_count, authority_wait_timeout,
     center_geometry_without_scaling, clamp_floating_pointer_outline,
     clear_client_pressed_keys_state_only, current_cpu_frame_is_presented,
-    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
+    flush_all_client_pressed_keys, global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_visual_evidence, managed_child_exit_is_nonfatal,
     native_frame_service_requires_owner_progress, native_frame_service_should_preempt_authority,
@@ -65,6 +65,7 @@ mod visual_candidate_tests;
 mod wm_action_tests;
 mod wm_admission_tests;
 mod wm_session_tests;
+mod wm_transport_worker_tests;
 
 fn test_key_repeat_parts() -> (KeyRepeatState, XkbKeymapSnapshot) {
     (

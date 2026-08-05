@@ -17,7 +17,8 @@ use sophia_protocol::{
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_FOCUS_NEXT,
-    XMONAD_ACTION_NEXT_LAYOUT,
+    XMONAD_ACTION_MOVE_WORKSPACE_BASE, XMONAD_ACTION_NEXT_LAYOUT,
+    XMONAD_ACTION_VIEW_WORKSPACE_BASE,
 };
 
 const ROOT: u32 = 0x20;
@@ -63,6 +64,13 @@ fn manage_focus_fixture_process() {
 fn pointer_gesture_fixture_process() {
     if is_private_bridge_child() {
         run_fixture(FixtureBehavior::PointerGesture);
+    }
+}
+
+#[test]
+fn silent_focus_noop_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::SilentFocusNoop);
     }
 }
 
@@ -115,6 +123,103 @@ fn focus_action_accepts_partial_pre_action_reconciliation() {
         response
             .commands
             .contains(&WmCommand::FocusSurface(SurfaceId::new(10, 1)))
+    );
+}
+
+#[test]
+fn unfocused_single_surface_cycle_does_not_wait_for_impossible_x11_activity() {
+    let mut runtime = fixture_runtime("silent_focus_noop_fixture_process");
+    configure_session(&mut runtime);
+    let surface = SurfaceId::new(10, 1);
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(10),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: BOUNDS,
+                node: node(10, BOUNDS),
+            }),
+        })
+        .unwrap();
+
+    let response = runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(11),
+            kind: WmRequestKind::ActionActivated(WmActionActivation {
+                action: WmActionId::from_raw(XMONAD_ACTION_FOCUS_NEXT),
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                focused_surface: None,
+                nodes: vec![node(10, BOUNDS)],
+            }),
+        })
+        .unwrap();
+
+    assert_eq!(response.transaction, TransactionId::from_raw(11));
+    assert!(
+        response
+            .commands
+            .contains(&WmCommand::FocusSurface(surface))
+    );
+}
+
+#[test]
+fn workspace_move_focuses_the_sole_committed_action_node() {
+    let mut runtime = fixture_runtime("silent_focus_noop_fixture_process");
+    configure_session_with_workspaces(
+        &mut runtime,
+        vec![WorkspaceId::from_raw(1), WorkspaceId::from_raw(2)],
+    );
+    let surface = SurfaceId::new(10, 1);
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(10),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: BOUNDS,
+                node: node(10, BOUNDS),
+            }),
+        })
+        .unwrap();
+    for (transaction, action) in [
+        (11, XMONAD_ACTION_MOVE_WORKSPACE_BASE + 2),
+        (12, XMONAD_ACTION_VIEW_WORKSPACE_BASE + 2),
+    ] {
+        runtime
+            .handle_request(&WmRequestPacket {
+                transaction: TransactionId::from_raw(transaction),
+                kind: WmRequestKind::ActionActivated(WmActionActivation {
+                    action: WmActionId::from_raw(action),
+                    output: OutputId::from_raw(1),
+                    workspace: WorkspaceId::from_raw(1),
+                    focused_surface: Some(surface),
+                    nodes: vec![node(10, BOUNDS)],
+                }),
+            })
+            .unwrap();
+    }
+    let mut moved = node(10, BOUNDS);
+    moved.workspace = WorkspaceId::from_raw(2);
+
+    let response = runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(13),
+            kind: WmRequestKind::ActionActivated(WmActionActivation {
+                action: WmActionId::from_raw(XMONAD_ACTION_FOCUS_NEXT),
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(2),
+                focused_surface: None,
+                nodes: vec![moved],
+            }),
+        })
+        .unwrap();
+
+    assert!(
+        response
+            .commands
+            .contains(&WmCommand::FocusSurface(surface))
     );
 }
 
@@ -182,10 +287,17 @@ fn fixture_runtime(test_name: &str) -> LegacyX11WmBridgeRuntime {
 }
 
 fn configure_session(runtime: &mut LegacyX11WmBridgeRuntime) {
+    configure_session_with_workspaces(runtime, vec![WorkspaceId::from_raw(1)]);
+}
+
+fn configure_session_with_workspaces(
+    runtime: &mut LegacyX11WmBridgeRuntime,
+    workspaces: Vec<WorkspaceId>,
+) {
     runtime
         .configure_session(WmSessionDescriptor {
             api_version: WM_API_VERSION,
-            workspaces: vec![WorkspaceId::from_raw(1)],
+            workspaces,
             active_workspaces: vec![WmOutputWorkspace {
                 output: OutputId::from_raw(1),
                 workspace: WorkspaceId::from_raw(1),
@@ -372,6 +484,7 @@ enum FixtureBehavior {
     PartialFocusReconciliation,
     ManageFocus,
     PointerGesture,
+    SilentFocusNoop,
 }
 
 fn run_fixture(behavior: FixtureBehavior) {
@@ -385,6 +498,7 @@ fn run_fixture(behavior: FixtureBehavior) {
         FixtureBehavior::PartialFocusReconciliation => {
             write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE)
         }
+        FixtureBehavior::SilentFocusNoop => write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE),
         FixtureBehavior::ManageFocus => {}
         FixtureBehavior::PointerGesture => {}
     }
@@ -423,7 +537,9 @@ fn run_fixture(behavior: FixtureBehavior) {
             }
             2 if event[1] == FOCUS_NEXT_KEYCODE && read_u16(&event, 28) == MOD1_MASK => {
                 focus_action_seen = true;
-                write_set_input_focus(&mut stream, windows[0]);
+                if behavior != FixtureBehavior::SilentFocusNoop {
+                    write_set_input_focus(&mut stream, windows[0]);
+                }
             }
             4 if behavior == FixtureBehavior::PointerGesture => {
                 let window = read_u32(&event, 12);
@@ -444,6 +560,7 @@ fn run_fixture(behavior: FixtureBehavior) {
                 );
                 stream.flush().unwrap();
             }
+            18 => windows.retain(|window| *window != read_u32(&event, 8)),
             5 => {}
             2 | 3 => {}
             event_type => panic!("unexpected synthetic X event {event_type}"),

@@ -44,6 +44,7 @@ pub(super) struct WmTransportWorker {
 
 impl WmTransportWorker {
     pub(super) fn new(mut transport: WmSocketTransport) -> Result<Self, std::io::Error> {
+        let response_timeout = transport.response_timeout();
         let (work_sender, work_receiver) =
             sync_channel::<WmTransportWork>(WM_TRANSPORT_WORK_CAPACITY);
         let (completion_sender, completion_receiver) = sync_channel(WM_TRANSPORT_WORK_CAPACITY);
@@ -53,8 +54,25 @@ impl WmTransportWorker {
             .name("sophia-wm-transport".to_owned())
             .spawn(move || {
                 let mut awaiting_policy_ack = false;
-                let mut pending_request = None;
+                let mut pending_request: Option<(TransactionId, Instant)> = None;
                 loop {
+                    if pending_request
+                        .as_ref()
+                        .is_some_and(|(_, started)| started.elapsed() >= response_timeout)
+                    {
+                        let (transaction, started) = pending_request
+                            .take()
+                            .expect("expired WM request should remain pending");
+                        let completion = WmTransportCompletion {
+                            transaction,
+                            result: Err("WM response timed out".to_owned()),
+                            elapsed: started.elapsed(),
+                        };
+                        if completion_sender.send(completion).is_err() {
+                            break;
+                        }
+                    }
+
                     if awaiting_policy_ack {
                         match policy_ack_receiver.recv_timeout(WM_TRANSPORT_IDLE_POLL) {
                             Ok(ack) => {

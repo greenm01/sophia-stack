@@ -93,6 +93,71 @@ fn planning_layers_for(
     layout.planning_layers_for_workspace_state(&workspace_state)
 }
 
+#[test]
+fn wm_projection_clears_focus_but_never_duplicates_positive_layout_focus() {
+    let transaction = TransactionId::from_raw(17);
+    let previous = SurfaceId::new(3, 1);
+    let next = SurfaceId::new(4, 1);
+
+    assert_eq!(
+        hidden_wm_focus_to_clear(transaction, Some(previous), Some(next)),
+        None
+    );
+    assert_eq!(
+        hidden_wm_focus_to_clear(transaction, Some(previous), None),
+        Some((transaction, previous))
+    );
+    assert_eq!(hidden_wm_focus_to_clear(transaction, None, None), None);
+}
+
+#[test]
+fn newer_committed_policy_replaces_deferred_retirement_focus() {
+    let old_surface = SurfaceId::new(5, 1);
+    let new_surface = SurfaceId::new(6, 1);
+    let old_transaction = TransactionId::from_raw(18);
+    let new_transaction = TransactionId::from_raw(19);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.retirement_focus.insert(
+        old_surface,
+        (
+            sophia_protocol::SurfaceTransactionKey {
+                transaction: old_transaction,
+                surface: old_surface,
+                target_buffer: BufferSource::None,
+            },
+            old_transaction,
+        ),
+    );
+
+    layout.commit_proposal(LiveWmProposal {
+        transaction: new_transaction,
+        layers: vec![test_layer(new_surface, geometry)],
+        requested_sizes: BTreeMap::new(),
+        focus: Some(new_surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: new_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![new_surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(1))),
+        effects: None,
+    });
+
+    assert!(layout.retirement_focus.is_empty());
+    assert_eq!(layout.focus_to_apply, Some((new_transaction, new_surface)));
+}
+
 fn hold_test_resize(
     layout: &mut PersistentLiveLayout,
     surface: SurfaceId,

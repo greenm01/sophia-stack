@@ -468,6 +468,16 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
             geometry,
         }
     );
+    // The projection adapter has no competing positive-focus command. The
+    // exact presented candidate is the only transition that may release it.
+    assert_eq!(
+        hidden_wm_focus_to_clear(
+            recovery_transaction,
+            Some(SurfaceId::new(6, 1)),
+            Some(surface),
+        ),
+        None
+    );
     assert_eq!(layout.focus_to_apply, None);
     let empty =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(24));

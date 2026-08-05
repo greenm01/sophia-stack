@@ -141,6 +141,11 @@ impl PersistentLiveLayout {
                     .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
             }
         }
+        // A presented admission can defer positive focus until retirement.
+        // Newer committed policy replaces that intent even while the older
+        // visual candidate remains independently entitled to retire.
+        self.retirement_focus
+            .retain(|surface, _| Some(*surface) == pending.focus);
         if let Some(surface) = pending.focus {
             match self.admissions.state(surface) {
                 sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
@@ -150,7 +155,7 @@ impl PersistentLiveLayout {
                     self.retirement_focus
                         .insert(surface, (visual_candidate, pending.transaction));
                 }
-                _ => self.focus_to_apply = Some((pending.transaction, surface)),
+                _ => self.queue_focus_handoff(pending.transaction, surface),
             }
         }
         println!(
