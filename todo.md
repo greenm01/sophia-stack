@@ -285,7 +285,12 @@ reopen the completed Milestone 9 exit gate.
   retained-mixed frame, and only that frame can submit or settle it. The Rust
   regressions, `AdmissionRecovery.tla`, `PresentFrameOwnership.tla`, and the
   physical verifier lock selection, storage choice, exact frame ownership,
-  timeout recovery, retirement, and Complete/Idle feedback.
+  timeout recovery, retirement, and Complete/Idle feedback. The first installed
+  run then retired software frame 30 in the same backend tick that submitted
+  successor DMA frame 31; a guard compared retirement against current
+  scheduler state and exited. Retirement reduction now permits this legal
+  overlap for CPU/retained content while preserving fail-closed DMA ownership,
+  with matching Rust and TLA+ regressions.
   Repeat the physical vkcube gate from the packaged fix before closing this
   item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11

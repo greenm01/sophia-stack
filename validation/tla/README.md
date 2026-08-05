@@ -23,8 +23,10 @@ The model checks that:
 `PresentFrameOwnership.tla` isolates the output-frame association needed by
 software Present. It allows an unrelated frame to submit and retire before the
 Present frame, but requires feedback to remain false until the exact bound
-frame retires. Under weak fairness, waiting Present work eventually reaches
-that retirement.
+frame retires. It also permits the backend to submit a successor DMA frame
+after observing the Present retirement but before reducing its feedback. That
+successor cannot steal or block the captured retirement. Under weak fairness,
+waiting Present work eventually reaches settlement.
 
 ## Rust Boundary Map
 
@@ -45,10 +47,12 @@ the current owning Rust boundaries as follows:
 The frame-ownership model maps `QueuePresent` to
 `queue_software_present_frame` and `stage_software_present_frame`,
 `SubmitPresent` to `mark_software_present_frame_submitted`, and
-`RetirePresent` to `settle_software_present_frame`. The typed
+`ObservePresentRetirement` plus `SettlePresent` to
+`settle_software_present_frame`. The typed
 `LiveProductionNativeFrameId` is the identity shared by those transitions.
 `SubmitUnrelated` and `RetireUnrelated` represent ordinary CPU or DMA frames
-whose callbacks must leave the software binding unchanged.
+whose callbacks must leave the software binding unchanged. `SubmitSuccessor`
+represents callback-and-submit coalescing within one backend tick.
 
 This table identifies correspondence, not equivalence. The current direct
 authority commit and committed-snapshot replacement APIs remain implementation

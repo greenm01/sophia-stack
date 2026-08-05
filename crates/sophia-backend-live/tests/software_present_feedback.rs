@@ -3,10 +3,12 @@
 use sophia_backend_live::{
     LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
     LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
-    LiveProductionDmaBufRegistration, LiveProductionPresentDisposition,
-    LiveProductionPresentSubmission, LiveProductionSoftwarePresentFrameObservation,
-    LiveProductionSoftwarePresentFramePhase, LiveProductionSoftwarePresentFrameTransition,
-    LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
+    LiveProductionDmaBufRegistration, LiveProductionNativeFrameId,
+    LiveProductionNativeRetirementOwner, LiveProductionPresentDisposition,
+    LiveProductionPresentSubmission, LiveProductionScanoutContent,
+    LiveProductionSoftwarePresentFrameObservation, LiveProductionSoftwarePresentFramePhase,
+    LiveProductionSoftwarePresentFrameTransition, LiveProductionSoftwarePresentSubmission,
+    LiveProductionVisualRuntime, reduce_live_production_native_retirement_owner,
     reduce_software_present_frame_observation,
 };
 use sophia_engine::HeadlessOutput;
@@ -25,8 +27,8 @@ use std::sync::Arc;
 
 #[test]
 fn software_present_feedback_requires_its_own_native_frame() {
-    let owned = sophia_backend_live::LiveProductionNativeFrameId::from_raw(41);
-    let unrelated = sophia_backend_live::LiveProductionNativeFrameId::from_raw(42);
+    let owned = LiveProductionNativeFrameId::from_raw(41);
+    let unrelated = LiveProductionNativeFrameId::from_raw(42);
 
     assert_eq!(
         reduce_software_present_frame_observation(
@@ -67,6 +69,33 @@ fn software_present_feedback_requires_its_own_native_frame() {
             LiveProductionSoftwarePresentFrameObservation::NativeRetired(owned),
         ),
         LiveProductionSoftwarePresentFrameTransition::Retired
+    );
+}
+
+#[test]
+fn older_software_frame_may_retire_after_next_dma_frame_submits() {
+    let retired = LiveProductionNativeFrameId::from_raw(30);
+    let successor = LiveProductionNativeFrameId::from_raw(31);
+    let software = LiveProductionScanoutContent::RetainedMixed {
+        frame: retired,
+        nonzero_rgb_pixels: 985,
+    };
+
+    assert_eq!(
+        reduce_live_production_native_retirement_owner(retired, software, Some(successor)),
+        LiveProductionNativeRetirementOwner::IndependentFrame
+    );
+    assert_eq!(
+        reduce_live_production_native_retirement_owner(
+            retired,
+            LiveProductionScanoutContent::MixedPresent {
+                frame: retired,
+                transaction: TransactionId::from_raw(699),
+                nonzero_rgb_pixels: 985,
+            },
+            Some(successor),
+        ),
+        LiveProductionNativeRetirementOwner::InvalidDmaOwnership
     );
 }
 

@@ -7,14 +7,17 @@ EXTENDS FiniteSets
  ***************************************************************************
 *)
 
-CONSTANTS PresentFrame, UnrelatedFrame, NoFrame
+CONSTANTS PresentFrame, UnrelatedFrame, SuccessorFrame, NoFrame
 
 ASSUME /\ PresentFrame # UnrelatedFrame
+       /\ PresentFrame # SuccessorFrame
        /\ PresentFrame # NoFrame
+       /\ UnrelatedFrame # SuccessorFrame
        /\ UnrelatedFrame # NoFrame
+       /\ SuccessorFrame # NoFrame
 
-Frames == {PresentFrame, UnrelatedFrame}
-Phases == {"waiting", "pending", "submitted", "retired"}
+Frames == {PresentFrame, UnrelatedFrame, SuccessorFrame}
+Phases == {"waiting", "pending", "submitted", "retirement_pending", "retired"}
 
 VARIABLES phase, nativeFrame, unrelatedRetired, retired, feedback
 
@@ -54,20 +57,34 @@ SubmitPresent ==
     /\ phase' = "submitted"
     /\ UNCHANGED <<nativeFrame, unrelatedRetired, retired, feedback>>
 
-RetirePresent ==
+ObservePresentRetirement ==
     /\ phase = "submitted"
     /\ nativeFrame = PresentFrame
-    /\ phase' = "retired"
+    /\ phase' = "retirement_pending"
     /\ nativeFrame' = NoFrame
     /\ retired' = retired \cup {PresentFrame}
-    /\ feedback' = TRUE
-    /\ UNCHANGED unrelatedRetired
+    /\ UNCHANGED <<unrelatedRetired, feedback>>
 
-PresentProgress == QueuePresent \/ SubmitPresent \/ RetirePresent
+SubmitSuccessor ==
+    /\ phase = "retirement_pending"
+    /\ nativeFrame = NoFrame
+    /\ nativeFrame' = SuccessorFrame
+    /\ UNCHANGED <<phase, unrelatedRetired, retired, feedback>>
+
+SettlePresent ==
+    /\ phase = "retirement_pending"
+    /\ PresentFrame \in retired
+    /\ phase' = "retired"
+    /\ feedback' = TRUE
+    /\ UNCHANGED <<nativeFrame, unrelatedRetired, retired>>
+
+PresentProgress ==
+    QueuePresent \/ SubmitPresent \/ ObservePresentRetirement \/ SettlePresent
 
 Next ==
     \/ SubmitUnrelated
     \/ RetireUnrelated
+    \/ SubmitSuccessor
     \/ PresentProgress
 
 Spec == Init /\ [][Next]_vars
@@ -88,6 +105,9 @@ UnrelatedRetirementCannotAdvancePresent ==
 
 SubmittedFrameOwnsPresent ==
     phase \in {"pending", "submitted"} => nativeFrame = PresentFrame
+
+SuccessorCannotBlockFeedback ==
+    phase = "retired" /\ nativeFrame = SuccessorFrame => feedback
 
 PresentEventuallyRetires == phase = "waiting" ~> phase = "retired"
 

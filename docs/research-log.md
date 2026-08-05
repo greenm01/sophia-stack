@@ -28,6 +28,22 @@ and `PresentFrameOwnership.tla` checks both the safety relation and eventual
 retirement under weak fairness. The offline gates establish the lifecycle; a
 fresh installed xmonad/vkcube run remains the physical acceptance boundary.
 
+The first installed run exposed a legal callback/submission overlap in the new
+guard. Retained software frame 30 retired while the same backend tick had
+already submitted the next DMA Present as frame 31. The retirement finalizer
+compared frame 30 with the scheduler's newer current frame and terminated the
+session before settling transaction 699. Frame identity was correct; the
+reducer had confused captured retirement ownership with current submission
+state.
+
+Retirement reduction now treats an exact CPU or retained frame as independent
+of a newer submitted DMA frame, settles only bindings owned by the captured
+frame, and leaves the successor scheduler entry intact. A `MixedPresent`
+retirement without the matching scheduler frame still fails closed. The Rust
+regression reproduces frames 30 and 31, and `PresentFrameOwnership.tla` now
+allows successor submission between native retirement observation and feedback
+settlement.
+
 ## 2026-08-04: Present retirement is independent of storage
 
 The fresh installed xmonad/vkcube run disproved the remaining DMA-only

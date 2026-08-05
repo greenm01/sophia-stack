@@ -29,6 +29,34 @@ pub struct LiveProductionNativeSuspendReport {
     pub skipped_present: Option<TransactionId>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeRetirementOwner {
+    IndependentFrame,
+    SubmittedDmaPresent,
+    InvalidDmaOwnership,
+}
+
+pub fn reduce_live_production_native_retirement_owner(
+    retired_frame: LiveProductionNativeFrameId,
+    retired_content: LiveProductionScanoutContent,
+    submitted_dma_frame: Option<LiveProductionNativeFrameId>,
+) -> LiveProductionNativeRetirementOwner {
+    if retired_content.frame() != retired_frame {
+        return LiveProductionNativeRetirementOwner::InvalidDmaOwnership;
+    }
+    match (retired_content, submitted_dma_frame) {
+        (LiveProductionScanoutContent::MixedPresent { .. }, Some(submitted))
+            if submitted == retired_frame =>
+        {
+            LiveProductionNativeRetirementOwner::SubmittedDmaPresent
+        }
+        (LiveProductionScanoutContent::MixedPresent { .. }, _) => {
+            LiveProductionNativeRetirementOwner::InvalidDmaOwnership
+        }
+        (_, _) => LiveProductionNativeRetirementOwner::IndependentFrame,
+    }
+}
+
 impl LiveProductionVisualRuntime {
     pub fn suspend_native_scanout(
         &mut self,
@@ -271,20 +299,28 @@ impl LiveProductionVisualRuntime {
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
         let ust = retirement.ust;
         let msc = retirement.msc;
-        if let Some(submitted_frame) = self.present_scheduler.submitted_frame()
-            && submitted_frame != retirement.frame
-        {
-            return Err(format!(
-                "native page flip retired frame {} while DMA Present frame {} was submitted",
-                retirement.frame.raw(),
-                submitted_frame.raw(),
-            )
-            .into());
+        match reduce_live_production_native_retirement_owner(
+            retirement.frame,
+            retirement.content,
+            self.present_scheduler.submitted_frame(),
+        ) {
+            LiveProductionNativeRetirementOwner::IndependentFrame => {
+                // A callback and the next submission may share one backend
+                // tick. Retire only work bound to the callback's frame.
+                self.settle_software_present_frame(retirement)?;
+                return Ok(None);
+            }
+            LiveProductionNativeRetirementOwner::SubmittedDmaPresent => {}
+            LiveProductionNativeRetirementOwner::InvalidDmaOwnership => {
+                return Err(
+                    "DMA Present retired on a native frame with different ownership".into(),
+                );
+            }
         }
-        let Some(submitted) = self.present_scheduler.take_submitted() else {
-            self.settle_software_present_frame(retirement)?;
-            return Ok(None);
-        };
+        let submitted = self
+            .present_scheduler
+            .take_submitted()
+            .ok_or("native retirement lost its submitted DMA Present")?;
         if !matches!(
             retirement.content,
             LiveProductionScanoutContent::MixedPresent { transaction, .. }
