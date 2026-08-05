@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SESSION="$ROOT_DIR/tools/fixtures/physical_firefox_session_pass.log"
+SESSION="$ROOT_DIR/tools/fixtures/physical_xmonad_tty3_pass.log"
 GUARD="$ROOT_DIR/tools/fixtures/physical_firefox_guard_pass.log"
 RECOVERY="$ROOT_DIR/tools/fixtures/physical_firefox_recovery_pass.log"
 TEMP_FILE="$(mktemp)"

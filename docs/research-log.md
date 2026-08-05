@@ -19,6 +19,13 @@ cohesion exception. The source-layout audit, formatting checks, offline
 metadata, and complete all-features suite pass after the extraction. The
 commit-pinned semantic gate remains the next acceptance step.
 
+The next preflight exposed an independent fixture-ownership error. The generic
+TTY verifier still consumed the integrated Firefox fixture even though the
+shortened Firefox workflow had intentionally removed the last-window exit and
+desktop relaunch sequence. A dedicated generic TTY fixture now owns that
+sequence, two-output retirement, and clipboard evidence. Firefox fixture
+changes can no longer invalidate the unrelated TTY verifier.
+
 ## 2026-08-05: composited Present owns a renderer snapshot
 
 The retained DMA-BUF path had given X Present `Flip` semantics to an ordinary
