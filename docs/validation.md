@@ -224,7 +224,7 @@ contain no application identity branches.
 The staged CPU-buffer regression deliberately separates the first immutable
 buffer update from the later released transaction. It must retain the
 renderer-private buffer while Engine has no committed surface, then compose
-visual detail and route Complete-before-Idle after release. It also separates
+visual detail and route Copy Idle-before-Complete after release. It also separates
 an update-only replacement from a later patch, bounds the recent update
 working set at 16 handles, and requires post-reduction committed surfaces to
 retain a materialized renderer buffer:
@@ -250,7 +250,7 @@ tools/benchmark_sophia_vkcube_tty3.sh
 It runs an explicit 500-by-500, 900-frame, FIFO `vkcube` workload, exits with
 the startup application, and reports `sophia_rendering_performance schema=2`.
 The report derives FPS and p95 frame
-cadence from routed Present Flip timestamps rather than process wall time. It
+cadence from routed displayed Present timestamps rather than process wall time. It
 also joins the session's CPU replacement/patch counts, patch rectangles and
 payload bytes, exact-versus-damage-scoped metric counts, native composition
 target reuse, maximum CPU composition time, maximum native upload time, and

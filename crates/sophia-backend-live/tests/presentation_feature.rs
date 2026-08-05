@@ -7,7 +7,7 @@ use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuComposedFrame, LivePresentBufferDisposition,
     LivePresentFeedbackError, LivePresentProtocolFeedback, LivePresentationResourceSession,
     LivePresentationSubmission, LiveProductionPresentFeedbackCoordinator,
-    LiveResourceReleaseStatus, LiveRetainedDmaBufLayer, compose_full_state_mixed_frame,
+    LiveResourceReleaseStatus, LiveRetainedRendererImageLayer, compose_full_state_mixed_frame,
     try_clone_mixed_frame,
 };
 use sophia_engine::{
@@ -151,9 +151,13 @@ fn dma_buf_surface_resize_preserves_pixels_and_clips_without_scaling() {
             ..surface
         })
     );
-    let retained = LiveRetainedDmaBufLayer {
+    let retained = LiveRetainedRendererImageLayer {
         image_id: LiveRendererImageId::from_raw(transaction.raw()),
-        frame: frame.try_clone().unwrap(),
+        size: Size {
+            width: i32::try_from(frame.width).unwrap(),
+            height: i32::try_from(frame.height).unwrap(),
+        },
+        format: frame.format,
         placement: *placement,
     };
     assert!(retained.has_unit_scale());
@@ -200,9 +204,13 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
 
     let composed = compose_full_state_mixed_frame(
         current,
-        vec![LiveRetainedDmaBufLayer {
+        vec![LiveRetainedRendererImageLayer {
             image_id: LiveRendererImageId::from_raw(2),
-            frame: frame(),
+            size: Size {
+                width: 64,
+                height: 48,
+            },
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             placement: placement(0),
         }],
     );
@@ -210,7 +218,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
     assert_eq!(composed.layers.len(), 2);
     assert!(matches!(
         &composed.layers[0],
-        LiveOwnedMixedCompositionLayer::DmaBuf { image_id, .. }
+        LiveOwnedMixedCompositionLayer::RendererImage { image_id, .. }
             if *image_id == LiveRendererImageId::from_raw(2)
     ));
     assert!(matches!(
@@ -223,6 +231,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         .iter()
         .map(|layer| match layer {
             LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
+            | LiveOwnedMixedCompositionLayer::RendererImage { placement, .. }
             | LiveOwnedMixedCompositionLayer::Cpu { placement, .. } => placement.target.x,
             LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => geometry.x,
         })
@@ -325,32 +334,20 @@ fn retained_multi_plane_frame_clone_preserves_metadata_planes() {
 }
 
 #[test]
-fn retained_layer_clone_preserves_pixel_aligned_placement() {
+fn retained_renderer_image_preserves_pixel_aligned_placement() {
     let target = Rect {
         x: 64,
         y: 0,
         width: 128,
         height: 48,
     };
-    let layer = LiveRetainedDmaBufLayer {
+    let layer = LiveRetainedRendererImageLayer {
         image_id: LiveRendererImageId::from_raw(3),
-        frame: LiveOwnedMultiPlaneDmaBufFrame {
+        size: Size {
             width: 128,
             height: 48,
-            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-            modifier: DRM_FORMAT_MOD_INVALID,
-            plane_count: 1,
-            planes: [
-                Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
-                    fd: fd(),
-                    offset: 0,
-                    stride: 512,
-                }),
-                None,
-                None,
-                None,
-            ],
         },
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
         placement: LiveCompositionPlacement {
             target,
             clip: None,
@@ -360,10 +357,10 @@ fn retained_layer_clone_preserves_pixel_aligned_placement() {
     };
 
     assert!(layer.has_unit_scale());
-    let cloned = layer.try_clone().unwrap();
+    let cloned = layer;
 
     assert_eq!(cloned.image_id, LiveRendererImageId::from_raw(3));
-    assert_eq!(cloned.frame.width, layer.frame.width);
+    assert_eq!(cloned.size, layer.size);
     assert_eq!(cloned.placement.target, layer.placement.target);
     assert_eq!(cloned.placement.clip, layer.placement.clip);
     assert_eq!(cloned.placement.transform, layer.placement.transform);
@@ -401,13 +398,13 @@ fn production_feedback_retires_resources_before_complete_and_idle() {
     assert_eq!(
         outcome.feedback,
         [
+            LivePresentProtocolFeedback::Idle { transaction },
             LivePresentProtocolFeedback::Complete {
                 transaction,
                 ust: 22,
                 msc: 33,
                 disposition: LivePresentBufferDisposition::Copied,
             },
-            LivePresentProtocolFeedback::Idle { transaction },
         ]
     );
     assert!(!outcome.idle_fence_triggered);

@@ -349,14 +349,16 @@ for key in native_mixed_exports native_target_recreations \
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=4 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=5 status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
 resources="${resource_lines[0]}"
 for key in target_creations pipeline_creations frame_surface_creations cpu_target_creations \
     dmabuf_target_creations composition_target_creations composition_target_reuses \
-    generation_replacements recovery_replacements import_cache_imports import_cache_hits \
+    generation_replacements recovery_replacements snapshot_captures snapshot_promotions \
+    snapshot_rollbacks snapshot_evictions snapshot_live_entries snapshot_live_bytes \
+    import_cache_imports import_cache_hits \
     import_cache_evictions import_cache_live_entries import_cache_descriptor_mismatches \
     import_cache_capacity_rejections worker_requests worker_completions worker_failures \
     worker_soft_stalls worker_hard_stalls worker_release_enqueue_failures \
@@ -375,6 +377,12 @@ composition_targets="$(field "$resources" composition_target_creations)"
 composition_target_reuses="$(field "$resources" composition_target_reuses)"
 generation_replacements="$(field "$resources" generation_replacements)"
 recovery_replacements="$(field "$resources" recovery_replacements)"
+snapshot_captures="$(field "$resources" snapshot_captures)"
+snapshot_promotions="$(field "$resources" snapshot_promotions)"
+snapshot_rollbacks="$(field "$resources" snapshot_rollbacks)"
+snapshot_evictions="$(field "$resources" snapshot_evictions)"
+snapshot_live_entries="$(field "$resources" snapshot_live_entries)"
+snapshot_live_bytes="$(field "$resources" snapshot_live_bytes)"
 import_cache_imports="$(field "$resources" import_cache_imports)"
 import_cache_hits="$(field "$resources" import_cache_hits)"
 import_cache_evictions="$(field "$resources" import_cache_evictions)"
@@ -397,14 +405,18 @@ completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)
     fail "resource-class creation counts do not sum to the total"
 (( composition_targets > 0 && composition_targets + composition_target_reuses == mixed_exports )) ||
     fail "persistent composition target creation and reuse did not cover every mixed export"
-(( frame_surface_creations == composition_targets )) ||
-    fail "persistent composition targets and frame surfaces diverged"
+(( frame_surface_creations == target_creations )) ||
+    fail "render-target and frame-surface creation counts diverged"
 (( completion_frame_surfaces == frame_surface_creations )) ||
     fail "completion and resource frame-surface counts diverged"
 (( target_recreations == 0 )) ||
     fail "stable composition resources were recreated"
 (( generation_replacements == 0 && recovery_replacements == 0 )) ||
     fail "stable CPU or direct DMA-BUF resources were replaced"
+(( snapshot_captures > 0 && snapshot_captures == snapshot_promotions &&
+    snapshot_captures == snapshot_evictions && snapshot_rollbacks == 0 &&
+    snapshot_live_entries == 0 && snapshot_live_bytes == 0 )) ||
+    fail "renderer-owned Present snapshots did not promote and drain exactly"
 (( import_cache_imports > 0 && import_cache_hits > 0 )) ||
     fail "four-window composition did not exercise persistent import-cache reuse"
 (( import_cache_imports == import_cache_evictions && import_cache_live_entries == 0 )) ||

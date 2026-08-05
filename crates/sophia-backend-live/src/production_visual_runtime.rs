@@ -17,8 +17,7 @@ pub use service::*;
 
 #[derive(Debug)]
 struct LiveDisplayedSurface {
-    layer: LiveRetainedDmaBufLayer,
-    retained_transaction: Option<TransactionId>,
+    layer: LiveRetainedRendererImageLayer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,16 +48,9 @@ pub struct LiveFloatingOutline {
 fn replace_displayed_surface(
     displayed_surfaces: &mut BTreeMap<SurfaceId, LiveDisplayedSurface>,
     surface: SurfaceId,
-    transaction: TransactionId,
-    layer: LiveRetainedDmaBufLayer,
+    layer: LiveRetainedRendererImageLayer,
 ) -> Option<LiveDisplayedSurface> {
-    displayed_surfaces.insert(
-        surface,
-        LiveDisplayedSurface {
-            layer,
-            retained_transaction: Some(transaction),
-        },
-    )
+    displayed_surfaces.insert(surface, LiveDisplayedSurface { layer })
 }
 
 pub struct LiveProductionVisualRuntime {
@@ -294,7 +286,7 @@ impl LiveProductionVisualRuntime {
             false
         };
         let removed_surfaces = authority_batch_removed_surfaces(&batch);
-        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
+        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
         let rebased_groups = batch.groups;
         self.enqueue_software_presents(&rebased_groups)?;
         let software_present_frame_required = !self.software_presents_unframed.is_empty();
@@ -602,7 +594,7 @@ impl LiveProductionVisualRuntime {
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
-        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut());
+        self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
         self.displayed_surfaces
             .retain(|surface, _| !removed_surfaces.contains(surface));
         let mut authority_groups = Vec::new();

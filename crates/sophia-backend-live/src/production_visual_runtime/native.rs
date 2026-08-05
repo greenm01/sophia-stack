@@ -65,9 +65,14 @@ impl LiveProductionVisualRuntime {
         timeout: Duration,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         if self.drain_native_scanout_until(native_scanout, timeout)? {
-            self.detach_native_scanout(outputs, LiveProductionNativeSuspendOutcome::Drained)
+            self.detach_native_scanout(
+                Some(native_scanout),
+                outputs,
+                LiveProductionNativeSuspendOutcome::Drained,
+            )
         } else {
             self.detach_native_scanout(
+                Some(native_scanout),
                 outputs,
                 LiveProductionNativeSuspendOutcome::ForcedDetachTimeout,
             )
@@ -79,6 +84,7 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         self.detach_native_scanout(
+            None,
             outputs,
             LiveProductionNativeSuspendOutcome::ForcedDetachRevoked,
         )
@@ -86,6 +92,7 @@ impl LiveProductionVisualRuntime {
 
     fn detach_native_scanout(
         &mut self,
+        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         outputs: &[sophia_engine::HeadlessOutput],
         outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
@@ -96,6 +103,9 @@ impl LiveProductionVisualRuntime {
             .or_else(|| self.present_scheduler.take_rendering());
         self.reject_software_presents();
         if let Some(present) = skipped_present.as_ref() {
+            if let Some(native_scanout) = native_scanout.as_deref_mut() {
+                let _ = native_scanout.rollback_renderer_image(present.displayed_layer.image_id);
+            }
             self.reject_gpu_presentation(present.transaction);
         }
         self.outputs = LiveProductionOutputRuntimeSet::new(
@@ -239,6 +249,7 @@ impl LiveProductionVisualRuntime {
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
             Some(_) => {
                 if let Some(rendering) = self.present_scheduler.take_rendering() {
+                    native_scanout.rollback_renderer_image(rendering.displayed_layer.image_id)?;
                     self.reject_gpu_presentation(rendering.transaction);
                 }
             }
@@ -326,12 +337,19 @@ impl LiveProductionVisualRuntime {
         ) {
             return Err("DMA Present retired on a native frame with different ownership".into());
         }
+        // The page flip is the commit point for the compositor copy. Promote
+        // its staged image before releasing the client source or emitting any
+        // protocol feedback.
+        if native_scanout.promote_renderer_image(submitted.displayed_layer.image_id)? == 0 {
+            return Err("retired Present lost its staged renderer snapshot".into());
+        }
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
         let completion = production
             .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
-                TransactionOutcome::Committed => presentation_feedback
-                    .complete_retained_without_idle(submitted.transaction, ust, msc),
+                TransactionOutcome::Committed => {
+                    presentation_feedback.complete_copy(submitted.transaction, ust, msc)
+                }
                 TransactionOutcome::RejectedStaleSurface
                 | TransactionOutcome::RejectedInvalidSurface
                 | TransactionOutcome::TimedOut => {
@@ -352,6 +370,7 @@ impl LiveProductionVisualRuntime {
             );
         }
         if completion.commit.outcome != TransactionOutcome::Committed {
+            native_scanout.evict_renderer_image(submitted.displayed_layer.image_id)?;
             self.settle_software_present_frame(retirement)?;
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),
@@ -361,25 +380,16 @@ impl LiveProductionVisualRuntime {
             return Ok(None);
         }
         self.rebuild_input_layers();
-        let source_size = Size {
-            width: i32::try_from(submitted.displayed_layer.frame.width).unwrap_or(i32::MAX),
-            height: i32::try_from(submitted.displayed_layer.frame.height).unwrap_or(i32::MAX),
-        };
+        let source_size = submitted.displayed_layer.size;
         let target = submitted.displayed_layer.placement.target;
         let clip = submitted.displayed_layer.placement.clip;
         let replaced = replace_displayed_surface(
             &mut self.displayed_surfaces,
             submitted.surface,
-            submitted.transaction,
             submitted.displayed_layer,
         );
         if let Some(replaced) = replaced {
             native_scanout.evict_renderer_image(replaced.layer.image_id)?;
-            if let Some(transaction) = replaced.retained_transaction
-                && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
-            {
-                self.route_present_feedback(outcome);
-            }
         }
         self.settle_software_present_frame(retirement)?;
         Ok(Some(LiveProductionRetiredPresent {

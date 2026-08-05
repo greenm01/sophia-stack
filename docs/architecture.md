@@ -238,7 +238,8 @@ processes, observes proof criteria, requests shutdown, and does no frame work.
 `PreparedSurfaceCommit` remains the asynchronous Present gate. Preparation
 snapshots protocol-neutral state without changing the committed scene. Matching
 page-flip retirement revalidates and merges the candidate, then permits Present
-Complete before Idle and release. Rejection, timeout, disconnect, surface
+feedback. Composited Copy idles its captured source before Complete; a future
+direct Flip may complete before its retained source becomes idle. Rejection, timeout, disconnect, surface
 removal, changed baselines, or backpressure discard pending work, preserve the
 last committed geometry-plus-pixels state, and retire native resources exactly
 once. No failure path may infer presentation from client traffic or send
@@ -628,7 +629,7 @@ when it does not. Every owner-loop phase that may service native retirement
 must call the same retirement recorder. Authority-wait progress and the normal
 lifecycle phase are scheduling contexts, not separate presentation semantics.
 
-Performance cadence is accumulated from routed retained-buffer UST values in
+Performance cadence is accumulated from routed displayed-Present UST values in
 bounded owner state. Completion emits one summary containing sample count,
 advancing intervals, nonadvancing observations, overflow state, mean FPS, and
 p95 frame time. Benchmark tooling consumes that summary rather than enabling

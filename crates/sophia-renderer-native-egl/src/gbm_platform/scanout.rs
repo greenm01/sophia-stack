@@ -1,6 +1,6 @@
 use std::{
     ffi::c_void,
-    os::fd::{AsRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, OwnedFd},
     ptr,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,

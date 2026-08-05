@@ -443,6 +443,15 @@ reopen the completed Milestone 9 exit gate.
   zero live imports. The external watchdog process-group regression passes
   locally. Verbose per-stage tracing remains opt-in so benchmark cadence is
   not distorted by diagnostic I/O.
+- [x] Replace the provisional composited `Flip` lease with a renderer-owned
+  snapshot. Current DMA-BUFs are capture-only; retained layers contain no
+  client descriptors. Exact page-flip retirement promotes the snapshot and
+  reports Copy with Idle before Complete, while terminal failures roll staged
+  images back. Bound the store by entries and bytes, expose lifecycle debt,
+  and model the transition in `PresentCopyOwnership.tla`.
+- [ ] Re-run the bounded physical GLX and four-Kitty gates. Require positive,
+  equal snapshot capture/promotion counts, Copy cadence, zero rollback in the
+  healthy path, and zero snapshot/import debt at normal logout.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data

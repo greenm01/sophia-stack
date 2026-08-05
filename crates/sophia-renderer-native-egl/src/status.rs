@@ -80,6 +80,7 @@ pub enum NativeGbmScanoutBufferExportDetail {
     InvalidRendererImageId,
     DmaBufDescriptorMismatch,
     DmaBufImportCacheFull,
+    RendererImageStoreFull,
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -112,7 +113,8 @@ impl NativeGbmScanoutBufferExportDetail {
             | Self::InvalidBufferDescriptor
             | Self::InvalidRendererImageId
             | Self::DmaBufDescriptorMismatch
-            | Self::DmaBufImportCacheFull => NativeGbmScanoutBufferExportStatus::Degraded,
+            | Self::DmaBufImportCacheFull
+            | Self::RendererImageStoreFull => NativeGbmScanoutBufferExportStatus::Degraded,
         }
     }
 

@@ -108,6 +108,31 @@ impl LiveProductionNativeScanout {
         Ok(evicted)
     }
 
+    pub fn promote_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        let mut promoted = 0usize;
+        for head in &mut self.heads {
+            promoted = promoted
+                .saturating_add(usize::from(head.exporter.promote_renderer_image(image_id)?));
+        }
+        Ok(promoted)
+    }
+
+    pub fn rollback_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
+        let mut rolled_back = 0usize;
+        for head in &mut self.heads {
+            rolled_back = rolled_back.saturating_add(usize::from(
+                head.exporter.rollback_renderer_image(image_id)?,
+            ));
+        }
+        Ok(rolled_back)
+    }
+
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
@@ -173,6 +198,24 @@ impl LiveProductionNativeScanout {
                     .recovery_replacements
                     .saturating_add(stats.recovery_replacements);
                 metrics.uploads = metrics.uploads.saturating_add(stats.frame_uploads);
+                metrics.snapshot_captures = metrics
+                    .snapshot_captures
+                    .saturating_add(stats.snapshot_captures);
+                metrics.snapshot_promotions = metrics
+                    .snapshot_promotions
+                    .saturating_add(stats.snapshot_promotions);
+                metrics.snapshot_rollbacks = metrics
+                    .snapshot_rollbacks
+                    .saturating_add(stats.snapshot_rollbacks);
+                metrics.snapshot_evictions = metrics
+                    .snapshot_evictions
+                    .saturating_add(stats.snapshot_evictions);
+                metrics.snapshot_live_entries = metrics
+                    .snapshot_live_entries
+                    .saturating_add(stats.snapshot_live_entries);
+                metrics.snapshot_live_bytes = metrics
+                    .snapshot_live_bytes
+                    .saturating_add(stats.snapshot_live_bytes);
                 metrics.import_cache_imports = metrics
                     .import_cache_imports
                     .saturating_add(stats.import_cache.imports);

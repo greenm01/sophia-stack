@@ -99,6 +99,14 @@ pub struct NativeDmaBufCompositionLayer<'a> {
     pub alpha: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct NativeRendererImageCompositionLayer {
+    pub image_id: NativeRendererImageId,
+    pub target: NativeCompositionRect,
+    pub clip: Option<NativeCompositionRect>,
+    pub alpha: f32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeSolidCompositionLayer {
     pub target: NativeCompositionRect,
@@ -109,6 +117,7 @@ pub struct NativeSolidCompositionLayer {
 pub enum NativeCompositionLayer<'a> {
     Cpu(NativeCpuCompositionLayer<'a>),
     DmaBuf(NativeDmaBufCompositionLayer<'a>),
+    RendererImage(NativeRendererImageCompositionLayer),
     Solid(NativeSolidCompositionLayer),
 }
 
@@ -132,6 +141,12 @@ pub struct NativeGbmPersistentRenderStats {
     pub generation_replacements: usize,
     pub recovery_replacements: usize,
     pub frame_uploads: usize,
+    pub snapshot_captures: usize,
+    pub snapshot_promotions: usize,
+    pub snapshot_rollbacks: usize,
+    pub snapshot_evictions: usize,
+    pub snapshot_live_entries: usize,
+    pub snapshot_live_bytes: u64,
     pub import_cache: NativeDmaBufImportCacheStats,
     pub max_target_create: Duration,
     pub max_frame_surface_create: Duration,

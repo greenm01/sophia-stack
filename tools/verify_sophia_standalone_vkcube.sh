@@ -97,9 +97,8 @@ elif ((${#armed[@]} == 0)); then
             fail "completion does not contain $metric"
         ((value > 0)) || fail "software Present has no positive $metric evidence"
     done
-    presented="$(field "$completion" present_complete_copy 2>/dev/null ||
-        field "$completion" present_complete_flip)" ||
-        fail "completion does not contain a Present completion count"
+    presented="$(field "$completion" present_complete_copy)" ||
+        fail "completion does not contain a Present Copy count"
     ((presented > 0)) || fail "software Present has no positive completion evidence"
     authority_transactions="$(field "$completion" authority_transactions)" ||
         fail "completion does not contain authority_transactions"

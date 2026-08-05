@@ -13,6 +13,7 @@ fn mixed_composition_failure_stages_remain_reduced_and_degraded() {
         NativeGbmScanoutBufferExportDetail::CompositionDrawFailed,
         NativeGbmScanoutBufferExportDetail::CompositionFinishFailed,
         NativeGbmScanoutBufferExportDetail::EglImageDestroyFailed,
+        NativeGbmScanoutBufferExportDetail::RendererImageStoreFull,
     ] {
         assert_eq!(
             detail.status(),

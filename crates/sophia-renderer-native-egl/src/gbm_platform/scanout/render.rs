@@ -404,8 +404,10 @@ fn render_native_target_composition(
     target: &mut NativeRenderTarget,
     surface: std::sync::Arc<NativeFrameSurface>,
     import_cache: &mut NativeDmaBufImportCache,
+    renderer_images: &std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
     frame: NativeCompositionFrame<'_>,
     capture_pixels: bool,
+    preserve_target_alpha: bool,
 ) -> Result<
     (
         NativeGbmOwnedScanoutBuffer,
@@ -427,7 +429,13 @@ fn render_native_target_composition(
     }
 
     trace_native_lifecycle("composition_surface_current");
-    target.pipeline.begin_composition();
+    if preserve_target_alpha {
+        // A snapshot is a source image, not an opaque output frame. Clearing
+        // alpha to zero preserves ARGB content through premultiplied blending.
+        target.pipeline.begin_composition_with_clear_alpha(0.0);
+    } else {
+        target.pipeline.begin_composition();
+    }
     trace_native_lifecycle("composition_started");
     static PIXEL_TRACE_CLAIMED: AtomicBool = AtomicBool::new(false);
     let pixel_trace = std::env::var("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").ok();
@@ -512,6 +520,54 @@ fn render_native_target_composition(
                             layer.frame.planes[0].map_or(0, |plane| plane.stride),
                         );
                     }
+                }
+                result
+            }
+            NativeCompositionLayer::RendererImage(layer) => {
+                trace_native_lifecycle("composition_renderer_image_layer_started");
+                let result = (|| {
+                    let image = renderer_images
+                        .get(&layer.image_id)
+                        .ok_or(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId)?;
+                    let plane_count = image.buffer.plane_count();
+                    let plane_offsets = image.buffer.plane_offsets();
+                    let plane_strides = image.buffer.plane_pitches();
+                    let plane_fds = image.buffer.export_plane_fds()?.into_plane_fds();
+                    let planes = std::array::from_fn(|index| {
+                        plane_fds[index].as_ref().map(|fd| NativeDmaBufPlane {
+                            fd: fd.as_fd(),
+                            offset: plane_offsets[index],
+                            stride: plane_strides[index],
+                        })
+                    });
+                    let imported = NativeDmaBufCompositionLayer {
+                        image_id: layer.image_id,
+                        frame: NativeMultiPlaneDmaBufFrame {
+                            width: image.buffer.width(),
+                            height: image.buffer.height(),
+                            format: image.buffer.format(),
+                            modifier: image.buffer.modifier().unwrap_or(u64::MAX),
+                            plane_count,
+                            planes,
+                        },
+                        target: layer.target,
+                        clip: layer.clip,
+                        alpha: layer.alpha,
+                    };
+                    let texture = import_cache.texture(egl, display, &target.pipeline, imported)?;
+                    target
+                        .pipeline
+                        .draw_texture_layer(
+                            texture,
+                            layer.target.into(),
+                            layer.clip.map(Into::into),
+                            layer.alpha,
+                            image.buffer.format() == 0x3432_5241,
+                        )
+                        .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
+                })();
+                if result.is_ok() {
+                    trace_native_lifecycle("composition_renderer_image_layer_finished");
                 }
                 result
             }

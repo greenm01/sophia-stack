@@ -429,16 +429,22 @@ impl LiveProductionPresentFeedbackCoordinator {
         disposition: LivePresentBufferDisposition,
         idle_fence_triggered: bool,
     ) -> LivePresentFeedbackOutcome {
+        let complete = LivePresentProtocolFeedback::Complete {
+            transaction,
+            ust,
+            msc,
+            disposition,
+        };
+        let idle = LivePresentProtocolFeedback::Idle { transaction };
         LivePresentFeedbackOutcome {
-            feedback: vec![
-                LivePresentProtocolFeedback::Complete {
-                    transaction,
-                    ust,
-                    msc,
-                    disposition,
-                },
-                LivePresentProtocolFeedback::Idle { transaction },
-            ],
+            // X Present Copy releases the source after the copy finishes and
+            // completes against the display clock afterward. Mesa relies on
+            // seeing Idle before Complete when both become known together.
+            feedback: if disposition == LivePresentBufferDisposition::Copied {
+                vec![idle, complete]
+            } else {
+                vec![complete, idle]
+            },
             idle_fence_triggered,
         }
     }

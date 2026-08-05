@@ -77,7 +77,7 @@ struct XPresentCadenceSummary {
 
 struct XPresentSessionObserver {
     router: XServerFrontendProtocolRouter,
-    retained_cadence: XPresentCadence,
+    displayed_cadence: XPresentCadence,
     complete_copy: usize,
     complete_flip: usize,
     complete_skip: usize,
@@ -95,7 +95,7 @@ impl XPresentSessionObserver {
     fn new(router: XServerFrontendProtocolRouter) -> Self {
         Self {
             router,
-            retained_cadence: XPresentCadence::new(),
+            displayed_cadence: XPresentCadence::new(),
             complete_copy: 0,
             complete_flip: 0,
             complete_skip: 0,
@@ -143,8 +143,13 @@ impl XPresentSessionObserver {
                         Ok(routed) => {
                             self.complete_routed =
                                 self.complete_routed.saturating_add(usize::from(routed));
-                            if routed && mode == XPresentCompletionMode::Flip {
-                                self.retained_cadence.observe(ust);
+                            if routed
+                                && matches!(
+                                    mode,
+                                    XPresentCompletionMode::Copy | XPresentCompletionMode::Flip
+                                )
+                            {
+                                self.displayed_cadence.observe(ust);
                             }
                             if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
                                 eprintln!(

@@ -56,7 +56,7 @@ pub struct LiveProductionSubmittedPresent {
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
-    pub displayed_layer: crate::LiveRetainedDmaBufLayer,
+    pub displayed_layer: crate::LiveRetainedRendererImageLayer,
 }
 
 #[derive(Debug)]
@@ -375,7 +375,7 @@ impl LiveProductionPresentScheduler {
 
     pub fn in_flight_displayed_layer(
         &self,
-    ) -> Option<(SurfaceId, &crate::LiveRetainedDmaBufLayer)> {
+    ) -> Option<(SurfaceId, &crate::LiveRetainedRendererImageLayer)> {
         match self.in_flight.as_ref()? {
             LiveProductionInFlightPresent::Rendering(present)
             | LiveProductionInFlightPresent::Submitted(present) => {

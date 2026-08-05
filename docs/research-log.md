@@ -3,6 +3,29 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: composited Present owns a renderer snapshot
+
+The retained DMA-BUF path had given X Present `Flip` semantics to an ordinary
+composited frame. Sophia kept duplicated client DMA-BUF descriptors in scene
+state after page-flip completion, so the client could legally reuse its pixmap
+while later focus, layout, or damage repaints still sampled it. XLibre's copy
+path idles the source after copying, and yserver independently sends Idle
+before Complete for Copy; Flip is reserved for retaining the exact source.
+
+The native renderer now captures each current DMA-BUF into a bounded,
+same-format compositor-owned GBM image. The image is staged during rendering,
+promoted only by the exact mixed-frame page flip, and rolled back on terminal
+failure. Retained scene state contains image identity and geometry but no
+client file descriptors. Output-target recreation may discard EGL imports
+without discarding the renderer image. Replacement evicts the import before
+dropping its backing store.
+
+Page-flip retirement now reports Copy and releases the client source with Idle
+before Complete. X-authority tracks the two phases independently, accepting
+both Copy and future Flip ordering exactly once. Reduced snapshot metrics and
+`PresentCopyOwnership.tla` cover capture, promotion, rollback, eviction, live
+debt, and the rule that displayed composited content is compositor-owned.
+
 ## 2026-08-04: delayed Presents reconcile resolved layout epochs
 
 The first installed run after grouped CPU content selected vkcube's 500-by-500

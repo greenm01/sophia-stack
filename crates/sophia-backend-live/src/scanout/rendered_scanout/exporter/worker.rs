@@ -1,10 +1,11 @@
 use super::discovery::PendingRenderedFrame;
 use crate::api::*;
 use sophia_renderer_live::{
-    LiveNativePersistentRenderStats, LiveRendererImageId, LiveRendererScanoutBufferDescriptor,
-    LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
-    NativeGbmOwnedScanoutBuffer, NativeGbmOwnedScanoutBufferExportReport,
-    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
+    LiveMixedCompositionError, LiveNativePersistentRenderStats, LiveRendererImageId,
+    LiveRendererScanoutBufferDescriptor, LiveRendererScanoutBufferExportDetail,
+    LiveRendererScanoutBufferExportStatus, NativeGbmOwnedScanoutBuffer,
+    NativeGbmOwnedScanoutBufferExportReport, NativeGbmRenderedScanoutContext,
+    NativeGbmRenderedScanoutContextStatus,
 };
 use std::collections::BTreeMap;
 use std::io;
@@ -245,10 +246,59 @@ impl NativeGbmRendererWorker {
         }
     }
 
-    pub fn evict_renderer_image(&self, image_id: LiveRendererImageId) -> bool {
+    pub fn evict_renderer_image(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.renderer_image_transition(|completion_sender| WorkerCommand::Evict {
+            image_id,
+            completion_sender,
+        })
+    }
+
+    pub fn promote_renderer_image(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.renderer_image_transition(|completion_sender| WorkerCommand::Promote {
+            image_id,
+            completion_sender,
+        })
+    }
+
+    pub fn rollback_renderer_image(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.renderer_image_transition(|completion_sender| WorkerCommand::Rollback {
+            image_id,
+            completion_sender,
+        })
+    }
+
+    fn renderer_image_transition(
+        &self,
+        command: impl FnOnce(
+            SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+        ) -> WorkerCommand,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        let (completion_sender, completion_receiver) = sync_channel(1);
         self.command_sender
-            .try_send(WorkerCommand::Evict(image_id))
-            .is_ok()
+            .try_send(command(completion_sender))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => LiveRendererScanoutBufferExportDetail::WorkerQueueFull,
+                TrySendError::Disconnected(_) => {
+                    LiveRendererScanoutBufferExportDetail::WorkerDisconnected
+                }
+            })?;
+        completion_receiver
+            .recv_timeout(WORKER_MAINTENANCE_TIMEOUT)
+            .map_err(|error| match error {
+                RecvTimeoutError::Timeout => LiveRendererScanoutBufferExportDetail::WorkerStalled,
+                RecvTimeoutError::Disconnected => {
+                    LiveRendererScanoutBufferExportDetail::WorkerDisconnected
+                }
+            })?
     }
 
     pub fn discard_in_flight_for_maintenance(
@@ -354,7 +404,18 @@ enum WorkerCommand {
         frame: PendingRenderedFrame,
         preferred_modifiers: Vec<u64>,
     },
-    Evict(LiveRendererImageId),
+    Evict {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+    },
+    Promote {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+    },
+    Rollback {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
+    },
     ClearImages {
         completion_sender: SyncSender<WorkerMaintenanceResult>,
     },
@@ -444,10 +505,32 @@ fn run_worker<D>(
                     break;
                 }
             }
-            WorkerCommand::Evict(image_id) => {
-                if let Some(context) = context.as_mut() {
-                    let _ = context.evict_renderer_image(image_id);
-                }
+            WorkerCommand::Evict {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context
+                    .as_mut()
+                    .map_or(Ok(false), |context| context.evict_renderer_image(image_id));
+                let _ = completion_sender.send(result);
+            }
+            WorkerCommand::Promote {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context.as_mut().map_or(Ok(false), |context| {
+                    context.promote_renderer_image(image_id)
+                });
+                let _ = completion_sender.send(result);
+            }
+            WorkerCommand::Rollback {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context.as_mut().map_or(Ok(false), |context| {
+                    context.rollback_renderer_image(image_id)
+                });
+                let _ = completion_sender.send(result);
             }
             WorkerCommand::ClearImages { completion_sender } => {
                 let result = context.as_mut().map_or(Ok(0), |context| {
@@ -591,6 +674,9 @@ where
                 preferred_modifiers,
             ) {
                 Ok(report) => report,
+                Err(LiveMixedCompositionError::Renderer(detail)) => {
+                    return WorkerOutcome::Failed(detail);
+                }
                 Err(_) => {
                     return WorkerOutcome::Failed(
                         LiveRendererScanoutBufferExportDetail::InvalidTarget,

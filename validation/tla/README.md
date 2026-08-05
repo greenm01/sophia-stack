@@ -28,6 +28,14 @@ after observing the Present retirement but before reducing its feedback. That
 successor cannot steal or block the captured retirement. Under weak fairness,
 waiting Present work eventually reaches settlement.
 
+`PresentCopyOwnership.tla` isolates composited DMA-BUF ownership. Capture
+creates a staged compositor image without releasing the client source. Exact
+page-flip retirement promotes that image, makes the source idle, and only then
+permits Copy completion. A failure before retirement instead removes the
+staged image and settles Skip. The model forbids client-owned content from
+becoming the displayed owner and requires every staged Present to reach Copy
+or rollback under weak fairness.
+
 `SurfaceContentStream.tla` models a Present followed by the three representative
 software operations in the X11 content stream: SHM, clear, and core drawing.
 It requires those operations to remain bounded and FIFO until the exact Present
@@ -63,6 +71,12 @@ The frame-ownership model maps `QueuePresent` to
 `SubmitUnrelated` and `RetireUnrelated` represent ordinary CPU or DMA frames
 whose callbacks must leave the software binding unchanged. `SubmitSuccessor`
 represents callback-and-submit coalescing within one backend tick.
+
+The copy-ownership model maps `Capture` to
+`NativeGbmRenderedScanoutContext::capture_renderer_image`, `PageFlip` to the
+exact mixed-frame retirement that promotes the image and retires the client
+presentation, `CompleteCopy` to X Present Copy feedback, and `Rollback` to
+renderer-image teardown on export, submission, or authority failure.
 
 This table identifies correspondence, not equivalence. The current direct
 authority commit and committed-snapshot replacement APIs remain implementation

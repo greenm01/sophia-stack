@@ -14,7 +14,9 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" present_fps=59.999 "* ]]
 [[ "$report" == *" p95_frame_msec=16.667 "* ]]
 [[ "$report" == *" native_mixed_exports=3 "* ]]
-[[ "$report" == *" present_complete_flip=3 "* ]]
+[[ "$report" == *" present_complete_copy=3 "* ]]
+[[ "$report" == *" snapshot_captures=3 "* ]]
+[[ "$report" == *" snapshot_promotions=3 "* ]]
 [[ "$report" == *" import_cache_imports=3 "* ]]
 [[ "$report" == *" import_cache_hits=2 "* ]]
 [[ "$report" == *" cursor_updates_primary_in_flight=80 "* ]]
@@ -68,6 +70,18 @@ fi
 sed 's/import_cache_imports=3/import_cache_imports=0/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     echo "glxgears reporter accepted missing DMA-BUF import evidence" >&2
+    exit 1
+fi
+
+sed 's/snapshot_promotions=3/snapshot_promotions=0/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted missing snapshot promotion" >&2
+    exit 1
+fi
+
+sed 's/snapshot_live_entries=0/snapshot_live_entries=1/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted live snapshot debt" >&2
     exit 1
 fi
 

@@ -8,7 +8,7 @@ use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LivePresentationResourceSession,
     LiveProductionAuthorityBatch, LiveProductionAuthorityGroup, LiveProductionPresentDisposition,
     LiveProductionPresentGate, LiveProductionPresentScheduler, LiveProductionPresentSubmission,
-    LiveProductionSubmittedPresent, LiveRetainedDmaBufLayer,
+    LiveProductionSubmittedPresent, LiveRetainedRendererImageLayer,
 };
 use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
@@ -16,10 +16,7 @@ use sophia_protocol::{
     DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, Transform,
 };
-use sophia_renderer_live::{
-    LiveCompositionPlacement, LiveOwnedDmaBufPlane, LiveOwnedMultiPlaneDmaBufFrame,
-    LiveRendererImageId,
-};
+use sophia_renderer_live::{LiveCompositionPlacement, LiveRendererImageId};
 
 fn fd() -> OwnedFd {
     File::open("/dev/null").unwrap().into()
@@ -152,25 +149,13 @@ fn in_flight_present(
         transaction,
         surface,
         prepared,
-        displayed_layer: LiveRetainedDmaBufLayer {
+        displayed_layer: LiveRetainedRendererImageLayer {
             image_id: LiveRendererImageId::from_raw(901),
-            frame: LiveOwnedMultiPlaneDmaBufFrame {
+            size: Size {
                 width: 64,
                 height: 48,
-                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                modifier: DRM_FORMAT_MOD_INVALID,
-                plane_count: 1,
-                planes: [
-                    Some(LiveOwnedDmaBufPlane {
-                        fd: fd(),
-                        offset: 0,
-                        stride: 256,
-                    }),
-                    None,
-                    None,
-                    None,
-                ],
             },
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             placement: LiveCompositionPlacement {
                 target: geometry,
                 clip: None,

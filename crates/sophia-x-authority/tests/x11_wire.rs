@@ -27,3 +27,20 @@ include!("x11_wire/routed_service.rs");
 include!("x11_wire/focus_routing.rs");
 include!("x11_wire/support_requests.rs");
 include!("x11_wire/support_extensions.rs");
+
+#[test]
+fn present_feedback_phases_accept_copy_and_flip_order_once() {
+    let mut copy = XPresentFeedbackPhases::default();
+    assert!(copy.observe_idle());
+    assert!(!copy.finished());
+    assert!(!copy.observe_idle());
+    assert!(copy.observe_complete());
+    assert!(copy.finished());
+    assert!(!copy.observe_complete());
+
+    let mut flip = XPresentFeedbackPhases::default();
+    assert!(flip.observe_complete());
+    assert!(!flip.finished());
+    assert!(flip.observe_idle());
+    assert!(flip.finished());
+}

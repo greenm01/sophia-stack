@@ -89,12 +89,17 @@ impl LiveProductionVisualRuntime {
                     image_id,
                     frame,
                     placement,
-                } => Some(LiveRetainedDmaBufLayer {
+                } => Some(LiveRetainedRendererImageLayer {
                     image_id: *image_id,
-                    frame: frame.try_clone().ok()?,
+                    size: Size {
+                        width: i32::try_from(frame.width).ok()?,
+                        height: i32::try_from(frame.height).ok()?,
+                    },
+                    format: frame.format,
                     placement: *placement,
                 }),
                 LiveOwnedMixedCompositionLayer::Cpu { .. }
+                | LiveOwnedMixedCompositionLayer::RendererImage { .. }
                 | LiveOwnedMixedCompositionLayer::Solid { .. } => None,
             })
             .ok_or("ready Present frame did not retain its DMA-BUF")?;
@@ -103,8 +108,8 @@ impl LiveProductionVisualRuntime {
             tracing::warn!(
                 transaction = transaction.raw(),
                 surface = queued_surface.index(),
-                source_width = current_layer.frame.width,
-                source_height = current_layer.frame.height,
+                source_width = current_layer.size.width,
+                source_height = current_layer.size.height,
                 logical_width = current_layer
                     .placement
                     .clip
@@ -178,11 +183,14 @@ impl LiveProductionVisualRuntime {
                         .displayed_surfaces
                         .get(&surface)
                         .ok_or("ordered retained DMA-BUF layer disappeared")?;
-                    mixed.layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
-                        image_id: displayed.layer.image_id,
-                        frame: displayed.layer.frame.try_clone()?,
-                        placement: displayed.layer.placement,
-                    });
+                    mixed
+                        .layers
+                        .push(LiveOwnedMixedCompositionLayer::RendererImage {
+                            image_id: displayed.layer.image_id,
+                            size: displayed.layer.size,
+                            format: displayed.layer.format,
+                            placement: displayed.layer.placement,
+                        });
                 }
                 CompositorDisplayCommand::Surface { .. } => {}
                 CompositorDisplayCommand::Border(border) => {
@@ -213,9 +221,13 @@ impl LiveProductionVisualRuntime {
                         crate::LiveOwnedMixedCompositionLayer::DmaBuf { .. } => {
                             (cpu, dmabuf.saturating_add(1))
                         }
+                        crate::LiveOwnedMixedCompositionLayer::RendererImage { .. } => {
+                            (cpu, dmabuf.saturating_add(1))
+                        }
                         crate::LiveOwnedMixedCompositionLayer::Solid { .. } => (cpu, dmabuf),
                     });
             let (status, detail) = native_scanout.diagnose_mixed_frame(primary_index, mixed);
+            native_scanout.rollback_renderer_image(current_layer.image_id)?;
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction);
             let _ = self.presentation_feedback.disconnect();
@@ -289,6 +301,7 @@ impl LiveProductionVisualRuntime {
             Some(Status::AlreadyInFlight | Status::CleanupPending) | None => {}
             Some(_) => {
                 self.present_scheduler.pop_front();
+                native_scanout.rollback_renderer_image(current_layer.image_id)?;
                 self.reject_gpu_presentation(transaction);
             }
         }

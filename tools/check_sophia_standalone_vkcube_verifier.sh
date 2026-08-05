@@ -42,7 +42,7 @@ if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$cpu_candidate" >/dev/null 2>&1; then
 fi
 
 cpu_candidate="$TEMP_DIR/cpu-no-present-feedback.log"
-sed 's/present_complete_flip=12/present_complete_flip=0/' "$CPU_PASS" >"$cpu_candidate"
+sed 's/present_complete_copy=12/present_complete_copy=0/' "$CPU_PASS" >"$cpu_candidate"
 if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$cpu_candidate" >/dev/null 2>&1; then
     echo "standalone vkcube verifier accepted software Present without completion" >&2
     exit 1

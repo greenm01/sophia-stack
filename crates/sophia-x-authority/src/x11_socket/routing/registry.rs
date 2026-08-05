@@ -47,7 +47,7 @@ struct XPendingPresent {
     pixmap: XResourceId,
     serial: u32,
     idle_fence: Option<XResourceId>,
-    completed: bool,
+    phases: crate::XPresentFeedbackPhases,
 }
 
 #[cfg(unix)]
@@ -441,7 +441,7 @@ impl XServerFrontendRouteRegistry {
                 pixmap,
                 serial,
                 idle_fence,
-                completed: false,
+                phases: crate::XPresentFeedbackPhases::default(),
             },
         );
         Ok(())
@@ -463,11 +463,15 @@ impl XServerFrontendRouteRegistry {
             let Some(presentation) = pending.get_mut(&transaction) else {
                 return Ok(false);
             };
-            if presentation.completed {
+            if !presentation.phases.observe_complete() {
                 return Ok(false);
             }
-            presentation.completed = true;
-            *presentation
+            let presentation = *presentation;
+            if presentation.phases.finished() {
+                pending.remove(&transaction);
+                self.pending_presentations.capacity_changed.notify_all();
+            }
+            presentation
         };
         let subscriptions = self
             .present_subscriptions
@@ -521,15 +525,21 @@ impl XServerFrontendRouteRegistry {
                 .entries
                 .lock()
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            let Some(front) = pending.get(&transaction).copied() else {
+            let Some(presentation) = pending.get_mut(&transaction) else {
                 return Ok(false);
             };
-            if !front.completed {
+            if !presentation.phases.observe_idle() {
                 return Ok(false);
             }
-            pending.remove(&transaction);
-            self.pending_presentations.capacity_changed.notify_all();
-            front
+            let presentation = *presentation;
+            // Copy may release its source before display completion, while
+            // Flip completes before its retained source becomes idle. Keep
+            // the route until both independently owned phases arrive.
+            if presentation.phases.finished() {
+                pending.remove(&transaction);
+                self.pending_presentations.capacity_changed.notify_all();
+            }
+            presentation
         };
         let subscriptions = self
             .present_subscriptions

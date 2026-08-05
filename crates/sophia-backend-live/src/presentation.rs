@@ -25,37 +25,23 @@ pub struct LivePresentationSubmission {
     pub idle_fence: Option<FenceHandle>,
 }
 
-#[derive(Debug)]
-pub struct LiveRetainedDmaBufLayer {
+#[derive(Clone, Copy, Debug)]
+pub struct LiveRetainedRendererImageLayer {
     pub image_id: sophia_renderer_live::LiveRendererImageId,
-    pub frame: LiveOwnedMultiPlaneDmaBufFrame,
+    pub size: Size,
+    pub format: u32,
     pub placement: LiveCompositionPlacement,
 }
 
-impl LiveRetainedDmaBufLayer {
-    pub fn try_clone(&self) -> std::io::Result<Self> {
-        Ok(Self {
-            image_id: self.image_id,
-            frame: self.frame.try_clone()?,
-            placement: self.placement,
-        })
-    }
-
+impl LiveRetainedRendererImageLayer {
     pub fn has_unit_scale(&self) -> bool {
-        self.placement.target.width == i32::try_from(self.frame.width).unwrap_or(i32::MAX)
-            && self.placement.target.height == i32::try_from(self.frame.height).unwrap_or(i32::MAX)
+        self.placement.target.width == self.size.width
+            && self.placement.target.height == self.size.height
     }
 
     pub fn reproject(&mut self, surface: Rect) {
-        self.placement = pixel_aligned_dma_buf_placement(
-            Size {
-                width: i32::try_from(self.frame.width).unwrap_or(i32::MAX),
-                height: i32::try_from(self.frame.height).unwrap_or(i32::MAX),
-            },
-            surface,
-            None,
-            self.placement.alpha,
-        );
+        self.placement =
+            pixel_aligned_dma_buf_placement(self.size, surface, None, self.placement.alpha);
     }
 }
 
@@ -103,17 +89,19 @@ fn intersect_rects(left: Rect, right: Rect) -> Rect {
 
 pub fn compose_full_state_mixed_frame(
     mut current: LiveOwnedMixedCompositionFrame,
-    retained: Vec<LiveRetainedDmaBufLayer>,
+    retained: Vec<LiveRetainedRendererImageLayer>,
 ) -> LiveOwnedMixedCompositionFrame {
     let current_layer = current.layers.pop();
     current.layers.extend(retained.into_iter().map(
-        |LiveRetainedDmaBufLayer {
+        |LiveRetainedRendererImageLayer {
              image_id,
-             frame,
+             size,
+             format,
              placement,
-         }| LiveOwnedMixedCompositionLayer::DmaBuf {
+         }| LiveOwnedMixedCompositionLayer::RendererImage {
             image_id,
-            frame,
+            size,
+            format,
             placement,
         },
     ));
@@ -143,6 +131,17 @@ pub fn try_clone_mixed_frame(
             } => Ok(LiveOwnedMixedCompositionLayer::DmaBuf {
                 image_id: *image_id,
                 frame: frame.try_clone()?,
+                placement: *placement,
+            }),
+            LiveOwnedMixedCompositionLayer::RendererImage {
+                image_id,
+                size,
+                format,
+                placement,
+            } => Ok(LiveOwnedMixedCompositionLayer::RendererImage {
+                image_id: *image_id,
+                size: *size,
+                format: *format,
                 placement: *placement,
             }),
             LiveOwnedMixedCompositionLayer::Solid { geometry, color } => {

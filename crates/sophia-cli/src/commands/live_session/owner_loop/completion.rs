@@ -416,7 +416,7 @@
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
     println!(
-        "sophia_live_native_resources schema=4 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} max_worker_request_msec={}",
+        "sophia_live_native_resources schema=5 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} max_worker_request_msec={}",
         native_resources.target_creations,
         native_resources.pipeline_creations,
         native_resources.frame_surface_creations,
@@ -426,6 +426,12 @@
         native_resources.composition_target_reuses,
         native_resources.generation_replacements,
         native_resources.recovery_replacements,
+        native_resources.snapshot_captures,
+        native_resources.snapshot_promotions,
+        native_resources.snapshot_rollbacks,
+        native_resources.snapshot_evictions,
+        native_resources.snapshot_live_entries,
+        native_resources.snapshot_live_bytes,
         native_resources.import_cache_imports,
         native_resources.import_cache_hits,
         native_resources.import_cache_evictions,
@@ -535,7 +541,7 @@
     );
 
     let present_observation = &present_observer;
-    if let Some(cadence) = present_observation.retained_cadence.summary() {
+    if let Some(cadence) = present_observation.displayed_cadence.summary() {
         println!(
             "sophia_live_present_cadence schema=1 status=complete samples={} advancing_intervals={} nonadvancing={} overflowed=false mean_fps={:.3} p95_frame_msec={:.3}",
             cadence.samples,
@@ -548,15 +554,15 @@
         println!(
             "sophia_live_present_cadence schema=1 status=unavailable samples={} advancing_intervals={} nonadvancing={} overflowed={}",
             present_observation
-                .retained_cadence
+                .displayed_cadence
                 .intervals_usec
                 .len()
                 .saturating_add(usize::from(
-                    present_observation.retained_cadence.first_ust.is_some()
+                    present_observation.displayed_cadence.first_ust.is_some()
                 )),
-            present_observation.retained_cadence.intervals_usec.len(),
-            present_observation.retained_cadence.nonadvancing,
-            present_observation.retained_cadence.overflowed,
+            present_observation.displayed_cadence.intervals_usec.len(),
+            present_observation.displayed_cadence.nonadvancing,
+            present_observation.displayed_cadence.overflowed,
         );
     }
     println!(

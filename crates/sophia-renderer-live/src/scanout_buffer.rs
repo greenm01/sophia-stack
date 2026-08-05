@@ -210,6 +210,7 @@ pub enum LiveRendererScanoutBufferExportDetail {
     InvalidRendererImageId,
     DmaBufDescriptorMismatch,
     DmaBufImportCacheFull,
+    RendererImageStoreFull,
     RetainedBufferMissing,
 }
 
@@ -222,6 +223,20 @@ impl std::fmt::Display for LiveRendererScanoutBufferExportDetail {
 impl std::error::Error for LiveRendererScanoutBufferExportDetail {}
 
 impl LiveRendererScanoutBufferExportDetail {
+    pub const fn status(self) -> LiveRendererScanoutBufferExportStatus {
+        match self {
+            Self::Exported => LiveRendererScanoutBufferExportStatus::Exported,
+            Self::WorkerPending => LiveRendererScanoutBufferExportStatus::Pending,
+            Self::InvalidTarget => LiveRendererScanoutBufferExportStatus::InvalidTarget,
+            Self::BackendDeviceUnavailable
+            | Self::GbmDeviceUnavailable
+            | Self::EglUnavailable
+            | Self::EglDisplayUnavailable
+            | Self::GbmSurfaceUnavailable => LiveRendererScanoutBufferExportStatus::Unavailable,
+            _ => LiveRendererScanoutBufferExportStatus::Degraded,
+        }
+    }
+
     pub const fn from_status(status: LiveRendererScanoutBufferExportStatus) -> Self {
         match status {
             LiveRendererScanoutBufferExportStatus::Exported => Self::Exported,

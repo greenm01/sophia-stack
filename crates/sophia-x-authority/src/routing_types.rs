@@ -247,6 +247,39 @@ pub enum XServerFrontendRouteError {
     RegistryPoisoned,
 }
 
+/// Tracks the two independently ordered lifecycle phases of one X Present.
+///
+/// Copy normally idles its source before display completion; Flip normally
+/// completes before its retained source becomes idle. The route remains live
+/// until both phases have arrived exactly once.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct XPresentFeedbackPhases {
+    complete: bool,
+    idle: bool,
+}
+
+impl XPresentFeedbackPhases {
+    pub fn observe_complete(&mut self) -> bool {
+        if self.complete {
+            return false;
+        }
+        self.complete = true;
+        true
+    }
+
+    pub fn observe_idle(&mut self) -> bool {
+        if self.idle {
+            return false;
+        }
+        self.idle = true;
+        true
+    }
+
+    pub const fn finished(self) -> bool {
+        self.complete && self.idle
+    }
+}
+
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {

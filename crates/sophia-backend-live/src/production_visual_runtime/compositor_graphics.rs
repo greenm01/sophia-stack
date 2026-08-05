@@ -163,9 +163,10 @@ impl LiveProductionVisualRuntime {
                         in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == surface)
                     {
                         retained_client_image = true;
-                        layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                        layers.push(LiveOwnedMixedCompositionLayer::RendererImage {
                             image_id: displayed.image_id,
-                            frame: displayed.frame.try_clone()?,
+                            size: displayed.size,
+                            format: displayed.format,
                             placement: displayed.placement,
                         });
                     } else if let Some(layer) =
@@ -183,9 +184,10 @@ impl LiveProductionVisualRuntime {
                         });
                     } else if let Some(displayed) = self.displayed_surfaces.get(&surface) {
                         retained_client_image = true;
-                        layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                        layers.push(LiveOwnedMixedCompositionLayer::RendererImage {
                             image_id: displayed.layer.image_id,
-                            frame: displayed.layer.frame.try_clone()?,
+                            size: displayed.layer.size,
+                            format: displayed.layer.format,
                             placement: displayed.layer.placement,
                         });
                     }

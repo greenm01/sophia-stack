@@ -337,13 +337,13 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
     assert_eq!(
         outcomes[0].feedback,
         [
+            LivePresentProtocolFeedback::Idle { transaction },
             LivePresentProtocolFeedback::Complete {
                 transaction,
                 ust: 0,
                 msc: 0,
                 disposition: LivePresentBufferDisposition::Copied,
             },
-            LivePresentProtocolFeedback::Idle { transaction },
         ]
     );
     assert_eq!(runtime.diagnostics().live_presentations, 0);

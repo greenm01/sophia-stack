@@ -264,12 +264,16 @@ impl PersistentXrgb8888GlPipeline {
     }
 
     pub(crate) fn begin_composition(&self) {
+        self.begin_composition_with_clear_alpha(1.0);
+    }
+
+    pub(crate) fn begin_composition_with_clear_alpha(&self, alpha: f32) {
         unsafe {
             self.gl
                 .viewport(0, 0, self.width as i32, self.height as i32);
             self.gl.disable(glow::BLEND);
             self.gl.disable(glow::SCISSOR_TEST);
-            self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
+            self.gl.clear_color(0.0, 0.0, 0.0, alpha);
             self.gl.clear(glow::COLOR_BUFFER_BIT);
         }
     }

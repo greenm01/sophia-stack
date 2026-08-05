@@ -257,22 +257,15 @@ impl LiveProductionVisualRuntime {
         &mut self,
         removed_surfaces: &[SurfaceId],
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
-    ) {
+    ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
         for surface in removed_surfaces {
             if let Some(displayed) = self.displayed_surfaces.remove(surface) {
-                let renderer_released = native_scanout.as_deref_mut().map_or(true, |native| {
-                    native
-                        .evict_renderer_image(displayed.layer.image_id)
-                        .is_ok()
-                });
-                if renderer_released
-                    && let Some(transaction) = displayed.retained_transaction
-                    && let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction)
-                {
-                    self.route_present_feedback(outcome);
+                if let Some(native) = native_scanout.as_deref_mut() {
+                    native.evict_renderer_image(displayed.layer.image_id)?;
                 }
             }
         }
+        Ok(())
     }
 
     pub fn drain_present_feedback_into(
@@ -311,15 +304,7 @@ impl LiveProductionVisualRuntime {
                 "discarded fenced surface authority during presentation shutdown"
             );
         }
-        let displayed = std::mem::take(&mut self.displayed_surfaces);
-        for transaction in displayed
-            .into_values()
-            .filter_map(|displayed| displayed.retained_transaction)
-        {
-            if let Ok(outcome) = self.presentation_feedback.idle_displayed(transaction) {
-                self.route_present_feedback(outcome);
-            }
-        }
+        self.displayed_surfaces.clear();
 
         self.presentation_feedback.disconnect()
     }

@@ -73,7 +73,7 @@ only handles referenced by the transitional scene projection.
 Standard X11 DRI3 1.2 and Present are the admitted GPU handoff. Renderer-private
 registries retain imported multi-plane DMA-BUF sources and fences; mixed CPU and
 GPU composition, controlled acquire delay and rejection recovery, KMS page-flip
-retirement, Complete-before-Idle feedback, idle-fence triggering, and exact
+retirement, Copy Idle-before-Complete feedback, idle-fence triggering, and exact
 cleanup pass the retained Milestone 4 X13 gate. The retired Wayland prototype's
 controlled linear DMA-BUF proofs are historical evidence under
 `research/wayland`.
@@ -526,31 +526,26 @@ rejected or removed Engine transaction. Native KMS initialization waits for this
 first committed-state frame rather than requiring a speculative or blank visual
 bootstrap.
 
-## Generational DMA-BUF Import Residency
+## Generational Renderer-Image Residency
 
 Mixed composition assigns every admitted client buffer an opaque
-`LiveRendererImageId`. The ID is a renderer generation, not a protocol object
-or application identity. A composition layer carries that ID together with its
-DMA-BUF descriptor so a cold renderer context can import it without reaching
-back into an authority.
+`LiveRendererImageId`. The client DMA-BUF is a capture source only. Before the
+output frame is assembled, the native renderer copies it into a same-format
+GBM image owned by the renderer context; the temporary client EGLImage and GL
+texture are then destroyed. Retained scene records carry only the image ID,
+size, format, and placement. They never retain client file descriptors.
 
-Each native output context owns a fixed-capacity slot table derived from
-`LIVE_PRESENTATION_REGISTRY_CAPACITY`. A cold generation creates one EGLImage
-and one GL texture. Retained focus, chrome, workspace, and damage repaints draw
-that texture from the resident slot. Re-presenting the same generation with a
-different device/inode, extent, format, modifier, plane count, offset, or
-stride fails closed as a descriptor mismatch; a full table with no vacant slot
-also fails closed. The renderer never evicts a live generation to make room
-and never silently falls back to importing it again.
+Captured images enter a staged table bounded to 256 entries and 512 MiB. The
+exact mixed-frame page flip promotes the staged image, retires the client
+source, and emits X Present Copy with Idle before Complete. Export or submit
+failure removes a staged image. Replacing or removing a displayed surface
+first evicts every output import of its renderer image and then drops the
+compositor-owned GBM backing store. Capacity exhaustion fails closed; the
+renderer never evicts a live image to make room.
 
-Composition executes one frame-level completion barrier after all layers.
-When a successor frame has reached KMS retirement, the old imported image is
-evicted while its EGL context is current; only then may backend-live trigger
-the old idle fence and route Present Idle. Target recreation clears native
-residency before destroying the context and may re-import the still-leased
-displayed descriptor. Surface removal and normal shutdown clear renderer
-residency before releasing presentation resources.
-
-Import count, hit count, evictions, live entries, descriptor mismatches, and
-capacity rejections are reduced metrics. EGLImages, texture names, file
-descriptors, and descriptor identity remain private to the native renderer.
+The renderer-image table belongs to the native context rather than its output
+composition target, so target recreation may clear and rebuild EGL imports
+without losing displayed content. Import counts and cache validation remain
+separate from snapshot captures, promotions, rollbacks, evictions, live
+entries, and live bytes. These metrics make a future persistent capture-target
+optimization measurable without weakening the ownership boundary.

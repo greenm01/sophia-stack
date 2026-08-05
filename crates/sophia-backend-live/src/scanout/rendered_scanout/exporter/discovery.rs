@@ -239,11 +239,35 @@ where
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
         if let Some(worker) = &self.worker {
-            return Ok(worker.evict_renderer_image(image_id));
+            return worker.evict_renderer_image(image_id);
         }
         self.context
             .as_mut()
             .map_or(Ok(false), |context| context.evict_renderer_image(image_id))
+    }
+
+    pub fn promote_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        if let Some(worker) = &self.worker {
+            return worker.promote_renderer_image(image_id);
+        }
+        self.context.as_mut().map_or(Ok(false), |context| {
+            context.promote_renderer_image(image_id)
+        })
+    }
+
+    pub fn rollback_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        if let Some(worker) = &self.worker {
+            return worker.rollback_renderer_image(image_id);
+        }
+        self.context.as_mut().map_or(Ok(false), |context| {
+            context.rollback_renderer_image(image_id)
+        })
     }
 
     pub fn clear_renderer_images(
@@ -379,6 +403,13 @@ where
                             self.mixed_frame_exports = self.mixed_frame_exports.saturating_add(1);
                         }
                         report
+                    }
+                    Err(sophia_renderer_live::LiveMixedCompositionError::Renderer(detail)) => {
+                        sophia_renderer_live::NativeGbmOwnedScanoutBufferExportReport::new(
+                            detail.status(),
+                            detail,
+                            None,
+                        )
                     }
                     Err(_) => sophia_renderer_live::NativeGbmOwnedScanoutBufferExportReport::new(
                         LiveRendererScanoutBufferExportStatus::InvalidTarget,
