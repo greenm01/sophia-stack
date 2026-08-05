@@ -3,8 +3,9 @@ set -euo pipefail
 
 lifecycle="${1:-}"
 mode="${2:-normal}"
-[[ -s "$lifecycle" && ( "$mode" == normal || "$mode" == emergency ) ]] || {
-    echo "usage: tools/verify_installed_session_lifecycle.sh LIFECYCLE_LOG [normal|emergency]" >&2
+[[ -s "$lifecycle" \
+    && ( "$mode" == normal || "$mode" == emergency || "$mode" == watchdog ) ]] || {
+    echo "usage: tools/verify_installed_session_lifecycle.sh LIFECYCLE_LOG [normal|emergency|watchdog]" >&2
     exit 1
 }
 fail() {
@@ -43,11 +44,19 @@ for marker in \
     previous="$current"
 done
 
-if [[ "$mode" == normal ]]; then
-    returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=0 emergency=false handoff=display_manager'
-else
-    returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=130 emergency=true handoff=display_manager'
-fi
+case "$mode" in
+    normal)
+        returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=0 emergency=false handoff=display_manager'
+        ;;
+    emergency)
+        returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=130 emergency=true handoff=display_manager'
+        ;;
+    watchdog)
+        returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=124 emergency=true handoff=display_manager'
+        grep -Eq '^sophia_session_diagnostic schema=1 status=failed phase=session installed=true version=[0-9A-Za-z._-]+ commit=[0-9A-Za-z._-]+ exit_status=124$' \
+            "$lifecycle" || fail "watchdog deadline diagnostic is missing"
+        ;;
+esac
 grep -Fxq "$returned" "$lifecycle" ||
     fail "display-manager handoff does not match $mode recovery"
 returned_line="$(line_number "$returned")"

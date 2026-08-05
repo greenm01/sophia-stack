@@ -642,6 +642,13 @@ the launcher parent then restores the saved TTY and service state. Workload
 identity and duration remain tooling policy, while Engine and backend
 watchdogs continue to describe presentation progress only.
 
+The installed release exposes the same launcher-owned boundary only through a
+dedicated recovery-proof entry. Ordinary installed sessions leave the deadline
+unset and therefore have no wall-clock lifetime. The recovery entry fixes its
+deadline as packaging policy, while its verifier classifies the resulting
+status-124 handoff separately from graceful Engine completion and the local
+emergency chord.
+
 Client DMA-BUF imports are renderer-owned, generation-keyed resources. The
 renderer frame boundary carries only an opaque image generation plus the cold-import
 descriptor. The native output context imports once, reuses the resident texture

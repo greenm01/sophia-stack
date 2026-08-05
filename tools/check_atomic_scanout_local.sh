@@ -152,6 +152,9 @@ bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
 bash -n tools/check_sophia_xmonad_emergency_verifier.sh
 bash -n tools/verify_installed_session_lifecycle.sh
 bash -n tools/check_installed_session_lifecycle_verifier.sh
+bash -n tools/check_sophia_session_watchdog.sh
+bash -n tools/verify_installed_watchdog_recovery.sh
+bash -n tools/check_installed_watchdog_recovery.sh
 bash -n tools/verify_sophia_firefox_physical.sh
 bash -n tools/record_sophia_firefox_physical_run.sh
 bash -n tools/verify_sophia_firefox_physical_runs.sh
@@ -175,6 +178,8 @@ tools/check_sophia_firefox_lifecycle_verifier.sh
 tools/check_sophia_xmonad_tty3_verifier.sh
 tools/check_sophia_xmonad_emergency_verifier.sh
 tools/check_installed_session_lifecycle_verifier.sh
+tools/check_sophia_session_watchdog.sh
+tools/check_installed_watchdog_recovery.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh
@@ -220,11 +225,16 @@ tools/check_session_lifecycle_diagnostics.sh
 bash -n tools/installed/sophia-session
 bash -n tools/installed/sophia-kitty-session
 bash -n tools/installed/sophia-firefox-proof
+bash -n tools/installed/sophia-recovery-proof
 bash -n tools/installed/capture-runtime-identity.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'firefox_m10_kitty_probe.sh' tools/package_live_session.sh
+grep -Fq 'tools/installed/sophia-recovery-proof' tools/package_live_session.sh
+grep -Fq 'tools/record_installed_watchdog_run.sh' tools/package_live_session.sh
+grep -Fq 'tools/verify_installed_watchdog_recovery.sh' tools/package_live_session.sh
 bash -n tools/verify_installed_runtime_identity.sh
-bash -n tools/record_installed_session_run.sh tools/record_installed_emergency_run.sh
+bash -n tools/record_installed_session_run.sh tools/record_installed_emergency_run.sh \
+    tools/record_installed_watchdog_run.sh
 bash -n tools/verify_installed_session_cycles.sh
 bash -n tools/verify_installed_session_soak.sh tools/check_installed_session_verifiers.sh
 tools/check_installed_session_verifiers.sh

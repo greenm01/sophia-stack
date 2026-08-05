@@ -41,6 +41,8 @@ install -m 755 tools/installed/sophia-kitty-session \
     "$artifact/bin/sophia-kitty-session"
 install -m 755 tools/installed/sophia-firefox-proof \
     "$artifact/bin/sophia-firefox-proof"
+install -m 755 tools/installed/sophia-recovery-proof \
+    "$artifact/bin/sophia-recovery-proof"
 install -m 755 tools/installed/capture-runtime-identity.sh \
     "$artifact/bin/capture-runtime-identity"
 install -m 755 tools/status_live_session.sh "$artifact/bin/sophia-status"
@@ -50,6 +52,8 @@ install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
 install -m 755 tools/record_installed_emergency_run.sh \
     "$artifact/bin/sophia-record-emergency-run"
+install -m 755 tools/record_installed_watchdog_run.sh \
+    "$artifact/bin/sophia-record-watchdog-run"
 install -m 755 tools/verify_installed_session_cycles.sh \
     "$artifact/bin/sophia-verify-cycles"
 install -m 755 tools/verify_installed_session_soak.sh \
@@ -62,6 +66,8 @@ install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
 install -m 755 tools/verify_installed_session_lifecycle.sh \
     "$artifact/bin/sophia-verify-lifecycle"
+install -m 755 tools/verify_installed_watchdog_recovery.sh \
+    "$artifact/bin/sophia-verify-watchdog-run"
 install -m 755 tools/verify_sophia_firefox_physical.sh \
     "$artifact/bin/sophia-verify-firefox-run"
 install -m 755 tools/record_sophia_firefox_physical_run.sh \
@@ -107,6 +113,14 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-firefox-proof.desktop"
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Name=Sophia Recovery Proof' \
+    'Comment=Bounded installed session and automatic display-manager recovery' \
+    'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-recovery-proof' \
+    'Type=Application' \
+    'DesktopNames=Sophia' \
+    >"$artifact/share/wayland-sessions/sophia-recovery-proof.desktop"
 printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >"$artifact/manifest"

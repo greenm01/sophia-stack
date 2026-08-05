@@ -1011,9 +1011,11 @@ updates `/opt/sophia/current`, preserves the former target as
 `/usr/share/wayland-sessions/`, the directory configured for greetd/tuigreet
 session discovery.
 
-The installed Kitty baseline is `Sophia Kitty (Baseline)`; the integrated
-policy candidate is `Sophia xmonad (Experimental)`. Both enter through
-`/usr/local/bin/sophia-session`, which performs no
+The installed Kitty fallback is `Sophia Kitty (Baseline)`; the integrated
+policy candidate is `Sophia xmonad (Experimental)`. The bounded containment
+gate is `Sophia Recovery Proof`. All three enter through versioned commands
+below `/opt/sophia/current`; the ordinary sessions ultimately use
+`sophia-session`, which performs no
 source build, repository lookup, display-manager takeover, or privileged
 service control. It emits the installed version and commit before entering the
 same guarded session lifecycle. It fails closed unless greetd supplies
@@ -1036,6 +1038,29 @@ sudo sophia-rollback
 
 `sophia-stop` requests bounded cleanup from an independently logged-in control
 TTY; Ctrl-Alt-Backspace remains the independent local emergency chord.
+Neither mechanism imposes a lifetime on a healthy desktop. `Sophia Recovery
+Proof` is the only installed entry that opts into the outer launcher's
+45-second wall-clock deadline. The deadline process remains outside Sophia's
+process group; when it expires, it terminates that group and leaves the outer
+launcher to restore the saved keyboard, KD, and terminal modes before greetd
+resumes.
+
+One installed watchdog proof is sufficient for a release. Select `Sophia
+Recovery Proof` in greetd, press and release Ctrl-Alt-Backspace once when asked
+to arm the guard, and then leave the visible xmonad session running. Greetd
+must return automatically after 45 seconds. Log into `Sophia Kitty (Baseline)`
+once and exit Kitty normally to prove the fallback entry, then retain the
+watchdog evidence from any ordinary login with:
+
+```sh
+sophia-record-watchdog-run
+```
+
+The recorder requires visible startup readiness, exactly one process-group
+deadline, an armed but untriggered local input guard, exact TTY restoration,
+the installed release identity and digests, and a display-manager handoff with
+status 124. It archives watchdog runs separately; they never count as normal
+login cycles or as graceful Ctrl-Alt-Backspace recovery.
 Because the graphical owner deliberately places the kernel keyboard in
 off-mode, Sophia recognizes Ctrl-Alt-F1 through Ctrl-Alt-F12 and explicitly
 requests the target Linux VT through libseat. Seat disable pauses physical
@@ -1052,6 +1077,9 @@ sophia-record-run
 
 # After one separate Ctrl-Alt-Backspace recovery run:
 sophia-record-emergency-run
+
+# After the one dedicated Sophia Recovery Proof run:
+sophia-record-watchdog-run
 
 # Require the latest three recorded runs to be clean and from one commit:
 sophia-verify-cycles 3

@@ -1,6 +1,7 @@
 const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_session.sh");
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
+const INSTALLED_RECOVERY: &str = include_str!("../../../tools/installed/sophia-recovery-proof");
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
 const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
 
@@ -87,6 +88,13 @@ fn installed_session_uses_only_versioned_release_artifacts() {
     assert!(INSTALLED_SESSION.contains("$RELEASE_DIR/target/release/sophia"));
     assert!(!INSTALLED_SESSION.contains("cargo "));
     assert!(!INSTALLED_SESSION.contains("sudo "));
+}
+
+#[test]
+fn installed_watchdog_is_fixed_and_opt_in() {
+    assert!(INSTALLED_RECOVERY.contains("SOPHIA_SESSION_WATCHDOG_SECONDS=45"));
+    assert!(INSTALLED_RECOVERY.contains("$RELEASE_DIR/bin/sophia-session"));
+    assert!(!INSTALLED_SESSION.contains("export SOPHIA_SESSION_WATCHDOG_SECONDS="));
 }
 
 #[test]

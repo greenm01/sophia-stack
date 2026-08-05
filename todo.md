@@ -1272,10 +1272,10 @@ Compatibility follow-up outside the Firefox exit gate:
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.
 - [ ] Preserve the independent emergency path, a known-good fallback session,
-  and a documented rollback procedure. The repository launcher now supports
-  an opt-in process-external wall-clock deadline, and the bounded GLX proof
-  enables it automatically; the installed session still needs an
-  installation-owned equivalent and physical recovery proof.
+  and a documented rollback procedure. The installed `Sophia Recovery Proof`
+  entry now fixes an opt-in 45-second process-external deadline and packages a
+  strict repository-independent recorder. Its physical recovery capture and a
+  successful `Sophia Kitty (Baseline)` fallback login remain.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+
+# Keep the deadline opt-in: an ordinary desktop session must not expire.
+export SOPHIA_SESSION_WATCHDOG_SECONDS=45
+exec "$RELEASE_DIR/bin/sophia-session" "$@"
