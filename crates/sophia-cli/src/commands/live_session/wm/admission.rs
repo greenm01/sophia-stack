@@ -322,6 +322,38 @@ impl PersistentLiveLayout {
                 self.released_admission_groups.push_back(group);
                 continue;
             }
+            let covered_by_later_backing = !touched.is_empty()
+                && touched.iter().all(|surface| {
+                    selected_positions
+                        .get(surface)
+                        .is_some_and(|selected_position| position < *selected_position)
+                        && self
+                            .layout_epochs
+                            .safe_observation(*surface)
+                            .is_some_and(|observation| {
+                                observation.evidence
+                                    == sophia_engine::SurfaceVisualEvidence::BackingSnapshot
+                            })
+                });
+            if covered_by_later_backing {
+                // A stable CPU handle may reach admission as Replace followed
+                // by patches. Release the complete prefix so the selected
+                // patch never outruns the renderer-owned replacement base.
+                for surface in &touched {
+                    if let Some(layer) = self.layers.get(surface) {
+                        group.reproject_surface(*surface, layer.geometry);
+                    }
+                }
+                for transaction in &mut group.transactions {
+                    let generation = committed_generations
+                        .entry(transaction.surface)
+                        .or_insert(0);
+                    transaction.previous_committed_generation = *generation;
+                    *generation = generation.saturating_add(1);
+                }
+                self.released_admission_groups.push_back(group);
+                continue;
+            }
             let covered_by_later_present = !touched.is_empty()
                 && touched.iter().all(|surface| {
                     selected_positions

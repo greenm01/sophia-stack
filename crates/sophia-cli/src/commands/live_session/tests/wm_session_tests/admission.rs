@@ -850,3 +850,115 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
     assert!(observation.admission_group_invalid);
     assert!(layout.pre_admission_groups.is_empty());
 }
+
+#[test]
+fn backing_admission_releases_cpu_replacement_before_selected_patch() {
+    let surface = SurfaceId::new(10, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    };
+    let size = Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    let handle = 172;
+    let base_transaction = TransactionId::from_raw(380);
+    let selected_transaction = TransactionId::from_raw(381);
+    let transaction = |transaction, previous_committed_generation| SurfaceTransaction {
+        transaction,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_buffer: BufferSource::CpuBuffer { handle },
+        damage: Region::single(geometry),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation,
+    };
+    let base = sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(
+        sophia_x_authority::XAuthorityCpuBufferSnapshot {
+            handle,
+            drawable: sophia_x_authority::XResourceId::new(10, 1),
+            size,
+            stride: 16,
+            format: 0,
+            generation: 1,
+            bytes: vec![0; 64],
+        },
+    );
+    let patch = sophia_x_authority::XAuthorityCpuBufferUpdate::PatchBatch(
+        sophia_x_authority::XAuthorityCpuBufferPatchBatch {
+            handle,
+            drawable: sophia_x_authority::XResourceId::new(10, 1),
+            size,
+            stride: 16,
+            format: 0,
+            generation: 2,
+            patches: vec![sophia_x_authority::XAuthorityCpuBufferPatchRegion {
+                rect: geometry,
+                bytes: vec![1; 64],
+            }],
+        },
+    );
+    let mut layout = PersistentLiveLayout::default();
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout.layout_epochs.record_safe_observation(
+        sophia_protocol::SurfaceTransactionKey {
+            transaction: selected_transaction,
+            surface,
+            target_buffer: BufferSource::CpuBuffer { handle },
+        },
+        size,
+        sophia_engine::SurfaceVisualEvidence::BackingSnapshot,
+    );
+    layout.pre_admission_groups.push_back(
+        crate::commands::live_session::LiveAdmissionAuthorityGroup {
+            transaction: base_transaction,
+            transactions: vec![transaction(base_transaction, 0)],
+            cpu_buffer_updates: vec![base],
+            present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
+            superseded: false,
+        },
+    );
+    layout.pre_admission_groups.push_back(
+        crate::commands::live_session::LiveAdmissionAuthorityGroup {
+            transaction: selected_transaction,
+            transactions: vec![transaction(selected_transaction, 1)],
+            cpu_buffer_updates: vec![patch],
+            present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
+            superseded: false,
+        },
+    );
+
+    layout.release_admission_groups(&BTreeMap::from([(
+        surface,
+        selected_transaction,
+    )]));
+
+    assert!(layout.pre_admission_groups.is_empty());
+    assert_eq!(layout.released_admission_groups.len(), 2);
+    assert!(matches!(
+        layout.released_admission_groups[0].cpu_buffer_updates[0],
+        sophia_x_authority::XAuthorityCpuBufferUpdate::Replace(_)
+    ));
+    assert!(matches!(
+        layout.released_admission_groups[1].cpu_buffer_updates[0],
+        sophia_x_authority::XAuthorityCpuBufferUpdate::PatchBatch(_)
+    ));
+    assert_eq!(
+        layout.released_admission_groups[0].transactions[0]
+            .previous_committed_generation,
+        0
+    );
+    assert_eq!(
+        layout.released_admission_groups[1].transactions[0]
+            .previous_committed_generation,
+        1
+    );
+}
