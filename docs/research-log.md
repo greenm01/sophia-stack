@@ -3,6 +3,31 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-04: software Present feedback owns an exact native frame
+
+The live mixed-session trace disproved FIFO association between software
+Present and native page flips. Software transaction 599 remained pending until
+an unrelated Kitty DMA frame 704 retired; transaction 715 behaved the same way
+behind frame 742. The runtime marked and settled the oldest software submission
+on whichever native callback arrived next. CPU output work was also suppressed
+while a GPU projection existed, so vkcube could advance a few frames only when
+unrelated desktop damage happened to drive KMS.
+
+Native frames now carry monotonic typed identities from queueing through submit
+and page-flip retirement. A software Present first owns an immutable CPU or
+retained-mixed frame, then only callbacks naming that frame may mark its
+resources submitted or route clocked Copy/Idle feedback. Mixed owner batches
+serialize an unrelated DMA frame and the software follow-up frame; the latter
+uses the DMA transaction's prepared candidate so the new Vulkan surface cannot
+disappear between flips. Same-owner coalescing excludes software Present work.
+
+The deterministic reducer regression injects unrelated submission and
+retirement observations and requires them to be no-ops. The physical verifier
+joins every software retirement to its nonzero native frame and submission,
+and `PresentFrameOwnership.tla` checks both the safety relation and eventual
+retirement under weak fairness. The offline gates establish the lifecycle; a
+fresh installed xmonad/vkcube run remains the physical acceptance boundary.
+
 ## 2026-08-04: Present retirement is independent of storage
 
 The fresh installed xmonad/vkcube run disproved the remaining DMA-only

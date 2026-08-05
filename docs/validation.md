@@ -39,12 +39,15 @@ state in a temporary directory:
 SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
 ```
 
-The bounded configurations explore retirement and supersession ordering plus
-exact PresentedBuffer selection through timeout recovery and feedback. They
-remain suitable for routine validation. A TLC counterexample that changes
-implementation behavior must become a deterministic Rust regression before the
-model or implementation is corrected. The models are not refinement proofs and
-must not be weakened to accept a known Rust shortcut.
+The bounded configurations explore retirement and supersession ordering,
+exact PresentedBuffer selection through timeout recovery, and ownership of a
+software Present by one native frame. The frame-ownership model permits an
+unrelated frame to submit and retire first and proves that only the exact bound
+frame can emit feedback. They remain suitable for routine validation. A TLC
+counterexample that changes implementation behavior must become a
+deterministic Rust regression before the model or implementation is corrected.
+The models are not refinement proofs and must not be weakened to accept a
+known Rust shortcut.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
@@ -401,8 +404,10 @@ neither may bypass retirement as a backing snapshot. At least three increasing
 Present transactions must then receive routed Complete events with nonzero
 UST/MSC followed by routed Idle events. These checks reject the historical
 backing-clear substitution, the mixed-batch software-registration omission,
-and a static first-frame success. The verifier also requires bounded clean
-teardown and rejects malformed, overflowed, mismatched, or degraded intake.
+and a static first-frame success. A software retirement additionally names its
+nonzero native frame and submission, and the verifier joins both to the exact
+native submit/retire pair. The verifier also requires bounded clean teardown
+and rejects malformed, overflowed, mismatched, or degraded intake.
 
 The retained two-xterm hardware proof must preserve its 2,000 ms startup,
 25 ms maximum-composition, 100 ms input-to-presentation, complete event-flush,

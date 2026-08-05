@@ -277,10 +277,15 @@ reopen the completed Milestone 9 exit gate.
   path for that owner batch, the software submission was never registered or
   retired. Present semantics are now storage-independent: every selected
   `PresentedBuffer` waits for exact native retirement, mixed batches queue
-  separate CPU and DMA-BUF groups on the same output frame, and software
-  retirement returns its exact key and page-flip clock to admission. The Rust
-  regressions, `AdmissionRecovery.tla`, and physical verifier lock selection,
-  storage choice, timeout recovery, retirement, and Complete/Idle feedback.
+  separate CPU and DMA-BUF groups, and software retirement returns its exact
+  key and page-flip clock to admission. A later live trace exposed that the
+  groups were still associated by queue order: transactions 599 and 715
+  advanced only when unrelated Kitty frames 704 and 742 retired. Native frames
+  now have typed monotonic identities; software work owns a serialized CPU or
+  retained-mixed frame, and only that frame can submit or settle it. The Rust
+  regressions, `AdmissionRecovery.tla`, `PresentFrameOwnership.tla`, and the
+  physical verifier lock selection, storage choice, exact frame ownership,
+  timeout recovery, retirement, and Complete/Idle feedback.
   Repeat the physical vkcube gate from the packaged fix before closing this
   item.
 - [ ] After the visible vkcube gate passes, model arbitrary post-admission X11

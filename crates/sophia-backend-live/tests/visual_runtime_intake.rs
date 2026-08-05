@@ -151,8 +151,12 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
 #[test]
 fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
     let checksum = 42;
-    let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
+    let cpu = Some(LiveProductionScanoutContent::Cpu {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
+        checksum,
+    });
     let mixed = Some(LiveProductionScanoutContent::MixedPresent {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(2),
         transaction: TransactionId::from_raw(9),
         nonzero_rgb_pixels: 1,
     });
@@ -194,7 +198,10 @@ fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
 #[test]
 fn unchanged_initial_modeset_frame_requires_one_event_bearing_submission() {
     let checksum = 42;
-    let cpu = Some(LiveProductionScanoutContent::Cpu { checksum });
+    let cpu = Some(LiveProductionScanoutContent::Cpu {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
+        checksum,
+    });
 
     assert_eq!(
         reduce_live_production_cpu_frame_queue(None, None, cpu, false, false, checksum),

@@ -1,6 +1,6 @@
 use crate::{
     LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityGroup,
-    LiveProductionPresentDisposition,
+    LiveProductionNativeFrameId, LiveProductionPresentDisposition,
 };
 use sophia_engine::PreparedSurfaceCommit;
 use sophia_protocol::{
@@ -43,6 +43,7 @@ impl LiveProductionPresentLayoutState {
 
 #[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
+    pub frame: LiveProductionNativeFrameId,
     pub candidate: SurfaceTransactionKey,
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
@@ -328,6 +329,33 @@ impl LiveProductionPresentScheduler {
             self.in_flight,
             Some(LiveProductionInFlightPresent::Submitted(_))
         )
+    }
+
+    pub fn submitted_frame(&self) -> Option<LiveProductionNativeFrameId> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Submitted(submitted) => Some(submitted.frame),
+            LiveProductionInFlightPresent::Rendering(_) => None,
+        }
+    }
+
+    pub fn in_flight_displayed_layer(
+        &self,
+    ) -> Option<(SurfaceId, &crate::LiveRetainedDmaBufLayer)> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => {
+                Some((present.surface, &present.displayed_layer))
+            }
+        }
+    }
+
+    pub fn in_flight_candidate(&self) -> Option<&[CommittedSurfaceState]> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => {
+                Some(present.prepared.candidate())
+            }
+        }
     }
 
     pub fn has_rendering(&self) -> bool {

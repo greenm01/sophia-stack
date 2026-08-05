@@ -34,4 +34,10 @@ if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/skip.log" >/dev/null 2>&1; 
     exit 1
 fi
 
+sed '0,/frame=41/{s/frame=41/frame=99/}' "$PASS" >"$TEMP_DIR/wrong-frame.log"
+if SOPHIA_VERIFY_WAIT_SECONDS=0 "$VERIFY" "$TEMP_DIR/wrong-frame.log" >/dev/null 2>&1; then
+    echo "vkcube verifier accepted software feedback without exact native-frame ownership" >&2
+    exit 1
+fi
+
 echo "vkcube xmonad verifier self-test passed"

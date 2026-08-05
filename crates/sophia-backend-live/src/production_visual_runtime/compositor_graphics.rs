@@ -138,7 +138,12 @@ impl LiveProductionVisualRuntime {
     ) -> Result<Option<LiveOwnedMixedCompositionFrame>, std::io::Error> {
         let mut retained_client_image = false;
         let mut layers = Vec::with_capacity(self.displayed_surfaces.len().saturating_add(4));
-        let committed = self.production.committed_surfaces();
+        // A serialized software frame may follow a DMA frame that has not yet
+        // retired. Its display list must preserve that prepared transaction.
+        let committed = self
+            .present_scheduler
+            .in_flight_candidate()
+            .unwrap_or_else(|| self.production.committed_surfaces());
         let display_list = self
             .display_list(committed, &self.presentation_order)
             .map_err(std::io::Error::other)?;
@@ -150,15 +155,18 @@ impl LiveProductionVisualRuntime {
             output_frame_damage_snapshot(output, display_list.clone(), committed, None)
                 .map_err(std::io::Error::other)?,
         );
+        let in_flight = self.present_scheduler.in_flight_displayed_layer();
         for command in display_list.commands {
             match command {
                 CompositorDisplayCommand::Surface { surface } => {
-                    if let Some(displayed) = self.displayed_surfaces.get(&surface) {
+                    if let Some((_, displayed)) =
+                        in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == surface)
+                    {
                         retained_client_image = true;
                         layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
-                            image_id: displayed.layer.image_id,
-                            frame: displayed.layer.frame.try_clone()?,
-                            placement: displayed.layer.placement,
+                            image_id: displayed.image_id,
+                            frame: displayed.frame.try_clone()?,
+                            placement: displayed.placement,
                         });
                     } else if let Some(layer) =
                         cpu_layers.iter().find(|layer| layer.surface == surface)
@@ -172,6 +180,13 @@ impl LiveProductionVisualRuntime {
                                 transform: Transform::IDENTITY,
                                 alpha: 1.0,
                             },
+                        });
+                    } else if let Some(displayed) = self.displayed_surfaces.get(&surface) {
+                        retained_client_image = true;
+                        layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
+                            image_id: displayed.layer.image_id,
+                            frame: displayed.layer.frame.try_clone()?,
+                            placement: displayed.layer.placement,
                         });
                     }
                 }

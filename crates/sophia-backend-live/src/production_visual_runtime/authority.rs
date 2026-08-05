@@ -57,50 +57,7 @@ impl LiveProductionVisualRuntime {
                 return Err("software Present acquire fence is not ready".into());
             }
         }
-        self.software_presents_waiting_submit.push_back(submissions);
-        Ok(())
-    }
-
-    pub(super) fn mark_software_present_frame_submitted(
-        &mut self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(submissions) = self.software_presents_waiting_submit.pop_front() else {
-            return Ok(());
-        };
-        for submission in &submissions {
-            self.presentation_feedback
-                .resources_mut()
-                .mark_submitted(submission.transaction)?;
-        }
-        self.software_presents_submitted.push_back(submissions);
-        Ok(())
-    }
-
-    pub(super) fn settle_software_present_frame(
-        &mut self,
-        ust: u64,
-        msc: u64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(submissions) = self.software_presents_submitted.pop_front() else {
-            return Ok(());
-        };
-        for submission in submissions {
-            let outcome =
-                self.presentation_feedback
-                    .complete_copy(submission.transaction, ust, msc)?;
-            self.route_present_feedback(outcome);
-            if self.retired_software_presents.len() == PRESENT_FEEDBACK_CAPACITY {
-                self.retired_software_presents_overflowed = true;
-            } else {
-                self.retired_software_presents
-                    .push_back(LiveProductionRetiredSoftwarePresent {
-                        candidate: submission.candidate,
-                        source_size: submission.source_size,
-                        ust_usec: ust,
-                        msc,
-                    });
-            }
-        }
+        self.software_presents_unframed.push_back(submissions);
         Ok(())
     }
 
@@ -116,21 +73,7 @@ impl LiveProductionVisualRuntime {
     }
 
     pub(super) fn reject_software_presents(&mut self) {
-        let transactions = self
-            .software_presents_waiting_submit
-            .drain(..)
-            .chain(self.software_presents_submitted.drain(..))
-            .flatten()
-            .map(|submission| submission.transaction)
-            .collect::<Vec<_>>();
-        for transaction in transactions {
-            if let Ok(outcome) = self
-                .presentation_feedback
-                .reject_skip_at_last_display(transaction)
-            {
-                self.route_present_feedback(outcome);
-            }
-        }
+        self.reject_software_present_frames();
     }
 
     pub fn reject_gpu_presentation(&mut self, transaction: TransactionId) {

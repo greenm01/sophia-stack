@@ -1,12 +1,38 @@
 use super::*;
 
 impl LiveProductionNativeScanout {
+    pub fn queue_present_cpu_frame(
+        &mut self,
+        index: usize,
+        frame: LiveProductionComposedFrame,
+    ) -> Result<LiveProductionNativeFrameId, &'static str> {
+        if self.heads[index].exporter.pending_frame() {
+            return Err("native output already has pending frame work");
+        }
+        let frame_id = self.allocate_frame_id();
+        let head = &mut self.heads[index];
+        head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
+        head.last_checksum = frame.checksum;
+        head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+        head.pending_content = Some(LiveProductionScanoutContent::Cpu {
+            frame: frame_id,
+            checksum: frame.checksum,
+        });
+        head.exporter.set_pending_cpu_frame_with_damage(
+            frame.frame,
+            frame.checksum,
+            frame.output_damage_snapshot,
+        );
+        Ok(frame_id)
+    }
+
     pub fn queue_mixed_frame(
         &mut self,
         index: usize,
         transaction: TransactionId,
         frame: crate::LiveOwnedMixedCompositionFrame,
-    ) {
+    ) -> LiveProductionNativeFrameId {
+        let frame_id = self.allocate_frame_id();
         let head = &mut self.heads[index];
         if let Some(superseded) = head.pending_content {
             tracing::warn!(
@@ -16,18 +42,21 @@ impl LiveProductionNativeScanout {
             );
         }
         head.pending_content = Some(LiveProductionScanoutContent::MixedPresent {
+            frame: frame_id,
             transaction,
             nonzero_rgb_pixels: 0,
         });
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
         head.exporter.set_pending_mixed_frame(frame);
+        frame_id
     }
 
     pub fn queue_retained_mixed_frame(
         &mut self,
         index: usize,
         frame: crate::LiveOwnedMixedCompositionFrame,
-    ) {
+    ) -> LiveProductionNativeFrameId {
+        let frame_id = self.allocate_frame_id();
         let head = &mut self.heads[index];
         if let Some(superseded) = head.pending_content {
             tracing::warn!(
@@ -36,10 +65,12 @@ impl LiveProductionNativeScanout {
             );
         }
         head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
+            frame: frame_id,
             nonzero_rgb_pixels: 0,
         });
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
         head.exporter.set_pending_mixed_frame(frame);
+        frame_id
     }
 
     pub fn diagnose_mixed_frame(

@@ -4,8 +4,10 @@ use sophia_backend_live::{
     LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
     LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
     LiveProductionDmaBufRegistration, LiveProductionPresentDisposition,
-    LiveProductionPresentSubmission, LiveProductionSoftwarePresentSubmission,
-    LiveProductionVisualRuntime,
+    LiveProductionPresentSubmission, LiveProductionSoftwarePresentFrameObservation,
+    LiveProductionSoftwarePresentFramePhase, LiveProductionSoftwarePresentFrameTransition,
+    LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
+    reduce_software_present_frame_observation,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -20,6 +22,53 @@ use sophia_renderer_live::{
 use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
+
+#[test]
+fn software_present_feedback_requires_its_own_native_frame() {
+    let owned = sophia_backend_live::LiveProductionNativeFrameId::from_raw(41);
+    let unrelated = sophia_backend_live::LiveProductionNativeFrameId::from_raw(42);
+
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Pending,
+            LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(unrelated),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::Unrelated
+    );
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Pending,
+            LiveProductionSoftwarePresentFrameObservation::NativeRetired(unrelated),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::Unrelated
+    );
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Pending,
+            LiveProductionSoftwarePresentFrameObservation::NativeRetired(owned),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::InvalidRetirement
+    );
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Pending,
+            LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(owned),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::Submitted
+    );
+    assert_eq!(
+        reduce_software_present_frame_observation(
+            owned,
+            LiveProductionSoftwarePresentFramePhase::Submitted,
+            LiveProductionSoftwarePresentFrameObservation::NativeRetired(owned),
+        ),
+        LiveProductionSoftwarePresentFrameTransition::Retired
+    );
+}
 
 #[test]
 fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
@@ -268,6 +317,8 @@ fn staged_cpu_present_survives_until_transaction_release_and_routes_feedback() {
         [sophia_backend_live::LiveProductionRetiredSoftwarePresent {
             candidate: surface_transaction.key(),
             source_size: size,
+            frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(0),
+            native_submission: 0,
             ust_usec: 0,
             msc: 0,
         }]

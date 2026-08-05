@@ -165,6 +165,9 @@ impl LiveProductionVisualRuntime {
             .outputs
             .output_index(selected_output)
             .ok_or("frame service selected an unknown output")?;
+        if !native_scanout.pending_frame(index) {
+            self.stage_software_present_frame(native_scanout, selected_output)?;
+        }
         let committed = self.production.committed_surfaces().to_vec();
         let output = self
             .outputs
@@ -200,7 +203,10 @@ impl LiveProductionVisualRuntime {
                         .resources_mut()
                         .mark_submitted(transaction)?;
                 }
-                self.mark_software_present_frame_submitted()?;
+                let submitted = native_scanout
+                    .submitted_content(index)
+                    .ok_or("native submit did not retain its frame identity")?;
+                self.mark_software_present_frame_submitted(submitted.frame())?;
             }
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
@@ -251,9 +257,9 @@ impl LiveProductionVisualRuntime {
             .replace_committed_surfaces(committed);
         native_scanout.retire_ready_and_retry_cleanup(index, &mut output.runtime)?;
         if self.outputs.primary_output() == Some(selected_output)
-            && let Some((ust, msc)) = native_scanout.take_presentation_feedback(selected_output)
+            && let Some(retirement) = native_scanout.take_presentation_feedback(selected_output)
         {
-            return self.finalize_gpu_page_flip(native_scanout, ust, msc);
+            return self.finalize_gpu_page_flip(native_scanout, retirement);
         }
         Ok(None)
     }
@@ -261,13 +267,31 @@ impl LiveProductionVisualRuntime {
     pub fn finalize_gpu_page_flip(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
-        ust: u64,
-        msc: u64,
+        retirement: LiveProductionNativeFrameRetirement,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        let ust = retirement.ust;
+        let msc = retirement.msc;
+        if let Some(submitted_frame) = self.present_scheduler.submitted_frame()
+            && submitted_frame != retirement.frame
+        {
+            return Err(format!(
+                "native page flip retired frame {} while DMA Present frame {} was submitted",
+                retirement.frame.raw(),
+                submitted_frame.raw(),
+            )
+            .into());
+        }
         let Some(submitted) = self.present_scheduler.take_submitted() else {
-            self.settle_software_present_frame(ust, msc)?;
+            self.settle_software_present_frame(retirement)?;
             return Ok(None);
         };
+        if !matches!(
+            retirement.content,
+            LiveProductionScanoutContent::MixedPresent { transaction, .. }
+                if transaction == submitted.transaction
+        ) {
+            return Err("DMA Present retired on a native frame with different ownership".into());
+        }
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
         let completion = production
@@ -294,7 +318,7 @@ impl LiveProductionVisualRuntime {
             );
         }
         if completion.commit.outcome != TransactionOutcome::Committed {
-            self.settle_software_present_frame(ust, msc)?;
+            self.settle_software_present_frame(retirement)?;
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),
                 outcome = ?completion.commit.outcome,
@@ -323,7 +347,7 @@ impl LiveProductionVisualRuntime {
                 self.route_present_feedback(outcome);
             }
         }
-        self.settle_software_present_frame(ust, msc)?;
+        self.settle_software_present_frame(retirement)?;
         Ok(Some(LiveProductionRetiredPresent {
             candidate: submitted.candidate,
             transaction: submitted.transaction,

@@ -11,6 +11,7 @@ mod native;
 mod present;
 mod projection;
 mod service;
+mod software_present;
 pub use native::*;
 pub use service::*;
 
@@ -68,8 +69,12 @@ pub struct LiveProductionVisualRuntime {
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
     surface_content_fence: LiveProductionSurfaceContentFence,
-    software_presents_waiting_submit: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
-    software_presents_submitted: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
+    software_present_frames_waiting: VecDeque<software_present::LiveProductionSoftwarePresentFrame>,
+    software_present_frames_bound: BTreeMap<
+        LiveProductionNativeFrameId,
+        software_present::LiveProductionSoftwarePresentBinding,
+    >,
+    software_presents_unframed: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     retired_software_presents: VecDeque<LiveProductionRetiredSoftwarePresent>,
     retired_software_presents_overflowed: bool,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
@@ -138,8 +143,9 @@ impl LiveProductionVisualRuntime {
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
             surface_content_fence: LiveProductionSurfaceContentFence::default(),
-            software_presents_waiting_submit: VecDeque::new(),
-            software_presents_submitted: VecDeque::new(),
+            software_present_frames_waiting: VecDeque::new(),
+            software_present_frames_bound: BTreeMap::new(),
+            software_presents_unframed: VecDeque::new(),
             retired_software_presents: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             retired_software_presents_overflowed: false,
             displayed_surfaces: BTreeMap::new(),
@@ -291,6 +297,7 @@ impl LiveProductionVisualRuntime {
         }
         let rebased_groups = immediate_groups;
         self.enqueue_software_presents(&rebased_groups)?;
+        let software_present_frame_required = !self.software_presents_unframed.is_empty();
         for group in &rebased_groups {
             self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
         }
@@ -306,12 +313,16 @@ impl LiveProductionVisualRuntime {
                 &self.presentation_order,
             ),
         );
-        let defer_frame = reduce_live_production_frame_defer(
-            defer_frame,
-            visual_projection_changed,
-            preserve_gpu_scanout,
-        );
-        let native_scanout = if preserve_gpu_scanout {
+        let defer_frame = if software_present_frame_required {
+            false
+        } else {
+            reduce_live_production_frame_defer(
+                defer_frame,
+                visual_projection_changed,
+                preserve_gpu_scanout,
+            )
+        };
+        let native_scanout = if preserve_gpu_scanout || software_present_frame_required {
             None
         } else {
             native_scanout
@@ -398,16 +409,16 @@ impl LiveProductionVisualRuntime {
                     error.phase, error.source
                 )
             })?;
-        if report
-            .submission
-            .tick
-            .rendered_primary_plane_scanout_submit
-            .is_some()
-        {
-            self.mark_software_present_frame_submitted()?;
-        } else if !native_enabled && report.submission.composed {
-            self.mark_software_present_frame_submitted()?;
-            self.settle_software_present_frame(0, 0)?;
+        drop(adapter);
+        if software_present_frame_required {
+            if !report.submission.composed {
+                return Err("software Present did not produce an immutable composed frame".into());
+            }
+            if native_enabled {
+                self.frame_unframed_software_presents(scene, output_descriptors)?;
+            } else {
+                self.settle_unframed_software_presents_without_native()?;
+            }
         }
         if report.submission.composed {
             self.record_focus_ring_observation(&report.committed_surfaces, false)?;
@@ -436,6 +447,7 @@ impl LiveProductionVisualRuntime {
             chrome_surfaces,
             staged_cpu_buffer_handles,
         } = request;
+        let native_enabled = native_scanout.is_some();
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
             &mut self.cpu_buffer_residency,
@@ -459,7 +471,7 @@ impl LiveProductionVisualRuntime {
             .into());
         }
         let compose_started = Instant::now();
-        let composition = if defer_frame {
+        let mut composition = if defer_frame {
             scene
                 .last_report()
                 .cloned()
@@ -506,12 +518,36 @@ impl LiveProductionVisualRuntime {
             cpu_layers,
             wm_update,
         )?;
+        let software_present_frame_required = !self.software_presents_unframed.is_empty();
+        if software_present_frame_required {
+            let committed_surfaces = self.committed_surfaces().to_vec();
+            let presentation_order =
+                raised_presentation_order(&self.presentation_order, raised_surface);
+            let display_list = self.display_list(&committed_surfaces, &presentation_order)?;
+            let output = output_descriptors
+                .first()
+                .copied()
+                .ok_or("software Present has no output descriptor")?;
+            composition = scene
+                .compose_display_list(
+                    output,
+                    &committed_surfaces,
+                    &display_list,
+                    cursor_presentation.composition_position(),
+                )?
+                .clone();
+            if native_enabled {
+                self.frame_unframed_software_presents(scene, output_descriptors)?;
+            } else {
+                self.settle_unframed_software_presents_without_native()?;
+            }
+        }
         Ok((
             LiveProductionCpuSubmission {
                 tick,
                 composition,
-                composed: !defer_frame,
-                compose_elapsed: if defer_frame {
+                composed: !defer_frame || software_present_frame_required,
+                compose_elapsed: if defer_frame && !software_present_frame_required {
                     Duration::ZERO
                 } else {
                     compose_started.elapsed()

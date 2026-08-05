@@ -72,11 +72,13 @@ pub(super) fn record_native_software_present_retirement(
     let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
     layout.complete_admission_retirement(retired.candidate);
     println!(
-        "sophia_live_session_present schema=3 status=retired transaction={} surface={} source={}x{} kind=software ust={} msc={}",
+        "sophia_live_session_present schema=4 status=retired transaction={} surface={} source={}x{} kind=software frame={} native_submission={} ust={} msc={}",
         retired.candidate.transaction.raw(),
         retired.candidate.surface.index(),
         retired.source_size.width,
         retired.source_size.height,
+        retired.frame.raw(),
+        retired.native_submission,
         retired.ust_usec,
         retired.msc,
     );

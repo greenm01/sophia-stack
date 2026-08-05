@@ -331,10 +331,15 @@ than cloning the full batch per queued Present.
 
 Storage classification is per atomic authority group, not per owner envelope.
 One owner batch may contain a software Present group and an unrelated DMA-BUF
-Present group. The GPU production path registers the software group before the
-DMA-BUF group drives their shared native frame; the page flip settles each
-group with its original transaction and storage-appropriate feedback. A single
-group that claims both storage paths is malformed and fails closed.
+Present group. Each native frame receives a monotonic typed identity, and a
+software Present binds to exactly one immutable CPU or retained-mixed frame.
+An unrelated DMA-BUF frame may submit and retire first, but its callbacks
+cannot mark or settle the software Present. The runtime then submits the bound
+software frame and routes Copy/Idle feedback only from that exact page flip.
+A same-owner batch containing software Present work cannot be coalesced, and a
+single group that claims both storage paths is malformed and fails closed.
+Future frame merging must preserve this explicit ownership relation rather
+than infer it from queue order.
 
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and

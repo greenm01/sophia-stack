@@ -233,7 +233,7 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
-        native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
+        let frame = native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
 
         let layer_templates = self.compositor_layer_templates();
         let production = &self.production;
@@ -269,19 +269,21 @@ impl LiveProductionVisualRuntime {
                 self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_submitted(LiveProductionSubmittedPresent {
+                        frame,
                         candidate: queued_candidate,
                         transaction,
                         surface: queued_surface,
                         prepared,
                         displayed_layer: current_layer,
                     });
-                self.mark_software_present_frame_submitted()?;
+                self.mark_software_present_frame_submitted(frame)?;
             }
             Some(Status::ScanoutExportPending) => {
                 self.present_scheduler.pop_front();
                 self.surface_content_fence.begin(queued_surface)?;
                 self.present_scheduler
                     .mark_rendering(LiveProductionSubmittedPresent {
+                        frame,
                         candidate: queued_candidate,
                         transaction,
                         surface: queued_surface,

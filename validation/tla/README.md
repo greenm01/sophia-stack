@@ -20,6 +20,12 @@ The model checks that:
 - admitted work eventually reaches one terminal settlement under the weak
   fairness assumption documented in the module.
 
+`PresentFrameOwnership.tla` isolates the output-frame association needed by
+software Present. It allows an unrelated frame to submit and retire before the
+Present frame, but requires feedback to remain false until the exact bound
+frame retires. Under weak fairness, waiting Present work eventually reaches
+that retirement.
+
 ## Rust Boundary Map
 
 The model is deliberately smaller than the implementation. Its actions map to
@@ -35,6 +41,14 @@ the current owning Rust boundaries as follows:
 | `Settle(..., "disconnected")` | `AuthorityTransactionInbox::drain_ready` reports disconnect; universal visual settlement remains a gap |
 | `Settle(..., "removed")` | ordered `AuthorityTransactionIntake::removed_surfaces` handling, currently on the direct-commit path |
 | `Release` | output retirement plus backend-specific lease teardown; a universal release reducer remains deferred |
+
+The frame-ownership model maps `QueuePresent` to
+`queue_software_present_frame` and `stage_software_present_frame`,
+`SubmitPresent` to `mark_software_present_frame_submitted`, and
+`RetirePresent` to `settle_software_present_frame`. The typed
+`LiveProductionNativeFrameId` is the identity shared by those transitions.
+`SubmitUnrelated` and `RetireUnrelated` represent ordinary CPU or DMA frames
+whose callbacks must leave the software binding unchanged.
 
 This table identifies correspondence, not equivalence. The current direct
 authority commit and committed-snapshot replacement APIs remain implementation

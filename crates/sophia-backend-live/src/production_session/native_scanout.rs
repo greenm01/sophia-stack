@@ -30,6 +30,7 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
+        next_frame_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
         pub presentation_started: Instant,
         pub kernel_page_flip_timestamps: usize,
@@ -284,6 +285,7 @@ mod persistent_native_scanout {
                 callback_rejected: 0,
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
+                next_frame_id: 1,
                 production_page_flips,
                 presentation_started: Instant::now(),
                 kernel_page_flip_timestamps: 0,
@@ -316,6 +318,15 @@ mod persistent_native_scanout {
 
         pub fn output_index(&self, output: OutputId) -> Option<usize> {
             self.heads.iter().position(|head| head.output.id == output)
+        }
+
+        fn allocate_frame_id(&mut self) -> LiveProductionNativeFrameId {
+            let frame = LiveProductionNativeFrameId::from_raw(self.next_frame_id);
+            self.next_frame_id = self
+                .next_frame_id
+                .checked_add(1)
+                .expect("native frame ID space exhausted");
+            frame
         }
 
         pub fn page_flip_hard_stall(&self) -> Option<(OutputId, Duration)> {
@@ -458,6 +469,7 @@ mod persistent_native_scanout {
                                     ..
                                 } | LiveProductionScanoutContent::RetainedMixed {
                                     nonzero_rgb_pixels: 1..,
+                                    ..
                                 }
                             )
                         ) {
@@ -468,11 +480,13 @@ mod persistent_native_scanout {
                         let output = self.heads[index].output.id;
                         let cycle =
                             u64::try_from(self.heads[index].submissions).unwrap_or(u64::MAX);
+                        let frame = content.map_or(0, |content| content.frame().raw());
                         tracing::info!(
-                            "sophia_live_native_page_flip schema=1 status=submitted output={} submission={} content={:?}",
+                            "sophia_live_native_page_flip schema=1 status=submitted output={} submission={} content={:?} frame={}",
                             output.raw(),
                             cycle,
                             content,
+                            frame,
                         );
                         if self.production_page_flips.submit(output, cycle).is_err() {
                             self.vsync_overlap_rejections =
@@ -592,12 +606,17 @@ mod persistent_native_scanout {
             match retire.status {
                 Status::RetiredAfterPageFlip => {
                     trace_live_native_lifecycle("kms_buffer_retired");
+                    let frame = self.heads[index]
+                        .submitted_content
+                        .or(self.heads[index].presented_content)
+                        .map_or(0, |content| content.frame().raw());
                     tracing::info!(
-                        "sophia_live_native_page_flip schema=1 status=retired output={} submission={}",
+                        "sophia_live_native_page_flip schema=1 status=retired output={} submission={} frame={}",
                         self.heads[index].output.id.raw(),
                         self.heads[index]
                             .submitted_sequence
                             .unwrap_or(self.heads[index].submissions),
+                        frame,
                     );
                     self.retirements = self.retirements.saturating_add(1);
                     self.heads[index].retirements = self.heads[index].retirements.saturating_add(1);
@@ -766,15 +785,17 @@ mod persistent_native_scanout {
             index: usize,
             frame: LiveProductionComposedFrame,
         ) -> LiveProductionCpuFrameQueueStatus {
-            let head = &mut self.heads[index];
-            let status = reduce_live_production_cpu_frame_queue(
-                head.pending_content,
-                head.submitted_content,
-                head.presented_content,
-                head.exporter.worker_in_flight(),
-                head.callback_accepted != 0 || head.initial_modeset_submission.is_some(),
-                frame.checksum,
-            );
+            let status = {
+                let head = &self.heads[index];
+                reduce_live_production_cpu_frame_queue(
+                    head.pending_content,
+                    head.submitted_content,
+                    head.presented_content,
+                    head.exporter.worker_in_flight(),
+                    head.callback_accepted != 0 || head.initial_modeset_submission.is_some(),
+                    frame.checksum,
+                )
+            };
             if !matches!(
                 status,
                 LiveProductionCpuFrameQueueStatus::Queued
@@ -782,10 +803,13 @@ mod persistent_native_scanout {
             ) {
                 return status;
             }
+            let frame_id = self.allocate_frame_id();
+            let head = &mut self.heads[index];
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
             head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
+                frame: frame_id,
                 checksum: frame.checksum,
             });
             head.exporter.set_pending_cpu_frame_with_damage(
@@ -796,9 +820,21 @@ mod persistent_native_scanout {
             status
         }
 
-        pub fn take_presentation_feedback(&mut self, output: OutputId) -> Option<(u64, u64)> {
+        pub fn take_presentation_feedback(
+            &mut self,
+            output: OutputId,
+        ) -> Option<LiveProductionNativeFrameRetirement> {
             let retirement = self.production_page_flips.take_retirement(output)?;
-            Some((retirement.retirement.ust, retirement.retirement.msc))
+            let index = self.output_index(output)?;
+            let content = self.heads[index].presented_content?;
+            Some(LiveProductionNativeFrameRetirement {
+                output,
+                frame: content.frame(),
+                submission: retirement.cycle,
+                content,
+                ust: retirement.retirement.ust,
+                msc: retirement.retirement.msc,
+            })
         }
 
         pub fn pending_kernel_page_flip_timestamps(&self) -> usize {
@@ -811,6 +847,10 @@ mod persistent_native_scanout {
 
         pub fn pending_frame(&self, index: usize) -> bool {
             self.heads[index].exporter.pending_frame()
+        }
+
+        pub fn submitted_content(&self, index: usize) -> Option<LiveProductionScanoutContent> {
+            self.heads[index].submitted_content
         }
 
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
@@ -833,6 +873,7 @@ mod persistent_native_scanout {
                     Some(LiveProductionScanoutContent::MixedPresent {
                         transaction: presented,
                         nonzero_rgb_pixels,
+                        ..
                     }) if presented == transaction => Some(nonzero_rgb_pixels),
                     _ => None,
                 })
@@ -898,7 +939,8 @@ mod persistent_native_scanout {
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
-    LiveProductionCpuFrameQueueStatus, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionCpuFrameQueueStatus, LiveProductionNativeFrameId,
+    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
     LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
     live_production_scanout_is_stable_present, reduce_live_production_cpu_frame_queue,
     reduce_live_production_page_flip_watchdog,

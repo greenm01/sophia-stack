@@ -67,13 +67,13 @@ for record in "${armed[@]}"; do
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction never completed visual admission"
     grep -Eq \
-        "^sophia_live_session_present schema=(2|3) status=retired transaction=${transaction} surface=${surface} " \
+        "^sophia_live_session_present schema=(2|3|4) status=retired transaction=${transaction} surface=${surface} " \
         "$SESSION_LOG" ||
         fail "surface $surface transaction $transaction has no matching page-flip retirement"
 
     mapfile -t retired < <(
         grep -E \
-            "^sophia_live_session_present schema=(2|3) status=retired transaction=[0-9]+ surface=${surface} " \
+            "^sophia_live_session_present schema=(2|3|4) status=retired transaction=[0-9]+ surface=${surface} " \
             "$SESSION_LOG"
     )
     ((${#retired[@]} >= 3)) ||
@@ -85,6 +85,22 @@ for record in "${armed[@]}"; do
         ((retired_transaction > previous)) ||
             fail "surface $surface Present transactions did not advance"
         previous="$retired_transaction"
+        if [[ "$retired_record" == "sophia_live_session_present schema=4 "* ]]; then
+            frame="$(field "$retired_record" frame)" ||
+                fail "software Present retirement lacks a native frame"
+            native_submission="$(field "$retired_record" native_submission)" ||
+                fail "software Present retirement lacks a native submission"
+            ((frame > 0 && native_submission > 0)) ||
+                fail "software Present retirement has an invalid native owner"
+            grep -Eq \
+                "sophia_live_native_page_flip schema=1 status=submitted output=[0-9]+ submission=${native_submission} .*frame=${frame}$" \
+                "$SESSION_LOG" ||
+                fail "software Present frame $frame was not submitted as native submission $native_submission"
+            grep -Eq \
+                "sophia_live_native_page_flip schema=1 status=retired output=[0-9]+ submission=${native_submission} frame=${frame}$" \
+                "$SESSION_LOG" ||
+                fail "software Present frame $frame did not own its page-flip retirement"
+        fi
         grep -Eq \
             "^sophia_live_session_present_feedback schema=1 kind=complete transaction=${retired_transaction} routed=true mode=(Copy|Flip) ust=[1-9][0-9]* msc=[1-9][0-9]*$" \
             "$SESSION_LOG" ||

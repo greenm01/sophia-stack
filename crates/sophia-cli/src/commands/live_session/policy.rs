@@ -194,6 +194,7 @@ fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bo
         && batch.dma_buf_registrations.is_empty()
         && batch.fence_registrations.is_empty()
         && batch.present_submissions.is_empty()
+        && batch.software_present_submissions.is_empty()
         && batch.released_dma_bufs.is_empty()
         && batch.released_fences.is_empty()
         && (!batch.transactions.is_empty() || !batch.cpu_buffer_updates.is_empty())

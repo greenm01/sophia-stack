@@ -38,8 +38,25 @@ impl LiveProductionVisualRuntime {
             live_sources: self.presentation_feedback.resources().source_count(),
             live_fences: self.presentation_feedback.resources().fence_count(),
             live_presentations: self.presentation_feedback.resources().presentation_count(),
-            software_present_frames_waiting: self.software_presents_waiting_submit.len(),
-            software_present_frames_submitted: self.software_presents_submitted.len(),
+            software_present_frames_waiting: self
+                .software_presents_unframed
+                .len()
+                .saturating_add(self.software_present_frames_waiting.len())
+                .saturating_add(
+                    self.software_present_frames_bound
+                        .values()
+                        .filter(|binding| {
+                            binding.phase == LiveProductionSoftwarePresentFramePhase::Pending
+                        })
+                        .count(),
+                ),
+            software_present_frames_submitted: self
+                .software_present_frames_bound
+                .values()
+                .filter(|binding| {
+                    binding.phase == LiveProductionSoftwarePresentFramePhase::Submitted
+                })
+                .count(),
             software_present_retirements_pending: self.retired_software_presents.len(),
             acquire_waits: self.present_scheduler.acquire_waits(),
             controlled_rejections: self.present_scheduler.controlled_rejections(),
@@ -79,8 +96,57 @@ pub struct LiveProductionRetiredPresent {
 pub struct LiveProductionRetiredSoftwarePresent {
     pub candidate: SurfaceTransactionKey,
     pub source_size: Size,
+    pub frame: LiveProductionNativeFrameId,
+    pub native_submission: u64,
     pub ust_usec: u64,
     pub msc: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionSoftwarePresentFramePhase {
+    Pending,
+    Submitted,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionSoftwarePresentFrameObservation {
+    NativeSubmitted(LiveProductionNativeFrameId),
+    NativeRetired(LiveProductionNativeFrameId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionSoftwarePresentFrameTransition {
+    Unrelated,
+    Submitted,
+    Retired,
+    InvalidRetirement,
+}
+
+pub fn reduce_software_present_frame_observation(
+    owned_frame: LiveProductionNativeFrameId,
+    phase: LiveProductionSoftwarePresentFramePhase,
+    observation: LiveProductionSoftwarePresentFrameObservation,
+) -> LiveProductionSoftwarePresentFrameTransition {
+    match observation {
+        LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(frame)
+            if frame == owned_frame
+                && matches!(phase, LiveProductionSoftwarePresentFramePhase::Pending) =>
+        {
+            LiveProductionSoftwarePresentFrameTransition::Submitted
+        }
+        LiveProductionSoftwarePresentFrameObservation::NativeRetired(frame)
+            if frame == owned_frame
+                && matches!(phase, LiveProductionSoftwarePresentFramePhase::Submitted) =>
+        {
+            LiveProductionSoftwarePresentFrameTransition::Retired
+        }
+        LiveProductionSoftwarePresentFrameObservation::NativeRetired(frame)
+            if frame == owned_frame =>
+        {
+            LiveProductionSoftwarePresentFrameTransition::InvalidRetirement
+        }
+        _ => LiveProductionSoftwarePresentFrameTransition::Unrelated,
+    }
 }
 
 #[derive(Debug)]
@@ -113,6 +179,7 @@ impl LiveProductionVisualRuntime {
             .outputs
             .primary_output()
             .ok_or("persistent backend runtime has no primary output")?;
+        let software_frame_waiting = self.software_present_frames_waiting.front();
         let outputs = (0..self.output_count())
             .map(|index| {
                 let output = self
@@ -131,13 +198,15 @@ impl LiveProductionVisualRuntime {
                     output,
                     primary: output == primary,
                     native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
-                    pending_frame: native_scanout.pending_frame(index),
+                    pending_frame: native_scanout.pending_frame(index)
+                        || software_frame_waiting.is_some_and(|frame| frame.output == output),
                 })
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         Ok(OutputFrameServiceRequest {
             outputs,
-            presentation_queued: self.diagnostics().present_queued
+            presentation_queued: software_frame_waiting.is_none()
+                && self.diagnostics().present_queued
                 && !self.diagnostics().present_scheduling_blocked,
         })
     }

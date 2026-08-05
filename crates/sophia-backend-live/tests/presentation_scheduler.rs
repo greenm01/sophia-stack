@@ -142,6 +142,7 @@ fn in_flight_present(
         previous_committed_generation: 1,
     });
     LiveProductionSubmittedPresent {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
         candidate: sophia_protocol::SurfaceTransactionKey {
             transaction,
             surface,
