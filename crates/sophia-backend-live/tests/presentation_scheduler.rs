@@ -582,6 +582,91 @@ fn aborted_epoch_rejects_its_staged_present() {
 }
 
 #[test]
+fn present_released_after_its_layout_epoch_aborted_is_rejected() {
+    let handle = BufferHandle::from_raw(104);
+    let transaction = TransactionId::from_raw(105);
+    let surface = SurfaceId::new(106, 1);
+    let epoch = TransactionId::from_raw(107);
+    let batch = scheduler_batch_with_disposition(
+        transaction,
+        surface,
+        handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    assert!(scheduler.abort_layout_epoch(epoch).rejected.is_empty());
+    let rejected = scheduler
+        .enqueue_group(
+            &batch.groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert_eq!(rejected, [transaction]);
+    assert!(!scheduler.has_queued());
+    assert_eq!(scheduler.controlled_rejections(), 1);
+}
+
+#[test]
+fn present_released_after_commit_runs_when_its_surface_is_visible() {
+    let handle = BufferHandle::from_raw(108);
+    let transaction = TransactionId::from_raw(109);
+    let surface = SurfaceId::new(110, 1);
+    let epoch = TransactionId::from_raw(111);
+    let batch = scheduler_batch_with_disposition(
+        transaction,
+        surface,
+        handle,
+        LiveProductionPresentDisposition::StageLayout { epoch },
+    );
+    let layout = [sophia_protocol::LayerSnapshot {
+        surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry: batch.groups[0].transactions[0].target_geometry,
+        source: batch.groups[0].transactions[0].target_buffer,
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation: 1,
+        resize_sync: sophia_protocol::ResizeSyncCapability::ImplicitOnly,
+    }];
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    assert_eq!(scheduler.commit_layout_epoch(epoch), 0);
+    let rejected = scheduler
+        .enqueue_group(
+            &batch.groups[0],
+            &layout,
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert!(rejected.is_empty());
+    assert!(scheduler.has_eligible());
+    assert_eq!(
+        scheduler.poll_gate(&mut resources, Instant::now()).unwrap(),
+        LiveProductionPresentGate::Ready(transaction)
+    );
+}
+
+#[test]
 fn aborting_one_epoch_does_not_settle_another_epoch() {
     let first_epoch = TransactionId::from_raw(980);
     let second_epoch = TransactionId::from_raw(981);

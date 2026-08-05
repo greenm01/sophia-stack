@@ -2,7 +2,7 @@ use crate::{
     LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityGroup,
     LiveProductionNativeFrameId, LiveProductionPresentDisposition,
 };
-use sophia_engine::PreparedSurfaceCommit;
+use sophia_engine::{PreparedSurfaceCommit, SURFACE_CONTENT_STREAM_CAPACITY};
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, LayerSnapshot, Rect, SurfaceId, SurfaceTransaction,
     SurfaceTransactionKey, TransactionId,
@@ -12,6 +12,8 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+const LAYOUT_EPOCH_HISTORY_CAPACITY: usize = SURFACE_CONTENT_STREAM_CAPACITY;
 
 #[derive(Clone, Debug)]
 pub struct LiveProductionQueuedPresent {
@@ -33,6 +35,12 @@ enum LiveProductionPresentLayoutState {
     Runnable,
     Staged { epoch: TransactionId },
     AwaitingVisibility { epoch: TransactionId },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveProductionLayoutEpochOutcome {
+    Committed,
+    Aborted,
 }
 
 impl LiveProductionPresentLayoutState {
@@ -75,6 +83,8 @@ pub struct LiveProductionLayoutRollbackReport {
 pub struct LiveProductionPresentScheduler {
     queued: VecDeque<LiveProductionQueuedPresent>,
     in_flight: Option<LiveProductionInFlightPresent>,
+    resolved_layout_epochs: VecDeque<(TransactionId, LiveProductionLayoutEpochOutcome)>,
+    highest_resolved_layout_epoch: Option<TransactionId>,
     first_acquire_delay: Option<Duration>,
     first_acquire_delay_applied: bool,
     reject_first_present: bool,
@@ -108,20 +118,45 @@ impl LiveProductionPresentScheduler {
         let cpu_layers: Arc<[LiveCpuPresentationLayer]> = cpu_layers.into();
         group.validate()?;
         for submission in &group.present_submissions {
-            let layout_state = match submission.layout_disposition {
-                LiveProductionPresentDisposition::Immediate => {
+            let resolved_layout = match submission.layout_disposition {
+                LiveProductionPresentDisposition::StageLayout { epoch } => {
+                    self.resolved_layout_epoch(epoch)
+                }
+                _ => None,
+            };
+            let visible = presentation_layout
+                .iter()
+                .any(|layer| layer.surface == submission.surface);
+            let layout_state = match (submission.layout_disposition, resolved_layout) {
+                (LiveProductionPresentDisposition::Immediate, _) => {
                     LiveProductionPresentLayoutState::Runnable
                 }
-                LiveProductionPresentDisposition::StageLayout { epoch } => {
+                (
+                    LiveProductionPresentDisposition::StageLayout { .. },
+                    Some(LiveProductionLayoutEpochOutcome::Committed),
+                ) if visible => LiveProductionPresentLayoutState::Runnable,
+                (
+                    LiveProductionPresentDisposition::StageLayout { epoch },
+                    Some(LiveProductionLayoutEpochOutcome::Committed),
+                ) => LiveProductionPresentLayoutState::AwaitingVisibility { epoch },
+                (
+                    LiveProductionPresentDisposition::StageLayout { .. },
+                    Some(LiveProductionLayoutEpochOutcome::Aborted),
+                ) => LiveProductionPresentLayoutState::Runnable,
+                (LiveProductionPresentDisposition::StageLayout { epoch }, None) => {
                     LiveProductionPresentLayoutState::Staged { epoch }
                 }
-                LiveProductionPresentDisposition::RejectSuperseded => {
+                (LiveProductionPresentDisposition::RejectSuperseded, _) => {
                     LiveProductionPresentLayoutState::Runnable
                 }
             };
             let reject_for_layout = matches!(
-                submission.layout_disposition,
-                LiveProductionPresentDisposition::RejectSuperseded
+                (submission.layout_disposition, resolved_layout),
+                (LiveProductionPresentDisposition::RejectSuperseded, _)
+                    | (
+                        LiveProductionPresentDisposition::StageLayout { .. },
+                        Some(LiveProductionLayoutEpochOutcome::Aborted)
+                    )
             );
             let surface = submission.surface;
             let x_offset = submission.x_offset;
@@ -384,6 +419,7 @@ impl LiveProductionPresentScheduler {
     /// Records that one layout epoch committed. Its Presents remain fenced
     /// until the committed projection contains their surfaces.
     pub fn commit_layout_epoch(&mut self, epoch: TransactionId) -> usize {
+        self.record_layout_epoch(epoch, LiveProductionLayoutEpochOutcome::Committed);
         let mut committed = 0usize;
         for queued in &mut self.queued {
             if queued.layout_state == (LiveProductionPresentLayoutState::Staged { epoch }) {
@@ -430,6 +466,7 @@ impl LiveProductionPresentScheduler {
         &mut self,
         epoch: TransactionId,
     ) -> LiveProductionLayoutRollbackReport {
+        self.record_layout_epoch(epoch, LiveProductionLayoutEpochOutcome::Aborted);
         let mut retained = VecDeque::with_capacity(self.queued.len());
         let mut report = LiveProductionLayoutRollbackReport::default();
         while let Some(queued) = self.queued.pop_front() {
@@ -441,6 +478,49 @@ impl LiveProductionPresentScheduler {
         }
         self.queued = retained;
         report
+    }
+
+    fn record_layout_epoch(
+        &mut self,
+        epoch: TransactionId,
+        outcome: LiveProductionLayoutEpochOutcome,
+    ) {
+        if let Some((_, current)) = self
+            .resolved_layout_epochs
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == epoch)
+        {
+            *current = outcome;
+            return;
+        }
+        if self.resolved_layout_epochs.len() == LAYOUT_EPOCH_HISTORY_CAPACITY {
+            self.resolved_layout_epochs.pop_front();
+        }
+        self.resolved_layout_epochs.push_back((epoch, outcome));
+        if self
+            .highest_resolved_layout_epoch
+            .is_none_or(|highest| epoch.raw() > highest.raw())
+        {
+            self.highest_resolved_layout_epoch = Some(epoch);
+        }
+    }
+
+    fn resolved_layout_epoch(
+        &self,
+        epoch: TransactionId,
+    ) -> Option<LiveProductionLayoutEpochOutcome> {
+        self.resolved_layout_epochs
+            .iter()
+            .rev()
+            .find_map(|(candidate, outcome)| (*candidate == epoch).then_some(*outcome))
+            .or_else(|| {
+                // A content-stream delay can outlive the bounded exact
+                // history. Resolved WM epochs are monotonic; fail closed
+                // instead of recreating a stage that no future event can end.
+                self.highest_resolved_layout_epoch
+                    .is_some_and(|highest| epoch.raw() <= highest.raw())
+                    .then_some(LiveProductionLayoutEpochOutcome::Aborted)
+            })
     }
 
     pub fn take_diagnose_first_mixed_export(&mut self) -> bool {

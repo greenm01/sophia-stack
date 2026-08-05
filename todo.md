@@ -309,6 +309,18 @@ reopen the completed Milestone 9 exit gate.
   bounds, exact settlement, grouped pixels, and the Present/SHM/clear/core
   generation chain; `SurfaceContentStream.tla` checks no-overtake and eventual
   drain while unrelated work progresses.
+- [x] Reconcile a content-stream-delayed DMA-BUF Present against the outcome of
+  its layout epoch when it reaches scheduling. The first grouped-content run
+  left later Kitty frames tagged with an already-aborted epoch, so Kitty could
+  not provide the resize evidence needed to admit vkcube. The scheduler now
+  retains bounded commit/abort outcomes, rejects delayed work from an aborted
+  epoch, and runs committed work once its surface is visible. Crate-boundary
+  regressions cover both outcomes without depending on unrelated client
+  traffic.
+- [ ] Install the corrected release and rerun one focused xmonad/Kitty/vkcube
+  cycle. Require vkcube to become visible and animate, at least three clocked
+  software retirements, continued Kitty presentation, and clean layout,
+  Present, content-stream, native, and protocol teardown.
 - [x] Optimize the proven software-Present fallback after correctness is
   retained. X authority now owns bounded reusable read-only SysV mappings,
   resolves XFixes valid/update regions with source clipping and fixed capacity,

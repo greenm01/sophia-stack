@@ -3,6 +3,32 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-04: delayed Presents reconcile resolved layout epochs
+
+The first installed run after grouped CPU content selected vkcube's 500-by-500
+software Present, but no vkcube window became visible. The live trace showed
+that application creation and pixel capture had succeeded. Its admission epoch
+timed out while an existing Kitty DMA-BUF Present was staged; rollback rejected
+the scheduler-owned Kitty Present, but later Kitty groups remained behind that
+Present in `SurfaceContentStream`.
+
+Those later groups retained `StageLayout { epoch: 2 }`. They reached the
+Present scheduler only after epoch 2 had aborted, so the one-shot abort could
+not see them. The scheduler treated the dead epoch as pending again. No future
+commit or abort could release it, Kitty stopped supplying resize evidence, and
+vkcube's valid admission transaction remained outside the visible workspace.
+The new content stream exposed this latent time-of-classification error by
+making the deferred ownership exact.
+
+The Present scheduler now retains bounded outcomes for resolved layout epochs
+and reconciles a delayed submission when it actually enters the queue. Work
+from an aborted epoch receives ordinary controlled Skip/Idle settlement; work
+from a committed epoch runs when its surface is already visible or waits only
+for visibility. An outcome older than the bounded exact history fails closed
+instead of recreating an epoch that cannot progress. Crate-boundary regressions
+cover both delayed abort and delayed commit. A fresh installed vkcube run
+remains the physical acceptance boundary.
+
 ## 2026-08-04: software Present feedback owns an exact native frame
 
 The live mixed-session trace disproved FIFO association between software

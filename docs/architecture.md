@@ -423,6 +423,12 @@ order and are rebased sequentially against committed generations. Unrelated
 surfaces remain independently runnable, and configured geometry remains
 separate from rendering state.
 
+A content-stream delay may outlive the layout epoch attached to a Present.
+The scheduler retains bounded commit and abort outcomes, then reconciles the
+submission when it reaches scheduling: aborted work is settled as skipped,
+while committed work runs only after its surface is visible. A resolved epoch
+must never be recreated as pending merely because its Present arrived late.
+
 Niri supplies a compatible policy precedent, not Sophia's transaction model:
 fixed client constraints can cause a window to open floating. Sophia publishes
 generic exact constraints through the blind WM API; an unmodified legacy WM
