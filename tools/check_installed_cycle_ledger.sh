@@ -36,15 +36,21 @@ printf 'schema=1\nversion=0.1.0\ncommit=%s\nrelease_id=0.1.0-test\nbuilt_at_utc=
 )
 ln -s releases/0.1.0-test "$PREFIX/current"
 
-record() {
+set_identity() {
     local started_at_utc="$1"
     printf 'sophia_installed_session schema=1 status=starting profile=xmonad version=0.1.0 commit=%s release=%s started_at_utc=%s\n' \
         "$COMMIT" "$RELEASE" "$started_at_utc" >"$IDENTITY_DIR/launch.log"
+}
+recorder() {
     env \
         XDG_STATE_HOME="$STATE_HOME" \
         SOPHIA_INSTALL_PREFIX="$PREFIX" \
         SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
-        "$ROOT_DIR/tools/record_installed_session_run.sh"
+        "$ROOT_DIR/tools/record_installed_session_run.sh" "$@"
+}
+record() {
+    set_identity "$1"
+    recorder
 }
 
 record 2026-08-05T12:00:00Z
@@ -59,7 +65,28 @@ env \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
     "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3
 
-cp -a "$RUN_ROOT/0003" "$RUN_ROOT/0004"
+set_identity 2026-08-05T12:03:00Z
+failed_run="$(recorder begin)"
+if recorder finish "$failed_run" 1 >/dev/null 2>&1; then
+    echo "installed recorder accepted a nonzero session" >&2
+    exit 1
+fi
+if env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 >/dev/null 2>&1; then
+    echo "installed cycle verifier skipped a failed intervening attempt" >&2
+    exit 1
+fi
+record 2026-08-05T12:04:00Z
+record 2026-08-05T12:05:00Z
+record 2026-08-05T12:06:00Z
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3
+
+cp -a "$RUN_ROOT/0007" "$RUN_ROOT/9999"
 if env \
     XDG_STATE_HOME="$STATE_HOME" \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \

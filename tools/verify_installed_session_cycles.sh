@@ -39,11 +39,16 @@ for run in "${runs[@]}"; do
         cd "$run"
         sha256sum -c SHA256SUMS
     )
+    grep -Fxq 'sophia_installed_cycle schema=1 status=passed exit_status=0' \
+        "$run/result.kdl" || {
+        echo "installed cycle attempt did not pass: $run" >&2
+        exit 1
+    }
     "$VERIFY_LOGIN" \
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     "$VERIFY_IDENTITY" "$run/runtime-identity.log"
     "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
-    [[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 1 ]] || {
+    [[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 2 ]] || {
         echo "run has no supported record schema: $run" >&2
         exit 1
     }

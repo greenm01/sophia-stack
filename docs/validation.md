@@ -1072,9 +1072,6 @@ same `evdev`/`pc105`/`us` XKB state used for client-visible core and XKB events.
 The artifact also installs repository-independent evidence commands:
 
 ```sh
-# After each complete normal physical run:
-sophia-record-run
-
 # Check only the current installed login/startup/logout cycle:
 sophia-verify-login-cycle
 
@@ -1103,24 +1100,28 @@ sophia-verify-soak \
 Run the long gates through the installed `Sophia Firefox Proof` entry so the
 same log also contains the redacted keyboard, navigation/scroll, resize,
 refocus, dialog, and lifecycle contract. Selection correctness comes from the
-separately retained focused gates. `sophia-record-run` applies the focused
-installed-login verifier: automatic Kitty startup, two-output readiness within
-eight seconds, a native retirement, normal logout, clean protocol and session
-health, drained native and application state, an untriggered guard, and exact
-TTY restoration. It checks the running release identity and every packaged
-SHA-256 digest, and only then
-copies the session, guard, recovery, identity, and release manifest into a
-numbered, checksummed promotion-run directory. Each archive records the launch
-timestamp and a SHA-256 digest of the immutable launch identity; recording the
-same launch twice fails. It also requires the ordered installed lifecycle and
-display-manager handoff. The broader xmonad and Firefox interaction proofs
-remain independent gates and are not repeated merely to count a login cycle.
+separately retained focused gates. The installed wrapper applies the focused
+login verifier automatically through `sophia-record-run`. Before xmonad
+takeover, it reserves a numbered attempt with the release and launch identities.
+After handoff it finalizes that attempt with the session, guard, recovery, and
+lifecycle evidence. A clean attempt requires automatic Kitty startup,
+two-output readiness within eight seconds, a native retirement, normal logout,
+clean protocol and session health, drained native and application state, an
+untriggered guard, and exact TTY restoration. Failed and interrupted attempts
+remain failed or pending ledger entries, so they cannot disappear between
+later clean cycles. Each archive records the launch timestamp and a SHA-256
+digest of the immutable launch identity; duplicate identities fail. The
+broader xmonad and Firefox interaction proofs remain independent gates and are
+not repeated merely to count a login cycle. The no-argument
+`sophia-record-run` form remains a compatibility importer for a completed
+unrecorded run; ordinary installed logins require no recording command.
 `sophia-record-emergency-run`
 applies the independent guard/owner recovery verifier and archives the
 emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived
 lifecycle and rejects mixed commits, modified evidence, duplicate launch
-identities, emergency exits, incomplete input/WM/native cleanup, or fewer than
-the requested number of runs.
+identities, any failed or pending attempt among the latest requested entries,
+emergency exits, incomplete input/WM/native cleanup, or fewer than the
+requested number of runs.
 `sophia-verify-soak`
 requires one clean supported schema-14 through schema-16 completion, the requested elapsed time and action
 counts, and zero WM, Present, callback, native, or cleanup debt.

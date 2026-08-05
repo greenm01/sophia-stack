@@ -26,10 +26,30 @@ identity_log="$state_dir/launch.log"
 runtime_identity_log="$state_dir/runtime-identity.log"
 [[ ! -f "$runtime_identity_log" ]] ||
     mv -f "$runtime_identity_log" "$runtime_identity_log.previous"
-printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s commit=%s release=%s started_at_utc=%s\n' \
+launch_id="$(date -u +%Y%m%dT%H%M%S%NZ)"
+printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s commit=%s release=%s started_at_utc=%s launch_id=%s\n' \
     "$SOPHIA_TTY_PROFILE" "${version:-unknown}" "${commit:-unknown}" "$RELEASE_DIR" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee "$identity_log"
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$launch_id" | tee "$identity_log"
 chmod 600 "$identity_log"
 "$RELEASE_DIR/bin/capture-runtime-identity" "$runtime_identity_log" "$RELEASE_DIR"
 
-exec "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
+# Reserve the ledger slot before takeover. A crash or interrupted handoff then
+# remains a pending attempt and cannot disappear between later clean cycles.
+attempt_dir=""
+if [[ "$SOPHIA_TTY_PROFILE" == xmonad ]]; then
+    if ! attempt_dir="$("$RELEASE_DIR/bin/sophia-record-run" begin)"; then
+        echo "sophia_installed_cycle schema=1 status=untracked phase=begin" >&2
+        exit 1
+    fi
+fi
+
+set +e
+"$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
+session_status=$?
+set -e
+if [[ -n "$attempt_dir" ]] &&
+    ! "$RELEASE_DIR/bin/sophia-record-run" finish "$attempt_dir" "$session_status"; then
+    # Evidence failure must not rewrite the session's real exit status.
+    echo "sophia_installed_cycle schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2
+fi
+exit "$session_status"

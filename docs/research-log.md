@@ -27,6 +27,15 @@ startup, slow readiness, native debt, emergency recovery, repeat recording,
 and a copied archive. The staged immutable installer carries the new verifier;
 three distinct physical installed cycles remain the acceptance boundary.
 
+The installed wrapper now reserves a ledger entry before graphics takeover and
+finalizes it only after the display-manager handoff. A process failure leaves a
+pending entry, while a nonzero or unverifiable session leaves a checksummed
+failed entry. The latest-N verifier includes both states rather than selecting
+only passes. Reservation failure stops takeover, and an atomic directory claim
+prevents simultaneous launch attempts from sharing a sequence number. Fixtures
+prove automatic success, preserved session exit status, failed-attempt
+interruption, fail-closed reservation, and three subsequent clean launches.
+
 ## 2026-08-05: mixed-session control handoffs have explicit boundaries
 
 The complete M8 workload exposed four races after the earlier presentation and
