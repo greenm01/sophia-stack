@@ -21,6 +21,8 @@ require_command() {
 }
 
 require_command cargo
+require_command dbus-daemon
+require_command dbus-run-session
 require_command dracut
 require_command zenity
 require_command xterm
@@ -58,6 +60,8 @@ XMONAD_INCLUDE=()
 
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
 runtime_files=(
+    "$(command -v dbus-daemon)"
+    "$(command -v dbus-run-session)"
     /usr/lib/libEGL.so.1
     /usr/lib/libEGL_mesa.so.0
     /usr/lib/libGLdispatch.so.0
@@ -70,7 +74,11 @@ runtime_files=(
     /usr/bin/zenity
 )
 extra_includes=()
-required_guest_paths=()
+required_guest_paths=(
+    /usr/bin/dbus-daemon
+    /usr/bin/dbus-run-session
+    /usr/share/dbus-1/session.conf
+)
 if [[ "$IMAGE_PROFILE" == m8 ]]; then
     extra_includes+=(--include "$ROOT_DIR/tools/fixtures/qemu_zenity_launcher.sh" /usr/bin/sophia-zenity-launcher)
     FIREFOX_BIN="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
@@ -117,7 +125,7 @@ if [[ "$IMAGE_PROFILE" == m8 ]]; then
         --include "$LVP_ICD" /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         --include "$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html" /usr/share/sophia/firefox_m8_local_page.html
     )
-    required_guest_paths=(
+    required_guest_paths+=(
         /usr/bin/firefox
         /usr/bin/vkcube
         /usr/bin/xmonad
@@ -159,6 +167,7 @@ dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     --include /usr/share/fonts/noto/NotoSans-Regular.ttf \
       /usr/share/fonts/noto/NotoSans-Regular.ttf \
     --include /var/lib/dbus/machine-id /var/lib/dbus/machine-id \
+    --include /usr/share/dbus-1/session.conf /usr/share/dbus-1/session.conf \
     --include /usr/share/glvnd /usr/share/glvnd \
     --include /usr/share/libinput /usr/share/libinput \
     --include /usr/share/glib-2.0/schemas /usr/share/glib-2.0/schemas \
@@ -166,15 +175,13 @@ dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     --include "$XKB_DATA_DIR" "$XKB_DATA_DIR" \
     "$INITRAMFS"
 
-if [[ "$IMAGE_PROFILE" == m8 ]]; then
-    initramfs_listing="$(lsinitrd "$INITRAMFS")"
-    for guest_path in "${required_guest_paths[@]}"; do
-        if ! grep -Fq " ${guest_path#/}" <<<"$initramfs_listing"; then
-            echo "M8 initramfs is missing required path: $guest_path" >&2
-            exit 1
-        fi
-    done
-fi
+initramfs_listing="$(lsinitrd "$INITRAMFS")"
+for guest_path in "${required_guest_paths[@]}"; do
+    if ! grep -Fq " ${guest_path#/}" <<<"$initramfs_listing"; then
+        echo "$IMAGE_PROFILE initramfs is missing required path: $guest_path" >&2
+        exit 1
+    fi
+done
 
 echo "Sophia QEMU guest initramfs built"
 echo "Kernel: $KERNEL_IMAGE"

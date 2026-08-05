@@ -212,11 +212,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
-                wait_for_x11_control_runtime(&state.control_runtime_pending);
-                let server_owner = state
-                    .runtime
-                    .lock()
-                    .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+                let server_owner = lock_x11_request_runtime(
+                    &state.runtime,
+                    &state.control_runtime_pending,
+                )?
                     .input_authority_mut()
                     .server_owner(namespace);
                 if server_owner.is_none_or(|owner| owner == client.raw()) {
@@ -495,10 +494,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     } else {
                         false
                     };
-                    wait_for_x11_control_runtime(&state.control_runtime_pending);
-                    let mut runtime = state.runtime.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                    })?;
+                    let mut runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
                     let mut atoms = state
                         .atoms
                         .lock()

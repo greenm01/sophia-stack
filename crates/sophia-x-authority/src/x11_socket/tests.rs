@@ -6,6 +6,46 @@ use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;
 
 #[test]
+fn pending_control_wins_the_request_runtime_lock_race() {
+    let runtime = Arc::new(Mutex::new(XAuthorityRuntime::new()));
+    let control_pending = Arc::new(AtomicUsize::new(0));
+    let initial_guard = runtime.lock().unwrap();
+    let (request_started_sender, request_started_receiver) = sync_channel(1);
+    let (order_sender, order_receiver) = sync_channel(2);
+
+    let request_runtime = runtime.clone();
+    let request_pending = control_pending.clone();
+    let request_order = order_sender.clone();
+    let request = std::thread::spawn(move || {
+        request_started_sender.send(()).unwrap();
+        let _guard = lock_x11_request_runtime(&request_runtime, &request_pending).unwrap();
+        request_order.send("request").unwrap();
+    });
+    request_started_receiver.recv().unwrap();
+
+    control_pending.fetch_add(1, Ordering::AcqRel);
+    let control_runtime = runtime.clone();
+    let control_count = control_pending.clone();
+    let control = std::thread::spawn(move || {
+        let _guard = control_runtime.lock().unwrap();
+        control_count.fetch_sub(1, Ordering::AcqRel);
+        order_sender.send("control").unwrap();
+    });
+
+    drop(initial_guard);
+    assert_eq!(
+        order_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        "control"
+    );
+    assert_eq!(
+        order_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        "request"
+    );
+    control.join().unwrap();
+    request.join().unwrap();
+}
+
+#[test]
 fn xi_key_selection_bypasses_core_keyboard_startup_wait() {
     assert!(x11_keyboard_route_ready(true, true, false, false));
     assert!(x11_keyboard_route_ready(true, false, true, false));

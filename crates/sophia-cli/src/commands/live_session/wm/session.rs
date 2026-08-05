@@ -297,7 +297,12 @@ impl LiveWmSession {
         let mut transport = WmSocketTransport::new(
             stream,
             WmSocketTransportConfig {
-                response_timeout: Duration::from_millis(500),
+                // The legacy bridge may spend up to three seconds collecting
+                // a bounded WM response. Keep the transport deadline outside
+                // that contract but inside the owner transaction deadline.
+                response_timeout: Duration::from_millis(
+                    SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
+                ),
             },
         );
         let descriptor = self

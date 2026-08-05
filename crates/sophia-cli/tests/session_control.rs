@@ -2,7 +2,8 @@ use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
 
 use sophia_cli::session_control::{
-    SESSION_CONTROL_CAPACITY, SESSION_CONTROL_TIMEOUT, SessionControlFailure, SessionControlQueue,
+    SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT, SESSION_CONTROL_CAPACITY,
+    SESSION_CONTROL_QUEUE_TIMEOUT, SessionControlFailure, SessionControlQueue,
 };
 use sophia_protocol::{SurfaceId, TransactionId};
 use sophia_x_authority::{
@@ -208,7 +209,7 @@ fn undispatched_controls_expire_at_the_total_deadline() {
         .service(
             &sender,
             &receiver,
-            now + SESSION_CONTROL_TIMEOUT,
+            now + SESSION_CONTROL_QUEUE_TIMEOUT,
             &mut completions,
         )
         .unwrap();
@@ -217,6 +218,92 @@ fn undispatched_controls_expire_at_the_total_deadline() {
         Some(SessionControlFailure::TimedOut)
     );
     assert_eq!(queue.metrics().timed_out, 1);
+}
+
+#[test]
+fn dispatched_control_gets_an_independent_acknowledgement_deadline() {
+    let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let now = Instant::now();
+    let command = control(1, 1, surface(1), XAuthorityControlKind::FocusSurface);
+    let mut queue = SessionControlQueue::default();
+    queue.enqueue(command, now).unwrap();
+    let mut completions = Vec::new();
+
+    let dispatched_at = now + SESSION_CONTROL_QUEUE_TIMEOUT - Duration::from_millis(1);
+    queue
+        .service(&sender, &receiver, dispatched_at, &mut completions)
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), command);
+    queue
+        .service(
+            &sender,
+            &receiver,
+            dispatched_at + SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT - Duration::from_millis(1),
+            &mut completions,
+        )
+        .unwrap();
+    assert!(completions.is_empty());
+
+    acknowledgements.send(acknowledgement(command)).unwrap();
+    queue
+        .service(
+            &sender,
+            &receiver,
+            dispatched_at + SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT,
+            &mut completions,
+        )
+        .unwrap();
+    assert_eq!(completions.len(), 1);
+    assert_eq!(completions[0].failure, None);
+    assert_eq!(queue.metrics().timed_out, 0);
+}
+
+#[test]
+fn dispatch_prerequisite_does_not_consume_the_queue_deadline() {
+    let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let now = Instant::now();
+    let command = control(1, 1, surface(1), XAuthorityControlKind::ClearFocus);
+    let mut queue = SessionControlQueue::default();
+    queue.enqueue(command, now).unwrap();
+    let mut completions = Vec::new();
+
+    let prerequisite_completed_at = now + SESSION_CONTROL_QUEUE_TIMEOUT * 2;
+    queue
+        .service_when(
+            &sender,
+            &receiver,
+            prerequisite_completed_at,
+            &mut completions,
+            false,
+        )
+        .unwrap();
+    assert!(completions.is_empty());
+    assert!(commands.try_recv().is_err());
+    queue
+        .service_when(
+            &sender,
+            &receiver,
+            prerequisite_completed_at,
+            &mut completions,
+            true,
+        )
+        .unwrap();
+    assert_eq!(commands.recv().unwrap(), command);
+
+    acknowledgements.send(acknowledgement(command)).unwrap();
+    queue
+        .service(
+            &sender,
+            &receiver,
+            prerequisite_completed_at + Duration::from_millis(1),
+            &mut completions,
+        )
+        .unwrap();
+    assert_eq!(completions.len(), 1);
+    assert_eq!(completions[0].failure, None);
+    assert!(completions[0].queue_dwell >= SESSION_CONTROL_QUEUE_TIMEOUT * 2);
 }
 
 #[test]

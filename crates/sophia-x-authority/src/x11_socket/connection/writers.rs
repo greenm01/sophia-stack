@@ -693,6 +693,27 @@ fn wait_for_x11_control_runtime(control_runtime_pending: &AtomicUsize) {
 }
 
 #[cfg(unix)]
+fn lock_x11_request_runtime<'a>(
+    runtime: &'a Mutex<XAuthorityRuntime>,
+    control_runtime_pending: &AtomicUsize,
+) -> Result<std::sync::MutexGuard<'a, XAuthorityRuntime>, X11SetupSocketError> {
+    loop {
+        wait_for_x11_control_runtime(control_runtime_pending);
+        let runtime = runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
+        // A control can become pending between the pre-lock check and mutex
+        // acquisition. Recheck while holding the lock so that request work
+        // cannot overtake an already-waiting focus or configure command.
+        if control_runtime_pending.load(Ordering::Acquire) == 0 {
+            return Ok(runtime);
+        }
+        drop(runtime);
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(unix)]
 fn lock_x11_control_runtime<'a>(
     runtime: &'a Mutex<XAuthorityRuntime>,
     control_runtime_pending: &AtomicUsize,

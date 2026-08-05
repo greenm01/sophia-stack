@@ -3,6 +3,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mix="$ROOT_DIR/tools/fixtures/qemu_xmonad_m8_mix_pass.log"
 soak="$ROOT_DIR/tools/fixtures/qemu_xmonad_m8_soak_pass.log"
+grep -Fq 'require_command dbus-run-session' "$ROOT_DIR/tools/build_qemu_session_initramfs.sh"
+grep -Fq '/usr/bin/dbus-run-session -- /usr/bin/sophia "$@"' "$ROOT_DIR/tools/qemu_guest_init.sh"
+grep -Fq 'export GTK_A11Y=none' "$ROOT_DIR/tools/qemu_guest_init.sh"
+grep -Fq 'export RUST_LOG=warn' "$ROOT_DIR/tools/qemu_guest_init.sh"
 "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$mix"
 "$ROOT_DIR/tools/verify_qemu_xmonad_m8_soak_evidence.sh" "$soak"
 
@@ -21,6 +25,11 @@ fi
 sed '/status=scroll_complete source=wheel /d' "$mix" > "$tmp"
 if "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2>&1; then
     echo "M8 mix verifier accepted Firefox keyboard scroll fallback" >&2
+    exit 1
+fi
+sed '/anchor=dialog_confirmation /d' "$mix" > "$tmp"
+if "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2>&1; then
+    echo "M8 mix verifier accepted an unpositioned modal confirmation" >&2
     exit 1
 fi
 awk '!removed && /status=axis_batch / { removed=1; next } { print }' "$mix" > "$tmp"

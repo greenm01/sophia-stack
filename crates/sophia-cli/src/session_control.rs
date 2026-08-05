@@ -10,7 +10,8 @@ use sophia_x_authority::{
 };
 
 pub const SESSION_CONTROL_CAPACITY: usize = 32;
-pub const SESSION_CONTROL_TIMEOUT: Duration = Duration::from_millis(500);
+pub const SESSION_CONTROL_QUEUE_TIMEOUT: Duration = Duration::from_millis(500);
+pub const SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionControlKey {
@@ -91,6 +92,7 @@ struct PendingControl {
     command: XAuthorityClientControlCommand,
     key: SessionControlKey,
     queued_at: Instant,
+    dispatch_eligible_at: Option<Instant>,
     dispatched_at: Option<Instant>,
 }
 
@@ -148,6 +150,7 @@ impl SessionControlQueue {
             command,
             key,
             queued_at: now,
+            dispatch_eligible_at: None,
             dispatched_at: None,
         });
         self.metrics.enqueued += 1;
@@ -174,6 +177,13 @@ impl SessionControlQueue {
         dispatch_ready: bool,
     ) -> Result<(), SessionControlFailure> {
         self.receive_acknowledgements(receiver, now, completions)?;
+        if dispatch_ready {
+            for pending in &mut self.pending {
+                if pending.dispatched_at.is_none() && pending.dispatch_eligible_at.is_none() {
+                    pending.dispatch_eligible_at = Some(now);
+                }
+            }
+        }
         self.expire(now, completions);
         if dispatch_ready {
             self.dispatch(sender, now)?;
@@ -247,7 +257,18 @@ impl SessionControlQueue {
     fn expire(&mut self, now: Instant, completions: &mut Vec<SessionControlCompletion>) {
         let mut index = 0;
         while index < self.pending.len() {
-            if now.duration_since(self.pending[index].queued_at) < SESSION_CONTROL_TIMEOUT {
+            let pending = self.pending[index];
+            let deadline_crossed = pending.dispatched_at.map_or_else(
+                || {
+                    pending.dispatch_eligible_at.is_some_and(|eligible_at| {
+                        now.duration_since(eligible_at) >= SESSION_CONTROL_QUEUE_TIMEOUT
+                    })
+                },
+                |dispatched_at| {
+                    now.duration_since(dispatched_at) >= SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT
+                },
+            );
+            if !deadline_crossed {
                 index += 1;
                 continue;
             }

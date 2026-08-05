@@ -133,6 +133,9 @@ if [ "$scenario" = "emergency-recovery" ]; then
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     profile="classic"
     [ "$scenario" = "gtk-confined" ] && profile="confined"
+    # Accessibility is outside this minimal image's GTK rendering/input proof.
+    # Disable its bus lookup explicitly while retaining the real session bus.
+    export GTK_A11Y=none
     expected_stdout="$(printf 'sophia\n.')"
     expected_stdout="${expected_stdout%.}"
     set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms=30000 \
@@ -172,6 +175,10 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || 
         export MOZ_FORCE_DISABLE_E10S=1
         export MOZ_USE_XINPUT2=1
         export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        # The M8 verifier consumes reduced stdout records, not per-frame
+        # tracing. Keep the emulated serial channel current so host input is
+        # ordered against live guest state rather than a stale log backlog.
+        export RUST_LOG=warn
         mkdir -p /tmp/firefox-profile
         printf '%s\n' \
             'user_pref("browser.tabs.remote.autostart", false);' \
@@ -219,9 +226,13 @@ if [ -n "$input_devices" ]; then
 if [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     (
         while ! pidof sophia-x11-wm-bridge >/dev/null 2>&1; do sleep 0.05; done
-        # The host proves the initial focus, pointer, workspace, and layout
-        # sequence before it observes this fault. Keep injection beyond that
-        # bounded prelude so it cannot bisect an authority transaction.
+        # Start the fault clock after the scenario's startup clients exist.
+        # Bridge startup precedes client admission by an unbounded amount on
+        # slower guests, so it cannot safely anchor this recovery boundary.
+        while ! pidof xterm >/dev/null 2>&1; do sleep 0.05; done
+        if [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+            while ! pidof vkcube >/dev/null 2>&1; do sleep 0.05; done
+        fi
         sleep 30
         while :; do
             wm_pid="$(pidof xmonad 2>/dev/null || true)"
@@ -238,7 +249,11 @@ fi
 fi
 
 set +e
-SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 /usr/bin/sophia "$@"
+# Give every application in the guest one session-scoped bus. Modern GTK
+# acquires the bus before opening X, so a bus-less image can strand launchers
+# without ever reaching the authority listener.
+SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+    /usr/bin/dbus-run-session -- /usr/bin/sophia "$@"
 status=$?
 set -e
 

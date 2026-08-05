@@ -749,7 +749,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
     wait_for_socket(&socket_path);
     let mut stream = UnixStream::connect(&socket_path).unwrap();
     stream
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -795,7 +795,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
         ))
         .unwrap();
     let mut peer = UnixStream::connect(&socket_path).unwrap();
-    peer.set_read_timeout(Some(Duration::from_secs(1)))
+    peer.set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     peer.write_all(&setup_request(
         XByteOrder::LittleEndian,
@@ -902,6 +902,10 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
             0x000c,
             &[1000, 700],
         ))
+        .unwrap();
+    // The final read proves silence, so it needs only a short negative window.
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
     let mut unexpected = [0_u8; 1];
     let error = stream.read(&mut unexpected).unwrap_err();

@@ -322,6 +322,18 @@ fn application_admission_outlives_the_longest_wm_transaction() {
 }
 
 #[test]
+fn wm_deadlines_follow_transport_transaction_and_admission_order() {
+    assert!(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC > 3_000);
+    assert!(
+        SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC
+            < u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC)
+    );
+    assert!(
+        u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC) < SESSION_APP_ADMISSION_TIMEOUT_MSEC
+    );
+}
+
+#[test]
 fn production_input_seat_and_explicit_paths_are_distinct_modes() {
     let seat = PersistentXtermSessionConfig::from_args(&[
         "--input-seat=seat0".to_owned(),

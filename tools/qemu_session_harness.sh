@@ -125,6 +125,13 @@ position_left_content_pointer() {
     done
 }
 
+position_left_dialog_confirmation_pointer() {
+    # The fixture places its modal confirmation over the isolated-page anchor.
+    # Preserve that proven target instead of guessing browser chrome geometry.
+    echo "sophia_qemu_xmonad_pointer schema=3 status=positioned anchor=dialog_confirmation source=isolated_page movement=none" |
+        tee -a "$EVIDENCE_FILE"
+}
+
 run_pointer_focus_gesture() {
     local gesture=$1
     local key=$2
@@ -319,21 +326,30 @@ wait_for_firefox_stage() {
 }
 
 isolate_focused_interaction_surface() {
+    local moved_projection_baseline
     local projection_baseline
     local focus_baseline
+    moved_projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=none$')"
+    send_chord_and_wait meta_l+shift+3 '^sophia_live_wm schema=1 status=physical_action_committed action=' interaction-isolate-move
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=none$' "$moved_projection_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_isolation_move_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+
+    projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=none$')"
+    send_chord_and_wait meta_l+3 '^sophia_live_wm schema=1 status=physical_action_committed action=' interaction-isolate-view
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=none$' "$projection_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_isolation_view_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        return 1
+    fi
+
     projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=surface$')"
     focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
-    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+3
-    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+3 phase=interaction-isolate" |
-        tee -a "$EVIDENCE_FILE"
-    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+3
-    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+3 phase=interaction-isolate" |
-        tee -a "$EVIDENCE_FILE"
-    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
-    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+j phase=interaction-isolate-focus" |
-        tee -a "$EVIDENCE_FILE"
+    send_chord_and_wait meta_l+j '^sophia_live_wm schema=1 status=physical_action_committed action=' interaction-isolate-focus
     if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=3 visible_surfaces=1 focus=surface$' "$projection_baseline"; then
-        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_isolation_timeout" |
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=interaction_isolation_focus_projection_timeout" |
             tee -a "$EVIDENCE_FILE"
         return 1
     fi
@@ -370,6 +386,7 @@ restore_focused_interaction_surface() {
 run_firefox_m8_interactions() {
     local page_focus_baseline
     local keyboard_complete=false
+    local clipboard_owner_baseline
     local clipboard_complete=false
     local primary_complete=false
     local scroll_complete=false
@@ -396,8 +413,18 @@ run_firefox_m8_interactions() {
     fi
     wait_for_firefox_stage keyboard
     for _ in $(seq 1 10); do
+        # Re-enter the document after any focus cycle, then wait until the
+        # asynchronous CLIPBOARD owner change is observable before requesting
+        # its value. This keeps the conversion ordered by protocol evidence.
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+l
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" f6
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+a
+        clipboard_owner_baseline="$(evidence_count '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ')"
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+c
+        if ! wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change ' "$clipboard_owner_baseline" 80; then
+            cycle_x11_focus_and_wait firefox-clipboard-refocus || true
+            continue
+        fi
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" tab
         "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" ctrl+v
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=clipboard ' 0 80; then
@@ -511,7 +538,12 @@ run_firefox_m8_interactions() {
             continue
         fi
         echo "sophia_qemu_firefox_m8 schema=7 status=dialog_open surface_snapshot=false modality=dom" | tee -a "$EVIDENCE_FILE"
-        "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left
+        if ! position_left_dialog_confirmation_pointer ||
+            ! "$ROOT_DIR/tools/qemu_qmp_pointer.py" "$QMP_SOCKET" 0 0 1 left; then
+            echo "sophia_qemu_xmonad schema=1 status=failed reason=firefox_dialog_confirmation_send" |
+                tee -a "$EVIDENCE_FILE"
+            return 1
+        fi
         echo "sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-dialog-confirmation" | tee -a "$EVIDENCE_FILE"
         if wait_for_new_evidence '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ' "$dialog_stage_baseline" 800; then
             dialog_complete=true
@@ -740,9 +772,7 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     empty_workspace_chord=meta_l+2
     if [[ "$SCENARIO" == "xmonad-m8-mix" || "$SCENARIO" == "xmonad-m8-soak" ]]; then
         moved_vulkan_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=')"
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+2
-        echo "sophia_qemu_xmonad_input schema=1 status=sent chord=meta_l+shift+2" |
-            tee -a "$EVIDENCE_FILE"
+        send_chord_and_wait meta_l+shift+2 '^sophia_live_wm schema=1 status=physical_action_committed action=' vulkan-workspace-move
         if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=\(surface\|none\)$' "$moved_vulkan_baseline"; then
             echo "sophia_qemu_xmonad schema=1 status=failed reason=vulkan_workspace_move_timeout" |
                 tee -a "$EVIDENCE_FILE"
@@ -751,17 +781,40 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         empty_workspace_chord=meta_l+3
     fi
 
-    chords=("meta_l+k" "meta_l+spc")
-    for chord in "${chords[@]}"; do
-        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
-        echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$chord" | tee -a "$EVIDENCE_FILE"
-        sleep 1
-    done
+    focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    focused_projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$')"
+    send_chord_and_wait meta_l+k '^sophia_live_wm schema=1 status=physical_action_committed action=' prelude-focus
+    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$' "$focused_projection_baseline" \
+        || ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=prelude_focus_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    layout_baseline="$(evidence_count '^sophia_live_wm schema=1 status=layout_committed ')"
+    resized_projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$')"
+    send_chord_and_wait meta_l+spc '^sophia_live_wm schema=1 status=physical_action_committed action=' prelude-layout
+    if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=layout_committed ' "$layout_baseline" \
+        || ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$' "$resized_projection_baseline"; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=prelude_layout_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
     empty_workspace_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$')"
-    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$empty_workspace_chord"
-    echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$empty_workspace_chord" |
-        tee -a "$EVIDENCE_FILE"
-    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$' "$empty_workspace_baseline"; then
+    empty_workspace_reached=false
+    # Viewing a workspace is idempotent, so a bounded resend is safe if TCG
+    # delays the first virtio-keyboard packet beyond the observation window.
+    for _ in $(seq 1 4); do
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$empty_workspace_chord"
+        echo "sophia_qemu_xmonad_input schema=1 status=sent chord=$empty_workspace_chord" |
+            tee -a "$EVIDENCE_FILE"
+        if wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=0 focus=none$' "$empty_workspace_baseline" 80; then
+            empty_workspace_reached=true
+            break
+        fi
+    done
+    if [[ "$empty_workspace_reached" != true ]]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=empty_workspace_projection_timeout" |
             tee -a "$EVIDENCE_FILE"
         exit 1

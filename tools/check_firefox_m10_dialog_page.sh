@@ -19,6 +19,8 @@ require_count() {
 
 require "const dialogOnly = parameters.get('dialog_only') === '1';"
 require "let stage = dialogOnly ? 6 : primaryOnly ? 2 : navigated ? 3 : 0;"
+require "#proof-dialog { position: fixed; inset: 0 auto auto 0;"
+require "#proof-dialog button { min-height: 50vh; margin: 0; }"
 require_count "stage === 6 && (!dialogOnly || event.isTrusted)" 2
 require "document.title = '0'.repeat(225);"
 require "dialogOnly ? 226 : stages[6] + 1"

@@ -75,6 +75,7 @@ axis_routes=$(awk '
 grep -q '^sophia_qemu_firefox_m8 schema=4 status=scroll_complete source=wheel axis_routes=2 keyboard_fallback=false$' "$evidence"
 grep -q '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' "$evidence"
 grep -q '^sophia_qemu_firefox_m8 schema=7 status=dialog_open surface_snapshot=false modality=dom$' "$evidence"
+grep -q '^sophia_qemu_xmonad_pointer schema=3 status=positioned anchor=dialog_confirmation source=isolated_page movement=none$' "$evidence"
 grep -q '^sophia_qemu_xmonad_input schema=1 status=sent pointer=left phase=firefox-dialog-confirmation$' "$evidence"
 grep -q '^sophia_qemu_firefox_m8 schema=7 status=dialog_closed surface_snapshot=false modality=dom$' "$evidence"
 for stage in loaded keyboard clipboard primary scroll resize refocus dialog; do
