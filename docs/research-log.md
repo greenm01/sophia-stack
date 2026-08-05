@@ -26,6 +26,17 @@ both Copy and future Flip ordering exactly once. Reduced snapshot metrics and
 `PresentCopyOwnership.tla` cover capture, promotion, rollback, eviction, live
 debt, and the rule that displayed composited content is compositor-owned.
 
+The paired physical acceptance runs on `39f87687` passed. The bounded GLX run
+remained visibly animated under continuous pointer motion, sustained 59.950
+presentation FPS with a 16.685 ms p95 interval, and balanced 1,193 snapshot
+captures and promotions with matching Copy, Idle, and idle-fence completion.
+The four-Kitty mixed-scene run balanced 146 captures and promotions, reused
+retained imports 356 times, and completed 146 Copy feedback cycles. Both runs
+reported zero rollback, live snapshot or import debt, unexpected protocol
+errors, and cleanup failure. This closes the snapshot correctness gate; the
+conditional three-slot software scanout pool is not justified by these
+results.
+
 ## 2026-08-04: delayed Presents reconcile resolved layout epochs
 
 The first installed run after grouped CPU content selected vkcube's 500-by-500

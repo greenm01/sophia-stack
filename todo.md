@@ -449,9 +449,15 @@ reopen the completed Milestone 9 exit gate.
   reports Copy with Idle before Complete, while terminal failures roll staged
   images back. Bound the store by entries and bytes, expose lifecycle debt,
   and model the transition in `PresentCopyOwnership.tla`.
-- [ ] Re-run the bounded physical GLX and four-Kitty gates. Require positive,
+- [x] Re-run the bounded physical GLX and four-Kitty gates. Require positive,
   equal snapshot capture/promotion counts, Copy cadence, zero rollback in the
-  healthy path, and zero snapshot/import debt at normal logout.
+  healthy path, and zero snapshot/import debt at normal logout. The paired
+  physical runs on `39f87687` passed: GLX sustained 59.950 presentation FPS
+  with a 16.685 ms p95 interval and balanced 1,193 captures/promotions; the
+  four-Kitty run balanced 146 captures/promotions, reused retained imports 356
+  times, and completed 146 Copy feedback cycles. Both runs reported zero
+  rollback, live snapshot/import debt, unexpected protocol errors, or cleanup
+  failure.
 - [ ] If the measured software fallback remains outside that parity gate,
   replace per-frame direct CPU GBM allocation with an output-scoped,
   retirement-fed three-slot scanout pool. Slot state must be plain indexed data
