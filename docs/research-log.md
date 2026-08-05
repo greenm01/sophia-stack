@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: the semantic preflight restores source ownership boundaries
+
+The commit-pinned semantic gate stopped before QEMU because seven Rust files
+exceeded the reviewed 1,000-line source boundary. Six had direct ownership
+seams: WM admission tests, layout commit reduction, native one-shot rendering,
+X input-event writing, routed X delivery, and X routing tests. Each domain now
+lives behind its existing facade without changing its public API or runtime
+order.
+
+The remaining file is the single ordered X11 connection lifecycle, from setup
+through request dispatch and disconnect cleanup. Splitting its control flow
+would scatter one tightly coupled algorithm, so it has one explicit temporary
+cohesion exception. The source-layout audit, formatting checks, offline
+metadata, and complete all-features suite pass after the extraction. The
+commit-pinned semantic gate remains the next acceptance step.
+
 ## 2026-08-05: composited Present owns a renderer snapshot
 
 The retained DMA-BUF path had given X Present `Flip` semantics to an ordinary
