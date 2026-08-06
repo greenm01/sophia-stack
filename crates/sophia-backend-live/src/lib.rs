@@ -24,6 +24,8 @@ mod production_intake;
 mod production_output_runtime;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod production_present_scheduler;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+mod production_renderer_image_handoff;
 mod production_session;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod production_visual_runtime;
@@ -43,6 +45,8 @@ pub use production_intake::*;
 pub use production_output_runtime::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_present_scheduler::*;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub use production_renderer_image_handoff::*;
 pub use production_session::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use production_visual_runtime::*;

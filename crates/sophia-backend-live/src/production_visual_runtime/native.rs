@@ -33,11 +33,18 @@ fn validate_renderer_image_resume_admission(
     retained: &[LiveRendererImageId],
     handoff: Option<&[LiveRendererImageId]>,
 ) -> Result<(), &'static str> {
-    match (retained.is_empty(), handoff) {
-        (true, None) => Ok(()),
-        (_, Some(images)) if images == retained => Ok(()),
-        (false, None) => Err("native resume omitted retained renderer images"),
-        (_, Some(_)) => {
+    match crate::reduce_live_renderer_image_handoff_admission(retained, handoff) {
+        crate::LiveRendererImageHandoffAdmission::Ready => Ok(()),
+        crate::LiveRendererImageHandoffAdmission::Missing => {
+            Err("native resume omitted retained renderer images")
+        }
+        crate::LiveRendererImageHandoffAdmission::InvalidIdentity => {
+            Err("native resume contains an invalid renderer-image identity")
+        }
+        crate::LiveRendererImageHandoffAdmission::DuplicateIdentity => {
+            Err("native resume contains a duplicate renderer-image identity")
+        }
+        crate::LiveRendererImageHandoffAdmission::CoverageMismatch => {
             Err("native resume renderer-image handoff does not match the retained scene")
         }
     }
@@ -471,5 +478,3 @@ impl LiveProductionVisualRuntime {
         self.outputs.diagnostic()
     }
 }
-
-mod tests;

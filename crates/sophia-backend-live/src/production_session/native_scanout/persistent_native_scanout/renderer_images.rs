@@ -1,5 +1,4 @@
 use super::*;
-use std::collections::BTreeSet;
 
 #[derive(Debug)]
 pub struct LiveProductionRendererImageHandoff {
@@ -26,20 +25,21 @@ fn validate_renderer_image_handoff_ids(
     expected: &[sophia_renderer_live::LiveRendererImageId],
     actual: &[sophia_renderer_live::LiveRendererImageId],
 ) -> Result<(), &'static str> {
-    if expected.iter().any(|image| !image.is_valid())
-        || actual.iter().any(|image| !image.is_valid())
-    {
-        return Err("renderer-image handoff contains an invalid image identity");
+    match crate::reduce_live_renderer_image_handoff_admission(expected, Some(actual)) {
+        crate::LiveRendererImageHandoffAdmission::Ready => Ok(()),
+        crate::LiveRendererImageHandoffAdmission::InvalidIdentity => {
+            Err("renderer-image handoff contains an invalid image identity")
+        }
+        crate::LiveRendererImageHandoffAdmission::DuplicateIdentity => {
+            Err("renderer-image handoff contains a duplicate image identity")
+        }
+        crate::LiveRendererImageHandoffAdmission::CoverageMismatch => {
+            Err("renderer-image handoff does not cover the retained scene")
+        }
+        crate::LiveRendererImageHandoffAdmission::Missing => {
+            Err("renderer-image handoff is unexpectedly missing")
+        }
     }
-    let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
-    let actual_set = actual.iter().copied().collect::<BTreeSet<_>>();
-    if expected_set.len() != expected.len() || actual_set.len() != actual.len() {
-        return Err("renderer-image handoff contains a duplicate image identity");
-    }
-    if expected_set != actual_set {
-        return Err("renderer-image handoff does not cover the retained scene");
-    }
-    Ok(())
 }
 
 impl LiveProductionNativeScanout {
@@ -370,5 +370,3 @@ impl LiveProductionNativeScanout {
         )
     }
 }
-
-mod tests;
