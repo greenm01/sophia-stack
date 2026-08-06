@@ -1425,14 +1425,20 @@ work without a repository checkout or development takeover script.
   page-flip callbacks, stuck keys/buttons, presentation starvation, in-flight
   ownership, cleanup debt, or failed TTY restoration.
 - [ ] Record bounded latency and health summaries without logging typed content,
-  clipboard payloads, window titles, or application metadata.
+  clipboard payloads, window titles, or application metadata. The installed
+  soak command now selects the latest immutable normal archive and binds its
+  reduced latency/health summary to checksums, clean lifecycle evidence, the
+  release commit, and exact application digests. The physical two-hour and
+  workday captures remain.
 - [ ] Rotate retained logs and preserve the exact Sophia commit, binary digest,
   kernel, Mesa, Kitty, Firefox, xmonad, output, and input-seat identities. The
   schema-2 runtime identity now records Sophia's executable digest directly,
   and the schema-4 attempt manifest binds that digest to every checksummed
   normal, fallback, watchdog, and emergency archive. Capture, recording, and
   later verification reject a missing, unavailable, or mismatched Sophia
-  digest. A current-release physical soak remains before this item can close.
+  digest. The aggregate soak gate also requires exact Kitty, Firefox, and
+  xmonad digests and needs no mutable live-log path. A current-release physical
+  soak remains before this item can close.
 
 Failures create the next smallest evidence-driven compatibility or lifecycle
 slice. They do not justify broad X11 conformance work. Milestone 12 exits when

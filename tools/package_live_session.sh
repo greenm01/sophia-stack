@@ -59,8 +59,10 @@ install -m 755 tools/record_installed_watchdog_run.sh \
     "$artifact/bin/sophia-record-watchdog-run"
 install -m 755 tools/verify_installed_session_cycles.sh \
     "$artifact/bin/sophia-verify-cycles"
-install -m 755 tools/verify_installed_session_soak.sh \
+install -m 755 tools/verify_installed_soak_archive.sh \
     "$artifact/bin/sophia-verify-soak"
+install -m 755 tools/verify_installed_session_soak.sh \
+    "$artifact/bin/sophia-verify-soak-session"
 install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
 install -m 755 tools/verify_installed_login_cycle.sh \

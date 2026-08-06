@@ -3,6 +3,23 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: The installed soak gate owns its archive
+
+The packaged `sophia-verify-soak` command previously accepted a mutable
+session-log path. It could prove duration, application exercise, health, and
+resource drain, but it did not prove which installed attempt, commit, binary,
+launch, or lifecycle produced that log. It also required the operator to find
+and paste a path after a long run.
+
+The command now selects the latest normal-run ledger entry without arguments
+and verifies its checksums, passed result, schema-4 kind, normal login and
+lifecycle, launch digest and timestamp, release commit, and exact Sophia,
+Kitty, Firefox, and xmonad identities before applying the focused soak budgets.
+Numeric arguments adjust the duration and action thresholds without restoring
+a log-path choreography; an explicit archive remains available for historical
+checks. Fail-closed fixtures cover a failed latest attempt, unavailable Firefox
+identity, a checksummed false Sophia digest, and post-checksum log mutation.
+
 ## 2026-08-06: Installed archives retain the Sophia binary identity
 
 The installed recorder verified `/opt/sophia/current/SHA256SUMS` while a

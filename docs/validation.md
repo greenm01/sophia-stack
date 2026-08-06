@@ -1201,17 +1201,15 @@ sophia-verify-cycles 3
 # Verify the latest automatic Kitty fallback attempt:
 sophia-verify-fallback
 
-# Verify a completed two-hour session with at least ten terminal and five
-# Firefox action launches:
-sophia-verify-soak \
-  ~/.local/state/sophia/xmonad-session/session.log 7200000 10 5
+# Verify the latest archived two-hour session. The default requires at least
+# ten terminal and five Firefox action launches:
+sophia-verify-soak
 
 # Ten clean installed login cycles:
 sophia-verify-cycles 10
 
 # Full eight-hour workday, with proportionally broader app exercise:
-sophia-verify-soak \
-  ~/.local/state/sophia/xmonad-session/session.log 28800000 30 15
+sophia-verify-soak 28800000 30 15
 ```
 
 Run the long gates through the installed `Sophia Firefox Proof` entry so the
@@ -1256,9 +1254,14 @@ lifecycle and rejects mixed commits, modified evidence, duplicate launch
 identities, any failed or pending attempt among the latest requested entries,
 emergency exits, incomplete input/WM/native cleanup, or fewer than the
 requested number of runs.
-`sophia-verify-soak`
-requires one clean supported schema-14 through schema-16 completion, the requested elapsed time and action
-counts, and zero WM, Present, callback, native, or cleanup debt.
+`sophia-verify-soak` selects the latest immutable normal-run archive by
+default. It rechecks archive checksums, the passed result, schema-4 normal-run
+contract, login and lifecycle cleanup, launch identity, commit, exact Sophia,
+Kitty, Firefox, and xmonad digests, and then one clean supported schema-14
+through schema-16 completion. The completion must meet the requested elapsed
+time and action counts with zero WM, Present, callback, native, or cleanup
+debt. An explicit archive directory may be supplied before the thresholds for
+historical verification.
 Each installed launch also rotates a content-free schema-2 runtime identity
 record with the kernel and Mesa versions, the packaged Sophia digest,
 Kitty/Firefox/xmonad binary digests, a hashed input-device identity, and

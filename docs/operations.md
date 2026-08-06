@@ -198,7 +198,12 @@ The gate rechecks release and evidence digests, launch uniqueness, runtime
 identity, two-output startup, page-flip retirement, normal logout, protocol and
 session health, application cleanup, guard state, VT restoration, and the
 display-manager handoff. The longer Milestone 12 gates use the same ledger with
-`sophia-verify-cycles 10` and the documented soak verifier in `validation.md`.
+`sophia-verify-cycles 10`. After a two-hour run, `sophia-verify-soak` selects
+the latest normal archive and verifies its checksums, commit, clean lifecycle,
+exact application digests, latency and health summaries, duration, actions,
+and resource drain. For the workday threshold, run
+`sophia-verify-soak 28800000 30 15`; no log path or manual archive step is
+required.
 
 ## Known Limitations
 

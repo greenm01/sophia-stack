@@ -1,0 +1,49 @@
+sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
+sophia_live_session_startup schema=2 status=ready outputs_ready=2/2 elapsed_msec=650
+sophia_session_app schema=1 status=started id=terminal source=startup
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=terminal source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_session_app schema=1 status=started id=firefox source=action
+sophia_live_wm schema=1 status=layout_committed transaction=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=3 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=4 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=5 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=6 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=7 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=8 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=9 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=10 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=11 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=12 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=13 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=14 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=15 moved_surfaces=1 configure_deliveries=1 outcome=Committed
+sophia_live_wm schema=1 status=focus_committed transaction=15 target=surface
+sophia_live_wm schema=1 status=session_action_committed transaction=16 action=CloseFocused
+sophia_live_wm schema=1 status=session_action_committed transaction=17 action=CloseFocused
+sophia_live_wm schema=1 status=session_action_committed transaction=18 action=CloseFocused
+sophia_live_wm schema=1 status=session_action_committed transaction=19 action=CloseFocused
+sophia_live_wm schema=1 status=session_action_committed transaction=20 action=CloseFocused
+sophia_firefox_m8 schema=1 status=complete stages=8 selection_owner_changes=4 selection_conversions=4 content=redacted
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=500
+sophia_live_output schema=1 status=complete output=1 checksum=10 submissions=500 retirements=500 callbacks=500 nonzero_exports=500
+sophia_live_output schema=1 status=complete output=2 checksum=20 submissions=20 retirements=20 callbacks=20 nonzero_exports=20
+sophia_live_wm schema=1 status=session_action_committed transaction=21 action=Logout
+sophia_live_session_protocol_errors schema=1 expected=2 unexpected=0
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_session schema=16 status=bounded_complete elapsed_msec=7200000 physical_input=enabled physical_events=100 physical_keys_routed=80 physical_pointer_events=20 physical_pointer_routed=20 wm_policy=external wm_requests=30 wm_committed=30 wm_restarts=0 wm_degraded=false native_submissions=500 native_retirements=500 native_frame_uploads=500 native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_in_flight=false native_cleanup_pending=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0
+sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
