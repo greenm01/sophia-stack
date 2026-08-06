@@ -1,0 +1,9 @@
+vnc_client_connect
+vnc_msg_client_key_event
+vnc_msg_client_ext_key_event
+vnc_msg_client_pointer_event
+input_event_key_number
+input_event_key_qcode
+input_event_btn
+input_event_rel
+input_event_abs

@@ -38,6 +38,7 @@ case " $cmdline " in
     *" sophia.scenario=xmonad-m8-launcher "*) scenario="xmonad-m8-launcher" ;;
     *" sophia.scenario=xmonad-m8-mix "*) scenario="xmonad-m8-mix" ;;
     *" sophia.scenario=xmonad-m8-soak "*) scenario="xmonad-m8-soak" ;;
+    *" sophia.scenario=xmonad-interactive "*) scenario="xmonad-interactive" ;;
 esac
 case " $cmdline " in
     *" sophia.two_xterm=1 "*) two_xterm=true ;;
@@ -47,7 +48,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ] || [ "$scenario" = "xmonad-interactive" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -153,7 +154,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         --expect-physical-text=sophia --expect-physical-pointer \
         --inject-surface-resize=640x360 --exit-after-input-proof
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ] || [ "$scenario" = "xmonad-interactive" ]; then
     if [ ! -x /usr/bin/xmonad ]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=xmonad_missing"
         sync
@@ -168,7 +169,13 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
     [ "$scenario" != "xmonad-stale-response" ] || runtime_ms=120000
     [ "$scenario" != "xmonad-m8-mix" ] || runtime_ms=360000
     [ "$scenario" != "xmonad-m8-soak" ] || runtime_ms=2100000
-    set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
+    if [ "$scenario" = "xmonad-interactive" ]; then
+        # This is an operator-owned development session, not an acceptance
+        # clock. It exits only through the ordinary logout action.
+        set -- sophia-live-session --display=:181 --native-scanout
+    else
+        set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
+    fi
     if [ "$scenario" = "xmonad-producer-overload" ]; then
         if [ ! -x /usr/bin/sophia-present-overload-client ]; then
             echo "sophia_qemu_producer_overload schema=1 status=failed reason=application_missing program=/usr/bin/sophia-present-overload-client"
@@ -289,7 +296,7 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
         set -- "$@" --session-app-arg=terminal=-cm --session-app-arg=terminal=-dc
         set -- "$@" --session-start=terminal --session-action-app=terminal=terminal
         echo "sophia_qemu_xmonad schema=1 status=running windows=1 profile=xmonad mode=normal"
-    elif [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+    elif [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ] || [ "$scenario" = "xmonad-interactive" ]; then
         for program in /usr/bin/firefox /usr/bin/vkcube /usr/bin/zenity; do
             if [ ! -x "$program" ]; then
                 echo "sophia_qemu_xmonad schema=1 status=failed reason=m8_application_missing program=$program"
@@ -327,10 +334,18 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
         set -- "$@" --session-app=firefox=/usr/bin/firefox --session-app-arg=firefox=--new-instance --session-app-arg=firefox=--no-remote
         set -- "$@" --session-app-arg=firefox=--profile --session-app-arg=firefox=/tmp/firefox-profile
         set -- "$@" --session-app-arg=firefox=file:///usr/share/sophia/firefox_m8_local_page.html
-        set -- "$@" --session-start=terminal --session-start=vulkan
+        if [ "$scenario" = "xmonad-interactive" ]; then
+            set -- "$@" --session-start=terminal
+        else
+            set -- "$@" --session-start=terminal --session-start=vulkan
+        fi
         set -- "$@" --session-action-app=terminal=terminal --session-action-app=launcher=launcher --session-action-app=firefox=firefox
-        set -- "$@" --firefox-m8-proof
-        echo "sophia_qemu_xmonad schema=1 status=running windows=2 profile=xmonad mode=m8-app-mix"
+        if [ "$scenario" = "xmonad-interactive" ]; then
+            echo "sophia_qemu_xmonad schema=1 status=running windows=1 profile=xmonad mode=interactive proof_watchdog=off fault_injection=off"
+        else
+            set -- "$@" --firefox-m8-proof
+            echo "sophia_qemu_xmonad schema=1 status=running windows=2 profile=xmonad mode=m8-app-mix"
+        fi
     else
         set -- "$@" --secondary-terminal
         echo "sophia_qemu_xmonad schema=1 status=running windows=2 profile=xmonad"
@@ -422,7 +437,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     else
         echo "sophia_qemu_guest schema=1 status=failed reason=gtk_session_exit scenario=$scenario exit_status=$status"
     fi
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-producer-overload" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ] || [ "$scenario" = "xmonad-interactive" ]; then
     if [ "$status" -eq 0 ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else

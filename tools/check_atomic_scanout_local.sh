@@ -42,6 +42,12 @@ bash -n tools/qemu_xmonad_stale_response_acceptance.sh \
     tools/verify_qemu_xmonad_stale_response_evidence.sh \
     tools/check_qemu_xmonad_stale_response_verifier.sh
 tools/check_qemu_xmonad_stale_response_verifier.sh
+bash -n tools/qemu_xmonad_interactive.sh \
+    tools/reduce_qemu_interactive_trace.sh \
+    tools/verify_qemu_xmonad_interactive_evidence.sh \
+    tools/check_qemu_xmonad_interactive_verifier.sh
+python3 tools/check_qemu_rfb_input.py
+tools/check_qemu_xmonad_interactive_verifier.sh
 bash -n tools/qemu_xmonad_m8_mix_acceptance.sh
 bash -n tools/qemu_xmonad_m8_soak_acceptance.sh
 bash -n tools/verify_qemu_xmonad_m8_mix_evidence.sh

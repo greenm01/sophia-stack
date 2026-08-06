@@ -457,6 +457,33 @@ count other than 300. QEMU does not claim VRR because virtio-gpu does not expose
 the physical property contract. Keep the physical TTY proof for the AMD
 multi-connector/VRR gates and operator-typed input evidence.
 
+For exploratory interaction, use the dedicated one-shot guest instead of the
+acceptance soak:
+
+```sh
+tools/qemu_xmonad_interactive.sh
+```
+
+Run it from a graphical terminal. It rebuilds the isolated M8 image, opens its
+Unix-domain VNC display, and leaves the terminal, Vulkan, Firefox, launcher,
+xmonad, and two-output session under operator control. It has no proof clock,
+scheduled bridge restart, automated input, disk, network, host DRM access, or
+host VT access. Use the session freely and finish with Super-Shift-Q; closing
+the viewer does not impersonate a clean logout. Set
+`SOPHIA_QEMU_INTERACTIVE_VIEWER=none` only when a viewer will attach from
+another graphical session; the harness prints the private socket path.
+
+The interactive path enables QEMU's VNC and input-core tracepoints only into a
+FIFO. `tools/reduce_qemu_interactive_trace.sh` discards their values and
+retains boundary-kind markers and bounded keyboard-count checkpoints. Q35's
+legacy `vmmouse` path is disabled so the viewer and guest share the declared
+relative virtio mouse. The final verifier correlates those host markers with
+virtio discovery, Engine key/button/motion intake and routing,
+focused-client and output projection, a manually launched terminal, later
+typed input, a focus change, close, normal logout, native drain, and clean
+resource release. It rejects raw trace names so keycodes, pointer coordinates,
+and button values cannot enter retained evidence.
+
 The `xmonad-m7` scenario additionally waits for two visible managed surfaces
 and proves plain-click focus and click-drag focus as independent sequences.
 Before each gesture, Super-J establishes keyboard focus away from the target

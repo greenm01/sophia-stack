@@ -212,6 +212,20 @@ page-flip retirement, xterm pixel export/input change, no callback rejection,
 and no in-flight frame or cleanup debt. Evidence defaults to
 `/tmp/sophia-qemu-session.log`; build artifacts stay under ignored `.qemu/`.
 
+For a manually controlled guest, run the dedicated interactive command from a
+graphical terminal:
+
+```sh
+tools/qemu_xmonad_interactive.sh
+```
+
+It opens a private Unix-domain VNC viewer and does not inherit the unattended
+soak's timer, injected bridge restart, or scripted input. Super-Shift-Q performs
+the normal guest logout and poweroff. The guest disables Q35's legacy
+`vmmouse`, keeping viewer input on the declared relative virtio mouse. Its
+reduced evidence is written to `/tmp/sophia-qemu-xmonad-interactive.log`; raw
+input values are consumed through a FIFO and are never retained.
+
 ### Optional Remote Hardware Target
 
 When the development workstation must keep its graphical session, use a second

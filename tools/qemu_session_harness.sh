@@ -10,7 +10,7 @@ SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" && "$SCENARIO" != "xmonad-interactive" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -20,6 +20,10 @@ if [[ "$GPU_MODE" != software && "$GPU_MODE" != virgl ]]; then
 fi
 if [[ ("$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-producer-overload" || "$SCENARIO" == "xmonad-render-contention") && "$GPU_MODE" != virgl ]]; then
     echo "$SCENARIO requires SOPHIA_QEMU_GPU_MODE=virgl" >&2
+    exit 1
+fi
+if [[ "$SCENARIO" == "xmonad-interactive" && "$GPU_MODE" != software ]]; then
+    echo "xmonad-interactive requires the visible software VNC backend" >&2
     exit 1
 fi
 if [[ "$TWO_XTERM" != "0" && "$TWO_XTERM" != "1" ]]; then
@@ -46,8 +50,12 @@ VIRTUAL_CPUS="${SOPHIA_QEMU_CPUS:-2}"
 VNC_SOCKET="${SOPHIA_QEMU_VNC_SOCKET:-$OUT_DIR/display.sock}"
 QMP_SOCKET="${SOPHIA_QEMU_QMP_SOCKET:-$OUT_DIR/qmp.sock}"
 SERIAL_FIFO="${SOPHIA_QEMU_SERIAL_FIFO:-$OUT_DIR/serial.fifo}"
+INTERACTIVE_TRACE_FIFO="${SOPHIA_QEMU_INTERACTIVE_TRACE_FIFO:-$OUT_DIR/interactive-trace.fifo}"
+INTERACTIVE_VIEWER="${SOPHIA_QEMU_INTERACTIVE_VIEWER:-auto}"
 QEMU_PID=""
 LOGGER_PID=""
+TRACE_LOGGER_PID=""
+VIEWER_PID=""
 
 evidence_count() {
     grep -c "$1" "$EVIDENCE_FILE" 2>/dev/null || true
@@ -650,7 +658,15 @@ cleanup() {
         kill "$LOGGER_PID" 2>/dev/null || true
         wait "$LOGGER_PID" 2>/dev/null || true
     fi
-    rm -f "$VNC_SOCKET" "$QMP_SOCKET" "$SERIAL_FIFO"
+    if [[ -n "$TRACE_LOGGER_PID" ]] && kill -0 "$TRACE_LOGGER_PID" 2>/dev/null; then
+        kill "$TRACE_LOGGER_PID" 2>/dev/null || true
+        wait "$TRACE_LOGGER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$VIEWER_PID" ]] && kill -0 "$VIEWER_PID" 2>/dev/null; then
+        kill "$VIEWER_PID" 2>/dev/null || true
+        wait "$VIEWER_PID" 2>/dev/null || true
+    fi
+    rm -f "$VNC_SOCKET" "$QMP_SOCKET" "$SERIAL_FIFO" "$INTERACTIVE_TRACE_FIFO"
 }
 trap cleanup EXIT
 
@@ -663,6 +679,23 @@ if ! command -v python3 >/dev/null 2>&1; then
     echo "missing python3; on Void install it with:" >&2
     echo "  sudo xbps-install -S python3" >&2
     exit 1
+fi
+if [[ "$SCENARIO" == "xmonad-interactive" ]]; then
+    if [[ "$INTERACTIVE_VIEWER" != auto && "$INTERACTIVE_VIEWER" != none ]]; then
+        echo "SOPHIA_QEMU_INTERACTIVE_VIEWER must be auto or none" >&2
+        exit 1
+    fi
+    if [[ "$INTERACTIVE_VIEWER" == auto ]]; then
+        command -v vncviewer >/dev/null 2>&1 || {
+            echo "xmonad-interactive requires vncviewer or SOPHIA_QEMU_INTERACTIVE_VIEWER=none" >&2
+            exit 1
+        }
+        if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+            echo "automatic xmonad-interactive viewing requires a graphical session" >&2
+            echo "set SOPHIA_QEMU_INTERACTIVE_VIEWER=none to attach from another session" >&2
+            exit 1
+        fi
+    fi
 fi
 if [[ ! -r "$KERNEL_IMAGE" ]]; then
     echo "guest kernel is not readable: $KERNEL_IMAGE" >&2
@@ -702,15 +735,35 @@ else
     )
 fi
 
+machine="q35,accel=kvm:tcg"
+if [[ "$SCENARIO" == "xmonad-interactive" ]]; then
+    # Keep the interactive viewer on the declared virtio mouse. Q35's optional
+    # vmmouse otherwise wins QEMU's pointer selection without a guest consumer.
+    machine+=",vmport=off"
+fi
+
 mkdir -p "$(dirname "$EVIDENCE_FILE")"
 : > "$EVIDENCE_FILE"
-rm -f "$VNC_SOCKET" "$QMP_SOCKET" "$SERIAL_FIFO"
+rm -f "$VNC_SOCKET" "$QMP_SOCKET" "$SERIAL_FIFO" "$INTERACTIVE_TRACE_FIFO"
 mkfifo "$SERIAL_FIFO"
+trace_args=()
+if [[ "$SCENARIO" == "xmonad-interactive" ]]; then
+    mkfifo "$INTERACTIVE_TRACE_FIFO"
+    "$ROOT_DIR/tools/reduce_qemu_interactive_trace.sh" \
+        "$INTERACTIVE_TRACE_FIFO" "$EVIDENCE_FILE" &
+    TRACE_LOGGER_PID=$!
+    trace_args=(
+        -trace
+        "events=$ROOT_DIR/tools/config/qemu_interactive_trace_events,file=$INTERACTIVE_TRACE_FIFO"
+    )
+fi
 
 if [[ "$SCENARIO" == "emergency-recovery" ]]; then
     echo "sophia_qemu_recovery schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio chord=ctrl-alt-backspace" | tee -a "$EVIDENCE_FILE"
 elif [[ "$SCENARIO" == gtk-* ]]; then
     echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
+elif [[ "$SCENARIO" == "xmonad-interactive" ]]; then
+    echo "sophia_qemu_interactive schema=2 status=starting isolation=manual display_backend=vnc-unix control=qmp-unix pointer=virtio-relative vmport=off host_drm=none host_vt=none guest_network=none storage=none proof_watchdog=off fault_injection=off" | tee -a "$EVIDENCE_FILE"
 elif [[ "$SCENARIO" == xmonad-* ]]; then
     if [[ "$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-producer-overload" ]]; then
         echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
@@ -729,7 +782,7 @@ done < "$SERIAL_FIFO" | tee -a "$EVIDENCE_FILE" &
 LOGGER_PID=$!
 
 "$QEMU_BIN" \
-    -machine q35,accel=kvm:tcg \
+    -machine "$machine" \
     -smp "$VIRTUAL_CPUS" \
     -m "$MEMORY_MIB" \
     -nodefaults \
@@ -737,6 +790,7 @@ LOGGER_PID=$!
     "${display_args[@]}" \
     -monitor none \
     -qmp "unix:$QMP_SOCKET,server=on,wait=off" \
+    "${trace_args[@]}" \
     -serial stdio \
     "${gpu_args[@]}" \
     -device virtio-keyboard-pci \
@@ -746,6 +800,73 @@ LOGGER_PID=$!
     -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
+
+if [[ "$SCENARIO" == "xmonad-interactive" ]]; then
+    if [[ "$INTERACTIVE_VIEWER" == auto ]]; then
+        while [[ ! -S "$VNC_SOCKET" ]]; do
+            kill -0 "$QEMU_PID" 2>/dev/null || break
+            sleep 0.05
+        done
+        [[ -S "$VNC_SOCKET" ]] || {
+            echo "sophia_qemu_interactive schema=1 status=failed reason=display_socket_missing" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        }
+        vncviewer "$VNC_SOCKET" >/dev/null 2>&1 &
+        VIEWER_PID=$!
+        echo "sophia_qemu_interactive schema=1 status=viewer_started program=vncviewer" |
+            tee -a "$EVIDENCE_FILE"
+    else
+        echo "sophia_qemu_interactive schema=1 status=viewer_waiting socket=$VNC_SOCKET" |
+            tee -a "$EVIDENCE_FILE"
+        echo "Attach with: vncviewer $VNC_SOCKET"
+    fi
+
+    interactive_ready=false
+    while kill -0 "$QEMU_PID" 2>/dev/null; do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=1 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            interactive_ready=true
+            break
+        fi
+        sleep 0.05
+    done
+    if [[ "$interactive_ready" == true ]]; then
+        echo "sophia_qemu_interactive schema=1 status=ready actions=freeform shutdown=meta_l+shift+q" |
+            tee -a "$EVIDENCE_FILE"
+        echo "Interactive Sophia is ready; use it freely, then log out with Super+Shift+Q."
+    fi
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    wait "$TRACE_LOGGER_PID"
+    trace_status=$?
+    TRACE_LOGGER_PID=""
+    if [[ -n "$VIEWER_PID" ]]; then
+        kill "$VIEWER_PID" 2>/dev/null || true
+        wait "$VIEWER_PID" 2>/dev/null
+    fi
+    VIEWER_PID=""
+    set -e
+    cleanup
+    if [[ "$interactive_ready" != true || "$qemu_status" -ne 0 \
+        || "$logger_status" -ne 0 || "$trace_status" -ne 0 ]]; then
+        echo "sophia_qemu_interactive schema=1 status=failed reason=guest_exit ready=$interactive_ready qemu_exit=$qemu_status logger_exit=$logger_status trace_exit=$trace_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_interactive_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_interactive schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
+    exit 0
+fi
 
 if [[ "$SCENARIO" == "emergency-recovery" ]]; then
     guard_ready=false

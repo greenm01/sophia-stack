@@ -1518,15 +1518,20 @@ Sophia's native-X authority model.
 Interactive QEMU is useful for reproduction but is not a physical daily-driver
 blocker. Work on it only when it shortens one of the active milestones.
 
-- [ ] Replace the acceptance-oriented `xmonad-m8-soak` guest with a dedicated
+- [x] Replace the acceptance-oriented `xmonad-m8-soak` guest with a dedicated
   `xmonad-interactive` scenario: manual shutdown, no scheduled bridge restart,
-  and no proof watchdog.
-- [ ] Retain host and guest diagnostics that distinguish host grab delivery,
+  and no proof watchdog. The one-shot runner packages the M8 application set,
+  opens a private Unix-domain VNC viewer, accepts freeform input, and powers the
+  guest off only after ordinary xmonad logout.
+- [x] Retain host and guest diagnostics that distinguish host grab delivery,
   guest device discovery, key/button/motion intake, Engine routing, and
-  focus/display targeting without recording input content.
+  focus/display targeting without recording input content. QEMU's VNC and
+  input-core tracepoints feed a FIFO reducer that emits only one stage marker
+  per input kind; the verifier rejects any retained raw trace record.
 - [ ] Gate the supported interactive backend with visible pointer movement,
   terminal launch, typed text, focus change, application close, and clean
-  manual shutdown.
+  manual shutdown. The fail-closed verifier, mutations, and an end-to-end RFB
+  capture pass; one human-visible viewer capture remains.
 
 ## Evidence-Driven Compatibility Follow-ups
 
