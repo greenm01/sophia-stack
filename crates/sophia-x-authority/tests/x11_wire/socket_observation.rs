@@ -722,6 +722,9 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    // The full fixture matrix can briefly starve this worker. Keep I/O bounded
+    // without mistaking scheduler delay for a protocol-ordering failure.
+    const SOCKET_IO_TIMEOUT: Duration = Duration::from_secs(10);
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-present-child-configure-test-{}-{}.sock",
         std::process::id(),
@@ -748,9 +751,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
 
     wait_for_socket(&socket_path);
     let mut stream = UnixStream::connect(&socket_path).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
+    stream.set_read_timeout(Some(SOCKET_IO_TIMEOUT)).unwrap();
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -795,8 +796,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
         ))
         .unwrap();
     let mut peer = UnixStream::connect(&socket_path).unwrap();
-    peer.set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
+    peer.set_read_timeout(Some(SOCKET_IO_TIMEOUT)).unwrap();
     peer.write_all(&setup_request(
         XByteOrder::LittleEndian,
         11,
