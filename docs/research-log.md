@@ -104,6 +104,14 @@ before its full-damage repaint. Sophia additionally preserves its explicit
 renderer-generation handoff because its retained scene stores renderer-owned
 image identities across native-owner replacement.
 
+The installed `d29e2f2c` rerun passed as native-chrome archive `0006`. The VT
+transition drained with no abandoned scanout, captured two images, restored
+both after tty7 reacquisition, and retired the first nonzero retained mixed
+frame before later Present work. The session routed 28 physical keys, completed
+all chrome generations, and logged out normally with zero native submit,
+retirement, callback, renderer-worker, protocol, or cleanup failures. This
+closes the focused installed switch-away/switch-back gate.
+
 ## 2026-08-06: The final chrome capture is an installed one-shot proof
 
 The schema-2 native chrome verifier was strict, but its physical runner still

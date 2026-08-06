@@ -1351,11 +1351,15 @@ Compatibility follow-up outside the Firefox exit gate:
   replacement exporter had no renderer worker yet. Replacement output owners
   now initialize before snapshot import, and the ordered transition is covered
   by a reducer plus the concrete exporter ownership seam.
-- [ ] Re-run the installed physical switch-away/switch-back proof. Require a
+- [x] Re-run the installed physical switch-away/switch-back proof. Require a
   nonempty captured/restored renderer-image handoff, visible quiet-client
   content after tty7 reacquisition, continued input and presentation, normal
   logout, and zero renderer, native-submit, or cleanup failures before treating
-  the installed candidate as stable.
+  the installed candidate as stable. Commit `d29e2f2c` passed native-chrome
+  archive `0006`: two images were captured and restored, the retained mixed
+  frame retired after tty7 reacquisition, 28 physical keys were routed, and the
+  session logged out normally with clean renderer, presentation, and native
+  ownership ledgers.
 - [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.
