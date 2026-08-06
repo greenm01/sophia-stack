@@ -8,7 +8,7 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -729,6 +729,111 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-stale-response" ]]; then
+    ready=false
+    for _ in $(seq 1 800); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_stale_response schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$')"
+    echo "sophia_qemu_stale_response schema=1 status=launch_begin chord=meta_l+ret" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+ret
+    echo "sophia_qemu_stale_response schema=1 status=launch_sent chord=meta_l+ret" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence \
+        '^sophia_session_app schema=2 status=started id=transient source=action ' 0 400 \
+        || ! wait_for_new_evidence \
+            '^sophia_session_app schema=2 status=completed id=transient source=action .* reason=normal_exit_after_surface ' 0 800 \
+        || ! wait_for_new_evidence \
+            '^sophia_live_wm schema=3 status=response_rejected reason=stale_layout .* source=manage removed_registered_surfaces=0$' 0 800 \
+        || ! wait_for_new_evidence \
+            '^sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true$' 0 800; then
+        echo "sophia_qemu_stale_response schema=1 status=failed reason=stale_recovery_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    restart_line="$(awk '/^sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true$/ { print NR; exit }' "$EVIDENCE_FILE")"
+    recovered=false
+    for _ in $(seq 1 800); do
+        if evidence_has_after_line \
+            '^sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout$' \
+            "$restart_line" \
+            && evidence_has_after_line \
+                '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$' \
+                "$restart_line" \
+            && (( $(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$') > projection_baseline )); then
+            recovered=true
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$recovered" != true ]]; then
+        echo "sophia_qemu_stale_response schema=1 status=failed reason=reseed_projection_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_stale_response schema=1 status=recovered restarts=1 visible_surfaces=2" |
+        tee -a "$EVIDENCE_FILE"
+
+    action_baseline="$(evidence_count '^sophia_live_wm schema=1 status=physical_action_committed action=')"
+    focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    echo "sophia_qemu_stale_response schema=1 status=action_probe_begin chord=meta_l+j" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+    if ! wait_for_new_evidence \
+        '^sophia_live_wm schema=1 status=physical_action_committed action=' \
+        "$action_baseline" 400 \
+        || ! wait_for_new_evidence \
+            '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' \
+            "$focus_baseline" 400; then
+        echo "sophia_qemu_stale_response schema=1 status=failed reason=post_restart_action_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_stale_response schema=1 status=action_probe_committed chord=meta_l+j focus=applied" |
+        tee -a "$EVIDENCE_FILE"
+
+    echo "sophia_qemu_stale_response schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_stale_response schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_stale_response schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_stale_response_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::commands::live_session::{
     LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
-    PendingLiveWmLayout, PersistentLiveLayout, committed_relayout_nodes,
+    LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, committed_relayout_nodes,
     live_layout_node_from_facts, planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
@@ -994,3 +994,4 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
 
 include!("wm_session_tests/admission.rs");
 include!("wm_session_tests/direct_map.rs");
+include!("wm_session_tests/response_lifetime.rs");

@@ -571,6 +571,14 @@ reopen the completed Milestone 9 exit gate.
   same run also completes startup, ordered WM response rebasing, bridge
   restart, action-window launch/close, empty-workspace logout, and native drain
   with zero stale responses or protocol errors.
+- [x] Treat a stale external-WM response as a speculative-peer lifetime
+  boundary. Reconcile surfaces removed while the request was in flight, stop
+  the peer before dispatching queued work, and reseed a fresh xmonad process
+  from committed state. The isolated QEMU race maps a short-lived Xterm inside
+  the bridge's 80 ms response quiet period, observes its normal exit, rejects
+  one stale `ManageSurface` reply, restarts exactly once, preserves two
+  persistent Xterms, cycles focus afterward, and drains with no
+  `UnknownSurface`, protocol, transport, or native-resource debt.
 - [x] Prove the four-Kitty Tall layout has one full-height pane and three
   pixel-matched stack panes with no staging geometry, flashing, or corruption.
   With the active 14-pixel top reservation, the physical capture produced one

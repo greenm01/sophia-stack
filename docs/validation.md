@@ -498,6 +498,24 @@ timeouts or WM restarts, clean session health, and drained native and
 application ownership. `tools/check_qemu_xmonad_launch_burst_verifier.sh`
 mutation-tests this evidence contract and runs from the local regression gate.
 
+The short-lived-surface recovery gate is:
+
+```sh
+tools/qemu_xmonad_stale_response_acceptance.sh
+```
+
+Its isolated profile keeps two persistent Xterms while a Super-Enter action
+maps an Xterm whose child exits inside the xmonad bridge's response quiet
+period. The verifier requires the action surface to be observed before normal
+exit, rejects the resulting stale `ManageSurface` reply, and requires exactly
+one transport restart plus a committed-layout reseed. Both persistent surfaces
+must survive, a post-restart Super-J focus transition must reach X11, and
+normal logout must drain application, transport, input, presentation, and
+native ownership. `UnknownSurface`, a second restart, incorrect stale-response
+accounting, or missing causal ordering fails the gate. The mutation checker
+`tools/check_qemu_xmonad_stale_response_verifier.sh` runs from the local
+regression gate.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

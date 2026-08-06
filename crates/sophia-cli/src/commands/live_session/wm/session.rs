@@ -5,30 +5,6 @@ use sophia_cli::wm_recovery::{
 
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct LiveWmLayoutFingerprint(Vec<SurfaceId>);
-
-impl LiveWmLayoutFingerprint {
-    fn capture(layout: &PersistentLiveLayout, state: &WmWorkspaceState) -> Self {
-        Self(
-            layout
-                .layers
-                .keys()
-                .chain(layout.planning_surfaces.keys())
-                .copied()
-                .filter(|surface| layout.is_policy_managed(*surface))
-                .filter(|surface| state.surface_workspace(*surface).is_some())
-                .collect(),
-        )
-    }
-
-    fn still_matches(&self, layout: &PersistentLiveLayout) -> bool {
-        self.0
-            .iter()
-            .all(|surface| layout.knows_surface(*surface))
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveWmProposalSource {
     Action(WmActionId),
@@ -756,16 +732,25 @@ impl LiveWmSession {
                 fingerprint,
                 source,
                 ..
-            } => {
-                if !fingerprint.still_matches(layout) {
+            } => match fingerprint
+                .reconcile_response_lifetime(layout, &mut self.workspace_state)
+            {
+                LiveWmResponseLifetime::RestartAndReseed {
+                    removed_registered_surfaces,
+                } => {
                     self.stale_responses = self.stale_responses.saturating_add(1);
                     println!(
-                        "sophia_live_wm schema=2 status=response_rejected reason=stale_layout transaction={} source={}",
+                        "sophia_live_wm schema=3 status=response_rejected reason=stale_layout transaction={} source={} removed_registered_surfaces={removed_registered_surfaces}",
                         completion.transaction.raw(),
                         source.reduced_name(),
                     );
+                    // The peer applied this request to its private model before
+                    // the response became stale. Do not send later work until
+                    // a fresh process is seeded from committed state.
+                    self.request_transport_restart("stale_response", None);
                     None
-                } else {
+                }
+                LiveWmResponseLifetime::Current => {
                     let planning_state =
                         planning_state_for_response(&self.workspace_state, &queued.packet)?;
                     Some(self.proposal_from_response(
@@ -776,9 +761,9 @@ impl LiveWmSession {
                         output,
                     )?)
                 }
-            }
+            },
         };
-        if proposal.is_none() {
+        if proposal.is_none() && !self.force_transport_restart {
             self.pump_transport()?;
         }
         Ok(proposal)

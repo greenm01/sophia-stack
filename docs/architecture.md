@@ -169,6 +169,12 @@ layout transaction, and applies workspace and session effects only after the
 atomic layout commit. The worker owns no scene, focus, workspace, application,
 or protocol state.
 
+A stale reply is also a transport-lifetime boundary. The external WM may have
+already applied that request to its private model, so the owner reconciles any
+removed committed surfaces, stops the peer before sending later queued work,
+and reseeds a fresh process from committed Engine state. It never tries to
+continue against the speculative peer state represented by the rejected reply.
+
 Owner completion evidence separates child-reap and physical-input phase maxima
 from WM transport round-trip and queue-dwell measurements. A slow policy
 process may delay a policy result up to its bounded timeout, but it cannot hold
