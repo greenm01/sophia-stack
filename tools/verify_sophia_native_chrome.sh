@@ -93,6 +93,77 @@ awk '
     END { exit !(phase == 14) }
 ' "$SESSION_LOG" || fail "chrome phases or atomic resize boundaries are incomplete or out of order"
 
+# A matched layout epoch is prepared state, not visual completion. Require
+# both distinct surface candidates to reach their exact retirement before the
+# next chrome generation may advance.
+awk '
+    function value(name,    field, parts) {
+        for (field = 1; field <= NF; field++) {
+            split($field, parts, "=")
+            if (parts[1] == name) return parts[2]
+        }
+        return ""
+    }
+    function complete(generation) {
+        return epoch[generation] != "" \
+            && matched[generation] \
+            && armed_count[generation] == 2 \
+            && surface_count[generation] == 2 \
+            && retired_count[generation] == 2
+    }
+    /^sophia_live_wm_policy schema=2 status=applied generation=[234] / {
+        generation = value("generation") + 0
+        if (active != 0 && !complete(active)) failed = 1
+        active = generation
+        next
+    }
+    active != 0 && /^sophia_live_resize_epoch schema=1 status=held / {
+        if (value("surfaces") == "2" && epoch[active] == "") {
+            epoch[active] = value("transaction")
+        }
+        next
+    }
+    active != 0 && /^sophia_live_resize_epoch schema=3 status=visual_armed / {
+        if (value("epoch") != epoch[active]) next
+        candidate = value("transaction") ":" value("surface")
+        slot = active SUBSEP candidate
+        if (!(slot in armed)) {
+            armed[slot] = value("width") "x" value("height")
+            candidate_generation[candidate] = active
+            armed_count[active]++
+            surface_slot = active SUBSEP value("surface")
+            if (!(surface_slot in armed_surface)) {
+                armed_surface[surface_slot] = 1
+                surface_count[active]++
+            }
+        }
+        next
+    }
+    active != 0 && /^sophia_live_resize_epoch schema=1 status=committed / {
+        if (value("transaction") == epoch[active] && value("matched_surfaces") == "2") {
+            matched[active] = 1
+        }
+        next
+    }
+    /^sophia_live_resize_epoch schema=3 status=visual_committed / {
+        candidate = value("transaction") ":" value("surface")
+        generation = candidate_generation[candidate]
+        slot = generation SUBSEP candidate
+        extent = value("width") "x" value("height")
+        if (generation != 0 && armed[slot] == extent && !(slot in retired)) {
+            retired[slot] = 1
+            retired_count[generation]++
+        }
+    }
+    END {
+        if (active != 0 && !complete(active)) failed = 1
+        for (generation = 2; generation <= 4; generation++) {
+            if (!complete(generation)) failed = 1
+        }
+        exit failed
+    }
+' "$SESSION_LOG" || fail "a two-surface chrome epoch did not retire both exact visual candidates"
+
 grep -Eq '^sophia_live_session_health schema=1 status=clean .*pending_input=0 .*wm_degraded=false$' \
     "$SESSION_LOG" || fail "session health did not drain cleanly"
 grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete .*native_submit_failures=0 .*native_retire_failures=0 .*native_cleanup_pending=false ' \

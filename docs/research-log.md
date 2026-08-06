@@ -24,8 +24,15 @@ Runnable coalescing now keeps the newest transaction per surface. Same-surface
 overload remains bounded, while distinct surfaces retain FIFO order and exact
 retirement ownership. Regressions cover both two-surface release in one epoch
 and the observed ordering where one staged Present becomes runnable before the
-second surface arrives. A fresh installed native-chrome run remains the
-physical acceptance boundary.
+second surface arrives. The native-chrome verifier now requires both distinct
+armed candidates to retire at their exact extents before the next policy
+generation may advance.
+
+Installed commit `6a5bc833` passed native-chrome archive `0004`. Ring-wide,
+frame-only, and combined policy each delivered two Configures, armed two exact
+surface candidates, and retired both before advancing. The archive records 14
+routed physical keys, two connected outputs, normal logout, clean native drain,
+and no protocol, submission, retirement, or cleanup debt.
 
 ## 2026-08-06: Interactive QEMU is separate from acceptance choreography
 
