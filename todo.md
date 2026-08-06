@@ -24,7 +24,7 @@ physical input, focus authority, scene state, rendering, presentation, and
 scanout. X11 is the sole supported application protocol; the retired Wayland
 and XLibre prototypes remain under `research/` as architectural evidence.
 
-The development TTY profile now establishes:
+The installed daily-driver candidate now establishes:
 
 - Guarded two-output startup with automatic Kitty, keyboard, pointer, focus,
   atomic xmonad resize, presentation, and clean teardown.
@@ -35,15 +35,13 @@ The development TTY profile now establishes:
 - Native-X Kitty and Firefox protocol coverage plus unattended two-output QEMU
   mix and soak evidence.
 
-This remains development evidence: the captured lifecycle reports
-`installed=false`, `build=true`, and `manual_service=true`. Milestone 9's
-commit-pinned promotion ledger passed all five gates on commit `727c716d`:
-unattended QEMU semantics, native chrome, four-Kitty hardware smoke, xmobar
-hardware smoke, and independent emergency recovery. The current renderer uses
-one persistent composition target and frame surface with measured reuse,
-balanced import-cache teardown, and a drained renderer-worker ledger. The next
-product milestone is the combined physical Firefox workload; installed-login,
-repeat-cycle, and workday-soak requirements remain later gates.
+Milestones 10 and 11 established the integrated physical Firefox workflow and
+the repository-independent installed release. The current candidate has
+commit-pinned normal, fallback, watchdog, emergency, native-chrome, and
+switch-away/switch-back archives with exact runtime identity and clean
+ownership teardown. Milestone 12 now owns the remaining promotion boundary:
+ten consecutive installed cycles, a two-hour interactive soak, and one full
+workday on one immutable build.
 
 ## Daily-Driver Promotion Contract
 
@@ -1305,116 +1303,6 @@ Compatibility follow-up outside the Firefox exit gate:
 
 - [ ] Run the same deterministic wheel/keyboard/pointer fixture in Chromium as
   an independent native-X consumer after the Chromium package is installed.
-
----
-
-## Milestone 11: Installed Daily-Driver Candidate
-
-- [x] Establish two strict KDL 2 configuration domains: XDG
-  `sophia/config.kdl` for session/Engine mechanism and `sophia/wm.kdl` only
-  for a Sophia-native WM. External WMs retain their native configuration.
-- [x] Add single-source discovery, safe file admission, compiled defaults,
-  immutable SHA-256 snapshots, strict schema/cross-reference validation,
-  public check/print commands, parent-directory inotify, last-known-good
-  retention, and whole-file pending-restart semantics.
-- [x] Apply the initial live-safe core slice at owner-loop boundaries:
-  future application launches, idle key-repeat replacement, fallback chrome,
-  and diagnostics. Engine-owned border rendering now consumes runtime style
-  instead of a backend hard-code.
-- [x] Split compositor chrome into explicit focus-ring and frame roles. Reserve
-  stable Engine-owned clearance inside each WM allocation, derive client
-  content once through a checked data-oriented geometry system, keep
-  client-positioned surfaces ineligible, and lower semantic borders through
-  one shared fixed-band path so wide chrome cannot cover application pixels.
-- [x] Make native chrome ownership an explicit WM API capability. Keep the X11
-  compatibility bridge chrome-blind, route external WMs through the core
-  fallback, and hold candidate width changes behind the same committed
-  relayout boundary used by native policy.
-- [x] Complete the physical schema-2 proof for ring-only, frame-only, and
-  combined chrome. Require an atomic 2→6 width transition with no content
-  occlusion, partial geometry, focus resize, bar decoration, or input loss.
-  Reduced aggregate evidence and fail-closed fixtures now cover each policy,
-  resize, and composition boundary. The installed `Sophia Native Chrome Proof`
-  entry packages the native WM, applies the ordered sequence automatically,
-  and retains a commit-pinned immutable archive. Installed commit `e07afa0f`
-  passed archive `0002` with two outputs, all six ordered phases, 48 routed
-  physical keys, normal logout, clean native drain, and exact VT restoration.
-- [x] Restore renderer-image ownership across in-session VT switches. Native
-  chrome attempt `0001` showed that KMS recreation discarded the renderer
-  table while runtime state retained its opaque image IDs, poisoning every
-  resumed export with `InvalidTarget`. Quiesced replacement now transfers only
-  promoted compositor-owned snapshots through bounded DMA-BUF leases, restores
-  exact unique coverage before resume can queue retained content, and drops
-  stale identities after an unexpected revoke. Deterministic regressions bind
-  the exact-coverage and resume-admission rules. Installed attempt `0005` then
-  exposed restore-before-owner ordering: both snapshots were captured, but the
-  replacement exporter had no renderer worker yet. Replacement output owners
-  now initialize before snapshot import, and the ordered transition is covered
-  by a reducer plus the concrete exporter ownership seam.
-- [x] Re-run the installed physical switch-away/switch-back proof. Require a
-  nonempty captured/restored renderer-image handoff, visible quiet-client
-  content after tty7 reacquisition, continued input and presentation, normal
-  logout, and zero renderer, native-submit, or cleanup failures before treating
-  the installed candidate as stable. Commit `d29e2f2c` passed native-chrome
-  archive `0006`: two images were captured and restored, the retained mixed
-  frame retired after tty7 reacquisition, 28 physical keys were routed, and the
-  session logged out normally with clean renderer, presentation, and native
-  ownership ledgers.
-- [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
-  generation-ordered policy-update/ack packets, stale rejection, and an
-  Engine idle-shortcut application reducer.
-- [x] Carry native-WM policy updates and acknowledgements through the
-  supervised live transport without requiring an existing binding to trigger
-  a request; update bindings, action policy, workspace policy, and active
-  chrome as one idle-boundary transaction.
-- [x] Add guarded physical hot-reload proof tooling: valid live edit, invalid
-  edit
-  retaining last-known-good state, restart-required edit with no partial
-  apply, atomic replacement, deletion/recreation, and external-WM native
-  config isolation. The native-WM runner is
-  `tools/start_sophia_native_hot_reload_tty3.sh`; the external-xmonad core
-  runner is `tools/start_sophia_xmonad_config_reload_tty3.sh`. Both have
-  ordered sequence logs and negative-fixture verifiers. Their commit-pinned
-  physical captures remain.
-- [x] Promote one immutable, versioned release and greetd entry that uses no
-  source build, repository-relative binary, temporary path, manual `sudo`,
-  process kill, or service repair during ordinary login.
-- [x] Preserve the independent emergency path, a known-good fallback session,
-  and a documented rollback procedure. The installed `Sophia Recovery Proof`
-  entry now fixes an opt-in 45-second process-external deadline and packages a
-  strict repository-independent recorder. The Kitty entry now automatically
-  reserves and finalizes a separate checksummed fallback attempt, and its
-  fail-closed verifier covers the one-Kitty, WM-disabled, two-output, physical
-  input, clean-shutdown, and exact VT-recovery contract. The watchdog entry
-  applies the same pre-takeover reservation and automatic finalization to its
-  status-124 proof. A status-130 ordinary session writes a separate verified
-  emergency archive while leaving its pre-reserved normal attempt failed.
-  Installed commit `4cc84913` passed fallback archive `0005`, watchdog archive
-  `0003`, and emergency archive `0002`, including exact runtime identity,
-  checksums, clean ownership release, and VT restoration.
-- [x] Add startup diagnostics that identify the installed version and exact
-  preflight, guard, takeover, session, or handoff failure without exposing
-  application content.
-- [x] Validate three consecutive installed logins, normal logouts, one
-  emergency recovery, and successful fallback-session login. Normal-cycle
-  recording now uses a dedicated login/startup/logout verifier instead of the
-  obsolete full operator choreography. The installed wrapper reserves every
-  attempt before takeover and finalizes it after handoff; failed and pending
-  entries therefore interrupt the latest-three gate. Every archive carries a
-  checksummed, unique launch identity, and the cycle gate rejects duplicated
-  sessions and mixed commits. The fallback entry uses the same automatic
-  attempt discipline in its own ledger and rejects modified, failed, pending,
-  wrong-profile, or incomplete evidence. Installed commit `4cc84913` passed
-  normal archives `0003` through `0005` with two outputs, unique launches,
-  normal logout, and exact VT restoration; fallback `0005`, watchdog `0003`,
-  and emergency `0002` pass the same commit-pinned archive contract. The cycle
-  verifier can retain that contiguous gate through `0005` after later recovery
-  attempts without skipping failed or pending ledger entries.
-- [x] Document supported hardware, required services, known limitations, and
-  the operator commands for status, logs, stop, recovery, and rollback.
-
-Milestone 11 exits when three normal logins and the independent recovery path
-work without a repository checkout or development takeover script.
 
 ---
 
