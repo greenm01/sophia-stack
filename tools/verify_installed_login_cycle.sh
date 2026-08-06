@@ -83,7 +83,7 @@ output_count="$(grep -Ec \
     '^sophia_live_output schema=1 status=complete output=[0-9]+ .*nonzero_exports=[1-9][0-9]*$' \
     "$SESSION_LOG" || true)"
 (( output_count == 2 )) || fail "expected two clean output summaries; found $output_count"
-require_line '^sophia_live_native_page_flip schema=1 status=retired output=[0-9]+ ' \
+require_line '(^|[[:space:]])sophia_live_native_page_flip schema=1 status=retired output=[0-9]+ ' \
     "$SESSION_LOG" "no native page flip retired"
 
 mapfile -t completions < <(

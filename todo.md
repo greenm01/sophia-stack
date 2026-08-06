@@ -1396,7 +1396,11 @@ Compatibility follow-up outside the Firefox exit gate:
   sessions and mixed commits. The fallback entry uses the same automatic
   attempt discipline in its own ledger and rejects modified, failed, pending,
   wrong-profile, or incomplete evidence. Three physical installed cycles plus
-  commit-pinned emergency, watchdog, and fallback runs remain.
+  commit-pinned emergency, watchdog, and fallback runs remain. The first
+  `02505e81` normal attempt retired nine kernel page flips and drained cleanly,
+  but exposed a verifier-only mismatch with the production tracing prefix.
+  Login verification now accepts the same structured payload boundary as the
+  fallback gate; the immutable failed attempt remains in the ledger.
 - [x] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 

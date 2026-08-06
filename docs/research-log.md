@@ -3,6 +3,21 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: Installed login proof accepts the production trace envelope
+
+The first normal installed run on `02505e81` retired nine asynchronous kernel
+page flips, reported 16 ms maximum submit-to-flip latency, and drained cleanly.
+Its recorder nevertheless marked the attempt failed because the focused login
+verifier required the page-flip schema at byte zero. Production emits that
+record through `tracing`, after its timestamp, level, target, and ANSI state.
+
+The login verifier now uses the same whitespace-delimited structured-payload
+boundary as the fallback verifier. It still requires a genuine retirement and
+rejects a log with that payload removed. A fixture wraps the passing record in
+the production trace envelope so formatting metadata cannot invalidate later
+installed evidence. Archive `0002` remains an immutable failed attempt; a new
+run must supersede it.
+
 ## 2026-08-06: Recovery evidence belongs to one launch
 
 The live session rotated its launch, runtime identity, lifecycle, input-guard,

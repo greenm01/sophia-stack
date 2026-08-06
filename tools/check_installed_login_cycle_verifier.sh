@@ -11,6 +11,19 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
 
 "$VERIFY" "$SESSION" "$GUARD" "$RECOVERY"
 
+# Native page-flip records use tracing, whose production formatter prepends
+# timestamp, level, target, and ANSI state before the stable schema payload.
+sed $'s/^sophia_live_native_page_flip /\033[2m2026-08-06T10:25:02Z\033[0m INFO native_scanout: \033[0m sophia_live_native_page_flip /' \
+    "$SESSION" >"$TEMP_FILE"
+"$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY"
+
+grep -Fv 'sophia_live_native_page_flip schema=1 status=retired ' \
+    "$SESSION" >"$TEMP_FILE"
+if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "login-cycle verifier accepted a session without a page-flip retirement" >&2
+    exit 1
+fi
+
 grep -Fv 'status=session_action_committed transaction=6 action=Logout' \
     "$SESSION" >"$TEMP_FILE"
 if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
