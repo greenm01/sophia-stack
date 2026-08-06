@@ -81,8 +81,9 @@ use process_supervision::{
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use startup_readiness::{
     StartupSurfacePresentationEvidence, all_startup_outputs_presented,
-    independent_native_output_presented, rects_intersect, startup_output_evidence,
-    startup_submission_requirement, startup_surface_visual_detail, synchronous_modeset_record,
+    independent_native_output_presented, rects_intersect, startup_native_recovery_reason,
+    startup_output_evidence, startup_submission_requirement, startup_surface_visual_detail,
+    synchronous_modeset_record,
 };
 use wm_transport_worker::{WmTransportPolicyEvent, WmTransportSubmitError, WmTransportWorker};
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};

@@ -700,16 +700,14 @@
             );
             std::io::stdout().flush()?;
         }
-        let mixed_without_visible_pixels = !startup_content_ready
-            && !retired_present_surfaces.is_empty()
-            && focused_surface.is_some();
-        let recovery_due = (missing_output_callback
-            && started.elapsed() >= Duration::from_millis(750))
-            || (mixed_without_visible_pixels
-                && started.elapsed() >= Duration::from_millis(1_500));
+        // Pixel content is application-readiness evidence, not transport
+        // liveness. A valid black Present may have more client work queued;
+        // rebuilding its renderer here would invalidate retained snapshots.
+        let recovery_reason =
+            startup_native_recovery_reason(missing_output_callback, started.elapsed());
         if !startup_ready_reported
             && !startup_native_recovery_attempted
-            && recovery_due
+            && recovery_reason.is_some()
             && runtime.is_some()
             && native_scanout.is_some()
             && seat_controller.is_some()
@@ -761,11 +759,9 @@
             );
             println!(
                 "sophia_live_session_startup schema=3 status=recovered attempt=1 reason={} outcome={} drained={} abandoned_scanouts={}",
-                if missing_output_callback {
-                    "missing_output_callback"
-                } else {
-                    "no_visible_mixed_pixels"
-                },
+                recovery_reason
+                    .expect("startup recovery requires an admitted transport reason")
+                    .reduced_name(),
                 suspended.outcome.reduced_name(),
                 suspended.outcome.drained(),
                 suspended.abandoned_scanouts,

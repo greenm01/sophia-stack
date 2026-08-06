@@ -1,6 +1,28 @@
 use sophia_protocol::Rect;
 use sophia_protocol::SurfaceId;
 use std::collections::BTreeMap;
+use std::time::Duration;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StartupNativeRecoveryReason {
+    MissingOutputCallback,
+}
+
+impl StartupNativeRecoveryReason {
+    pub(super) const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::MissingOutputCallback => "missing_output_callback",
+        }
+    }
+}
+
+pub(super) fn startup_native_recovery_reason(
+    missing_output_callback: bool,
+    elapsed: Duration,
+) -> Option<StartupNativeRecoveryReason> {
+    (missing_output_callback && elapsed >= Duration::from_millis(750))
+        .then_some(StartupNativeRecoveryReason::MissingOutputCallback)
+}
 
 #[derive(Debug, Default)]
 pub(super) struct StartupSurfacePresentationEvidence {

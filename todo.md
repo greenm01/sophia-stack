@@ -1296,8 +1296,10 @@ Compatibility follow-up outside the Firefox exit gate:
   now applies the same pre-takeover reservation and automatic finalization to
   its status-124 proof. A status-130 ordinary session now automatically writes
   a separate verified emergency archive while leaving its pre-reserved normal
-  attempt failed. Commit-pinned emergency, watchdog, and fallback captures
-  remain.
+  attempt failed. The first current-release fallback exposed an invalid
+  content-to-transport transition: a valid black Present triggered native
+  recovery while later client work was queued. Recovery now requires a
+  missing page-flip callback; the commit-pinned fallback recapture remains.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.

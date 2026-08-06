@@ -1,7 +1,7 @@
 #![cfg(test)]
 use super::startup_readiness::{
-    StartupOutputEvidence, StartupSurfacePresentationEvidence, all_startup_outputs_presented,
-    startup_surface_visual_detail,
+    StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,
+    all_startup_outputs_presented, startup_native_recovery_reason, startup_surface_visual_detail,
 };
 use super::{
     BufferSource, CommittedSurfaceState, FirefoxM8StageProof, FirefoxM10DialogProof,
@@ -249,6 +249,23 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
         callbacks: 0,
         synchronous_modeset: true,
     }]));
+}
+
+#[test]
+fn startup_native_recovery_requires_objective_transport_stall() {
+    assert_eq!(
+        startup_native_recovery_reason(false, Duration::from_secs(30)),
+        None,
+        "valid black client content must remain under the readiness deadline"
+    );
+    assert_eq!(
+        startup_native_recovery_reason(true, Duration::from_millis(749)),
+        None
+    );
+    assert_eq!(
+        startup_native_recovery_reason(true, Duration::from_millis(750)),
+        Some(StartupNativeRecoveryReason::MissingOutputCallback)
+    );
 }
 
 #[test]
