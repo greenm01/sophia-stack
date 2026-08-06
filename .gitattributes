@@ -1,0 +1,5 @@
+# Keep GitHub's language bar focused on product and specification code.
+* -linguist-detectable
+*.rs linguist-detectable -linguist-documentation -linguist-vendored -linguist-generated
+*.tla linguist-detectable -linguist-documentation -linguist-vendored -linguist-generated
+*.c linguist-detectable -linguist-documentation -linguist-vendored -linguist-generated

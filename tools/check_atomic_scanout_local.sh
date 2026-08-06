@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 
 cargo fmt --check
 tools/audit_source_layout.sh
+tools/check_github_language_visibility.sh
 cargo check --offline -p sophia-cli --features atomic-scanout-smoke-live --quiet
 cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test backend_evidence --quiet
 cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test input_proof --quiet
