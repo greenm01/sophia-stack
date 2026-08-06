@@ -66,6 +66,20 @@ require_line \
 require_line \
     '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' \
     "$SESSION_LOG" "both outputs did not establish a startup baseline"
+mapfile -t startup_outputs < <(
+    grep -E '^sophia_live_native_startup_output schema=1 status=presented output=[0-9]+ proof=synchronous_modeset submission=1$' \
+        "$SESSION_LOG"
+)
+(( ${#startup_outputs[@]} == 2 )) ||
+    fail "expected two synchronously presented startup outputs"
+[[ "$(printf '%s\n' "${startup_outputs[@]}" | sed -n 's/.* output=\([0-9][0-9]*\) .*/\1/p' | sort -u | wc -l)" == 2 ]] ||
+    fail "startup output evidence contains duplicate output identities"
+# A damage-idle output keeps its proven startup modeset. Requiring a redundant
+# flip there would defeat unchanged-frame suppression; active content must
+# still retire asynchronously somewhere in the session.
+require_line \
+    '(^|[[:space:]])sophia_live_native_page_flip schema=1 status=retired output=[0-9]+ ' \
+    "$SESSION_LOG" "no asynchronous page flip retired"
 require_line \
     '^sophia_live_session_startup schema=2 status=content_ready source=stable_present_scanout nonzero_rgb_pixels=[1-9][0-9]*$' \
     "$SESSION_LOG" "fallback never retired visible Kitty pixels"
@@ -81,9 +95,6 @@ startup_msec="$(field "$startup" elapsed_msec)" ||
     fail "startup readiness took ${startup_msec:-unknown}ms (limit: 8000ms)"
 
 for output in 1 2; do
-    require_line \
-        "(^|[[:space:]])sophia_live_native_page_flip schema=1 status=retired output=${output} " \
-        "$SESSION_LOG" "fallback output $output did not retire a page flip"
     require_line \
         "^sophia_live_output schema=1 status=complete output=${output} .*nonzero_exports=[1-9][0-9]*$" \
         "$SESSION_LOG" "fallback output $output has no visible export summary"

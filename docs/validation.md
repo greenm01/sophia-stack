@@ -1129,8 +1129,10 @@ unrecorded run; ordinary installed logins require no recording command.
 The Kitty entry reserves and finalizes a separate immutable fallback attempt
 the same way. `sophia-verify-fallback` rejects a failed or pending latest
 attempt, modified archive, wrong profile or commit, external WM, missing
-two-output retirement, absent physical input, emergency-guard use, dirty
-shutdown, or incomplete VT restoration.
+per-output startup presentation, no asynchronous scene retirement, absent
+physical input, emergency-guard use, dirty shutdown, or incomplete VT
+restoration. A damage-idle output retains its proven synchronous startup
+modeset instead of issuing a redundant page flip.
 The dedicated recovery entry likewise reserves and finalizes a watchdog
 attempt automatically. `sophia-verify-watchdog` rejects an unexpected exit,
 local emergency trigger, changed deadline, modified archive, wrong profile or

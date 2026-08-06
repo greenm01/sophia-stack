@@ -1310,9 +1310,11 @@ Compatibility follow-up outside the Firefox exit gate:
   an external WM retains allocation ownership. This keeps compositor chrome
   inside the output and leaves X Authority's client geometry unchanged. The
   installed `a752ca27` recapture confirmed the +2+9 target and complete chrome
-  on the first output. The full fallback gate remains open because its
-  verifier rejects the idle second output's synchronous startup presentation
-  when no later asynchronous page flip occurs there.
+  on the first output. The fallback verifier now follows the established
+  damage-idle output contract: every output needs a unique synchronous startup
+  presentation, while active scene work must retire asynchronously somewhere.
+  Archive `0004` passes that corrected session contract; one fresh immutable
+  installed fallback recording remains.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.

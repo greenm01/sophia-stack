@@ -26,9 +26,20 @@ if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     echo "fallback verifier accepted slow startup" >&2
     exit 1
 fi
-grep -Fv 'status=retired output=2 ' "$SESSION" >"$TEMP_FILE"
+grep -Fv 'status=retired output=1 ' "$SESSION" >"$TEMP_FILE"
 if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
-    echo "fallback verifier accepted a missing output retirement" >&2
+    echo "fallback verifier accepted no asynchronous retirement" >&2
+    exit 1
+fi
+grep -Fv 'status=presented output=2 proof=synchronous_modeset' "$SESSION" >"$TEMP_FILE"
+if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "fallback verifier accepted a missing startup output" >&2
+    exit 1
+fi
+sed 's/output=2 proof=synchronous_modeset/output=1 proof=synchronous_modeset/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "fallback verifier accepted duplicate startup output identities" >&2
     exit 1
 fi
 sed 's/physical_keys_routed=8/physical_keys_routed=0/' "$SESSION" >"$TEMP_FILE"
