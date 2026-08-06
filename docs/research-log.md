@@ -3,6 +3,23 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: The final chrome capture is an installed one-shot proof
+
+The schema-2 native chrome verifier was strict, but its physical runner still
+depended on a checkout, an on-login release build, and a separately retained
+sequence file. The installed release now packages the native WM and guarded
+driver as `Sophia Native Chrome Proof`. One menu selection reserves an attempt,
+advances ring-only, frame-only, and combined modes, and finalizes a checksummed
+archive after normal logout.
+
+The shared installed-attempt ledger accepts explicit bounded extra evidence and
+verifier inputs, keeping reservation, launch identity, lifecycle, and checksum
+semantics common rather than cloning them for chrome. The archive verifier
+binds the sequence commit to the release and fails closed on incomplete
+transitions, lost physical input, output/native debt, emergency recovery,
+modified evidence, or identity drift. The current commit still needs one
+physical installed capture before the Milestone 11 chrome item can close.
+
 ## 2026-08-06: Consecutive-cycle evidence has a stable endpoint
 
 Installed commit `4cc84913` passed normal archives `0003` through `0005`, then

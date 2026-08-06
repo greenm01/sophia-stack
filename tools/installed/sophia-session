@@ -12,6 +12,7 @@ export SOPHIA_REQUIRE_RUNTIME_DIR=true
 export SOPHIA_REQUIRE_LOCAL_VT=true
 export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
 export SOPHIA_X11_WM_BRIDGE_BIN="$RELEASE_DIR/target/release/sophia-x11-wm-bridge"
+export SOPHIA_NATIVE_WM_BIN="$RELEASE_DIR/target/release/sophia-wm-demo"
 export SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"
 export SOPHIA_TTY_MODE_HELPER="$RELEASE_DIR/tools/sophia_tty_mode.py"
 
@@ -49,6 +50,10 @@ case "$attempt_mode" in
     watchdog)
         attempt_record="$RELEASE_DIR/bin/sophia-record-watchdog-run"
         attempt_result_record=sophia_installed_watchdog
+        ;;
+    native-chrome)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-native-chrome-run"
+        attempt_result_record=sophia_installed_native_chrome
         ;;
 esac
 # Reserve the ledger slot before takeover. A crash or interrupted handoff then

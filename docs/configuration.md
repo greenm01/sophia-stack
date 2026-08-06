@@ -137,6 +137,11 @@ From a logged-in TTY 3, run:
 tools/start_sophia_native_hot_reload_tty3.sh
 ```
 
+For an installed release, select `Sophia Native Chrome Proof` in greetd. It
+uses the same sequence without a checkout or build and automatically reserves,
+finalizes, and checksums a commit-pinned archive. After normal logout, run
+`sophia-verify-native-chrome` from a text session.
+
 The launcher uses a private runtime `wm.kdl`; it does not modify the user's
 default configuration. After two Kitty surfaces are visible, it advances a
 2-pixel ring to 6 pixels, rejects an invalid edit, rejects deletion while

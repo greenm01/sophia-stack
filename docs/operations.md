@@ -44,13 +44,15 @@ tools/install_live_session.sh
 The command builds before requesting privilege, verifies every artifact
 digest, installs a new immutable directory below `/opt/sophia/releases`, and
 atomically updates `current` while retaining the former release as `previous`.
-It installs four greetd entries:
+It installs five greetd entries:
 
 - `Sophia xmonad (Experimental)` is the ordinary candidate.
 - `Sophia Kitty (Baseline)` is the known-good reduced fallback.
 - `Sophia Firefox Proof` runs the integrated browser evidence workflow.
 - `Sophia Recovery Proof` adds a process-external 45-second watchdog. It is an
   evidence gate, not the ordinary desktop.
+- `Sophia Native Chrome Proof` advances ring-only, frame-only, and combined
+  native-WM chrome and records one immutable physical proof.
 
 ## Status And Logs
 
@@ -62,9 +64,9 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal, fallback, emergency, and watchdog
-attempts. An `OK` line for every packaged file is expected. Investigate any
-checksum failure before launching or rolling back.
+runtime identity, and the newest normal, fallback, emergency, watchdog, and
+native-chrome attempts. An `OK` line for every packaged file is expected.
+Investigate any checksum failure before launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
 
@@ -77,6 +79,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic fallback attempts | `sophia/promotion/fallback-runs/` |
 | automatic emergency archives | `sophia/promotion/emergency-runs/` |
 | automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
+| automatic native-chrome attempts | `sophia/promotion/native-chrome-runs/` |
 | Firefox proof archives | `sophia/promotion/firefox-runs/` |
 
 Every active launch, runtime-identity, session, input-guard, recovery, and
@@ -105,6 +108,8 @@ The command signals the outer session wrapper, which performs bounded child
 cleanup and restores terminal state. Do not kill Sophia, xmonad, Kitty, or
 Firefox individually; that bypasses the owner responsible for cleanup and
 weakens the retained evidence.
+`sophia-stop` discovers the sole active installed profile; an explicit
+`sophia-stop native` remains available for diagnostics.
 
 ## Emergency Recovery And Fallback
 
@@ -189,6 +194,23 @@ cycle gate—and the wrapper writes a separate verified emergency archive. The
 emergency verifier requires both the guard and live owner to observe the chord,
 drained client keys and native presentation, graceful process ownership, the
 installed lifecycle and runtime identities, and exact VT restoration.
+
+`Sophia Native Chrome Proof` starts two Kitty windows under the packaged native
+WM and advances the focus ring from 2 to 6 pixels, retains that state across an
+invalid edit and deletion, applies a 4-pixel frame, and finishes with a 2-pixel
+ring plus 6-pixel frame. Confirm that each stage is complete, focus and type in
+both windows, then use `Super+Shift+Q` for a normal logout. The entry archives
+the ordered sequence automatically. Verify it from a text session with:
+
+```sh
+sophia-verify-native-chrome
+```
+
+The verifier binds the sequence to the installed commit and requires both
+output baselines, an asynchronous page flip, routed physical keys, atomic
+two-surface resize epochs, exact ring/frame composition, clean native drain,
+an untriggered guard, and exact VT restoration. An early logout, timeout,
+emergency exit, modified log, or mismatched release remains a failed attempt.
 
 Verify the latest three consecutive attempts with:
 

@@ -1,5 +1,66 @@
 # Shared immutable-attempt ledger for installed Sophia session profiles.
 
+# Proof profiles may add bounded evidence without forking reservation, identity,
+# finalization, or checksum semantics.
+declare -p SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES >/dev/null 2>&1 ||
+    declare -a SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES=()
+declare -p SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS >/dev/null 2>&1 ||
+    declare -a SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS=()
+declare -p SOPHIA_ATTEMPT_SESSION_EVIDENCE >/dev/null 2>&1 ||
+    declare -a SOPHIA_ATTEMPT_SESSION_EVIDENCE=(
+        session.log input-guard.log recovery.log
+    )
+SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME:-}"
+SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH:-}"
+
+sophia_installed_attempt_validate_evidence_contract() {
+    (( ${#SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES[@]} ==
+        ${#SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS[@]} )) || {
+        echo "installed attempt extra-evidence arrays have different lengths" >&2
+        return 1
+    }
+    local target
+    declare -A evidence_targets=(
+        [session.log]=1
+        [input-guard.log]=1
+        [recovery.log]=1
+        [lifecycle.log]=1
+    )
+    for target in "${SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS[@]}"; do
+        [[ "$target" =~ ^[0-9A-Za-z._-]+$ ]] || {
+            echo "installed attempt has an unsafe evidence name: $target" >&2
+            return 1
+        }
+        [[ -z "${evidence_targets[$target]:-}" ]] || {
+            echo "installed attempt has a duplicate evidence name: $target" >&2
+            return 1
+        }
+        evidence_targets[$target]=1
+    done
+    for target in "${SOPHIA_ATTEMPT_SESSION_EVIDENCE[@]}"; do
+        [[ "$target" =~ ^[0-9A-Za-z._-]+$ \
+            && -n "${evidence_targets[$target]:-}" ]] || {
+            echo "installed attempt has an unknown verifier input: $target" >&2
+            return 1
+        }
+    done
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \
+        || -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH" ]]; then
+        [[ "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" =~ ^[a-z][a-z0-9_]*$ \
+            && -f "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH" ]] || {
+            echo "installed attempt has an invalid auxiliary binary contract" >&2
+            return 1
+        }
+        local release_root resolved_binary
+        release_root="$(readlink -f "$SOPHIA_ATTEMPT_PREFIX/current")"
+        resolved_binary="$(readlink -f "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH")"
+        [[ "$resolved_binary" == "$release_root/"* ]] || {
+            echo "installed attempt auxiliary binary is outside the release" >&2
+            return 1
+        }
+    fi
+}
+
 sophia_installed_attempt_load_identity() {
     [[ -s "$SOPHIA_ATTEMPT_IDENTITY_LOG" ]] || {
         echo "installed session identity log is missing: $SOPHIA_ATTEMPT_IDENTITY_LOG" >&2
@@ -51,6 +112,17 @@ sophia_installed_attempt_load_identity() {
         echo "installed Sophia binary digest is unavailable" >&2
         return 1
     }
+    sophia_attempt_auxiliary_binary_sha256=""
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH" ]]; then
+        sophia_attempt_auxiliary_binary_sha256="$(
+            sha256sum "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH" |
+                awk '{ print $1 }'
+        )"
+        [[ "$sophia_attempt_auxiliary_binary_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "installed attempt auxiliary binary digest is unavailable" >&2
+            return 1
+        }
+    fi
     if ! "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" \
         "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
         "$sophia_attempt_binary_sha256" >/dev/null; then
@@ -91,6 +163,11 @@ sophia_installed_attempt_begin() {
         "$SOPHIA_ATTEMPT_KIND" "$sophia_attempt_started_at_utc" \
         "$sophia_attempt_identity_sha256" "$sophia_attempt_binary_sha256" \
         >>"$run_dir/manifest"
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
+        printf '%s_binary_sha256=%s\n' \
+            "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \
+            "$sophia_attempt_auxiliary_binary_sha256" >>"$run_dir/manifest"
+    fi
     printf '%s\n' "$run_dir"
 }
 
@@ -101,6 +178,9 @@ sophia_installed_attempt_write_checksums() {
         local files=(manifest result.kdl identity.log runtime-identity.log)
         local candidate
         for candidate in session.log input-guard.log recovery.log lifecycle.log; do
+            [[ ! -f "$candidate" ]] || files+=("$candidate")
+        done
+        for candidate in "${SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS[@]}"; do
             [[ ! -f "$candidate" ]] || files+=("$candidate")
         done
         sha256sum "${files[@]}" >SHA256SUMS
@@ -114,6 +194,7 @@ sophia_installed_attempt_finish() {
         return 1
     }
     local resolved_root resolved_run expected_identity recorded_binary recorded_kind
+    local recorded_auxiliary_binary
     resolved_root="$(readlink -f "$SOPHIA_ATTEMPT_RUN_ROOT")"
     resolved_run="$(readlink -f "$run_dir")"
     [[ -d "$resolved_run" && "$(dirname "$resolved_run")" == "$resolved_root" ]] || {
@@ -133,7 +214,7 @@ sophia_installed_attempt_finish() {
         return 1
     }
 
-    local failure=none source target
+    local failure=none source target index
     for target in session.log input-guard.log recovery.log lifecycle.log; do
         source="$SOPHIA_ATTEMPT_SESSION_DIR/$target"
         if [[ -s "$source" ]]; then
@@ -142,6 +223,18 @@ sophia_installed_attempt_finish() {
             failure=missing_evidence
         fi
     done
+    for index in "${!SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES[@]}"; do
+        source="${SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES[$index]}"
+        target="${SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS[$index]}"
+        if [[ -s "$source" ]]; then
+            install -m 600 "$source" "$run_dir/$target"
+        else
+            failure=missing_evidence
+        fi
+    done
+    sophia_attempt_identity_sha256=""
+    sophia_attempt_binary_sha256=""
+    sophia_attempt_auxiliary_binary_sha256=""
     sophia_installed_attempt_load_identity || failure=identity_mismatch
     expected_identity="$(
         sed -n 's/^launch_identity_sha256=//p' "$run_dir/manifest"
@@ -153,15 +246,23 @@ sophia_installed_attempt_finish() {
     [[ "$recorded_binary" =~ ^[0-9a-f]{64}$ \
         && "$sophia_attempt_binary_sha256" == "$recorded_binary" ]] ||
         failure=identity_mismatch
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
+        recorded_auxiliary_binary="$(
+            sed -n "s/^${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME}_binary_sha256=//p" \
+                "$run_dir/manifest"
+        )"
+        [[ "$recorded_auxiliary_binary" =~ ^[0-9a-f]{64}$ \
+            && "$sophia_attempt_auxiliary_binary_sha256" == \
+                "$recorded_auxiliary_binary" ]] || failure=identity_mismatch
+    fi
 
     if [[ "$session_status" != "$expected_status" ]]; then
         failure=session_exit
     elif [[ "$failure" == none ]]; then
-        local -a session_evidence=(
-            "$run_dir/session.log"
-            "$run_dir/input-guard.log"
-            "$run_dir/recovery.log"
-        )
+        local -a session_evidence=()
+        for target in "${SOPHIA_ATTEMPT_SESSION_EVIDENCE[@]}"; do
+            session_evidence+=("$run_dir/$target")
+        done
         if [[ "${SOPHIA_ATTEMPT_SESSION_INCLUDES_LIFECYCLE:-false}" == true ]]; then
             session_evidence+=("$run_dir/lifecycle.log")
         fi
@@ -207,6 +308,7 @@ sophia_record_installed_attempt() {
     : "${SOPHIA_ATTEMPT_VERIFY_SESSION:?}"
     : "${SOPHIA_ATTEMPT_VERIFY_IDENTITY:?}"
     : "${SOPHIA_ATTEMPT_VERIFY_LIFECYCLE:?}"
+    sophia_installed_attempt_validate_evidence_contract
 
     local run_dir
     case "$#:${1:-}" in

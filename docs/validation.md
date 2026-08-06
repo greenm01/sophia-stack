@@ -1112,9 +1112,10 @@ With no argument, this one-shot command resolves the current Git commit,
 packages it when necessary, verifies the exact artifact and every digest,
 requests privilege only for the system installation, and verifies the installed
 commit. An explicit artifact directory remains available for staged tests and
-recovery tooling. Packaging refuses a dirty worktree, builds optimized Sophia and the generic WM
-bridge, resolves the tested xmonad binary, and records SHA-256 digests plus the
-exact Git commit in an immutable release directory. Installation verifies
+recovery tooling. Packaging refuses a dirty worktree, builds optimized Sophia,
+the generic WM bridge, and the native WM, resolves the tested xmonad binary,
+and records SHA-256 digests plus the exact Git commit in an immutable release
+directory. Installation verifies
 those digests, copies the release below `/opt/sophia/releases/`, atomically
 updates `/opt/sophia/current`, preserves the former target as
 `/opt/sophia/previous`, and installs the Sophia greetd session entries below
@@ -1123,7 +1124,8 @@ session discovery.
 
 The installed Kitty fallback is `Sophia Kitty (Baseline)`; the integrated
 policy candidate is `Sophia xmonad (Experimental)`. The bounded containment
-gate is `Sophia Recovery Proof`. All three enter through versioned commands
+gate is `Sophia Recovery Proof`, and `Sophia Native Chrome Proof` is the
+automated physical ring/frame gate. All four enter through versioned commands
 below `/opt/sophia/current`; the ordinary sessions ultimately use
 `sophia-session`, which performs no
 source build, repository lookup, display-manager takeover, or privileged
@@ -1204,6 +1206,9 @@ sophia-verify-cycles 3 0005
 # Verify the latest automatic Kitty fallback attempt:
 sophia-verify-fallback
 
+# Verify the latest automatic native ring/frame proof:
+sophia-verify-native-chrome
+
 # Verify the latest archived two-hour session. The default requires at least
 # ten terminal and five Firefox action launches:
 sophia-verify-soak
@@ -1240,6 +1245,12 @@ per-output startup presentation, no asynchronous scene retirement, absent
 physical input, emergency-guard use, dirty shutdown, or incomplete VT
 restoration. A damage-idle output retains its proven synchronous startup
 modeset instead of issuing a redundant page flip.
+The native-chrome entry packages the native WM and the guarded hot-reload
+driver. It records the ordered ring-only, frame-only, and combined transitions
+with the installed launch, binary, runtime, lifecycle, guard, and recovery
+identities. `sophia-verify-native-chrome` rejects missing or reordered resize
+and presentation boundaries, a mismatched sequence commit, absent physical
+key routing, output or native debt, emergency recovery, and modified evidence.
 The dedicated recovery entry likewise reserves and finalizes a watchdog
 attempt automatically. `sophia-verify-watchdog` rejects an unexpected exit,
 local emergency trigger, changed deadline, modified archive, wrong profile or

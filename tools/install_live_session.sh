@@ -63,6 +63,7 @@ commands=(
     sophia-kitty-session
     sophia-firefox-proof
     sophia-recovery-proof
+    sophia-native-chrome-proof
     sophia-status
     sophia-stop
     sophia-rollback
@@ -70,12 +71,14 @@ commands=(
     sophia-record-fallback-run
     sophia-record-emergency-run
     sophia-record-watchdog-run
+    sophia-record-native-chrome-run
     sophia-record-firefox-run
     sophia-verify-login-cycle
     sophia-verify-cycles
     sophia-verify-emergency
     sophia-verify-fallback
     sophia-verify-watchdog
+    sophia-verify-native-chrome
     sophia-verify-firefox-runs
     sophia-verify-soak
 )
@@ -86,7 +89,9 @@ for command in "${commands[@]}"; do
     }
     ln -sfn "$PREFIX/current/bin/$command" "$COMMAND_DIR/$command"
 done
-for desktop in sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof; do
+for desktop in \
+    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
+    sophia-native-chrome-proof; do
     install -m 644 "$target/share/wayland-sessions/$desktop.desktop" \
         "$SESSION_DIR/$desktop.desktop.template"
     sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
@@ -100,7 +105,9 @@ echo "Installed Sophia release: $release_id"
 echo "Current: $PREFIX/current"
 echo "Operator guide: $PREFIX/current/share/doc/sophia/operations.md"
 echo "Session entries:"
-for desktop in sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof; do
+for desktop in \
+    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
+    sophia-native-chrome-proof; do
     echo "  $SESSION_DIR/$desktop.desktop"
 done
 echo "Operator commands: ${commands[*]}"

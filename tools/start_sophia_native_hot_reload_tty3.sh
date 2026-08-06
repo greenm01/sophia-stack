@@ -64,7 +64,16 @@ write_wm_config "$WM_CONFIG" true 2 false 0
 : >"$SEQUENCE_LOG"
 chmod 600 "$SEQUENCE_LOG"
 : >"$START_MARKER"
-printf 'commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)" >>"$SEQUENCE_LOG"
+if [[ -f "$ROOT_DIR/manifest" ]]; then
+    proof_commit="$(sed -n 's/^commit=//p' "$ROOT_DIR/manifest" | head -n 1)"
+else
+    proof_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+fi
+[[ "$proof_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "The native chrome proof could not resolve its release commit." >&2
+    exit 1
+}
+printf 'commit=%s\n' "$proof_commit" >>"$SEQUENCE_LOG"
 
 (
     sophia_proof_wait_for_log '^sophia_live_session_startup schema=2 status=ready ' 180 || exit 1
@@ -150,17 +159,25 @@ printf '%s\n' \
     "Sequence: $SEQUENCE_LOG"
 
 export SOPHIA_TTY_PROFILE=native
-"$ROOT_DIR/tools/start_sophia_tty3.sh" \
-    --no-config \
-    "--session-app=terminal-secondary=$terminal_bin" \
-    --session-start=terminal-secondary \
-    --session-app-arg=terminal-secondary=--config \
-    --session-app-arg=terminal-secondary=NONE \
-    --session-app-arg=terminal-secondary=--override \
-    --session-app-arg=terminal-secondary=linux_display_server=x11 \
-    --session-app-arg=terminal-secondary=--override \
-    --session-app-arg=terminal-secondary=background_opacity=1 \
-    --session-app-arg=terminal-secondary=--title \
-    "--session-app-arg=terminal-secondary=Sophia Native TTY3 Secondary" \
-    "--wm-process-arg=--wm-config=$WM_CONFIG" \
+session_args=(
+    --no-config
+    "--session-app=terminal-secondary=$terminal_bin"
+    --session-start=terminal-secondary
+    --session-app-arg=terminal-secondary=--config
+    --session-app-arg=terminal-secondary=NONE
+    --session-app-arg=terminal-secondary=--override
+    --session-app-arg=terminal-secondary=linux_display_server=x11
+    --session-app-arg=terminal-secondary=--override
+    --session-app-arg=terminal-secondary=background_opacity=1
+    --session-app-arg=terminal-secondary=--title
+    "--session-app-arg=terminal-secondary=Sophia Native TTY3 Secondary"
+    "--wm-process-arg=--wm-config=$WM_CONFIG"
     "$@"
+)
+if [[ "${SOPHIA_NATIVE_CHROME_INSTALLED:-false}" == true ]]; then
+    export SOPHIA_INSTALLED_ATTEMPT_MODE=native-chrome
+    export SOPHIA_NATIVE_CHROME_SEQUENCE_LOG="$SEQUENCE_LOG"
+    "$ROOT_DIR/bin/sophia-session" "${session_args[@]}"
+else
+    "$ROOT_DIR/tools/start_sophia_tty3.sh" "${session_args[@]}"
+fi

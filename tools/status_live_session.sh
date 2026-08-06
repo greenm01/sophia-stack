@@ -18,13 +18,13 @@ operator_guide="$PREFIX/current/share/doc/sophia/operations.md"
 printf 'operator_guide=%s\n' "$operator_guide"
 printf 'graphical_processes='
 found_graphical=false
-for process in sophia xmonad kitty firefox; do
+for process in sophia xmonad sophia-wm-demo kitty firefox; do
     if pgrep -a -x "$process" 2>/dev/null; then
         found_graphical=true
     fi
 done
 [[ "$found_graphical" == true ]] || echo none
-for profile in xmonad kitty; do
+for profile in xmonad kitty native; do
     state="$STATE_HOME/sophia/$profile-session"
     lifecycle="$state/lifecycle.log"
     printf '%s_logs=%s\n' "$profile" "$state"
@@ -66,3 +66,5 @@ print_latest_attempt installed_emergency \
     "$STATE_HOME/sophia/promotion/emergency-runs"
 print_latest_attempt installed_watchdog \
     "$STATE_HOME/sophia/promotion/watchdog-runs"
+print_latest_attempt installed_native_chrome \
+    "$STATE_HOME/sophia/promotion/native-chrome-runs"

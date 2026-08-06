@@ -1334,7 +1334,9 @@ Compatibility follow-up outside the Firefox exit gate:
   combined chrome. Require an atomic 2→6 width transition with no content
   occlusion, partial geometry, focus resize, bar decoration, or input loss.
   Reduced aggregate evidence and fail-closed fixtures now cover each policy,
-  resize, and composition boundary; physical capture remains.
+  resize, and composition boundary. The installed `Sophia Native Chrome Proof`
+  entry packages the native WM, applies the ordered sequence automatically,
+  and retains a commit-pinned immutable archive; one physical capture remains.
 - [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.

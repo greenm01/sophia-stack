@@ -12,6 +12,17 @@ PREFIX="$TEMP_DIR/opt/sophia"
 RELEASE="$PREFIX/releases/0.1.0-test"
 COMMIT=1111111111111111111111111111111111111111
 
+if (
+    SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES=(/tmp/sequence.log)
+    SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS=(session.log)
+    SOPHIA_ATTEMPT_SESSION_EVIDENCE=(session.log)
+    source "$ROOT_DIR/tools/lib/installed_attempt_ledger.sh"
+    sophia_installed_attempt_validate_evidence_contract
+) >/dev/null 2>&1; then
+    echo "installed attempt ledger accepted an evidence-name collision" >&2
+    exit 1
+fi
+
 install -d -m 700 "$SESSION_DIR" "$IDENTITY_DIR" "$RUN_ROOT"
 install -d -m 755 "$RELEASE/bin" "$RELEASE/target/release"
 install -m 600 \

@@ -12,6 +12,8 @@ COMMIT=2222222222222222222222222222222222222222
 install -d -m 755 \
     "$RELEASE/bin" "$RELEASE/tools/lib" "$RELEASE/target/release"
 printf 'sophia-test-binary\n' >"$RELEASE/target/release/sophia"
+printf 'sophia-wm-demo-test-binary\n' \
+    >"$RELEASE/target/release/sophia-wm-demo"
 install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-session" \
     "$RELEASE/bin/sophia-session"
@@ -34,6 +36,9 @@ install -m 755 \
     "$ROOT_DIR/tools/record_installed_watchdog_run.sh" \
     "$RELEASE/bin/sophia-record-watchdog-run"
 install -m 755 \
+    "$ROOT_DIR/tools/record_installed_native_chrome_run.sh" \
+    "$RELEASE/bin/sophia-record-native-chrome-run"
+install -m 755 \
     "$ROOT_DIR/tools/verify_installed_login_cycle.sh" \
     "$RELEASE/bin/sophia-verify-login-cycle"
 install -m 755 \
@@ -54,6 +59,15 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_watchdog_archive.sh" \
     "$RELEASE/bin/sophia-verify-watchdog"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_sophia_native_chrome.sh" \
+    "$RELEASE/bin/sophia-verify-native-chrome-core"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_native_chrome_session.sh" \
+    "$RELEASE/bin/sophia-verify-native-chrome-session"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_native_chrome_archive.sh" \
+    "$RELEASE/bin/sophia-verify-native-chrome"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
     "$RELEASE/bin/sophia-verify-runtime-identity"
@@ -94,6 +108,12 @@ printf '%s\n' \
     '    recovery_fixture=installed_watchdog_recovery_pass.log' \
     '    lifecycle_fixture=installed_lifecycle_watchdog_pass.log' \
     '    session_status="${SOPHIA_TEST_SESSION_STATUS:-124}"' \
+    'fi' \
+    'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == native-chrome ]]; then' \
+    '    state="${XDG_STATE_HOME}/sophia/native-session"' \
+    '    session_fixture=physical_native_chrome_pass.log' \
+    '    guard_fixture=physical_xmonad_hardware_smoke_guard_pass.log' \
+    '    recovery_fixture=installed_native_chrome_recovery_pass.log' \
     'fi' \
     'if [[ "${SOPHIA_TEST_SESSION_STATUS:-}" == 130 && "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" != watchdog ]]; then' \
     '    session_fixture=installed_emergency_session_pass.log' \
@@ -234,6 +254,26 @@ env "${session_env[@]}" "$RELEASE/bin/sophia-record-watchdog-run"
 grep -Fxq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
     "$STATE_HOME/sophia/promotion/watchdog-runs/0004/result.kdl"
 env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog"
+
+native_sequence="$TEMP_DIR/native-sequence.log"
+sed "1s/.*/commit=$COMMIT/" \
+    "$ROOT_DIR/tools/fixtures/physical_native_chrome_sequence_pass.log" \
+    >"$native_sequence"
+env "${session_env[@]}" \
+    SOPHIA_TTY_PROFILE=native \
+    SOPHIA_INSTALLED_ATTEMPT_MODE=native-chrome \
+    SOPHIA_NATIVE_CHROME_SEQUENCE_LOG="$native_sequence" \
+    "$RELEASE/bin/sophia-session"
+grep -Fxq \
+    'sophia_installed_native_chrome schema=1 status=passed exit_status=0' \
+    "$STATE_HOME/sophia/promotion/native-chrome-runs/0001/result.kdl"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-native-chrome"
+printf '\n' >>"$STATE_HOME/sophia/promotion/native-chrome-runs/0001/sequence.log"
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-native-chrome" \
+    >/dev/null 2>&1; then
+    echo "native-chrome verifier accepted a modified automatic archive" >&2
+    exit 1
+fi
 
 printf '\n' >>"$STATE_HOME/sophia/promotion/watchdog-runs/0004/result.kdl"
 if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog" >/dev/null 2>&1; then

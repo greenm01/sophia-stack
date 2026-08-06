@@ -16,6 +16,8 @@ fail() {
 if grep -Eqi '(^Error:|panicked at|status=(failed|degraded)([[:space:]]|$))' "$SESSION_LOG"; then
     fail "session contains an error, panic, or degraded status"
 fi
+grep -Eq '^sophia_live_wm_chrome schema=1 status=negotiated source=wm_policy capability=true clearance=2$' \
+    "$SESSION_LOG" || fail "the WM did not negotiate native chrome ownership"
 
 required_sequence=(
     '^commit=[0-9a-f]{40}$'

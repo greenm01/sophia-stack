@@ -17,6 +17,7 @@ OPERATOR_COMMANDS=(
     sophia-kitty-session
     sophia-firefox-proof
     sophia-recovery-proof
+    sophia-native-chrome-proof
     sophia-status
     sophia-stop
     sophia-rollback
@@ -24,12 +25,14 @@ OPERATOR_COMMANDS=(
     sophia-record-fallback-run
     sophia-record-emergency-run
     sophia-record-watchdog-run
+    sophia-record-native-chrome-run
     sophia-record-firefox-run
     sophia-verify-login-cycle
     sophia-verify-cycles
     sophia-verify-emergency
     sophia-verify-fallback
     sophia-verify-watchdog
+    sophia-verify-native-chrome
     sophia-verify-firefox-runs
     sophia-verify-soak
 )
@@ -53,7 +56,7 @@ make_artifact() {
                 cp "$ROOT_DIR/tools/rollback_live_session.sh" "$artifact/bin/$command"
                 ;;
             sophia-stop)
-                cp "$ROOT_DIR/tools/stop_sophia_xmonad_session.sh" \
+                cp "$ROOT_DIR/tools/installed/sophia-stop" \
                     "$artifact/bin/$command"
                 ;;
             *)
@@ -72,6 +75,8 @@ make_artifact() {
         >"$artifact/share/wayland-sessions/sophia-firefox-proof.desktop"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-recovery-proof\n' \
         >"$artifact/share/wayland-sessions/sophia-recovery-proof.desktop"
+    printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-native-chrome-proof\n' \
+        >"$artifact/share/wayland-sessions/sophia-native-chrome-proof.desktop"
     printf 'schema=1\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\n' \
         "$release_id" "$release_id" >"$artifact/manifest"
     (
@@ -98,6 +103,8 @@ grep -Fq "Exec=$PREFIX/current/bin/sophia-firefox-proof" \
     "$SESSION_DIR/sophia-firefox-proof.desktop"
 grep -Fq "Exec=$PREFIX/current/bin/sophia-recovery-proof" \
     "$SESSION_DIR/sophia-recovery-proof.desktop"
+grep -Fq "Exec=$PREFIX/current/bin/sophia-native-chrome-proof" \
+    "$SESSION_DIR/sophia-native-chrome-proof.desktop"
 for command in "${OPERATOR_COMMANDS[@]}"; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done
@@ -114,6 +121,7 @@ install -d -m 700 "$operator_state/sophia/promotion/runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/fallback-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/emergency-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/watchdog-runs/0001"
+install -d -m 700 "$operator_state/sophia/promotion/native-chrome-runs/0001"
 printf 'sophia_installed_cycle schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/runs/0001/result.kdl"
 printf 'sophia_installed_fallback schema=1 status=passed exit_status=0\n' \
@@ -122,6 +130,8 @@ printf 'sophia_installed_emergency schema=1 status=passed exit_status=130\n' \
     >"$operator_state/sophia/promotion/emergency-runs/0001/result.kdl"
 printf 'sophia_installed_watchdog schema=1 status=passed exit_status=124\n' \
     >"$operator_state/sophia/promotion/watchdog-runs/0001/result.kdl"
+printf 'sophia_installed_native_chrome schema=1 status=passed exit_status=0\n' \
+    >"$operator_state/sophia/promotion/native-chrome-runs/0001/result.kdl"
 status_output="$(env \
     SOPHIA_INSTALL_PREFIX="$PREFIX" \
     XDG_STATE_HOME="$operator_state" \
@@ -147,6 +157,11 @@ grep -Fq \
     "latest_installed_watchdog=$operator_state/sophia/promotion/watchdog-runs/0001" \
     <<<"$status_output"
 grep -Fq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
+    <<<"$status_output"
+grep -Fq \
+    "latest_installed_native_chrome=$operator_state/sophia/promotion/native-chrome-runs/0001" \
+    <<<"$status_output"
+grep -Fq 'sophia_installed_native_chrome schema=1 status=passed exit_status=0' \
     <<<"$status_output"
 
 stop_runtime="$TEMP_DIR/stop-runtime"

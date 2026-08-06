@@ -24,6 +24,7 @@ artifact="$ARTIFACT_ROOT/sophia-$release_id"
 
 cargo build --offline --release -p sophia-cli --features atomic-scanout-live
 cargo build --offline --release -p sophia-x11-wm-bridge
+cargo build --offline --release -p sophia-wm-demo
 xmonad_bin="$(tools/resolve_sophia_xmonad.sh)"
 
 install -d -m 755 \
@@ -36,6 +37,8 @@ install -d -m 755 \
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
 install -m 755 target/release/sophia-x11-wm-bridge \
     "$artifact/target/release/sophia-x11-wm-bridge"
+install -m 755 target/release/sophia-wm-demo \
+    "$artifact/target/release/sophia-wm-demo"
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
 install -m 755 tools/installed/sophia-kitty-session \
@@ -44,10 +47,12 @@ install -m 755 tools/installed/sophia-firefox-proof \
     "$artifact/bin/sophia-firefox-proof"
 install -m 755 tools/installed/sophia-recovery-proof \
     "$artifact/bin/sophia-recovery-proof"
+install -m 755 tools/installed/sophia-native-chrome-proof \
+    "$artifact/bin/sophia-native-chrome-proof"
 install -m 755 tools/installed/capture-runtime-identity.sh \
     "$artifact/bin/capture-runtime-identity"
 install -m 755 tools/status_live_session.sh "$artifact/bin/sophia-status"
-install -m 755 tools/stop_sophia_xmonad_session.sh "$artifact/bin/sophia-stop"
+install -m 755 tools/installed/sophia-stop "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
 install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
@@ -57,6 +62,8 @@ install -m 755 tools/record_installed_emergency_run.sh \
     "$artifact/bin/sophia-record-emergency-run"
 install -m 755 tools/record_installed_watchdog_run.sh \
     "$artifact/bin/sophia-record-watchdog-run"
+install -m 755 tools/record_installed_native_chrome_run.sh \
+    "$artifact/bin/sophia-record-native-chrome-run"
 install -m 755 tools/verify_installed_session_cycles.sh \
     "$artifact/bin/sophia-verify-cycles"
 install -m 755 tools/verify_installed_soak_archive.sh \
@@ -83,6 +90,12 @@ install -m 755 tools/verify_installed_watchdog_recovery.sh \
     "$artifact/bin/sophia-verify-watchdog-run"
 install -m 755 tools/verify_installed_watchdog_archive.sh \
     "$artifact/bin/sophia-verify-watchdog"
+install -m 755 tools/verify_sophia_native_chrome.sh \
+    "$artifact/bin/sophia-verify-native-chrome-core"
+install -m 755 tools/verify_installed_native_chrome_session.sh \
+    "$artifact/bin/sophia-verify-native-chrome-session"
+install -m 755 tools/verify_installed_native_chrome_archive.sh \
+    "$artifact/bin/sophia-verify-native-chrome"
 install -m 755 tools/verify_sophia_firefox_physical.sh \
     "$artifact/bin/sophia-verify-firefox-run"
 install -m 755 tools/record_sophia_firefox_physical_run.sh \
@@ -92,7 +105,11 @@ install -m 755 tools/verify_sophia_firefox_physical_runs.sh \
 install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmonad.sh \
     tools/resolve_sophia_xmobar.sh \
-    tools/stop_sophia_session.sh "$artifact/tools/"
+    tools/stop_sophia_session.sh \
+    tools/start_sophia_native_hot_reload_tty3.sh "$artifact/tools/"
+install -d -m 755 "$artifact/tools/config"
+install -m 644 tools/config/proof_helpers.sh \
+    "$artifact/tools/config/proof_helpers.sh"
 install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
 install -m 644 tools/lib/installed_attempt_ledger.sh \
@@ -140,6 +157,14 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-recovery-proof.desktop"
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Name=Sophia Native Chrome Proof' \
+    'Comment=Installed ring, frame, and combined chrome proof' \
+    'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-native-chrome-proof' \
+    'Type=Application' \
+    'DesktopNames=Sophia' \
+    >"$artifact/share/wayland-sessions/sophia-native-chrome-proof.desktop"
 printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >"$artifact/manifest"
