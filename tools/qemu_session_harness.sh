@@ -8,8 +8,18 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
+RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
+    exit 1
+fi
+if [[ "$GPU_MODE" != software && "$GPU_MODE" != virgl ]]; then
+    echo "SOPHIA_QEMU_GPU_MODE must be software or virgl" >&2
+    exit 1
+fi
+if [[ "$SCENARIO" == "xmonad-render-contention" && "$GPU_MODE" != virgl ]]; then
+    echo "xmonad-render-contention requires SOPHIA_QEMU_GPU_MODE=virgl" >&2
     exit 1
 fi
 if [[ "$TWO_XTERM" != "0" && "$TWO_XTERM" != "1" ]]; then
@@ -54,6 +64,45 @@ axis_route_count() {
             }
         }
         END { print total + 0 }
+    ' "$EVIDENCE_FILE" 2>/dev/null
+}
+
+dmabuf_retirement_surface_count() {
+    awk '
+        /^sophia_live_session_present schema=2 status=retired / {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^surface=[0-9]+$/) surfaces[$i] = 1
+            }
+        }
+        END {
+            for (surface in surfaces) count++
+            print count + 0
+        }
+    ' "$EVIDENCE_FILE" 2>/dev/null
+}
+
+dmabuf_retirement_window_stats() {
+    local start_line=$1
+    awk -v start_line="$start_line" '
+        NR > start_line && /^sophia_live_session_present schema=2 status=retired / {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^surface=[0-9]+$/) {
+                    surface = $i
+                    sub(/^surface=/, "", surface)
+                    counts[surface]++
+                }
+            }
+        }
+        END {
+            minimum = -1
+            for (surface in counts) {
+                surfaces++
+                total += counts[surface]
+                if (minimum < 0 || counts[surface] < minimum) minimum = counts[surface]
+            }
+            if (minimum < 0) minimum = 0
+            print surfaces + 0, minimum + 0, total + 0
+        }
     ' "$EVIDENCE_FILE" 2>/dev/null
 }
 
@@ -619,6 +668,26 @@ if [[ ! "$VIRTUAL_CPUS" =~ ^[0-9]+$ ]] || (( VIRTUAL_CPUS < 1 || VIRTUAL_CPUS > 
     echo "SOPHIA_QEMU_CPUS must be from 1 through 16" >&2
     exit 1
 fi
+if [[ "$GPU_MODE" == virgl && ! -c "$RENDER_NODE" ]]; then
+    echo "Virgl QEMU mode requires a DRM render node: $RENDER_NODE" >&2
+    exit 1
+fi
+
+if [[ "$GPU_MODE" == virgl ]]; then
+    # Virgl keeps guest producers and Sophia's renderer on one explicit host
+    # render node; software QEMU remains the default.
+    display_args=(-display "egl-headless,rendernode=$RENDER_NODE")
+    gpu_args=(
+        -device virtio-vga-gl,max_outputs=1
+        -device virtio-gpu-pci,max_outputs=1
+    )
+else
+    display_args=(-display none -vnc "unix:$VNC_SOCKET")
+    gpu_args=(
+        -device virtio-vga,max_outputs=1
+        -device virtio-gpu-pci,max_outputs=1
+    )
+fi
 
 mkdir -p "$(dirname "$EVIDENCE_FILE")"
 : > "$EVIDENCE_FILE"
@@ -630,7 +699,11 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 elif [[ "$SCENARIO" == gtk-* ]]; then
     echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
 elif [[ "$SCENARIO" == xmonad-* ]]; then
-    echo "sophia_qemu_xmonad schema=1 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2" | tee -a "$EVIDENCE_FILE"
+    if [[ "$GPU_MODE" == virgl ]]; then
+        echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=3 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
+    else
+        echo "sophia_qemu_xmonad schema=1 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2" | tee -a "$EVIDENCE_FILE"
+    fi
 else
     echo "sophia_qemu_session schema=3 status=starting isolation=headless display_sink=vnc-unix control=qmp-unix host_drm=none host_vt=none guest_network=none storage=none gpu=virtio-gpu gpu_devices=2 gpu_heads=2 keyboard=virtio mouse=virtio ticks=300" | tee -a "$EVIDENCE_FILE"
 fi
@@ -646,13 +719,11 @@ LOGGER_PID=$!
     -m "$MEMORY_MIB" \
     -nodefaults \
     -no-reboot \
-    -display none \
-    -vnc "unix:$VNC_SOCKET" \
+    "${display_args[@]}" \
     -monitor none \
     -qmp "unix:$QMP_SOCKET,server=on,wait=off" \
     -serial stdio \
-    -device virtio-vga,max_outputs=1 \
-    -device virtio-gpu-pci,max_outputs=1 \
+    "${gpu_args[@]}" \
     -device virtio-keyboard-pci \
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
@@ -729,6 +800,130 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-render-contention" ]]; then
+    ready=false
+    for _ in $(seq 1 1600); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=1 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_work_area schema=1 status=reduced outputs=2 .*active_reservations=1$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE"; then
+            echo "sophia_qemu_render_contention schema=1 status=failed reason=startup_layout_timeout" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        if grep -Eq '^sophia_session_app schema=1 status=exited id=(gpu1|gpu2|gpu3|statusbar) ' "$EVIDENCE_FILE"; then
+            echo "sophia_qemu_render_contention schema=1 status=failed reason=startup_application_exit" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_render_contention schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_render_contention schema=1 status=started producers=1 cpu_bar=xmobar gpu=virgl" |
+        tee -a "$EVIDENCE_FILE"
+
+    for launch in 'meta_l+ret gpu2 2' 'meta_l+p gpu3 3'; do
+        read -r chord app visible <<<"$launch"
+        started_baseline="$(evidence_count "^sophia_session_app schema=2 status=started id=$app source=action ")"
+        admitted_baseline="$(evidence_count '^sophia_session_app schema=2 status=admitted source=action ')"
+        echo "sophia_qemu_render_contention schema=1 status=launch_begin chord=$chord app=$app" |
+            tee -a "$EVIDENCE_FILE"
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" "$chord"
+        if ! wait_for_new_evidence \
+            "^sophia_session_app schema=2 status=started id=$app source=action " \
+            "$started_baseline" 400 \
+            || ! wait_for_new_evidence \
+                '^sophia_session_app schema=2 status=admitted source=action ' \
+                "$admitted_baseline" 1600; then
+            echo "sophia_qemu_render_contention schema=1 status=failed reason=producer_admission_timeout app=$app" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        producer_ready=false
+        for _ in $(seq 1 800); do
+            if grep -Eq "^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=$visible focus=surface$" "$EVIDENCE_FILE" \
+                && (( $(dmabuf_retirement_surface_count) == visible )); then
+                producer_ready=true
+                break
+            fi
+            if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+                || grep -Eq '^sophia_session_app schema=1 status=exited id=(gpu1|gpu2|gpu3|statusbar) ' "$EVIDENCE_FILE"; then
+                break
+            fi
+            if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+        done
+        if [[ "$producer_ready" != true ]]; then
+            echo "sophia_qemu_render_contention schema=1 status=failed reason=producer_progress_timeout app=$app visible=$visible surfaces=$(dmabuf_retirement_surface_count)" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        echo "sophia_qemu_render_contention schema=1 status=producer_ready app=$app producers=$visible" |
+            tee -a "$EVIDENCE_FILE"
+    done
+
+    window_start_line="$(wc -l < "$EVIDENCE_FILE")"
+    echo "sophia_qemu_render_contention schema=1 status=window_started producers=3 minimum_frames=30" |
+        tee -a "$EVIDENCE_FILE"
+    producers_ready=false
+    for _ in $(seq 1 1200); do
+        read -r surfaces minimum retirements <<<"$(dmabuf_retirement_window_stats "$window_start_line")"
+        if (( surfaces == 3 && minimum >= 30 )); then
+            producers_ready=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(gpu1|gpu2|gpu3|statusbar) ' "$EVIDENCE_FILE"; then
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$producers_ready" != true ]]; then
+        echo "sophia_qemu_render_contention schema=1 status=failed reason=dmabuf_progress_timeout retirements=${retirements:-0} surfaces=${surfaces:-0} minimum=${minimum:-0}" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_render_contention schema=1 status=window_complete producers=3 dmabuf_surfaces=$surfaces minimum_retirements=$minimum retirements=$retirements" |
+        tee -a "$EVIDENCE_FILE"
+    sleep 1
+
+    echo "sophia_qemu_render_contention schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_render_contention schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_render_contention schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_render_contention_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 

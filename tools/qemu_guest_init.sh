@@ -30,6 +30,7 @@ case " $cmdline " in
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
     *" sophia.scenario=xmonad-m7 "*) scenario="xmonad-m7" ;;
     *" sophia.scenario=xmonad-launch-burst "*) scenario="xmonad-launch-burst" ;;
+    *" sophia.scenario=xmonad-render-contention "*) scenario="xmonad-render-contention" ;;
     *" sophia.scenario=xmonad-resize-storm "*) scenario="xmonad-resize-storm" ;;
     *" sophia.scenario=xmonad-stale-response "*) scenario="xmonad-stale-response" ;;
     *" sophia.scenario=xmonad-m8-launcher "*) scenario="xmonad-m8-launcher" ;;
@@ -44,7 +45,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -150,7 +151,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         --expect-physical-text=sophia --expect-physical-pointer \
         --inject-surface-resize=640x360 --exit-after-input-proof
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     if [ ! -x /usr/bin/xmonad ]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=xmonad_missing"
         sync
@@ -158,12 +159,44 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] ||
     fi
     runtime_ms=60000
     [ "$scenario" != "xmonad-launch-burst" ] || runtime_ms=240000
+    [ "$scenario" != "xmonad-render-contention" ] || runtime_ms=240000
     [ "$scenario" != "xmonad-resize-storm" ] || runtime_ms=180000
     [ "$scenario" != "xmonad-stale-response" ] || runtime_ms=120000
     [ "$scenario" != "xmonad-m8-mix" ] || runtime_ms=360000
     [ "$scenario" != "xmonad-m8-soak" ] || runtime_ms=2100000
     set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
-    if [ "$scenario" = "xmonad-resize-storm" ]; then
+    if [ "$scenario" = "xmonad-render-contention" ]; then
+        for program in /usr/bin/glxgears /usr/bin/xmobar; do
+            if [ ! -x "$program" ]; then
+                echo "sophia_qemu_render_contention schema=1 status=failed reason=application_missing program=$program"
+                sync
+                poweroff -f
+            fi
+        done
+        export LANG=C.UTF-8
+        export LC_ALL=C.UTF-8
+        export RUST_LOG=warn
+        set -- "$@" --session-mode=normal
+        # Xmobar reserves fourteen rows before xmonad admits these windows.
+        # Match the successive master dimensions inside that work area so
+        # virgl spends startup rendering, not reallocating an oversize buffer.
+        set -- "$@" --session-app=gpu1=/usr/bin/glxgears
+        set -- "$@" --session-app-arg=gpu1=-geometry
+        set -- "$@" --session-app-arg=gpu1=1276x786
+        set -- "$@" --session-start=gpu1
+        set -- "$@" --session-app=gpu2=/usr/bin/glxgears
+        set -- "$@" --session-app-arg=gpu2=-geometry
+        set -- "$@" --session-app-arg=gpu2=636x782
+        set -- "$@" --session-app=gpu3=/usr/bin/glxgears
+        set -- "$@" --session-app-arg=gpu3=-geometry
+        set -- "$@" --session-app-arg=gpu3=636x782
+        set -- "$@" --session-action-app=terminal=gpu2
+        set -- "$@" --session-action-app=launcher=gpu3
+        set -- "$@" --session-app=statusbar=/usr/bin/xmobar
+        set -- "$@" --session-app-arg=statusbar=/usr/share/sophia/qemu_render_contention_xmobar.config
+        set -- "$@" --session-start=statusbar
+        echo "sophia_qemu_xmonad schema=1 status=running windows=3 profile=xmonad mode=render-contention producers=3 launch=serial cpu_bar=xmobar"
+    elif [ "$scenario" = "xmonad-resize-storm" ]; then
         set -- "$@" --session-mode=normal
         set -- "$@" --session-app=renderer=/usr/bin/xterm
         set -- "$@" --session-app-arg=renderer=-cm --session-app-arg=renderer=-dc
@@ -343,7 +376,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     else
         echo "sophia_qemu_guest schema=1 status=failed reason=gtk_session_exit scenario=$scenario exit_status=$status"
     fi
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-render-contention" ] || [ "$scenario" = "xmonad-resize-storm" ] || [ "$scenario" = "xmonad-stale-response" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     if [ "$status" -eq 0 ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else

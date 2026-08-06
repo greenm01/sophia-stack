@@ -535,6 +535,30 @@ software-present resize path; it does not claim concurrent DMA-BUF coverage.
 `tools/check_qemu_xmonad_resize_storm_verifier.sh` mutation-tests the evidence
 contract and runs from the local regression gate.
 
+The unattended single-output DMA-BUF contention gate is:
+
+```sh
+tools/qemu_xmonad_render_contention_acceptance.sh
+```
+
+This host-render-node profile uses virgl to give three unmodified `glxgears`
+clients real DRI3 DMA-BUFs. Sophia's bounded application-admission FIFO starts
+the second and third clients only after the preceding client is stable; the
+measured window begins only after all three producers and one unmodified xmobar
+are present. The verifier requires at least 30 exact retirements from each
+producer with no more than two frames of service skew. It also requires
+exactly one active output, active CPU patch composition, positive import-cache
+traffic, balanced renderer-worker ownership, a 100 ms worker-request bound, a
+balanced 100 ms frontend-control bound, monotonic Present cadence, and clean
+layout, native, protocol, and process teardown.
+
+This is deliberately a single-active-output proof. QEMU still exposes two
+connected outputs and both retain valid completion records, but only one must
+carry the bounded workload. The gate must not be cited as inter-output fairness
+evidence until producers are assigned to both outputs of one render-device
+group. `tools/check_qemu_xmonad_render_contention_verifier.sh` mutation-tests
+the evidence contract and runs from the local regression gate.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

@@ -8,8 +8,8 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 IMAGE_PROFILE="${SOPHIA_QEMU_IMAGE_PROFILE:-base}"
 
-if [[ "$IMAGE_PROFILE" != base && "$IMAGE_PROFILE" != m8 ]]; then
-    echo "SOPHIA_QEMU_IMAGE_PROFILE must be base or m8" >&2
+if [[ "$IMAGE_PROFILE" != base && "$IMAGE_PROFILE" != m8 && "$IMAGE_PROFILE" != rendering ]]; then
+    echo "SOPHIA_QEMU_IMAGE_PROFILE must be base, m8, or rendering" >&2
     exit 1
 fi
 
@@ -138,6 +138,57 @@ if [[ "$IMAGE_PROFILE" == m8 ]]; then
         /usr/lib/libnss3.so
         /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         /usr/share/sophia/firefox_m8_local_page.html
+    )
+fi
+if [[ "$IMAGE_PROFILE" == rendering ]]; then
+    GLXGEARS_BIN="${SOPHIA_GLXGEARS_BIN:-$(command -v glxgears || true)}"
+    [[ -x "$GLXGEARS_BIN" ]] || {
+        echo "The rendering QEMU profile requires glxgears; set SOPHIA_GLXGEARS_BIN." >&2
+        exit 1
+    }
+    XMOBAR_BIN="${SOPHIA_XMOBAR_BIN:-$($ROOT_DIR/tools/resolve_sophia_xmobar.sh)}"
+    [[ -x "$XMOBAR_BIN" ]] || {
+        echo "The rendering QEMU profile requires xmobar; set SOPHIA_XMOBAR_BIN." >&2
+        exit 1
+    }
+    GLX_VENDOR_LIBRARY=/usr/lib/libGLX_mesa.so.0
+    [[ -r "$GLX_VENDOR_LIBRARY" ]] || {
+        echo "The rendering QEMU profile requires Mesa GLX: $GLX_VENDOR_LIBRARY" >&2
+        exit 1
+    }
+    runtime_files+=("$GLX_VENDOR_LIBRARY")
+    # libGLX loads Mesa's vendor library dynamically, so resolve that library
+    # separately from the executable dependency graph.
+    for executable in "$GLXGEARS_BIN" "$XMOBAR_BIN" "$GLX_VENDOR_LIBRARY"; do
+        dependency_report="$(ldd "$executable" 2>&1 || true)"
+        if grep -q 'not found' <<<"$dependency_report"; then
+            echo "Rendering dependency resolution failed for $executable:" >&2
+            grep 'not found' <<<"$dependency_report" >&2
+            exit 1
+        fi
+        while IFS= read -r dependency; do
+            [[ -z "$dependency" ]] || runtime_files+=("$dependency")
+        done < <(awk '
+            $2 == "=>" && $3 ~ /^\// { print $3 }
+            $1 ~ /^\// { print $1 }
+        ' <<<"$dependency_report")
+    done
+    extra_includes+=(
+        --include "$GLXGEARS_BIN" /usr/bin/glxgears
+        --include "$XMOBAR_BIN" /usr/bin/xmobar
+        --include "$ROOT_DIR/tools/fixtures/qemu_render_contention_xmobar.config" /usr/share/sophia/qemu_render_contention_xmobar.config
+        --include /usr/lib/locale/C.utf8 /usr/lib/locale/C.utf8
+        --include /usr/share/X11/locale /usr/share/X11/locale
+        --include /usr/share/fonts/TTF/DejaVuSansMono.ttf /usr/share/fonts/TTF/DejaVuSansMono.ttf
+    )
+    required_guest_paths+=(
+        /usr/bin/glxgears
+        /usr/bin/xmobar
+        /usr/lib/locale/C.utf8/LC_CTYPE
+        /usr/share/X11/locale/locale.dir
+        /usr/share/fonts/TTF/DejaVuSansMono.ttf
+        /usr/bin/xmonad
+        /usr/share/sophia/qemu_render_contention_xmobar.config
     )
 fi
 install_files=()

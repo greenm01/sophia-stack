@@ -864,6 +864,22 @@ promotes one to a hard M9 exit gate.
   CPU-composited bar and measure per-output frame-service fairness, import-cache
   pressure and eviction, and single renderer-worker request latency under
   contention.
+  - [x] Lock the single-active-output contention cell. The diskless virgl QEMU
+    profile serially admits three unmodified `glxgears` clients beside
+    unmodified xmobar, then measures one bounded 90-frame window only after all
+    four surfaces are stable. Two production runs passed; the latest gave every
+    producer 32–33 retirements, imported and finally evicted 816 DMA-BUFs with
+    1,069 cache hits, balanced 818 renderer requests/completions with a 47 ms
+    maximum, and drained nine frontend controls with a 1 ms maximum
+    acknowledgement. The
+    mutation-tested verifier rejects producer starvation, false window
+    accounting, missing cache reuse, worker debt/stall/latency, layout recovery,
+    inactive CPU composition, or dirty teardown.
+  - [ ] Place active producers on both outputs of one render-device group and
+    require bounded inter-output service skew. The current second QEMU output
+    retains its startup baseline but intentionally carries no workload, so the
+    parent item remains open. Complete the shared renderer-worker prerequisite
+    in Milestone 13 before treating this as same-device output fairness.
 - [ ] Idle / partial-damage efficiency. Hold a mostly-static desktop and require
   near-zero recomposition, a high import-cache hit rate, and no full-frame CPU
   upload when nothing changed. This is the inverse of the always-animating
