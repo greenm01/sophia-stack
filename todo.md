@@ -1294,8 +1294,10 @@ Compatibility follow-up outside the Firefox exit gate:
   fail-closed verifier covers the one-Kitty, WM-disabled, two-output, physical
   input, clean-shutdown, and exact VT-recovery contract. The watchdog entry
   now applies the same pre-takeover reservation and automatic finalization to
-  its status-124 proof. Commit-pinned emergency, watchdog, and fallback
-  captures remain.
+  its status-124 proof. A status-130 ordinary session now automatically writes
+  a separate verified emergency archive while leaving its pre-reserved normal
+  attempt failed. Commit-pinned emergency, watchdog, and fallback captures
+  remain.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.

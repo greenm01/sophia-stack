@@ -150,6 +150,7 @@ bash -n tools/verify_sophia_xmonad_tty3.sh
 bash -n tools/check_sophia_xmonad_tty3_verifier.sh
 bash -n tools/verify_sophia_xmonad_emergency_tty3.sh
 bash -n tools/check_sophia_xmonad_emergency_verifier.sh
+bash -n tools/verify_installed_emergency_archive.sh
 bash -n tools/verify_installed_session_lifecycle.sh
 bash -n tools/check_installed_session_lifecycle_verifier.sh
 bash -n tools/verify_installed_login_cycle.sh \
@@ -241,6 +242,7 @@ bash -n tools/installed/capture-runtime-identity.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'firefox_m10_kitty_probe.sh' tools/package_live_session.sh
 grep -Fq 'tools/installed/sophia-recovery-proof' tools/package_live_session.sh
+grep -Fq 'tools/verify_installed_emergency_archive.sh' tools/package_live_session.sh
 grep -Fq 'tools/record_installed_watchdog_run.sh' tools/package_live_session.sh
 grep -Fq 'tools/verify_installed_watchdog_recovery.sh' tools/package_live_session.sh
 grep -Fq 'tools/verify_installed_watchdog_archive.sh' tools/package_live_session.sh

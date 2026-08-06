@@ -71,6 +71,8 @@ install -m 755 tools/verify_installed_fallback_run.sh \
     "$artifact/bin/sophia-verify-fallback"
 install -m 755 tools/verify_sophia_xmonad_emergency_tty3.sh \
     "$artifact/bin/sophia-verify-emergency-run"
+install -m 755 tools/verify_installed_emergency_archive.sh \
+    "$artifact/bin/sophia-verify-emergency"
 install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
 install -m 755 tools/verify_installed_session_lifecycle.sh \

@@ -64,6 +64,11 @@ set +e
 "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
 session_status=$?
 set -e
+if [[ "$attempt_mode" == xmonad && "$session_status" == 130 ]] &&
+    ! "$RELEASE_DIR/bin/sophia-record-emergency-run"; then
+    # The normal pending attempt still preserves the launch if archival fails.
+    echo "sophia_installed_emergency schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2
+fi
 if [[ -n "$attempt_dir" ]] &&
     ! "$attempt_record" finish "$attempt_dir" "$session_status"; then
     # Evidence failure must not rewrite the session's real exit status.

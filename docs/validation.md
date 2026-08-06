@@ -1084,7 +1084,7 @@ The artifact also installs repository-independent evidence commands:
 sophia-verify-login-cycle
 
 # After one separate Ctrl-Alt-Backspace recovery run:
-sophia-record-emergency-run
+sophia-verify-emergency
 
 # After the one dedicated Sophia Recovery Proof run:
 sophia-verify-watchdog
@@ -1137,9 +1137,13 @@ local emergency trigger, changed deadline, modified archive, wrong profile or
 commit, incomplete lifecycle, or incomplete VT restoration. The no-argument
 `sophia-record-watchdog-run` form remains a compatibility importer for an
 unrecorded status-124 proof.
-`sophia-record-emergency-run`
-applies the independent guard/owner recovery verifier and archives the
-emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived
+When an ordinary installed session returns status 130, its wrapper applies the
+independent guard/owner recovery verifier and archives the emergency lifecycle
+automatically. The pre-reserved normal attempt remains failed, so an emergency
+cannot count toward consecutive clean cycles. `sophia-verify-emergency`
+rechecks the separate archive, while the no-argument
+`sophia-record-emergency-run` command remains a compatibility importer.
+`sophia-verify-cycles` rechecks each archived
 lifecycle and rejects mixed commits, modified evidence, duplicate launch
 identities, any failed or pending attempt among the latest requested entries,
 emergency exits, incomplete input/WM/native cleanup, or fewer than the

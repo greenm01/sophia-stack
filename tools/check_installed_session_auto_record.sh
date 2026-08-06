@@ -26,6 +26,9 @@ install -m 755 \
     "$ROOT_DIR/tools/record_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-record-fallback-run"
 install -m 755 \
+    "$ROOT_DIR/tools/record_installed_emergency_run.sh" \
+    "$RELEASE/bin/sophia-record-emergency-run"
+install -m 755 \
     "$ROOT_DIR/tools/record_installed_watchdog_run.sh" \
     "$RELEASE/bin/sophia-record-watchdog-run"
 install -m 755 \
@@ -37,6 +40,12 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-verify-fallback"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_sophia_xmonad_emergency_tty3.sh" \
+    "$RELEASE/bin/sophia-verify-emergency-run"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_emergency_archive.sh" \
+    "$RELEASE/bin/sophia-verify-emergency"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_watchdog_recovery.sh" \
     "$RELEASE/bin/sophia-verify-watchdog-run"
@@ -81,6 +90,12 @@ printf '%s\n' \
     '    recovery_fixture=installed_watchdog_recovery_pass.log' \
     '    lifecycle_fixture=installed_lifecycle_watchdog_pass.log' \
     '    session_status="${SOPHIA_TEST_SESSION_STATUS:-124}"' \
+    'fi' \
+    'if [[ "${SOPHIA_TEST_SESSION_STATUS:-}" == 130 && "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" != watchdog ]]; then' \
+    '    session_fixture=installed_emergency_session_pass.log' \
+    '    guard_fixture=physical_xmonad_guard_emergency_pass.log' \
+    '    recovery_fixture=physical_xmonad_recovery_emergency_pass.log' \
+    '    lifecycle_fixture=installed_lifecycle_emergency_pass.log' \
     'fi' \
     'install -d -m 700 "$state"' \
     'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/$session_fixture" "$state/session.log"' \
@@ -212,6 +227,44 @@ env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog"
 printf '\n' >>"$STATE_HOME/sophia/promotion/watchdog-runs/0004/result.kdl"
 if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog" >/dev/null 2>&1; then
     echo "watchdog verifier accepted a modified archive" >&2
+    exit 1
+fi
+
+[[ ! -e "$STATE_HOME/sophia/promotion/emergency-runs" ]]
+set +e
+env "${session_env[@]}" SOPHIA_TEST_SESSION_STATUS=130 \
+    "$RELEASE/bin/sophia-session"
+emergency_status=$?
+set -e
+[[ "$emergency_status" == 130 ]] || {
+    echo "installed wrapper changed the emergency exit status" >&2
+    exit 1
+}
+grep -Fxq 'sophia_installed_emergency schema=1 status=passed exit_status=130' \
+    "$STATE_HOME/sophia/promotion/emergency-runs/0001/result.kdl"
+grep -Fxq \
+    'sophia_installed_cycle schema=1 status=failed exit_status=130 reason=session_exit' \
+    "$STATE_HOME/sophia/promotion/runs/0006/result.kdl"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-emergency"
+if env "${session_env[@]}" "$RELEASE/bin/sophia-record-emergency-run" \
+    >/dev/null 2>&1; then
+    echo "emergency recorder accepted a duplicate automatic archive" >&2
+    exit 1
+fi
+printf '\n' >>"$STATE_HOME/sophia/promotion/emergency-runs/0001/result.kdl"
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-emergency" >/dev/null 2>&1; then
+    echo "emergency verifier accepted a modified archive" >&2
+    exit 1
+fi
+printf 'sophia_installed_emergency schema=1 status=failed exit_status=130 reason=session_verification\n' \
+    >"$STATE_HOME/sophia/promotion/emergency-runs/0001/result.kdl"
+(
+    cd "$STATE_HOME/sophia/promotion/emergency-runs/0001"
+    sha256sum manifest result.kdl identity.log runtime-identity.log \
+        session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+)
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-emergency" >/dev/null 2>&1; then
+    echo "emergency verifier accepted a checksummed failed archive" >&2
     exit 1
 fi
 

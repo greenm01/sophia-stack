@@ -62,9 +62,9 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal, fallback, and watchdog attempts. An
-`OK` line for every packaged file is expected. Investigate any checksum
-failure before launching or rolling back.
+runtime identity, and the newest normal, fallback, emergency, and watchdog
+attempts. An `OK` line for every packaged file is expected. Investigate any
+checksum failure before launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
 
@@ -75,7 +75,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | installed launch and runtime identity | `sophia/installed-session/` |
 | automatic normal-cycle attempts | `sophia/promotion/runs/` |
 | automatic fallback attempts | `sophia/promotion/fallback-runs/` |
-| emergency recovery archives | `sophia/promotion/emergency-runs/` |
+| automatic emergency archives | `sophia/promotion/emergency-runs/` |
 | automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
 | Firefox proof archives | `sophia/promotion/firefox-runs/` |
 
@@ -129,10 +129,12 @@ takeover and finalizes it automatically. Verify the newest proof with:
 sophia-verify-watchdog
 ```
 
-An ordinary `Ctrl+Alt+Backspace` recovery is separate and is archived with:
+An ordinary `Ctrl+Alt+Backspace` recovery is separate. The ordinary session
+automatically archives a strictly verified status-130 outcome before returning
+that status to greetd. Verify the newest emergency proof with:
 
 ```sh
-sophia-record-emergency-run
+sophia-verify-emergency
 ```
 
 ## Rollback
@@ -175,6 +177,13 @@ deadline, an armed but untriggered local guard, watchdog-owned process-group
 termination, installed lifecycle and runtime identities, and complete VT
 restoration. Failed and pending recovery attempts remain visible and fail the
 latest-attempt check.
+
+If the independent chord ends an ordinary xmonad session, its already-reserved
+normal attempt remains a failed interruption—as required by the consecutive
+cycle gate—and the wrapper writes a separate verified emergency archive. The
+emergency verifier requires both the guard and live owner to observe the chord,
+drained client keys and native presentation, graceful process ownership, the
+installed lifecycle and runtime identities, and exact VT restoration.
 
 Verify the latest three consecutive attempts with:
 

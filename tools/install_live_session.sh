@@ -73,6 +73,7 @@ commands=(
     sophia-record-firefox-run
     sophia-verify-login-cycle
     sophia-verify-cycles
+    sophia-verify-emergency
     sophia-verify-fallback
     sophia-verify-watchdog
     sophia-verify-firefox-runs
