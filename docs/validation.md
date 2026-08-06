@@ -559,6 +559,31 @@ evidence until producers are assigned to both outputs of one render-device
 group. `tools/check_qemu_xmonad_render_contention_verifier.sh` mutation-tests
 the evidence contract and runs from the local regression gate.
 
+The unattended idle and partial-damage efficiency gate is:
+
+```sh
+tools/qemu_xmonad_idle_efficiency_acceptance.sh
+```
+
+This explicit-host-render-node profile runs a static CPU/SHM Xterm beside a
+real virgl `glxgears` DMA-BUF producer, freezes the producer after at least ten
+retirements, and waits for one second of stable producer state. It then sends
+256 Super-J focus transitions. Every transition must commit one physical
+action and produce a partial, page-flip-retired `RetainedMixed` submission from
+the cached client image, with no later client Present and no CPU submission in
+the marked reuse window. A subsequent two-second idle window must contain no
+repaint, page flip, or client Present.
+
+Completion requires more import-cache hits than imports, exact final eviction,
+balanced renderer-worker ownership, bounded worker and frontend-control
+latency, one active output plus one baseline-only output, a two- or three-frame
+startup upload baseline, and clean native, application, protocol, and cache
+teardown. The upload total is deliberately bounded rather than exact because
+the initial static Xterm frame may coalesce with startup; the causal reuse
+window independently rejects every non-retained submission. Run
+`tools/check_qemu_xmonad_idle_efficiency_verifier.sh` to mutation-test the
+evidence contract. Both checks run from the local regression gate.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

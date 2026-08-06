@@ -880,11 +880,28 @@ promotes one to a hard M9 exit gate.
     retains its startup baseline but intentionally carries no workload, so the
     parent item remains open. Complete the shared renderer-worker prerequisite
     in Milestone 13 before treating this as same-device output fairness.
-- [ ] Idle / partial-damage efficiency. Hold a mostly-static desktop and require
+- [x] Idle / partial-damage efficiency. Hold a mostly-static desktop and require
   near-zero recomposition, a high import-cache hit rate, and no full-frame CPU
   upload when nothing changed. This is the inverse of the always-animating
   benchmarks and the only proof that exercises the import-cache hit path, since
-  every animation frame is a cache miss by construction.
+  every animation frame is a cache miss by construction. The isolated
+  two-output virgl gate freezes a real `glxgears` DMA-BUF producer beside a
+  static CPU/SHM Xterm, then performs 256 focus transitions followed by a
+  two-second causal idle window. Two consecutive production runs delivered a
+  partial, page-flip-retired `RetainedMixed` submission for every transition,
+  admitted no client Present or CPU submission during that window, and
+  performed no repaint, page flip, or client Present while idle. The latest
+  completion recorded 73 imports, 257 cache hits, 73 final evictions, 334
+  balanced renderer requests/completions with a 34 ms maximum, and clean
+  native, control, application, and cache teardown. The runs exercised both
+  legal two- and three-upload startup baselines without uploading another CPU
+  frame in the retained window. Mutation tests reject a missing transition,
+  full repaint, non-retained submission, weak cache reuse, idle work, worker
+  debt, output leakage, or dirty cleanup. The gate also found and locked down a
+  lost-repaint bug: CPU-frame coalescing had removed the native visual owner
+  from the same Engine cycle, allowing focus state to commit without queuing
+  retained projection. CPU coalescing is now advisory only for CPU composition;
+  retained GPU and chrome work keeps its native owner.
 - [ ] Producer-overload / frame-drop discipline. Drive an unthrottled producer
   above the refresh rate and prove one latest pending frame plus one KMS
   submission in flight per output, bounded queue storage, no unbounded memory

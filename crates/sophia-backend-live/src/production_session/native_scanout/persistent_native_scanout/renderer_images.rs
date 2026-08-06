@@ -34,6 +34,8 @@ impl LiveProductionNativeScanout {
     ) -> LiveProductionNativeFrameId {
         let frame_id = self.allocate_frame_id();
         let head = &mut self.heads[index];
+        let pending_before = head.exporter.pending_frame();
+        let worker_in_flight = head.exporter.worker_in_flight();
         if let Some(superseded) = head.pending_content {
             tracing::warn!(
                 "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
@@ -48,6 +50,13 @@ impl LiveProductionNativeScanout {
         });
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
         head.exporter.set_pending_mixed_frame(frame);
+        tracing::debug!(
+            "sophia_live_retained_projection schema=1 status=native_queued output={} frame={} pending_before={} worker_in_flight={}",
+            head.output.id.raw(),
+            frame_id.raw(),
+            pending_before,
+            worker_in_flight,
+        );
         frame_id
     }
 

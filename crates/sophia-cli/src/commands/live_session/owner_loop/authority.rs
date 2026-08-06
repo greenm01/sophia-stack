@@ -554,6 +554,10 @@
                     .filter(|layer| !layout.is_client_positioned(layer.surface))
                     .map(|layer| layer.surface)
                     .collect::<Vec<_>>();
+                let native_owner_policy = production_cycle_native_owner_policy(
+                    native_scanout.is_some(),
+                    defer_cpu_frame,
+                );
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if !production_batch.has_dma_buf_present_submissions()
                         && !runtime.released_surface_content_requires_gpu()
@@ -567,11 +571,10 @@
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 output_descriptors: &outputs,
-                                native_scanout: if defer_cpu_frame {
-                                    None
-                                } else {
-                                    native_scanout.as_mut()
-                                },
+                                native_scanout: native_scanout.as_mut().filter(|_| {
+                                    native_owner_policy
+                                        == ProductionCycleNativeOwnerPolicy::Available
+                                }),
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,
@@ -594,11 +597,10 @@
                                 cursor_presentation,
                                 defer_frame: defer_cpu_frame,
                                 output_descriptors: &outputs,
-                                native_scanout: if defer_cpu_frame {
-                                    None
-                                } else {
-                                    native_scanout.as_mut()
-                                },
+                                native_scanout: native_scanout.as_mut().filter(|_| {
+                                    native_owner_policy
+                                        == ProductionCycleNativeOwnerPolicy::Available
+                                }),
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,

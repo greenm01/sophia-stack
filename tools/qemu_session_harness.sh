@@ -10,7 +10,7 @@ SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -18,8 +18,8 @@ if [[ "$GPU_MODE" != software && "$GPU_MODE" != virgl ]]; then
     echo "SOPHIA_QEMU_GPU_MODE must be software or virgl" >&2
     exit 1
 fi
-if [[ "$SCENARIO" == "xmonad-render-contention" && "$GPU_MODE" != virgl ]]; then
-    echo "xmonad-render-contention requires SOPHIA_QEMU_GPU_MODE=virgl" >&2
+if [[ ("$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-render-contention") && "$GPU_MODE" != virgl ]]; then
+    echo "$SCENARIO requires SOPHIA_QEMU_GPU_MODE=virgl" >&2
     exit 1
 fi
 if [[ "$TWO_XTERM" != "0" && "$TWO_XTERM" != "1" ]]; then
@@ -699,7 +699,9 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 elif [[ "$SCENARIO" == gtk-* ]]; then
     echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
 elif [[ "$SCENARIO" == xmonad-* ]]; then
-    if [[ "$GPU_MODE" == virgl ]]; then
+    if [[ "$SCENARIO" == "xmonad-idle-efficiency" ]]; then
+        echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
+    elif [[ "$GPU_MODE" == virgl ]]; then
         echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=3 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
     else
         echo "sophia_qemu_xmonad schema=1 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2" | tee -a "$EVIDENCE_FILE"
@@ -800,6 +802,185 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-idle-efficiency" ]]; then
+    ready=false
+    for _ in $(seq 1 1600); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=1 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(cpu|gpu) ' "$EVIDENCE_FILE"; then
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    started_baseline="$(evidence_count '^sophia_session_app schema=2 status=started id=gpu source=action ')"
+    admitted_baseline="$(evidence_count '^sophia_session_app schema=2 status=admitted source=action ')"
+    echo "sophia_qemu_idle_efficiency schema=1 status=launch_begin chord=meta_l+p app=gpu" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+p
+    if ! wait_for_new_evidence \
+        '^sophia_session_app schema=2 status=started id=gpu source=action ' \
+        "$started_baseline" 400 \
+        || ! wait_for_new_evidence \
+            '^sophia_session_app schema=2 status=admitted source=action ' \
+            "$admitted_baseline" 1600; then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=producer_admission_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    frozen=false
+    for _ in $(seq 1 1600); do
+        retirements="$(evidence_count '^sophia_live_session_present schema=2 status=retired ')"
+        if grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_qemu_idle_client schema=1 status=frozen producer=glxgears$' "$EVIDENCE_FILE" \
+            && (( retirements >= 10 )) \
+            && (( $(dmabuf_retirement_surface_count) == 1 )); then
+            frozen=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(cpu|gpu) ' "$EVIDENCE_FILE" \
+            || grep -q '^sophia_qemu_idle_client schema=1 status=failed ' "$EVIDENCE_FILE"; then
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$frozen" != true ]]; then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=producer_freeze_timeout retirements=${retirements:-0}" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    # A frozen producer can leave already-admitted frames in the owner queue.
+    # Begin the reuse phase only after that queue has stopped advancing.
+    stable_ticks=0
+    previous_retirements=-1
+    while (( stable_ticks < 20 )); do
+        retirements="$(evidence_count '^sophia_live_session_present schema=2 status=retired ')"
+        if (( retirements == previous_retirements )); then
+            stable_ticks=$((stable_ticks + 1))
+        else
+            previous_retirements=$retirements
+            stable_ticks=0
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(cpu|gpu) ' "$EVIDENCE_FILE" \
+            || ! kill -0 "$QEMU_PID" 2>/dev/null; then
+            echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=producer_quiescence_interrupted" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        sleep 0.05
+    done
+    producer_retirements=$retirements
+    echo "sophia_qemu_idle_efficiency schema=1 status=producer_quiescent surfaces=1 retirements=$producer_retirements stable_msec=1000" |
+        tee -a "$EVIDENCE_FILE"
+
+    focus_transitions="${SOPHIA_QEMU_IDLE_FOCUS_TRANSITIONS:-256}"
+    if [[ ! "$focus_transitions" =~ ^[0-9]+$ ]] \
+        || (( focus_transitions < 1 || focus_transitions > 512 )); then
+        echo "SOPHIA_QEMU_IDLE_FOCUS_TRANSITIONS must be an integer from 1 through 512" >&2
+        exit 1
+    fi
+    action_baseline="$(evidence_count '^sophia_live_wm schema=1 status=physical_action_committed action=')"
+    repaint_baseline="$(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=1 ')"
+    partial_baseline="$(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=1 mode=partial ')"
+    flip_baseline="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=1 ')"
+    echo "sophia_qemu_idle_efficiency schema=1 status=reuse_window_started focus_transitions=$focus_transitions" |
+        tee -a "$EVIDENCE_FILE"
+    for transition in $(seq 1 "$focus_transitions"); do
+        action="$(evidence_count '^sophia_live_wm schema=1 status=physical_action_committed action=')"
+        partial="$(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=1 mode=partial ')"
+        flip="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=1 ')"
+        "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+        if ! wait_for_new_evidence \
+            '^sophia_live_wm schema=1 status=physical_action_committed action=' \
+            "$action" 400 \
+            || ! wait_for_new_evidence \
+                'sophia_live_output_repaint schema=1 status=presented output=1 mode=partial ' \
+                "$partial" 400 \
+            || ! wait_for_new_evidence \
+                'sophia_live_native_page_flip schema=1 status=retired output=1 ' \
+                "$flip" 400; then
+            echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=retained_repaint_timeout transition=$transition" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+    done
+    actions=$(( $(evidence_count '^sophia_live_wm schema=1 status=physical_action_committed action=') - action_baseline ))
+    repaints=$(( $(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=1 ') - repaint_baseline ))
+    partial_repaints=$(( $(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=1 mode=partial ') - partial_baseline ))
+    flips=$(( $(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=1 ') - flip_baseline ))
+    current_retirements="$(evidence_count '^sophia_live_session_present schema=2 status=retired ')"
+    if (( actions != focus_transitions \
+        || partial_repaints < focus_transitions \
+        || repaints != partial_repaints \
+        || flips < focus_transitions \
+        || current_retirements != producer_retirements )); then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=reuse_window_accounting actions=$actions repaints=$repaints partial_repaints=$partial_repaints flips=$flips producer_before=$producer_retirements producer_after=$current_retirements" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_idle_efficiency schema=1 status=reuse_window_complete focus_transitions=$focus_transitions actions=$actions repaints=$repaints partial_repaints=$partial_repaints flips=$flips producer_retirements=$current_retirements" |
+        tee -a "$EVIDENCE_FILE"
+
+    idle_repaint_baseline="$(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=')"
+    idle_flip_baseline="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=')"
+    idle_present_baseline="$(evidence_count '^sophia_live_session_present schema=2 status=retired ')"
+    echo "sophia_qemu_idle_efficiency schema=1 status=idle_window_started duration_msec=2000" |
+        tee -a "$EVIDENCE_FILE"
+    sleep 2
+    idle_repaints=$(( $(evidence_count 'sophia_live_output_repaint schema=1 status=presented output=') - idle_repaint_baseline ))
+    idle_flips=$(( $(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=') - idle_flip_baseline ))
+    idle_presents=$(( $(evidence_count '^sophia_live_session_present schema=2 status=retired ') - idle_present_baseline ))
+    echo "sophia_qemu_idle_efficiency schema=1 status=idle_window_complete duration_msec=2000 repaints=$idle_repaints page_flips=$idle_flips client_presents=$idle_presents" |
+        tee -a "$EVIDENCE_FILE"
+    if (( idle_repaints != 0 || idle_flips != 0 || idle_presents != 0 )); then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=idle_work_observed repaints=$idle_repaints page_flips=$idle_flips client_presents=$idle_presents" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    echo "sophia_qemu_idle_efficiency schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_idle_efficiency schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_idle_efficiency schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_idle_efficiency_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 

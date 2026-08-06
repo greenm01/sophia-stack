@@ -285,6 +285,19 @@ impl LiveProductionVisualRuntime {
         } else {
             false
         };
+        if visual_projection_changed {
+            tracing::debug!(
+                "sophia_live_retained_projection schema=1 status={} focus_changed={} order_changed={} chrome_changed={}",
+                if retained_projection_queued {
+                    "queued"
+                } else {
+                    "unavailable"
+                },
+                focus_changed,
+                presentation_order_changed,
+                chrome_surfaces_changed,
+            );
+        }
         let removed_surfaces = authority_batch_removed_surfaces(&batch);
         self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
         let rebased_groups = batch.groups;
@@ -349,8 +362,11 @@ impl LiveProductionVisualRuntime {
                   committed: &[CommittedSurfaceState],
                   authority_commits: &[TransactionCommit],
                   native_frames: Option<Vec<LiveProductionComposedFrame>>| {
+                // A deferred cycle may service retained native work without
+                // producing a new CPU frame; only an actual frame set initializes outputs.
+                let initialize_native = native_frames.is_some();
                 let native_frames = native_frames.unwrap_or_default();
-                if let Some(native_scanout) = native_scanout.as_deref_mut() {
+                if initialize_native && let Some(native_scanout) = native_scanout.as_deref_mut() {
                     outputs.initialize_native_scanout(native_scanout, &native_frames)?;
                 }
                 let mut native_frames = native_frames.into_iter();

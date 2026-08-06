@@ -46,6 +46,24 @@ fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequ
         })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProductionCycleNativeOwnerPolicy {
+    Unavailable,
+    Available,
+}
+
+const fn production_cycle_native_owner_policy(
+    native_enabled: bool,
+    cpu_frame_deferred: bool,
+) -> ProductionCycleNativeOwnerPolicy {
+    // Composition coalescing is advisory. The visual runtime still needs the
+    // native owner to preserve retained GPU content or repaint changed chrome.
+    match (native_enabled, cpu_frame_deferred) {
+        (false, false) | (false, true) => ProductionCycleNativeOwnerPolicy::Unavailable,
+        (true, false) | (true, true) => ProductionCycleNativeOwnerPolicy::Available,
+    }
+}
+
 fn native_frame_service_should_preempt_authority(
     request: &OutputFrameServiceRequest,
     preempted_previous_cycle: bool,

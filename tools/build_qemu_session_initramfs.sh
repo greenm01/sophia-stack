@@ -176,6 +176,7 @@ if [[ "$IMAGE_PROFILE" == rendering ]]; then
     extra_includes+=(
         --include "$GLXGEARS_BIN" /usr/bin/glxgears
         --include "$XMOBAR_BIN" /usr/bin/xmobar
+        --include "$ROOT_DIR/tools/fixtures/qemu_idle_glxgears_client.sh" /usr/bin/sophia-idle-glxgears-client
         --include "$ROOT_DIR/tools/fixtures/qemu_render_contention_xmobar.config" /usr/share/sophia/qemu_render_contention_xmobar.config
         --include /usr/lib/locale/C.utf8 /usr/lib/locale/C.utf8
         --include /usr/share/X11/locale /usr/share/X11/locale
@@ -183,6 +184,7 @@ if [[ "$IMAGE_PROFILE" == rendering ]]; then
     )
     required_guest_paths+=(
         /usr/bin/glxgears
+        /usr/bin/sophia-idle-glxgears-client
         /usr/bin/xmobar
         /usr/lib/locale/C.utf8/LC_CTYPE
         /usr/share/X11/locale/locale.dir

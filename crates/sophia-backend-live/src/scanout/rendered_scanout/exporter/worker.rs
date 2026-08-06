@@ -10,11 +10,11 @@ use sophia_renderer_live::{
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::AsFd;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{
     Receiver, RecvTimeoutError, SyncSender, TryRecvError, TrySendError, sync_channel,
 };
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -173,6 +173,13 @@ impl NativeGbmRendererWorker {
             soft_stall_reported: false,
         });
         self.metrics.requests = self.metrics.requests.saturating_add(1);
+        if trace_worker_request(request_id) {
+            tracing::debug!(
+                "sophia_renderer_worker schema=2 status=request_submitted request={} requests={}",
+                request_id.0,
+                self.metrics.requests,
+            );
+        }
         Ok(())
     }
 
@@ -188,6 +195,14 @@ impl NativeGbmRendererWorker {
                 self.context_status = Some(result.context_status);
                 self.persistent_render_stats = result.persistent_render_stats;
                 self.composition_nonzero_rgb_pixels = result.composition_nonzero_rgb_pixels;
+                if trace_worker_request(in_flight.request_id) {
+                    tracing::debug!(
+                        "sophia_renderer_worker schema=2 status=request_received request={} expected={} age_ms={}",
+                        result.request_id.0,
+                        in_flight.request_id.0,
+                        age.as_millis(),
+                    );
+                }
                 if result.request_id != in_flight.request_id {
                     self.metrics.failures = self.metrics.failures.saturating_add(1);
                     self.quarantined = true;
@@ -466,6 +481,13 @@ fn run_worker<D>(
                 frame,
                 preferred_modifiers,
             } => {
+                let frame_kind = pending_frame_kind_name(&frame);
+                if trace_worker_request(request_id) {
+                    tracing::debug!(
+                        "sophia_renderer_worker schema=2 status=render_started request={} frame_kind={frame_kind}",
+                        request_id.0,
+                    );
+                }
                 let outcome = context.as_mut().map_or_else(
                     || {
                         WorkerOutcome::Failed(
@@ -484,6 +506,13 @@ fn run_worker<D>(
                         )
                     },
                 );
+                if trace_worker_request(request_id) {
+                    tracing::debug!(
+                        "sophia_renderer_worker schema=2 status=render_finished request={} frame_kind={frame_kind} outcome={}",
+                        request_id.0,
+                        worker_outcome_name(&outcome),
+                    );
+                }
                 let persistent_render_stats = context.as_ref().map_or_else(
                     LiveNativePersistentRenderStats::default,
                     NativeGbmRenderedScanoutContext::persistent_render_stats,
@@ -561,6 +590,34 @@ fn run_worker<D>(
             }
             WorkerCommand::Shutdown => break,
         }
+    }
+}
+
+fn pending_frame_kind_name(frame: &PendingRenderedFrame) -> &'static str {
+    match frame {
+        PendingRenderedFrame::Cpu { .. } => "cpu",
+        PendingRenderedFrame::DmaBuf(_) => "dmabuf",
+        PendingRenderedFrame::Mixed(_) => "mixed",
+    }
+}
+
+fn trace_worker_request(request: LiveRendererWorkerRequestId) -> bool {
+    static MINIMUM: OnceLock<Option<u64>> = OnceLock::new();
+    MINIMUM
+        .get_or_init(|| {
+            std::env::var("SOPHIA_LIVE_RENDERER_WORKER_TRACE_AFTER_REQUEST")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .as_ref()
+        .copied()
+        .is_some_and(|minimum| request.0 >= minimum)
+}
+
+fn worker_outcome_name(outcome: &WorkerOutcome) -> &'static str {
+    match outcome {
+        WorkerOutcome::Exported { .. } => "exported",
+        WorkerOutcome::Failed(_) => "failed",
     }
 }
 
