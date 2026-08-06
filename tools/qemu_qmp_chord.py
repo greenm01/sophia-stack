@@ -38,11 +38,19 @@ def execute(stream, command, arguments=None):
 
 
 def main():
-    if len(sys.argv) != 3:
-        fail("usage: qemu_qmp_chord.py QMP_SOCKET KEY+KEY")
+    if len(sys.argv) not in (3, 4):
+        fail("usage: qemu_qmp_chord.py QMP_SOCKET KEY+KEY [REPEAT]")
     keys = sys.argv[2].split("+")
     if not keys or len(keys) > 4 or len(set(keys)) != len(keys) or any(key not in ALLOWED for key in keys):
         fail("chord contains unsupported, duplicate, or excessive keys")
+    repeats = 1
+    if len(sys.argv) == 4:
+        try:
+            repeats = int(sys.argv[3])
+        except ValueError:
+            fail("repeat count must be an integer")
+        if not 1 <= repeats <= 32:
+            fail("repeat count must be from 1 through 32")
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.settimeout(5)
     connection.connect(sys.argv[1])
@@ -52,10 +60,13 @@ def main():
         if "QMP" not in greeting:
             fail("QMP greeting was missing")
         execute(stream, "qmp_capabilities")
-        execute(stream, "input-send-event", {"events": [event(key, True) for key in keys]})
-        time.sleep(0.08)
-        execute(stream, "input-send-event", {"events": [event(key, False) for key in reversed(keys)]})
-        time.sleep(0.2)
+        for repetition in range(repeats):
+            execute(stream, "input-send-event", {"events": [event(key, True) for key in keys]})
+            time.sleep(0.08)
+            execute(stream, "input-send-event", {"events": [event(key, False) for key in reversed(keys)]})
+            # A burst retains operator-like key holds but avoids reconnect and
+            # post-chord delays that would let each launch settle serially.
+            time.sleep(0.02 if repetition + 1 < repeats else 0.2)
     finally:
         connection.close()
 

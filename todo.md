@@ -588,10 +588,12 @@ reopen the completed Milestone 9 exit gate.
 - [ ] Pass the short physical four-Kitty hardware smoke once from the candidate
   commit. Keep multi-cycle repetition as an unattended soak and release-burn-in
   requirement rather than an operator promotion ritual.
-- [ ] Add the rapid Super-Enter capacity-overflow workload to an unattended
-  QEMU scenario. The passive queue-capacity tests remain authoritative until
-  that scenario exists; the physical hardware smoke performs three ordered
-  launches.
+- [x] Add the rapid Super-Enter capacity-overflow workload to an unattended
+  QEMU scenario. The isolated profile preloads 12 managed nonvisual children,
+  sends 32 physical launch chords, admits the four remaining slots, proves
+  bounded capacity rejection, reuses a slot after managed exit, commits a
+  following Super-J focus transition, and drains without admission timeout,
+  WM restart, or native cleanup debt.
 - [x] Require the session-control ledger to drain with balanced
   enqueue/dispatch/delivery counts, zero rejection/timeout/unexpected
   acknowledgements, and queue/ack latency at or below 100 ms. The three-

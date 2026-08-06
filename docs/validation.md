@@ -478,6 +478,26 @@ the external WM has projected out. Together these checks prove the stateful
 raw-to-logical pointer path and hidden-surface exclusion without claiming
 physical cursor visibility or the required all-edge hardware exercise.
 
+The unattended launch-capacity gate is:
+
+```sh
+tools/qemu_xmonad_launch_burst_acceptance.sh
+```
+
+Its isolated profile keeps one visible startup Xterm and preloads twelve
+managed `sleep` children, leaving four slots in the active-plus-pending limit.
+The harness sends 32 Super-Enter chords through one QMP connection. Because the
+WM transport may validly coalesce an identical action while one request is in
+flight, the verifier requires exactly four burst admissions, 20 through 28
+capacity rejections, and balanced committed launch actions rather than an
+exact rejection count. It then waits for a managed child to release capacity,
+requires one recovery launch and its X11 focus acknowledgment, commits a
+Super-J focus transition, and logs out normally. Acceptance also requires two
+unique startup-output baselines, asynchronous native retirement, zero admission
+timeouts or WM restarts, clean session health, and drained native and
+application ownership. `tools/check_qemu_xmonad_launch_burst_verifier.sh`
+mutation-tests this evidence contract and runs from the local regression gate.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

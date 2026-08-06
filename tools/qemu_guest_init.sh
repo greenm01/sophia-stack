@@ -29,6 +29,7 @@ case " $cmdline " in
     *" sophia.scenario=gtk-classic "*) scenario="gtk-classic" ;;
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
     *" sophia.scenario=xmonad-m7 "*) scenario="xmonad-m7" ;;
+    *" sophia.scenario=xmonad-launch-burst "*) scenario="xmonad-launch-burst" ;;
     *" sophia.scenario=xmonad-m8-launcher "*) scenario="xmonad-m8-launcher" ;;
     *" sophia.scenario=xmonad-m8-mix "*) scenario="xmonad-m8-mix" ;;
     *" sophia.scenario=xmonad-m8-soak "*) scenario="xmonad-m8-soak" ;;
@@ -41,7 +42,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -147,17 +148,36 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         --expect-physical-text=sophia --expect-physical-pointer \
         --inject-surface-resize=640x360 --exit-after-input-proof
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     if [ ! -x /usr/bin/xmonad ]; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=xmonad_missing"
         sync
         poweroff -f
     fi
     runtime_ms=60000
+    [ "$scenario" != "xmonad-launch-burst" ] || runtime_ms=240000
     [ "$scenario" != "xmonad-m8-mix" ] || runtime_ms=360000
     [ "$scenario" != "xmonad-m8-soak" ] || runtime_ms=2100000
     set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
-    if [ "$scenario" = "xmonad-m8-launcher" ]; then
+    if [ "$scenario" = "xmonad-launch-burst" ]; then
+        set -- "$@" --session-mode=normal
+        set -- "$@" --session-app=startup=/usr/bin/xterm
+        set -- "$@" --session-app-arg=startup=-cm --session-app-arg=startup=-dc
+        set -- "$@" --session-app=terminal=/usr/bin/xterm
+        set -- "$@" --session-app-arg=terminal=-cm --session-app-arg=terminal=-dc
+        set -- "$@" --session-start=startup --session-action-app=terminal=terminal
+        # Twelve non-visual managed children leave four slots for the rapid
+        # launch workload. This exercises the active-plus-pending limit without
+        # turning the queue proof into a sixteen-pane resize benchmark.
+        holder=1
+        while [ "$holder" -le 12 ]; do
+            set -- "$@" "--session-app=holder$holder=/usr/bin/sleep"
+            set -- "$@" "--session-app-arg=holder$holder=20"
+            set -- "$@" "--session-start=holder$holder"
+            holder=$((holder + 1))
+        done
+        echo "sophia_qemu_xmonad schema=1 status=running windows=1 profile=xmonad mode=launch-burst"
+    elif [ "$scenario" = "xmonad-m8-launcher" ]; then
         set -- "$@" --session-mode=normal
         set -- "$@" --session-app=terminal=/usr/bin/xterm
         set -- "$@" --session-app-arg=terminal=-cm --session-app-arg=terminal=-dc
@@ -296,7 +316,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     else
         echo "sophia_qemu_guest schema=1 status=failed reason=gtk_session_exit scenario=$scenario exit_status=$status"
     fi
-elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
+elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-launch-burst" ] || [ "$scenario" = "xmonad-m8-launcher" ] || [ "$scenario" = "xmonad-m8-mix" ] || [ "$scenario" = "xmonad-m8-soak" ]; then
     if [ "$status" -eq 0 ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else

@@ -8,7 +8,7 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -91,6 +91,24 @@ wait_for_new_evidence() {
     for _ in $(seq 1 "$attempts"); do
         current="$(evidence_count "$pattern")"
         if (( current > baseline )); then
+            return 0
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+            return 1
+        fi
+        sleep 0.05
+    done
+    return 1
+}
+
+wait_for_evidence_count_at_least() {
+    local pattern=$1
+    local expected=$2
+    local attempts=${3:-400}
+    local current
+    for _ in $(seq 1 "$attempts"); do
+        current="$(evidence_count "$pattern")"
+        if (( current >= expected )); then
             return 0
         fi
         if ! kill -0 "$QEMU_PID" 2>/dev/null; then
@@ -711,6 +729,133 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-launch-burst" ]]; then
+    ready=false
+    for _ in $(seq 1 800); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    managed_exit_baseline="$(evidence_count '^sophia_session_app schema=1 status=exited id=holder')"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+ret 32
+    echo "sophia_qemu_launch_burst schema=1 status=sent chord=meta_l+ret requests=32" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_evidence_count_at_least \
+        '^sophia_session_app schema=2 status=admitted source=action ' 4 1600; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=admission_drain_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    queued="$(evidence_count '^sophia_session_app schema=2 status=queued source=action ')"
+    rejected="$(evidence_count '^sophia_session_app schema=2 status=rejected source=action .* reason=capacity$')"
+    if (( queued != 4 || rejected < 20 || rejected > 28 )); then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=burst_accounting queued=$queued rejected=$rejected" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_launch_burst schema=1 status=settled active_preload=12 queued=4 admitted=4 rejected=$rejected" |
+        tee -a "$EVIDENCE_FILE"
+
+    echo "sophia_qemu_launch_burst schema=1 status=capacity_release_wait source=managed_exit" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence \
+        '^sophia_session_app schema=1 status=exited id=holder' \
+        "$managed_exit_baseline" 800; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=capacity_release_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    managed_exits="$(evidence_count '^sophia_session_app schema=1 status=exited id=holder')"
+    echo "sophia_qemu_launch_burst schema=1 status=capacity_released managed_exits=$managed_exits" |
+        tee -a "$EVIDENCE_FILE"
+
+    queued_baseline="$(evidence_count '^sophia_session_app schema=2 status=queued source=action ')"
+    admitted_baseline="$(evidence_count '^sophia_session_app schema=2 status=admitted source=action ')"
+    recovery_focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    echo "sophia_qemu_launch_burst schema=1 status=recovery_launch_begin chord=meta_l+ret" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+ret
+    echo "sophia_qemu_launch_burst schema=1 status=recovery_launch_sent chord=meta_l+ret" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence \
+        '^sophia_session_app schema=2 status=queued source=action ' "$queued_baseline" 400 \
+        || ! wait_for_new_evidence \
+            '^sophia_session_app schema=2 status=admitted source=action ' "$admitted_baseline" 1600; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=recovery_launch_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_launch_burst schema=1 status=recovery_admitted queued=5 admitted=5" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_new_evidence \
+        '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' \
+        "$recovery_focus_baseline" 400; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=recovery_focus_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_launch_burst schema=1 status=recovery_focus_ready source=x11-control" |
+        tee -a "$EVIDENCE_FILE"
+
+    action_baseline="$(evidence_count '^sophia_live_wm schema=1 status=physical_action_committed action=')"
+    action_focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    echo "sophia_qemu_launch_burst schema=1 status=action_probe_begin chord=meta_l+j" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+j
+    if ! wait_for_new_evidence \
+        '^sophia_live_wm schema=1 status=physical_action_committed action=' \
+        "$action_baseline" 400; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=post_burst_action_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    if ! wait_for_new_evidence \
+        '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' \
+        "$action_focus_baseline" 400; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=post_burst_focus_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_launch_burst schema=1 status=action_probe_committed chord=meta_l+j focus=applied" |
+        tee -a "$EVIDENCE_FILE"
+
+    echo "sophia_qemu_launch_burst schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_launch_burst schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_launch_burst schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_launch_burst_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 
