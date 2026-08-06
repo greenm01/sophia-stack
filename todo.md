@@ -1330,13 +1330,21 @@ Compatibility follow-up outside the Firefox exit gate:
   compatibility bridge chrome-blind, route external WMs through the core
   fallback, and hold candidate width changes behind the same committed
   relayout boundary used by native policy.
-- [ ] Complete the physical schema-2 proof for ring-only, frame-only, and
+- [x] Complete the physical schema-2 proof for ring-only, frame-only, and
   combined chrome. Require an atomic 2→6 width transition with no content
   occlusion, partial geometry, focus resize, bar decoration, or input loss.
   Reduced aggregate evidence and fail-closed fixtures now cover each policy,
   resize, and composition boundary. The installed `Sophia Native Chrome Proof`
   entry packages the native WM, applies the ordered sequence automatically,
-  and retains a commit-pinned immutable archive; one physical capture remains.
+  and retains a commit-pinned immutable archive. Installed commit `e07afa0f`
+  passed archive `0002` with two outputs, all six ordered phases, 48 routed
+  physical keys, normal logout, clean native drain, and exact VT restoration.
+- [ ] Restore renderer-target recreation after an in-session VT switch. Native
+  chrome attempt `0001` quiesced before switching to tty2 and reacquired the
+  seat, but every resumed renderer export returned `InvalidTarget`; the
+  emergency path then retained the attempt as failed. Require a deterministic
+  lifecycle regression and a physical switch-away/switch-back capture before
+  treating the installed candidate as stable.
 - [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.

@@ -17,8 +17,21 @@ verifier inputs, keeping reservation, launch identity, lifecycle, and checksum
 semantics common rather than cloning them for chrome. The archive verifier
 binds the sequence commit to the release and fails closed on incomplete
 transitions, lost physical input, output/native debt, emergency recovery,
-modified evidence, or identity drift. The current commit still needs one
-physical installed capture before the Milestone 11 chrome item can close.
+modified evidence, or identity drift.
+
+Installed commit `e07afa0f` passed native-chrome archive `0002` on two physical
+outputs. The checksummed evidence contains all six ordered ring/frame phases,
+48 routed physical keys, normal logout, clean native drain, an untriggered
+guard, and exact VT restoration. This closes the remaining physical schema-2
+chrome capture.
+
+The preceding archive `0001` remains a useful failed attempt. An operator VT
+switch quiesced native work before releasing tty7 and reacquired the seat on
+return, but the resumed renderer repeatedly returned `InvalidTarget` instead
+of rebuilding a usable target. Emergency recovery then retained a failed
+status-130 archive. The chrome proof is complete, but the installed candidate
+must restore and re-prove VT-resume target recreation before stability work can
+advance.
 
 ## 2026-08-06: Consecutive-cycle evidence has a stable endpoint
 
