@@ -80,8 +80,11 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | Firefox proof archives | `sophia/promotion/firefox-runs/` |
 
 The active files have a `.previous` sibling after rotation where applicable.
-The logs contain reduced state and identity evidence; they must not contain
-typed text, clipboard data, window titles, or application content.
+Every immutable attempt also records the exact Sophia executable digest in
+both its schema-2 runtime identity and schema-4 manifest. Archive verification
+compares those copies, so installing another release does not weaken the older
+record. The logs contain reduced state and identity evidence; they must not
+contain typed text, clipboard data, window titles, or application content.
 
 ## Normal Stop
 

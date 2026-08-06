@@ -9,7 +9,9 @@ PREFIX="$TEMP_DIR/opt/sophia"
 RELEASE="$PREFIX/releases/0.1.0-test"
 COMMIT=2222222222222222222222222222222222222222
 
-install -d -m 755 "$RELEASE/bin" "$RELEASE/tools/lib"
+install -d -m 755 \
+    "$RELEASE/bin" "$RELEASE/tools/lib" "$RELEASE/target/release"
+printf 'sophia-test-binary\n' >"$RELEASE/target/release/sophia"
 install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-session" \
     "$RELEASE/bin/sophia-session"
@@ -112,7 +114,8 @@ printf 'schema=1\nversion=0.1.0\ncommit=%s\nrelease_id=0.1.0-test\nbuilt_at_utc=
     "$COMMIT" >"$RELEASE/manifest"
 (
     cd "$RELEASE"
-    find bin tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+    find bin tools target -type f -print0 | sort -z | xargs -0 sha256sum \
+        >SHA256SUMS
 )
 ln -s releases/0.1.0-test "$PREFIX/current"
 

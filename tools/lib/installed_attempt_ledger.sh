@@ -43,6 +43,20 @@ sophia_installed_attempt_load_identity() {
         echo "installed release digest verification failed" >&2
         return 1
     }
+    sophia_attempt_binary_sha256="$(
+        sha256sum "$SOPHIA_ATTEMPT_PREFIX/current/target/release/sophia" |
+            awk '{ print $1 }'
+    )"
+    [[ "$sophia_attempt_binary_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "installed Sophia binary digest is unavailable" >&2
+        return 1
+    }
+    if ! "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" \
+        "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
+        "$sophia_attempt_binary_sha256" >/dev/null; then
+        echo "runtime identity does not match the installed Sophia binary" >&2
+        return 1
+    fi
 }
 
 sophia_installed_attempt_begin() {
@@ -73,9 +87,10 @@ sophia_installed_attempt_begin() {
     install -m 600 "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
         "$run_dir/runtime-identity.log"
     install -m 600 "$SOPHIA_ATTEMPT_PREFIX/current/manifest" "$run_dir/manifest"
-    printf 'record_schema=3\nrecord_kind=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\n' \
+    printf 'record_schema=4\nrecord_kind=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\nsophia_binary_sha256=%s\n' \
         "$SOPHIA_ATTEMPT_KIND" "$sophia_attempt_started_at_utc" \
-        "$sophia_attempt_identity_sha256" >>"$run_dir/manifest"
+        "$sophia_attempt_identity_sha256" "$sophia_attempt_binary_sha256" \
+        >>"$run_dir/manifest"
     printf '%s\n' "$run_dir"
 }
 
@@ -98,7 +113,7 @@ sophia_installed_attempt_finish() {
         echo "session exit status must be an integer from 0 through 255" >&2
         return 1
     }
-    local resolved_root resolved_run expected_identity recorded_kind
+    local resolved_root resolved_run expected_identity recorded_binary recorded_kind
     resolved_root="$(readlink -f "$SOPHIA_ATTEMPT_RUN_ROOT")"
     resolved_run="$(readlink -f "$run_dir")"
     [[ -d "$resolved_run" && "$(dirname "$resolved_run")" == "$resolved_root" ]] || {
@@ -134,6 +149,10 @@ sophia_installed_attempt_finish() {
     [[ -n "$expected_identity" \
         && "$sophia_attempt_identity_sha256" == "$expected_identity" ]] ||
         failure=identity_mismatch
+    recorded_binary="$(sed -n 's/^sophia_binary_sha256=//p' "$run_dir/manifest")"
+    [[ "$recorded_binary" =~ ^[0-9a-f]{64}$ \
+        && "$sophia_attempt_binary_sha256" == "$recorded_binary" ]] ||
+        failure=identity_mismatch
 
     if [[ "$session_status" != "$expected_status" ]]; then
         failure=session_exit
@@ -149,7 +168,8 @@ sophia_installed_attempt_finish() {
         "$SOPHIA_ATTEMPT_VERIFY_SESSION" "${session_evidence[@]}" ||
             failure=session_verification
         if [[ "$failure" == none ]]; then
-            "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" "$run_dir/runtime-identity.log" ||
+            "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" \
+                "$run_dir/runtime-identity.log" "$recorded_binary" ||
                 failure=identity_verification
         fi
         if [[ "$failure" == none ]]; then

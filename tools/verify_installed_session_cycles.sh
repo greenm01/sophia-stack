@@ -46,12 +46,12 @@ for run in "${runs[@]}"; do
     }
     "$VERIFY_LOGIN" \
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
-    "$VERIFY_IDENTITY" "$run/runtime-identity.log"
+    sophia_binary_sha256="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
+    "$VERIFY_IDENTITY" "$run/runtime-identity.log" "$sophia_binary_sha256"
     "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
     record_schema="$(sed -n 's/^record_schema=//p' "$run/manifest")"
     case "$record_schema" in
-        2) ;;
-        3)
+        4)
             [[ "$(sed -n 's/^record_kind=//p' "$run/manifest")" == normal ]] || {
                 echo "run is not a normal installed cycle: $run" >&2
                 exit 1

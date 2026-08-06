@@ -13,7 +13,7 @@ RELEASE="$PREFIX/releases/0.1.0-test"
 COMMIT=1111111111111111111111111111111111111111
 
 install -d -m 700 "$SESSION_DIR" "$IDENTITY_DIR" "$RUN_ROOT"
-install -d -m 755 "$RELEASE/bin"
+install -d -m 755 "$RELEASE/bin" "$RELEASE/target/release"
 install -m 600 \
     "$ROOT_DIR/tools/fixtures/physical_xmonad_hardware_smoke_session_pass.log" \
     "$SESSION_DIR/session.log"
@@ -28,11 +28,12 @@ install -m 600 "$ROOT_DIR/tools/fixtures/installed_lifecycle_normal_pass.log" \
 install -m 600 "$ROOT_DIR/tools/fixtures/installed_runtime_identity_pass.log" \
     "$IDENTITY_DIR/runtime-identity.log"
 printf 'test\n' >"$RELEASE/bin/payload"
+printf 'sophia-test-binary\n' >"$RELEASE/target/release/sophia"
 printf 'schema=1\nversion=0.1.0\ncommit=%s\nrelease_id=0.1.0-test\nbuilt_at_utc=2026-08-05T00:00:00Z\n' \
     "$COMMIT" >"$RELEASE/manifest"
 (
     cd "$RELEASE"
-    sha256sum bin/payload >SHA256SUMS
+    sha256sum bin/payload target/release/sophia >SHA256SUMS
 )
 ln -s releases/0.1.0-test "$PREFIX/current"
 
@@ -52,6 +53,17 @@ record() {
     set_identity "$1"
     recorder
 }
+
+sed -i \
+    's/name=sophia version=0.1.0 digest=[0-9a-f]*/name=sophia version=0.1.0 digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+    "$IDENTITY_DIR/runtime-identity.log"
+set_identity 2026-08-05T11:59:00Z
+if recorder begin >/dev/null 2>&1; then
+    echo "installed recorder reserved a run with the wrong Sophia binary digest" >&2
+    exit 1
+fi
+install -m 600 "$ROOT_DIR/tools/fixtures/installed_runtime_identity_pass.log" \
+    "$IDENTITY_DIR/runtime-identity.log"
 
 record 2026-08-05T12:00:00Z
 if record 2026-08-05T12:00:00Z >/dev/null 2>&1; then
@@ -85,6 +97,25 @@ env \
     XDG_STATE_HOME="$STATE_HOME" \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
     "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3
+
+MUTATED_ROOT="$TEMP_DIR/mutated-runs"
+install -d -m 700 "$MUTATED_ROOT"
+cp -a "$RUN_ROOT/0007" "$MUTATED_ROOT/0001"
+sed -i \
+    's/^sophia_binary_sha256=.*/sophia_binary_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+    "$MUTATED_ROOT/0001/manifest"
+(
+    cd "$MUTATED_ROOT/0001"
+    sha256sum manifest result.kdl identity.log runtime-identity.log \
+        session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+)
+if env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$MUTATED_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 1 >/dev/null 2>&1; then
+    echo "installed cycle verifier accepted a false Sophia binary digest" >&2
+    exit 1
+fi
 
 cp -a "$RUN_ROOT/0007" "$RUN_ROOT/9999"
 if env \

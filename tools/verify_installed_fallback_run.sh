@@ -45,9 +45,10 @@ grep -Fxq 'sophia_installed_fallback schema=1 status=passed exit_status=0' \
     exit 1
 }
 "$VERIFY_SESSION" "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
-"$VERIFY_IDENTITY" "$run/runtime-identity.log"
+sophia_binary_sha256="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
+"$VERIFY_IDENTITY" "$run/runtime-identity.log" "$sophia_binary_sha256"
 "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
-[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 3 \
+[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 4 \
     && "$(sed -n 's/^record_kind=//p' "$run/manifest")" == fallback ]] || {
     echo "installed fallback has no supported record contract: $run" >&2
     exit 1

@@ -1259,11 +1259,14 @@ requested number of runs.
 `sophia-verify-soak`
 requires one clean supported schema-14 through schema-16 completion, the requested elapsed time and action
 counts, and zero WM, Present, callback, native, or cleanup debt.
-Each installed launch also rotates a content-free runtime identity record with
-the kernel and Mesa versions, Kitty/Firefox/xmonad binary digests, a hashed
-input-device identity, and connector plus EDID hashes. The verifier rejects
-missing identities and fields that could contain typed, clipboard, or window
-content.
+Each installed launch also rotates a content-free schema-2 runtime identity
+record with the kernel and Mesa versions, the packaged Sophia digest,
+Kitty/Firefox/xmonad binary digests, a hashed input-device identity, and
+connector plus EDID hashes. The schema-4 attempt manifest repeats the Sophia
+digest, and every recorder and archive verifier requires it to match the
+captured identity. A later installation therefore cannot erase which binary
+produced an older run. The verifier rejects missing or mismatched identities
+and fields that could contain typed, clipboard, or window content.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
 non-system staging installation for verifier tests. A release is not promoted

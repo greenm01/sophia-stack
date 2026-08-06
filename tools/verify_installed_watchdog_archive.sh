@@ -45,8 +45,9 @@ grep -Fxq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
     "$run/input-guard.log" \
     "$run/recovery.log" \
     "$run/lifecycle.log"
-"$VERIFY_IDENTITY" "$run/runtime-identity.log"
-[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 3 \
+sophia_binary_sha256="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
+"$VERIFY_IDENTITY" "$run/runtime-identity.log" "$sophia_binary_sha256"
+[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 4 \
     && "$(sed -n 's/^record_kind=//p' "$run/manifest")" == watchdog ]] || {
     echo "installed watchdog has no supported record contract: $run" >&2
     exit 1
