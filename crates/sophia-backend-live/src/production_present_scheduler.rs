@@ -8,7 +8,7 @@ use sophia_protocol::{
     SurfaceTransactionKey, TransactionId,
 };
 use sophia_renderer_live::LiveCpuPresentationLayer;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -221,9 +221,13 @@ impl LiveProductionPresentScheduler {
                 };
             let not_before = now + acquire_delay;
             if layout_state.runnable() {
-                // Only the newest runnable frame may wait behind rendering or
-                // KMS. Layout-fenced work remains separate until it is visible.
-                self.supersede_queued_where(LiveProductionQueuedPresent::runnable, &mut superseded);
+                // A newer Present replaces queued work only for the same
+                // surface. Unrelated surfaces carry independent visual debt
+                // and must each reach retirement or explicit rejection.
+                self.supersede_queued_where(
+                    |queued| queued.runnable() && queued.surface == surface,
+                    &mut superseded,
+                );
             } else {
                 self.supersede_queued_where(
                     |queued| !queued.runnable() && queued.surface == surface,
@@ -270,15 +274,20 @@ impl LiveProductionPresentScheduler {
         self.queued = retained;
     }
 
-    fn retain_newest_runnable(&mut self) -> Vec<TransactionId> {
-        let newest = self
+    fn retain_newest_runnable_per_surface(&mut self) -> Vec<TransactionId> {
+        let mut newest = BTreeMap::new();
+        for (index, queued) in self
             .queued
             .iter()
-            .rposition(LiveProductionQueuedPresent::runnable);
+            .enumerate()
+            .filter(|(_, queued)| queued.runnable())
+        {
+            newest.insert(queued.surface, index);
+        }
         let mut retained = VecDeque::with_capacity(self.queued.len());
         let mut superseded = Vec::new();
         for (index, queued) in self.queued.drain(..).enumerate() {
-            if queued.runnable() && Some(index) != newest {
+            if queued.runnable() && newest.get(&queued.surface) != Some(&index) {
                 superseded.push(queued.submission.transaction);
                 self.pending_supersessions = self.pending_supersessions.saturating_add(1);
             } else {
@@ -519,7 +528,7 @@ impl LiveProductionPresentScheduler {
                 released = released.saturating_add(1);
             }
         }
-        let superseded = self.retain_newest_runnable();
+        let superseded = self.retain_newest_runnable_per_surface();
         self.observe_queue_depth();
         LiveProductionLayoutReleaseReport {
             released,

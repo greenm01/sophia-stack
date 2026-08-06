@@ -3,6 +3,30 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: Present coalescing is surface-local
+
+Native-chrome attempt `0003` applied and rendered the combined policy, but its
+sequence driver correctly rejected the resize boundary. The preceding
+two-surface epochs armed exact Present candidates for both Kitty surfaces while
+only one candidate per epoch reached native retirement. The other surface kept
+an older Engine committed extent. When combined chrome restored that extent,
+the layout coordinator suppressed its Configure as already committed and
+produced a one-surface epoch with clipped pixels.
+
+The production Present scheduler was coalescing all runnable queued work into
+one newest transaction. This crossed surface identity: releasing two staged
+Presents, or receiving the second surface after the epoch had committed, could
+reject the first surface even though both carried independent visual debt. It
+also contradicted the architecture rule that unrelated surfaces remain
+independently runnable.
+
+Runnable coalescing now keeps the newest transaction per surface. Same-surface
+overload remains bounded, while distinct surfaces retain FIFO order and exact
+retirement ownership. Regressions cover both two-surface release in one epoch
+and the observed ordering where one staged Present becomes runnable before the
+second surface arrives. A fresh installed native-chrome run remains the
+physical acceptance boundary.
+
 ## 2026-08-06: Interactive QEMU is separate from acceptance choreography
 
 The retained `xmonad-m8-soak` guest is an unattended acceptance workload. Its

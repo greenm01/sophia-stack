@@ -908,7 +908,7 @@ fn sustained_overload_keeps_queue_and_presentation_ownership_bounded() {
 }
 
 #[test]
-fn newly_visible_layout_work_keeps_only_the_newest_pending_present() {
+fn newly_visible_layout_work_preserves_one_present_per_surface() {
     let epoch = TransactionId::from_raw(711);
     let first_transaction = TransactionId::from_raw(712);
     let second_transaction = TransactionId::from_raw(713);
@@ -975,16 +975,121 @@ fn newly_visible_layout_work_keeps_only_the_newest_pending_present() {
         .release_layout_deferred_for_surfaces(&[first_surface, second_surface], &committed);
 
     assert_eq!(report.released, 2);
-    assert_eq!(report.superseded, [first_transaction]);
+    assert!(report.superseded.is_empty());
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(first_transaction)
+    );
+    assert_eq!(
+        scheduler
+            .pop_front()
+            .map(|queued| queued.submission.transaction),
+        Some(first_transaction)
+    );
     assert_eq!(
         scheduler
             .front()
             .map(|queued| queued.submission.transaction),
         Some(second_transaction)
     );
-    assert_eq!(scheduler.pending_supersessions(), 1);
-    assert_eq!(scheduler.max_pending_queued(), 1);
+    assert_eq!(scheduler.pending_supersessions(), 0);
+    assert_eq!(scheduler.max_pending_queued(), 2);
     assert_eq!(scheduler.max_total_queued(), 2);
+}
+
+#[test]
+fn later_epoch_present_does_not_supersede_another_surface() {
+    let epoch = TransactionId::from_raw(730);
+    let first_transaction = TransactionId::from_raw(731);
+    let second_transaction = TransactionId::from_raw(732);
+    let first_surface = SurfaceId::new(733, 1);
+    let second_surface = SurfaceId::new(734, 1);
+    let first_handle = BufferHandle::from_raw(735);
+    let second_handle = BufferHandle::from_raw(736);
+    let mut resources = LivePresentationResourceSession::default();
+    for handle in [first_handle, second_handle] {
+        resources
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler
+        .enqueue_group(
+            &scheduler_batch_with_disposition(
+                first_transaction,
+                first_surface,
+                first_handle,
+                LiveProductionPresentDisposition::StageLayout { epoch },
+            )
+            .groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
+    assert_eq!(
+        scheduler
+            .release_layout_deferred_for_surfaces(&[first_surface], &[])
+            .released,
+        1
+    );
+
+    let geometry = Rect {
+        x: 64,
+        y: 0,
+        width: 64,
+        height: 48,
+    };
+    let layout = [sophia_protocol::LayerSnapshot {
+        surface: second_surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 1,
+        geometry,
+        source: BufferSource::DmaBuf {
+            handle: second_handle.raw(),
+        },
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation: 1,
+        resize_sync: sophia_protocol::ResizeSyncCapability::ImplicitOnly,
+    }];
+    let superseded = scheduler
+        .enqueue_group(
+            &scheduler_batch_with_disposition(
+                second_transaction,
+                second_surface,
+                second_handle,
+                LiveProductionPresentDisposition::StageLayout { epoch },
+            )
+            .groups[0],
+            &layout,
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert!(superseded.is_empty());
+    assert_eq!(
+        scheduler
+            .pop_front()
+            .map(|queued| queued.submission.transaction),
+        Some(first_transaction)
+    );
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(second_transaction)
+    );
+    assert_eq!(scheduler.pending_supersessions(), 0);
 }
 
 #[test]
