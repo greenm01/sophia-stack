@@ -500,7 +500,12 @@ fn committed_epoch_present_waits_until_surface_is_visible() {
     assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
     assert!(scheduler.has_layout_deferred());
     assert!(!scheduler.has_eligible());
-    assert_eq!(scheduler.release_layout_deferred_for_surfaces(&[], &[]), 0);
+    assert_eq!(
+        scheduler
+            .release_layout_deferred_for_surfaces(&[], &[])
+            .released,
+        0
+    );
     assert!(!scheduler.has_eligible());
     let committed = [CommittedSurfaceState {
         surface,
@@ -515,7 +520,9 @@ fn committed_epoch_present_waits_until_surface_is_visible() {
         damage: Region::empty(),
     }];
     assert_eq!(
-        scheduler.release_layout_deferred_for_surfaces(&[surface], &committed),
+        scheduler
+            .release_layout_deferred_for_surfaces(&[surface], &committed)
+            .released,
         1
     );
     assert!(scheduler.has_eligible());
@@ -818,6 +825,166 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
         Some(second_transaction)
     );
     assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
+}
+
+#[test]
+fn immediate_overload_keeps_only_the_newest_pending_present() {
+    let surface = SurfaceId::new(701, 1);
+    let first_transaction = TransactionId::from_raw(702);
+    let second_transaction = TransactionId::from_raw(703);
+    let first_handle = BufferHandle::from_raw(704);
+    let second_handle = BufferHandle::from_raw(705);
+    let mut resources = LivePresentationResourceSession::default();
+    for handle in [first_handle, second_handle] {
+        resources
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    let first_superseded = scheduler
+        .enqueue_group(
+            &scheduler_batch(first_transaction, surface, first_handle).groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    let second_superseded = scheduler
+        .enqueue_group(
+            &scheduler_batch(second_transaction, surface, second_handle).groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+
+    assert!(first_superseded.is_empty());
+    assert_eq!(second_superseded, [first_transaction]);
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(second_transaction)
+    );
+    assert_eq!(scheduler.pending_supersessions(), 1);
+    assert_eq!(scheduler.max_pending_queued(), 1);
+    assert_eq!(scheduler.max_total_queued(), 1);
+}
+
+#[test]
+fn sustained_overload_keeps_queue_and_presentation_ownership_bounded() {
+    let surface = SurfaceId::new(721, 1);
+    let handle = BufferHandle::from_raw(722);
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    for raw in 1..=512 {
+        let transaction = TransactionId::from_raw(800 + raw);
+        let superseded = scheduler
+            .enqueue_group(
+                &scheduler_batch(transaction, surface, handle).groups[0],
+                &[],
+                Vec::new(),
+                &mut resources,
+                Instant::now(),
+            )
+            .unwrap();
+        for transaction in superseded {
+            resources.reject(transaction).unwrap();
+        }
+        assert_eq!(resources.presentation_count(), 1);
+    }
+
+    assert_eq!(scheduler.pending_supersessions(), 511);
+    assert_eq!(scheduler.max_pending_queued(), 1);
+    assert_eq!(scheduler.max_total_queued(), 1);
+    assert_eq!(resources.max_presentation_count(), 2);
+}
+
+#[test]
+fn newly_visible_layout_work_keeps_only_the_newest_pending_present() {
+    let epoch = TransactionId::from_raw(711);
+    let first_transaction = TransactionId::from_raw(712);
+    let second_transaction = TransactionId::from_raw(713);
+    let first_surface = SurfaceId::new(714, 1);
+    let second_surface = SurfaceId::new(715, 1);
+    let first_handle = BufferHandle::from_raw(716);
+    let second_handle = BufferHandle::from_raw(717);
+    let mut resources = LivePresentationResourceSession::default();
+    for handle in [first_handle, second_handle] {
+        resources
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    for (transaction, surface, handle) in [
+        (first_transaction, first_surface, first_handle),
+        (second_transaction, second_surface, second_handle),
+    ] {
+        scheduler
+            .enqueue_group(
+                &scheduler_batch_with_disposition(
+                    transaction,
+                    surface,
+                    handle,
+                    LiveProductionPresentDisposition::StageLayout { epoch },
+                )
+                .groups[0],
+                &[],
+                Vec::new(),
+                &mut resources,
+                Instant::now(),
+            )
+            .unwrap();
+    }
+    assert_eq!(scheduler.commit_layout_epoch(epoch), 2);
+    let committed = [
+        CommittedSurfaceState {
+            surface: first_surface,
+            committed_generation: 1,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 48,
+            },
+            buffer: BufferSource::CpuBuffer { handle: 718 },
+            damage: Region::empty(),
+        },
+        CommittedSurfaceState {
+            surface: second_surface,
+            committed_generation: 1,
+            geometry: Rect {
+                x: 64,
+                y: 0,
+                width: 64,
+                height: 48,
+            },
+            buffer: BufferSource::CpuBuffer { handle: 719 },
+            damage: Region::empty(),
+        },
+    ];
+
+    let report = scheduler
+        .release_layout_deferred_for_surfaces(&[first_surface, second_surface], &committed);
+
+    assert_eq!(report.released, 2);
+    assert_eq!(report.superseded, [first_transaction]);
+    assert_eq!(
+        scheduler
+            .front()
+            .map(|queued| queued.submission.transaction),
+        Some(second_transaction)
+    );
+    assert_eq!(scheduler.pending_supersessions(), 1);
+    assert_eq!(scheduler.max_pending_queued(), 1);
+    assert_eq!(scheduler.max_total_queued(), 2);
 }
 
 #[test]

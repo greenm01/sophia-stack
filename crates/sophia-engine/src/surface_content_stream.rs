@@ -7,7 +7,7 @@ pub const SURFACE_CONTENT_STREAM_CAPACITY: usize = 256;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SurfaceContentAdmission<T> {
     Ready(T),
-    Deferred,
+    Deferred { superseded: Option<T> },
 }
 
 #[derive(Debug)]
@@ -26,6 +26,9 @@ pub struct SurfaceContentStream<T> {
     active: BTreeMap<SurfaceId, SurfaceTransactionKey>,
     deferred: VecDeque<DeferredSurfaceContent<T>>,
     capacity: usize,
+    supersessions: usize,
+    max_deferred: usize,
+    max_latest_deferred_per_surface: usize,
 }
 
 impl<T> Default for SurfaceContentStream<T> {
@@ -40,6 +43,9 @@ impl<T> SurfaceContentStream<T> {
             active: BTreeMap::new(),
             deferred: VecDeque::new(),
             capacity,
+            supersessions: 0,
+            max_deferred: 0,
+            max_latest_deferred_per_surface: 0,
         }
     }
 
@@ -59,6 +65,33 @@ impl<T> SurfaceContentStream<T> {
         item: T,
         touched_surfaces: impl IntoIterator<Item = SurfaceId>,
         removed_surfaces: impl IntoIterator<Item = SurfaceId>,
+    ) -> Result<SurfaceContentAdmission<T>, &'static str> {
+        self.admit_inner(item, touched_surfaces, removed_surfaces, false, |_| false)
+    }
+
+    /// Admits replaceable content while retaining only its newest deferred
+    /// candidate for one surface.
+    ///
+    /// The caller owns the replacement policy because the stream deliberately
+    /// does not understand protocol payloads. Replacement never crosses later
+    /// work for the same surface, so ordinary mutations remain ordered.
+    pub fn admit_latest_deferred(
+        &mut self,
+        item: T,
+        touched_surfaces: impl IntoIterator<Item = SurfaceId>,
+        removed_surfaces: impl IntoIterator<Item = SurfaceId>,
+        replaceable: impl FnOnce(&T) -> bool,
+    ) -> Result<SurfaceContentAdmission<T>, &'static str> {
+        self.admit_inner(item, touched_surfaces, removed_surfaces, true, replaceable)
+    }
+
+    fn admit_inner(
+        &mut self,
+        item: T,
+        touched_surfaces: impl IntoIterator<Item = SurfaceId>,
+        removed_surfaces: impl IntoIterator<Item = SurfaceId>,
+        latest_deferred: bool,
+        replaceable: impl FnOnce(&T) -> bool,
     ) -> Result<SurfaceContentAdmission<T>, &'static str> {
         let removed_surfaces = removed_surfaces.into_iter().collect::<BTreeSet<_>>();
         let touched_surfaces = touched_surfaces
@@ -83,6 +116,26 @@ impl<T> SurfaceContentStream<T> {
         if blockers.is_empty() && !follows_deferred_surface {
             return Ok(SurfaceContentAdmission::Ready(item));
         }
+        // A replaceable candidate is safe only when it is the most recent
+        // deferred work touching this one surface. This permits coalescing
+        // frames across unrelated surfaces without crossing a same-surface
+        // mutation or a multi-surface transaction.
+        if removed_surfaces.is_empty()
+            && touched_surfaces.len() == 1
+            && let Some(index) = self
+                .deferred
+                .iter()
+                .rposition(|deferred| !deferred.touched_surfaces.is_disjoint(&touched_surfaces))
+            && self.deferred[index].touched_surfaces == touched_surfaces
+            && replaceable(&self.deferred[index].item)
+        {
+            let superseded = std::mem::replace(&mut self.deferred[index].item, item);
+            self.supersessions = self.supersessions.saturating_add(1);
+            self.max_latest_deferred_per_surface = 1;
+            return Ok(SurfaceContentAdmission::Deferred {
+                superseded: Some(superseded),
+            });
+        }
         if self.deferred.len() >= self.capacity {
             return Err("surface content stream capacity exceeded");
         }
@@ -91,7 +144,13 @@ impl<T> SurfaceContentStream<T> {
             touched_surfaces,
             blockers,
         });
-        Ok(SurfaceContentAdmission::Deferred)
+        self.max_deferred = self.max_deferred.max(self.deferred.len());
+        // `admit_latest_deferred` reaches this branch only when its surface
+        // has no replaceable candidate in the current ordering segment.
+        if latest_deferred {
+            self.max_latest_deferred_per_surface = 1;
+        }
+        Ok(SurfaceContentAdmission::Deferred { superseded: None })
     }
 
     pub fn finish(&mut self, owner: SurfaceTransactionKey) -> Result<Vec<T>, &'static str> {
@@ -128,6 +187,14 @@ impl<T> SurfaceContentStream<T> {
         discarded
     }
 
+    /// Transfers deferred payloads without disturbing active ownership.
+    pub fn drain_deferred(&mut self) -> Vec<T> {
+        self.deferred
+            .drain(..)
+            .map(|deferred| deferred.item)
+            .collect()
+    }
+
     pub fn owner(&self, surface: SurfaceId) -> Option<SurfaceTransactionKey> {
         self.active.get(&surface).copied()
     }
@@ -151,6 +218,18 @@ impl<T> SurfaceContentStream<T> {
 
     pub fn deferred_len(&self) -> usize {
         self.deferred.len()
+    }
+
+    pub const fn supersessions(&self) -> usize {
+        self.supersessions
+    }
+
+    pub const fn max_deferred_len(&self) -> usize {
+        self.max_deferred
+    }
+
+    pub const fn max_latest_deferred_per_surface(&self) -> usize {
+        self.max_latest_deferred_per_surface
     }
 
     pub fn deferred_items(&self) -> impl Iterator<Item = &T> {

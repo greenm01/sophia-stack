@@ -19,7 +19,10 @@ struct XServerFrontendRouteRegistry {
     xkb_worker: XkbKeyboardWorker,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
-    per_client_queue_capacity: NonZeroUsize,
+    per_client_input_capacity: NonZeroUsize,
+    per_client_control_capacity: NonZeroUsize,
+    per_client_protocol_capacity: NonZeroUsize,
+    per_client_presentation_capacity: NonZeroUsize,
     source_payload_sender: SyncSender<crate::ClipboardSourcePayload>,
 }
 
@@ -190,10 +193,10 @@ impl XServerFrontendRouteRegistry {
         ),
         XServerFrontendRouteError,
     > {
-        let capacity = self.per_client_queue_capacity.get();
-        let (input_sender, input) = sync_channel(capacity);
-        let (control_sender, control) = sync_channel(capacity);
-        let (protocol_sender, protocol) = sync_channel(capacity);
+        let (input_sender, input) = sync_channel(self.per_client_input_capacity.get());
+        let (control_sender, control) = sync_channel(self.per_client_control_capacity.get());
+        let (protocol_sender, protocol) =
+            sync_channel(self.per_client_protocol_capacity.get());
         let mut clients = self
             .clients
             .lock()
@@ -411,7 +414,7 @@ impl XServerFrontendRouteRegistry {
             .values()
             .filter(|presentation| presentation.client == client)
             .count()
-            >= self.per_client_queue_capacity.get()
+            >= self.per_client_presentation_capacity.get()
         {
             let now = Instant::now();
             if now >= deadline {
@@ -428,7 +431,7 @@ impl XServerFrontendRouteRegistry {
                     .values()
                     .filter(|presentation| presentation.client == client)
                     .count()
-                    >= self.per_client_queue_capacity.get()
+                    >= self.per_client_presentation_capacity.get()
             {
                 return Err(XServerFrontendRouteError::ClientQueueFull { client });
             }

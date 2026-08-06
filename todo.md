@@ -902,10 +902,25 @@ promotes one to a hard M9 exit gate.
   from the same Engine cycle, allowing focus state to commit without queuing
   retained projection. CPU coalescing is now advisory only for CPU composition;
   retained GPU and chrome work keeps its native owner.
-- [ ] Producer-overload / frame-drop discipline. Drive an unthrottled producer
+- [x] Producer-overload / frame-drop discipline. Drive an unthrottled producer
   above the refresh rate and prove one latest pending frame plus one KMS
   submission in flight per output, bounded queue storage, no unbounded memory
-  growth, and no tearing.
+  growth, and no tearing. Engine now retains one replaceable, pure
+  same-surface DMA-BUF Present behind the active owner without crossing layout,
+  CPU, removal, software-Present, or multi-surface barriers. Superseded work
+  receives exact Skip/Idle feedback and releases its source once. The
+  mutation-tested two-output virgl gate uses a three-buffer DRI3 client at
+  5 ms intervals, selects client-visible Complete/Idle events, and requires two
+  sustained five-second phases, one replaceable Engine slot, one scheduler
+  slot, one KMS frame in flight, at most two live Present records, bounded
+  source/fence high-water marks, a 100 ms worker ceiling with no stalls, exact
+  rejection accounting, and clean teardown. Two consecutive production runs
+  passed. The latest displayed 357 frames, skipped 925, routed 1,282 balanced
+  Complete/Idle pairs, superseded 906 pending frames, balanced 361 renderer
+  requests at a 40 ms maximum, and had zero route or native failure. Promotion
+  also separated X11 input/control/protocol/presentation capacities and gave
+  pending WM controls priority over ordinary socket output; regressions lock
+  both transport invariants.
 
 Tier 3 rendering coverage — atomic-test-gated direct-scanout bypass and
 multi-output cadence parity — is not new work here; it extends the existing

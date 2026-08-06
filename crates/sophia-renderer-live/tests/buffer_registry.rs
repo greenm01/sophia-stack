@@ -269,6 +269,8 @@ fn repeated_pixmap_presentations_are_transaction_keyed_and_release_deferred() {
     assert!(second_retirement.released_source);
     assert_eq!(registry.source_count(), 0);
     assert_eq!(registry.presentation_count(), 0);
+    assert_eq!(registry.max_source_count(), 1);
+    assert_eq!(registry.max_presentation_count(), 2);
 }
 
 #[test]

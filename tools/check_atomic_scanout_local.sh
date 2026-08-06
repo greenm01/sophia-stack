@@ -30,6 +30,10 @@ bash -n tools/fixtures/qemu_idle_glxgears_client.sh \
     tools/verify_qemu_xmonad_idle_efficiency_evidence.sh \
     tools/check_qemu_xmonad_idle_efficiency_verifier.sh
 tools/check_qemu_xmonad_idle_efficiency_verifier.sh
+bash -n tools/qemu_xmonad_producer_overload_acceptance.sh \
+    tools/verify_qemu_xmonad_producer_overload_evidence.sh \
+    tools/check_qemu_xmonad_producer_overload_verifier.sh
+tools/check_qemu_xmonad_producer_overload_verifier.sh
 bash -n tools/qemu_xmonad_render_contention_acceptance.sh \
     tools/verify_qemu_xmonad_render_contention_evidence.sh \
     tools/check_qemu_xmonad_render_contention_verifier.sh

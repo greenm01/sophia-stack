@@ -15,8 +15,57 @@ struct X11ProtocolEventWriter {
 }
 
 #[cfg(unix)]
+struct X11ControlOutputPriority {
+    pending: Arc<AtomicUsize>,
+}
+
+#[cfg(unix)]
+impl X11ControlOutputPriority {
+    fn new(pending: Arc<AtomicUsize>) -> Self {
+        pending.fetch_add(1, Ordering::AcqRel);
+        Self { pending }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for X11ControlOutputPriority {
+    fn drop(&mut self) {
+        let previous = self.pending.fetch_sub(1, Ordering::AcqRel);
+        debug_assert_ne!(previous, 0, "control-output priority underflow");
+    }
+}
+
+#[cfg(unix)]
+fn wait_for_x11_control_output(control_pending: &AtomicUsize) {
+    while control_pending.load(Ordering::Acquire) != 0 {
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(unix)]
+fn lock_x11_non_control_output<'a>(
+    stream: &'a Arc<Mutex<UnixStream>>,
+    control_pending: &AtomicUsize,
+) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+    loop {
+        wait_for_x11_control_output(control_pending);
+        let stream = stream
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+        // Recheck after acquisition: a control may have registered while this
+        // writer was waiting on a request, input, or protocol-event write.
+        if control_pending.load(Ordering::Acquire) == 0 {
+            return Ok(stream);
+        }
+        drop(stream);
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(unix)]
 fn spawn_x11_protocol_event_writer(
     stream: Arc<Mutex<UnixStream>>,
+    output_control_pending: Arc<AtomicUsize>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     client: XServerFrontendClientId,
@@ -31,9 +80,8 @@ fn spawn_x11_protocol_event_writer(
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
-            let mut stream = stream
-                .lock()
-                .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+            let mut stream =
+                lock_x11_non_control_output(&stream, &output_control_pending)?;
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
@@ -272,6 +320,7 @@ fn x11_surface_geometry_records(
 #[allow(clippy::too_many_arguments)]
 fn spawn_x11_control_writer(
     stream: Arc<Mutex<UnixStream>>,
+    output_control_pending: Arc<AtomicUsize>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     focused_surface_window: Arc<AtomicU64>,
@@ -320,6 +369,10 @@ fn spawn_x11_control_writer(
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
+            // Once a control leaves its route queue, no ordinary reply or
+            // event may repeatedly overtake the write that makes it visible.
+            let _output_priority =
+                X11ControlOutputPriority::new(output_control_pending.clone());
             let (command, focus_transition) = match routed {
                 X11RoutedControl::Authority { command, focus } => (command, focus),
                 X11RoutedControl::FocusOut { window, time_msec } => {

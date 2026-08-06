@@ -43,6 +43,43 @@ pub struct XServerFrontendControlRouter {
     registry: XServerFrontendRouteRegistry,
 }
 
+/// Independent bounds for routes whose payloads have different expansion
+/// factors and service rates at the X11 socket boundary.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XServerFrontendRouteCapacities {
+    pub input: NonZeroUsize,
+    pub control: NonZeroUsize,
+    pub protocol: NonZeroUsize,
+    pub presentations: NonZeroUsize,
+}
+
+#[cfg(unix)]
+impl XServerFrontendRouteCapacities {
+    pub const fn uniform(capacity: NonZeroUsize) -> Self {
+        Self {
+            input: capacity,
+            control: capacity,
+            protocol: capacity,
+            presentations: capacity,
+        }
+    }
+
+    pub const fn new(
+        input: NonZeroUsize,
+        control: NonZeroUsize,
+        protocol: NonZeroUsize,
+        presentations: NonZeroUsize,
+    ) -> Self {
+        Self {
+            input,
+            control,
+            protocol,
+            presentations,
+        }
+    }
+}
+
 #[cfg(unix)]
 impl XServerFrontendControlRouter {
     pub fn route_control(
@@ -87,7 +124,7 @@ impl XServerFrontendRouteBroker {
         let capacity = queue_capacity.get();
         let (acknowledgement_sender, acknowledgement_receiver) = sync_channel(capacity);
         Self::with_transports(
-            queue_capacity,
+            XServerFrontendRouteCapacities::uniform(queue_capacity),
             acknowledgement_sender,
             Some(acknowledgement_receiver),
             None,
@@ -100,7 +137,12 @@ impl XServerFrontendRouteBroker {
         queue_capacity: NonZeroUsize,
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     ) -> Self {
-        Self::with_transports(queue_capacity, acknowledgement_sender, None, None)
+        Self::with_transports(
+            XServerFrontendRouteCapacities::uniform(queue_capacity),
+            acknowledgement_sender,
+            None,
+            None,
+        )
     }
 
     /// Creates a broker whose focus/configure and input-flush acknowledgements
@@ -111,7 +153,7 @@ impl XServerFrontendRouteBroker {
         input_delivery_sender: Sender<XAuthorityClientInputDelivery>,
     ) -> Self {
         Self::with_transports(
-            queue_capacity,
+            XServerFrontendRouteCapacities::uniform(queue_capacity),
             acknowledgement_sender,
             None,
             Some(input_delivery_sender),
@@ -126,7 +168,25 @@ impl XServerFrontendRouteBroker {
     ) -> Result<Self, crate::XkbKeyboardError> {
         crate::XkbKeyboardState::new(&xkb_config)?;
         let mut broker = Self::with_transports(
-            queue_capacity,
+            XServerFrontendRouteCapacities::uniform(queue_capacity),
+            acknowledgement_sender,
+            None,
+            Some(input_delivery_sender),
+        );
+        broker.registry.xkb_config = xkb_config.clone();
+        broker.registry.xkb_worker = XkbKeyboardWorker::spawn(xkb_config);
+        Ok(broker)
+    }
+
+    pub fn with_route_capacities_and_xkb_config(
+        capacities: XServerFrontendRouteCapacities,
+        acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
+        input_delivery_sender: Sender<XAuthorityClientInputDelivery>,
+        xkb_config: crate::XkbRmlvoConfig,
+    ) -> Result<Self, crate::XkbKeyboardError> {
+        crate::XkbKeyboardState::new(&xkb_config)?;
+        let mut broker = Self::with_transports(
+            capacities,
             acknowledgement_sender,
             None,
             Some(input_delivery_sender),
@@ -137,16 +197,16 @@ impl XServerFrontendRouteBroker {
     }
 
     fn with_transports(
-        queue_capacity: NonZeroUsize,
+        capacities: XServerFrontendRouteCapacities,
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
         acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
         input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     ) -> Self {
-        let capacity = queue_capacity.get();
-        let (input_sender, input_receiver) = sync_channel(capacity);
-        let (routed_input_sender, routed_input_receiver) = sync_channel(capacity);
-        let (control_sender, control_receiver) = sync_channel(capacity);
-        let (source_payload_sender, source_payload_receiver) = sync_channel(capacity);
+        let (input_sender, input_receiver) = sync_channel(capacities.input.get());
+        let (routed_input_sender, routed_input_receiver) = sync_channel(capacities.input.get());
+        let (control_sender, control_receiver) = sync_channel(capacities.control.get());
+        let (source_payload_sender, source_payload_receiver) =
+            sync_channel(capacities.input.get());
         Self {
             registry: XServerFrontendRouteRegistry {
                 clients: Arc::new(Mutex::new(BTreeMap::new())),
@@ -164,7 +224,10 @@ impl XServerFrontendRouteBroker {
                 xkb_worker: XkbKeyboardWorker::spawn(crate::XkbRmlvoConfig::default()),
                 acknowledgement_sender,
                 input_delivery_sender,
-                per_client_queue_capacity: queue_capacity,
+                per_client_input_capacity: capacities.input,
+                per_client_control_capacity: capacities.control,
+                per_client_protocol_capacity: capacities.protocol,
+                per_client_presentation_capacity: capacities.presentations,
                 source_payload_sender,
             },
             input_sender,

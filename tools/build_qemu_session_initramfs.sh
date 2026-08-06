@@ -141,6 +141,8 @@ if [[ "$IMAGE_PROFILE" == m8 ]]; then
     )
 fi
 if [[ "$IMAGE_PROFILE" == rendering ]]; then
+    require_command cc
+    require_command pkg-config
     GLXGEARS_BIN="${SOPHIA_GLXGEARS_BIN:-$(command -v glxgears || true)}"
     [[ -x "$GLXGEARS_BIN" ]] || {
         echo "The rendering QEMU profile requires glxgears; set SOPHIA_GLXGEARS_BIN." >&2
@@ -156,10 +158,16 @@ if [[ "$IMAGE_PROFILE" == rendering ]]; then
         echo "The rendering QEMU profile requires Mesa GLX: $GLX_VENDOR_LIBRARY" >&2
         exit 1
     }
+    OVERLOAD_CLIENT_BIN="$OUT_DIR/qemu-present-overload-client"
+    read -r -a overload_client_flags <<<"$(pkg-config --cflags --libs gbm xcb xcb-dri3 xcb-present)"
+    cc -std=c11 -O2 -Wall -Wextra -Werror \
+        "$ROOT_DIR/tools/probes/qemu_present_overload_client.c" \
+        -o "$OVERLOAD_CLIENT_BIN" \
+        "${overload_client_flags[@]}"
     runtime_files+=("$GLX_VENDOR_LIBRARY")
     # libGLX loads Mesa's vendor library dynamically, so resolve that library
     # separately from the executable dependency graph.
-    for executable in "$GLXGEARS_BIN" "$XMOBAR_BIN" "$GLX_VENDOR_LIBRARY"; do
+    for executable in "$GLXGEARS_BIN" "$XMOBAR_BIN" "$GLX_VENDOR_LIBRARY" "$OVERLOAD_CLIENT_BIN"; do
         dependency_report="$(ldd "$executable" 2>&1 || true)"
         if grep -q 'not found' <<<"$dependency_report"; then
             echo "Rendering dependency resolution failed for $executable:" >&2
@@ -176,6 +184,7 @@ if [[ "$IMAGE_PROFILE" == rendering ]]; then
     extra_includes+=(
         --include "$GLXGEARS_BIN" /usr/bin/glxgears
         --include "$XMOBAR_BIN" /usr/bin/xmobar
+        --include "$OVERLOAD_CLIENT_BIN" /usr/bin/sophia-present-overload-client
         --include "$ROOT_DIR/tools/fixtures/qemu_idle_glxgears_client.sh" /usr/bin/sophia-idle-glxgears-client
         --include "$ROOT_DIR/tools/fixtures/qemu_render_contention_xmobar.config" /usr/share/sophia/qemu_render_contention_xmobar.config
         --include /usr/lib/locale/C.utf8 /usr/lib/locale/C.utf8
@@ -184,6 +193,7 @@ if [[ "$IMAGE_PROFILE" == rendering ]]; then
     )
     required_guest_paths+=(
         /usr/bin/glxgears
+        /usr/bin/sophia-present-overload-client
         /usr/bin/sophia-idle-glxgears-client
         /usr/bin/xmobar
         /usr/lib/locale/C.utf8/LC_CTYPE

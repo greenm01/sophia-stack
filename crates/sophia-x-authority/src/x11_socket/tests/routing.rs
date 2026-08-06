@@ -668,3 +668,47 @@ fn pending_control_gets_the_next_runtime_lock() {
     control.join().expect("control owner");
     request.join().expect("request owner");
 }
+
+#[test]
+fn pending_control_gets_the_next_output_lock() {
+    let (socket, _peer) = UnixStream::pair().expect("socket pair");
+    let stream = Arc::new(Mutex::new(socket));
+    let held = stream.lock().expect("initial output lock");
+    let control_pending = Arc::new(AtomicUsize::new(0));
+    let (normal_started_sender, normal_started_receiver) = sync_channel(1);
+    let (order_sender, order_receiver) = sync_channel(2);
+
+    let normal_stream = stream.clone();
+    let normal_pending = control_pending.clone();
+    let normal_order = order_sender.clone();
+    let normal = std::thread::spawn(move || {
+        normal_started_sender.send(()).expect("normal started");
+        let _guard = lock_x11_non_control_output(&normal_stream, &normal_pending)
+            .expect("normal output lock");
+        normal_order.send("normal").expect("normal order");
+    });
+    normal_started_receiver.recv().expect("normal waiting");
+
+    let control_stream = stream.clone();
+    let control_pending_probe = control_pending.clone();
+    let control = std::thread::spawn(move || {
+        let _priority = X11ControlOutputPriority::new(control_pending);
+        let _guard = control_stream.lock().expect("control output lock");
+        order_sender.send("control").expect("control order");
+    });
+    while control_pending_probe.load(Ordering::Acquire) == 0 {
+        std::thread::yield_now();
+    }
+    drop(held);
+
+    assert_eq!(
+        order_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        "control"
+    );
+    assert_eq!(
+        order_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        "normal"
+    );
+    control.join().expect("control owner");
+    normal.join().expect("normal owner");
+}

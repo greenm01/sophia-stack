@@ -67,7 +67,7 @@ fn in_flight_present_defers_only_later_work_for_the_same_surface() {
     let unrelated_kitty = group(801, kitty);
     assert_eq!(
         fence.admit(later_firefox.clone(), [firefox], []).unwrap(),
-        SurfaceContentAdmission::Deferred
+        SurfaceContentAdmission::Deferred { superseded: None }
     );
     assert_eq!(
         fence.admit(unrelated_kitty.clone(), [kitty], []).unwrap(),

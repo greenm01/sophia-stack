@@ -62,6 +62,7 @@ pub struct LiveProductionVisualRuntime {
     present_scheduler: LiveProductionPresentScheduler,
     surface_content_stream: SurfaceContentStream<LiveProductionAuthorityGroup>,
     released_surface_content: VecDeque<LiveProductionAuthorityGroup>,
+    superseded_surface_content: VecDeque<LiveProductionAuthorityGroup>,
     deferred_content_dma_buf_releases: BTreeSet<BufferHandle>,
     deferred_content_fence_releases: BTreeSet<FenceHandle>,
     software_present_frames_waiting: VecDeque<software_present::LiveProductionSoftwarePresentFrame>,
@@ -84,6 +85,9 @@ pub struct LiveProductionVisualRuntime {
     last_chrome_set_observation: Option<LiveChromeSetObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
+    present_rejections: usize,
+    native_suspend_present_rejections: usize,
+    shutdown_present_rejections: usize,
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
 }
@@ -138,6 +142,7 @@ impl LiveProductionVisualRuntime {
             present_scheduler: LiveProductionPresentScheduler::default(),
             surface_content_stream: SurfaceContentStream::default(),
             released_surface_content: VecDeque::new(),
+            superseded_surface_content: VecDeque::new(),
             deferred_content_dma_buf_releases: BTreeSet::new(),
             deferred_content_fence_releases: BTreeSet::new(),
             software_present_frames_waiting: VecDeque::new(),
@@ -157,6 +162,9 @@ impl LiveProductionVisualRuntime {
             last_chrome_set_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
+            present_rejections: 0,
+            native_suspend_present_rejections: 0,
+            shutdown_present_rejections: 0,
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
         })
@@ -239,6 +247,7 @@ impl LiveProductionVisualRuntime {
         self.presentation_feedback
             .observe_authority_resource_registrations(authority_envelope)?;
         let batch = self.ready_surface_content_batch(authority_envelope)?;
+        let _ = self.reject_superseded_surface_content()?;
         let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
@@ -609,6 +618,7 @@ impl LiveProductionVisualRuntime {
         batch.validate()?;
         self.presentation_feedback
             .observe_authority_resource_registrations(batch)?;
+        let _ = self.reject_superseded_surface_content()?;
         let removed_surfaces = authority_batch_removed_surfaces(batch);
         self.release_removed_presentations(&removed_surfaces, native_scanout.as_deref_mut())?;
         self.displayed_surfaces

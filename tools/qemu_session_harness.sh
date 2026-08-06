@@ -10,7 +10,7 @@ SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -18,7 +18,7 @@ if [[ "$GPU_MODE" != software && "$GPU_MODE" != virgl ]]; then
     echo "SOPHIA_QEMU_GPU_MODE must be software or virgl" >&2
     exit 1
 fi
-if [[ ("$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-render-contention") && "$GPU_MODE" != virgl ]]; then
+if [[ ("$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-producer-overload" || "$SCENARIO" == "xmonad-render-contention") && "$GPU_MODE" != virgl ]]; then
     echo "$SCENARIO requires SOPHIA_QEMU_GPU_MODE=virgl" >&2
     exit 1
 fi
@@ -51,6 +51,19 @@ LOGGER_PID=""
 
 evidence_count() {
     grep -c "$1" "$EVIDENCE_FILE" 2>/dev/null || true
+}
+
+present_progress_field() {
+    local key=$1
+    awk -v key="$key" '
+        /^sophia_live_present_progress schema=1 / {
+            for (i = 1; i <= NF; i++) {
+                split($i, pair, "=")
+                if (pair[1] == key) value = pair[2]
+            }
+        }
+        END { print value + 0 }
+    ' "$EVIDENCE_FILE" 2>/dev/null
 }
 
 axis_route_count() {
@@ -699,7 +712,7 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 elif [[ "$SCENARIO" == gtk-* ]]; then
     echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
 elif [[ "$SCENARIO" == xmonad-* ]]; then
-    if [[ "$SCENARIO" == "xmonad-idle-efficiency" ]]; then
+    if [[ "$SCENARIO" == "xmonad-idle-efficiency" || "$SCENARIO" == "xmonad-producer-overload" ]]; then
         echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
     elif [[ "$GPU_MODE" == virgl ]]; then
         echo "sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=3 gpu_mode=virgl host_render_node=explicit" | tee -a "$EVIDENCE_FILE"
@@ -802,6 +815,129 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-producer-overload" ]]; then
+    ready=false
+    for _ in $(seq 1 1600); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=1 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(cpu|gpu) ' "$EVIDENCE_FILE"; then
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_producer_overload schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    started_baseline="$(evidence_count '^sophia_session_app schema=2 status=started id=gpu source=action ')"
+    admitted_baseline="$(evidence_count '^sophia_session_app schema=2 status=admitted source=action ')"
+    echo "sophia_qemu_producer_overload schema=1 status=launch_begin chord=meta_l+p app=gpu" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+p
+    if ! wait_for_new_evidence \
+        '^sophia_session_app schema=2 status=started id=gpu source=action ' \
+        "$started_baseline" 400 \
+        || ! wait_for_new_evidence \
+            '^sophia_session_app schema=2 status=admitted source=action ' \
+            "$admitted_baseline" 1600; then
+        echo "sophia_qemu_producer_overload schema=1 status=failed reason=producer_admission_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+
+    overloaded=false
+    for _ in $(seq 1 1600); do
+        copies="$(present_progress_field complete_copy)"
+        skips="$(present_progress_field complete_skip)"
+        if grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=2 focus=surface$' "$EVIDENCE_FILE" \
+            && (( copies >= 20 && skips >= 1 )); then
+            overloaded=true
+            break
+        fi
+        if grep -q '^sophia_live_wm schema=1 status=layout_timeout ' "$EVIDENCE_FILE" \
+            || grep -Eq '^sophia_session_app schema=1 status=exited id=(cpu|gpu) ' "$EVIDENCE_FILE"; then
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$overloaded" != true ]]; then
+        echo "sophia_qemu_producer_overload schema=1 status=failed reason=overload_not_observed copies=${copies:-0} skips=${skips:-0}" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_producer_overload schema=1 status=warmup_complete copies=$copies skips=$skips" |
+        tee -a "$EVIDENCE_FILE"
+
+    copy_baseline=$copies
+    skip_baseline=$skips
+    submit_baseline="$(evidence_count 'sophia_live_native_page_flip schema=1 status=submitted output=1 ')"
+    retire_baseline="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=1 ')"
+    echo "sophia_qemu_producer_overload schema=1 status=window_started duration_msec=10000 phases=2" |
+        tee -a "$EVIDENCE_FILE"
+    for phase in 1 2; do
+        sleep 5
+        current_copies="$(present_progress_field complete_copy)"
+        current_skips="$(present_progress_field complete_skip)"
+        current_submits="$(evidence_count 'sophia_live_native_page_flip schema=1 status=submitted output=1 ')"
+        current_retires="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=1 ')"
+        phase_copies=$((current_copies - copy_baseline))
+        phase_skips=$((current_skips - skip_baseline))
+        phase_submits=$((current_submits - submit_baseline))
+        phase_retires=$((current_retires - retire_baseline))
+        echo "sophia_qemu_producer_overload schema=1 status=phase_complete phase=$phase duration_msec=5000 copies=$phase_copies skips=$phase_skips submissions=$phase_submits retirements=$phase_retires" |
+            tee -a "$EVIDENCE_FILE"
+        if (( phase_copies < 20 || phase_skips < 1 \
+            || phase_submits < 20 || phase_retires < 20 \
+            || phase_retires > phase_submits + 1 \
+            || phase_submits > phase_retires + 1 )); then
+            echo "sophia_qemu_producer_overload schema=1 status=failed reason=phase_discipline phase=$phase" |
+                tee -a "$EVIDENCE_FILE"
+            exit 1
+        fi
+        copy_baseline=$current_copies
+        skip_baseline=$current_skips
+        submit_baseline=$current_submits
+        retire_baseline=$current_retires
+    done
+    echo "sophia_qemu_producer_overload schema=1 status=window_complete duration_msec=10000 phases=2" |
+        tee -a "$EVIDENCE_FILE"
+
+    echo "sophia_qemu_producer_overload schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_producer_overload schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_producer_overload schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_producer_overload_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 

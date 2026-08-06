@@ -146,6 +146,9 @@ pub struct LiveDmaBufPresentationRegistry {
     fences: BTreeMap<FenceHandle, LiveFenceSourceRegistration>,
     presentations: BTreeMap<TransactionId, LivePresentRegistration>,
     limits: LivePresentationRegistryLimits,
+    max_sources: usize,
+    max_fences: usize,
+    max_presentations: usize,
 }
 
 impl Default for LiveDmaBufPresentationRegistry {
@@ -365,6 +368,9 @@ impl LiveDmaBufPresentationRegistry {
             fences: BTreeMap::new(),
             presentations: BTreeMap::new(),
             limits,
+            max_sources: 0,
+            max_fences: 0,
+            max_presentations: 0,
         }
     }
 
@@ -394,6 +400,7 @@ impl LiveDmaBufPresentationRegistry {
                 release_pending: false,
             },
         );
+        self.max_sources = self.max_sources.max(self.sources.len());
         Ok(())
     }
 
@@ -417,6 +424,7 @@ impl LiveDmaBufPresentationRegistry {
                 release_pending: false,
             },
         );
+        self.max_fences = self.max_fences.max(self.fences.len());
         Ok(())
     }
 
@@ -541,6 +549,7 @@ impl LiveDmaBufPresentationRegistry {
                 },
             },
         );
+        self.max_presentations = self.max_presentations.max(self.presentations.len());
         Ok(())
     }
 
@@ -668,6 +677,18 @@ impl LiveDmaBufPresentationRegistry {
 
     pub fn presentation_count(&self) -> usize {
         self.presentations.len()
+    }
+
+    pub const fn max_source_count(&self) -> usize {
+        self.max_sources
+    }
+
+    pub const fn max_fence_count(&self) -> usize {
+        self.max_fences
+    }
+
+    pub const fn max_presentation_count(&self) -> usize {
+        self.max_presentations
     }
 
     pub fn disconnect(&mut self) -> LivePresentationDisconnectReport {

@@ -102,6 +102,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let output_stream = Arc::new(Mutex::new(stream.try_clone().map_err(|error| {
         X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
     })?));
+    let output_control_pending = Arc::new(AtomicUsize::new(0));
     let protocol_routing = client_routing.clone();
     let (route_registration, input_receiver, control_channels, protocol_receiver) =
         if let Some(routing) = client_routing {
@@ -134,6 +135,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             spawn_x11_input_event_writer(
                 X11InputWriterState {
                     stream: output_stream.clone(),
+                    output_control_pending: output_control_pending.clone(),
                     byte_order: setup.byte_order,
                     sequence: event_sequence.clone(),
                     focused_surface_window: focused_surface_window.clone(),
@@ -155,6 +157,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .map(|channels| {
             spawn_x11_control_writer(
                 output_stream.clone(),
+                output_control_pending.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 focused_surface_window.clone(),
@@ -177,6 +180,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .map(|receiver| {
             spawn_x11_protocol_event_writer(
                 output_stream.clone(),
+                output_control_pending.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 client,
@@ -1101,9 +1105,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             })?;
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
             {
-                let mut output_stream = output_stream
-                    .lock()
-                    .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+                let mut output_stream = lock_x11_non_control_output(
+                    &output_stream,
+                    &output_control_pending,
+                )?;
                 if !encoded_outputs.is_empty() || !server_reply_fds.is_empty() {
                     for (index, bytes) in encoded_outputs.into_iter().enumerate() {
                         let fds = if index == 0 {

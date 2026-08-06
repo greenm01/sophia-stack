@@ -346,4 +346,16 @@ impl LivePresentationResourceSession {
     pub fn presentation_count(&self) -> usize {
         self.registry.presentation_count()
     }
+
+    pub fn max_source_count(&self) -> usize {
+        self.registry.max_source_count()
+    }
+
+    pub fn max_fence_count(&self) -> usize {
+        self.registry.max_fence_count()
+    }
+
+    pub fn max_presentation_count(&self) -> usize {
+        self.registry.max_presentation_count()
+    }
 }

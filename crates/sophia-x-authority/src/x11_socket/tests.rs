@@ -759,6 +759,46 @@ fn present_feedback_reaches_every_matching_event_selection() {
 }
 
 #[test]
+fn present_protocol_capacity_covers_both_lifecycle_phases() {
+    let namespace = NamespaceId::from_raw(11);
+    let client = XServerFrontendClientId(11);
+    let surface = SurfaceId::new(13, 1);
+    let window = XResourceId::new(0x310010, 1);
+    let event = XResourceId::new(0x310014, 1);
+    let pixmap = XResourceId::new(0x310016, 1);
+    let transaction = TransactionId::from_raw(205);
+    let one = NonZeroUsize::new(1).unwrap();
+    let two = NonZeroUsize::new(2).unwrap();
+    let (acknowledgements, _) = sync_channel(1);
+    let broker = XServerFrontendRouteBroker::with_transports(
+        XServerFrontendRouteCapacities::new(one, one, two, one),
+        acknowledgements,
+        None,
+        None,
+    );
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(client, event, window, 0b110)
+        .unwrap();
+    broker
+        .registry
+        .queue_present(transaction, client, window, pixmap, 1, None)
+        .unwrap();
+
+    assert_eq!(
+        broker.route_present_complete(transaction, 10, 20, XPresentCompletionMode::Copy),
+        Ok(true)
+    );
+    assert_eq!(broker.route_present_idle(transaction), Ok(true));
+    assert_eq!(channels.protocol.try_iter().count(), 2);
+}
+
+#[test]
 fn present_configure_selection_uses_only_masked_matching_windows() {
     let client = XServerFrontendClientId(11);
     let other_client = XServerFrontendClientId(12);

@@ -22,11 +22,25 @@ pub struct LiveProductionVisualDiagnostics {
     pub live_sources: usize,
     pub live_fences: usize,
     pub live_presentations: usize,
+    pub max_live_sources: usize,
+    pub max_live_fences: usize,
+    pub max_live_presentations: usize,
+    pub pending_supersessions: usize,
+    pub surface_content_supersessions: usize,
+    pub scheduler_supersessions: usize,
+    pub max_surface_content_deferred: usize,
+    pub max_latest_deferred_per_surface: usize,
+    pub max_pending_queued: usize,
+    pub max_total_queued: usize,
     pub software_present_frames_waiting: usize,
     pub software_present_frames_submitted: usize,
     pub software_present_retirements_pending: usize,
     pub acquire_waits: usize,
     pub controlled_rejections: usize,
+    pub present_rejections: usize,
+    pub native_suspend_present_rejections: usize,
+    pub other_present_rejections: usize,
+    pub shutdown_present_rejections: usize,
 }
 
 impl LiveProductionVisualRuntime {
@@ -38,6 +52,24 @@ impl LiveProductionVisualRuntime {
             live_sources: self.presentation_feedback.resources().source_count(),
             live_fences: self.presentation_feedback.resources().fence_count(),
             live_presentations: self.presentation_feedback.resources().presentation_count(),
+            max_live_sources: self.presentation_feedback.resources().max_source_count(),
+            max_live_fences: self.presentation_feedback.resources().max_fence_count(),
+            max_live_presentations: self
+                .presentation_feedback
+                .resources()
+                .max_presentation_count(),
+            pending_supersessions: self
+                .surface_content_stream
+                .supersessions()
+                .saturating_add(self.present_scheduler.pending_supersessions()),
+            surface_content_supersessions: self.surface_content_stream.supersessions(),
+            scheduler_supersessions: self.present_scheduler.pending_supersessions(),
+            max_surface_content_deferred: self.surface_content_stream.max_deferred_len(),
+            max_latest_deferred_per_surface: self
+                .surface_content_stream
+                .max_latest_deferred_per_surface(),
+            max_pending_queued: self.present_scheduler.max_pending_queued(),
+            max_total_queued: self.present_scheduler.max_total_queued(),
             software_present_frames_waiting: self
                 .software_presents_unframed
                 .len()
@@ -60,6 +92,17 @@ impl LiveProductionVisualRuntime {
             software_present_retirements_pending: self.retired_software_presents.len(),
             acquire_waits: self.present_scheduler.acquire_waits(),
             controlled_rejections: self.present_scheduler.controlled_rejections(),
+            present_rejections: self.present_rejections,
+            native_suspend_present_rejections: self.native_suspend_present_rejections,
+            other_present_rejections: self.present_rejections.saturating_sub(
+                self.surface_content_stream
+                    .supersessions()
+                    .saturating_add(self.present_scheduler.pending_supersessions())
+                    .saturating_add(self.present_scheduler.controlled_rejections())
+                    .saturating_add(self.native_suspend_present_rejections)
+                    .saturating_add(self.shutdown_present_rejections),
+            ),
+            shutdown_present_rejections: self.shutdown_present_rejections,
         }
     }
 

@@ -106,7 +106,10 @@ impl LiveProductionVisualRuntime {
             if let Some(native_scanout) = native_scanout.as_deref_mut() {
                 let _ = native_scanout.rollback_renderer_image(present.displayed_layer.image_id);
             }
-            self.reject_gpu_presentation(present.transaction);
+            if self.reject_gpu_presentation(present.transaction) {
+                self.native_suspend_present_rejections =
+                    self.native_suspend_present_rejections.saturating_add(1);
+            }
         }
         self.outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
@@ -366,6 +369,9 @@ impl LiveProductionVisualRuntime {
         self.outputs
             .project_committed(&completion.committed_surfaces);
         self.route_present_feedback(completion.evidence);
+        if completion.commit.outcome != TransactionOutcome::Committed {
+            self.present_rejections = self.present_rejections.saturating_add(1);
+        }
         let deferred_groups = self.finish_surface_content_owner(submitted.candidate)?;
         if deferred_groups != 0 {
             tracing::debug!(

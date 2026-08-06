@@ -490,7 +490,7 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
     assert_eq!(diagnostics.software_present_frames_waiting, 1);
     assert_eq!(diagnostics.software_present_frames_submitted, 0);
     assert_eq!(diagnostics.live_presentations, 1);
-    runtime.shutdown_presentations();
+    runtime.shutdown_presentations().unwrap();
     assert_eq!(runtime.diagnostics().live_presentations, 0);
 }
 
@@ -633,6 +633,6 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
     let diagnostics = runtime.diagnostics();
     assert_eq!(diagnostics.live_presentations, 1);
     assert_eq!(diagnostics.live_sources, 2);
-    runtime.shutdown_presentations();
+    runtime.shutdown_presentations().unwrap();
     assert_eq!(runtime.diagnostics().live_sources, 0);
 }

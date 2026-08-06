@@ -78,6 +78,9 @@ struct XPresentCadenceSummary {
 struct XPresentSessionObserver {
     router: XServerFrontendProtocolRouter,
     displayed_cadence: XPresentCadence,
+    diagnostic_events: bool,
+    aggregate_progress: bool,
+    progress_last_emit: Option<Instant>,
     complete_copy: usize,
     complete_flip: usize,
     complete_skip: usize,
@@ -93,9 +96,15 @@ struct XPresentSessionObserver {
 
 impl XPresentSessionObserver {
     fn new(router: XServerFrontendProtocolRouter) -> Self {
+        let aggregate_progress =
+            std::env::var_os("SOPHIA_LIVE_SESSION_PRESENT_AGGREGATE").is_some();
         Self {
             router,
             displayed_cadence: XPresentCadence::new(),
+            diagnostic_events: std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some()
+                && !aggregate_progress,
+            aggregate_progress,
+            progress_last_emit: None,
             complete_copy: 0,
             complete_flip: 0,
             complete_skip: 0,
@@ -151,7 +160,7 @@ impl XPresentSessionObserver {
                             {
                                 self.displayed_cadence.observe(ust);
                             }
-                            if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
+                            if self.diagnostic_events {
                                 eprintln!(
                                     "sophia_live_session_present_feedback schema=1 kind=complete transaction={} routed={routed} mode={mode:?} ust={ust} msc={msc}",
                                     transaction.raw(),
@@ -172,7 +181,7 @@ impl XPresentSessionObserver {
                     match self.router.route_present_idle(transaction) {
                         Ok(routed) => {
                             self.idle_routed = self.idle_routed.saturating_add(usize::from(routed));
-                            if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
+                            if self.diagnostic_events {
                                 eprintln!(
                                     "sophia_live_session_present_feedback schema=1 kind=idle transaction={} routed={routed}",
                                     transaction.raw(),
@@ -190,6 +199,28 @@ impl XPresentSessionObserver {
                 }
             }
         }
+        self.emit_progress(false);
+    }
+
+    fn emit_progress(&mut self, force: bool) {
+        if !self.aggregate_progress {
+            return;
+        }
+        let now = Instant::now();
+        if !force
+            && self
+                .progress_last_emit
+                .is_some_and(|last| now.duration_since(last) < Duration::from_millis(250))
+        {
+            return;
+        }
+        self.progress_last_emit = Some(now);
+        // Cumulative samples keep production evidence observable without making
+        // synchronous serial output part of every Present feedback transition.
+        eprintln!(
+            "sophia_live_present_progress schema=1 complete_copy={} complete_flip={} complete_skip={} idle={}",
+            self.complete_copy, self.complete_flip, self.complete_skip, self.idle,
+        );
     }
 
     fn observe_disconnect(

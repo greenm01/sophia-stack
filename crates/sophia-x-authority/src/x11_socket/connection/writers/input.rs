@@ -1,5 +1,6 @@
 struct X11InputWriterState {
     stream: Arc<Mutex<UnixStream>>,
+    output_control_pending: Arc<AtomicUsize>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     focused_surface_window: Arc<AtomicU64>,
@@ -19,6 +20,7 @@ fn spawn_x11_input_event_writer(
 ) -> Result<X11InputEventWriter, X11SetupSocketError> {
     let X11InputWriterState {
         stream,
+        output_control_pending,
         byte_order,
         sequence,
         focused_surface_window,
@@ -367,9 +369,8 @@ fn spawn_x11_input_event_writer(
                 },
             );
             let write_result = (|| -> Result<(), X11SetupSocketError> {
-                let mut stream = stream
-                    .lock()
-                    .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+                let mut stream =
+                    lock_x11_non_control_output(&stream, &output_control_pending)?;
                 let sequence = sequence.load(Ordering::Acquire);
                 write_xi_u16(byte_order, &mut record[2..4], sequence);
                 let transition = match event {

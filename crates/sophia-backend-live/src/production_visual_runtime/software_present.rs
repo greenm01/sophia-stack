@@ -238,7 +238,7 @@ impl LiveProductionVisualRuntime {
         Ok(())
     }
 
-    pub(super) fn reject_software_present_frames(&mut self) {
+    pub(super) fn reject_software_present_frames(&mut self) -> usize {
         let submissions = self
             .software_presents_unframed
             .drain(..)
@@ -254,12 +254,15 @@ impl LiveProductionVisualRuntime {
                     .flat_map(|binding| binding.submissions),
             )
             .collect::<Vec<_>>();
+        let mut rejected = 0usize;
         for submission in submissions {
             if let Ok(outcome) = self
                 .presentation_feedback
                 .reject_skip_at_last_display(submission.transaction)
             {
                 self.route_present_feedback(outcome);
+                rejected = rejected.saturating_add(1);
+                self.present_rejections = self.present_rejections.saturating_add(1);
             }
             if let Err(error) = self.finish_surface_content_owner(submission.candidate) {
                 tracing::error!(
@@ -269,5 +272,6 @@ impl LiveProductionVisualRuntime {
                 );
             }
         }
+        rejected
     }
 }

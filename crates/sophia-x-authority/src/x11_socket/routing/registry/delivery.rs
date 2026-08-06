@@ -27,7 +27,7 @@ impl XServerFrontendRouteRegistry {
                 .frozen_input
                 .lock()
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            if frozen.len() >= self.per_client_queue_capacity.get() {
+            if frozen.len() >= self.per_client_input_capacity.get() {
                 drop(frozen);
                 self.send_input_delivery(
                     surface_route.client,

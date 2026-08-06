@@ -46,8 +46,9 @@ use sophia_x_authority::{
     XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
     XServerFrontendConfig, XServerFrontendControlRouter, XServerFrontendProtocolRouter,
     XServerFrontendRenderDeviceError, XServerFrontendRenderDeviceProvider,
-    XServerFrontendRouteBroker, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
-    XkbKeymapSnapshot, run_x_server_frontend_routed_until_stopped,
+    XServerFrontendRouteBroker, XServerFrontendRouteCapacities, XServerFrontendServiceCommand,
+    XServerFrontendSetupAuthorization, XkbKeymapSnapshot,
+    run_x_server_frontend_routed_until_stopped,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{Read, Write};
@@ -97,6 +98,9 @@ include!("live_session/wm.rs");
 
 const SESSION_AUTHORITY_CAPACITY: usize = 256;
 const SESSION_KEY_CAPACITY: usize = 64;
+// One accepted Present can emit independent Complete and Idle records. Size
+// protocol transport from authority work, not from the smaller input queue.
+const SESSION_PRESENT_PROTOCOL_CAPACITY: usize = SESSION_AUTHORITY_CAPACITY * 2;
 const SESSION_INPUT_QUIET_MSEC: u64 = 500;
 const SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC: u64 = 15_000;
 const SESSION_PHYSICAL_PIXEL_TIMEOUT_MSEC: u64 = 5_000;
@@ -286,13 +290,28 @@ pub(crate) fn run_persistent_xterm_session(
     // another client filled a shared acknowledgement queue while the owner was
     // committing a WM transaction. Routed input itself remains bounded.
     let (input_delivery_sender, input_delivery_receiver) = channel();
-    let broker =
-        XServerFrontendRouteBroker::with_control_and_input_delivery_senders_and_xkb_config(
-            NonZeroUsize::new(SESSION_KEY_CAPACITY).expect("session route capacity is nonzero"),
-            control_ack_sender,
-            input_delivery_sender,
-            config.xkb_config.clone(),
-        )?;
+    let broker = XServerFrontendRouteBroker::with_route_capacities_and_xkb_config(
+        XServerFrontendRouteCapacities::new(
+            NonZeroUsize::new(SESSION_KEY_CAPACITY)
+                .expect("session input route capacity is nonzero"),
+            NonZeroUsize::new(SESSION_CONTROL_CAPACITY)
+                .expect("session control route capacity is nonzero"),
+            NonZeroUsize::new(SESSION_PRESENT_PROTOCOL_CAPACITY)
+                .expect("session protocol route capacity is nonzero"),
+            NonZeroUsize::new(SESSION_KEY_CAPACITY)
+                .expect("session presentation route capacity is nonzero"),
+        ),
+        control_ack_sender,
+        input_delivery_sender,
+        config.xkb_config.clone(),
+    )?;
+    println!(
+        "sophia_live_x11_route_capacity schema=1 input={} control={} protocol={} presentations={}",
+        SESSION_KEY_CAPACITY,
+        SESSION_CONTROL_CAPACITY,
+        SESSION_PRESENT_PROTOCOL_CAPACITY,
+        SESSION_KEY_CAPACITY,
+    );
     let input_sender = broker.routed_input_sender();
     let control_sender = broker.control_router();
     let protocol_router = broker.protocol_router();

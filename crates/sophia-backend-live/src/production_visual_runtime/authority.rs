@@ -1,5 +1,28 @@
 use super::*;
 
+fn replaceable_deferred_present_surface(group: &LiveProductionAuthorityGroup) -> Option<SurfaceId> {
+    let [submission] = group.present_submissions.as_slice() else {
+        return None;
+    };
+    if submission.layout_disposition != LiveProductionPresentDisposition::Immediate
+        || !group.cpu_buffer_updates.is_empty()
+        || !group.removed_surfaces.is_empty()
+        || !group.software_present_submissions.is_empty()
+    {
+        return None;
+    }
+    let [transaction] = group.transactions.as_slice() else {
+        return None;
+    };
+    (transaction.transaction == submission.transaction
+        && transaction.surface == submission.surface
+        && transaction.target_buffer
+            == (BufferSource::DmaBuf {
+                handle: submission.buffer.raw(),
+            }))
+    .then_some(submission.surface)
+}
+
 impl LiveProductionVisualRuntime {
     /// Whether retirement released ordered content that needs another cycle.
     pub fn has_released_surface_content(&self) -> bool {
@@ -35,14 +58,28 @@ impl LiveProductionVisualRuntime {
                 .map(|transaction| transaction.surface)
                 .collect::<Vec<_>>();
             let removed = group.removed_surfaces.clone();
-            match self.surface_content_stream.admit(group, touched, removed)? {
+            let replaceable_surface = replaceable_deferred_present_surface(&group);
+            let admission = match replaceable_surface {
+                Some(surface) => self.surface_content_stream.admit_latest_deferred(
+                    group,
+                    touched,
+                    removed,
+                    |deferred| replaceable_deferred_present_surface(deferred) == Some(surface),
+                )?,
+                None => self.surface_content_stream.admit(group, touched, removed)?,
+            };
+            match admission {
                 SurfaceContentAdmission::Ready(group) => {
                     for owner in authority_group_present_owners(&group)? {
                         self.surface_content_stream.begin(owner)?;
                     }
                     groups.push(group);
                 }
-                SurfaceContentAdmission::Deferred => {}
+                SurfaceContentAdmission::Deferred { superseded } => {
+                    if let Some(superseded) = superseded {
+                        self.superseded_surface_content.push_back(superseded);
+                    }
+                }
             }
         }
         Ok(LiveProductionAuthorityBatch {
@@ -134,6 +171,7 @@ impl LiveProductionVisualRuntime {
         self.surface_content_stream
             .deferred_items()
             .chain(self.released_surface_content.iter())
+            .chain(self.superseded_surface_content.iter())
             .flat_map(|group| group.present_submissions.iter())
             .any(|submission| submission.buffer == handle)
     }
@@ -142,6 +180,7 @@ impl LiveProductionVisualRuntime {
         self.surface_content_stream
             .deferred_items()
             .chain(self.released_surface_content.iter())
+            .chain(self.superseded_surface_content.iter())
             .any(|group| {
                 group.present_submissions.iter().any(|submission| {
                     submission.acquire_fence == Some(handle)
@@ -193,17 +232,68 @@ impl LiveProductionVisualRuntime {
         Ok(())
     }
 
-    pub(super) fn reject_software_presents(&mut self) {
-        self.reject_software_present_frames();
+    pub(super) fn reject_software_presents(&mut self) -> usize {
+        self.reject_software_present_frames()
     }
 
-    pub fn reject_gpu_presentation(&mut self, transaction: TransactionId) {
-        if let Ok(outcome) = self
+    pub(super) fn reject_superseded_surface_content(
+        &mut self,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let mut rejected = 0usize;
+        while let Some(group) = self.superseded_surface_content.pop_front() {
+            rejected = rejected.saturating_add(self.reject_unstarted_present_group(&group)?);
+        }
+        Ok(rejected)
+    }
+
+    fn reject_unstarted_present_group(
+        &mut self,
+        group: &LiveProductionAuthorityGroup,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let mut rejected = 0usize;
+        for submission in &group.present_submissions {
+            self.presentation_feedback.resources_mut().begin(
+                crate::LivePresentationSubmission {
+                    transaction: submission.transaction,
+                    buffer: submission.buffer,
+                    acquire_fence: submission.acquire_fence,
+                    idle_fence: submission.idle_fence,
+                },
+            )?;
+            let outcome = self
+                .presentation_feedback
+                .reject_skip_at_last_display(submission.transaction)?;
+            self.route_present_feedback(outcome);
+            rejected = rejected.saturating_add(1);
+            self.present_rejections = self.present_rejections.saturating_add(1);
+        }
+        for submission in &group.software_present_submissions {
+            self.presentation_feedback.resources_mut().begin_software(
+                submission.transaction,
+                submission.acquire_fence,
+                submission.idle_fence,
+            )?;
+            let outcome = self
+                .presentation_feedback
+                .reject_skip_at_last_display(submission.transaction)?;
+            self.route_present_feedback(outcome);
+            rejected = rejected.saturating_add(1);
+            self.present_rejections = self.present_rejections.saturating_add(1);
+        }
+        Ok(rejected)
+    }
+
+    pub fn reject_gpu_presentation(&mut self, transaction: TransactionId) -> bool {
+        let rejected = if let Ok(outcome) = self
             .presentation_feedback
             .reject_skip_at_last_display(transaction)
         {
             self.route_present_feedback(outcome);
-        }
+            self.present_rejections = self.present_rejections.saturating_add(1);
+            true
+        } else {
+            false
+        };
         match self.finish_surface_content_transaction(transaction) {
             Ok(released) if released != 0 => tracing::debug!(
                 transaction = transaction.raw(),
@@ -217,16 +307,20 @@ impl LiveProductionVisualRuntime {
                 "failed to release rejected Present content owner"
             ),
         }
+        rejected
     }
 
     pub fn release_layout_deferred_presentations(&mut self) {
         // `presentation_order` is the last projection applied at the Engine
         // boundary. It deliberately lags pre-admission recovery state until
         // the CPU snapshot transaction makes the surface scene-visible.
-        self.present_scheduler.release_layout_deferred_for_surfaces(
+        let report = self.present_scheduler.release_layout_deferred_for_surfaces(
             &self.presentation_order,
             self.production.committed_surfaces(),
         );
+        for transaction in report.superseded {
+            self.reject_gpu_presentation(transaction);
+        }
     }
 
     pub fn commit_layout_epoch(&mut self, epoch: TransactionId) -> usize {
@@ -279,23 +373,39 @@ impl LiveProductionVisualRuntime {
         Ok(())
     }
 
-    pub fn shutdown_presentations(&mut self) -> crate::LivePresentationDisconnectReport {
-        self.reject_software_presents();
+    pub fn shutdown_presentations(
+        &mut self,
+    ) -> Result<crate::LivePresentationDisconnectReport, Box<dyn std::error::Error>> {
+        let mut shutdown_rejections = self.reject_software_presents();
         let queued = self.present_scheduler.drain_transactions();
         for transaction in queued {
-            self.reject_gpu_presentation(transaction);
+            shutdown_rejections = shutdown_rejections
+                .saturating_add(usize::from(self.reject_gpu_presentation(transaction)));
         }
         if let Some(submitted) = self.present_scheduler.take_submitted() {
-            self.reject_gpu_presentation(submitted.transaction);
+            shutdown_rejections = shutdown_rejections.saturating_add(usize::from(
+                self.reject_gpu_presentation(submitted.transaction),
+            ));
         }
         if let Some(rendering) = self.present_scheduler.take_rendering() {
-            self.reject_gpu_presentation(rendering.transaction);
+            shutdown_rejections = shutdown_rejections.saturating_add(usize::from(
+                self.reject_gpu_presentation(rendering.transaction),
+            ));
         }
-        let discarded = self
-            .surface_content_stream
-            .discard()
-            .saturating_add(self.released_surface_content.len());
-        self.released_surface_content.clear();
+        // These rejections already belong to the supersession counter even
+        // when shutdown happens before the next owner cycle routes them.
+        let _ = self.reject_superseded_surface_content()?;
+        let mut deferred = self.released_surface_content.drain(..).collect::<Vec<_>>();
+        deferred.extend(self.surface_content_stream.drain_deferred());
+        let discarded = deferred.len();
+        for group in deferred {
+            shutdown_rejections =
+                shutdown_rejections.saturating_add(self.reject_unstarted_present_group(&group)?);
+        }
+        if self.surface_content_stream.active_len() != 0 {
+            return Err("presentation shutdown retained active surface content ownership".into());
+        }
+        let _ = self.surface_content_stream.discard();
         self.deferred_content_dma_buf_releases.clear();
         self.deferred_content_fence_releases.clear();
         if discarded != 0 {
@@ -305,8 +415,11 @@ impl LiveProductionVisualRuntime {
             );
         }
         self.displayed_surfaces.clear();
+        self.shutdown_present_rejections = self
+            .shutdown_present_rejections
+            .saturating_add(shutdown_rejections);
 
-        self.presentation_feedback.disconnect()
+        Ok(self.presentation_feedback.disconnect())
     }
 
     pub fn prepare_authority_transactions(

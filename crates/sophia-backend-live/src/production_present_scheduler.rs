@@ -49,6 +49,12 @@ impl LiveProductionPresentLayoutState {
     }
 }
 
+impl LiveProductionQueuedPresent {
+    const fn runnable(&self) -> bool {
+        self.layout_state.runnable()
+    }
+}
+
 #[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
     pub frame: LiveProductionNativeFrameId,
@@ -79,6 +85,12 @@ pub struct LiveProductionLayoutRollbackReport {
     pub rejected: Vec<TransactionId>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LiveProductionLayoutReleaseReport {
+    pub released: usize,
+    pub superseded: Vec<TransactionId>,
+}
+
 #[derive(Debug, Default)]
 pub struct LiveProductionPresentScheduler {
     queued: VecDeque<LiveProductionQueuedPresent>,
@@ -90,6 +102,9 @@ pub struct LiveProductionPresentScheduler {
     reject_first_present: bool,
     acquire_waits: usize,
     controlled_rejections: usize,
+    pending_supersessions: usize,
+    max_pending_queued: usize,
+    max_total_queued: usize,
     diagnose_first_mixed_export: bool,
 }
 
@@ -205,16 +220,15 @@ impl LiveProductionPresentScheduler {
                     Duration::ZERO
                 };
             let not_before = now + acquire_delay;
-            if !layout_state.runnable() {
-                let mut retained = VecDeque::with_capacity(self.queued.len());
-                while let Some(queued) = self.queued.pop_front() {
-                    if !queued.layout_state.runnable() && queued.surface == surface {
-                        superseded.push(queued.submission.transaction);
-                    } else {
-                        retained.push_back(queued);
-                    }
-                }
-                self.queued = retained;
+            if layout_state.runnable() {
+                // Only the newest runnable frame may wait behind rendering or
+                // KMS. Layout-fenced work remains separate until it is visible.
+                self.supersede_queued_where(LiveProductionQueuedPresent::runnable, &mut superseded);
+            } else {
+                self.supersede_queued_where(
+                    |queued| !queued.runnable() && queued.surface == surface,
+                    &mut superseded,
+                );
             }
             let timeout_msec = candidate.timeout_msec.clamp(100, 2_000);
             self.queued.push_back(LiveProductionQueuedPresent {
@@ -234,8 +248,55 @@ impl LiveProductionPresentScheduler {
                 deadline: not_before + Duration::from_millis(u64::from(timeout_msec)),
                 not_before,
             });
+            self.observe_queue_depth();
         }
         Ok(superseded)
+    }
+
+    fn supersede_queued_where(
+        &mut self,
+        mut predicate: impl FnMut(&LiveProductionQueuedPresent) -> bool,
+        superseded: &mut Vec<TransactionId>,
+    ) {
+        let mut retained = VecDeque::with_capacity(self.queued.len());
+        while let Some(queued) = self.queued.pop_front() {
+            if predicate(&queued) {
+                superseded.push(queued.submission.transaction);
+                self.pending_supersessions = self.pending_supersessions.saturating_add(1);
+            } else {
+                retained.push_back(queued);
+            }
+        }
+        self.queued = retained;
+    }
+
+    fn retain_newest_runnable(&mut self) -> Vec<TransactionId> {
+        let newest = self
+            .queued
+            .iter()
+            .rposition(LiveProductionQueuedPresent::runnable);
+        let mut retained = VecDeque::with_capacity(self.queued.len());
+        let mut superseded = Vec::new();
+        for (index, queued) in self.queued.drain(..).enumerate() {
+            if queued.runnable() && Some(index) != newest {
+                superseded.push(queued.submission.transaction);
+                self.pending_supersessions = self.pending_supersessions.saturating_add(1);
+            } else {
+                retained.push_back(queued);
+            }
+        }
+        self.queued = retained;
+        superseded
+    }
+
+    fn observe_queue_depth(&mut self) {
+        self.max_pending_queued = self.max_pending_queued.max(
+            self.queued
+                .iter()
+                .filter(|queued| queued.runnable())
+                .count(),
+        );
+        self.max_total_queued = self.max_total_queued.max(self.queued.len());
     }
 
     pub fn reproject_surface(&mut self, surface: SurfaceId, geometry: Rect) {
@@ -439,7 +500,7 @@ impl LiveProductionPresentScheduler {
         &mut self,
         visible: &[SurfaceId],
         committed: &[CommittedSurfaceState],
-    ) -> usize {
+    ) -> LiveProductionLayoutReleaseReport {
         let mut released = 0usize;
         for queued in &mut self.queued {
             if matches!(
@@ -458,7 +519,12 @@ impl LiveProductionPresentScheduler {
                 released = released.saturating_add(1);
             }
         }
-        released
+        let superseded = self.retain_newest_runnable();
+        self.observe_queue_depth();
+        LiveProductionLayoutReleaseReport {
+            released,
+            superseded,
+        }
     }
 
     /// Rejects only Presents staged by the epoch that actually aborted.
@@ -540,5 +606,17 @@ impl LiveProductionPresentScheduler {
 
     pub const fn controlled_rejections(&self) -> usize {
         self.controlled_rejections
+    }
+
+    pub const fn pending_supersessions(&self) -> usize {
+        self.pending_supersessions
+    }
+
+    pub const fn max_pending_queued(&self) -> usize {
+        self.max_pending_queued
+    }
+
+    pub const fn max_total_queued(&self) -> usize {
+        self.max_total_queued
     }
 }
