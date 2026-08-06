@@ -1320,6 +1320,10 @@ Compatibility follow-up outside the Firefox exit gate:
   emergency recovery, stale graphical processes, or display-manager repair.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
   launch/close, focus, workspace, resize, clipboard, and multi-output actions.
+  The installed verifier now requires each named workload from generic redacted
+  session evidence, including clean per-application exits, complete close
+  coverage, workspace round trips, visually committed resizes, selection
+  activity, distinct outputs, and drained input. The physical capture remains.
 - [ ] Pass one full workday using the same committed build and installed
   session entry.
 - [ ] Require zero unexpected protocol errors, allocator diagnostics, rejected

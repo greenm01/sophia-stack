@@ -234,6 +234,15 @@ and resource drain. For the workday threshold, run
 `sophia-verify-soak 28800000 30 15`; no log path or manual archive step is
 required.
 
+Use the ordinary installed Sophia xmonad entry for both soak gates. The soak
+verifier consumes generic redacted session evidence, not a special Firefox
+proof mode. Every counted action-launched Kitty and Firefox process must exit
+cleanly, and the run must include enough close actions to cover those launches.
+It also requires repeated focus commits, workspace-away and workspace-return
+projections, visually committed resizes, bidirectional selection activity, two
+distinct clean outputs, a complete kernel page-flip clock, drained input and
+held-key state, clean cursor health, and zero allocator or ownership failure.
+
 ## Known Limitations
 
 - Sophia is a native X11 research candidate, not a full Xorg replacement.

@@ -37,14 +37,97 @@ if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200000 2 3; then
     echo "installed soak verifier accepted too few Firefox actions" >&2
     exit 1
 fi
-sed '/status=complete stages=8 /d' "$PASS" >"$TEMP_FILE"
+sed '/^sophia_live_selection schema=1 status=complete /d' "$PASS" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
-    echo "installed soak verifier accepted no Firefox interaction proof" >&2
+    echo "installed soak verifier accepted no clipboard summary" >&2
+    exit 1
+fi
+sed '0,/^sophia_session_app schema=1 status=exited id=terminal /{/^sophia_session_app schema=1 status=exited id=terminal /d;}' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted too few clean terminal exits" >&2
+    exit 1
+fi
+sed '0,/^sophia_session_app schema=1 status=exited id=firefox /{/^sophia_session_app schema=1 status=exited id=firefox /d;}' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted too few clean Firefox exits" >&2
+    exit 1
+fi
+sed '/status=focus_committed /d' "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted no repeated focus changes" >&2
+    exit 1
+fi
+sed '/status=workspace_projection_committed .* focus=none$/d' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted no workspace-away transitions" >&2
+    exit 1
+fi
+sed '/^sophia_live_resize_epoch schema=3 status=visual_committed /d' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted no visually committed resizes" >&2
+    exit 1
+fi
+sed '0,/action=CloseFocused$/{/action=CloseFocused$/d;}' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted too few close actions" >&2
+    exit 1
+fi
+sed 's/owner_changes=2 conversions=2/owner_changes=1 conversions=1/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted insufficient clipboard activity" >&2
     exit 1
 fi
 sed '/status=complete output=2 /d' "$PASS" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
     echo "installed soak verifier accepted only one output" >&2
+    exit 1
+fi
+sed 's/status=complete output=2 /status=complete output=1 /' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted duplicate output summaries" >&2
+    exit 1
+fi
+sed 's/status=complete pending=0 /status=complete pending=1 /' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a stuck key" >&2
+    exit 1
+fi
+sed 's/hidden_updates=0 hardware_failures=0/hidden_updates=0 hardware_failures=1/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a cursor failure" >&2
+    exit 1
+fi
+sed 's/timestamps=500 fallbacks=0 pending=0/timestamps=500 fallbacks=1 pending=0/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a page-flip clock fallback" >&2
+    exit 1
+fi
+sed 's/input_events_flushed=100/input_events_flushed=99/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted undrained input" >&2
+    exit 1
+fi
+sed 's/native_callback_queue_saturated=0/native_callback_queue_saturated=1/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted callback saturation" >&2
+    exit 1
+fi
+cp "$PASS" "$TEMP_FILE"
+printf 'free(): invalid pointer\n' >>"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted an allocator diagnostic" >&2
     exit 1
 fi
 sed '/name=firefox /d' "$IDENTITY_PASS" >"$TEMP_FILE"
