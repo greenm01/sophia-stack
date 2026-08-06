@@ -240,6 +240,7 @@ pub(crate) fn run_persistent_xterm_session(
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
     let mut wm_session = LiveWmSession::from_config(&config, &initial_outputs)?;
+    let policy_map_mode = LivePolicyMapMode::from_external_wm(wm_session.is_some());
     let output_topology = output_topology_from_engine_outputs(&initial_outputs)?;
 
     let server_path = config.socket_path.clone();
@@ -266,7 +267,10 @@ pub(crate) fn run_persistent_xterm_session(
             .with_setup_authorization(XServerFrontendSetupAuthorization::MitMagicCookie(
                 xauthority_cookie,
             ))
-            .with_policy_map_deferred(true)
+            // XLibre maps immediately unless a redirecting policy owner is
+            // present. Deferring without a WM strands the client's toplevel
+            // before MapNotify, VisibilityNotify, and Expose.
+            .with_policy_map_deferred(policy_map_mode.frontend_deferred())
             .with_admission_policy(admission_policy);
     if !config.software_client_rendering
         && let Some(native_scanout) = native_scanout.as_ref()

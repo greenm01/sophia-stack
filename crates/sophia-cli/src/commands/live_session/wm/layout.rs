@@ -63,10 +63,10 @@ struct PersistentLiveLayout {
 }
 
 impl PersistentLiveLayout {
-    fn new(external_wm_present: bool, center_first_surface_in: Option<Size>) -> Self {
+    fn new(policy_map_mode: LivePolicyMapMode, center_first_surface_in: Option<Size>) -> Self {
         Self {
-            bypass_policy_admission: !external_wm_present,
-            stage_new_surfaces_offset: external_wm_present,
+            bypass_policy_admission: policy_map_mode.bypass_engine_admission(),
+            stage_new_surfaces_offset: policy_map_mode.frontend_deferred(),
             center_first_surface_in,
             ..Self::default()
         }

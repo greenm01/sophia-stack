@@ -1,8 +1,8 @@
 use super::*;
 use crate::commands::live_session::{
-    LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource, PendingLiveWmLayout,
-    PersistentLiveLayout, committed_relayout_nodes, live_layout_node_from_facts,
-    planning_state_for_response, wm_transport_requires_reseed,
+    LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
+    PendingLiveWmLayout, PersistentLiveLayout, committed_relayout_nodes,
+    live_layout_node_from_facts, planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{

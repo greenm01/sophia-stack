@@ -394,16 +394,14 @@ fn route_external_present_feedback(
     present_fences: &BTreeMap<sophia_protocol::FenceHandle, Arc<std::os::fd::OwnedFd>>,
     presentation_started: Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Match a real scanout boundary rather than completing re-entrantly while
-    // the worker is still unwinding the Present request dispatch.
-    std::thread::sleep(Duration::from_millis(250));
+    // Match production's compositor-copy retirement: the source becomes idle
+    // before display completion, after one ordinary refresh interval.
+    std::thread::sleep(Duration::from_millis(17));
     // Production scanout reports UST relative to the graphics-session start.
     // Using host uptime here creates a discontinuity large enough for a client
     // to stop scheduling frames before it consumes the injected keyboard data.
     let ust = presentation_started.elapsed().as_micros() as u64;
     let msc = 7_000_000_u64.saturating_add(ust / 16_667);
-    let complete =
-        router.route_present_complete(transaction, ust, msc, XPresentCompletionMode::Flip)?;
     if let Some(handle) = idle_fence {
         let fence = present_fences
             .get(&handle)
@@ -416,6 +414,8 @@ fn route_external_present_feedback(
         );
     }
     let idle = router.route_present_idle(transaction)?;
+    let complete =
+        router.route_present_complete(transaction, ust, msc, XPresentCompletionMode::Copy)?;
     eprintln!(
         "sophia_external_present_smoke schema=1 label={label:?} stage=present_feedback transaction={} complete_routed={complete} idle_routed={idle}",
         transaction.raw(),

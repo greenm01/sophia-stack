@@ -1,4 +1,15 @@
 #[test]
+fn map_deferral_requires_an_external_policy_owner() {
+    let direct = LivePolicyMapMode::from_external_wm(false);
+    assert!(!direct.frontend_deferred());
+    assert!(direct.bypass_engine_admission());
+
+    let deferred = LivePolicyMapMode::from_external_wm(true);
+    assert!(deferred.frontend_deferred());
+    assert!(!deferred.bypass_engine_admission());
+}
+
+#[test]
 fn no_wm_session_commits_policy_managed_pixels_without_admission() {
     let surface = SurfaceId::new(55, 1);
     let geometry = Rect {
@@ -44,7 +55,7 @@ fn no_wm_session_commits_policy_managed_pixels_without_admission() {
         timeout_msec: 250,
         previous_committed_generation: 0,
     });
-    let mut layout = PersistentLiveLayout::new(false, None);
+    let mut layout = PersistentLiveLayout::new(LivePolicyMapMode::Direct, None);
     layout.cpu_buffer_sizes.insert(
         111,
         Size {

@@ -1300,6 +1300,11 @@ Compatibility follow-up outside the Firefox exit gate:
   content-to-transport transition: a valid black Present triggered native
   recovery while later client work was queued. Recovery now requires a
   missing page-flip callback; the commit-pinned fallback recapture remains.
+  That recapture isolated a second defect: the frontend deferred MapWindow
+  even though the no-WM fallback bypassed policy admission, leaving no owner
+  able to map Kitty's toplevel after its black bootstrap Present. Frontend map
+  deferral and Engine admission now derive from one policy-owner mode; the
+  fresh commit-pinned fallback recapture remains.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.

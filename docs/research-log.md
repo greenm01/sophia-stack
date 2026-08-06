@@ -3,6 +3,29 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: X map deferral requires a live policy owner
+
+The second commit-pinned Kitty fallback attempt retired one valid black Present
+and then reached the visual-readiness deadline without another submission.
+Native scanout, page-flip retirement, focus delivery, and cleanup were healthy.
+The real-Kitty frontend probe also passed with production's idle-before-complete
+Copy feedback, excluding Present routing as the stalled boundary.
+
+The live frontend had unconditionally enabled policy-deferred mapping, while
+the no-WM layout deliberately bypassed policy admission. Those two decisions
+left no owner capable of admitting the deferred toplevel. Kitty's pre-map
+bootstrap Present could retire, but the window could never cross the X11 map
+transition or receive the MapNotify, VisibilityNotify, and Expose events that
+start its visible rendering.
+
+XLibre maps immediately unless a SubstructureRedirect owner intercepts the
+request. yserver independently implements the same rule and emits map,
+visibility, and exposure only after the window becomes viewable. Sophia now
+derives frontend deferral and Engine admission from one policy-map mode:
+external-WM sessions defer, while no-WM sessions fulfill MapWindow directly.
+The reducer regression makes the two states mutually exclusive, and the real
+Kitty probe now uses production's Copy feedback order and cadence.
+
 ## 2026-08-05: black client content cannot authorize native recovery
 
 The first commit-pinned Kitty fallback attempt exited at its eight-second
