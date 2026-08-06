@@ -29,6 +29,20 @@ pub struct LiveProductionNativeSuspendReport {
     pub skipped_present: Option<TransactionId>,
 }
 
+fn validate_renderer_image_resume_admission(
+    retained: &[LiveRendererImageId],
+    handoff: Option<&[LiveRendererImageId]>,
+) -> Result<(), &'static str> {
+    match (retained.is_empty(), handoff) {
+        (true, None) => Ok(()),
+        (_, Some(images)) if images == retained => Ok(()),
+        (false, None) => Err("native resume omitted retained renderer images"),
+        (_, Some(_)) => {
+            Err("native resume renderer-image handoff does not match the retained scene")
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionNativeRetirementOwner {
     IndependentFrame,
@@ -58,6 +72,24 @@ pub fn reduce_live_production_native_retirement_owner(
 }
 
 impl LiveProductionVisualRuntime {
+    pub fn retained_renderer_image_ids(&self) -> Vec<LiveRendererImageId> {
+        let mut images = self
+            .displayed_surfaces
+            .values()
+            .map(|displayed| displayed.layer.image_id)
+            .collect::<BTreeSet<_>>();
+        if let Some((_, in_flight)) = self.present_scheduler.in_flight_displayed_layer() {
+            images.insert(in_flight.image_id);
+        }
+        images.into_iter().collect()
+    }
+
+    pub fn discard_retained_renderer_images(&mut self) -> usize {
+        let discarded = self.displayed_surfaces.len();
+        self.displayed_surfaces.clear();
+        discarded
+    }
+
     pub fn suspend_native_scanout(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
@@ -129,7 +161,18 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
         frames: Vec<LiveProductionComposedFrame>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        renderer_handoff: Option<LiveProductionRendererImageHandoff>,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let retained = self.retained_renderer_image_ids();
+        // Admit the first retained frame only after its opaque image IDs are
+        // valid in the replacement renderer generation.
+        validate_renderer_image_resume_admission(
+            &retained,
+            renderer_handoff.as_ref().map(|handoff| handoff.image_ids()),
+        )?;
+        let restored = renderer_handoff.map_or(Ok(0), |handoff| {
+            native_scanout.restore_renderer_image_handoff(handoff)
+        })?;
         self.outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
             self.production.committed_surfaces(),
@@ -147,7 +190,7 @@ impl LiveProductionVisualRuntime {
                 .ok_or("persistent backend primary output was not registered")?;
             native_scanout.queue_retained_mixed_frame(primary_index, frame);
         }
-        Ok(())
+        Ok(restored)
     }
 
     pub fn drain_native_scanout(
@@ -428,3 +471,5 @@ impl LiveProductionVisualRuntime {
         self.outputs.diagnostic()
     }
 }
+
+mod tests;

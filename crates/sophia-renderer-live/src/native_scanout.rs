@@ -8,6 +8,9 @@ use crate::{
 use sophia_engine::CompositorRgb8;
 use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, Rect, Transform};
 
+mod renderer_images;
+pub use renderer_images::{LiveRendererImageId, LiveRendererImageSnapshot};
+
 #[derive(Debug)]
 pub struct NativeGbmOwnedScanoutBuffer {
     descriptor: LiveRendererScanoutBufferDescriptor,
@@ -123,25 +126,6 @@ pub struct LiveOwnedMultiPlaneDmaBufFrame {
     pub modifier: u64,
     pub plane_count: u8,
     pub planes: [Option<LiveOwnedDmaBufPlane>; 4],
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LiveRendererImageId(u64);
-
-impl LiveRendererImageId {
-    pub const INVALID: Self = Self(0);
-
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
-    }
-
-    pub const fn is_valid(self) -> bool {
-        self.0 != 0
-    }
 }
 
 impl LiveOwnedMultiPlaneDmaBufFrame {
@@ -396,6 +380,27 @@ where
             .promote_renderer_image(sophia_renderer_native_egl::NativeRendererImageId::from_raw(
                 image_id.raw(),
             ))
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
+    pub fn export_promoted_renderer_image(
+        &self,
+        image_id: LiveRendererImageId,
+    ) -> Result<Option<LiveRendererImageSnapshot>, LiveRendererScanoutBufferExportDetail> {
+        self.inner
+            .export_promoted_renderer_image(
+                sophia_renderer_native_egl::NativeRendererImageId::from_raw(image_id.raw()),
+            )
+            .map(|snapshot| snapshot.map(|inner| LiveRendererImageSnapshot { image_id, inner }))
+            .map_err(reduced_native_owned_scanout_buffer_export_detail)
+    }
+
+    pub fn restore_promoted_renderer_image(
+        &mut self,
+        snapshot: LiveRendererImageSnapshot,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        self.inner
+            .restore_promoted_renderer_image(snapshot.inner)
             .map_err(reduced_native_owned_scanout_buffer_export_detail)
     }
 

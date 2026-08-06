@@ -12,6 +12,7 @@ mod persistent_native_scanout {
     mod renderer_images;
     mod state;
     use frame_damage::trace_presented_output_damage;
+    pub use renderer_images::LiveProductionRendererImageHandoff;
     pub use state::*;
 
     pub struct LiveProductionNativeScanout {
@@ -947,9 +948,9 @@ pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
     LiveProductionCpuFrameQueueStatus, LiveProductionNativeFrameId,
     LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
-    LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
-    live_production_scanout_is_stable_present, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_page_flip_watchdog,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
+    LiveProductionScanoutContent, live_production_scanout_is_stable_present,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_page_flip_watchdog,
 };
 
 #[derive(Debug)]

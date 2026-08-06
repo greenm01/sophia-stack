@@ -3,6 +3,33 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: VT resume transfers renderer-owned snapshots
+
+Native-chrome attempt `0001` isolated the resume failure. The seat and KMS
+state quiesced and reacquired correctly, but `LiveProductionVisualRuntime`
+retained renderer-image IDs after the old native owner—and therefore its image
+table—was destroyed. The replacement worker received a retained mixed frame
+whose IDs belonged to the discarded generation. It correctly rejected that
+frame as `InvalidTarget`, and every later Present remained mixed with the same
+unresolvable scene state.
+
+Keeping the old worker alive is not currently safe because its GBM device is a
+clone of the seat-leased primary DRM node. Sophia instead exports each promoted
+compositor snapshot as an opaque, bounded DMA-BUF lease after native work has
+drained. The old KMS, EGL, and GBM owners are then released. After seat
+reacquisition, the replacement renderer copies and promotes the exact same
+image-ID set before `resume_native_scanout` may queue retained content. Missing,
+duplicate, invalid, or unexpected identities fail the lifecycle transition.
+An unsolicited revoke cannot guarantee a handoff, so it explicitly clears
+stale runtime identities rather than entering a permanent invalid-target loop.
+
+This keeps migration inside renderer/backend ownership and leaves Engine
+protocol-neutral. It also preserves the future optimization suggested by
+niri's split render/KMS model: Sophia can later move composition onto a
+persistent same-GPU render-node owner and make the same typed handoff a no-copy
+generation transfer. The current implementation does not retain revoked KMS
+authority to obtain that optimization prematurely.
+
 ## 2026-08-06: The final chrome capture is an installed one-shot proof
 
 The schema-2 native chrome verifier was strict, but its physical runner still

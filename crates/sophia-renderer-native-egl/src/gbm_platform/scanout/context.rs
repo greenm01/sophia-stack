@@ -246,6 +246,60 @@ where
         Ok(true)
     }
 
+    pub fn export_promoted_renderer_image(
+        &self,
+        image_id: NativeRendererImageId,
+    ) -> Result<Option<NativeRendererImageSnapshot>, NativeGbmScanoutBufferExportDetail> {
+        let Some(image) = self.renderer_images.get(&image_id) else {
+            return Ok(None);
+        };
+        if image.state != NativeRendererImageState::Promoted {
+            return Ok(None);
+        }
+        let mut plane_fds = image.buffer.export_plane_fds()?.into_plane_fds();
+        let pitches = image.buffer.plane_pitches();
+        let offsets = image.buffer.plane_offsets();
+        let planes = std::array::from_fn(|index| {
+            plane_fds[index]
+                .take()
+                .map(|fd| NativeOwnedDmaBufPlane {
+                    fd,
+                    offset: offsets[index],
+                    stride: pitches[index],
+                })
+        });
+        if planes[..usize::from(image.buffer.plane_count())]
+            .iter()
+            .any(Option::is_none)
+        {
+            return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
+        }
+        Ok(Some(NativeRendererImageSnapshot {
+            image_id,
+            width: image.buffer.width(),
+            height: image.buffer.height(),
+            format: image.buffer.format(),
+            modifier: image.buffer.modifier().unwrap_or(u64::MAX),
+            plane_count: image.buffer.plane_count(),
+            planes,
+        }))
+    }
+
+    pub fn restore_promoted_renderer_image(
+        &mut self,
+        snapshot: NativeRendererImageSnapshot,
+    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
+        let image_id = snapshot.image_id();
+        if !self.capture_renderer_image(image_id, snapshot.as_frame())? {
+            return Ok(false);
+        }
+        if !self.promote_renderer_image(image_id)? {
+            let _ = self.rollback_renderer_image(image_id);
+            return Err(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId);
+        }
+        Ok(true)
+    }
+
     pub fn rollback_renderer_image(
         &mut self,
         image_id: NativeRendererImageId,

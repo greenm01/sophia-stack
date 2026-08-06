@@ -222,22 +222,47 @@ for record in \
     'sophia_live_seat schema=1 status=active source=resume'; do
     require_line "^${record}$" "$SESSION_LOG" "VT lifecycle record is missing: $record"
 done
+renderer_capture="$(
+    grep -E '^sophia_live_renderer_handoff schema=1 status=captured images=[1-9][0-9]*$' \
+        "$SESSION_LOG" | head -n 1
+)"
+[[ -n "$renderer_capture" ]] || fail "VT release did not retain renderer-owned snapshots"
+renderer_restore="$(
+    grep -E '^sophia_live_renderer_handoff schema=1 status=restored images=[1-9][0-9]* source=seat_resume$' \
+        "$SESSION_LOG" | head -n 1
+)"
+[[ -n "$renderer_restore" ]] || fail "VT resume did not restore renderer-owned snapshots"
+captured_images="$(field "$renderer_capture" images)" || fail "renderer capture omitted its count"
+restored_images="$(field "$renderer_restore" images)" || fail "renderer restore omitted its count"
+[[ "$captured_images" == "$restored_images" ]] ||
+    fail "renderer-image handoff restored $restored_images of $captured_images images"
 queued_vt_line="$(line_number 'schema=4 status=queued target=' "$SESSION_LOG")"
 preparing_vt_line="$(line_number 'schema=4 status=preparing target=' "$SESSION_LOG")"
+renderer_capture_line="$(line_number 'status=captured images=' "$SESSION_LOG")"
 quiesced_vt_line="$(line_number 'schema=6 status=quiesced target=' "$SESSION_LOG")"
 requested_vt_line="$(line_number 'schema=4 status=requested target=' "$SESSION_LOG")"
 release_vt_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
 suspended_vt_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"
 acquire_vt_line="$(line_number 'sophia_live_seat schema=1 status=acquire_pending$' "$SESSION_LOG")"
+renderer_restore_line="$(line_number 'status=restored images=.* source=seat_resume$' "$SESSION_LOG")"
 resumed_vt_line="$(line_number 'sophia_live_seat schema=1 status=active source=resume$' "$SESSION_LOG")"
+post_resume_flip_line="$(
+    line_number_after \
+        'sophia_live_native_page_flip schema=1 status=retired output=1 ' \
+        "$SESSION_LOG" "$resumed_vt_line"
+)"
+[[ -n "$post_resume_flip_line" ]] || fail "no primary page flip retired after VT resume"
 (( queued_vt_line < preparing_vt_line
-    && preparing_vt_line < quiesced_vt_line
+    && preparing_vt_line < renderer_capture_line
+    && renderer_capture_line < quiesced_vt_line
     && quiesced_vt_line < requested_vt_line
     && requested_vt_line < release_vt_line
     && release_vt_line < suspended_vt_line
     && suspended_vt_line < acquire_vt_line
-    && acquire_vt_line < resumed_vt_line )) ||
-    fail "VT prepare, release, and acquire records are out of order"
+    && acquire_vt_line < renderer_restore_line
+    && renderer_restore_line < resumed_vt_line
+    && resumed_vt_line < post_resume_flip_line )) ||
+    fail "VT prepare, renderer handoff, release, acquire, and retirement records are out of order"
 if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight during teardown' \
     "$SESSION_LOG"; then
     fail "operator-requested VT switch used the revoked-seat fallback"

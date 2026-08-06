@@ -49,6 +49,17 @@
                 };
                 match quiesced {
                     Ok(report) => {
+                        suspended_renderer_images = match (runtime.as_ref(), native_scanout.as_mut())
+                        {
+                            (Some(runtime), Some(native)) => {
+                                Some(capture_renderer_image_handoff(runtime, native, output.id)?)
+                            }
+                            _ => None,
+                        };
+                        println!(
+                            "sophia_live_renderer_handoff schema=1 status=captured images={}",
+                            suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
+                        );
                         native_scanout.take();
                         seat_release_prepared = true;
                         println!(
@@ -81,15 +92,20 @@
                                             .into(),
                                     );
                                 }
-                                if let Some(runtime) = runtime.as_mut() {
-                                    let frames = scene.frames_for_outputs(&outputs)?;
-                                    runtime.resume_native_scanout(
+                                let frames = scene.frames_for_outputs(&outputs)?;
+                                let restored = runtime
+                                    .as_mut()
+                                    .ok_or("seat switch rejection lost the visual runtime")?
+                                    .resume_native_scanout(
                                         &mut resumed,
                                         &outputs,
                                         frames,
+                                        suspended_renderer_images.take(),
                                     )?;
-                                }
                                 *native_scanout = Some(resumed);
+                                println!(
+                                    "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=switch_rejected"
+                                );
                                 let device_map =
                                     sophia_backend_live::NativeLibinputDeviceMap::new(
                                         SeatId::from_raw(SESSION_SEAT_RAW),
@@ -148,11 +164,20 @@
                 if resumed.outputs() != outputs {
                     return Err("seat switch timeout changed the physical output topology".into());
                 }
-                if let Some(runtime) = runtime.as_mut() {
-                    let frames = scene.frames_for_outputs(&outputs)?;
-                    runtime.resume_native_scanout(&mut resumed, &outputs, frames)?;
-                }
+                let frames = scene.frames_for_outputs(&outputs)?;
+                let restored = runtime
+                    .as_mut()
+                    .ok_or("seat switch timeout lost the visual runtime")?
+                    .resume_native_scanout(
+                        &mut resumed,
+                        &outputs,
+                        frames,
+                        suspended_renderer_images.take(),
+                    )?;
                 *native_scanout = Some(resumed);
+                println!(
+                    "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=disable_timeout"
+                );
                 let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
                     SeatId::from_raw(SESSION_SEAT_RAW),
                 )
@@ -194,12 +219,17 @@
                     && let Some(runtime) = runtime.as_mut()
                 {
                     let report = runtime.suspend_revoked_native_scanout(&outputs)?;
+                    let discarded_renderer_images = runtime.discard_retained_renderer_images();
+                    suspended_renderer_images = None;
                     println!(
                         "sophia_live_seat schema=2 status=forced_detach abandoned_scanouts={} skipped_present={}",
                         report.abandoned_scanouts,
                         report
                             .skipped_present
                             .map_or_else(|| "none".to_owned(), |transaction| transaction.raw().to_string()),
+                    );
+                    println!(
+                        "sophia_live_renderer_handoff schema=1 status=discarded images={discarded_renderer_images} source=forced_detach"
                     );
                 }
                 native_scanout.take();
@@ -221,11 +251,20 @@
                 if resumed.outputs() != outputs {
                     return Err("seat resume changed the physical output topology".into());
                 }
-                if let Some(runtime) = runtime.as_mut() {
-                    let frames = scene.frames_for_outputs(&outputs)?;
-                    runtime.resume_native_scanout(&mut resumed, &outputs, frames)?;
-                }
+                let frames = scene.frames_for_outputs(&outputs)?;
+                let restored = runtime
+                    .as_mut()
+                    .ok_or("seat resume lost the visual runtime")?
+                    .resume_native_scanout(
+                        &mut resumed,
+                        &outputs,
+                        frames,
+                        suspended_renderer_images.take(),
+                    )?;
                 *native_scanout = Some(resumed);
+                println!(
+                    "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=seat_resume"
+                );
                 let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
                     SeatId::from_raw(SESSION_SEAT_RAW),
                 )
@@ -724,6 +763,13 @@
                     &outputs,
                     Duration::from_millis(100),
                 )?;
+            let renderer_handoff = capture_renderer_image_handoff(
+                runtime
+                    .as_ref()
+                    .ok_or("startup native recovery lost the visual runtime")?,
+                &mut current,
+                output.id,
+            )?;
             drop(current);
             let mut replacement = LiveProductionNativeScanout::new_with_seat(
                 &seat_controller
@@ -738,7 +784,12 @@
             let runtime = runtime
                 .as_mut()
                 .ok_or("startup native recovery lost the visual runtime")?;
-            runtime.resume_native_scanout(&mut replacement, &outputs, frames)?;
+            let restored_renderer_images = runtime.resume_native_scanout(
+                &mut replacement,
+                &outputs,
+                frames,
+                Some(renderer_handoff),
+            )?;
             let _ = runtime.run_cpu_repaint(
                 &mut scene,
                 focused_surface,
@@ -765,6 +816,9 @@
                 suspended.outcome.reduced_name(),
                 suspended.outcome.drained(),
                 suspended.abandoned_scanouts,
+            );
+            println!(
+                "sophia_live_renderer_handoff schema=1 status=restored images={restored_renderer_images} source=startup_recovery"
             );
             std::io::stdout().flush()?;
         }

@@ -549,3 +549,26 @@ without losing displayed content. Import counts and cache validation remain
 separate from snapshot captures, promotions, rollbacks, evictions, live
 entries, and live bytes. These metrics make a future persistent capture-target
 optimization measurable without weakening the ownership boundary.
+
+A full native-owner replacement is a renderer-generation transition, not an
+output-target recreation. Before a planned seat release, the backend drains
+native work and asks the old renderer to duplicate DMA-BUF leases for the exact
+set of promoted images retained by runtime state. The leases contain no client
+source, EGL object, GBM context, KMS device, or protocol metadata. The
+replacement renderer copies those snapshots into its bounded table under the
+same opaque IDs and promotes them before native resume may queue the first
+retained frame.
+
+Resume admission requires exact, unique image-ID coverage. A missing handoff,
+an extra or duplicate ID, or a failed restore terminates the transition rather
+than allowing an `InvalidTarget` frame to poison future composition. An
+unplanned device revoke, where safe export is no longer guaranteed, clears the
+stale displayed-image records and waits for client repaint. This is a degraded
+content path, but it preserves renderer and input liveness without pretending
+that the destroyed generation remains usable.
+
+The handoff is intentionally compatible with a future persistent render-node
+owner. Once rendering is independent of seat-scoped primary/KMS authority, the
+same admission contract can transfer an existing renderer generation without
+copying pixels. That optimization must also export scanout plane FDs for KMS
+import; renderer-private GEM handles are not valid in a different DRM file.

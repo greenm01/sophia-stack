@@ -1339,12 +1339,19 @@ Compatibility follow-up outside the Firefox exit gate:
   and retains a commit-pinned immutable archive. Installed commit `e07afa0f`
   passed archive `0002` with two outputs, all six ordered phases, 48 routed
   physical keys, normal logout, clean native drain, and exact VT restoration.
-- [ ] Restore renderer-target recreation after an in-session VT switch. Native
-  chrome attempt `0001` quiesced before switching to tty2 and reacquired the
-  seat, but every resumed renderer export returned `InvalidTarget`; the
-  emergency path then retained the attempt as failed. Require a deterministic
-  lifecycle regression and a physical switch-away/switch-back capture before
-  treating the installed candidate as stable.
+- [x] Restore renderer-image ownership across in-session VT switches. Native
+  chrome attempt `0001` showed that KMS recreation discarded the renderer
+  table while runtime state retained its opaque image IDs, poisoning every
+  resumed export with `InvalidTarget`. Quiesced replacement now transfers only
+  promoted compositor-owned snapshots through bounded DMA-BUF leases, restores
+  exact unique coverage before resume can queue retained content, and drops
+  stale identities after an unexpected revoke. Deterministic regressions bind
+  the exact-coverage and resume-admission rules.
+- [ ] Re-run the installed physical switch-away/switch-back proof. Require a
+  nonempty captured/restored renderer-image handoff, visible quiet-client
+  content after tty7 reacquisition, continued input and presentation, normal
+  logout, and zero renderer, native-submit, or cleanup failures before treating
+  the installed candidate as stable.
 - [x] Version the blind WM API to v6 with negotiated focus-ring/frame chrome,
   generation-ordered policy-update/ack packets, stale rejection, and an
   Engine idle-shortcut application reducer.

@@ -2,10 +2,10 @@ use super::discovery::PendingRenderedFrame;
 use crate::api::*;
 use sophia_renderer_live::{
     LiveMixedCompositionError, LiveNativePersistentRenderStats, LiveRendererImageId,
-    LiveRendererScanoutBufferDescriptor, LiveRendererScanoutBufferExportDetail,
-    LiveRendererScanoutBufferExportStatus, NativeGbmOwnedScanoutBuffer,
-    NativeGbmOwnedScanoutBufferExportReport, NativeGbmRenderedScanoutContext,
-    NativeGbmRenderedScanoutContextStatus,
+    LiveRendererImageSnapshot, LiveRendererScanoutBufferDescriptor,
+    LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
+    NativeGbmOwnedScanoutBuffer, NativeGbmOwnedScanoutBufferExportReport,
+    NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
 };
 use std::collections::BTreeMap;
 use std::io;
@@ -291,6 +291,46 @@ impl NativeGbmRendererWorker {
         })
     }
 
+    pub fn export_promoted_renderer_image(
+        &mut self,
+        image_id: LiveRendererImageId,
+    ) -> Result<Option<LiveRendererImageSnapshot>, LiveRendererScanoutBufferExportDetail> {
+        if self.in_flight.is_some() {
+            return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
+        }
+        let (completion_sender, completion_receiver) = sync_channel(1);
+        self.command_sender
+            .try_send(WorkerCommand::ExportPromotedImage {
+                image_id,
+                completion_sender,
+            })
+            .map_err(reduce_worker_command_send_error)?;
+        completion_receiver
+            .recv_timeout(WORKER_MAINTENANCE_TIMEOUT)
+            .map_err(reduce_worker_maintenance_receive_error)?
+    }
+
+    pub fn restore_promoted_renderer_image(
+        &mut self,
+        snapshot: LiveRendererImageSnapshot,
+    ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
+        if self.in_flight.is_some() {
+            return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
+        }
+        let (completion_sender, completion_receiver) = sync_channel(1);
+        self.command_sender
+            .try_send(WorkerCommand::RestorePromotedImage {
+                snapshot,
+                completion_sender,
+            })
+            .map_err(reduce_worker_command_send_error)?;
+        let completion = completion_receiver
+            .recv_timeout(WORKER_MAINTENANCE_TIMEOUT)
+            .map_err(reduce_worker_maintenance_receive_error)?;
+        self.persistent_render_stats = completion.persistent_render_stats;
+        completion.result
+    }
+
     fn renderer_image_transition(
         &self,
         command: impl FnOnce(
@@ -431,6 +471,16 @@ enum WorkerCommand {
         image_id: LiveRendererImageId,
         completion_sender: SyncSender<Result<bool, LiveRendererScanoutBufferExportDetail>>,
     },
+    ExportPromotedImage {
+        image_id: LiveRendererImageId,
+        completion_sender: SyncSender<
+            Result<Option<LiveRendererImageSnapshot>, LiveRendererScanoutBufferExportDetail>,
+        >,
+    },
+    RestorePromotedImage {
+        snapshot: LiveRendererImageSnapshot,
+        completion_sender: SyncSender<WorkerRestoreImageResult>,
+    },
     ClearImages {
         completion_sender: SyncSender<WorkerMaintenanceResult>,
     },
@@ -448,6 +498,11 @@ struct WorkerResult {
 
 struct WorkerMaintenanceResult {
     result: Result<usize, LiveRendererScanoutBufferExportDetail>,
+    persistent_render_stats: LiveNativePersistentRenderStats,
+}
+
+struct WorkerRestoreImageResult {
+    result: Result<bool, LiveRendererScanoutBufferExportDetail>,
     persistent_render_stats: LiveNativePersistentRenderStats,
 }
 
@@ -561,6 +616,31 @@ fn run_worker<D>(
                 });
                 let _ = completion_sender.send(result);
             }
+            WorkerCommand::ExportPromotedImage {
+                image_id,
+                completion_sender,
+            } => {
+                let result = context.as_ref().map_or(Ok(None), |context| {
+                    context.export_promoted_renderer_image(image_id)
+                });
+                let _ = completion_sender.send(result);
+            }
+            WorkerCommand::RestorePromotedImage {
+                snapshot,
+                completion_sender,
+            } => {
+                let result = context.as_mut().map_or(Ok(false), |context| {
+                    context.restore_promoted_renderer_image(snapshot)
+                });
+                let persistent_render_stats = context.as_ref().map_or_else(
+                    LiveNativePersistentRenderStats::default,
+                    NativeGbmRenderedScanoutContext::persistent_render_stats,
+                );
+                let _ = completion_sender.send(WorkerRestoreImageResult {
+                    result,
+                    persistent_render_stats,
+                });
+            }
             WorkerCommand::ClearImages { completion_sender } => {
                 let result = context.as_mut().map_or(Ok(0), |context| {
                     context
@@ -590,6 +670,24 @@ fn run_worker<D>(
             }
             WorkerCommand::Shutdown => break,
         }
+    }
+}
+
+fn reduce_worker_command_send_error<T>(
+    error: TrySendError<T>,
+) -> LiveRendererScanoutBufferExportDetail {
+    match error {
+        TrySendError::Full(_) => LiveRendererScanoutBufferExportDetail::WorkerQueueFull,
+        TrySendError::Disconnected(_) => LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
+    }
+}
+
+fn reduce_worker_maintenance_receive_error(
+    error: RecvTimeoutError,
+) -> LiveRendererScanoutBufferExportDetail {
+    match error {
+        RecvTimeoutError::Timeout => LiveRendererScanoutBufferExportDetail::WorkerStalled,
+        RecvTimeoutError::Disconnected => LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
     }
 }
 

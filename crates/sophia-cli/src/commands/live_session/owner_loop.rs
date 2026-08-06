@@ -90,6 +90,15 @@ fn synchronize_runtime_surface_chrome_style(
     runtime.set_surface_chrome_style(style)
 }
 
+fn capture_renderer_image_handoff(
+    runtime: &LiveProductionVisualRuntime,
+    native_scanout: &mut LiveProductionNativeScanout,
+    output: sophia_protocol::OutputId,
+) -> Result<sophia_backend_live::LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
+    let retained = runtime.retained_renderer_image_ids();
+    native_scanout.export_renderer_image_handoff(output, &retained)
+}
+
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
@@ -302,6 +311,7 @@ fn run_session_loop(
     let mut pending_virtual_terminal: Option<(u8, Instant)> = None;
     let mut requested_virtual_terminal = None;
     let mut seat_release_prepared = false;
+    let mut suspended_renderer_images = None;
 
     include!("owner_loop/session_control.rs")
 }

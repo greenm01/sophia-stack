@@ -1,4 +1,4 @@
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::time::Duration;
 
 use super::import_cache::{NativeDmaBufImportCacheStats, NativeRendererImageId};
@@ -42,6 +42,49 @@ pub struct NativeMultiPlaneDmaBufFrame<'a> {
     pub modifier: u64,
     pub plane_count: u8,
     pub planes: [Option<NativeDmaBufPlane<'a>>; 4],
+}
+
+#[derive(Debug)]
+pub struct NativeRendererImageSnapshot {
+    // Duplicated plane FDs keep pixels alive without retaining the old DRM
+    // device, EGL display, or GBM context across a renderer generation change.
+    pub(super) image_id: NativeRendererImageId,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) format: u32,
+    pub(super) modifier: u64,
+    pub(super) plane_count: u8,
+    pub(super) planes: [Option<NativeOwnedDmaBufPlane>; 4],
+}
+
+#[derive(Debug)]
+pub struct NativeOwnedDmaBufPlane {
+    pub(super) fd: OwnedFd,
+    pub(super) offset: u32,
+    pub(super) stride: u32,
+}
+
+impl NativeRendererImageSnapshot {
+    pub const fn image_id(&self) -> NativeRendererImageId {
+        self.image_id
+    }
+
+    pub(super) fn as_frame(&self) -> NativeMultiPlaneDmaBufFrame<'_> {
+        NativeMultiPlaneDmaBufFrame {
+            width: self.width,
+            height: self.height,
+            format: self.format,
+            modifier: self.modifier,
+            plane_count: self.plane_count,
+            planes: std::array::from_fn(|index| {
+                self.planes[index].as_ref().map(|plane| NativeDmaBufPlane {
+                    fd: plane.fd.as_fd(),
+                    offset: plane.offset,
+                    stride: plane.stride,
+                })
+            }),
+        }
+    }
 }
 
 impl NativeMultiPlaneDmaBufFrame<'_> {

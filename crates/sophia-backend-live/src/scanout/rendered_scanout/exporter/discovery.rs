@@ -270,6 +270,33 @@ where
         })
     }
 
+    pub fn export_promoted_renderer_image(
+        &mut self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Result<
+        Option<sophia_renderer_live::LiveRendererImageSnapshot>,
+        sophia_renderer_live::LiveRendererScanoutBufferExportDetail,
+    > {
+        if let Some(worker) = &mut self.worker {
+            return worker.export_promoted_renderer_image(image_id);
+        }
+        self.context.as_ref().map_or(Ok(None), |context| {
+            context.export_promoted_renderer_image(image_id)
+        })
+    }
+
+    pub fn restore_promoted_renderer_image(
+        &mut self,
+        snapshot: sophia_renderer_live::LiveRendererImageSnapshot,
+    ) -> Result<bool, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        if let Some(worker) = &mut self.worker {
+            return worker.restore_promoted_renderer_image(snapshot);
+        }
+        self.context.as_mut().map_or(Ok(false), |context| {
+            context.restore_promoted_renderer_image(snapshot)
+        })
+    }
+
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {

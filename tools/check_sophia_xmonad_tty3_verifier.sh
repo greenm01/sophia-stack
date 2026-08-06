@@ -24,6 +24,8 @@ for mutation in \
     'status=key_suppressed reason=no_focus' \
     'status=workspace_focus_restore_queued ' \
     'status=retired output=2 ' \
+    'status=captured images=' \
+    'status=restored images=' \
     'schema=6 status=quiesced target=' \
     'schema=1 status=active source=resume' \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
@@ -39,6 +41,14 @@ for mutation in \
         exit 1
     fi
 done
+
+sed 's/status=restored images=2 source=seat_resume/status=restored images=1 source=seat_resume/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "xmonad verifier accepted an incomplete renderer-image handoff" >&2
+    exit 1
+fi
 
 sed 's/repeat_routed=6/repeat_routed=0/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \

@@ -1,4 +1,46 @@
 use super::*;
+use std::collections::BTreeSet;
+
+#[derive(Debug)]
+pub struct LiveProductionRendererImageHandoff {
+    output: OutputId,
+    expected: Vec<sophia_renderer_live::LiveRendererImageId>,
+    snapshots: Vec<sophia_renderer_live::LiveRendererImageSnapshot>,
+}
+
+impl LiveProductionRendererImageHandoff {
+    pub const fn len(&self) -> usize {
+        self.snapshots.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.snapshots.is_empty()
+    }
+
+    pub fn image_ids(&self) -> &[sophia_renderer_live::LiveRendererImageId] {
+        &self.expected
+    }
+}
+
+fn validate_renderer_image_handoff_ids(
+    expected: &[sophia_renderer_live::LiveRendererImageId],
+    actual: &[sophia_renderer_live::LiveRendererImageId],
+) -> Result<(), &'static str> {
+    if expected.iter().any(|image| !image.is_valid())
+        || actual.iter().any(|image| !image.is_valid())
+    {
+        return Err("renderer-image handoff contains an invalid image identity");
+    }
+    let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
+    let actual_set = actual.iter().copied().collect::<BTreeSet<_>>();
+    if expected_set.len() != expected.len() || actual_set.len() != actual.len() {
+        return Err("renderer-image handoff contains a duplicate image identity");
+    }
+    if expected_set != actual_set {
+        return Err("renderer-image handoff does not cover the retained scene");
+    }
+    Ok(())
+}
 
 impl LiveProductionNativeScanout {
     pub fn queue_present_cpu_frame(
@@ -142,6 +184,60 @@ impl LiveProductionNativeScanout {
         Ok(rolled_back)
     }
 
+    pub fn export_renderer_image_handoff(
+        &mut self,
+        output: OutputId,
+        expected: &[sophia_renderer_live::LiveRendererImageId],
+    ) -> Result<LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
+        validate_renderer_image_handoff_ids(expected, expected)?;
+        let index = self
+            .output_index(output)
+            .ok_or("renderer-image handoff selected an unknown output")?;
+        let mut snapshots = Vec::with_capacity(expected.len());
+        for image_id in expected {
+            let snapshot = self.heads[index]
+                .exporter
+                .export_promoted_renderer_image(*image_id)?
+                .ok_or("retained scene refers to an unavailable promoted renderer image")?;
+            snapshots.push(snapshot);
+        }
+        let actual = snapshots
+            .iter()
+            .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
+            .collect::<Vec<_>>();
+        validate_renderer_image_handoff_ids(expected, &actual)?;
+        Ok(LiveProductionRendererImageHandoff {
+            output,
+            expected: expected.to_vec(),
+            snapshots,
+        })
+    }
+
+    pub fn restore_renderer_image_handoff(
+        &mut self,
+        handoff: LiveProductionRendererImageHandoff,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let index = self
+            .output_index(handoff.output)
+            .ok_or("renderer-image handoff target output is unavailable")?;
+        let actual = handoff
+            .snapshots
+            .iter()
+            .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
+            .collect::<Vec<_>>();
+        validate_renderer_image_handoff_ids(&handoff.expected, &actual)?;
+        let expected_count = handoff.expected.len();
+        for snapshot in handoff.snapshots {
+            if !self.heads[index]
+                .exporter
+                .restore_promoted_renderer_image(snapshot)?
+            {
+                return Err("replacement renderer rejected a retained image snapshot".into());
+            }
+        }
+        Ok(expected_count)
+    }
+
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
@@ -274,3 +370,5 @@ impl LiveProductionNativeScanout {
         )
     }
 }
+
+mod tests;
