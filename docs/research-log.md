@@ -7833,3 +7833,13 @@ acknowledgement ordering.
   2556-by-1422 Kitty content, requires the compositor target at +2+9, verifies
   that a two-pixel outer ring remains within output bounds, and proves the X
   transaction geometry is unchanged.
+- Installed commit `a752ca27` confirmed that target for all 14 retired Kitty
+  Presents and composed the focused ring with two-pixel clearance. The session
+  ended with clean health, zero native submission or retirement failures, and
+  no pending native cleanup; the operator confirmed the complete border.
+- The automatic fallback archive remains failed for an independent gate
+  condition. Output 2 completed its synchronous startup modeset and recorded
+  one nonzero export, but received no later damage and therefore no
+  asynchronous page flip. The current verifier requires an asynchronous
+  retirement on both outputs. That promotion-policy question remains separate
+  from the accepted direct-map placement fix.

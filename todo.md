@@ -1308,8 +1308,11 @@ Compatibility follow-up outside the Firefox exit gate:
   mode's stale placement dependency on an unrelated startup-input flag. The
   Engine now centers the first direct-map toplevel without resizing it, while
   an external WM retains allocation ownership. This keeps compositor chrome
-  inside the output and leaves X Authority's client geometry unchanged. A
-  fresh commit-pinned fallback recapture remains.
+  inside the output and leaves X Authority's client geometry unchanged. The
+  installed `a752ca27` recapture confirmed the +2+9 target and complete chrome
+  on the first output. The full fallback gate remains open because its
+  verifier rejects the idle second output's synchronous startup presentation
+  when no later asynchronous page flip occurs there.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
