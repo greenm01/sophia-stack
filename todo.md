@@ -1303,7 +1303,12 @@ Compatibility follow-up outside the Firefox exit gate:
   That recapture isolated a second defect: the frontend deferred MapWindow
   even though the no-WM fallback bypassed policy admission, leaving no owner
   able to map Kitty's toplevel after its black bootstrap Present. Frontend map
-  deferral and Engine admission now derive from one policy-owner mode; the
+  deferral and Engine admission now derive from one policy-owner mode. The
+  resulting live recapture mapped and animated Kitty, then exposed the same
+  mode's stale placement dependency on an unrelated startup-input flag. The
+  Engine now centers the first direct-map toplevel without resizing it, while
+  an external WM retains allocation ownership. This keeps compositor chrome
+  inside the output and leaves X Authority's client geometry unchanged. A
   fresh commit-pinned fallback recapture remains.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing

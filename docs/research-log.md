@@ -7812,3 +7812,24 @@ acknowledgement ordering.
   entry, current-release symlinks, and rollback survival. Fixture regressions
   reject a changed deadline, local-chord substitution, graceful-shutdown
   relabeling, a missing status-124 diagnostic, and a normal lifecycle handoff.
+
+## 2026-08-05: direct-map placement must retain compositor chrome
+
+- The first installed no-WM fallback after direct MapWindow ownership was
+  restored mapped Kitty and retired 16 animated Presents. Its 2556-by-1422
+  content remained at output origin, however, while the focused two-pixel
+  compositor ring extended outside that content. The output clipped the
+  negative left and top bands; the right and bottom bands remained visible.
+- Border generation was symmetric and X Authority's client geometry was
+  coherent. The ownership error was in live layout: centering the first
+  policy-managed surface depended on a startup-input proof flag that normal
+  sessions always disable. No external WM existed to supply another
+  placement.
+- Direct mapping now also declares Engine ownership of initial placement. The
+  first toplevel is centered inside the first output without changing its
+  source extent or its authority transaction. Deferred mapping continues to
+  leave final placement and chrome clearance to the external WM.
+- A live-reducer regression reproduces the installed 2560-by-1440 output and
+  2556-by-1422 Kitty content, requires the compositor target at +2+9, verifies
+  that a two-pixel outer ring remains within output bounds, and proves the X
+  transaction geometry is unchanged.

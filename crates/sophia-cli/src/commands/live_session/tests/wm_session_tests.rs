@@ -993,3 +993,4 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
 }
 
 include!("wm_session_tests/admission.rs");
+include!("wm_session_tests/direct_map.rs");

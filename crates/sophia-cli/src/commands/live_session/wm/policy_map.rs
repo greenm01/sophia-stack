@@ -20,4 +20,8 @@ impl LivePolicyMapMode {
     const fn bypass_engine_admission(self) -> bool {
         matches!(self, Self::Direct)
     }
+
+    const fn engine_owns_initial_placement(self) -> bool {
+        matches!(self, Self::Direct)
+    }
 }

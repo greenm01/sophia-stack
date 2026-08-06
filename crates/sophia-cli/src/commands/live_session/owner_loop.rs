@@ -125,7 +125,7 @@ fn run_session_loop(
     }
     let mut layout = PersistentLiveLayout::new(
         LivePolicyMapMode::from_external_wm(wm_session.is_some()),
-        require_startup_focus.then_some(output.size),
+        output.size,
     );
     let mut pending_wm_update = None;
     let mut floating_pointer_gesture = FloatingPointerGestureState::default();

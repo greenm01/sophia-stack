@@ -63,11 +63,16 @@ struct PersistentLiveLayout {
 }
 
 impl PersistentLiveLayout {
-    fn new(policy_map_mode: LivePolicyMapMode, center_first_surface_in: Option<Size>) -> Self {
+    fn new(policy_map_mode: LivePolicyMapMode, output: Size) -> Self {
         Self {
             bypass_policy_admission: policy_map_mode.bypass_engine_admission(),
             stage_new_surfaces_offset: policy_map_mode.frontend_deferred(),
-            center_first_surface_in,
+            // Without an external WM, the Engine owns initial placement. Keep
+            // the first toplevel's extent intact and center the output space
+            // available for compositor-owned chrome.
+            center_first_surface_in: policy_map_mode
+                .engine_owns_initial_placement()
+                .then_some(output),
             ..Self::default()
         }
     }
