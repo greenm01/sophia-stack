@@ -121,6 +121,22 @@ env \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
     "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3
 
+for minute in 07 08 09 10 11 12 13; do
+    record "2026-08-05T12:${minute}:00Z"
+done
+if env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 10 0013 \
+    >/dev/null 2>&1; then
+    echo "ten-cycle verifier skipped the failed direct predecessor" >&2
+    exit 1
+fi
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 10 0014
+
 MUTATED_ROOT="$TEMP_DIR/mutated-runs"
 install -d -m 700 "$MUTATED_ROOT"
 cp -a "$RUN_ROOT/0007" "$MUTATED_ROOT/0001"
@@ -140,7 +156,7 @@ if env \
     exit 1
 fi
 
-cp -a "$RUN_ROOT/0007" "$RUN_ROOT/9999"
+cp -a "$RUN_ROOT/0014" "$RUN_ROOT/9999"
 if env \
     XDG_STATE_HOME="$STATE_HOME" \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
