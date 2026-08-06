@@ -1,7 +1,9 @@
 #![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 
 use sophia_backend_live::{
-    LiveRendererImageHandoffAdmission, reduce_live_renderer_image_handoff_admission,
+    LiveRendererImageHandoffAdmission, LiveRendererImageResumeObservation,
+    LiveRendererImageResumePhase, LiveRendererImageResumeTransition,
+    reduce_live_renderer_image_handoff_admission, reduce_live_renderer_image_resume_observation,
 };
 use sophia_renderer_live::LiveRendererImageId;
 
@@ -49,5 +51,33 @@ fn renderer_handoff_requires_exact_unique_retained_image_coverage() {
     assert_eq!(
         reduce_live_renderer_image_handoff_admission(&[image(0)], Some(&[image(0)])),
         InvalidIdentity
+    );
+}
+
+#[test]
+fn renderer_handoff_resume_initializes_the_output_owner_before_restoring_images() {
+    use LiveRendererImageResumeObservation::{ImagesRestored, OutputOwnerInitialized};
+    use LiveRendererImageResumePhase::{AwaitingImageRestore, AwaitingOutputOwner, Ready};
+    use LiveRendererImageResumeTransition::{Advanced, Rejected};
+
+    assert_eq!(
+        reduce_live_renderer_image_resume_observation(AwaitingOutputOwner, ImagesRestored),
+        Rejected
+    );
+    assert_eq!(
+        reduce_live_renderer_image_resume_observation(AwaitingOutputOwner, OutputOwnerInitialized,),
+        Advanced(AwaitingImageRestore)
+    );
+    assert_eq!(
+        reduce_live_renderer_image_resume_observation(AwaitingImageRestore, OutputOwnerInitialized,),
+        Rejected
+    );
+    assert_eq!(
+        reduce_live_renderer_image_resume_observation(AwaitingImageRestore, ImagesRestored),
+        Advanced(Ready)
+    );
+    assert_eq!(
+        reduce_live_renderer_image_resume_observation(Ready, ImagesRestored),
+        Rejected
     );
 }

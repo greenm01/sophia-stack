@@ -88,6 +88,22 @@ persistent same-GPU render-node owner and make the same typed handoff a no-copy
 generation transfer. The current implementation does not retain revoked KMS
 authority to obtain that optimization prematurely.
 
+Installed native-chrome attempt `0005` exposed an ordering defect in that
+handoff. VT release drained native work and captured both retained images, but
+resume tried to import them before native output initialization had created the
+replacement renderer worker. The new exporter therefore had neither an inline
+context nor a worker image table and rejected the first snapshot. Resume now
+initializes every replacement output owner, restores the exact image set, then
+publishes the output runtime and queues retained content. A transition reducer
+rejects restore-before-owner and duplicate lifecycle observations; an exporter
+regression proves that the image owner does not exist before initialization.
+
+This matches the mature reference sequence: niri reactivates DRM devices and
+connectors before it schedules redraw, while yserver re-establishes modesets
+before its full-damage repaint. Sophia additionally preserves its explicit
+renderer-generation handoff because its retained scene stores renderer-owned
+image identities across native-owner replacement.
+
 ## 2026-08-06: The final chrome capture is an installed one-shot proof
 
 The schema-2 native chrome verifier was strict, but its physical runner still

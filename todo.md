@@ -1346,7 +1346,11 @@ Compatibility follow-up outside the Firefox exit gate:
   promoted compositor-owned snapshots through bounded DMA-BUF leases, restores
   exact unique coverage before resume can queue retained content, and drops
   stale identities after an unexpected revoke. Deterministic regressions bind
-  the exact-coverage and resume-admission rules.
+  the exact-coverage and resume-admission rules. Installed attempt `0005` then
+  exposed restore-before-owner ordering: both snapshots were captured, but the
+  replacement exporter had no renderer worker yet. Replacement output owners
+  now initialize before snapshot import, and the ordered transition is covered
+  by a reducer plus the concrete exporter ownership seam.
 - [ ] Re-run the installed physical switch-away/switch-back proof. Require a
   nonempty captured/restored renderer-image handoff, visible quiet-client
   content after tty7 reacquisition, continued input and presentation, normal

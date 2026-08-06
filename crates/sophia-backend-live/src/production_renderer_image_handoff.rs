@@ -10,6 +10,44 @@ pub enum LiveRendererImageHandoffAdmission {
     CoverageMismatch,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LiveRendererImageResumePhase {
+    #[default]
+    AwaitingOutputOwner,
+    AwaitingImageRestore,
+    Ready,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveRendererImageResumeObservation {
+    OutputOwnerInitialized,
+    ImagesRestored,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveRendererImageResumeTransition {
+    Advanced(LiveRendererImageResumePhase),
+    Rejected,
+}
+
+pub const fn reduce_live_renderer_image_resume_observation(
+    phase: LiveRendererImageResumePhase,
+    observation: LiveRendererImageResumeObservation,
+) -> LiveRendererImageResumeTransition {
+    use LiveRendererImageResumeObservation::{ImagesRestored, OutputOwnerInitialized};
+    use LiveRendererImageResumePhase::{AwaitingImageRestore, AwaitingOutputOwner, Ready};
+
+    match (phase, observation) {
+        (AwaitingOutputOwner, OutputOwnerInitialized) => {
+            LiveRendererImageResumeTransition::Advanced(AwaitingImageRestore)
+        }
+        (AwaitingImageRestore, ImagesRestored) => {
+            LiveRendererImageResumeTransition::Advanced(Ready)
+        }
+        _ => LiveRendererImageResumeTransition::Rejected,
+    }
+}
+
 pub fn reduce_live_renderer_image_handoff_admission(
     retained: &[LiveRendererImageId],
     handoff: Option<&[LiveRendererImageId]>,

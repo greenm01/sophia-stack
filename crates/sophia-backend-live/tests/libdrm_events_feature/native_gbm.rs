@@ -276,6 +276,19 @@ fn native_gbm_renderer_worker_defers_then_fails_closed_without_blocking_owner() 
 
 #[cfg(feature = "gbm-probe")]
 #[test]
+fn native_gbm_renderer_image_owner_exists_only_after_renderer_initialization() {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    assert!(!exporter.renderer_image_owner_initialized());
+
+    exporter
+        .enable_worker()
+        .expect("renderer worker should initialize its ownership boundary");
+
+    assert!(exporter.renderer_image_owner_initialized());
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
 fn native_gbm_rendered_scanout_exporter_rejects_forged_ready_target_before_device_open() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     let target = LiveGbmEglFrameTargetRecord {

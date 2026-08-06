@@ -234,6 +234,10 @@ where
         matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }
 
+    pub const fn renderer_image_owner_initialized(&self) -> bool {
+        self.worker.is_some() || self.context.is_some()
+    }
+
     pub fn evict_renderer_image(
         &mut self,
         image_id: sophia_renderer_live::LiveRendererImageId,

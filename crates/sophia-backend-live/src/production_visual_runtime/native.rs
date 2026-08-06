@@ -50,6 +50,18 @@ fn validate_renderer_image_resume_admission(
     }
 }
 
+fn advance_renderer_image_resume(
+    phase: crate::LiveRendererImageResumePhase,
+    observation: crate::LiveRendererImageResumeObservation,
+) -> Result<crate::LiveRendererImageResumePhase, &'static str> {
+    match crate::reduce_live_renderer_image_resume_observation(phase, observation) {
+        crate::LiveRendererImageResumeTransition::Advanced(next) => Ok(next),
+        crate::LiveRendererImageResumeTransition::Rejected => {
+            Err("native resume renderer-image lifecycle is out of order")
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionNativeRetirementOwner {
     IndependentFrame,
@@ -171,21 +183,39 @@ impl LiveProductionVisualRuntime {
         renderer_handoff: Option<LiveProductionRendererImageHandoff>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let retained = self.retained_renderer_image_ids();
-        // Admit the first retained frame only after its opaque image IDs are
-        // valid in the replacement renderer generation.
         validate_renderer_image_resume_admission(
             &retained,
             renderer_handoff.as_ref().map(|handoff| handoff.image_ids()),
         )?;
-        let restored = renderer_handoff.map_or(Ok(0), |handoff| {
-            native_scanout.restore_renderer_image_handoff(handoff)
-        })?;
-        self.outputs = LiveProductionOutputRuntimeSet::new(
+        let mut resume_phase = crate::LiveRendererImageResumePhase::default();
+        // Native initialization establishes the replacement renderer worker.
+        // Its image table cannot accept the retained snapshots before then.
+        let resumed_outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
             self.production.committed_surfaces(),
             Some(native_scanout),
             Some(frames),
         )?;
+        if !native_scanout.renderer_image_owners_initialized() {
+            return Err("native resume did not initialize every renderer image owner".into());
+        }
+        resume_phase = advance_renderer_image_resume(
+            resume_phase,
+            crate::LiveRendererImageResumeObservation::OutputOwnerInitialized,
+        )?;
+        let restored = renderer_handoff.map_or(Ok(0), |handoff| {
+            native_scanout.restore_renderer_image_handoff(handoff)
+        })?;
+        resume_phase = advance_renderer_image_resume(
+            resume_phase,
+            crate::LiveRendererImageResumeObservation::ImagesRestored,
+        )?;
+        if resume_phase != crate::LiveRendererImageResumePhase::Ready {
+            return Err("native resume renderer-image lifecycle did not become ready".into());
+        }
+        // Publish the replacement output runtime only after its retained IDs
+        // belong to the new renderer generation.
+        self.outputs = resumed_outputs;
         if let Some(frame) = self.retained_mixed_frame(&[])? {
             let primary = self
                 .outputs

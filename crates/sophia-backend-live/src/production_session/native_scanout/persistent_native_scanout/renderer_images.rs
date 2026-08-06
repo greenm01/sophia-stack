@@ -220,6 +220,12 @@ impl LiveProductionNativeScanout {
         let index = self
             .output_index(handoff.output)
             .ok_or("renderer-image handoff target output is unavailable")?;
+        if !self.heads[index]
+            .exporter
+            .renderer_image_owner_initialized()
+        {
+            return Err("replacement renderer image owner is not initialized".into());
+        }
         let actual = handoff
             .snapshots
             .iter()
@@ -236,6 +242,14 @@ impl LiveProductionNativeScanout {
             }
         }
         Ok(expected_count)
+    }
+
+    pub fn renderer_image_owners_initialized(&self) -> bool {
+        !self.heads.is_empty()
+            && self
+                .heads
+                .iter()
+                .all(|head| head.exporter.renderer_image_owner_initialized())
     }
 
     pub fn clear_renderer_images(
