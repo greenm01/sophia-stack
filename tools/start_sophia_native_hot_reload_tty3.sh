@@ -10,6 +10,12 @@ SESSION_LOG="${XDG_STATE_HOME:-${HOME}/.local/state}/sophia/native-session/sessi
 SEQUENCE_LOG="$PROOF_DIR/sequence.log"
 START_MARKER="$PROOF_DIR/start.marker"
 source "$ROOT_DIR/tools/config/proof_helpers.sh"
+stage_dwell_seconds="${SOPHIA_NATIVE_CHROME_STAGE_DWELL_SECONDS:-3}"
+[[ "$stage_dwell_seconds" =~ ^[1-9][0-9]*$ \
+    && "$stage_dwell_seconds" -le 10 ]] || {
+    echo "SOPHIA_NATIVE_CHROME_STAGE_DWELL_SECONDS must be from 1 through 10." >&2
+    exit 1
+}
 
 terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 if [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
@@ -82,6 +88,8 @@ printf 'commit=%s\n' "$proof_commit" >>"$SEQUENCE_LOG"
     sophia_proof_wait_for_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=2$' ||
         exit 1
     printf '%s\n' 'phase=ring_baseline focus_ring_width=2 frame_width=0' >>"$SEQUENCE_LOG"
+    # Keep each retired phase visible long enough for physical inspection.
+    sleep "$stage_dwell_seconds"
 
     baseline="$(sophia_proof_log_lines)"
     write_wm_config "$NEXT_CONFIG" true 6 false 0
@@ -95,6 +103,7 @@ printf 'commit=%s\n' "$proof_commit" >>"$SEQUENCE_LOG"
     sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=6$' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=ring_wide generation=2 focus_ring_width=6 frame_width=0' >>"$SEQUENCE_LOG"
+    sleep "$stage_dwell_seconds"
 
     baseline="$(sophia_proof_log_lines)"
     write_wm_config "$NEXT_CONFIG" true 9 false 0 'unknown-node #true'
@@ -102,12 +111,14 @@ printf 'commit=%s\n' "$proof_commit" >>"$SEQUENCE_LOG"
     sophia_proof_wait_for_new_log '^sophia_wm_config_reload schema=2 status=rejected reason=parse ' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=invalid_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
+    sleep "$stage_dwell_seconds"
 
     baseline="$(sophia_proof_log_lines)"
     rm -f "$WM_CONFIG"
     sophia_proof_wait_for_new_log '^sophia_wm_config_reload schema=2 status=rejected reason=read ' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=deletion_rejected retained_focus_ring_width=6' >>"$SEQUENCE_LOG"
+    sleep "$stage_dwell_seconds"
 
     baseline="$(sophia_proof_log_lines)"
     write_wm_config "$NEXT_CONFIG" false 0 true 4
@@ -121,6 +132,7 @@ printf 'commit=%s\n' "$proof_commit" >>"$SEQUENCE_LOG"
     sophia_proof_wait_for_new_log '^sophia_live_compositor_chrome_set schema=1 status=composed .* eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=0 primitives=8 clearance=4$' "$baseline" ||
         exit 1
     printf '%s\n' 'phase=frame_only generation=3 focus_ring_width=0 frame_width=4' >>"$SEQUENCE_LOG"
+    sleep "$stage_dwell_seconds"
 
     baseline="$(sophia_proof_log_lines)"
     write_wm_config "$NEXT_CONFIG" true 2 true 6

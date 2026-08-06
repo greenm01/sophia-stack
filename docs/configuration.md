@@ -148,7 +148,9 @@ default configuration. After two Kitty surfaces are visible, it advances a
 retaining the last-known-good state, applies a 4-pixel frame-only policy, then
 applies a 2-pixel ring with a 6-pixel focused/unfocused frame. Each width
 change must cross a matching two-surface resize epoch before the reduced
-chrome-set observation can advance.
+chrome-set observation can advance. Intermediate retired frames remain visible
+for three seconds so the physical proof can be inspected instead of merely
+logged.
 
 The external-WM half uses the core domain:
 

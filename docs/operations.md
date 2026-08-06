@@ -198,7 +198,8 @@ installed lifecycle and runtime identities, and exact VT restoration.
 `Sophia Native Chrome Proof` starts two Kitty windows under the packaged native
 WM and advances the focus ring from 2 to 6 pixels, retains that state across an
 invalid edit and deletion, applies a 4-pixel frame, and finishes with a 2-pixel
-ring plus 6-pixel frame. Confirm that each stage is complete, focus and type in
+ring plus 6-pixel frame. Each intermediate retired frame remains visible for
+three seconds. After the combined state remains on screen, focus and type in
 both windows, then use `Super+Shift+Q` for a normal logout. The entry archives
 the ordered sequence automatically. Verify it from a text session with:
 

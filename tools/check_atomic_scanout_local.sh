@@ -65,6 +65,9 @@ bash -n tools/config/proof_helpers.sh tools/config/write_core_chrome_config.sh
 bash -n tools/verify_sophia_native_chrome.sh \
     tools/check_sophia_native_chrome_verifier.sh
 tools/check_sophia_native_chrome_verifier.sh
+grep -Fq 'SOPHIA_NATIVE_CHROME_STAGE_DWELL_SECONDS:-3' \
+    tools/start_sophia_native_hot_reload_tty3.sh
+[[ "$(grep -Fc 'sleep "$stage_dwell_seconds"' tools/start_sophia_native_hot_reload_tty3.sh)" == 5 ]]
 bash -n tools/start_sophia_xmonad_config_reload_tty3.sh \
     tools/verify_sophia_xmonad_config_reload.sh \
     tools/check_sophia_xmonad_config_reload_verifier.sh
