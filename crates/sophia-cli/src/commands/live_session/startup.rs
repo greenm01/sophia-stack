@@ -12,6 +12,23 @@ fn parse_output_size(value: &str) -> Result<Size, Box<dyn std::error::Error>> {
     Ok(size)
 }
 
+fn parse_surface_resize_sequence(
+    value: &str,
+) -> Result<Vec<Size>, Box<dyn std::error::Error>> {
+    let values = value.split(',').collect::<Vec<_>>();
+    if values.len() < 2 || values.len() > 32 {
+        return Err("--inject-surface-resize-sequence accepts 2-32 sizes".into());
+    }
+    let mut sizes = Vec::with_capacity(values.len());
+    for value in values {
+        sizes.push(parse_output_size(value)?);
+    }
+    if sizes.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("--inject-surface-resize-sequence requires each adjacent size to change".into());
+    }
+    Ok(sizes)
+}
+
 fn open_randr_update_witness(
     socket_path: &std::path::Path,
     cookie: [u8; 16],
@@ -218,4 +235,3 @@ fn wait_for_x_server_socket(
     )
     .into())
 }
-

@@ -845,11 +845,21 @@ promotes one to a hard M9 exit gate.
   evidence. Precise glyph-level damage propagation remains a Milestone 13
   efficiency improvement because safely reusing older frames requires
   accumulated buffer-age history across coalesced generations.
-- [ ] Resize-under-render storm. Continuously relayout a rendering client using
+- [x] Resize-under-render storm. Continuously relayout a rendering client using
   the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
   no admission staging offset after `layout_committed`, no nonmatching buffer
   satisfying the pending resize, no resize timeout, and bounded recovery with
-  resources retired exactly once.
+  resources retired exactly once. The bounded
+  `--inject-surface-resize-sequence` extension admits 2–32 changing targets and
+  starts the next resize only after the preceding transaction has committed
+  its exact geometry and pixels. The two-output `xmonad-resize-storm` QEMU gate
+  drives 12 resizes across a continuously redrawing CPU/SHM Xterm, requires
+  request→layout→resize-epoch→exact-pixel causality for every step, observes a
+  later partial-damage page flip, and rejects renderer-worker or teardown debt.
+  Two consecutive production runs passed this contract; mutation tests reject
+  missing or mismatched pixels, layout timeout, missing post-storm rendering,
+  and imbalanced worker ownership. This closes the CPU/software-present cell;
+  concurrent DMA-BUF producers remain the next workload.
 - [ ] Multi-producer concurrent present. Present N DMA-BUF clients beside one
   CPU-composited bar and measure per-output frame-service fairness, import-cache
   pressure and eviction, and single renderer-worker request latency under

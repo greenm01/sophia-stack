@@ -376,6 +376,52 @@ fn live_x_output_injection_is_bounded_and_explicit() {
             height: 640
         })
     );
+    assert!(config.inject_surface_resize_sequence.is_empty());
+    let sequence = PersistentXtermSessionConfig::from_args(&[
+        "--inject-surface-resize-sequence=960x640,800x600,1024x700".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(
+        sequence.inject_surface_resize_sequence,
+        vec![
+            Size {
+                width: 960,
+                height: 640,
+            },
+            Size {
+                width: 800,
+                height: 600,
+            },
+            Size {
+                width: 1024,
+                height: 700,
+            },
+        ]
+    );
+    assert!(sequence.surface_resize_requested());
+    assert_eq!(
+        sequence.surface_resize_targets(),
+        sequence.inject_surface_resize_sequence
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--inject-surface-resize=960x640".to_owned(),
+            "--inject-surface-resize-sequence=800x600,960x640".to_owned(),
+        ])
+        .is_err()
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--inject-surface-resize-sequence=800x600".to_owned(),
+        ])
+        .is_err()
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--inject-surface-resize-sequence=800x600,800x600".to_owned(),
+        ])
+        .is_err()
+    );
     assert!(
         PersistentXtermSessionConfig::from_args(&["--inject-output-size=0x900".to_owned(),])
             .is_err()

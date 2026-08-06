@@ -21,7 +21,7 @@
         );
         let input_baseline_presented =
             input_baseline_is_presented(focused_gpu_presented, cpu_baseline_presented);
-        let input_start_stable = if config.inject_surface_resize.is_some() {
+        let input_start_stable = if config.surface_resize_requested() {
             resize_proof_complete
         } else if config.expect_physical_text.is_some() {
             layout.pending.is_none()
@@ -49,7 +49,7 @@
             && input_start_stable
             && focused_client_ready
             && focused_content_ready
-            && (config.inject_surface_resize.is_none() || resize_proof_complete)
+            && (!config.surface_resize_requested() || resize_proof_complete)
         {
             injection_checksum = scene.last_report().map(|report| report.checksum);
             input_change_submission_baseline = native_scanout

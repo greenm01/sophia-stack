@@ -333,14 +333,36 @@
                     && layout.pending.is_none()
                     && layout.layout_epochs.committed_size(surface) == Some(size)
                 {
-                    println!(
-                        "sophia_live_resize schema=1 status=committed transaction={} surface={} width={} height={} configure_delivered=true pixels=true",
-                        transaction.raw(),
-                        surface.index(),
-                        size.width,
-                        size.height,
-                    );
-                    resize_proof_complete = true;
+                    if resize_proof_targets.len() > 1 {
+                        println!(
+                            "sophia_live_resize schema=2 status=committed transaction={} surface={} width={} height={} configure_delivered=true pixels=true step={} total={}",
+                            transaction.raw(),
+                            surface.index(),
+                            size.width,
+                            size.height,
+                            resize_proof_completed + 1,
+                            resize_proof_targets.len(),
+                        );
+                    } else {
+                        println!(
+                            "sophia_live_resize schema=1 status=committed transaction={} surface={} width={} height={} configure_delivered=true pixels=true",
+                            transaction.raw(),
+                            surface.index(),
+                            size.width,
+                            size.height,
+                        );
+                    }
+                    // Only exact committed geometry and pixels advance the sequence.
+                    resize_proof = None;
+                    resize_proof_completed = resize_proof_completed.saturating_add(1);
+                    resize_proof_complete = resize_proof_completed == resize_proof_targets.len();
+                    if resize_proof_complete && resize_proof_targets.len() > 1 {
+                        println!(
+                            "sophia_live_resize_storm schema=1 status=complete steps={} surface={} exact_pixels=true",
+                            resize_proof_completed,
+                            surface.index(),
+                        );
+                    }
                 }
                 if wm_update.is_none() {
                     if let Some(result) =
@@ -363,7 +385,8 @@
                     )?;
                 }
                 if resize_proof.is_none()
-                    && let Some(size) = config.inject_surface_resize
+                    && !resize_proof_complete
+                    && let Some(size) = resize_proof_targets.get(resize_proof_completed).copied()
                     && startup_ready_reported
                     && wm_session.as_ref().is_none_or(|wm| wm.committed > 0)
                     && layout.layers.len() >= if config.secondary_terminal { 2 } else { 1 }
@@ -375,7 +398,11 @@
                         .next()
                         .copied()
                         .ok_or("surface resize proof has no target")?;
-                    let transaction = TransactionId::from_raw(2_000_000);
+                    let transaction = TransactionId::from_raw(
+                        2_000_000u64.saturating_add(
+                            u64::try_from(resize_proof_completed).unwrap_or(u64::MAX),
+                        ),
+                    );
                     let mut layers = layout.layers.values().cloned().collect::<Vec<_>>();
                     let layer = layers
                         .iter_mut()
@@ -410,13 +437,25 @@
                         ));
                     }
                     resize_proof = Some((transaction, surface, size));
-                    println!(
-                        "sophia_live_resize schema=1 status=requested transaction={} surface={} width={} height={}",
-                        transaction.raw(),
-                        surface.index(),
-                        size.width,
-                        size.height,
-                    );
+                    if resize_proof_targets.len() > 1 {
+                        println!(
+                            "sophia_live_resize schema=2 status=requested transaction={} surface={} width={} height={} step={} total={}",
+                            transaction.raw(),
+                            surface.index(),
+                            size.width,
+                            size.height,
+                            resize_proof_completed + 1,
+                            resize_proof_targets.len(),
+                        );
+                    } else {
+                        println!(
+                            "sophia_live_resize schema=1 status=requested transaction={} surface={} width={} height={}",
+                            transaction.raw(),
+                            surface.index(),
+                            size.width,
+                            size.height,
+                        );
+                    }
                 }
                 layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
                 let (batch, released_admission_groups) = layout.projected_batch(&batch);

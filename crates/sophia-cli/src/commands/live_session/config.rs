@@ -93,6 +93,7 @@ struct PersistentXtermSessionConfig {
     verbose_diagnostics: bool,
     inject_output_size: Option<Size>,
     inject_surface_resize: Option<Size>,
+    inject_surface_resize_sequence: Vec<Size>,
     m4_first_acquire_delay: Option<Duration>,
     m4_reject_first_present: bool,
     m4_diagnose_first_mixed_export: bool,
@@ -402,6 +403,18 @@ impl PersistentXtermSessionConfig {
             .as_deref()
             .map(parse_output_size)
             .transpose()?;
+        let inject_surface_resize_sequence =
+            arg_value(args, "--inject-surface-resize-sequence")
+                .as_deref()
+                .map(parse_surface_resize_sequence)
+                .transpose()?
+                .unwrap_or_default();
+        if inject_surface_resize.is_some() && !inject_surface_resize_sequence.is_empty() {
+            return Err(
+                "--inject-surface-resize and --inject-surface-resize-sequence are mutually exclusive"
+                    .into(),
+            );
+        }
         let m4_first_acquire_delay = arg_value(args, "--m4-first-acquire-delay-ms")
             .as_deref()
             .map(parse_u64)
@@ -637,6 +650,7 @@ impl PersistentXtermSessionConfig {
             core_config_state,
             inject_output_size,
             inject_surface_resize,
+            inject_surface_resize_sequence,
             m4_first_acquire_delay,
             m4_reject_first_present,
             m4_diagnose_first_mixed_export,
@@ -700,6 +714,18 @@ impl PersistentXtermSessionConfig {
 
     fn input_proof_requested(&self) -> bool {
         self.inject_text.is_some() || self.expect_physical_text.is_some()
+    }
+
+    fn surface_resize_requested(&self) -> bool {
+        self.inject_surface_resize.is_some() || !self.inject_surface_resize_sequence.is_empty()
+    }
+
+    fn surface_resize_targets(&self) -> Vec<Size> {
+        self.inject_surface_resize
+            .iter()
+            .copied()
+            .chain(self.inject_surface_resize_sequence.iter().copied())
+            .collect()
     }
 
     fn application_proof_requested(&self) -> bool {

@@ -8,7 +8,7 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
-if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
+if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" ]]; then
     echo "SOPHIA_QEMU_SCENARIO must include a supported session or xmonad scenario" >&2
     exit 1
 fi
@@ -729,6 +729,71 @@ if [[ "$SCENARIO" == "emergency-recovery" ]]; then
 
     echo "sophia_qemu_recovery schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     "$ROOT_DIR/tools/verify_qemu_emergency_recovery_evidence.sh" "$EVIDENCE_FILE"
+    exit 0
+fi
+
+if [[ "$SCENARIO" == "xmonad-resize-storm" ]]; then
+    ready=false
+    for _ in $(seq 1 800); do
+        if grep -q '^sophia_live_wm schema=1 status=ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE" \
+            && grep -Eq '^sophia_live_wm schema=2 status=workspace_projection_committed .*visible_surfaces=1 focus=surface$' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' "$EVIDENCE_FILE"; then
+            ready=true
+            break
+        fi
+        if ! kill -0 "$QEMU_PID" 2>/dev/null; then break; fi
+        sleep 0.05
+    done
+    if [[ "$ready" != true ]]; then
+        echo "sophia_qemu_resize_storm schema=1 status=failed reason=readiness_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_resize_storm schema=1 status=started steps=12 client=cpu-renderer" |
+        tee -a "$EVIDENCE_FILE"
+    if ! wait_for_evidence_count_at_least \
+        '^sophia_live_resize schema=2 status=committed ' 12 2400 \
+        || ! wait_for_new_evidence \
+            '^sophia_live_resize_storm schema=1 status=complete steps=12 .* exact_pixels=true$' 0 400; then
+        echo "sophia_qemu_resize_storm schema=1 status=failed reason=resize_sequence_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    retirement_baseline="$(evidence_count 'sophia_live_native_page_flip schema=1 status=retired output=')"
+    if ! wait_for_new_evidence \
+        'sophia_live_native_page_flip schema=1 status=retired output=' \
+        "$retirement_baseline" 800; then
+        echo "sophia_qemu_resize_storm schema=1 status=failed reason=post_storm_frame_timeout" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_resize_storm schema=1 status=post_storm_frame_retired steps=12" |
+        tee -a "$EVIDENCE_FILE"
+
+    echo "sophia_qemu_resize_storm schema=1 status=logout_begin chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+    "$ROOT_DIR/tools/qemu_qmp_chord.py" "$QMP_SOCKET" meta_l+shift+q
+    echo "sophia_qemu_resize_storm schema=1 status=logout_sent chord=meta_l+shift+q" |
+        tee -a "$EVIDENCE_FILE"
+
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_resize_storm schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" |
+            tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    "$ROOT_DIR/tools/verify_qemu_xmonad_resize_storm_evidence.sh" "$EVIDENCE_FILE"
+    echo "sophia_qemu_xmonad schema=1 status=complete qemu_exit=0" |
+        tee -a "$EVIDENCE_FILE"
     exit 0
 fi
 

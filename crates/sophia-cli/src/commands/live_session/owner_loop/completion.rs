@@ -343,7 +343,7 @@
             "sophia_firefox_lifecycle schema=1 status=complete page_ready=true kitty_checkpoints=6 content=redacted"
         );
     }
-    if config.inject_surface_resize.is_some() && !resize_proof_complete {
+    if config.surface_resize_requested() && !resize_proof_complete {
         return Err(
             "persistent live session did not commit configured surface resize pixels".into(),
         );
@@ -690,7 +690,7 @@
             "disabled"
         },
         output_notifications,
-        if resize_proof_complete {
+        if config.surface_resize_requested() && resize_proof_complete {
             "committed"
         } else {
             "disabled"
@@ -811,7 +811,7 @@
                 .as_ref()
                 .is_some_and(PhysicalTextProof::is_complete),
             physical_pointer_buttons_routed > 0,
-            if resize_proof_complete {
+            if config.surface_resize_requested() && resize_proof_complete {
                 "committed"
             } else {
                 "disabled"

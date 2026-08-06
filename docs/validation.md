@@ -516,6 +516,25 @@ accounting, or missing causal ordering fails the gate. The mutation checker
 `tools/check_qemu_xmonad_stale_response_verifier.sh` runs from the local
 regression gate.
 
+The unattended resize-under-render gate is:
+
+```sh
+tools/qemu_xmonad_resize_storm_acceptance.sh
+```
+
+Its isolated profile continuously redraws one CPU/SHM Xterm while the session
+applies 12 bounded policy resizes. A later target cannot start until the prior
+transaction has delivered one configure and committed matching geometry and
+pixels. The verifier orders each request, blind-WM layout commit, resize-epoch
+commit, and exact-pixel completion; it rejects rollback, timeout, mismatched
+dimensions, or authority loss. A partial-damage page flip after the final
+resize proves that rendering did not stall. Normal logout must balance every
+renderer-worker request and completion, drain native presentation, and leave no
+WM, application, snapshot, import-cache, or cleanup debt. This gate covers the
+software-present resize path; it does not claim concurrent DMA-BUF coverage.
+`tools/check_qemu_xmonad_resize_storm_verifier.sh` mutation-tests the evidence
+contract and runs from the local regression gate.
+
 ### X11 Live-Session Stability Diagnostics
 
 After an allocator abort or a flushed-input pixel timeout, do not repeatedly run

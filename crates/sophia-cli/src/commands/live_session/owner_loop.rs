@@ -227,7 +227,9 @@ fn run_session_loop(
     let mut session_control_completions =
         Vec::with_capacity(SESSION_CONTROL_CAPACITY);
     let mut next_focus_control_transaction = 1_000_000u64;
+    let resize_proof_targets = config.surface_resize_targets();
     let mut resize_proof: Option<(TransactionId, SurfaceId, Size)> = None;
+    let mut resize_proof_completed = 0usize;
     let mut resize_proof_complete = false;
     let mut input_observations = InputObservationState::default();
     let mut input_delivery = InputDeliveryState::default();

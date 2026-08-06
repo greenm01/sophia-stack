@@ -20,6 +20,11 @@ bash -n tools/qemu_xmonad_launch_burst_acceptance.sh \
     tools/verify_qemu_xmonad_launch_burst_evidence.sh \
     tools/check_qemu_xmonad_launch_burst_verifier.sh
 tools/check_qemu_xmonad_launch_burst_verifier.sh
+bash -n tools/fixtures/qemu_resize_storm_client.sh \
+    tools/qemu_xmonad_resize_storm_acceptance.sh \
+    tools/verify_qemu_xmonad_resize_storm_evidence.sh \
+    tools/check_qemu_xmonad_resize_storm_verifier.sh
+tools/check_qemu_xmonad_resize_storm_verifier.sh
 bash -n tools/qemu_xmonad_stale_response_acceptance.sh \
     tools/verify_qemu_xmonad_stale_response_evidence.sh \
     tools/check_qemu_xmonad_stale_response_verifier.sh

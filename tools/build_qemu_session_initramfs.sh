@@ -73,10 +73,13 @@ runtime_files=(
     /usr/lib/libudev.so.1
     /usr/bin/zenity
 )
-extra_includes=()
+extra_includes=(
+    --include "$ROOT_DIR/tools/fixtures/qemu_resize_storm_client.sh" /usr/bin/sophia-resize-storm-client
+)
 required_guest_paths=(
     /usr/bin/dbus-daemon
     /usr/bin/dbus-run-session
+    /usr/bin/sophia-resize-storm-client
     /usr/share/dbus-1/session.conf
 )
 if [[ "$IMAGE_PROFILE" == m8 ]]; then
