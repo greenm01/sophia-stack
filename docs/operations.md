@@ -199,7 +199,11 @@ sophia-verify-cycles 3
 The gate rechecks release and evidence digests, launch uniqueness, runtime
 identity, two-output startup, page-flip retirement, normal logout, protocol and
 session health, application cleanup, guard state, VT restoration, and the
-display-manager handoff. The longer Milestone 12 gates use the same ledger with
+display-manager handoff. After a later recovery attempt, preserve an earlier
+gate's reproducibility by naming its immutable ending run, for example
+`sophia-verify-cycles 3 0005`. The verifier selects that run and its two direct
+predecessors; it does not skip intervening failures or pending attempts. The
+longer Milestone 12 gates use the same ledger with
 `sophia-verify-cycles 10`. After a two-hour run, `sophia-verify-soak` selects
 the latest normal archive and verifies its checksums, commit, clean lifecycle,
 exact application digests, latency and health summaries, duration, actions,

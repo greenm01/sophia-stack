@@ -1198,6 +1198,9 @@ sophia-verify-watchdog
 # Require the latest three recorded runs to be clean and from one commit:
 sophia-verify-cycles 3
 
+# Reverify a retained three-run gate after later recovery attempts:
+sophia-verify-cycles 3 0005
+
 # Verify the latest automatic Kitty fallback attempt:
 sophia-verify-fallback
 
@@ -1253,7 +1256,9 @@ rechecks the separate archive, while the no-argument
 lifecycle and rejects mixed commits, modified evidence, duplicate launch
 identities, any failed or pending attempt among the latest requested entries,
 emergency exits, incomplete input/WM/native cleanup, or fewer than the
-requested number of runs.
+requested number of runs. An optional ending-run name selects that immutable
+archive and its direct predecessors, retaining the same no-gap fail-closed
+contract after later attempts enter the ledger.
 `sophia-verify-soak` selects the latest immutable normal-run archive by
 default. It rechecks archive checksums, the passed result, schema-4 normal-run
 contract, login and lifecycle cleanup, launch identity, commit, exact Sophia,

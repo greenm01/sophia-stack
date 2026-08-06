@@ -90,6 +90,18 @@ if env \
     echo "installed cycle verifier skipped a failed intervening attempt" >&2
     exit 1
 fi
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 0003
+if env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 0004 \
+    >/dev/null 2>&1; then
+    echo "historical cycle verifier skipped a failed endpoint" >&2
+    exit 1
+fi
 record 2026-08-05T12:04:00Z
 record 2026-08-05T12:05:00Z
 record 2026-08-05T12:06:00Z
@@ -123,6 +135,18 @@ if env \
     SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
     "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 >/dev/null 2>&1; then
     echo "installed cycle verifier accepted a duplicate launch identity" >&2
+    exit 1
+fi
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 0007
+if env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$RUN_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 3 "$TEMP_DIR" \
+    >/dev/null 2>&1; then
+    echo "historical cycle verifier accepted an endpoint outside its ledger" >&2
     exit 1
 fi
 

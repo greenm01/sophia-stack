@@ -1354,39 +1354,23 @@ Compatibility follow-up outside the Firefox exit gate:
 - [x] Promote one immutable, versioned release and greetd entry that uses no
   source build, repository-relative binary, temporary path, manual `sudo`,
   process kill, or service repair during ordinary login.
-- [ ] Preserve the independent emergency path, a known-good fallback session,
+- [x] Preserve the independent emergency path, a known-good fallback session,
   and a documented rollback procedure. The installed `Sophia Recovery Proof`
   entry now fixes an opt-in 45-second process-external deadline and packages a
   strict repository-independent recorder. The Kitty entry now automatically
   reserves and finalizes a separate checksummed fallback attempt, and its
   fail-closed verifier covers the one-Kitty, WM-disabled, two-output, physical
   input, clean-shutdown, and exact VT-recovery contract. The watchdog entry
-  now applies the same pre-takeover reservation and automatic finalization to
-  its status-124 proof. A status-130 ordinary session now automatically writes
-  a separate verified emergency archive while leaving its pre-reserved normal
-  attempt failed. The first current-release fallback exposed an invalid
-  content-to-transport transition: a valid black Present triggered native
-  recovery while later client work was queued. Recovery now requires a
-  missing page-flip callback; the commit-pinned fallback recapture remains.
-  That recapture isolated a second defect: the frontend deferred MapWindow
-  even though the no-WM fallback bypassed policy admission, leaving no owner
-  able to map Kitty's toplevel after its black bootstrap Present. Frontend map
-  deferral and Engine admission now derive from one policy-owner mode. The
-  resulting live recapture mapped and animated Kitty, then exposed the same
-  mode's stale placement dependency on an unrelated startup-input flag. The
-  Engine now centers the first direct-map toplevel without resizing it, while
-  an external WM retains allocation ownership. This keeps compositor chrome
-  inside the output and leaves X Authority's client geometry unchanged. The
-  installed `a752ca27` recapture confirmed the +2+9 target and complete chrome
-  on the first output. The fallback verifier now follows the established
-  damage-idle output contract: every output needs a unique synchronous startup
-  presentation, while active scene work must retire asynchronously somewhere.
-  Archive `0004` passes that corrected session contract; one fresh immutable
-  installed fallback recording remains.
+  applies the same pre-takeover reservation and automatic finalization to its
+  status-124 proof. A status-130 ordinary session writes a separate verified
+  emergency archive while leaving its pre-reserved normal attempt failed.
+  Installed commit `4cc84913` passed fallback archive `0005`, watchdog archive
+  `0003`, and emergency archive `0002`, including exact runtime identity,
+  checksums, clean ownership release, and VT restoration.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
-- [ ] Validate three consecutive installed logins, normal logouts, one
+- [x] Validate three consecutive installed logins, normal logouts, one
   emergency recovery, and successful fallback-session login. Normal-cycle
   recording now uses a dedicated login/startup/logout verifier instead of the
   obsolete full operator choreography. The installed wrapper reserves every
@@ -1395,12 +1379,12 @@ Compatibility follow-up outside the Firefox exit gate:
   checksummed, unique launch identity, and the cycle gate rejects duplicated
   sessions and mixed commits. The fallback entry uses the same automatic
   attempt discipline in its own ledger and rejects modified, failed, pending,
-  wrong-profile, or incomplete evidence. Three physical installed cycles plus
-  commit-pinned emergency, watchdog, and fallback runs remain. The first
-  `02505e81` normal attempt retired nine kernel page flips and drained cleanly,
-  but exposed a verifier-only mismatch with the production tracing prefix.
-  Login verification now accepts the same structured payload boundary as the
-  fallback gate; the immutable failed attempt remains in the ledger.
+  wrong-profile, or incomplete evidence. Installed commit `4cc84913` passed
+  normal archives `0003` through `0005` with two outputs, unique launches,
+  normal logout, and exact VT restoration; fallback `0005`, watchdog `0003`,
+  and emergency `0002` pass the same commit-pinned archive contract. The cycle
+  verifier can retain that contiguous gate through `0005` after later recovery
+  attempts without skipping failed or pending ledger entries.
 - [x] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 
