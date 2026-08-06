@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+source "$RELEASE_DIR/tools/lib/session_lifecycle.sh"
 export SOPHIA_TTY_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 export SOPHIA_BUILD_SESSION=false
 export SOPHIA_MANAGE_KEYD=false
@@ -22,10 +23,9 @@ export SOPHIA_INSTALLED_COMMIT="${commit:-unknown}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/installed-session"
 install -d -m 700 "$state_dir"
 identity_log="$state_dir/launch.log"
-[[ ! -f "$identity_log" ]] || mv -f "$identity_log" "$identity_log.previous"
+sophia_session_rotate_log "$identity_log"
 runtime_identity_log="$state_dir/runtime-identity.log"
-[[ ! -f "$runtime_identity_log" ]] ||
-    mv -f "$runtime_identity_log" "$runtime_identity_log.previous"
+sophia_session_rotate_log "$runtime_identity_log"
 launch_id="$(date -u +%Y%m%dT%H%M%S%NZ)"
 printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s commit=%s release=%s started_at_utc=%s launch_id=%s\n' \
     "$SOPHIA_TTY_PROFILE" "${version:-unknown}" "${commit:-unknown}" "$RELEASE_DIR" \

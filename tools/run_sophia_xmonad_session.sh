@@ -66,9 +66,10 @@ SESSION_LOG="$LOG_DIR/session.log"
 LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"
-[[ ! -f "$LIFECYCLE_LOG" ]] || mv -f "$LIFECYCLE_LOG" "$LIFECYCLE_LOG.previous"
-: >"$LIFECYCLE_LOG"
-chmod 600 "$LIFECYCLE_LOG"
+sophia_session_rotate_log "$LIFECYCLE_LOG"
+sophia_session_rotate_log "$GUARD_LOG"
+sophia_session_rotate_log "$RECOVERY_LOG"
+sophia_session_rotate_log "$SESSION_LOG"
 lifecycle_phase() {
     printf 'sophia_session_lifecycle schema=1 status=%s phase=%s installed=%s build=%s manual_service=%s runtime=%s vt=%s\n' \
         "$1" "$2" "$INSTALLED_SESSION" "$BUILD_SESSION" "$MANAGE_KEYD" \
@@ -336,9 +337,6 @@ if [[ "$MANAGE_KEYD" == true ]] && pgrep -x keyd >/dev/null 2>&1; then
     keyd_was_running=true
 fi
 
-[[ ! -f "$GUARD_LOG" ]] || mv -f "$GUARD_LOG" "$GUARD_LOG.previous"
-: >"$GUARD_LOG"
-chmod 600 "$GUARD_LOG"
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
 lifecycle_current_phase=input_guard
 lifecycle_phase entering input_guard
@@ -464,9 +462,6 @@ else
         exit 1
     fi
 fi
-[[ ! -f "$SESSION_LOG" ]] || mv -f "$SESSION_LOG" "$SESSION_LOG.previous"
-: >"$SESSION_LOG"
-chmod 600 "$SESSION_LOG"
 session_args=(
     sophia-live-session
     --session-mode=normal

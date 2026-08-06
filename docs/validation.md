@@ -1262,14 +1262,15 @@ through schema-16 completion. The completion must meet the requested elapsed
 time and action counts with zero WM, Present, callback, native, or cleanup
 debt. An explicit archive directory may be supplied before the thresholds for
 historical verification.
-Each installed launch also rotates a content-free schema-2 runtime identity
-record with the kernel and Mesa versions, the packaged Sophia digest,
-Kitty/Firefox/xmonad binary digests, a hashed input-device identity, and
-connector plus EDID hashes. The schema-4 attempt manifest repeats the Sophia
-digest, and every recorder and archive verifier requires it to match the
-captured identity. A later installation therefore cannot erase which binary
-produced an older run. The verifier rejects missing or mismatched identities
-and fields that could contain typed, clipboard, or window content.
+Each installed launch rotates every active reduced log to one `.previous`
+generation, including the recovery log, and captures a content-free schema-2
+runtime identity with the kernel and Mesa versions, the packaged Sophia
+digest, Kitty/Firefox/xmonad binary digests, a hashed input-device identity,
+and connector plus EDID hashes. The schema-4 attempt manifest repeats the
+Sophia digest, and every recorder and archive verifier requires it to match
+the captured identity. A later installation therefore cannot erase which
+binary produced an older run. The verifier rejects missing or mismatched
+identities and fields that could contain typed, clipboard, or window content.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
 non-system staging installation for verifier tests. A release is not promoted

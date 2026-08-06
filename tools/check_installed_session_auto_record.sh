@@ -65,6 +65,8 @@ install -m 755 \
     "$RELEASE/bin/sophia-verify-cycles"
 install -m 644 "$ROOT_DIR/tools/lib/installed_attempt_ledger.sh" \
     "$RELEASE/tools/lib/installed_attempt_ledger.sh"
+install -m 644 "$ROOT_DIR/tools/lib/session_lifecycle.sh" \
+    "$RELEASE/tools/lib/session_lifecycle.sh"
 
 printf '%s\n' \
     '#!/usr/bin/env bash' \
@@ -128,6 +130,8 @@ session_env=(
 env "${session_env[@]}" "$RELEASE/bin/sophia-session"
 grep -Fxq 'sophia_installed_cycle schema=1 status=passed exit_status=0' \
     "$STATE_HOME/sophia/promotion/runs/0001/result.kdl"
+[[ -f "$STATE_HOME/sophia/installed-session/launch.log" ]]
+[[ -f "$STATE_HOME/sophia/installed-session/runtime-identity.log" ]]
 
 if env "${session_env[@]}" SOPHIA_TEST_SESSION_STATUS=1 \
     "$RELEASE/bin/sophia-session" >/dev/null 2>&1; then
@@ -160,6 +164,10 @@ fi
 for _ in 1 2 3; do
     env "${session_env[@]}" "$RELEASE/bin/sophia-session"
 done
+[[ -s "$STATE_HOME/sophia/installed-session/launch.log.previous" ]]
+[[ -s "$STATE_HOME/sophia/installed-session/runtime-identity.log.previous" ]]
+[[ "$(stat -c %a "$STATE_HOME/sophia/installed-session/launch.log")" == 600 ]]
+[[ "$(stat -c %a "$STATE_HOME/sophia/installed-session/runtime-identity.log")" == 600 ]]
 env "${session_env[@]}" "$RELEASE/bin/sophia-verify-cycles" 3
 
 env "${session_env[@]}" "$RELEASE/bin/sophia-kitty-session"

@@ -11,6 +11,12 @@ prefix="$TEMP_DIR/prefix"
 release="$prefix/releases/diagnostic-test"
 mkdir -p "$state_home" "$runtime_dir" "$release"
 chmod 700 "$state_home" "$runtime_dir"
+session_state="$state_home/sophia/xmonad-session"
+install -d -m 700 "$session_state"
+printf 'prior lifecycle\n' >"$session_state/lifecycle.log"
+printf 'prior guard\n' >"$session_state/input-guard.log"
+printf 'prior recovery\n' >"$session_state/recovery.log"
+printf 'prior session\n' >"$session_state/session.log"
 
 set +e
 env \
@@ -28,6 +34,16 @@ set -e
 [[ "$runner_status" == 1 ]]
 
 lifecycle="$state_home/sophia/xmonad-session/lifecycle.log"
+grep -Fxq 'prior lifecycle' "$lifecycle.previous"
+grep -Fxq 'prior guard' "$session_state/input-guard.log.previous"
+grep -Fxq 'prior recovery' "$session_state/recovery.log.previous"
+grep -Fxq 'prior session' "$session_state/session.log.previous"
+[[ -f "$session_state/input-guard.log" && ! -s "$session_state/input-guard.log" ]]
+[[ -f "$session_state/recovery.log" && ! -s "$session_state/recovery.log" ]]
+[[ -f "$session_state/session.log" && ! -s "$session_state/session.log" ]]
+[[ "$(stat -c %a "$session_state/input-guard.log")" == 600 ]]
+[[ "$(stat -c %a "$session_state/recovery.log")" == 600 ]]
+[[ "$(stat -c %a "$session_state/session.log")" == 600 ]]
 grep -Fxq \
     'sophia_session_diagnostic schema=1 status=failed phase=preflight installed=true version=0.1.0 commit=0123456789abcdef exit_status=1' \
     "$lifecycle"
@@ -59,6 +75,20 @@ grep -Fq \
 )" == 1 ]]
 
 source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
+rotation_log="$TEMP_DIR/rotation.log"
+printf 'first generation\n' >"$rotation_log"
+sophia_session_rotate_log "$rotation_log"
+grep -Fxq 'first generation' "$rotation_log.previous"
+[[ -f "$rotation_log" && ! -s "$rotation_log" ]]
+printf 'second generation\n' >"$rotation_log"
+sophia_session_rotate_log "$rotation_log"
+grep -Fxq 'second generation' "$rotation_log.previous"
+[[ -f "$rotation_log" && ! -s "$rotation_log" ]]
+[[ "$(stat -c %a "$rotation_log")" == 600 ]]
+if sophia_session_rotate_log; then
+    echo "session log rotation accepted a missing path" >&2
+    exit 1
+fi
 phase_log="$TEMP_DIR/phases.log"
 for phase in preflight input_guard graphics_takeover session handoff; do
     sophia_session_record_failure \

@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+sophia_session_rotate_log() {
+    (( $# == 1 )) || return 2
+    local log="$1" parent
+    [[ -n "$log" && "$log" != / && ! -d "$log" ]] || return 2
+    parent="$(dirname "$log")"
+    [[ -d "$parent" && -w "$parent" ]] || return 2
+
+    # Keep one diagnostic generation without allowing separate session
+    # artifacts to accumulate on different retention schedules.
+    if [[ -e "$log" || -L "$log" ]]; then
+        mv -f -- "$log" "$log.previous"
+    fi
+    : >"$log"
+    chmod 600 "$log"
+}
+
 sophia_session_record_failure() {
     local lifecycle_log="$1"
     local phase="$2"

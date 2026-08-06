@@ -1436,9 +1436,11 @@ work without a repository checkout or development takeover script.
   and the schema-4 attempt manifest binds that digest to every checksummed
   normal, fallback, watchdog, and emergency archive. Capture, recording, and
   later verification reject a missing, unavailable, or mismatched Sophia
-  digest. The aggregate soak gate also requires exact Kitty, Firefox, and
-  xmonad digests and needs no mutable live-log path. A current-release physical
-  soak remains before this item can close.
+  digest. Every active reduced log now rotates as one current plus one previous
+  generation; recovery no longer appends records from unrelated launches into
+  a later archive. The aggregate soak gate also requires exact Kitty, Firefox,
+  and xmonad digests and needs no mutable live-log path. A current-release
+  physical soak remains before this item can close.
 
 Failures create the next smallest evidence-driven compatibility or lifecycle
 slice. They do not justify broad X11 conformance work. Milestone 12 exits when

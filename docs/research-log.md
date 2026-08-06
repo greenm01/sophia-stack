@@ -3,6 +3,21 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: Recovery evidence belongs to one launch
+
+The live session rotated its launch, runtime identity, lifecycle, input-guard,
+and session logs, but appended every TTY handoff to one `recovery.log`. That
+file could grow without bound, and a later immutable attempt could inherit
+recovery records from unrelated launches.
+
+One shared lifecycle helper now rotates all active reduced logs to a current
+file and one `.previous` generation. The runner creates an empty, private
+recovery log before preflight, so even an early failure cannot reuse older
+handoff evidence. The installed wrapper uses the same boundary for launch and
+runtime identity. Regressions cover replacement semantics, private modes,
+preflight isolation, and installed-wrapper rotation; promotion archives remain
+immutable and checksummed rather than being silently pruned.
+
 ## 2026-08-06: The installed soak gate owns its archive
 
 The packaged `sophia-verify-soak` command previously accepted a mutable
