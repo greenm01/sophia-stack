@@ -243,7 +243,10 @@ uses the resulting activity plus a quiet boundary as its pre-injection fence;
 X11 does not require a WM to answer that notification with one
 `ConfigureWindow` per mapped window. A new synthetic `MapRequest` remains an
 admission boundary and must receive its own configure reply before the action
-can proceed.
+can proceed. Remapping a previously admitted synthetic window preserves its
+XID, geometry, and stacking record. When one unfocused node is the complete
+Engine snapshot, focus cycling may commit that exact target after the quiet
+boundary even if the WM correctly leaves the retained geometry unchanged.
 
 If a node's manage-time constraint profile changes, the bridge destroys and
 recreates only its private synthetic window before the next `MapRequest`.

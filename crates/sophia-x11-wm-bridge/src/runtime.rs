@@ -423,6 +423,17 @@ impl LegacyX11WmBridgeRuntime {
             WmRequestKind::FocusRequested(focus) => self.bridge.synthetic_window(focus.surface),
             _ => None,
         };
+        let deterministic_unfocused_cycle = matches!(
+            &request.kind,
+            WmRequestKind::ActionActivated(activation)
+                if matches!(
+                    activation.action.raw(),
+                    XMONAD_ACTION_FOCUS_NEXT | XMONAD_ACTION_FOCUS_PREVIOUS
+                )
+                    && activation.focused_surface.is_none()
+                    && activation.nodes.len() == 1
+                    && profiled_focus.is_some()
+        );
 
         let update = self.bridge.apply_engine_request(request)?;
         let expected = send_engine_update(
@@ -439,7 +450,13 @@ impl LegacyX11WmBridgeRuntime {
             _ => None,
         };
 
-        if profiled_chord.is_some() && !expected.configured.is_empty() {
+        if profiled_chord.is_some()
+            && !deterministic_unfocused_cycle
+            && !expected.configured.is_empty()
+        {
+            // A sole retained node already has committed Engine geometry.
+            // X11 permits its remap to produce no redundant configure, while
+            // every action that still needs layout policy keeps this fence.
             self.collect_legacy_responses(&expected.map_admissions, true)?;
         }
         if let Some(chord) = profiled_chord {

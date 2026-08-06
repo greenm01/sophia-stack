@@ -3,6 +3,25 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: Retained X11 remaps do not owe redundant geometry
+
+The unattended M12 QEMU lifecycle reached Firefox focus isolation, then the
+xmonad bridge disconnected after waiting three seconds for one synthetic
+`ConfigureWindow`. Engine had switched to an unfocused workspace containing
+one previously admitted Firefox surface. Its action snapshot already carried
+the exact committed node and geometry; xmonad legally left that unchanged
+during the remap.
+
+The private facade compounded the wait by deleting its window and stacking
+record on `UnmapNotify`. XLibre and Yserver both retain the window, change only
+its map state, and leave destruction to `DestroyWindow`. The facade now follows
+that lifecycle. A sole-node focus cycle still sends the bounded profile chord
+so xmonad's stack converges, but does not require a geometry response that has
+no remaining policy choice. The regression queries the retained unmapped child,
+remaps it without a configure response, and requires the opaque `FocusSurface`
+result. New-window admission and every non-deterministic layout fence remain
+fail closed.
+
 ## 2026-08-06: The soak gate uses generic session evidence
 
 The installed soak verifier required a Firefox M8 proof-completion record even

@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     env,
     io::{Read, Write},
     os::unix::net::UnixStream,
@@ -165,7 +165,7 @@ fn unfocused_single_surface_cycle_does_not_wait_for_impossible_x11_activity() {
 }
 
 #[test]
-fn workspace_move_focuses_the_sole_committed_action_node() {
+fn workspace_remap_without_configure_focuses_the_sole_committed_action_node() {
     let mut runtime = fixture_runtime("silent_focus_noop_fixture_process");
     configure_session_with_workspaces(
         &mut runtime,
@@ -504,6 +504,7 @@ fn run_fixture(behavior: FixtureBehavior) {
     }
 
     let mut windows = Vec::new();
+    let mut known_windows = BTreeSet::new();
     let mut mirror = false;
     let mut partial_reconciliation_sent = false;
     let mut focus_action_seen = false;
@@ -516,8 +517,11 @@ fn run_fixture(behavior: FixtureBehavior) {
         match event[0] & 0x7f {
             20 => {
                 let window = read_u32(&event, 8);
+                let remapped = !known_windows.insert(window);
                 windows.push(window);
-                write_layout(&mut stream, &windows, mirror);
+                if behavior != FixtureBehavior::SilentFocusNoop || !remapped {
+                    write_layout(&mut stream, &windows, mirror);
+                }
             }
             22 if behavior == FixtureBehavior::PartialFocusReconciliation => {
                 if windows.len() == 3 && partial_reconciliation_sent && !focus_action_seen {
@@ -560,12 +564,59 @@ fn run_fixture(behavior: FixtureBehavior) {
                 );
                 stream.flush().unwrap();
             }
-            18 => windows.retain(|window| *window != read_u32(&event, 8)),
+            18 => {
+                let window = read_u32(&event, 8);
+                windows.retain(|candidate| *candidate != window);
+                assert_unmapped_child_is_retained(&mut stream, window, &mut pending_events);
+            }
             5 => {}
             2 | 3 => {}
             event_type => panic!("unexpected synthetic X event {event_type}"),
         }
     }
+}
+
+fn assert_unmapped_child_is_retained(
+    stream: &mut UnixStream,
+    window: u32,
+    pending_events: &mut VecDeque<[u8; 32]>,
+) {
+    let mut attributes = vec![3, 0, 2, 0];
+    attributes.extend_from_slice(&window.to_le_bytes());
+    stream.write_all(&attributes).unwrap();
+    stream.flush().unwrap();
+    let (header, _) = read_reply_with_body(stream, pending_events);
+    assert_eq!(header[26], 0, "unmapped child remained viewable");
+
+    let mut query_tree = vec![15, 0, 2, 0];
+    query_tree.extend_from_slice(&ROOT.to_le_bytes());
+    stream.write_all(&query_tree).unwrap();
+    stream.flush().unwrap();
+    let (header, body) = read_reply_with_body(stream, pending_events);
+    let child_count = usize::from(read_u16(&header, 16));
+    assert_eq!(body.len(), child_count * 4);
+    assert!(
+        body.chunks_exact(4)
+            .any(|child| read_u32(child, 0) == window),
+        "unmapped child disappeared from QueryTree"
+    );
+}
+
+fn read_reply_with_body(
+    stream: &mut UnixStream,
+    pending_events: &mut VecDeque<[u8; 32]>,
+) -> ([u8; 32], Vec<u8>) {
+    let header = loop {
+        let mut packet = [0_u8; 32];
+        stream.read_exact(&mut packet).unwrap();
+        if packet[0] == 1 {
+            break packet;
+        }
+        pending_events.push_back(packet);
+    };
+    let mut body = vec![0; read_u32(&header, 4) as usize * 4];
+    stream.read_exact(&mut body).unwrap();
+    (header, body)
 }
 
 fn write_query_pointer_and_grab(stream: &mut UnixStream, window: u32) {

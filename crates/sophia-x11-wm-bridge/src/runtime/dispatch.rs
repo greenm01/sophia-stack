@@ -91,16 +91,23 @@ fn apply_server_command(
             write_configure_notify(stream, state.sequence, SYNTHETIC_ROOT_XID, bounds)?;
         }
         ServerCommand::Map(window, geometry, manage_profile) => {
-            state.stacking.retain(|candidate| *candidate != window.raw());
-            state.stacking.push(window.raw());
-            state.windows.insert(
-                window.raw(),
-                WindowState {
-                    geometry,
-                    mapped: false,
-                    manage_profile,
-                },
-            );
+            if let Some(entry) = state.windows.get_mut(&window.raw()) {
+                // Unmap preserves an X11 window and its stack position. A
+                // later map updates the retained policy object in place.
+                entry.geometry = geometry;
+                entry.mapped = false;
+                entry.manage_profile = manage_profile;
+            } else {
+                state.stacking.push(window.raw());
+                state.windows.insert(
+                    window.raw(),
+                    WindowState {
+                        geometry,
+                        mapped: false,
+                        manage_profile,
+                    },
+                );
+            }
             let mut event = vec![20, 0];
             push_u16(&mut event, state.sequence);
             push_u32(&mut event, SYNTHETIC_ROOT_XID);
@@ -136,8 +143,12 @@ fn apply_server_command(
             )?;
         }
         ServerCommand::Unmap(window) => {
-            state.windows.remove(&window.raw());
-            state.stacking.retain(|candidate| *candidate != window.raw());
+            let entry = state.windows.get_mut(&window.raw()).ok_or_else(|| {
+                BridgeRuntimeError::new("synthetic unmap targeted an unknown window")
+            })?;
+            // X11 unmapping changes viewability; it does not destroy the
+            // child or remove it from QueryTree stacking order.
+            entry.mapped = false;
             write_window_event(stream, state.sequence, 18, window.raw())?;
         }
         ServerCommand::Destroy(window) => {
