@@ -77,6 +77,8 @@ install -m 755 tools/verify_installed_session_lifecycle.sh \
     "$artifact/bin/sophia-verify-lifecycle"
 install -m 755 tools/verify_installed_watchdog_recovery.sh \
     "$artifact/bin/sophia-verify-watchdog-run"
+install -m 755 tools/verify_installed_watchdog_archive.sh \
+    "$artifact/bin/sophia-verify-watchdog"
 install -m 755 tools/verify_sophia_firefox_physical.sh \
     "$artifact/bin/sophia-verify-firefox-run"
 install -m 755 tools/record_sophia_firefox_physical_run.sh \

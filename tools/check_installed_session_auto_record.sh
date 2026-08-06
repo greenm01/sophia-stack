@@ -17,11 +17,17 @@ install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-kitty-session" \
     "$RELEASE/bin/sophia-kitty-session"
 install -m 755 \
+    "$ROOT_DIR/tools/installed/sophia-recovery-proof" \
+    "$RELEASE/bin/sophia-recovery-proof"
+install -m 755 \
     "$ROOT_DIR/tools/record_installed_session_run.sh" \
     "$RELEASE/bin/sophia-record-run"
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-record-fallback-run"
+install -m 755 \
+    "$ROOT_DIR/tools/record_installed_watchdog_run.sh" \
+    "$RELEASE/bin/sophia-record-watchdog-run"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_login_cycle.sh" \
     "$RELEASE/bin/sophia-verify-login-cycle"
@@ -31,6 +37,12 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-verify-fallback"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_watchdog_recovery.sh" \
+    "$RELEASE/bin/sophia-verify-watchdog-run"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_watchdog_archive.sh" \
+    "$RELEASE/bin/sophia-verify-watchdog"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
     "$RELEASE/bin/sophia-verify-runtime-identity"
@@ -55,19 +67,28 @@ printf '%s\n' \
     'session_fixture=physical_xmonad_hardware_smoke_session_pass.log' \
     'guard_fixture=physical_xmonad_hardware_smoke_guard_pass.log' \
     'recovery_fixture=physical_xmonad_hardware_smoke_recovery_pass.log' \
+    'lifecycle_fixture=installed_lifecycle_normal_pass.log' \
+    'session_status="${SOPHIA_TEST_SESSION_STATUS:-0}"' \
     'if [[ "${SOPHIA_TTY_PROFILE:-xmonad}" == kitty ]]; then' \
     '    state="${XDG_STATE_HOME}/sophia/kitty-session"' \
     '    session_fixture=installed_fallback_session_pass.log' \
     '    guard_fixture=installed_fallback_guard_pass.log' \
     '    recovery_fixture=installed_fallback_recovery_pass.log' \
     'fi' \
+    'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == watchdog ]]; then' \
+    '    session_fixture=installed_watchdog_session_pass.log' \
+    '    guard_fixture=installed_watchdog_guard_pass.log' \
+    '    recovery_fixture=installed_watchdog_recovery_pass.log' \
+    '    lifecycle_fixture=installed_lifecycle_watchdog_pass.log' \
+    '    session_status="${SOPHIA_TEST_SESSION_STATUS:-124}"' \
+    'fi' \
     'install -d -m 700 "$state"' \
     'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/$session_fixture" "$state/session.log"' \
     'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/$guard_fixture" "$state/input-guard.log"' \
     'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/$recovery_fixture" "$state/recovery.log"' \
-    'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/installed_lifecycle_normal_pass.log" "$state/lifecycle.log"' \
+    'install -m 600 "$SOPHIA_TEST_FIXTURE_ROOT/tools/fixtures/$lifecycle_fixture" "$state/lifecycle.log"' \
     '[[ -z "${SOPHIA_TEST_RUNNER_MARKER:-}" ]] || touch "$SOPHIA_TEST_RUNNER_MARKER"' \
-    'exit "${SOPHIA_TEST_SESSION_STATUS:-0}"' \
+    'exit "$session_status"' \
     >"$RELEASE/tools/run_sophia_xmonad_session.sh"
 chmod 755 \
     "$RELEASE/bin/capture-runtime-identity" \
@@ -146,6 +167,51 @@ env "${session_env[@]}" "$RELEASE/bin/sophia-verify-fallback"
 printf '\n' >>"$STATE_HOME/sophia/promotion/fallback-runs/0003/result.kdl"
 if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-fallback" >/dev/null 2>&1; then
     echo "fallback verifier accepted a modified archive" >&2
+    exit 1
+fi
+
+set +e
+env "${session_env[@]}" "$RELEASE/bin/sophia-recovery-proof"
+watchdog_status=$?
+set -e
+[[ "$watchdog_status" == 124 ]] || {
+    echo "installed recovery wrapper changed the watchdog exit status" >&2
+    exit 1
+}
+grep -Fxq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
+    "$STATE_HOME/sophia/promotion/watchdog-runs/0001/result.kdl"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog"
+
+if env "${session_env[@]}" SOPHIA_TEST_SESSION_STATUS=1 \
+    "$RELEASE/bin/sophia-recovery-proof" >/dev/null 2>&1; then
+    echo "installed recovery wrapper hid an unexpected session exit" >&2
+    exit 1
+fi
+grep -Fxq \
+    'sophia_installed_watchdog schema=1 status=failed exit_status=1 reason=session_exit' \
+    "$STATE_HOME/sophia/promotion/watchdog-runs/0002/result.kdl"
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog" >/dev/null 2>&1; then
+    echo "watchdog verifier skipped the latest failed automatic attempt" >&2
+    exit 1
+fi
+set +e
+env "${session_env[@]}" "$RELEASE/bin/sophia-recovery-proof"
+watchdog_status=$?
+set -e
+[[ "$watchdog_status" == 124 ]]
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog"
+
+printf 'sophia_installed_session schema=1 status=starting profile=xmonad version=0.1.0 commit=%s release=%s started_at_utc=2026-08-05T12:34:56Z launch_id=compatibility-import\n' \
+    "$COMMIT" "$RELEASE" \
+    >"$STATE_HOME/sophia/installed-session/launch.log"
+env "${session_env[@]}" "$RELEASE/bin/sophia-record-watchdog-run"
+grep -Fxq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
+    "$STATE_HOME/sophia/promotion/watchdog-runs/0004/result.kdl"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog"
+
+printf '\n' >>"$STATE_HOME/sophia/promotion/watchdog-runs/0004/result.kdl"
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-watchdog" >/dev/null 2>&1; then
+    echo "watchdog verifier accepted a modified archive" >&2
     exit 1
 fi
 

@@ -62,9 +62,9 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal and fallback attempts. An `OK` line
-for every packaged file is expected. Investigate any checksum failure before
-launching or rolling back.
+runtime identity, and the newest normal, fallback, and watchdog attempts. An
+`OK` line for every packaged file is expected. Investigate any checksum
+failure before launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
 
@@ -76,7 +76,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic normal-cycle attempts | `sophia/promotion/runs/` |
 | automatic fallback attempts | `sophia/promotion/fallback-runs/` |
 | emergency recovery archives | `sophia/promotion/emergency-runs/` |
-| watchdog recovery archives | `sophia/promotion/watchdog-runs/` |
+| automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
 | Firefox proof archives | `sophia/promotion/firefox-runs/` |
 
 The active files have a `.previous` sibling after rotation where applicable.
@@ -122,10 +122,11 @@ After greetd returns:
 
 For a release recovery gate, select `Sophia Recovery Proof`, arm the local
 guard when prompted, and leave the session running. The external watchdog must
-return to greetd after 45 seconds. Archive that completed proof with:
+return to greetd after 45 seconds. The entry reserves its archive before
+takeover and finalizes it automatically. Verify the newest proof with:
 
 ```sh
-sophia-record-watchdog-run
+sophia-verify-watchdog
 ```
 
 An ordinary `Ctrl+Alt+Backspace` recovery is separate and is archived with:
@@ -167,6 +168,13 @@ exact Kitty-profile VT restoration. Verify the newest fallback attempt with:
 ```sh
 sophia-verify-fallback
 ```
+
+`Sophia Recovery Proof` records its expected status-124 handoff in a third
+ledger. The verifier requires visible startup, the exact 45-second external
+deadline, an armed but untriggered local guard, watchdog-owned process-group
+termination, installed lifecycle and runtime identities, and complete VT
+restoration. Failed and pending recovery attempts remain visible and fail the
+latest-attempt check.
 
 Verify the latest three consecutive attempts with:
 

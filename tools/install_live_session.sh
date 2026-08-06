@@ -74,6 +74,7 @@ commands=(
     sophia-verify-login-cycle
     sophia-verify-cycles
     sophia-verify-fallback
+    sophia-verify-watchdog
     sophia-verify-firefox-runs
     sophia-verify-soak
 )

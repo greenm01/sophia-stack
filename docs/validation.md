@@ -1054,19 +1054,21 @@ Recovery Proof` in greetd, press and release Ctrl-Alt-Backspace once when asked
 to arm the guard, and then leave the visible xmonad session running. Greetd
 must return automatically after 45 seconds. Log into `Sophia Kitty (Baseline)`
 once, exercise physical keyboard input, and exit Kitty normally. That entry
-automatically retains its own attempt. Verify the fallback, then retain the
-watchdog evidence from any ordinary login with:
+automatically retains its own attempt. Verify the fallback and the
+automatically retained watchdog attempt with:
 
 ```sh
 sophia-verify-fallback
-sophia-record-watchdog-run
+sophia-verify-watchdog
 ```
 
-The recorder requires visible startup readiness, exactly one process-group
-deadline, an armed but untriggered local input guard, exact TTY restoration,
-the installed release identity and digests, and a display-manager handoff with
-status 124. It archives watchdog runs separately; they never count as normal
-login cycles or as graceful Ctrl-Alt-Backspace recovery.
+The recovery entry reserves its ledger slot before takeover and finalizes it
+after the status-124 handoff. Its verifier requires visible startup readiness,
+exactly one process-group deadline, an armed but untriggered local input guard,
+exact TTY restoration, the installed release identity and digests, and a
+display-manager handoff with status 124. Watchdog attempts remain separate;
+they never count as normal login cycles or as graceful Ctrl-Alt-Backspace
+recovery.
 Because the graphical owner deliberately places the kernel keyboard in
 off-mode, Sophia recognizes Ctrl-Alt-F1 through Ctrl-Alt-F12 and explicitly
 requests the target Linux VT through libseat. Seat disable pauses physical
@@ -1085,7 +1087,7 @@ sophia-verify-login-cycle
 sophia-record-emergency-run
 
 # After the one dedicated Sophia Recovery Proof run:
-sophia-record-watchdog-run
+sophia-verify-watchdog
 
 # Require the latest three recorded runs to be clean and from one commit:
 sophia-verify-cycles 3
@@ -1129,6 +1131,12 @@ the same way. `sophia-verify-fallback` rejects a failed or pending latest
 attempt, modified archive, wrong profile or commit, external WM, missing
 two-output retirement, absent physical input, emergency-guard use, dirty
 shutdown, or incomplete VT restoration.
+The dedicated recovery entry likewise reserves and finalizes a watchdog
+attempt automatically. `sophia-verify-watchdog` rejects an unexpected exit,
+local emergency trigger, changed deadline, modified archive, wrong profile or
+commit, incomplete lifecycle, or incomplete VT restoration. The no-argument
+`sophia-record-watchdog-run` form remains a compatibility importer for an
+unrecorded status-124 proof.
 `sophia-record-emergency-run`
 applies the independent guard/owner recovery verifier and archives the
 emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived

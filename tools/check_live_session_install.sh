@@ -28,6 +28,7 @@ OPERATOR_COMMANDS=(
     sophia-verify-login-cycle
     sophia-verify-cycles
     sophia-verify-fallback
+    sophia-verify-watchdog
     sophia-verify-firefox-runs
     sophia-verify-soak
 )
@@ -110,10 +111,13 @@ env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-rollback"
 operator_state="$TEMP_DIR/operator-state"
 install -d -m 700 "$operator_state/sophia/promotion/runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/fallback-runs/0001"
+install -d -m 700 "$operator_state/sophia/promotion/watchdog-runs/0001"
 printf 'sophia_installed_cycle schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/runs/0001/result.kdl"
 printf 'sophia_installed_fallback schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/fallback-runs/0001/result.kdl"
+printf 'sophia_installed_watchdog schema=1 status=passed exit_status=124\n' \
+    >"$operator_state/sophia/promotion/watchdog-runs/0001/result.kdl"
 status_output="$(env \
     SOPHIA_INSTALL_PREFIX="$PREFIX" \
     XDG_STATE_HOME="$operator_state" \
@@ -129,6 +133,11 @@ grep -Fq \
     "latest_installed_fallback=$operator_state/sophia/promotion/fallback-runs/0001" \
     <<<"$status_output"
 grep -Fq 'sophia_installed_fallback schema=1 status=passed exit_status=0' \
+    <<<"$status_output"
+grep -Fq \
+    "latest_installed_watchdog=$operator_state/sophia/promotion/watchdog-runs/0001" \
+    <<<"$status_output"
+grep -Fq 'sophia_installed_watchdog schema=1 status=passed exit_status=124' \
     <<<"$status_output"
 
 stop_runtime="$TEMP_DIR/stop-runtime"

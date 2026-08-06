@@ -33,10 +33,11 @@ printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s 
 chmod 600 "$identity_log"
 "$RELEASE_DIR/bin/capture-runtime-identity" "$runtime_identity_log" "$RELEASE_DIR"
 
+attempt_mode="${SOPHIA_INSTALLED_ATTEMPT_MODE:-$SOPHIA_TTY_PROFILE}"
 attempt_dir=""
 attempt_record=""
 attempt_result_record=""
-case "$SOPHIA_TTY_PROFILE" in
+case "$attempt_mode" in
     xmonad)
         attempt_record="$RELEASE_DIR/bin/sophia-record-run"
         attempt_result_record=sophia_installed_cycle
@@ -44,6 +45,10 @@ case "$SOPHIA_TTY_PROFILE" in
     kitty)
         attempt_record="$RELEASE_DIR/bin/sophia-record-fallback-run"
         attempt_result_record=sophia_installed_fallback
+        ;;
+    watchdog)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-watchdog-run"
+        attempt_result_record=sophia_installed_watchdog
         ;;
 esac
 # Reserve the ledger slot before takeover. A crash or interrupted handoff then

@@ -62,3 +62,5 @@ print_latest_attempt() {
 print_latest_attempt installed_cycle "$STATE_HOME/sophia/promotion/runs"
 print_latest_attempt installed_fallback \
     "$STATE_HOME/sophia/promotion/fallback-runs"
+print_latest_attempt installed_watchdog \
+    "$STATE_HOME/sophia/promotion/watchdog-runs"

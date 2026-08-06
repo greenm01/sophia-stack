@@ -1292,8 +1292,10 @@ Compatibility follow-up outside the Firefox exit gate:
   strict repository-independent recorder. The Kitty entry now automatically
   reserves and finalizes a separate checksummed fallback attempt, and its
   fail-closed verifier covers the one-Kitty, WM-disabled, two-output, physical
-  input, clean-shutdown, and exact VT-recovery contract. Physical recovery and
-  commit-pinned fallback captures remain.
+  input, clean-shutdown, and exact VT-recovery contract. The watchdog entry
+  now applies the same pre-takeover reservation and automatic finalization to
+  its status-124 proof. Commit-pinned emergency, watchdog, and fallback
+  captures remain.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
@@ -1307,7 +1309,7 @@ Compatibility follow-up outside the Firefox exit gate:
   sessions and mixed commits. The fallback entry uses the same automatic
   attempt discipline in its own ledger and rejects modified, failed, pending,
   wrong-profile, or incomplete evidence. Three physical installed cycles plus
-  commit-pinned emergency and fallback runs remain.
+  commit-pinned emergency, watchdog, and fallback runs remain.
 - [x] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 

@@ -112,6 +112,12 @@ sophia_installed_attempt_finish() {
         return 1
     }
 
+    local expected_status="${SOPHIA_ATTEMPT_EXPECTED_EXIT_STATUS:-0}"
+    [[ "$expected_status" =~ ^[0-9]+$ && "$expected_status" -le 255 ]] || {
+        echo "expected session exit status must be an integer from 0 through 255" >&2
+        return 1
+    }
+
     local failure=none source target
     for target in session.log input-guard.log recovery.log lifecycle.log; do
         source="$SOPHIA_ATTEMPT_SESSION_DIR/$target"
@@ -129,25 +135,34 @@ sophia_installed_attempt_finish() {
         && "$sophia_attempt_identity_sha256" == "$expected_identity" ]] ||
         failure=identity_mismatch
 
-    if [[ "$session_status" != 0 ]]; then
+    if [[ "$session_status" != "$expected_status" ]]; then
         failure=session_exit
     elif [[ "$failure" == none ]]; then
-        "$SOPHIA_ATTEMPT_VERIFY_SESSION" \
-            "$run_dir/session.log" "$run_dir/input-guard.log" "$run_dir/recovery.log" ||
+        local -a session_evidence=(
+            "$run_dir/session.log"
+            "$run_dir/input-guard.log"
+            "$run_dir/recovery.log"
+        )
+        if [[ "${SOPHIA_ATTEMPT_SESSION_INCLUDES_LIFECYCLE:-false}" == true ]]; then
+            session_evidence+=("$run_dir/lifecycle.log")
+        fi
+        "$SOPHIA_ATTEMPT_VERIFY_SESSION" "${session_evidence[@]}" ||
             failure=session_verification
         if [[ "$failure" == none ]]; then
             "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" "$run_dir/runtime-identity.log" ||
                 failure=identity_verification
         fi
         if [[ "$failure" == none ]]; then
-            "$SOPHIA_ATTEMPT_VERIFY_LIFECYCLE" "$run_dir/lifecycle.log" normal ||
+            "$SOPHIA_ATTEMPT_VERIFY_LIFECYCLE" "$run_dir/lifecycle.log" \
+                "${SOPHIA_ATTEMPT_LIFECYCLE_MODE:-normal}" ||
                 failure=lifecycle_verification
         fi
     fi
 
     if [[ "$failure" == none ]]; then
-        printf '%s schema=1 status=passed exit_status=0\n' \
-            "$SOPHIA_ATTEMPT_RESULT_RECORD" >"$run_dir/result.kdl"
+        printf '%s schema=1 status=passed exit_status=%s\n' \
+            "$SOPHIA_ATTEMPT_RESULT_RECORD" "$session_status" \
+            >"$run_dir/result.kdl"
         sophia_installed_attempt_write_checksums "$run_dir"
         echo "Recorded verified installed $SOPHIA_ATTEMPT_KIND run: $run_dir"
         return 0
@@ -177,7 +192,8 @@ sophia_record_installed_attempt() {
     case "$#:${1:-}" in
         0:)
             run_dir="$(sophia_installed_attempt_begin)"
-            sophia_installed_attempt_finish "$run_dir" 0
+            sophia_installed_attempt_finish "$run_dir" \
+                "${SOPHIA_ATTEMPT_EXPECTED_EXIT_STATUS:-0}"
             ;;
         1:begin)
             sophia_installed_attempt_begin
