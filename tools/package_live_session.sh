@@ -51,6 +51,8 @@ install -m 755 tools/stop_sophia_xmonad_session.sh "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
 install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
+install -m 755 tools/record_installed_fallback_run.sh \
+    "$artifact/bin/sophia-record-fallback-run"
 install -m 755 tools/record_installed_emergency_run.sh \
     "$artifact/bin/sophia-record-emergency-run"
 install -m 755 tools/record_installed_watchdog_run.sh \
@@ -63,6 +65,10 @@ install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
 install -m 755 tools/verify_installed_login_cycle.sh \
     "$artifact/bin/sophia-verify-login-cycle"
+install -m 755 tools/verify_installed_fallback_session.sh \
+    "$artifact/bin/sophia-verify-fallback-session"
+install -m 755 tools/verify_installed_fallback_run.sh \
+    "$artifact/bin/sophia-verify-fallback"
 install -m 755 tools/verify_sophia_xmonad_emergency_tty3.sh \
     "$artifact/bin/sophia-verify-emergency-run"
 install -m 755 tools/verify_installed_runtime_identity.sh \
@@ -83,6 +89,8 @@ install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/stop_sophia_session.sh "$artifact/tools/"
 install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
+install -m 644 tools/lib/installed_attempt_ledger.sh \
+    "$artifact/tools/lib/installed_attempt_ledger.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
 install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"

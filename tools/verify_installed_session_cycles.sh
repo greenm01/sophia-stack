@@ -48,10 +48,20 @@ for run in "${runs[@]}"; do
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     "$VERIFY_IDENTITY" "$run/runtime-identity.log"
     "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
-    [[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 2 ]] || {
-        echo "run has no supported record schema: $run" >&2
-        exit 1
-    }
+    record_schema="$(sed -n 's/^record_schema=//p' "$run/manifest")"
+    case "$record_schema" in
+        2) ;;
+        3)
+            [[ "$(sed -n 's/^record_kind=//p' "$run/manifest")" == normal ]] || {
+                echo "run is not a normal installed cycle: $run" >&2
+                exit 1
+            }
+            ;;
+        *)
+            echo "run has no supported record schema: $run" >&2
+            exit 1
+            ;;
+    esac
     commit="$(sed -n 's/^commit=//p' "$run/manifest" | head -n 1)"
     [[ -n "$commit" ]] || {
         echo "run has no release commit: $run" >&2

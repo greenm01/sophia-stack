@@ -1289,8 +1289,11 @@ Compatibility follow-up outside the Firefox exit gate:
 - [ ] Preserve the independent emergency path, a known-good fallback session,
   and a documented rollback procedure. The installed `Sophia Recovery Proof`
   entry now fixes an opt-in 45-second process-external deadline and packages a
-  strict repository-independent recorder. Its physical recovery capture and a
-  successful `Sophia Kitty (Baseline)` fallback login remain.
+  strict repository-independent recorder. The Kitty entry now automatically
+  reserves and finalizes a separate checksummed fallback attempt, and its
+  fail-closed verifier covers the one-Kitty, WM-disabled, two-output, physical
+  input, clean-shutdown, and exact VT-recovery contract. Physical recovery and
+  commit-pinned fallback captures remain.
 - [x] Add startup diagnostics that identify the installed version and exact
   preflight, guard, takeover, session, or handoff failure without exposing
   application content.
@@ -1301,7 +1304,10 @@ Compatibility follow-up outside the Firefox exit gate:
   attempt before takeover and finalizes it after handoff; failed and pending
   entries therefore interrupt the latest-three gate. Every archive carries a
   checksummed, unique launch identity, and the cycle gate rejects duplicated
-  sessions and mixed commits. Three physical installed cycles remain.
+  sessions and mixed commits. The fallback entry uses the same automatic
+  attempt discipline in its own ledger and rejects modified, failed, pending,
+  wrong-profile, or incomplete evidence. Three physical installed cycles plus
+  commit-pinned emergency and fallback runs remain.
 - [x] Document supported hardware, required services, known limitations, and
   the operator commands for status, logs, stop, recovery, and rollback.
 

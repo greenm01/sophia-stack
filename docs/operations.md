@@ -62,8 +62,8 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest installed-cycle attempt. An `OK` line for
-every packaged file is expected. Investigate any checksum failure before
+runtime identity, and the newest normal and fallback attempts. An `OK` line
+for every packaged file is expected. Investigate any checksum failure before
 launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
@@ -74,6 +74,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | fallback session, guard, recovery, lifecycle | `sophia/kitty-session/` |
 | installed launch and runtime identity | `sophia/installed-session/` |
 | automatic normal-cycle attempts | `sophia/promotion/runs/` |
+| automatic fallback attempts | `sophia/promotion/fallback-runs/` |
 | emergency recovery archives | `sophia/promotion/emergency-runs/` |
 | watchdog recovery archives | `sophia/promotion/watchdog-runs/` |
 | Firefox proof archives | `sophia/promotion/firefox-runs/` |
@@ -114,8 +115,10 @@ After greetd returns:
 1. Select `Sophia Kitty (Baseline)` to distinguish an integrated xmonad or
    Firefox failure from the core display, input, and recovery path.
 2. Exit Kitty normally to return to greetd.
-3. Run `sophia-status` from a text VT and inspect the xmonad or Kitty lifecycle
-   and recovery lines before retrying.
+3. Run `sophia-verify-fallback` from a text VT. The login is recorded
+   automatically, so no archive command is needed.
+4. Run `sophia-status` and inspect the xmonad or Kitty lifecycle and recovery
+   lines before retrying.
 
 For a release recovery gate, select `Sophia Recovery Proof`, arm the local
 guard when prompted, and leave the session running. The external watchdog must
@@ -154,6 +157,16 @@ graphics takeover. Normal handoff finalizes it as passed or failed; a wrapper
 crash leaves it pending. Failed and pending attempts intentionally interrupt
 the consecutive-cycle gate. No recording command is needed after an ordinary
 login.
+
+Every `Sophia Kitty (Baseline)` launch follows the same fail-closed pattern in
+a separate fallback ledger. A passing attempt requires the reduced one-Kitty,
+WM-disabled profile, two-output readiness and retirement, routed physical
+input, clean presentation and application shutdown, an untriggered guard, and
+exact Kitty-profile VT restoration. Verify the newest fallback attempt with:
+
+```sh
+sophia-verify-fallback
+```
 
 Verify the latest three consecutive attempts with:
 

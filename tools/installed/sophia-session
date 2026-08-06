@@ -33,12 +33,24 @@ printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s 
 chmod 600 "$identity_log"
 "$RELEASE_DIR/bin/capture-runtime-identity" "$runtime_identity_log" "$RELEASE_DIR"
 
-# Reserve the ledger slot before takeover. A crash or interrupted handoff then
-# remains a pending attempt and cannot disappear between later clean cycles.
 attempt_dir=""
-if [[ "$SOPHIA_TTY_PROFILE" == xmonad ]]; then
-    if ! attempt_dir="$("$RELEASE_DIR/bin/sophia-record-run" begin)"; then
-        echo "sophia_installed_cycle schema=1 status=untracked phase=begin" >&2
+attempt_record=""
+attempt_result_record=""
+case "$SOPHIA_TTY_PROFILE" in
+    xmonad)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-run"
+        attempt_result_record=sophia_installed_cycle
+        ;;
+    kitty)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-fallback-run"
+        attempt_result_record=sophia_installed_fallback
+        ;;
+esac
+# Reserve the ledger slot before takeover. A crash or interrupted handoff then
+# remains a pending attempt and cannot disappear between later clean runs.
+if [[ -n "$attempt_record" ]]; then
+    if ! attempt_dir="$("$attempt_record" begin)"; then
+        echo "$attempt_result_record schema=1 status=untracked phase=begin" >&2
         exit 1
     fi
 fi
@@ -48,8 +60,8 @@ set +e
 session_status=$?
 set -e
 if [[ -n "$attempt_dir" ]] &&
-    ! "$RELEASE_DIR/bin/sophia-record-run" finish "$attempt_dir" "$session_status"; then
+    ! "$attempt_record" finish "$attempt_dir" "$session_status"; then
     # Evidence failure must not rewrite the session's real exit status.
-    echo "sophia_installed_cycle schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2
+    echo "$attempt_result_record schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2
 fi
 exit "$session_status"

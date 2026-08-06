@@ -43,16 +43,22 @@ runtime_identity="$STATE_HOME/sophia/installed-session/runtime-identity.log"
 printf 'runtime_identity=%s\n' "$runtime_identity"
 [[ ! -s "$runtime_identity" ]] || cat "$runtime_identity"
 
-attempt_root="$STATE_HOME/sophia/promotion/runs"
-printf 'installed_cycle_attempts=%s\n' "$attempt_root"
-latest_attempt="$(
-    find "$attempt_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+print_latest_attempt() {
+    local label="$1" root="$2" latest
+    printf '%s_attempts=%s\n' "$label" "$root"
+    latest="$(
+        find "$root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
         sort -V |
         tail -n 1 || true
-)"
-if [[ -n "$latest_attempt" ]]; then
-    printf 'latest_installed_cycle=%s\n' "$latest_attempt"
-    tail -n 1 "$latest_attempt/result.kdl" 2>/dev/null || true
-else
-    echo 'latest_installed_cycle=none'
-fi
+    )"
+    if [[ -n "$latest" ]]; then
+        printf 'latest_%s=%s\n' "$label" "$latest"
+        tail -n 1 "$latest/result.kdl" 2>/dev/null || true
+    else
+        printf 'latest_%s=none\n' "$label"
+    fi
+}
+
+print_latest_attempt installed_cycle "$STATE_HOME/sophia/promotion/runs"
+print_latest_attempt installed_fallback \
+    "$STATE_HOME/sophia/promotion/fallback-runs"

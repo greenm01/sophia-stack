@@ -67,11 +67,13 @@ commands=(
     sophia-stop
     sophia-rollback
     sophia-record-run
+    sophia-record-fallback-run
     sophia-record-emergency-run
     sophia-record-watchdog-run
     sophia-record-firefox-run
     sophia-verify-login-cycle
     sophia-verify-cycles
+    sophia-verify-fallback
     sophia-verify-firefox-runs
     sophia-verify-soak
 )

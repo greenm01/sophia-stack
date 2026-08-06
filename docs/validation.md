@@ -1053,10 +1053,12 @@ One installed watchdog proof is sufficient for a release. Select `Sophia
 Recovery Proof` in greetd, press and release Ctrl-Alt-Backspace once when asked
 to arm the guard, and then leave the visible xmonad session running. Greetd
 must return automatically after 45 seconds. Log into `Sophia Kitty (Baseline)`
-once and exit Kitty normally to prove the fallback entry, then retain the
+once, exercise physical keyboard input, and exit Kitty normally. That entry
+automatically retains its own attempt. Verify the fallback, then retain the
 watchdog evidence from any ordinary login with:
 
 ```sh
+sophia-verify-fallback
 sophia-record-watchdog-run
 ```
 
@@ -1087,6 +1089,9 @@ sophia-record-watchdog-run
 
 # Require the latest three recorded runs to be clean and from one commit:
 sophia-verify-cycles 3
+
+# Verify the latest automatic Kitty fallback attempt:
+sophia-verify-fallback
 
 # Verify a completed two-hour session with at least ten terminal and five
 # Firefox action launches:
@@ -1119,6 +1124,11 @@ broader xmonad and Firefox interaction proofs remain independent gates and are
 not repeated merely to count a login cycle. The no-argument
 `sophia-record-run` form remains a compatibility importer for a completed
 unrecorded run; ordinary installed logins require no recording command.
+The Kitty entry reserves and finalizes a separate immutable fallback attempt
+the same way. `sophia-verify-fallback` rejects a failed or pending latest
+attempt, modified archive, wrong profile or commit, external WM, missing
+two-output retirement, absent physical input, emergency-guard use, dirty
+shutdown, or incomplete VT restoration.
 `sophia-record-emergency-run`
 applies the independent guard/owner recovery verifier and archives the
 emergency lifecycle separately. `sophia-verify-cycles` rechecks each archived

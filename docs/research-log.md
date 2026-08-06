@@ -3,6 +3,31 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-05: installed fallback attempts are automatic and fail closed
+
+The Kitty baseline previously rotated live logs but had no immutable attempt
+boundary. A successful-looking later run could overwrite the evidence for a
+failed fallback, and the operator had no repository-independent command that
+bound the reduced session to its installed release identity.
+
+Normal and fallback logins now share one profile-parameterized attempt ledger.
+Each installed Kitty launch reserves a numbered directory before graphics
+takeover and finalizes it after display-manager handoff. A crash remains
+pending; a nonzero or unverifiable run remains failed. The archive contains
+checksummed session, guard, recovery, lifecycle, launch-identity, runtime-
+identity, and release records, while normal and fallback attempts remain in
+separate ledgers and cannot be relabeled across profiles.
+
+The fallback verifier admits only the bounded one-Kitty, WM-disabled profile.
+It requires two-output startup and visible retirement within eight seconds,
+positive routed physical keys, clean protocol, presentation, application, and
+lifecycle shutdown, an armed but untriggered guard, and exact Kitty-profile KD
+and termios restoration. Mutation fixtures reject missing Kitty exit,
+one-output or slow startup, missing retirement, absent physical input, external
+WM policy, emergency recovery, a wrong recovery profile, a failed latest
+attempt, and archive modification. Packaging, installation, status, and the
+operator runbook expose the same contract without a source checkout.
+
 ## 2026-08-05: installed operations have one packaged source of truth
 
 The immutable release now carries its own operator runbook instead of relying
