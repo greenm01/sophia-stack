@@ -1,0 +1,274 @@
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::time::Duration;
+
+use sophia_protocol::{
+    IpcCodecError, IpcMessageKind, PolicyProjectionOutcome, SOPHIA_IPC_HEADER_LEN,
+    SOPHIA_IPC_MAX_PAYLOAD_LEN, TransactionId, WmV1SnapshotBegin, WmV1SnapshotChunk,
+    WmV1SnapshotEnd, decode_frame, decode_wm_v1_client_hello_frame,
+    decode_wm_v1_projection_begin_frame, decode_wm_v1_projection_chunk_frame,
+    decode_wm_v1_projection_end_frame, encode_wm_v1_policy_projection_outcome,
+    encode_wm_v1_policy_projection_request, encode_wm_v1_projection_outcome_frame,
+    encode_wm_v1_projection_request_frame, encode_wm_v1_server_welcome_frame,
+    encode_wm_v1_snapshot_begin_frame, encode_wm_v1_snapshot_chunk_frame,
+    encode_wm_v1_snapshot_end_frame,
+};
+
+use crate::{
+    PolicyConnectionState, PolicyPeerIdentity, PolicyRoleEndpoint, PolicyRoleEndpointError,
+    PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PolicyTransportError {
+    Endpoint(PolicyRoleEndpointError),
+    Transfer(PolicyTransferError),
+    Codec(IpcCodecError),
+    Io(String),
+    UnexpectedMessage(IpcMessageKind),
+    NotConnected,
+}
+
+impl core::fmt::Display for PolicyTransportError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for PolicyTransportError {}
+
+impl From<PolicyRoleEndpointError> for PolicyTransportError {
+    fn from(error: PolicyRoleEndpointError) -> Self {
+        Self::Endpoint(error)
+    }
+}
+
+impl From<PolicyTransferError> for PolicyTransportError {
+    fn from(error: PolicyTransferError) -> Self {
+        Self::Transfer(error)
+    }
+}
+
+impl From<IpcCodecError> for PolicyTransportError {
+    fn from(error: IpcCodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
+/// Draft session-owned WM transport. It is not connected to the installed v7
+/// path until the public-protocol milestone reaches its migration gate.
+pub struct PolicyWmSessionTransport {
+    endpoint: PolicyRoleEndpoint,
+    connection: PolicyConnectionState,
+    stream: Option<UnixStream>,
+    peer: Option<PolicyPeerIdentity>,
+}
+
+impl PolicyWmSessionTransport {
+    pub fn bind(
+        directory: impl AsRef<Path>,
+        expected_peer: PolicyPeerIdentity,
+    ) -> Result<Self, PolicyTransportError> {
+        Ok(Self {
+            endpoint: PolicyRoleEndpoint::bind(directory, expected_peer)?,
+            connection: PolicyConnectionState::default(),
+            stream: None,
+            peer: None,
+        })
+    }
+
+    pub fn socket_path(&self) -> &Path {
+        self.endpoint.socket_path()
+    }
+
+    pub fn accept_and_negotiate(
+        &mut self,
+        connection_epoch: u64,
+        timeout: Duration,
+    ) -> Result<(), PolicyTransportError> {
+        if self.stream.is_some() {
+            return Err(PolicyTransportError::Transfer(
+                PolicyTransferError::AlreadyConnected,
+            ));
+        }
+        let mut stream = self.endpoint.accept_expected()?;
+        let peer = self
+            .endpoint
+            .active_peer()
+            .expect("accepted endpoint records its peer");
+        let result = (|| {
+            stream
+                .set_read_timeout(Some(timeout))
+                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+            stream
+                .set_write_timeout(Some(timeout))
+                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+            let frame = read_policy_frame(&mut stream)?;
+            let hello = decode_wm_v1_client_hello_frame(&frame)?;
+            let mut connection = self.connection.clone();
+            connection.connect(connection_epoch)?;
+            let welcome = connection.negotiate(&hello)?;
+            let frame = encode_wm_v1_server_welcome_frame(&welcome)?;
+            stream
+                .write_all(&frame)
+                .and_then(|()| stream.flush())
+                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+            self.connection = connection;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = self.endpoint.release_peer(peer);
+            return Err(error);
+        }
+        self.stream = Some(stream);
+        self.peer = Some(peer);
+        Ok(())
+    }
+
+    pub fn receive_projection_part(
+        &mut self,
+    ) -> Result<Option<QueuedPolicyProjection>, PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let frame = read_policy_frame(stream)?;
+        let (header, _) = decode_frame(&frame)?;
+        match header.message_kind {
+            IpcMessageKind::WmV1ProjectionBegin => {
+                let (transaction, begin) = decode_wm_v1_projection_begin_frame(&frame)?;
+                self.connection.begin_projection(transaction, begin)?;
+                Ok(None)
+            }
+            IpcMessageKind::WmV1ProjectionChunk => {
+                let (transaction, chunk) = decode_wm_v1_projection_chunk_frame(&frame)?;
+                self.connection
+                    .append_projection_chunk(transaction, chunk)?;
+                Ok(None)
+            }
+            IpcMessageKind::WmV1ProjectionEnd => {
+                let (transaction, end) = decode_wm_v1_projection_end_frame(&frame)?;
+                self.connection.finish_projection(transaction, end)?;
+                Ok(self.connection.settle_queued())
+            }
+            other => Err(PolicyTransportError::UnexpectedMessage(other)),
+        }
+    }
+
+    pub fn send_snapshot(
+        &mut self,
+        transaction: TransactionId,
+        begin: &WmV1SnapshotBegin,
+        chunks: &[WmV1SnapshotChunk],
+        end: &WmV1SnapshotEnd,
+    ) -> Result<(), PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let mut assembler = PolicySnapshotAssembler::new(begin.connection_epoch)?;
+        assembler.begin(transaction, begin.clone())?;
+        for chunk in chunks {
+            assembler.append(transaction, chunk.clone())?;
+        }
+        assembler.finish(transaction, end.clone())?;
+
+        let mut frames = Vec::with_capacity(chunks.len() + 2);
+        frames.push(encode_wm_v1_snapshot_begin_frame(transaction, begin)?);
+        for chunk in chunks {
+            frames.push(encode_wm_v1_snapshot_chunk_frame(transaction, chunk)?);
+        }
+        frames.push(encode_wm_v1_snapshot_end_frame(transaction, end)?);
+        for frame in frames {
+            stream
+                .write_all(&frame)
+                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+        }
+        stream
+            .flush()
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_projection_request(
+        &mut self,
+        transaction: TransactionId,
+        request: &sophia_protocol::PolicyProjectionRequest,
+    ) -> Result<(), PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let request = encode_wm_v1_policy_projection_request(request)?;
+        let frame = encode_wm_v1_projection_request_frame(transaction, &request)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_projection_outcome(
+        &mut self,
+        transaction: TransactionId,
+        request_id: u64,
+        scene_generation: u64,
+        outcome: PolicyProjectionOutcome,
+    ) -> Result<(), PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let outcome = encode_wm_v1_policy_projection_outcome(
+            self.connection.connection_epoch(),
+            request_id,
+            scene_generation,
+            outcome,
+        )?;
+        let frame = encode_wm_v1_projection_outcome_frame(transaction, &outcome)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn disconnect(&mut self) -> Result<(), PolicyTransportError> {
+        if self.stream.take().is_none() {
+            return Err(PolicyTransportError::NotConnected);
+        }
+        self.connection.disconnect()?;
+        let peer = self
+            .peer
+            .take()
+            .expect("connected transport records its peer");
+        self.endpoint.release_peer(peer)?;
+        Ok(())
+    }
+
+    pub const fn connection(&self) -> &PolicyConnectionState {
+        &self.connection
+    }
+}
+
+fn read_policy_frame(stream: &mut UnixStream) -> Result<Vec<u8>, PolicyTransportError> {
+    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
+    stream
+        .read_exact(&mut header)
+        .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+    let payload_len = u32::from_le_bytes(
+        header[16..20]
+            .try_into()
+            .expect("fixed frame payload range is present"),
+    ) as usize;
+    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
+        return Err(PolicyTransportError::Codec(IpcCodecError::PayloadTooLarge(
+            payload_len,
+        )));
+    }
+    let mut frame = Vec::with_capacity(SOPHIA_IPC_HEADER_LEN + payload_len);
+    frame.extend_from_slice(&header);
+    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
+    stream
+        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+        .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+    Ok(frame)
+}

@@ -11,5 +11,8 @@ sophia-protocol = { path = "../sophia-protocol" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 tracing.workspace = true
 
+[dev-dependencies]
+sophia-engine = { path = "../sophia-engine" }
+
 [lints]
 workspace = true

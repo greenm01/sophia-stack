@@ -40,14 +40,55 @@ SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
 ```
 
 The bounded configurations explore retirement and supersession ordering,
-exact PresentedBuffer selection through timeout recovery, and ownership of a
-software Present by one native frame. The frame-ownership model permits an
-unrelated frame to submit and retire first and proves that only the exact bound
-frame can emit feedback. They remain suitable for routine validation. A TLC
-counterexample that changes implementation behavior must become a
-deterministic Rust regression before the model or implementation is corrected.
-The models are not refinement proofs and must not be weakened to accept a
-known Rust shortcut.
+exact PresentedBuffer selection through timeout recovery, ownership of a
+software Present by one native frame, public policy negotiation and transfer
+assembly, and atomic multi-output projection. The frame-ownership model permits
+an unrelated frame to submit and retire first and proves that only the exact
+bound frame can emit feedback. `PolicyConnection` requires the full client,
+connection-epoch, and transaction identity for admitted work.
+`PolicyProjection` requires proposals to answer an outstanding server-issued
+request for the current scene generation. They remain suitable for routine
+validation. A TLC counterexample that changes implementation behavior must
+become a deterministic Rust regression before the model or implementation is
+corrected. The models are not refinement proofs and must not be weakened to
+accept a known Rust shortcut.
+
+### Public Policy Wire
+
+The draft `sophia_wm_v1` wire has one checked-in KDL schema and retained Rust,
+C99, documentation, and golden-corpus outputs. Normal builds do not run the
+generator. The gate first checks those outputs for byte-for-byte drift, then
+runs the Rust codec and an independently compiled, allocation-free C99 codec
+against the same valid and malformed frames. It then drives a standalone C99
+client through the authenticated session transport and Engine reducer:
+
+```sh
+tools/check_policy_protocol.sh
+cargo test --offline -q -p sophia-protocol --test policy_semantics
+cargo test --offline -q -p sophia-runtime --test policy_ipc
+cargo test --offline -q -p sophia-runtime --test policy_socket
+cargo test --offline -q -p sophia-runtime --test policy_transport
+cargo test --offline -q -p sophia-engine --test policy_projection
+cargo test --offline -q -p sophia-wm-demo --test policy_v1
+cargo test --offline -q -p sophia-x11-wm-bridge --test policy_projection_adapter
+```
+
+The first command proves generated envelope and record layouts across Rust and
+C99. The focused Rust gates prove exact supervised-peer admission, negotiation,
+bounded begin/chunk/end assembly, late-epoch discard, semantic record
+conversion, atomic multi-output validation, last-layout preservation, and the
+API v7 adapter. The Rust reference client and generic X11 bridge then prove
+their policy output through the same reducer. They do not switch or qualify
+the installed session path.
+
+The separate, standalone Hagia checkout verifies its independently written Nim
+decoder against the same retained corpus, then runs its proof client through
+the authenticated Sophia transport and canonical reducer with:
+
+```sh
+cd ~/dev/hagia
+SOPHIA_STACK_ROOT=~/dev/sophia-stack tools/check_sophia_policy.sh
+```
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

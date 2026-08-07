@@ -4,9 +4,9 @@
 
 ## The Name
 
-Hagia is a working name for a Sophia-native descendant of Triad. The reference
-is Hagia Sophia: Holy Wisdom. The name gives the new project a clear family
-resemblance without pretending that it is still the same program.
+Hagia is a working name for a standalone Sophia-native spatial-policy project.
+The reference is Hagia Sophia: Holy Wisdom. Triad informs parts of its policy
+design, but Hagia is not a Triad descendant or compatibility branch.
 
 ## The Decision
 
@@ -16,12 +16,12 @@ protocol surfaces, output management, and session behavior have shaped the
 program. Keeping Triad on that foundation protects a useful project and avoids
 turning every Sophia experiment into a compatibility burden for River users.
 
-Hagia should begin as a fork. It may retain Triad's data-oriented model, layout
-algorithms, tags, configuration language, Janet support, and shell-facing ideas,
-but it should be free to divide responsibilities according to Sophia's
-authority boundaries. The two projects may continue to exchange improvements
-where their designs still agree. They need not share an abstraction merely to
-make that exchange easier.
+Hagia begins as a clean standalone repository. It carries no Triad history,
+River or Wayland dependency, inherited binary, configuration surface, or build
+scaffolding. It may deliberately reimplement or port useful data-oriented
+models, layout mathematics, tag semantics, Janet support, and shell-facing
+ideas after they are reviewed against Sophia's authority boundaries. The two
+projects need not share an abstraction merely to make that exchange easier.
 
 ## The Architectural Idea
 
@@ -88,31 +88,50 @@ place or crop the surfaces that belong in the visible projection.
 That first experiment should be deliberately plain. It need not reproduce all
 of Triad before it can prove the boundary.
 
-## Questions the Fork Exposes
+## Decisions From the Fork Review
 
-### Tags, Workspaces, and Views
+### Tags, Views, and Output Ownership
 
 Triad permits richer membership than Sophia's present
 one-surface/one-workspace model. Sophia should not adopt Triad's tag bit mask as
 a universal desktop abstraction.
 
-A better candidate is an opaque **view projection**. Hagia would keep tags as
-private policy state. For a particular output, it would request a visible set
-of eligible surfaces and provide their placements. Engine would validate the
-request and retain final authority over visibility and focus.
+A better boundary is a complete **output projection**. Hagia keeps tags and
+stable `ViewId` values as private policy state. For a particular output, it
+requests a visible ordered set of eligible surfaces and supplies their
+placements. Engine validates the complete affected-output replacement and
+retains final authority over visibility and focus.
 
 This model could express tags, conventional workspaces, scrolling collections,
 freeform desktops, and single-application sessions without naming any of them
 in the Engine contract.
 
-Questions to settle include:
+Hagia's initial private model is fixed as follows:
 
-- whether a view needs a stable Sophia ID or can remain policy-private;
-- how Engine restores the last committed projection while policy is absent;
-- how a surface appearing in several policy tags is represented without
-  duplicating the surface;
-- which component owns the output-to-view association;
-- how dynamic creation and removal remain bounded.
+- every surface has a nonempty tag set and one home output;
+- every view has a stable Hagia `ViewId` and nonempty selected tag set;
+- each output owns an ordered view list, one active view, focus history, and
+  reconnect affinity;
+- a surface is eligible when its home output matches and its tags intersect the
+  active view's selected tags; and
+- Hagia resolves all membership to a projection in which a surface appears on
+  at most one output.
+
+Engine stores neither the tag sets nor `ViewId`. It preserves only the last
+committed projection while policy is absent. Hagia may atomically checkpoint
+its bounded private model in the session runtime directory, keyed to the
+current Sophia session, and reconcile it with the full live-surface snapshot
+after restart. A different WM receives no Hagia state.
+
+Output removal migrates private views and surfaces to a surviving primary
+output while retaining reconnect affinity. Output return may restore those
+views when their identities still match. Mirroring is outside the first
+protocol because it changes presentation, input, and resource semantics.
+
+This combines River's non-monolithic policy boundary with Niri's useful
+distinction between stable workspace identity and positional order. River's
+classic tag intersection remains a private Hagia policy rule, not a Sophia
+wire type.
 
 ### Application Rules Without Metadata Leakage
 
@@ -193,21 +212,29 @@ session tokens rather than executable paths and arguments supplied by policy.
 Capture and screenshots should use portal decisions. Output and input
 configuration should have their own authority and validation.
 
-## A Possible Progression
+## Implementation Progression
 
 ### 1. Geometry Proof
 
-Run Hagia as a blind external policy process. Support manage, relayout, remove,
-registered actions, placement, sizing, focus, and restart. Carry over a small
-selection of layouts, including one scrolling layout and one Janet layout.
+Create Hagia as a standalone repository and run it as a blind external policy
+process. Implement the public Sophia wire independently in Nim. Support
+complete snapshots and output projections, registered actions, placement,
+sizing, focus, removal, restart, one ordinary tiling layout, one scrolling
+layout, and one bounded Janet layout.
+
+The standalone repository's independent Nim envelope and record decoder passes
+Sophia's retained valid and malformed corpus. Its proof client also passes one
+authenticated complete snapshot/request/projection/outcome cycle through the
+canonical Engine reducer. This remains a dormant boundary proof; private
+tag/view policy is not yet part of a live session.
 
 Do not make metadata rules, pointer operations, shell overlays, or full Triad
 IPC prerequisites for this proof.
 
 ### 2. Daily-Driver Spatial Policy
 
-Develop the view model needed for dynamic tags and richer visibility. Add
-bounded pointer interactions, stable restoration, state requests such as
+Complete the tag-plus-view model, multi-output migration and return, bounded
+pointer interactions, stable private restoration, state requests such as
 fullscreen and minimize, and declarative transition targets.
 
 This phase should prove that the policy process may crash or restart without
@@ -245,15 +272,17 @@ Hagia is on the right side of the boundary if these statements remain true:
    vocabulary without making them Sophia concepts.
 5. No protocol grants a component data merely because an earlier monolithic
    window manager happened to possess it.
+6. A C client and the Rust X11 WM bridge can implement the same public wire
+   without importing Hagia, Nim, River, or Triad types.
 
 ## Relationship to Triad
 
-Triad remains the River window manager. Hagia is the Sophia-native descendant.
-The fork may begin with shared history, but its purpose is architectural
-freedom, not a permanent downstream patch set.
+Triad remains the River window manager. Hagia is a separate Sophia-native
+project with independent history, dependencies, releases, and compatibility
+policy.
 
 Good layout mathematics, reducer fixes, configuration improvements, and
-language-independent test cases may travel in either direction. River protocol
-work stays in Triad. Sophia authority and native-policy work stays in Hagia.
-When a useful change cannot cross that line cleanly, duplication is preferable
-to a false common abstraction.
+language-independent test cases may be deliberately ported in either direction.
+River protocol work stays in Triad. Sophia authority and native-policy work
+stays in Hagia. When a useful change cannot cross that line cleanly, duplication
+is preferable to a false common abstraction.

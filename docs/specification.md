@@ -33,6 +33,13 @@ choices. Panels, decorations, launchers, and other shell pieces are separate
 choices. None of them changes who owns input, pixels, protocol state, or
 presentation.
 
+Replaceable window managers and shells are public process interfaces, not
+in-tree implementation privileges. Their local wire contracts must be
+language-neutral and independently implementable. Hagia is the first planned
+native WM and shell family, not the definition of either interface. A stable
+policy-interface revision remains accepted by later Sophia releases unless an
+explicit security amendment records its retirement.
+
 A future Sophia-native compositor/Engine protocol, if product evidence calls
 for one, would be another bounded route to the same Engine mechanisms. It would
 not dictate one shell, layout, or application model.
@@ -72,6 +79,10 @@ violates one is not a Sophia design.
    column, a stacking convention, or a particular desktop shell. Current
    clients and profiles are evidence, not templates every later session must
    follow.
+8. **Replaceable policy clients.** A WM or shell uses a bounded, versioned,
+   language-neutral IPC interface and receives only its separately authorized
+   projection. Sharing a binary, repository, protocol library, or language
+   cannot create a private path into Engine or combine WM and shell authority.
 
 ## Hard Architectural Non-Goals
 

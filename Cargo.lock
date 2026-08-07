@@ -546,6 +546,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-policy-protocol-gen"
+version = "0.1.0"
+dependencies = [
+ "kdl",
+]
+
+[[package]]
 name = "sophia-portal"
 version = "0.1.0"
 dependencies = [
@@ -583,7 +590,9 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-engine",
  "sophia-protocol",
+ "sophia-wm-demo",
  "tracing-subscriber",
 ]
 
@@ -620,6 +629,7 @@ dependencies = [
 name = "sophia-x11-wm-bridge"
 version = "0.1.0"
 dependencies = [
+ "sophia-engine",
  "sophia-protocol",
  "sophia-x-authority",
  "tracing",

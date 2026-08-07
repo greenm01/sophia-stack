@@ -33,6 +33,9 @@ Normative documents describe both current and target contracts. They must label
 unimplemented target behavior explicitly.
 - [Sophia WM API](sophia-wm-api.md) defines the versioned, metadata-blind native
   policy contract shared by Sophia WMs and legacy compatibility profiles.
+- [Sophia Policy IPC](sophia-policy-ipc.md) defines the target language-neutral
+  framing, endpoint, versioning, transfer, and stability rules shared by public
+  WM and later shell interfaces.
 
 ## Architecture Rationale
 
@@ -68,8 +71,8 @@ override the ownership and trust rules in the normative architecture.
   work, and measurable exits.
 - [Active Research Log](research-log.md) contains current investigations and
   retained evidence.
-- [Project Hagia](project-hagia.md) is a design note for a future Sophia-native
-  window manager fork.
+- [Project Hagia](project-hagia.md) is the design note for a standalone
+  Sophia-native spatial-policy project.
 
 ## Historical Material
 

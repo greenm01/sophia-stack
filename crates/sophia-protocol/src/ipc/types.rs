@@ -20,6 +20,16 @@ pub enum IpcMessageKind {
     WmPolicyUpdate = 11,
     WmPolicyAck = 12,
     PortalClipboardPayload = 8,
+    WmV1ClientHello = 32,
+    WmV1ServerWelcome = 33,
+    WmV1SnapshotBegin = 34,
+    WmV1SnapshotChunk = 35,
+    WmV1SnapshotEnd = 36,
+    WmV1ProjectionRequest = 37,
+    WmV1ProjectionBegin = 38,
+    WmV1ProjectionChunk = 39,
+    WmV1ProjectionEnd = 40,
+    WmV1ProjectionOutcome = 41,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +57,12 @@ pub enum IpcCodecError {
         len: usize,
         max: usize,
     },
+    FieldTooLarge {
+        field: &'static str,
+        len: usize,
+        max: usize,
+    },
+    InvalidTransaction(u64),
     InvalidUtf8 {
         field: &'static str,
     },

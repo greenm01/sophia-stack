@@ -1,178 +1,214 @@
 # Sophia Window Manager API
 
-**Role:** normative policy-process boundary and compatibility contract.
+**Role:** normative spatial-policy boundary and compatibility contract.
+**Status:** API v7 is the current experimental implementation;
+`sophia_wm_v1` is the unimplemented public target.
 
-Sophia Engine has one window-management interface. A Sophia-native window
-manager speaks this API directly. A legacy X11 window manager speaks its normal
-policy protocol only to the private synthetic X server inside
-`sophia-x11-wm-bridge`; the bridge translates that behavior into this same API.
-Neither path is an alternate compositor or application authority.
+Sophia has one spatial-policy role. A native WM speaks that role directly. A
+classical X11 WM speaks only to the private synthetic X server inside
+`sophia-x11-wm-bridge`; the bridge translates its policy into the same Sophia
+interface. Neither path is an application authority or an alternate
+compositor.
+
+The language-neutral endpoint, framing, versioning, and stability rules are in
+[Sophia Policy IPC](sophia-policy-ipc.md). This document defines the policy
+facts allowed across that connection.
 
 ## Ownership
 
-Sophia Engine owns physical input, shortcut matching, committed workspace and
-focus state, scene validation, rendering, and scanout. The session owns process
-launch, logout, and protocol-specific polite close execution. A WM proposes
-bounded policy changes and never receives:
+Engine owns physical input, shortcut matching, authoritative visibility and
+focus, scene validation, atomic commit, rendering, and scanout. The session
+owns endpoint admission, process supervision, application launch, logout, and
+protocol-specific polite-close execution. A WM owns only its private policy
+model and proposes bounded changes.
 
-- physical input streams, grabs, or client sockets;
-- real XIDs, protocol object IDs, namespaces, titles, classes, PIDs, or paths;
-- client pixels, renderer handles, DRM objects, or portal payloads.
+A WM never receives:
 
-The Engine validates every proposal and preserves the last committed layout when
-a WM is absent, incompatible, timed out, malformed, or restarting.
+- physical input streams, grabs, client sockets, or protocol handles;
+- XIDs, namespaces, titles, classes, PIDs, paths, or credentials;
+- client pixels, renderer or DRM handles, or portal payloads; or
+- another WM's tags, views, trees, columns, stacks, or checkpoint.
 
-Chrome policy is an explicit capability. A Sophia-native WM may advertise it;
-the X11 compatibility bridge does not, so external WMs remain unaware of
-Engine chrome and use the compositor fallback from `config.kdl`.
+Engine preserves the last committed projection while policy is absent,
+incompatible, malformed, timed out, or restarting.
 
-## Policy Model
+## Form-Neutral Policy
 
-`WM` is the name of the version 6 policy slot. It is not a requirement that a
-client behave like a traditional window manager, nor does it make one layout
-family part of Sophia's architecture.
+“WM” names the spatial-policy slot, not a required desktop form. A client may
+tile, scroll, stack, float, combine those approaches, or implement a
+single-application session. Sophia packets carry opaque identities,
+capabilities, constraints, state, and geometry; they do not carry a tiling
+tree, workspace array, tag mask, scrolling column, or global stacking model.
 
-The API carries surface capabilities, state, constraints, and geometry. It
-does not carry a tiling tree, master-and-stack roles, scrolling columns, or a
-global stacking model. A policy client may keep any such structure privately
-and return the same bounded Sophia commands. Tiling clients such as xmonad and
-qtile, scrolling policies, freeform stacking policies, hybrid layouts, and
-single-application sessions therefore share one Engine boundary.
+Shell, metadata, portal, and session powers remain separate. A combined
+desktop may implement several clients, but it must connect to and be authorized
+for each interface independently.
 
-A larger environment uses other boundaries as well. An Xfce-style session, for
-example, would not turn its panel, decorations, settings, notifications, and
-session services into WM powers. Those parts belong to shell, metadata,
-portal, and session interfaces, while spatial policy remains blind.
+## Current Experimental API v7
 
-Version 6's workspace, registered-action, pointer-focus, and chrome-policy
-models are current, versioned contracts. They are not constitutional claims
-that every later policy model must have nine workspaces, keyboard-first
-control, or the same notion of visibility. A later version may broaden those
-mechanics without weakening the ownership rules above.
+The production tree currently implements `WM_API_VERSION = 7`. It uses the
+common Sophia frame version 1 and has these negotiated capabilities:
 
-## Version 6 Session Negotiation
+- registered opaque bindings;
+- nine Engine-owned workspaces and output/workspace activation;
+- opaque session actions; and
+- bounded Engine-rendered focus-ring and frame policy.
 
-WM API version 6 uses the existing Sophia IPC frame version. It does not change
-the framing or the protocol versions of brokers and authorities.
+The WM creates the present filesystem socket and Engine connects. `WmHello`
+carries a client-selected policy generation, capabilities, bindings, and
+chrome policy. `WmSessionDescriptor` returns workspaces, active output mappings,
+and session actions. Manage, relayout, remove, action, focus, and reduced
+pointer-gesture requests receive command lists containing workspace assignment,
+size, focus, placement, workspace activation, floating state, and session
+actions.
 
-After Engine connects to the supervised WM socket, the WM sends one bounded
-`WmHello` containing API version 6, a nonzero policy generation, capability
-bits, bounded focus-ring/frame chrome policy, and at most 256 binding
-registrations. Engine rejects unsupported capabilities, stale or zero
-generations, invalid chrome, duplicate chords or action IDs, invalid modifier
-masks, zero action IDs, excessive registrations, and Ctrl-Alt-Backspace.
-Engine replies with one `WmSessionDescriptor` containing the configured
-outputs, nine opaque workspace IDs by default, the active workspace for every
-output, and the opaque session actions available to that WM. No layout or
-action request is sent before this exchange succeeds.
+API v7 remains supported only during migration. It is not the first public
+interface, and its workspace ownership, client-hosted socket, and version
+number must not be frozen as ecosystem architecture.
 
-`WmPolicyUpdate` carries the same bounded binding and chrome policy with a
-strictly increasing generation. Engine rejects stale generations and invalid
-candidates, and defers an otherwise valid replacement while a shortcut or
-modifier remains held. `WmPolicyAck` reports applied, stale, or invalid
-outcomes. Engine owns chrome geometry, display-list insertion, damage, render,
-and scanout regardless of which accepted style is active. WM placements and
-size requests describe outer allocations. Engine reserves the maximum enabled
-chrome width and derives client-content geometry once, so neither a focus ring
-nor a frame consumes application pixels.
+## Public `sophia_wm_v1` Negotiation
 
-The supervised socket is multiplexed. Its I/O worker may receive a policy
-update while one Engine request is in flight, but it never mutates Engine
-state. It forwards the immutable candidate to the owner loop, which applies it
-only at a shortcut-idle boundary and returns the acknowledgement through the
-worker. The WM may buffer the single bounded in-flight request while awaiting
-that acknowledgement and services it only after the generation is applied.
-This ordering prevents a response planned with policy that Engine has not yet
-accepted. Transport failure requests a supervised WM restart while preserving
-the last committed layout.
+The Sophia session hosts an owner-only WM endpoint and admits one supervised
+client. `ClientHello` names `sophia_wm_v1`, the client's maximum revision, and
+requested capabilities. `ServerWelcome` selects a supported revision and
+capability subset and supplies a server-owned connection epoch plus effective
+limits.
 
-A restart repeats negotiation, restores the committed workspace/output mapping,
-then sends a complete relayout snapshot. Negotiation failure leaves applications
-and the last frame alive while supervisor policy decides whether to retry or
-remain degraded.
+Capabilities are orthogonal and fail closed. The initial set covers registered
+bindings, opaque session actions, reduced pointer interactions, and bounded
+Engine chrome policy. Unsupported bits reject negotiation. An operation is
+legal only when its selected revision and negotiated capability admit it.
 
-## Registered Actions
+Bindings contain one nonzero opaque action ID, normalized evdev keycode, and a
+bounded modifier mask. Engine rejects duplicate chords or action IDs, invalid
+modifiers, excessive registrations, and the emergency chord. Policy updates
+use a strictly increasing client configuration generation and apply only at a
+shortcut-idle boundary.
 
-A binding contains an opaque action ID, a normalized evdev keycode, and a bounded
-modifier mask. Engine matches the physical chord before client routing, emits one
-activation on the initial press, ignores repeat presses until release, consumes
-the matching release, and exposes only the action ID to the WM.
+## Complete Scene Snapshot
 
-`WmRequestKind::ActionActivated` carries the action ID plus current output,
-workspace, focused surface, and an immutable layout-node snapshot. The WM may
-respond with the same transactional layout commands used for manage and relayout
-requests.
+Engine sends one generation-tagged snapshot containing:
 
-`WmRequestKind::FocusRequested` carries only the hit-tested opaque surface,
-output, and workspace. It is emitted for an unmodified primary press on an
-unfocused visible surface. The WM may accept that request with
-`FocusSurface`; no raw motion, button payload, protocol handle, namespace, or
-application metadata crosses the policy boundary. Engine retains the press
-and following pointer events in a bounded ordered handoff until both Engine
-focus and frontend protocol focus have committed. Timeout or disappearance
-drops the handoff instead of routing it to stale focus.
+- up to 16 opaque outputs with their full and policy work rectangles;
+- up to 1,024 live manageable opaque surfaces;
+- current visible focus per output when one exists; and
+- advertised opaque session-action tokens.
 
-Session actions are advertised tokens. Application launches carry only a
-nonzero `SessionApplicationId`; the session maps that ID to its private
-executable registry. A WM may request an advertised token with an optional
-opaque target surface. It cannot supply an executable, arguments, environment,
-signal, or protocol handle. Initial configured tokens cover applications,
-close-focused, and logout. Application names and roles never cross into Engine
-or the WM.
+A surface record contains:
 
-## Workspace Model
+- `SurfaceId` and surface generation;
+- broad toplevel, dialog, utility, popup, or unknown kind;
+- reduced transient owner when valid;
+- movable, resizable, focusable, closable, and fullscreen capabilities;
+- frontend presentation requests and current committed state;
+- minimum, maximum, and exact-size constraints; and
+- current committed outer geometry.
 
-The initial session creates nine workspaces. Each output displays exactly one
-workspace and a workspace is visible on at most one output.
+The snapshot contains no workspace, tag, `ViewId`, application identity, or
+policy-private layout state. It is complete even when some surfaces are hidden.
+Chunking is a wire detail and cannot expose a partial snapshot to the policy
+reducer.
 
-Engine validates and atomically commits:
+Engine sends a fresh snapshot after a relevant scene or output change. One
+request may also carry an opaque action activation, reduced focus request, or
+bounded interaction request as its cause. The cause does not weaken snapshot
+validation.
 
-- activate a workspace on an output;
-- swap visible workspaces when the requested workspace is already on another
-  output;
-- assign or move a surface to a workspace;
-- optionally focus a valid visible surface;
-- configure and place the visible surfaces.
+## Projection Proposal
 
-Activating a hidden workspace replaces the target output's current workspace.
-Activating a workspace visible elsewhere swaps the two outputs' workspaces.
-Focus follows the target output and falls back to the first focusable visible
-surface when the prior focus is no longer visible.
+A response repeats the connection epoch, transaction ID, and base snapshot
+generation. It lists every output affected by the decision. Each listed output
+contains a complete ordered projection of its visible surfaces; list order is
+bottom-to-top stacking order.
+
+Each projected surface may specify:
+
+- requested client-content size;
+- committed outer geometry;
+- optional crop; and
+- protocol-neutral transform.
+
+The proposal may name one focused surface for each affected output. A surface
+that was visible on an affected output and is absent from its replacement is
+hidden. An unlisted output retains its committed projection. Moving one
+surface between outputs therefore requires both outputs in the same proposal.
+
+Engine validates the complete candidate before mutation:
+
+- connection epoch, transaction, snapshot, output, and surface generations
+  must be current;
+- every output and surface must exist and remain authorized;
+- counts, geometry, crop, transform, sizes, and constraints must be valid;
+- no output or surface may be duplicated;
+- a surface may appear on at most one output; and
+- focus must name a visible focusable surface.
+
+Success commits all affected outputs as one logical scene transaction.
+Committed, stale, invalid, and timed-out outcomes are explicit. A rejected
+proposal does not launch a process, change focus, partially change visibility,
+or alter the last committed projection.
+
+Physical outputs retire independently. The logical projection transaction
+feeds the existing visual-preparation and retirement model; it does not claim
+that separate displays flip at one simultaneous physical instant.
+
+## Actions And Interactions
+
+Engine matches registered physical chords before client routing, emits one
+activation on the initial press, suppresses repeat activations until release,
+and exposes only the action ID and reduced snapshot context. No rejected action
+falls through to application input.
+
+Session actions are advertised opaque tokens. A WM may request an advertised
+token with an optional opaque target. It cannot supply an executable, argument,
+environment, signal, or protocol handle.
+
+An unmodified primary press on an unfocused visible surface may produce a
+reduced focus request. Engine retains the ordered input handoff until Engine
+focus and frontend protocol focus settle on the same surface. Timeout or
+surface loss drops the handoff instead of routing it to stale focus.
+
+Move, resize, drag, and scrolling interactions remain Engine-owned grabs.
+Policy receives only the target, operation kind, and bounded geometry update
+and returns an ordinary projection proposal. It never receives raw motion,
+button payloads, device identity, or cursor authority.
+
+## Recovery And Replacement
+
+The connection epoch changes whenever the active policy process changes. Work
+decoded from an older connection cannot commit after replacement, even if it
+reuses a transaction or surface generation.
+
+Disconnect, malformed transfer, timeout, and crash discard incomplete work and
+leave applications and committed visuals alive. A replacement negotiates from
+the beginning and receives a complete current snapshot. Engine does not store
+or interpret the predecessor's workspaces, tags, views, or layout history.
+
+A WM may maintain a private session-local checkpoint. It must reconcile that
+checkpoint against the new snapshot and discard stale opaque IDs. Switching to
+a different WM never transfers that checkpoint.
 
 ## Legacy X11 WM Profiles
 
-The compatibility bridge is generic, while concrete legacy behavior is selected
-by a bounded profile. A profile declares bindings and maps action IDs to either
-synthetic policy input or a private Sophia action message.
+The compatibility bridge owns synthetic-X lifecycle and generic translation.
+A bounded profile supplies one named upstream WM/version, frozen configuration,
+captured private-X request surface, and action map. Xmonad is the first profile,
+not a universal compatibility claim.
 
-The bundled xmonad profile preserves familiar focus, layout, workspace,
-move-to-workspace, three opaque application slots, close, and logout chords.
-Policy-only actions become bounded synthetic events on xmonad's private display.
-Workspace and session actions use private bridge messages and emerge as normal
-Sophia WM commands. They never execute an application on the synthetic display.
-Pointer focus requests become a private synthetic primary-button gesture
-against xmonad's opaque synthetic window so its internal stack remains
-consistent; the bridge response still contains only a Sophia `SurfaceId`.
+Classical workspaces, layouts, and focus stacks remain inside the bridge and
+its supervised WM. The bridge converts the selected visible synthetic windows
+into the same complete Sophia projection used by a native policy client. It
+cannot expose real X Authority clients or properties, draw application pixels,
+receive raw input, execute arbitrary commands, or acquire metadata.
 
-The profile supplies generic empty ICCCM/EWMH property data. Metadata-dependent
-legacy rules are unsupported by design. Future policy tags require a separate
-explicit broker contract and cannot expose raw application metadata.
+Every admitted profile passes the same semantic conformance suite as a native
+client. Profiles that require real client metadata, global X server ownership,
+or fake-server drawing are rejected rather than widening Engine or the bridge.
 
-## Failure Rules
+## Stability Gate
 
-All vectors and strings are bounded before allocation. Unknown action IDs,
-unadvertised session tokens, stale surfaces, nonexistent workspaces, duplicate
-workspace visibility, invalid geometry, and transaction mismatch reject the
-whole proposal. No rejected action falls through to client input. No failed WM
-request launches a process, changes focus, or partially mutates workspace state.
-
-## Evidence Levels
-
-Milestone 7 requires identical direct-API and bridge evidence for negotiation,
-bindings, focus, layout, workspaces, session actions, restart, and last-layout
-preservation. The xmonad QEMU gate uses real client surfaces and virtio input;
-internal injection cannot satisfy it.
-
-Milestone 8 adds the normal session launcher, Firefox, the retained X11
-application mix, multi-output workspace behavior, and the unattended soak.
-Machine-specific DRM/input runs are optional compatibility diagnostics.
+`sophia_wm_v1` becomes stable only after the independently implemented Hagia
+client, the X11 WM bridge, and a C conformance client pass identical negotiation,
+snapshot, projection, action, focus, multi-output, rejection, timeout, restart,
+and last-layout tests. Stable revisions remain supported according to
+[Sophia Policy IPC](sophia-policy-ipc.md).

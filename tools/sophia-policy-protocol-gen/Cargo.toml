@@ -1,0 +1,14 @@
+[package]
+name = "sophia-policy-protocol-gen"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+kdl.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,144 @@
+protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 max-outputs=16 max-surfaces=1024 max-bindings=256 {
+    capability "bindings" bit=0
+    capability "actions" bit=1
+    capability "multi_output" bit=2
+
+    outcome "committed" value=1
+    outcome "rejected_stale" value=2
+    outcome "rejected_invalid" value=3
+    outcome "timed_out" value=4
+    outcome "disconnected" value=5
+
+    record "SnapshotOutput" transfer="snapshot" kind=1 max=16 {
+        field "output" type="u64" sample=1
+        field "generation" type="u64" sample=1
+        field "focus_index" type="u32" sample=3
+        field "focus_generation" type="u32" sample=1
+        field "x" type="i32" sample=0
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=1920
+        field "height" type="i32" sample=1080
+    }
+    record "SnapshotSurface" transfer="snapshot" kind=2 max=1024 {
+        field "surface_index" type="u32" sample=3
+        field "surface_generation" type="u32" sample=1
+        field "state_generation" type="u64" sample=7
+        field "current_output" type="u64" sample=1
+        field "capability_bits" type="u16" sample=31
+        field "reserved" type="u16" reserved=#true sample=0
+        field "transient_index" type="u32" sample=0
+        field "transient_generation" type="u32" sample=0
+        field "x" type="i32" sample=40
+        field "y" type="i32" sample=50
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=600
+        field "min_width" type="i32" sample=0
+        field "min_height" type="i32" sample=0
+        field "max_width" type="i32" sample=0
+        field "max_height" type="i32" sample=0
+    }
+    record "SnapshotBinding" transfer="snapshot" kind=3 max=256 {
+        field "action" type="u64" sample=5
+        field "keycode" type="u32" sample=33
+        field "modifier_bits" type="u32" sample=8
+    }
+    record "ProjectionOutput" transfer="projection" kind=1 max=16 {
+        field "output" type="u64" sample=1
+        field "placement_count" type="u32" sample=1
+        field "focus_index" type="u32" sample=3
+        field "focus_generation" type="u32" sample=1
+        field "reserved" type="u32" reserved=#true sample=0
+    }
+    record "ProjectionPlacement" transfer="projection" kind=2 max=1024 {
+        field "surface_index" type="u32" sample=3
+        field "surface_generation" type="u32" sample=1
+        field "state_generation" type="u64" sample=7
+        field "x" type="i32" sample=40
+        field "y" type="i32" sample=50
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=600
+        field "requested_width" type="i32" sample=800
+        field "requested_height" type="i32" sample=600
+        field "crop_x" type="i32" sample=0
+        field "crop_y" type="i32" sample=0
+        field "crop_width" type="i32" sample=0
+        field "crop_height" type="i32" sample=0
+        field "transform" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+
+    message "ClientHello" kind=32 direction="policy-to-session" transaction="zero" {
+        field "minimum_revision" type="u16" sample=1
+        field "maximum_revision" type="u16" sample=1
+        field "capabilities" type="u64" sample=7
+    }
+    message "ServerWelcome" kind=33 direction="session-to-policy" transaction="zero" {
+        field "selected_revision" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+        field "capabilities" type="u64" sample=7
+        field "connection_epoch" type="u64" sample=9
+        field "max_outputs" type="u16" sample=16
+        field "max_bindings" type="u16" sample=256
+        field "max_surfaces" type="u32" sample=1024
+        field "max_chunk_bytes" type="u32" sample=65520
+    }
+    message "SnapshotBegin" kind=34 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "scene_generation" type="u64" sample=41
+        field "chunk_count" type="u16" sample=2
+        field "output_count" type="u16" sample=2
+        field "surface_count" type="u32" sample=3
+        field "binding_count" type="u16" sample=4
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "SnapshotChunk" kind=35 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "ordinal" type="u16" sample=0
+        field "record_kind" type="u16" sample=1
+        field "item_count" type="u32" sample=2
+        field "data" type="bytes" max=65520 sample="00010203"
+    }
+    message "SnapshotEnd" kind=36 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "scene_generation" type="u64" sample=41
+        field "chunk_count" type="u16" sample=2
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "ProjectionRequest" kind=37 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "scene_generation" type="u64" sample=41
+        field "affected_output_count" type="u16" sample=2
+        field "reserved" type="u16" reserved=#true sample=0
+        field "affected_outputs" type="bytes" max=128 sample="01000000000000000200000000000000"
+    }
+    message "ProjectionBegin" kind=38 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "base_generation" type="u64" sample=41
+        field "chunk_count" type="u16" sample=2
+        field "output_count" type="u16" sample=2
+        field "placement_count" type="u32" sample=3
+    }
+    message "ProjectionChunk" kind=39 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "ordinal" type="u16" sample=0
+        field "record_kind" type="u16" sample=1
+        field "item_count" type="u32" sample=2
+        field "data" type="bytes" max=65520 sample="10111213"
+    }
+    message "ProjectionEnd" kind=40 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "base_generation" type="u64" sample=41
+        field "chunk_count" type="u16" sample=2
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "ProjectionOutcome" kind=41 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "scene_generation" type="u64" sample=42
+        field "outcome" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+}

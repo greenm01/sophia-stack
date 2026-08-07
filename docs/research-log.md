@@ -3,6 +3,187 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: The public policy protocol is the extension point
+
+Hagia is Sophia's first planned native WM, not a privileged Engine component or
+the definition of Sophia policy. Sophia will publish independently
+implementable, role-specific local IPC so other WMs and shells may be written
+in any language. The first native proof, the Rust X11 WM bridge, and an
+independently compiled C client must use the same wire and semantic conformance
+suite.
+
+River supplies the decisive architectural precedent: its compositor and WM are
+separate processes joined by a stable protocol, which permits replacement and
+hot-swap without moving rendering into policy. Sophia does not adopt River's
+Wayland runtime. Unlike River, Sophia has retired its production Wayland
+frontend and already has opaque generational IDs, bounded binary framing, and
+Engine transactions. Importing a Wayland server solely for WM IPC would add a
+second object/runtime model without improving Sophia's narrower blind-policy
+boundary.
+
+The wire remains the dependency floor. Clients need no Sophia library,
+generator, Rust crate, Wayland stack, CBOR codec, or schema runtime. A narrow
+checked-in KDL description will generate retained Rust and C99 codecs,
+normative tables, and golden vectors; normal builds do not run the generator.
+CBOR remains inappropriate for this authority path because its flexible maps,
+duplicate keys, nesting, tags, and multiple equivalent encodings would require
+a Sophia-specific restricted profile while buying little for fixed bounded
+projection records.
+
+The session, not the policy process, will host owner-only role sockets. This
+aligns endpoint admission and hot-swap with session authority. Interface
+versions are independent of the common frame version. The current Rust WM API
+v7 is experimental; the first stable public family will be
+`sophia_wm_v1` after Hagia and the bridge pass the same projection and recovery
+suite. Once published, a stable revision remains accepted unless an explicit
+security amendment retires it. Old revisions normalize at the IPC edge so
+Engine retains one current internal projection model.
+
+Complete scene snapshots and complete affected-output projections are the
+semantic baseline. Strict begin/chunk/end transfer permits those records to
+cross the existing 64-KiB frame boundary without exposing partial state.
+Engine validates and atomically commits the affected logical outputs, preserves
+the last projection on every failure, and permits a surface on at most one
+output. Hagia privately owns nonempty tag sets, stable `ViewId` values, ordered
+per-output views, focus history, reconnect affinity, and a session-local
+checkpoint. Engine stores none of them. Mirroring remains a later separate
+capability.
+
+Two bounded TLA+ models precede production changes. `PolicyConnection` checks
+negotiation, capabilities, transfer assembly, connection epochs, timeout,
+disconnect, and replacement. `PolicyProjection` checks snapshots, stale
+proposals, validation, multi-output atomicity, focus, removal, and
+last-committed recovery. Wire offsets remain codec/golden-vector work rather
+than TLA+ state.
+
+The initial model checks exposed two protocol-level ambiguities before Rust
+implementation. A transfer keyed only by client and connection epoch collided
+with a later transaction on the same connection, so admitted work is identified
+by client, epoch, and transaction, and a transaction cannot be reused within an
+epoch. Separately, accepting any proposal whose declared base generation
+equaled the current scene let a client guess a future generation and become
+accidentally valid after a scene change. The session must issue the request for
+the current generation, and a proposal must answer that exact outstanding
+request. With those requirements, `PolicyConnection` passes 2,177 distinct
+states to depth 23 and `PolicyProjection` passes 524,396 distinct states to
+depth 18, including safety and liveness checks.
+
+The first retained wire slice now derives ten draft handshake and transfer
+message layouts from `protocol/sophia-wm-v1.kdl`. The generator emits the Rust
+codec, an allocation-free C99 codec, normative byte tables, and shared valid
+and malformed frame corpora. Generation is an explicit developer operation;
+the ordinary build consumes only retained outputs. One check rejects generated
+drift, round-trips every golden frame through both language implementations,
+and requires the same fail-closed result for truncation, bad magic or version,
+unknown kind, excessive payload, reserved data, trailing data, and invalid
+transaction identity. Transfer ordering and semantic record validation remain
+owned by the next bounded-assembler slice rather than the scalar codec.
+
+The next draft slice implements that boundary without changing the installed
+API v7 session. A Linux session-owned endpoint creates a new mode-0700 role
+directory and mode-0600 WM socket, authenticates the exact supervised UID and
+PID through peer credentials, and admits one exclusive client. Its connection
+reducer negotiates one epoch, prohibits transaction reuse, accepts one bounded
+transfer at a time, verifies ordinals and declared category totals, caps total
+assembly memory, and discards complete queued work if its epoch disconnects
+before Engine intake. Snapshot and projection assemblers share generated
+fixed-width semantic records; all scalar and record bytes still round-trip
+through the same retained Rust and allocation-free C99 artifacts.
+
+Engine now has a dormant canonical projection reducer. It validates complete
+scene snapshots, exact server-issued request identity, live surface
+generations, constraints, geometry, output membership, global surface
+uniqueness, and visible focus before replacing all affected outputs in one
+mutation. Rejection, timeout, and disconnect preserve committed layout; scene
+removal prunes only dead surfaces and invalid focus. A focused adapter converts
+an API v7 workspace plan into this canonical shape, but production v7 remains
+the installed owner until Milestone 12 promotion permits migration.
+Deterministic tests preserve both formal counterexamples and a real Unix-socket
+handshake-to-semantic-projection path.
+
+The first ordinary client conversion exposed two missing facts in the draft
+wire. A projection request named only its affected-output count, so an
+independent policy could not know which complete outputs it had to replace. A
+snapshot surface named current geometry but not its committed output, and no
+snapshot record named current focus. A new policy therefore could not
+distinguish hidden surfaces or reconstruct the active output state. The schema
+now carries the bounded affected-output ID vector, an optional current output
+(`0` means hidden), and optional per-output focus; regenerated Rust, C,
+documentation, and golden artifacts agree on those fields.
+
+Three non-production clients now exercise the corrected boundary. The dormant
+Rust reference WM completes an authenticated snapshot/request/projection
+cycle. The generic X11 bridge translates a real synthetic-X layout response
+through API v7 and then the canonical reducer. A standalone C99 client assembles
+the strict snapshot, tiles two opaque surfaces, and has its proposal accepted
+by that reducer while linking only the retained C codec and libc. The protocol
+gate retains the scalar malformed corpus and adds this live cross-language
+cycle.
+
+An initial uncommitted Triad clone was discarded when the project boundary was
+clarified. Hagia now starts with independent history, a Nim-only manifest, and
+no Triad, River, or Wayland source, dependency, binary, configuration, or build
+scaffolding. Triad remains a reference for deliberate ports rather than
+Hagia's base. Hagia's independent Nim decoder passes Sophia's valid and
+malformed corpus, and its proof client completes strict snapshot assembly,
+projection encoding, and committed outcome through the authenticated socket
+and canonical reducer. Its private tag/view model remains incomplete, and none
+of these draft paths changes the installed Milestone 12 candidate.
+
+## 2026-08-07: One WM API serves legacy profiles and native Sophia policy
+
+Xmonad is Sophia's first mature classical-X11 compatibility profile and the
+current daily-driver promotion vehicle. It is not Sophia's architectural
+window manager. Engine exposes one blind, versioned WM policy API. A native
+Sophia policy process speaks that API directly; a classical X11 WM speaks only
+to the compatibility bridge's private synthetic X server, whose bounded
+profile translates policy into the same API. Future i3, dwm, qtile, or other
+profiles must each retain their own request and action evidence without seeing
+real X Authority clients, metadata, pixels, or physical input.
+
+The immediate xmonad configuration work therefore remains profile-local. The
+installed session will compile and package a fixed xmonad executable rather
+than loading mutable home configuration, package the exact xmobar executable,
+and verify both digests. Geometry-only layouts may enter after deterministic
+bridge coverage. Title-aware tab decorations and metadata rules may not widen
+the fake X server or leak into Engine. The current Void host already has the
+required configuration build and runtime dependencies; dependency installation
+is closed.
+
+Hagia remains the intended first demanding Sophia-native policy and shell
+family. Its spatial-policy process will own private tags, layout structures,
+focus policy, scrolling, and Janet layouts while remaining blind. An optional
+`hagia-shell` will own authorized visible furniture through a separate shell
+projection. Engine retains hit-testing, input, animation, rendering, and
+scanout; session services, portals, and trusted classification brokers retain
+launch, lock, capture, transfer, and metadata authority. The direct and legacy
+paths must share semantic conformance tests so compatibility work strengthens
+rather than forks the WM boundary.
+
+The same roadmap review exposed an incomplete X Authority TrueColor contract.
+Sophia correctly advertises 24-bit XRGB and 32-bit ARGB TrueColor visuals and
+maps arbitrary `AllocColor` components into the advertised masks. However,
+`QueryColors` currently reports every nonzero pixel as white, and
+`AllocNamedColor` treats every name except black as white. Completing mask
+round-trips, bounded retained-client color names, validation and error paths,
+and a non-gray physical pixel proof belongs in X Authority. Engine must continue
+to receive only normalized XRGB8888/ARGB8888 pixels and opacity facts.
+
+## 2026-08-07: The active roadmap contains decisions, not evidence transcripts
+
+`todo.md` had grown to 1,474 lines, including 94 checked items and long causal
+transcripts from completed Milestones 9 and 10. Several unchecked lines were
+stale duplicates of gates already closed by the Milestone 9 promotion record.
+That shape obscured the actual promotion boundary and made old diagnostic work
+look active.
+
+The active roadmap now retains only open work, current constraints, ordering,
+and measurable exit gates. Completed Milestones 9 through 11 and the completed
+Milestone 12 precursor gates live in `docs/roadmap-history.md`; causal evidence
+stays in this log. Conditional rendering investigations remain explicitly
+post-promotion or Milestone 13 work so they cannot silently reopen completed
+daily-driver gates.
+
 ## 2026-08-06: Lifecycle repetition is a runner, not an operator ritual
 
 The first Milestone 12 instruction asked the operator to select the ordinary

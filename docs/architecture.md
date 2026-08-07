@@ -802,10 +802,14 @@ credentials, titles, PIDs, paths, payloads, icons, or buffer contents.
 
 The native-X foundations, production session loop, paired software/GPU gates,
 namespace and portal reference flows, xmonad policy bridge, and Firefox
-daily-driver soak are complete. The next milestone is selected from measured
-native-X daily-driver gaps. New X11 compatibility remains probe-driven; future
-application protocols are outside the active roadmap. XLibre and Wayland stay
-archived unless a later specification decision admits a bounded provider.
+daily-driver workload are complete. The current immutable-candidate promotion
+finishes before runtime policy-protocol changes. The next architectural
+milestone then models and proves the public spatial-policy interface with both
+Hagia and the X11 WM bridge before native graphics optimization resumes.
+
+New X11 compatibility remains probe-driven; future application protocols are
+outside the active roadmap. XLibre and Wayland stay archived unless a later
+specification decision admits a bounded provider.
 
 ## Reference Boundaries
 
@@ -818,9 +822,10 @@ archived unless a later specification decision admits a bounded provider.
 - macOS WindowServer/Core Animation: transaction-first presentation and
   fail-closed visual integrity.
 
-The WM policy boundary is versioned independently at Sophia WM API v4. Engine
-owns physical shortcut matching, workspace visibility, transaction validation,
-and opaque session actions. A WM registers bounded keycode/modifier chords to
-opaque action IDs during startup and receives only opaque layout nodes and
-action activations. Native Sophia WMs consume this contract directly; legacy
-X11 WMs require the metadata-blind compatibility bridge and a bounded profile.
+The current Rust WM API v7 is an experimental implementation contract. The
+first durable public boundary will be the independently versioned
+`sophia_wm_v1` interface described in
+[Sophia Policy IPC](sophia-policy-ipc.md). Engine owns physical shortcut
+matching, projection validation, visibility, focus authority, and opaque
+session actions. Native Sophia WMs consume this contract directly; legacy X11
+WMs require the metadata-blind compatibility bridge and a bounded profile.

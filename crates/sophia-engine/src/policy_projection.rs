@@ -1,0 +1,622 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use sophia_protocol::{
+    OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyOutputProjection,
+    PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest,
+    PolicySceneSnapshot, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
+    Size, SurfaceId, Transform,
+};
+
+use crate::WmPolicyPlan;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyProjectionError {
+    InvalidSceneGeneration,
+    InvalidOutput,
+    DuplicateOutput,
+    InvalidOutputGeometry,
+    ExcessiveOutputs,
+    InvalidSurface,
+    DuplicateSurface,
+    InvalidSurfaceGeometry,
+    InvalidSurfaceConstraints,
+    InvalidTransientOwner,
+    ExcessiveSurfaces,
+    ConnectionAlreadyActive,
+    InvalidConnectionEpoch,
+    NoActiveConnection,
+    RequestAlreadyPending,
+    NoAffectedOutputs,
+    UnknownAffectedOutput,
+    RequestIdExhausted,
+    V7AdapterState,
+}
+
+impl core::fmt::Display for PolicyProjectionError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for PolicyProjectionError {}
+
+/// Engine-owned canonical projection state.
+///
+/// Validation constructs a complete candidate map before replacing committed
+/// state. Rejection, timeout, and policy loss therefore cannot expose a partial
+/// multi-output update.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyProjectionReducer {
+    scene: PolicySceneSnapshot,
+    committed: BTreeMap<OutputId, PolicyOutputProjection>,
+    active_epoch: Option<u64>,
+    greatest_epoch: u64,
+    next_request_id: u64,
+    outstanding: Option<PolicyProjectionRequest>,
+    commit_serial: u64,
+}
+
+impl PolicyProjectionReducer {
+    pub fn new(scene: PolicySceneSnapshot) -> Result<Self, PolicyProjectionError> {
+        validate_scene(&scene)?;
+        let committed = committed_from_scene(&scene);
+        Ok(Self {
+            scene,
+            committed,
+            active_epoch: None,
+            greatest_epoch: 0,
+            next_request_id: 1,
+            outstanding: None,
+            commit_serial: 0,
+        })
+    }
+
+    pub fn connect(&mut self, connection_epoch: u64) -> Result<(), PolicyProjectionError> {
+        if self.active_epoch.is_some() {
+            return Err(PolicyProjectionError::ConnectionAlreadyActive);
+        }
+        if connection_epoch == 0 || connection_epoch <= self.greatest_epoch {
+            return Err(PolicyProjectionError::InvalidConnectionEpoch);
+        }
+        self.active_epoch = Some(connection_epoch);
+        self.greatest_epoch = connection_epoch;
+        Ok(())
+    }
+
+    pub fn disconnect(&mut self, connection_epoch: u64) -> PolicyProjectionOutcome {
+        if self.active_epoch != Some(connection_epoch) {
+            return PolicyProjectionOutcome::Disconnected;
+        }
+        self.active_epoch = None;
+        self.outstanding = None;
+        PolicyProjectionOutcome::Disconnected
+    }
+
+    pub fn issue_request(
+        &mut self,
+        affected_outputs: Vec<OutputId>,
+    ) -> Result<PolicyProjectionRequest, PolicyProjectionError> {
+        let Some(connection_epoch) = self.active_epoch else {
+            return Err(PolicyProjectionError::NoActiveConnection);
+        };
+        if self.outstanding.is_some() {
+            return Err(PolicyProjectionError::RequestAlreadyPending);
+        }
+        if affected_outputs.is_empty() {
+            return Err(PolicyProjectionError::NoAffectedOutputs);
+        }
+        let live_outputs = self
+            .scene
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<BTreeSet<_>>();
+        let unique = affected_outputs.iter().copied().collect::<BTreeSet<_>>();
+        if unique.len() != affected_outputs.len() {
+            return Err(PolicyProjectionError::DuplicateOutput);
+        }
+        if !unique.is_subset(&live_outputs) {
+            return Err(PolicyProjectionError::UnknownAffectedOutput);
+        }
+        let request_id = self.next_request_id;
+        self.next_request_id = self
+            .next_request_id
+            .checked_add(1)
+            .ok_or(PolicyProjectionError::RequestIdExhausted)?;
+        let request = PolicyProjectionRequest {
+            connection_epoch,
+            request_id,
+            scene_generation: self.scene.generation,
+            affected_outputs,
+        };
+        self.outstanding = Some(request.clone());
+        Ok(request)
+    }
+
+    pub fn apply_proposal(
+        &mut self,
+        proposal: &PolicyProjectionProposal,
+    ) -> PolicyProjectionOutcome {
+        let Some(request) = self.outstanding.take() else {
+            return if self.active_epoch == Some(proposal.connection_epoch) {
+                PolicyProjectionOutcome::RejectedStale
+            } else {
+                PolicyProjectionOutcome::Disconnected
+            };
+        };
+        if self.active_epoch != Some(proposal.connection_epoch)
+            || proposal.connection_epoch != request.connection_epoch
+        {
+            return PolicyProjectionOutcome::Disconnected;
+        }
+        if proposal.request_id != request.request_id
+            || proposal.base_generation != request.scene_generation
+            || request.scene_generation != self.scene.generation
+        {
+            return PolicyProjectionOutcome::RejectedStale;
+        }
+        if !proposal.transaction.is_valid() {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        }
+        let Ok(candidate) = self.validated_candidate(&request, proposal) else {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        };
+        self.committed = candidate;
+        sync_scene_projection(&mut self.scene, &self.committed);
+        self.commit_serial = self.commit_serial.saturating_add(1);
+        PolicyProjectionOutcome::Committed
+    }
+
+    pub fn timeout(&mut self, request_id: u64) -> PolicyProjectionOutcome {
+        if self
+            .outstanding
+            .as_ref()
+            .is_some_and(|request| request.request_id == request_id)
+        {
+            self.outstanding = None;
+            PolicyProjectionOutcome::TimedOut
+        } else {
+            PolicyProjectionOutcome::RejectedStale
+        }
+    }
+
+    pub fn observe_scene(
+        &mut self,
+        scene: PolicySceneSnapshot,
+    ) -> Result<(), PolicyProjectionError> {
+        validate_scene(&scene)?;
+        if scene.generation <= self.scene.generation {
+            return Err(PolicyProjectionError::InvalidSceneGeneration);
+        }
+        let surfaces = scene
+            .surfaces
+            .iter()
+            .map(|surface| (surface.surface, surface))
+            .collect::<BTreeMap<_, _>>();
+        let output_ids = scene
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<BTreeSet<_>>();
+        let mut committed = BTreeMap::new();
+        for output in &scene.outputs {
+            let mut projection =
+                self.committed
+                    .get(&output.output)
+                    .cloned()
+                    .unwrap_or(PolicyOutputProjection {
+                        output: output.output,
+                        placements: Vec::new(),
+                        focus: output.focus,
+                    });
+            projection.placements.retain_mut(|placement| {
+                let Some(surface) = surfaces.get(&placement.surface) else {
+                    return false;
+                };
+                placement.surface_generation = surface.generation;
+                true
+            });
+            let visible = projection
+                .placements
+                .iter()
+                .map(|placement| placement.surface)
+                .collect::<BTreeSet<_>>();
+            if projection.focus.is_some_and(|focus| {
+                !visible.contains(&focus)
+                    || !surfaces
+                        .get(&focus)
+                        .is_some_and(|surface| surface.capabilities.focusable)
+            }) {
+                projection.focus = None;
+            }
+            committed.insert(output.output, projection);
+        }
+        let mut placed = committed
+            .values()
+            .flat_map(|projection| projection.placements.iter())
+            .map(|placement| placement.surface)
+            .collect::<BTreeSet<_>>();
+        for surface in &scene.surfaces {
+            let Some(output) = surface.current_output else {
+                continue;
+            };
+            if placed.insert(surface.surface) {
+                committed
+                    .get_mut(&output)
+                    .expect("validated current output exists")
+                    .placements
+                    .push(placement_from_snapshot(surface));
+            }
+        }
+        debug_assert_eq!(
+            committed.keys().copied().collect::<BTreeSet<_>>(),
+            output_ids
+        );
+        self.scene = scene;
+        self.committed = committed;
+        sync_scene_projection(&mut self.scene, &self.committed);
+        Ok(())
+    }
+
+    pub const fn scene(&self) -> &PolicySceneSnapshot {
+        &self.scene
+    }
+
+    pub fn committed(&self) -> Vec<PolicyOutputProjection> {
+        self.committed.values().cloned().collect()
+    }
+
+    pub const fn outstanding(&self) -> Option<&PolicyProjectionRequest> {
+        self.outstanding.as_ref()
+    }
+
+    pub const fn commit_serial(&self) -> u64 {
+        self.commit_serial
+    }
+
+    fn validated_candidate(
+        &self,
+        request: &PolicyProjectionRequest,
+        proposal: &PolicyProjectionProposal,
+    ) -> Result<BTreeMap<OutputId, PolicyOutputProjection>, PolicyProjectionError> {
+        let affected = request
+            .affected_outputs
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let proposed = proposal
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<BTreeSet<_>>();
+        if proposed.len() != proposal.outputs.len() || proposed != affected {
+            return Err(PolicyProjectionError::DuplicateOutput);
+        }
+        let live_outputs = self
+            .scene
+            .outputs
+            .iter()
+            .map(|output| (output.output, output.bounds))
+            .collect::<BTreeMap<_, _>>();
+        let live_surfaces = self
+            .scene
+            .surfaces
+            .iter()
+            .map(|surface| (surface.surface, surface))
+            .collect::<BTreeMap<_, _>>();
+        let mut candidate = self.committed.clone();
+        for output in &proposal.outputs {
+            let bounds = live_outputs
+                .get(&output.output)
+                .copied()
+                .ok_or(PolicyProjectionError::InvalidOutput)?;
+            validate_output_projection(output, bounds, &live_surfaces)?;
+            candidate.insert(output.output, output.clone());
+        }
+        let mut surfaces = BTreeSet::new();
+        let mut count = 0usize;
+        for output in candidate.values() {
+            count = count
+                .checked_add(output.placements.len())
+                .ok_or(PolicyProjectionError::ExcessiveSurfaces)?;
+            if count > POLICY_MAX_SURFACES {
+                return Err(PolicyProjectionError::ExcessiveSurfaces);
+            }
+            for placement in &output.placements {
+                if !surfaces.insert(placement.surface) {
+                    return Err(PolicyProjectionError::DuplicateSurface);
+                }
+            }
+        }
+        Ok(candidate)
+    }
+}
+
+/// Adapts one API v7 candidate through the canonical output-projection shape.
+/// The adapter owns workspace interpretation; the reducer never stores it.
+pub fn adapt_v7_policy_plan(
+    request: &PolicyProjectionRequest,
+    scene: &PolicySceneSnapshot,
+    plan: &WmPolicyPlan,
+) -> Result<PolicyProjectionProposal, PolicyProjectionError> {
+    let surfaces = scene
+        .surfaces
+        .iter()
+        .map(|surface| (surface.surface, surface))
+        .collect::<BTreeMap<_, _>>();
+    let rendered = plan
+        .layout
+        .render_positions
+        .iter()
+        .map(|placement| (placement.surface, placement))
+        .collect::<BTreeMap<_, _>>();
+    let requested_sizes = plan
+        .layout
+        .requested_sizes
+        .iter()
+        .map(|request| (request.surface, request.size))
+        .collect::<BTreeMap<_, _>>();
+    let mut outputs = Vec::with_capacity(request.affected_outputs.len());
+    for output in &request.affected_outputs {
+        let output_state = plan
+            .candidate
+            .output(*output)
+            .ok_or(PolicyProjectionError::V7AdapterState)?;
+        let visible = plan
+            .candidate
+            .visible_surfaces(*output)
+            .map_err(|_| PolicyProjectionError::V7AdapterState)?;
+        let mut placements = visible
+            .into_iter()
+            .map(|surface| {
+                let snapshot = surfaces
+                    .get(&surface)
+                    .ok_or(PolicyProjectionError::V7AdapterState)?;
+                let rendered = rendered.get(&surface).copied();
+                Ok(PolicySurfacePlacement {
+                    surface,
+                    surface_generation: snapshot.generation,
+                    geometry: rendered.map_or(snapshot.geometry, |placement| placement.geometry),
+                    requested_size: requested_sizes.get(&surface).copied(),
+                    crop: rendered.and_then(|placement| placement.crop),
+                    transform: match rendered.map(|placement| placement.transform) {
+                        None | Some(Transform::IDENTITY) => PolicyTransform::Identity,
+                        Some(_) => return Err(PolicyProjectionError::V7AdapterState),
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, PolicyProjectionError>>()?;
+        placements.sort_by_key(|placement| {
+            rendered
+                .get(&placement.surface)
+                .map_or(0, |rendered| rendered.z_index)
+        });
+        outputs.push(PolicyOutputProjection {
+            output: *output,
+            placements,
+            focus: output_state.focus,
+        });
+    }
+    Ok(PolicyProjectionProposal {
+        transaction: plan.transaction,
+        connection_epoch: request.connection_epoch,
+        request_id: request.request_id,
+        base_generation: request.scene_generation,
+        outputs,
+    })
+}
+
+fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyProjectionError> {
+    if scene.generation == 0 {
+        return Err(PolicyProjectionError::InvalidSceneGeneration);
+    }
+    if scene.outputs.is_empty() {
+        return Err(PolicyProjectionError::InvalidOutput);
+    }
+    if scene.outputs.len() > POLICY_MAX_OUTPUTS {
+        return Err(PolicyProjectionError::ExcessiveOutputs);
+    }
+    let mut outputs = BTreeSet::new();
+    for output in &scene.outputs {
+        if !output.output.is_valid() || output.generation == 0 {
+            return Err(PolicyProjectionError::InvalidOutput);
+        }
+        if !outputs.insert(output.output) {
+            return Err(PolicyProjectionError::DuplicateOutput);
+        }
+        if output.bounds.is_empty() {
+            return Err(PolicyProjectionError::InvalidOutputGeometry);
+        }
+    }
+    if scene.surfaces.len() > POLICY_MAX_SURFACES {
+        return Err(PolicyProjectionError::ExcessiveSurfaces);
+    }
+    let mut surfaces = BTreeSet::new();
+    for surface in &scene.surfaces {
+        if !surface.surface.is_valid() || surface.generation == 0 {
+            return Err(PolicyProjectionError::InvalidSurface);
+        }
+        if surface
+            .current_output
+            .is_some_and(|output| !outputs.contains(&output))
+        {
+            return Err(PolicyProjectionError::InvalidOutput);
+        }
+        if !surfaces.insert(surface.surface) {
+            return Err(PolicyProjectionError::DuplicateSurface);
+        }
+        if surface.geometry.is_empty() {
+            return Err(PolicyProjectionError::InvalidSurfaceGeometry);
+        }
+        validate_constraints(surface)?;
+    }
+    for surface in &scene.surfaces {
+        if surface
+            .transient_owner
+            .is_some_and(|owner| owner == surface.surface || !surfaces.contains(&owner))
+        {
+            return Err(PolicyProjectionError::InvalidTransientOwner);
+        }
+    }
+    let surface_map = scene
+        .surfaces
+        .iter()
+        .map(|surface| (surface.surface, surface))
+        .collect::<BTreeMap<_, _>>();
+    let committed = committed_from_scene(scene);
+    for output in &scene.outputs {
+        validate_output_projection(
+            committed
+                .get(&output.output)
+                .expect("current projection has every validated output"),
+            output.bounds,
+            &surface_map,
+        )?;
+    }
+    Ok(())
+}
+
+fn committed_from_scene(scene: &PolicySceneSnapshot) -> BTreeMap<OutputId, PolicyOutputProjection> {
+    let mut committed = scene
+        .outputs
+        .iter()
+        .map(|output| {
+            (
+                output.output,
+                PolicyOutputProjection {
+                    output: output.output,
+                    placements: Vec::new(),
+                    focus: output.focus,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for surface in &scene.surfaces {
+        if let Some(output) = surface.current_output {
+            committed
+                .get_mut(&output)
+                .expect("validated current output exists")
+                .placements
+                .push(placement_from_snapshot(surface));
+        }
+    }
+    committed
+}
+
+fn placement_from_snapshot(surface: &PolicySurfaceSnapshot) -> PolicySurfacePlacement {
+    PolicySurfacePlacement {
+        surface: surface.surface,
+        surface_generation: surface.generation,
+        geometry: surface.geometry,
+        requested_size: None,
+        crop: None,
+        transform: PolicyTransform::Identity,
+    }
+}
+
+fn sync_scene_projection(
+    scene: &mut PolicySceneSnapshot,
+    committed: &BTreeMap<OutputId, PolicyOutputProjection>,
+) {
+    let focus = committed
+        .iter()
+        .map(|(output, projection)| (*output, projection.focus))
+        .collect::<BTreeMap<_, _>>();
+    let placements = committed
+        .iter()
+        .flat_map(|(output, projection)| {
+            projection
+                .placements
+                .iter()
+                .map(|placement| (placement.surface, (*output, placement.geometry)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for output in &mut scene.outputs {
+        output.focus = focus.get(&output.output).copied().flatten();
+    }
+    for surface in &mut scene.surfaces {
+        let committed = placements.get(&surface.surface).copied();
+        surface.current_output = committed.map(|(output, _)| output);
+        if let Some((_, geometry)) = committed {
+            surface.geometry = geometry;
+        }
+    }
+}
+
+fn validate_constraints(surface: &PolicySurfaceSnapshot) -> Result<(), PolicyProjectionError> {
+    let valid_size = |size: Size| size.width > 0 && size.height > 0;
+    if surface
+        .constraints
+        .min_size
+        .is_some_and(|size| !valid_size(size))
+        || surface
+            .constraints
+            .max_size
+            .is_some_and(|size| !valid_size(size))
+    {
+        return Err(PolicyProjectionError::InvalidSurfaceConstraints);
+    }
+    if let (Some(minimum), Some(maximum)) =
+        (surface.constraints.min_size, surface.constraints.max_size)
+        && (minimum.width > maximum.width || minimum.height > maximum.height)
+    {
+        return Err(PolicyProjectionError::InvalidSurfaceConstraints);
+    }
+    Ok(())
+}
+
+fn validate_output_projection(
+    projection: &PolicyOutputProjection,
+    bounds: Rect,
+    surfaces: &BTreeMap<SurfaceId, &PolicySurfaceSnapshot>,
+) -> Result<(), PolicyProjectionError> {
+    let mut visible = BTreeSet::new();
+    for placement in &projection.placements {
+        if !visible.insert(placement.surface) {
+            return Err(PolicyProjectionError::DuplicateSurface);
+        }
+        let surface = surfaces
+            .get(&placement.surface)
+            .ok_or(PolicyProjectionError::InvalidSurface)?;
+        if placement.surface_generation != surface.generation {
+            return Err(PolicyProjectionError::InvalidSurface);
+        }
+        if placement.geometry.is_empty()
+            || !rect_contains(bounds, placement.geometry)
+            || placement.crop.is_some_and(Rect::is_empty)
+        {
+            return Err(PolicyProjectionError::InvalidSurfaceGeometry);
+        }
+        let requested = placement.requested_size.unwrap_or(Size {
+            width: placement.geometry.width,
+            height: placement.geometry.height,
+        });
+        if surface.constraints.min_size.is_some_and(|minimum| {
+            requested.width < minimum.width || requested.height < minimum.height
+        }) || surface.constraints.max_size.is_some_and(|maximum| {
+            requested.width > maximum.width || requested.height > maximum.height
+        }) {
+            return Err(PolicyProjectionError::InvalidSurfaceConstraints);
+        }
+    }
+    if projection.focus.is_some_and(|focus| {
+        !visible.contains(&focus)
+            || !surfaces
+                .get(&focus)
+                .is_some_and(|surface| surface.capabilities.focusable)
+    }) {
+        return Err(PolicyProjectionError::InvalidSurface);
+    }
+    Ok(())
+}
+
+fn rect_contains(outer: Rect, inner: Rect) -> bool {
+    let outer_right = i64::from(outer.x) + i64::from(outer.width);
+    let outer_bottom = i64::from(outer.y) + i64::from(outer.height);
+    let inner_right = i64::from(inner.x) + i64::from(inner.width);
+    let inner_bottom = i64::from(inner.y) + i64::from(inner.height);
+    i64::from(inner.x) >= i64::from(outer.x)
+        && i64::from(inner.y) >= i64::from(outer.y)
+        && inner_right <= outer_right
+        && inner_bottom <= outer_bottom
+}

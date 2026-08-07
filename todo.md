@@ -1,18 +1,22 @@
 # Sophia Active Roadmap
 
 Sophia is a research prototype moving toward a usable native-X daily driver.
-This file contains only active work and the next promotion gates. Completed
-milestones belong in `docs/roadmap-history.md`; detailed evidence and diagnosis
-belong in `docs/research-log.md`.
+This file contains active work, ordering constraints, and promotion gates.
+Completed milestones belong in `docs/roadmap-history.md`; detailed decisions,
+diagnoses, and retained evidence belong in `docs/research-log.md`.
 
 Roadmap rules:
 
 - Keep exit criteria measurable and fail closed.
 - Expand X11 behavior only from retained real-client evidence.
-- Use QEMU for repeatable policy, protocol, transaction, and application
+- Use QEMU for repeatable protocol, policy, transaction, and application
   semantics. Do not substitute it for physical DRM, input-device, VT,
   display-manager, or visible-pixel requirements.
 - Keep Engine protocol-neutral and free of application-specific policy.
+- Keep the WM blind to XIDs, namespace IDs, titles, classes, PIDs, and client
+  payloads.
+- Rebuild and re-prove the installed candidate whenever its executable,
+  packaged policy, or supervised application set changes.
 - Archive a milestone when its complete exit gate passes.
 
 ---
@@ -21,28 +25,33 @@ Roadmap rules:
 
 Sophia's product path is its native **Sophia X Server Frontend**. Engine owns
 physical input, focus authority, scene state, rendering, presentation, and
-scanout. X11 is the sole supported application protocol; the retired Wayland
-and XLibre prototypes remain under `research/` as architectural evidence.
+scanout. X Authority owns X11 protocol semantics and private client resources.
+One versioned, protocol-neutral WM API accepts native Sophia policy clients or
+legacy-X11 policy translated through a private compatibility bridge. Xmonad is
+the first mature bridge profile and current promotion vehicle; it is not
+Sophia's architectural WM. XLibre and Wayland prototypes remain under
+`research/` as architectural evidence.
 
-The installed daily-driver candidate now establishes:
+The current installed candidate provides:
 
-- Guarded two-output startup with automatic Kitty, keyboard, pointer, focus,
-  atomic xmonad resize, presentation, and clean teardown.
-- Bounded Super-Enter admission and four concurrently presented Kitty clients
-  without flashing in the latest focused physical captures.
-- Engine-owned KMS presentation, protocol-neutral cursor and input policy, a
-  blind WM API, and a supervised xmonad bridge.
-- Native-X Kitty and Firefox protocol coverage plus unattended two-output QEMU
-  mix and soak evidence.
+- guarded two-output startup and exact TTY restoration;
+- automatic Kitty, supervised xmonad, and optional unmodified xmobar;
+- physical keyboard, pointer, focus, workspace, resize, clipboard, Firefox,
+  floating-dialog, and normal-logout workflows;
+- Engine-owned KMS presentation, protocol-neutral cursor and input policy,
+  native chrome, and retained-frame recovery across VT release; and
+- commit-pinned normal, fallback, watchdog, emergency, native-chrome, and
+  switch-away/switch-back evidence with exact runtime identity.
 
-Milestones 10 and 11 established the integrated physical Firefox workflow and
-the repository-independent installed release. The current candidate has
-commit-pinned normal, fallback, watchdog, emergency, native-chrome, and
-switch-away/switch-back archives with exact runtime identity and clean
-ownership teardown. The automated ten-cycle installed lifecycle gate passed on
-the current signed candidate. Milestone 12 now owns the remaining promotion
-boundary: a two-hour interactive soak and one full workday on that immutable
-build.
+Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
+the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
+the remaining promotion boundary: close the intended xmonad/xmobar and color
+configuration into a new immutable candidate, repeat its automated lifecycle
+gate, then pass the two-hour interactive soak and one full workday.
+
+The current Void host has the required xmonad-configuration build and runtime
+dependencies installed. Dependency installation is complete and is not an
+active roadmap item.
 
 ## Daily-Driver Promotion Contract
 
@@ -52,1417 +61,429 @@ xmonad session proves all of the following:
 1. Normal login, automatic Kitty startup, and normal logout through greetd.
 2. Keyboard, pointer, focus, workspaces, shortcuts, resizing, and both outputs.
 3. At least two Kitty windows plus Firefox remaining independently usable.
-4. Small text `CLIPBOARD` and `PRIMARY`, dialog handling, and application close.
+4. Small-text `CLIPBOARD` and `PRIMARY`, dialog handling, application close,
+   and representative 24-bit color rendering.
 5. Clean application, WM, frontend, renderer, KMS, input, and VT teardown.
 6. Independent emergency recovery from a separate destructive-path run.
 7. Repeated startup/logout cycles and an interactive soak with zero unexpected
    protocol errors, stuck input, rejected callbacks, or cleanup debt.
-8. Installed release artifacts: no source build, manual service repair, or
-   ad-hoc process cleanup during ordinary login.
+8. Installed release artifacts: no source build, mutable home-directory policy,
+   manual service repair, or ad hoc process cleanup during ordinary login.
 
 ---
 
-## Post-Milestone 9 retained session follow-ups
+## Boundary And Capability Ledger
 
-Milestone 9 completed on commit `727c716d` on 2026-08-01. Its five immutable
-promotion records all pass. The unchecked items retained below are explicitly
-post-promotion compatibility, optimization, and stress follow-ups; they do not
-reopen the completed Milestone 9 exit gate.
+This ledger records the current product limits so later feature work goes to
+the correct authority.
 
-### 9.1 Native presentation lifetime and latency
+### Boundaries To Preserve
 
-- [x] Decouple exported scanout-buffer ownership from the persistent EGL
-  context, GL pipeline, and GBM target lifetime.
-- [x] Falsify retained-context composition on the physical AMDGPU path: two
-  exports presented, then the third command stream was rejected even though
-  every export used a distinct GBM/EGL surface.
-- [x] Restore one complete context/pipeline/surface target per successful mixed
-  export as the fail-safe baseline.
-- [x] Confirm the restored lifetime in one physical cycle: 253 mixed exports,
-  matching target/pipeline/surface creation and retirement, zero recovery,
-  zero AMDGPU rejection, and a normal exit.
-- [x] Confirm that layer-sized CPU overlays retain the fail-safe lifetime:
-  the first bar-plus-three-Kitty run completed 141 mixed exports with matching
-  target, pipeline, and frame-surface creation, zero native failures, and clean
-  teardown.
-- [x] Pass three physical four-Kitty cycles with complete-target creation and
-  retirement equal to the mixed-export count. The third clean cycle exercised
-  four-window layouts on two workspaces and completed 524 balanced mixed
-  target, pipeline, and frame-surface lifetimes after the output-scoped
-  frame-service change.
-- [x] Prevent child-exit and resize-epoch work from starving input and native
-  callback service. The first post-worker cycle reduced input dwell to 12 ms
-  and submit-to-page-flip observation to 23 ms.
-- [x] Poll native retirement before routing shortcuts that can synchronously
-  enter the external WM transport.
-- [x] Emit bounded owner-phase evidence for child reaping, physical-input
-  routing, and external-WM request latency.
-- [x] Attribute the remaining stall: the physical cycle recorded 180 ms in the
-  synchronous WM request, 246 ms input dwell, and 210 ms submit-to-page-flip
-  observation while child reaping remained at 25 ms.
-- [x] Move the blocking WM socket round trip to one bounded typed worker while
-  retaining validation, stale-response rejection, policy state, and atomic
-  commit effects on the physical owner.
-- [x] Re-run the two-output four-Kitty gate and require owner input below
-  100 ms, a drained WM transport ledger, and clean page-flip/resource teardown.
-- [x] Serialize cursor-plane updates against primary page flips: defer while a
-  primary commit is in flight, complete admitted cursor-only commits before
-  returning to the owner, and report cursor update latency and deferral.
-- [x] Replace that bounded standalone-atomic repair after animated GLX exposed
-  its vblank serialization cost. Sanitize inherited cursor-plane state once,
-  query driver cursor dimensions, then use legacy set/move ioctls for steady
-  hardware-cursor motion. Evidence distinguishes initialization deferral from
-  successful steady updates that overlap primary flips and gates animated
-  pointer-motion cadence at 55 FPS with a 25 ms p95 frame interval.
-- [x] Keep a Logout-bearing WM transaction alive until its already-committed
-  Engine update crosses the authority/runtime boundary. The physical GLX run
-  exposed the old premature exit with every other queue drained and exactly
-  one `pending_wm_update`; the shutdown reducer now treats that slot like the
-  existing input, key-release, and X-control drain boundaries.
-- [x] Re-run the four-Kitty gate after cursor/primary serialization. The
-  workspace-stress cycle recorded zero native submit failures and a 12 ms
-  maximum cursor update; it then exposed an independent workspace-visibility
-  defect.
-- [x] Emit reduced recreation-reason and lifetime evidence without native
-  handles or application metadata.
-- [x] Remove blocking X11 configure/focus/close acknowledgements from the
-  render/input owner; correlate them through a bounded typed control ledger
-  while preserving global shortcuts and cursor motion during focus handoff.
-- [x] Track client-delivered key presses and require acknowledged synthetic
-  releases before focus, close, VT, seat-release, and logout handoffs so
-  suppressed physical releases cannot leave the seat XKB state stuck.
-- [x] Apply state-only XKB releases when a client destroys its surface before
-  the physical key release, without delivering an orphan event to the next
-  focused application.
-- [x] Emit immutable per-output synchronous-modeset evidence at the aggregate
-  startup-readiness transition rather than before native initialization.
-- [x] Use the low-latency owner wait budget whenever physical input is active,
-  so an idle X channel cannot add 25 ms to queued input before composition.
-- [x] Prove a stable physical workload has balanced context, pipeline, and
-  frame-surface creation/retirement with zero live-resource growth, zero
-  launch-admission timeouts, and bounded input-to-submit and presentation
-  latency. The 77-second two-workspace run balanced 524 complete composition
-  lifetimes, drained every native and admission ledger, held input dwell to
-  11 ms and submit-to-page-flip observation to 47 ms, and exited cleanly.
-- [x] Retain focused rollback, resize, output-change, and recovery regressions
-  proving resources retire exactly once. The named native-presentation
-  lifecycle gate covers compensating resize rollback and late-pixel fencing,
-  output/target size replacement and stale-allocation removal, stale prepared
-  page-flip settlement, displayed-buffer replacement, cleanup retry, and
-  duplicate-retirement rejection. Each case remains an isolated reducer or
-  fake-device test; no native handles or application policy enter Engine.
-- [x] Move non-cooperative resize/admission recovery into a protocol-neutral
-  Engine layout-epoch coordinator. Preserve safe pixels, fence abandoned
-  extents, publish temporary exact-size constraints for one bounded blind-WM
-  replan, and translate those constraints through generic ICCCM size hints in
-  the legacy bridge without application identity.
-- [x] Reconcile blind-WM proposals against Engine-owned declared content
-  constraints before client configure delivery. Preserve WM placement, clamp
-  min/max extents inside the work area, and reject impossible constraints so a
-  WM that treats ICCCM hints as advisory cannot destabilize an application
-  swapchain before recovery begins.
-- [x] Add protocol-neutral pre-pixel presentation admission. Keep a
-  policy-managed X window unmapped after `MapWindow`, let Engine and the blind
-  WM plan from passive geometry/constraint facts, then atomically configure and
-  map it through a transaction-keyed `AdmitSurface` control. Require matching
-  concrete pixels before the surface becomes committed visual state. Preserve
-  the X parent tree so `MapSubwindows` maps only direct client-positioned
-  descendants and cannot consume a later root-child admission; quarantine
-  pre-map drawing outside renderer intake, reduce descendant software drawing
-  into the toplevel presentation surface, and release it with any bounded
-  queued Present submissions exactly once at the accepted geometry.
-- [x] Report real X window lifecycle through `GetWindowAttributes`: created
-  and policy-pending windows are unmapped, admitted windows are viewable.
-  Retain a real-Kitty deferred-map probe that requires a presentation intent,
-  delivered admission, continued Present feedback, focus, and routed text.
-- [x] Replace the session-wide layout/Present barrier with per-submission
-  dispositions. Stage only submissions owned by the pending epoch, route other
-  valid buffers against committed geometry without letting them satisfy the
-  pending resize, reject malformed or superseded work, and keep unrelated
-  surfaces eligible. Retain bounded queue storage with one shared immutable
-  authority batch.
-- [x] Separate queued Present ownership from persistent scene projection.
-  Each queued submission now retains its exact surface transaction; Engine
-  preparation overlays only that candidate on committed visual state, while
-  unrelated CPU/GPU surfaces preserve their generations and transaction
-  identity. Input projection is rebuilt from committed state after synchronous
-  commit or page-flip retirement. The mixed-scene regression reproduces xmobar
-  transaction 198 beside Kitty Present 403 and rejects malformed candidate
-  pairings without terminating the session.
-- [x] Preserve transaction identity across pre-pixel admission release.
-  Production intake now carries ordered atomic groups inside one bounded
-  resource envelope; quarantine retains complete homogeneous groups and
-  releases them once without relabelling them as the current frontend batch.
-  The retained regression reproduces ordinary transaction 367 beside released
-  vkcube transaction 858 and commits both independently. A routed
-  `x-authority-vkcube-admission-smoke` now requires deferred map intent,
-  delivered generic admission, continued DRI3 imports, and two exact
-  Complete/Idle Present round trips.
-- [x] Gate DMA-BUF admission on exact page-flip retirement rather than X's
-  mutable mapped snapshot. Require one-to-one surface/transaction/buffer
-  pairing between the quarantined transaction and Present, defer focus until
-  that candidate retires, keep referenced DMA-BUF/fence releases behind
-  renderer ownership, and prevent retained CPU projection from overtaking a
-  Present-bearing visual candidate. Retain reduced `armed`/`presented`
-  diagnostics and an exact physical-log verifier.
-- [x] Close the fixed-extent recovery escape around visual admission. Include
-  every policy/control/pixel-pending layer in admission finalization even when
-  the blind WM did not change its size, and require an exact newly staged
-  transaction rather than accepting retained committed-size history. Keep
-  bufferless geometry, chrome, and focus outside visible projection; bounded
-  timeout withdraws a client that never supplies matching pixels.
-- [x] Replace scalar safe-size overwrite and reverse admission lookup with an
-  evidence-ranked visual candidate. Retain source transaction, extent,
-  evidence class, and Engine observation sequence; prefer complete Present
-  buffers over accumulated backing snapshots during admission in either
-  arrival order. Select only that exact transaction, settle older covered
-  groups, fence newer groups until retirement, and require candidate evidence
-  in the physical verifier. The regression reproduces a 500-by-500 Present
-  followed by the 1276-by-1422 blank backing snapshot from the failed run.
-- [x] Add a visible single-client Vulkan isolation profile before changing the
-  combined desktop again. Launch default `vkcube --wsi xcb` directly, omit
-  Kitty/xmonad/xmobar and the compatibility bridge, and use a generic
-  metadata-blind natural-size reference policy while retaining deferred
-  admission, Present, rendering, and native KMS. Require an exact offline
-  verifier for PresentedBuffer selection, retirement, nonzero pixels, and
-  resource-clean normal teardown.
-- [x] Re-run `tools/start_sophia_vkcube_standalone_tty3.sh` physically and
-  retain `tools/verify_sophia_standalone_vkcube.sh` evidence. The first run
-  isolated a blank frame below the WM bridge; after pixel materialization, the
-  second run exposed a visible but static first frame because software Present
-  never received Complete/Idle feedback. The first feedback-enabled rerun then
-  exposed duplicate same-iteration admission projection; the original software
-  observation and retained admission release both reached production. X
-  authority now snapshots regular and MIT-SHM pixmaps at Present time, emits no
-  unresolved pixmap as visual success, projects every storage form through one
-  exact admission owner, and carries source-free Present lifetime through
-  composed KMS retirement.
-  The verifier requires at least three software frames, nonzero CPU composition
-  and native export, Complete-before-Idle delivery, idle-fence triggers, and
-  clean teardown.
-  The retained physical result animated 487 software frames in 17,755 ms with
-  487 native retirements, Complete/Idle pairs, and idle-fence triggers; it had
-  zero native failures, protocol errors, or live presentation resources at
-  clean teardown.
-- [x] Re-run the short physical xmonad/xmobar/Kitty startup proof. Require two
-  committed runtime surfaces, a focused and interactive Kitty, successful
-  Present retirement, zero mismatched-transaction warnings, and clean teardown
-  before returning to the `vkcube` recovery proof. The retained `ad84d88a`
-  session launched vkcube from the focused Kitty, kept both desktop surfaces
-  live, reported no mismatched transaction, and completed cleanly.
-- [x] Physically launch default `vkcube --wsi xcb` from Kitty. Require the
-  existing desktop to remain responsive, the cube to become visible through
-  pre-pixel admission (using bounded fixed-extent recovery only if the client
-  misses the accepted resize), and normal shutdown with no stale Present,
-  control, input, or native-resource debt. Use
-  `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh` for the retained run. An
-  installed interactive run on `e360b4b0` displayed one static 500-by-500
-  frame: its queued Present was skipped during layout rollback with synthetic
-  `UST=0, MSC=0`, then its CPU snapshot became visible. XLibre settles skips
-  on the current CRTC clock, and yserver independently rejects zero-clock
-  Present completion events. The live feedback coordinator now retains the
-  last kernel display sample and all asynchronous scheduler/rollback skips
-  reuse it; the public-API regression locks nonzero timeline continuity. A
-  physical rerun on `f007757a` disproved that as the complete fix: vkcube
-  remained alive with its FIFO queue and main thread parked after Sophia
-  destroyed its first Present during admission rollback. A later live trace
-  exposed the deeper identity error: transaction 683 carried both the exact
-  DMA-BUF Present and a same-surface CPU backing snapshot, and the surface-level
-  evidence flag let the snapshot impersonate the Present. Safe observations,
-  admission retirement, and scheduler ownership now carry the exact
-  transaction/surface/target-buffer key. Layout commit and abort are explicit
-  epoch transitions; abort rejects only that epoch, while valid nonmatching
-  content continues against committed geometry. A fresh installed run then
-  selected exact CPU-backed Present transaction 626 but committed it as a
-  backing snapshot; because an unrelated Kitty DMA-BUF Present selected the GPU
-  path for that owner batch, the software submission was never registered or
-  retired. Present semantics are now storage-independent: every selected
-  `PresentedBuffer` waits for exact native retirement, mixed batches queue
-  separate CPU and DMA-BUF groups, and software retirement returns its exact
-  key and page-flip clock to admission. A later live trace exposed that the
-  groups were still associated by queue order: transactions 599 and 715
-  advanced only when unrelated Kitty frames 704 and 742 retired. Native frames
-  now have typed monotonic identities; software work owns a serialized CPU or
-  retained-mixed frame, and only that frame can submit or settle it. The Rust
-  regressions, `AdmissionRecovery.tla`, `PresentFrameOwnership.tla`, and the
-  physical verifier lock selection, storage choice, exact frame ownership,
-  timeout recovery, retirement, and Complete/Idle feedback. The first installed
-  run then retired software frame 30 in the same backend tick that submitted
-  successor DMA frame 31; a guard compared retirement against current
-  scheduler state and exited. Retirement reduction now permits this legal
-  overlap for CPU/retained content while preserving fail-closed DMA ownership,
-  with matching Rust and TLA+ regressions.
-  The installed `ad84d88a` rerun visibly animated and exited cleanly with 411
-  Copy completions, 21 Flip completions, 435 Idle/fence signals, zero live
-  Present resources, and no native or protocol failures. The corrected
-  verifier passes that retained session and its fixture now covers the
-  unrelated Kitty admission plus the frame-30/frame-31 overlap.
-- [x] After the visible vkcube gate passes, model arbitrary post-admission X11
-  Present, SHM, clear, and core-drawing operations as one bounded ordered
-  logical-window content stream. Engine now owns a protocol-neutral
-  `SurfaceContentStream` keyed by exact surface candidates; live authority
-  groups carry their CPU mutations with their transactions, and DMA or software
-  Present retirement releases later groups in FIFO order for sequential
-  generation rebasing. X authority retains copy/clip semantics and never reads
-  pixels back from the GPU. Rust regressions cover multi-surface ordering,
-  bounds, exact settlement, grouped pixels, and the Present/SHM/clear/core
-  generation chain; `SurfaceContentStream.tla` checks no-overtake and eventual
-  drain while unrelated work progresses.
-- [x] Reconcile a content-stream-delayed DMA-BUF Present against the outcome of
-  its layout epoch when it reaches scheduling. The first grouped-content run
-  left later Kitty frames tagged with an already-aborted epoch, so Kitty could
-  not provide the resize evidence needed to admit vkcube. The scheduler now
-  retains bounded commit/abort outcomes, rejects delayed work from an aborted
-  epoch, and runs committed work once its surface is visible. Crate-boundary
-  regressions cover both outcomes without depending on unrelated client
-  traffic.
-- [x] Install the corrected release and rerun one focused xmonad/Kitty/vkcube
-  cycle. Installed commit `663934ca` recovered from the first blind-WM timeout,
-  committed vkcube into a two-surface projection, and retired 665 clocked
-  software frames while Kitty continued DMA-BUF presentation. Normal logout
-  completed with 691 Present Idle/fence signals, 132 native retirements, zero
-  protocol or native failures, zero live Present resources, clean layout
-  health, and clean frontend/session teardown.
-- [x] Optimize the proven software-Present fallback after correctness is
-  retained. X authority now owns bounded reusable read-only SysV mappings,
-  resolves XFixes valid/update regions with source clipping and fixed capacity,
-  copies only requested SHM rows, preserves the presentation handle across
-  same-size generations, and publishes one atomic immutable patch batch rather
-  than cloning a whole pixmap per Present. Renderer registries validate every
-  patch before mutation. CPU output storage is reference-counted and reused
-  when its previous lease has retired; exact pixel scans are limited to three
-  startup proofs, later frames use generation/damage evidence; same-stride GBM
-  writes borrow the composed pixels; and mixed native composition retains its
-  EGL/GBM target across frames. X resources and SysV identity remain authority
-  private, and neither Engine nor WM policy gained X-specific state.
-- [x] Make optimized admission progress and CPU-buffer residency independent
-  of frontend timing. Service ready layouts after authority, policy, or control
-  transitions; defer rather than overwrite an occupied WM-update slot. Retain
-  renderer-private CPU buffers through a bounded staged-handle snapshot until
-  the exact transaction commits or is withdrawn, without making pre-admission
-  pixels scene-visible.
-- [x] Run the bounded 900-frame physical performance proof with
-  `tools/benchmark_sophia_vkcube_tty3.sh`. Retain the schema-2 report with
-  positive patch traffic, bounded replacement pressure, Present FPS and p95
-  cadence, CPU compose/upload maxima, clean retirement, and no visual
-  regression. Capture a same-machine Xorg/XLibre reference with
-  `tools/benchmark_xserver_graphics.sh`; require at least 90% of its rate and
-  no more than 1/0.90 of its p95 interval before declaring the software
-  fallback daily-driver performant.
-  The paired tooling is complete: `tools/benchmark_xserver_graphics.sh`
-  observes real X Present completions for the identical fixed workload and
-  `tools/compare_sophia_xserver_rendering.sh` rejects provider, geometry,
-  frame-count, mode, and output mismatches. Its optional `glxgears` phase is a
-  separately labeled GLX compatibility/cadence probe and cannot satisfy or
-  fail the Vulkan parity threshold. Physical 900-frame Sophia and Xserver
-  captures passed on the same llvmpipe provider and 2560-by-1440 output:
-  Sophia measured 59.953 FPS and 17.155 ms p95; composited Xorg measured
-  59.950 FPS and 16.686 ms p95. The resulting rate ratio was 1.0001 and the
-  inverse-p95 ratio was 0.9727, both above the 0.90 gate. Sophia retired 898
-  observed frames with 6 ms maximum CPU composition, 3 ms maximum upload, and
-  no native submission failure.
-- [ ] After the cadence gate, obtain an unredirected Xorg/XLibre `Flip`
-  reference if end-to-end presentation-latency parity is needed. A composited
-  Xserver `Copy` result is valid client-cadence evidence but may complete
-  before compositor scanout; retain the path label and do not present it as a
-  scanout-latency comparison.
-- [ ] Retain the paired bounded `glxgears` physical proof under Sophia. The
-  generic standalone workload slot, bounded 500-by-500 swap-interval-one
-  runner, and fail-closed schema-2 reporter are implemented in
-  `tools/benchmark_sophia_glxgears_tty3.sh`. Require visible animation, direct
-  GLX bootstrap, positive DRI3/mixed-composition and Present idle-fence
-  progress, advancing post-KMS Flip cadence, positive DMA-BUF imports, zero
-  descriptor mismatch/capacity rejection, clean retirement, and the same
-  renderer provider under the reference Xserver. Cache hits are reported but
-  are not required when every application frame carries a new buffer
-  generation. An installed interactive run on `09113a7d` exposed a distinct
-  recovery-path freeze: the first 300-by-300 GLX frame retired, then a retained
-  1276-by-709 standing target caused 188,148 later 300-by-300 Presents to be
-  rejected even though 300-by-300 remained the coherent recovery extent.
-  Engine now classifies expected, retained-recovery, mismatched, and
-  unconstrained pixel extents without mutating layout state; the live gate
-  schedules newer retained-extent buffers while preserving the standing
-  target. The deterministic transition regression passes; repeat the bounded
-  physical proof from the packaged fix before closing this item. Record client
-  and presentation cadence separately and keep this a compatibility
-  diagnostic, not a substitute for the fixed Vulkan acceptance workload.
-- [x] Promote renderer-image residency from Milestone 13 into the GLX
-  correctness path. Mixed DMA-BUF layers now carry opaque image generations;
-  each native output context imports a generation once, validates descriptor
-  identity on every hit, reuses it for compositor-only repaints, and evicts the
-  predecessor before routing Idle. Capacity derives from the 256-presentation
-  bound, context reset clears residency, shutdown clears imports before
-  presentation teardown, and reduced metrics expose imports, hits, evictions,
-  mismatches, capacity rejection, and live debt.
-- [x] Correct retained DMA-BUF presentation semantics and isolate production
-  GL execution from the session/input owner. Protocol-neutral feedback now
-  distinguishes `Retained`, `Copied`, and `Skipped`; X maps a retained
-  compositor lease to Present `Flip` and sends Idle only after its exact KMS
-  retirement. The native hot path no longer calls `glFinish`. After the
-  initial modeset, a bounded renderer worker owns EGL/GL/GBM, imported images,
-  and locked front buffers while the owner retains input, cursor, VT, X
-  polling, and KMS authority. Require the physical GLX rerun to show advancing
-  animation, zero hard stalls, zero release-enqueue failures, and a clean
-  worker request/completion drain. The first worker-enabled rerun proved the
-  owner remained responsive but exposed stale CPU replacement of an in-flight
-  mixed frame and ambiguous scanout transport. CPU fallback is now deferred
-  across renderer/KMS ownership. The next run reached and retired a correctly
-  labelled mixed KMS frame but exposed loss of the Present record during
-  asynchronous worker deferral. The scheduler now owns one immutable
-  `Rendering`/`Submitted` record from worker acceptance through page-flip
-  retirement. The following
-  run retired two advancing Flips, then exposed the same missing rendering
-  slot in output content/damage plus an unsafe PRIME round trip inside the
-  shared DRM file. Both output records now follow
-  `Pending -> Rendering -> Submitted -> Presented`; shared-file scanout uses
-  direct GEM descriptors, independent-file scanout requires PRIME FDs, and a
-  500 ms page-flip watchdog terminates a lost-event session. The bounded
-  six-second physical rerun visibly animated at 52.956 client FPS, completed
-  242/242 renderer-worker requests without worker stalls or failures, drained
-  scanout, and reported zero X protocol errors. It exposed a final proof-only
-  ordering bug: the first stable nonzero KMS frame preceded X focus
-  acknowledgement and its evidence was discarded. Startup now retains
-  monotonic presentation evidence keyed by exact surface until focus pins the
-  application. Two follow-up runs proved 240/240 and 242/242 worker completion,
-  zero live import debt, visible animation up to 53.542 client FPS, and exposed
-  the remaining false base-committed-surface membership gate. The consumer now
-  treats exact stable GPU evidence independently of that optional CPU/base
-  record, with a regression for the absent-record state. A fourth run animated
-  at 52.981 client FPS and exposed duplicate native-retirement service paths:
-  the authority-wait copy logged transaction 46 but omitted startup evidence.
-  Both scheduling sites now use one shared retirement reducer. The clean
-  lifecycle rerun reached readiness in 178 ms without recovery, animated at
-  59.088 client FPS, completed 352/352 renderer requests and 351 exact
-  Flip/Idle pairs, drained every import, and exited cleanly. Its reporter
-  exposed a measurement-only dependency on disabled per-frame tracing.
-  Cadence is now accumulated from routed UST values in bounded owner state and
-  emitted once at completion. The final physical run passed schema 3: 161 ms
-  startup, 59.197 client FPS, 352 retained-buffer samples, 59.953 presentation
-  FPS, 17.324 ms p95, 353/353 worker completion, zero protocol errors, and
-  zero live imports. The external watchdog process-group regression passes
-  locally. Verbose per-stage tracing remains opt-in so benchmark cadence is
-  not distorted by diagnostic I/O.
-- [x] Replace the provisional composited `Flip` lease with a renderer-owned
-  snapshot. Current DMA-BUFs are capture-only; retained layers contain no
-  client descriptors. Exact page-flip retirement promotes the snapshot and
-  reports Copy with Idle before Complete, while terminal failures roll staged
-  images back. Bound the store by entries and bytes, expose lifecycle debt,
-  and model the transition in `PresentCopyOwnership.tla`.
-- [x] Re-run the bounded physical GLX and four-Kitty gates. Require positive,
-  equal snapshot capture/promotion counts, Copy cadence, zero rollback in the
-  healthy path, and zero snapshot/import debt at normal logout. The paired
-  physical runs on `39f87687` passed: GLX sustained 59.950 presentation FPS
-  with a 16.685 ms p95 interval and balanced 1,193 captures/promotions; the
-  four-Kitty run balanced 146 captures/promotions, reused retained imports 356
-  times, and completed 146 Copy feedback cycles. Both runs reported zero
-  rollback, live snapshot/import debt, unexpected protocol errors, or cleanup
-  failure.
-- [ ] If the measured software fallback remains outside that parity gate,
-  replace per-frame direct CPU GBM allocation with an output-scoped,
-  retirement-fed three-slot scanout pool. Slot state must be plain indexed data
-  (`Available`, `Rendering`, `Queued`, `Displayed`), recycle only after KMS
-  retirement, and retain bounded recovery. If upload bandwidth still dominates,
-  route eligible DRI3 buffers directly through the existing DMA-BUF path rather
-  than adding another application-specific fast path.
-- [x] Replace the transient aggregate async-service booleans with one
-  Engine-owned, output-scoped frame-service reducer. Backend-live must execute
-  only named native effects, reobserve after each effect, and remain bounded
-  when callbacks or cleanup do not advance. The reducer now validates one
-  stable primary and bounded unique output set, orders per-output retirement
-  before presentation, reserves the primary queued-Present path without
-  starving secondary pending frames, and issues each effect at most once per
-  service pass.
-- [ ] Pass the same-commit unattended QEMU semantic gate, four-Kitty hardware
-  smoke, and xmobar hardware smoke with no latency, ordering, or resource
-  regression. Historical captures remain diagnostic evidence; the
-  commit-pinned ledger is authoritative for the candidate.
+- **Engine** owns physical input, outputs, work areas, scene geometry, focus,
+  chrome, transactions, rendering, presentation, and scanout. It must not learn
+  X11 resource identities or application metadata.
+- **X Authority** owns visuals, colormaps, X resources, ICCCM/EWMH reduction,
+  X11 events, client drawing, and protocol feedback. It lowers pixels and
+  opaque policy facts into Engine; it does not own physical layout or scanout.
+- **Blind WM policy** consumes opaque surfaces, workspaces or views, geometry,
+  constraints, and permitted role facts. A native Sophia WM speaks this API
+  directly. A classical X11 WM speaks to a private synthetic X server whose
+  bounded profile translates its policy into the same API. Neither path may
+  receive XIDs, titles, classes, PIDs, namespace IDs, or payloads.
+- **Session shell and configuration** own trusted launch provenance, key-bound
+  applications, status presentation, wallpaper, lock, screenshots, audio, and
+  process supervision. These are not X Authority shortcuts.
+- **Portals** own cross-namespace clipboard, drag-and-drop, file, URI, capture,
+  and notification decisions. Only the small-text `CLIPBOARD` and `PRIMARY`
+  execution path is complete.
 
-### 9.2 Complete physical xmonad workflow
+### Current Limitations
 
-- [x] Make workspace visibility authoritative at every downstream boundary:
-  preserve focus per workspace, restrict xmonad synthetic mappings and
-  relayout nodes to the active workspace, and project only visible surfaces
-  into composition and hit-testing.
-- [x] Re-run the workspace stress sequence through Super-1, Super-2, and
-  Super-3. The physical cycle committed seven workspace-1, nine workspace-2,
-  and two workspace-3 actions, restored each workspace's focus, submitted a
-  blank CPU frame for an empty projection, recorded no resize timeout, and
-  drained native scanout cleanly.
-- [ ] Capture the short hardware smoke from TTY3 with launcher, guard,
-  recovery, WM, frontend, renderer, and lifecycle evidence.
-- [ ] Require focused Kitty within eight seconds, `outputs_ready=2/2`, nonzero
-  mixed composition, and correct retained content on both outputs.
-- [ ] In the candidate ledger, prove physical typing, pointer focus,
-  Super-Enter, one VT round-trip, four-window geometry, and normal logout.
-  Prove layout switching, workspaces, clipboard/PRIMARY, hidden-surface input
-  suppression, application close, and bridge recovery unattended in QEMU.
-- [x] Physically prove plain-click focus and click-drag focus independently.
-  The guarded TTY3 run routed both gestures to the selected Kitty, preserved
-  cross-window copy/paste during the drag workflow, and rendered the
-  Engine-owned focused border. The retained QEMU gate independently correlates
-  request, Engine commit, X11 application, handoff release, and a following key
-  for each gesture.
-- [x] Keep external-WM empty workspaces focusless. Initial-focus reconciliation
-  now exits before mutating Engine focus whenever an external WM owns policy.
-  The QEMU gate switches to an empty workspace, observes both click edges
-  suppressed with `reason=no_target`, and rejects a hidden focus request or
-  client route before returning with Super-1.
-- [x] Add Engine-owned held-key repeat scheduling with XKB-derived per-key
-  repeatability and explicit X-frontend repeat delivery. Repeats bypass global
-  shortcut evaluation and cancel on physical release, focus handoff, surface
-  removal, workspace hiding, and seat suspension.
-- [x] Physically prove held editing/navigation keys repeat while Super and
-  modifiers do not. The first capture routed and acknowledged 66 repeat pulses
-  with zero coalescing or capacity exhaustion, drained all 1,289 input
-  deliveries, and ended with no active repeat seat or pressed-key debt.
-- [x] Prove Kitty `CLIPBOARD` ownership and same-namespace UTF-8 copy/paste.
-  Require copy/paste between independent Kitty clients before and after
-  workspace switches, at least one owner change and conversion, no GLFW
-  ownership or conversion failure, and visual confirmation that the text is
-  unchanged. Deterministic same-namespace and portal regressions now cover
-  subscriber-routed `PropertyNotify`, distinct target/property atoms, Xlib's
-  complete-property request shape (`AnyPropertyType`, `delete=true`, maximum
-  `long_length`), and deletion only after a complete read. Local namespace
-  ownership is preferred; cross-namespace source capture and execution
-  revalidate the exact namespace and generation through the portal boundary.
-  The dedicated physical capture copied the exact token from a workspace-3
-  Kitty and pasted it into the independent workspace-1 Kitty after switching
-  workspaces. It recorded two owner changes and one conversion and completed
-  with zero unexpected protocol, input, WM, native-presentation, or cleanup
-  failure.
-- [x] Prove pointer confinement across the complete output union: hard edge
-  motion must keep the hardware cursor visible, and reversing direction must
-  move it immediately without first consuming discarded overshoot. The full
-  raw-position, startup-offset, edge-correction, and logical-position state
-  now belongs to Engine rather than the CLI. The two-output xmonad QEMU gate
-  drives the virtio mouse past the right edge and proves that the first reverse
-  delta moves immediately through ordered, reduced Engine observations.
-  A dedicated guarded TTY3 wrapper now asks for free crossing at the internal
-  seam, one clamp/reversal at each far horizontal edge, and one at the top and
-  bottom of each physical output. Reduced schema-8 evidence records boundary
-  entry once, attributes it to a protocol-neutral output slot, distinguishes a
-  free internal transition from projected gap crossing, and avoids logging
-  every repeated edge contact. Its fail-closed verifier requires six ordered
-  Engine clamp/reversal pairs, both free seam directions, visible
-  hardware-cursor health, clean native/WM state, normal logout, and exact TTY
-  restoration. The physical two-output run proved all six ordered edge
-  clamp/reversal pairs and both free seam directions. It completed with 2,245
-  hardware-cursor updates, zero hidden updates or hardware failures, zero WM
-  restarts, clean Engine health, normal logout, and exact TTY restoration. A
-  follow-up regression keeps each edge axis latched during perpendicular
-  motion so one physical contact produces one reduced entry rather than a
-  stream of duplicate observations.
-- [x] Prove an unmodified primary-button press on an unfocused visible window
-  commits WM-selected focus before client delivery; require the following
-  keyboard input and ordered button release to reach that target, while hidden
-  surfaces remain unselectable. WM API v4, the blind xmonad focus bridge, and
-  the bounded Engine press/motion/release handoff now have deterministic
-  coverage. A fail-closed physical evidence verifier requires request, Engine
-  commit, frontend acknowledgment, retained input release, and a following key
-  routed to the selected surface in order. A dedicated TTY3 wrapper now guides
-  plain click and click-drag as separate focus transitions, returns after
-  normal logout, and automatically verifies both sequences; physical
-  confirmation remains. The unattended two-output xmonad gate now
-  independently performs a plain click/key sequence and a click-drag/key
-  sequence through virtio input. Each requires its own focus request, Engine
-  commit, frontend acknowledgment, ordered handoff release, focused
-  border/damage retirement, and following key on the selected surface. The
-  same run also completes startup, ordered WM response rebasing, bridge
-  restart, action-window launch/close, empty-workspace logout, and native drain
-  with zero stale responses or protocol errors.
-- [x] Treat a stale external-WM response as a speculative-peer lifetime
-  boundary. Reconcile surfaces removed while the request was in flight, stop
-  the peer before dispatching queued work, and reseed a fresh xmonad process
-  from committed state. The isolated QEMU race maps a short-lived Xterm inside
-  the bridge's 80 ms response quiet period, observes its normal exit, rejects
-  one stale `ManageSurface` reply, restarts exactly once, preserves two
-  persistent Xterms, cycles focus afterward, and drains with no
-  `UnknownSurface`, protocol, transport, or native-resource debt.
-- [x] Prove the four-Kitty Tall layout has one full-height pane and three
-  pixel-matched stack panes with no staging geometry, flashing, or corruption.
-  With the active 14-pixel top reservation, the physical capture produced one
-  `1280x1426` pane and exact `1280x475`, `1280x475`, and `1280x476` stack panes
-  spanning `y=14..1440`.
-- [x] Prove every ManageSurface resize commit and its first matching Present
-  consume the same Engine layout snapshot. No new surface may present at the
-  `(80,60)` admission staging offset after `layout_committed`, and the next
-  focus-only transaction must report `moved_surfaces=0`. Deterministic Present
-  admission, pending pixel/geometry authority, and sequential three-window
-  real-xmonad regressions cover the boundary. The physical confirmation
-  correlated seven action-launched surfaces across workspaces 1 and 2: every
-  first post-commit Present used the exact work-area master geometry, every
-  following transaction moved zero surfaces, and no staging target appeared.
-- [ ] Pass the short physical four-Kitty hardware smoke once from the candidate
-  commit. Keep multi-cycle repetition as an unattended soak and release-burn-in
-  requirement rather than an operator promotion ritual.
-- [x] Add the rapid Super-Enter capacity-overflow workload to an unattended
-  QEMU scenario. The isolated profile preloads 12 managed nonvisual children,
-  sends 32 physical launch chords, admits the four remaining slots, proves
-  bounded capacity rejection, reuses a slot after managed exit, commits a
-  following Super-J focus transition, and drains without admission timeout,
-  WM restart, or native cleanup debt.
-- [x] Require the session-control ledger to drain with balanced
-  enqueue/dispatch/delivery counts, zero rejection/timeout/unexpected
-  acknowledgements, and queue/ack latency at or below 100 ms. The three-
-  workspace cycle drained 22/22 controls with 17 ms queue dwell and 14 ms
-  acknowledgement latency.
-- [ ] Prove four tiled Kitty windows remain usable before and after one
-  TTY2/TTY3 round-trip, with keyboard, pointer, pixels, and bar restored.
-- [ ] Retain the full pc105 US shifted-punctuation and Ctrl-Alt-F1 through
-  Ctrl-Alt-F12 runner as a focused hardware diagnostic. Candidate promotion
-  requires one real VT suspend/resume plus the complete deterministic XKB
-  suite; repeat the exhaustive physical matrix only after input/seat changes
-  or for release burn-in.
-- [x] After physical geometry stability, add a minimal Engine-owned focused
-  surface border through the renderer-neutral compositor display list. Derive
-  its bounds and damage from the same committed surface/focus snapshot, keep
-  the blind WM and X frontend unaware of chrome, and verify it across focus,
-  resize, workspace, VT, and mixed CPU/DMA-BUF presentation.
-  The bounded Engine display list, stable border-node identities, old/new
-  damage, CPU reference lowering, and native solid-rectangle lowering are now
-  implemented. The production CPU and mixed CPU/DMA-BUF paths interleave the
-  four border primitives immediately after the focused surface and use the
-  exact committed or prepared-candidate geometry associated with that frame.
-  Those frames retain their immutable display-list identity through native
-  queueing. A bounded per-output Engine ledger now compares pending chrome with
-  the submitted or presented predecessor as appropriate, rejects failed and
-  superseded state transitions, and advances the baseline only after the
-  matching page-flip callback. The QEMU gate requires both output baselines and
-  nonzero retired focus damage. Every CPU and mixed frame now carries one
-  immutable Engine snapshot combining ordered client generations, geometry,
-  buffer identity, compositor nodes, and optional software-cursor bounds.
-  Initial or output-shape changes force full damage; the hardware cursor keeps
-  its independent plane lifecycle. Engine clips combined damage to the output,
-  coalesces exact rectangular unions, and selects bounded `skip`, `partial`, or
-  fail-safe `full` repaint plans under generic rectangle-count and coverage
-  policy. The QEMU focus proof correlates compositor damage, combined output
-  damage, and the matching safe repaint decision from one retired frame.
-  A reduced chrome-set observation now counts eligible surfaces, focused and
-  unfocused frames, rings, primitives, and clearance without exposing client
-  identity. Destination-buffer age/history, partial redraw, and KMS damage-clip
-  consumption remain later performance work.
-  The two-output QEMU xmonad gate proves that a click-drag focus commit is
-  followed by a rendered four-primitive border on the same opaque surface
-  before the next key reaches it, and observes borders on two distinct focus
-  targets. Physical focus, resize, workspace, VT, and mixed-presentation
-  confirmation remains required before closing this item. The fail-closed
-  physical verifier is ready: it requires border/focus correlation on two
-  surfaces, a focused geometry-generation change, empty-workspace hide/restore,
-  a post-VT-resume recompose, nonzero mixed exports, and clean teardown.
-- [ ] Close applications and request xmonad logout; require zero pending input,
-  WM work, Presents, fences, scanouts, or cleanup debt, followed by correct TTY
-  and greetd restoration.
-- [ ] Run emergency recovery separately from the same commit and require
-  bounded input flush, KMS cleanup, exact TTY restoration, and usable greetd.
-
-### 9.3 Unmodified status-bar compatibility
-
-- [x] Preserve core `CWOverrideRedirect` state through create/change,
-  `GetWindowAttributes`, and lifecycle events.
-- [x] Reduce override-redirect windows to the protocol-neutral
-  `ClientPositioned` presentation role. Keep their client geometry in Engine
-  composition and exclude them from the blind WM's managed-node stream.
-- [x] Add optional unmodified xmobar discovery and supervised startup to the
-  xmonad TTY launcher, with a deterministic Sophia-owned local config.
-- [ ] Re-prove that xmobar renders above managed Kitty windows,
-  continues updating, accepts pointer events, and does not steal keyboard
-  focus during the short candidate hardware smoke. Workspace and lifecycle
-  semantics remain in the unattended QEMU gate; the exhaustive focused
-  xmobar runner remains available after work-area or seat changes.
-  The first physical run exposed a mixed-scene ordering bug: the flattened CPU
-  frame sat below Kitty's DMA-BUF. The next run rendered the bar and exposed a
-  second generic boundary: the native GL path rejected CPU layers smaller than
-  the output, so all Kitty Presents failed export. Sophia now interleaves
-  CPU/GPU surfaces by Engine order and supports persistent, layer-sized CPU
-  textures. The next run rendered the bar with Kitty, completed 141 mixed
-  exports with zero native failures, and exposed the remaining overlap:
-  managed Kitty geometry still begins at `y=0` beneath the bar.
-  A later click/drag focus run exposed a brief focused-border outline around
-  the bar during workspace changes. The cause was generic external-WM focus
-  reconciliation selecting the first committed hidden surface after xmonad
-  cleared focus; the owner now rejects that candidate before Engine mutation.
-  The follow-up physical run committed 10 empty focusless projections and 26
-  focused restorations with zero focused-border compositions during any empty
-  interval, zero pointer-policy suppressions, and clean teardown.
-  The refreshed schema-2 verifier additionally requires exactly one decorated
-  managed Kitty and proves the client-positioned bar is excluded from both
-  frame and focus-ring composition.
-- [x] Decode bounded `_NET_WM_STRUT_PARTIAL` and legacy `_NET_WM_STRUT` values
-  entirely inside the X
-  frontend and reduce them to protocol-neutral edge/span reservations tied to
-  the presenting surface. Reject malformed type, format, length, range, and
-  overflow without leaking atoms, XIDs, dock metadata, or client identity.
-- [x] Derive an output work area from active mapped, client-positioned
-  reservations and send
-  only that rectangle to the blind WM. Keep client-positioned bar geometry in
-  the full output scene, while managed Kitty geometry begins exactly at the
-  reserved top edge and ends exactly at the output boundary.
-- [x] Make reservation replacement, deletion, unmap, surface destruction,
-  configured-output projection, workspace projection, and frontend teardown
-  trigger one bounded work-area update while preserving workspace and focus
-  state. Invalid aggregate reductions retain the last valid work area.
-- [x] Cover no reservation, valid top reservation, partial-span reservation,
-  malformed values, conflicting edges, two-output clipping, replacement, and
-  removal with passive reducer, lifecycle, policy-state, and X11 socket tests.
-- [ ] Physically prove those lifecycle paths have no stale gap, overlap,
-  resize timeout, or focus change; dynamic output-topology change remains part
-  of the later multi-output hotplug gate.
-- [x] Retain a bounded real-xmobar request trace proving override-redirect
-  lifecycle, MIT-SHM pixmap upload/readback, copy-to-window pixels, and no X
-  protocol errors.
-- [x] Retain a guarded physical xmobar regression from the same commit as the
-  status-bar work-area implementation. Require an updating bar, Kitty at
-  `y=bar_bottom` with `height=output_height-bar_bottom`, no visible seam or
-  occluded Kitty pixels, working bar pointer interaction, unchanged Kitty
-  keyboard focus, one workspace round-trip, one VT round-trip, and clean
-  teardown.
-  The guarded capture on frame-service commit `9b14ea9` applied `y=14` on both
-  outputs, routed button and axis input to the generic client-positioned role,
-  preserved Kitty focus across the interaction, committed workspace 2/1,
-  completed three clean VT suspend/resume cycles, balanced 50 mixed
-  composition target/pipeline/frame-surface lifetimes with zero replacement,
-  and exited normally with clean TTY recovery.
-
-### 9.4 Rendering workload coverage
-
-The `vkcube` and `glxgears` proofs occupy the same workload cell: one
-fixed-size, always-animating window emitting a fresh full-frame DMA-BUF every
-vsync, measured for throughput/cadence. They prove the GPU DRI3 hot path twice
-and leave the workloads a daily driver actually lives in unmeasured. These
-items add the missing rendering-optimization proofs. Each keeps the existing
-launcher/probe/reporter/fixture/check pattern, a fail-closed schema report, and
-a same-hardware Xserver reference where an apples-to-apples one is definable.
-They are rendering-coverage evidence; only a named daily-driver failure
-promotes one to a hard M9 exit gate.
-
-- [x] Terminal CPU-path throughput. Drive the SHM/software-Present
-  path with a bounded standalone `xterm` scrollback workload rather than a GPU
-  client. Require positive CPU patch traffic (`cpu_patch_updates>0`,
-  `cpu_payload_bytes>0`) proving the immutable patch-batch path rather than
-  whole-pixmap replacement, at least one `partial` `sophia_live_output_repaint`
-  proving damage-driven repaint rather than a full frame every present, bounded
-  `cpu_max_compose_msec`, zero unexpected X11 protocol errors, and clean
-  teardown. Follow-up: define an apples-to-apples Xserver xterm-redraw cadence
-  reference (Copy-based redraw has no clean per-frame flip) before claiming
-  CPU-path parity.
-  Status: the first physical run hard-locked the machine. Root cause was a
-  probe bug, not the CPU path: `run_bounded_xterm.sh` passed the pixel intent
-  into xterm's `-geometry` (character cells), so `500x500` requested a
-  4004x5004 px window that overran the 64 MiB software-buffer cap, was rejected
-  `BadWindow`, and aborted startup before any layout committed; the hard lock
-  was the downstream greetd/RDNA3 KMS re-take after that abnormal early exit.
-  Reproduced deterministically offline via `x-authority-xterm-input-smoke`
-  (no KMS). Fixed by converting px→cells against a pinned `6x13` font and
-  clamping under the cap. The schema-3 performance reporter now fail-closes
-  above the established 25 ms CPU-composition budget and reports the applied
-  budget beside the observed maximum. A commit-pinned TTY3 gate now refuses a
-  dirty tree or inactive persistent logging and archives the report, session,
-  guard, recovery, launcher, and exact kernel-log delta. Native path audited
-  and cleared as a lock cause.
-  The first post-geometry-fix run then failed closed at transaction 650 because
-  the probe emitted unpaced 200-line bursts into the intentional 256-batch
-  authority queue. The X frontend stopped rather than dropping visual facts;
-  xterm exited 84, and TTY3/greetd restoration completed normally. The probe
-  now declares a fixed eight-line/16 ms cadence in schema-3 evidence, and the
-  runner preserves structured interrupted evidence. See
-  `docs/research-log.md` 2026-07-30. Two paced physical attempts then proved
-  clean rendering, input, native drain, kernel delta, and TTY handback, but
-  produced no client completion: one was manually logged out before 20 seconds;
-  the other exposed a probe-controller bug where xterm backpressure held
-  `seq(1)` past the shell's wall-clock test and the outer safety timeout arrived
-  before the final-only count write. The producer now has an independent timer,
-  records completed bursts incrementally, and has a stalled-pty regression.
-  Two controller-fixed physical runs on `4cb4f5f` then passed the schema-3
-  automated gate: 6,648 lines / 831 iterations, positive patch traffic,
-  partial repaint, zero authority drops or unexpected protocol/native
-  failures, 7 ms maximum CPU composition against the 25 ms budget, clean
-  kernel deltas, and clean TTY3/greetd handback. The retained runner records
-  remain `visual-confirmed=false` because the local prompt did not capture
-  `yes`; the operator separately observed the expected scrolling-number
-  surface and responsive pointer in the paced session. Do not rewrite the
-  immutable archive. The Sophia CPU-path evidence is complete; the Xserver
-  comparison remains a follow-up before any parity claim.
-- [x] Input-to-photon latency. Inject input through the physical libinput
-  dwell/budget path and measure ingress to the exact presented frame that
-  reflects it. Kernel `PageFlipEvent::duration` now survives the private native
-  callback path into production retirement, with completion counters exposing
-  kernel timestamps, synthetic fallbacks, and pending correlations. The raw
-  ingress gap remains: `--inject-text` bypasses the libinput queue-dwell stage.
-  Add a bounded uinput-backed injector and per-sample correlation from the
-  libinput event timestamp through the exact submitted/presented frame. Require
-  positive kernel timestamp coverage and zero fallbacks/pending correlations.
-  For synchronized scanout, require full-chain latency below two refresh
-  periods at p95 while independently requiring maximum queue dwell at or below
-  1 ms, dwell-to-submit at or below one refresh, and submit-to-page-flip at
-  or below one refresh. This keeps random vblank phase out of the controllable
-  pre-submit budget without accepting an extra queued frame.
-  Implemented: the uinput keyboard helper, per-event libinput timing sidecar,
-  post-ingress submission correlation, kernel-UST retirement, stage reporting,
-  and a commit-pinned 20-sample TTY3 runner. The unattended QEMU regression now
-  drives QMP input through virtio evdev/libinput, correlates software-composed
-  scanout to its kernel UST, and rejects fallback/pending clocks; it caught and
-  fixed a no-WM visual-admission startup deadlock. Remaining: run the physical
-  gate and retain a passing p95 archive before checking this item complete.
-  The first damage-reuse physical rerun completed 16 clean samples with a
-  2 ms maximum native upload, then stopped before injection on a transient
-  cursor-plane `EACCES`; the runner now retries only that exact pre-input
-  startup failure and still fails closed after input readiness or injection.
-  The next complete archive retained the 2 ms upload maximum but measured
-  22 ms p95 because the paced seven-character injector created intermediate
-  input frames and made the final key wait behind an earlier page flip. The
-  gate now emits the same exact text as one zero-spacing uinput burst so one
-  sample measures one isolated libinput-to-presented-frame transaction. That
-  isolated run proved zero queue dwell but exposed 11–14 ms of pre-submit work:
-  every primary update was rebuilding and scanning an unchanged 1920x1080
-  secondary-output marker. Secondary frames are now cached by output slot and
-  descriptor, reused across primary recomposition, and invalidated when the
-  output changes. The dual-output QEMU GBM/KMS path passes with 2 ms maximum
-  composition; a same-commit physical p95 archive remains required.
-  The next 20-sample physical archive on `df1f385b` retained exact input,
-  kernel timestamps, clean teardown, and a 2 ms maximum native upload, but
-  measured 25 ms p95 and 28 ms maximum. Queue dwell remained at 0–1 ms while
-  dwell-to-submit remained 9–13 ms: caching the secondary output removed only
-  part of the owner-path work because the primary CPU scene still cleared and
-  recomposed the complete 3840x960 frame for each bounded xterm change. Primary
-  display-list composition now derives a normalized repaint plan from the
-  retained output snapshot, clears and replays only intersecting layers,
-  borders, and cursor pixels in stacking order, and falls back to full
-  composition whenever history or storage is incompatible. Focused pixel
-  regressions and the complete offline gate pass. Commit-pinned QEMU on
-  `a2c91f51` passed with exact input, kernel page-flip timestamps, clean
-  teardown, 3 ms maximum CPU composition, and an 18 ms full chain split into
-  0 ms queue dwell, 14 ms dwell-to-submit, and 4 ms submit-to-page-flip; QEMU
-  remains correctness evidence rather than the physical performance gate. The
-  authoritative physical rerun on `b6e94d5d` retained 20 exact samples with
-  kernel timestamps, zero fallback/pending correlations, clean health and
-  teardown, 26 ms p95, 27 ms maximum, 0 ms maximum queue dwell, 10 ms maximum
-  dwell-to-submit, and 16 ms maximum submit-to-page-flip. The physical contract
-  separates the synchronized two-refresh end-to-end bound from one-refresh
-  processing and scanout-stage maxima. The immutable archive's report records
-  the superseded half-refresh processing gate as failed; schema-2 re-evaluation
-  under the corrected contract passes all four gates without modifying that
-  evidence. Precise glyph-level damage propagation remains a Milestone 13
-  efficiency improvement because safely reusing older frames requires
-  accumulated buffer-age history across coalesced generations.
-- [x] Resize-under-render storm. Continuously relayout a rendering client using
-  the existing `--inject-surface-resize` / `--inject-output-size` hooks. Require
-  no admission staging offset after `layout_committed`, no nonmatching buffer
-  satisfying the pending resize, no resize timeout, and bounded recovery with
-  resources retired exactly once. The bounded
-  `--inject-surface-resize-sequence` extension admits 2–32 changing targets and
-  starts the next resize only after the preceding transaction has committed
-  its exact geometry and pixels. The two-output `xmonad-resize-storm` QEMU gate
-  drives 12 resizes across a continuously redrawing CPU/SHM Xterm, requires
-  request→layout→resize-epoch→exact-pixel causality for every step, observes a
-  later partial-damage page flip, and rejects renderer-worker or teardown debt.
-  Two consecutive production runs passed this contract; mutation tests reject
-  missing or mismatched pixels, layout timeout, missing post-storm rendering,
-  and imbalanced worker ownership. This closes the CPU/software-present cell;
-  concurrent DMA-BUF producers remain the next workload.
-- [ ] Multi-producer concurrent present. Present N DMA-BUF clients beside one
-  CPU-composited bar and measure per-output frame-service fairness, import-cache
-  pressure and eviction, and single renderer-worker request latency under
-  contention.
-  - [x] Lock the single-active-output contention cell. The diskless virgl QEMU
-    profile serially admits three unmodified `glxgears` clients beside
-    unmodified xmobar, then measures one bounded 90-frame window only after all
-    four surfaces are stable. Two production runs passed; the latest gave every
-    producer 32–33 retirements, imported and finally evicted 816 DMA-BUFs with
-    1,069 cache hits, balanced 818 renderer requests/completions with a 47 ms
-    maximum, and drained nine frontend controls with a 1 ms maximum
-    acknowledgement. The
-    mutation-tested verifier rejects producer starvation, false window
-    accounting, missing cache reuse, worker debt/stall/latency, layout recovery,
-    inactive CPU composition, or dirty teardown.
-  - [ ] Place active producers on both outputs of one render-device group and
-    require bounded inter-output service skew. The current second QEMU output
-    retains its startup baseline but intentionally carries no workload, so the
-    parent item remains open. Complete the shared renderer-worker prerequisite
-    in Milestone 13 before treating this as same-device output fairness.
-- [x] Idle / partial-damage efficiency. Hold a mostly-static desktop and require
-  near-zero recomposition, a high import-cache hit rate, and no full-frame CPU
-  upload when nothing changed. This is the inverse of the always-animating
-  benchmarks and the only proof that exercises the import-cache hit path, since
-  every animation frame is a cache miss by construction. The isolated
-  two-output virgl gate freezes a real `glxgears` DMA-BUF producer beside a
-  static CPU/SHM Xterm, then performs 256 focus transitions followed by a
-  two-second causal idle window. Two consecutive production runs delivered a
-  partial, page-flip-retired `RetainedMixed` submission for every transition,
-  admitted no client Present or CPU submission during that window, and
-  performed no repaint, page flip, or client Present while idle. The latest
-  completion recorded 73 imports, 257 cache hits, 73 final evictions, 334
-  balanced renderer requests/completions with a 34 ms maximum, and clean
-  native, control, application, and cache teardown. The runs exercised both
-  legal two- and three-upload startup baselines without uploading another CPU
-  frame in the retained window. Mutation tests reject a missing transition,
-  full repaint, non-retained submission, weak cache reuse, idle work, worker
-  debt, output leakage, or dirty cleanup. The gate also found and locked down a
-  lost-repaint bug: CPU-frame coalescing had removed the native visual owner
-  from the same Engine cycle, allowing focus state to commit without queuing
-  retained projection. CPU coalescing is now advisory only for CPU composition;
-  retained GPU and chrome work keeps its native owner.
-- [x] Producer-overload / frame-drop discipline. Drive an unthrottled producer
-  above the refresh rate and prove one latest pending frame plus one KMS
-  submission in flight per output, bounded queue storage, no unbounded memory
-  growth, and no tearing. Engine now retains one replaceable, pure
-  same-surface DMA-BUF Present behind the active owner without crossing layout,
-  CPU, removal, software-Present, or multi-surface barriers. Superseded work
-  receives exact Skip/Idle feedback and releases its source once. The
-  mutation-tested two-output virgl gate uses a three-buffer DRI3 client at
-  5 ms intervals, selects client-visible Complete/Idle events, and requires two
-  sustained five-second phases, one replaceable Engine slot, one scheduler
-  slot, one KMS frame in flight, at most two live Present records, bounded
-  source/fence high-water marks, a 100 ms worker ceiling with no stalls, exact
-  rejection accounting, and clean teardown. Two consecutive production runs
-  passed. The latest displayed 357 frames, skipped 925, routed 1,282 balanced
-  Complete/Idle pairs, superseded 906 pending frames, balanced 361 renderer
-  requests at a 40 ms maximum, and had zero route or native failure. Promotion
-  also separated X11 input/control/protocol/presentation capacities and gave
-  pending WM controls priority over ordinary socket output; regressions lock
-  both transport invariants.
-
-Tier 3 rendering coverage — atomic-test-gated direct-scanout bypass and
-multi-output cadence parity — is not new work here; it extends the existing
-Milestone 13 direct-scanout and multi-output-worker items.
-
-Milestone 9 exits only when the commit-pinned unattended semantic, native
-chrome, four-Kitty hardware, xmobar hardware, and emergency gates pass for one
-candidate commit.
+- The release freezes Sophia and the stock xmonad policy, but its xmobar
+  resolver can still discover or build `~/src/xmobar`. A release is not fully
+  repository-independent until it packages the exact configured xmonad and
+  xmobar executables and verifies their digests at runtime.
+- The xmonad bridge has one flattened `active_workspace` policy view even
+  though the session descriptor can express output/workspace mappings. True
+  independent per-output workspaces require output-scoped active-workspace
+  state throughout the bridge and Engine transaction path.
+- The opaque WM API lacks focus-master, swap-master/up/down, shrink/expand,
+  master-count, reset-layout, focus-output, move-to-output, and supervised
+  WM-restart actions.
+- `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` are compatible
+  geometry policies once each has deterministic bridge coverage. Xmonad's
+  `Tabbed` layout depends on title-aware, WM-drawn decorations and therefore
+  does not fit the blind-WM contract. If tabs are admitted later, Engine must
+  draw metadata-free native tabs.
+- Xmobar can render, reserve a work area, update, and retire cleanly, but it has
+  no private workspace/layout/focus feed. Such a feed must be emitted by
+  Engine or a trusted shell broker and contain only workspace number, approved
+  layout name, and focus state—never window titles or client identity.
+- Application placement cannot use xmonad class/title rules. Requested launch
+  placement, such as Firefox on workspace 2, must come from trusted launch
+  provenance or explicit user action.
+- The X setup catalog already advertises 24-bit XRGB and 32-bit ARGB TrueColor
+  visuals, and arbitrary `AllocColor` pixels work. Color-query and named-color
+  behavior is still reduced to a black/white approximation, so the advertised
+  TrueColor contract is not yet internally consistent.
+- The daily-driver session still uses the `classic-shared` X namespace. The
+  confined-group architecture and most portal executors are not yet promoted
+  into the normal Firefox session.
+- Tray/XEmbed, lock, screenshots, wallpaper, audio control, and general prompt
+  UI are shell or portal work. `xcompmgr` must never run under Sophia because
+  Sophia is the compositor.
+- The compatibility bridge currently has a complete xmonad profile, not broad
+  classical-WM compatibility. Other WMs such as i3, dwm, and qtile require
+  separate evidence-backed profiles against the same synthetic-X and Sophia
+  WM boundaries; no profile may grow into a proxy for the real X Authority.
+- The small bundled native WM proves the direct API and native chrome path, but
+  it is not the intended full desktop policy. Hagia is the planned first
+  demanding Sophia-native WM and shell family: a blind spatial-policy process,
+  an optional separately authorized shell, and ordinary Sophia session and
+  portal services.
 
 ---
 
-## Milestone 10: Physical Firefox Workload
+## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
-QEMU already proves the bounded Firefox protocol workflow. This milestone
-tests the combined physical AMD/KMS, xmonad, Kitty, and Firefox session rather
-than adding speculative browser compatibility.
+The previous ten-cycle gate remains valid evidence for commit `958fb5e6`, but
+the intended xmonad/xmobar configuration and complete TrueColor semantics will
+produce a successor candidate. Do not begin the final soak on a build that is
+about to change.
 
-- [x] Establish first-class floating-window policy without application
-  heuristics. X Authority keeps every non-override-redirect application
-  toplevel under WM policy, reduces ICCCM/EWMH dialog facts into opaque
-  `Dialog`/`Floating` layout facts, and reserves client-positioned bypass for
-  override-redirect plus desktop/dock ownership. WM API v7 persists floating
-  state and exposes a transactional toggle; the xmonad profile exports only
-  standard transient/type/size hints and binds `Super+Shift+Space`,
-  `Super+left-drag`, and `Super+right-drag`. Pointer drags render an
-  Engine-owned outline from retained pixels, keep the whole frame on the
-  gesture-start output, suppress client delivery during capture, and commit
-  one final atomic move/resize. Wire, codec, policy, process-external xmonad,
-  stacking, multi-output clamp, and compositor-outline regressions pass.
-  Firefox uses an in-document modal for its deterministic browser workflow;
-  a separate genuine hinted X11 dialog regression owns transient-toplevel
-  coverage.
+### 12.1 Close The Intended Desktop Configuration
 
-- [x] Complete generic Firefox wheel compatibility in the X frontend. Preserve
-  protocol-neutral Engine axis routing, translate it through the appropriate
-  X11 input semantics, and require a real routed axis event to produce the
-  deterministic local page's DOM `wheel` stage. The clean QEMU gate negotiates
-  Firefox XI2 2.1, advertises horizontal and vertical scroll valuators, routes
-  cumulative smooth-axis positions through the selected ancestor window, and
-  completes the DOM stage with `source=wheel`, `axis_routes=2`, and
-  `keyboard_fallback=false`. The first physical run to reach this stage proved
-  that libinput and Engine routing completed but Firefox did not receive a DOM
-  wheel event. Sophia had incorrectly overlaid its scroll valuators on pointer
-  X/Y axes 0/1; the X frontend now advertises X/Y on 0/1 and scrolling on 2/3
-  and emits matching XI2 masks. The next physical run delivered exactly one
-  smooth XI2 motion packet. GTK uses the first value for its per-axis baseline,
-  so it correctly produced no scroll delta; QEMU's old ten-attempt loop hid
-  that requirement. The X frontend now also emits XI2 ButtonPress/Release
-  wheel compatibility events, reports zero/zero bounds for its relative scroll
-  valuators, and both proof paths explicitly require two routed wheel packets.
-  A live follow-up exposed two remaining conformance/evidence defects: the
-  translated smooth XI2 Motion lacked Xorg's `XIPointerEmulated` flag, and the
-  `axis_routed` marker was intentionally one-shot even though the verifier
-  counted it as a packet. Smooth Motion and compatibility button events now
-  carry the emulation flag, while a redacted axis-batch record publishes exact
-  observed/routed packet counts. Repeat the physical stage before closing this
-  item again. The follow-up implementation now also returns live pointer X/Y
-  and cumulative scroll positions from XI2 `QueryDevice`, reports hierarchy-
-  correct child/local coordinates plus button/modifier state from
-  `XIQueryPointer`, and includes the immediate child and button mask in XI2
-  device events. The offline scroll stage now requires a real document
-  navigation, a post-baseline vertical DOM wheel event, and nonzero document
-  displacement, while the QEMU verifier independently requires both routed
-  wheel packets after replacement-document readiness; receiving packets
-  without scrolling can no longer pass the fixture. The strengthened QEMU gate
-  passes end to end, including ordered Firefox DOM-modal ready/confirm stages
-  and clean guest shutdown. The separate X11 wire regression proves genuine
-  hinted-dialog management and floating placement. The 2026-08-03 integrated
-  physical run causally ordered a routed XI2 wheel packet after replacement-
-  document readiness, then Firefox reported DOM wheel handling and nonzero
-  document displacement.
-- [x] Run the deterministic local Firefox workload beside two independently
-  usable Kitty windows. The first isolated-profile physical run proved a real
-  Firefox DRI3 frame plus the deterministic loaded and keyboard stages, then
-  exposed clipped-frame rejection and descendant-click focus ambiguity after
-  xmonad resize. Pixel-aligned clipped Presents, same-client managed-toplevel
-  focus handoff, reparent role withdrawal, and client-scoped observation
-  overload handling allowed the next run to retire the browser frames, but the
-  trace then proved that Firefox's render child was still projected at global
-  origin and overlapped Kitty's input region. Descendant DMA-BUF Presents now
-  reduce to their managed toplevel with an accumulated X-hierarchy offset and
-  target-bounded clipping. The following physical run proved correct unit-scale
-  browser placement plus keyboard and clipboard interaction, then exposed an
-  edge-target instruction and an unsynchronized two-Kitty prompt race in the
-  proof harness. Those prompts now coordinate exactly one restart and direct
-  pointer work away from compositor edges. Later focused rendering,
-  cross-window `CLIPBOARD`, and DOM-dialog gates passed; retain this history
-  without replaying the obsolete combined workflow. The shortened 2026-08-03
-  promotion retained both Kitty processes through both Firefox lifecycles and
-  completed with clean teardown.
-- [x] Require visible rendering plus keyboard, pointer, scroll, resize,
-  workspace hide/show, refocus, modal open/close, and status-zero exit.
-  Genuine non-override-redirect transient dialogs remain policy-managed with
-  opaque owner and floating-preference facts; only override-redirect windows
-  bypass WM policy. Temporary exact-size recovery constraints clear only after
-  matching CPU admission or exact DMA-BUF retirement, queue one coalesced blind-
-  WM relayout, and must be zero in the clean layout-health record. The strict
-  Firefox verifier now requires action 3 (`Super+Space`), a committed layout
-  and exact Firefox resize epoch, a three-visible-surface workspace
-  projection, replacement-document readiness, ordered DOM-modal ready and
-  confirmation checkpoints without any new X11 toplevel, and clean
-  recovery-constraint teardown. Genuine transient-toplevel semantics remain
-  locked independently by the hinted-dialog wire regression. The focused
-  gates and the 2026-08-03 integrated physical run close these boundaries.
-  A subsequent `Super+F` run exposed a stale five-second application-admission
-  deadline below the accepted WM resize bound and a fatal pointer-focus queue
-  overflow. Admission now remains open beyond the maximum WM transaction;
-  held pointer motion coalesces and exceptional capacity loss is atomic and
-  nonfatal. Repeat the physical workflow before closing this item.
-  The next trace showed why the longer wait did not help: Firefox's mapped
-  toplevel `ConfigureWindow` was incorrectly allowed to overwrite the geometry
-  already committed by Engine, and recovery drained its selected frame before
-  WM assignment made the surface visible. Mapped policy toplevel geometry is
-  now Engine-owned, released admission pixels wait for policy assignment, and
-  the xmonad admission fallback is back to two seconds. That launch produced
-  the exact 1276-by-1422 Firefox resize candidate, but the native page flip
-  later rejected it as stale: layout had declared the candidate committed when
-  it was only observed, and subsequent same-surface backing transactions
-  advanced the Engine generation before scanout retirement. DMA-BUF layout
-  candidates now keep the standing target until their exact native retirement,
-  reject old-size Presents throughout that interval, and fence only later
-  authority work for the same surface. Retirement commits the candidate first,
-  then rebases and releases the bounded backlog; unrelated surfaces remain
-  runnable. Reducer, Engine-ordering, lifecycle, and fail-closed verifier
-  regressions pass. The first physical follow-up selected and armed Firefox's
-  exact 1280-by-1040 recovery frame, but presentation disposition compared it
-  with the retained 1276-by-1422 standing target and rejected it before native
-  submission, so admission timed out. The disposition gate now admits only the
-  exact armed transaction/surface/size identity; later same-surface work stays
-  behind the production content fence and the standing target remains pending.
-  The next physical launch retired that exact admission frame and delivered
-  the standing 1276-by-1422 configure, but then accepted an exact-size passive
-  CPU backing snapshot as resize completion while Firefox's visible DMA-BUF
-  producer continued at 1280-by-1040. The resulting taller layout contained
-  only 1040 rows of browser pixels, leaving a black lower region and clipped
-  content. Engine now retains the strongest visual-evidence requirement for a
-  surface lifetime: once a surface explicitly presents complete buffers, a
-  backing snapshot may inform recovery but cannot satisfy a resize. CPU-only
-  clients and explicit software Presents remain valid. Repeat the physical
-  launch from this commit before continuing the full workflow. That repeat
-  preserved the correct 1280-by-1040 recovery extent and exposed the remaining
-  frontend gap: Firefox resized its descendant render window, but Sophia sent
-  only core `ConfigureNotify`, so Mesa retained the old swap-buffer size and no
-  1276-by-1422 PresentedBuffer ever arrived. XLibre's Present screen hook and
-  yserver's independent native-Rust Firefox fix both require exact-window
-  Present `ConfigureNotify` before core delivery. X authority now applies that
-  ordering to real client- and Engine-originated geometry changes, routes every
-  matching subscription, and suppresses failed/no-op notifications. Repeat the
-  three-window physical launch from this change before continuing the full
-  workflow. The 2026-08-02 repeat rendered Firefox at the exact 1276-by-1422
-  tile and reached verifier stage 5 of 8, confirming the Present/core
-  ConfigureNotify regression physically. `Super+Space` then produced action 3
-  transaction 6 with `moved_surfaces=0` and `configure_deliveries=0`: the bridge
-  accepted its own pre-action Tall reconciliation before xmonad's later Mirror
-  response. The xmonad profile now drains that baseline before injecting the
-  registered private Mod1+Space chord and requires fresh post-action WM
-  activity. The real-xmonad gate additionally exposed a core-wire prerequisite:
-  `GetKeyboardMapping` parsed its header padding as the first keycode and
-  omitted the inclusive maximum keycode, leaving xmonad with no passive grabs.
-  Correct body parsing and full advertised serialization are now exercised by
-  the fixture before `GrabKey`. Hermetic delayed-response and missing-grab
-  regressions plus the exact real-xmonad Tall-to-Mirror smoke lock this
-  boundary. Repeat the physical workflow from this change before closing the
-  item. That repeat confirmed `Super+Space` changed the layout orientation and
-  repeated `Super+J` proposals cycled focus among all three clients, but
-  Firefox never received `FocusOut` when focus moved to another X client. The
-  frontend broker now owns the cross-client old/new route, preserves
-  same-client FIFO delivery, and has a repeated A-to-B-to-A wire regression.
-  The session's apparent crash was a clean status-1 exit caused by treating an
-  expected duplicate in-flight physical action as fatal; action duplicates now
-  coalesce, are counted in the bounded transport summary, and retain capacity
-  rejection as a separate outcome. The following repeat reached the refocus
-  checkpoint and created the attached popup, but a later focus action restarted
-  the bridge after xmonad answered only one of three synthetic root
-  `ConfigureNotify` signals. Existing-node reconciliation is now one coalesced
-  activity fence; only new synthetic `MapRequest` admissions require a reply
-  for every window. A process-external three-window focus regression answers
-  that fence with one configure and rejects duplicate root notifications.
-  The next physical run again committed every `Super+J` cycle but stopped at
-  refocus. The earlier apparent pass had depended on the input writer lazily
-  emitting XI2 focus when some later key arrived; compositor-owned Super
-  chords provide no such Firefox packet. XLibre and yserver both emit selected
-  core and XI2 focus together at the authority mutation. Sophia now does the
-  same from one passive control-time transition, while key delivery retains
-  only pointer crossing work. The two-client wire regression requires repeated
-  transitions without input, and both QEMU and the page have lost the hidden
-  `r` bypass. That repeat proved the focus handoffs, then exposed a clean
-  status-1 `UnknownSurface` exit during the second Firefox launch. A timed-out
-  popup proposal had been rejected by Engine while remaining in the xmonad
-  bridge's speculative model. Rejected WM proposals now retain their source,
-  trigger the bounded bridge restart, discard queued/in-flight speculative
-  work, and reseed xmonad from the committed layout. The following run no
-  longer exited, but opening the popup blanked Firefox while xmonad repeatedly
-  attempted to tile it. Separating `WM_TRANSIENT_FOR` presence from its
-  optional owner did not fix the physical workload: the freshly built repeat
-  still admitted the popup, proving that it produced no valid transient
-  reduction. X Authority now also reduces the ordered EWMH
-  `_NET_WM_WINDOW_TYPE` list, keeping normal toplevels managed while excluding
-  dialog/menu/utility/splash/popup-like types from blind-WM admission. The
-  fallback path also retains its safe fixed extent while a different standing
-  target remains unmet, preventing an admitted initial frame from immediately
-  re-entering the same failed resize loop. Repeat the popup recovery, second
-  Firefox launch, and exit stages from this change; the new redacted window-
-  type trace must confirm the exact live Firefox hint.
-  Three identical follow-up failures disproved popup classification as the
-  remaining root cause. X Authority had emitted a fabricated core
-  `ConfigureNotify` for every successful `CreateWindow`; GTK later consumed
-  the real admission configure against an already-unbalanced toplevel-update
-  freeze and reported `gdk_window_thaw_toplevel_updates` while the owner
-  blanked. Created and policy-pending windows also lacked the protocol's
-  distinct `Unviewable` state, so an early-mapped render child could become
-  falsely visible below an unmapped top-level. X Authority now keeps deferred
-  policy intent separate from `Unmapped`/`Unviewable`/`Viewable`, propagates
-  ancestor viewability through mapped descendants, and routes `CreateNotify`,
-  `MapNotify`, `ConfigureNotify`, `VisibilityNotify`, and `Expose` strictly by
-  each client's selected masks. The Firefox-shaped wire regression maps a
-  child below a deferred top-level and requires child visibility/exposure only
-  after exact admission; a two-client regression covers structure and
-  substructure delivery and proves no create-time configure remains queued.
-  The physical verifier now rejects GDK thaw underflow, popup-era layout
-  timeout or WM restart, and popup layout without a matching retired visual.
-  The next run proved `Super+F` and process launch still succeeded, but the
-  first Firefox admission timeout restarted xmonad and incorrectly queued a
-  committed-state relayout before replaying the uncommitted manage operation.
-  That relayout projected only the two existing Kitty surfaces; the later
-  Firefox retry was withdrawn. Recovery now prioritizes the pending opaque
-  `ManageSurface`, with an allocation-free crate-boundary regression and
-  reduced reseed-order evidence for future queue optimizations. The immediate
-  rerun showed the first implementation still emitted `request=relayout`:
-  it reused the ordinary admission selector, which correctly blocks while
-  rollback extents exist. Reseed replay now has a separate candidate query
-  that ignores only that scheduling gate while retaining known-surface and
-  terminal-retry checks. The next run confirmed `request=manage` and retired
-  Firefox's 1280-by-1040 fallback followed by its exact 1276-by-1422 standing
-  target, but the latter remained clipped to 1276-by-1040 because it arrived
-  after the constrained admission epoch and therefore was not armed. The old
-  regression had bypassed this production boundary by manually recording the
-  target. Exact native retirement now discharges an unarmed standing target
-  only while the same surface retains its temporary recovery extent, queues
-  one constraint relayout, and leaves unrelated unarmed frames rejected.
-  The next physical run confirmed
-  `recovery_extent_cleared reason=standing_target_presented`, complete clips,
-  successful pointer handoffs, and proof progress through 7/8. Its cleanup
-  relayout nevertheless moved Firefox from the full master column into the
-  lower-right slave pane because the synthetic bridge destroyed and remapped
-  the window when its temporary fixed `WM_NORMAL_HINTS` became resizable.
-  Recovery-profile changes now update that property in place and emit the core
-  `PropertyNotify` shape verified against XLibre and yserver. Reducer and real-
-  xmonad regressions require stable synthetic identity, focus, and master-stack
-  placement across fixed-to-resizable release. The next live run falsified the
-  remaining focus assumption: Sophia committed Firefox focused, but the bridge
-  had only appended that focus to its response and had not synchronized the
-  private xmonad instance. The constraint relayout then exposed xmonad's stale
-  Kitty focus and made Kitty master. Manage admission now performs a bounded
-  synthetic pointer-focus transition before returning. The real-xmonad smoke
-  passes without its former explicit-focus workaround, and a process-external
-  fixture requires managed focus to survive the next relayout. The immediate
-  live repeat falsified that single-runtime model: the timeout restarted the
-  complete bridge/xmonad process, then replayed only Firefox with its temporary
-  recovery extent exposed as fixed `WM_NORMAL_HINTS`. Fresh xmonad therefore
-  lacked the committed Kitty stack and classified Firefox as floating; the
-  next relayout admitted Kitty afterward and made it master. Restart recovery
-  now queues the committed workspace seed before the pending manage replay,
-  and external-WM nodes project only client-declared constraints while Engine
-  reconciliation retains the temporary recovery extent. The real-xmonad smoke
-  now destroys and recreates its runtime before restoring two committed nodes
-  and replaying Firefox, and requires Firefox to remain the tiled master/focus
-  on the following relayout. The next live launch proved that both requests
-  were queued in the right order, but exposed a second ownership leak:
-  response planning rebuilt the committed relayout on every known planning
-  surface, so phase one admitted Firefox and consumed its quarantined
-  1280-by-1040 Present before the queued manage replay could own it. WM
-  proposal layers are now scoped by the response's candidate workspace state,
-  and unresolved admissions remain eligible until their own candidate assigns
-  them. The lifecycle regression requires phase one to preserve the exact
-  visual candidate and phase two to arm, retire, and admit it. The physical
-  verifier accepts a future direct-admission optimization, but if recovery is
-  used it rejects repeated restarts or any phase-one candidate consumption.
-  The focused selection follow-up physically confirmed that the FIFO fix
-  clears the recovery extent through the exact standing target and then
-  repeatedly retires complete 1276-by-1422 Firefox frames in the full left
-  column. A rendering-only canary now locks that invariant without coupling it
-  to browser interaction; its verifier accepts direct admission and bounds
-  fallback admission to one retained extent and at most one WM restart.
-  The final modal now has its own one-Kitty/one-Firefox canary with only two
-  trusted clicks. Its reducer requires ordered page-ready, modal-ready, and
-  confirmed checkpoints; its verifier requires a routed pointer batch and a
-  complete full-height native retirement for both transitions while rejecting
-  a new X11 toplevel, post-admission WM restart, layout timeout, GDK freeze, or
-  retained recovery constraint. The 2026-08-02 physical gate passed all three
-  ordered checkpoints, both routed click transitions, complete 1276-by-1422
-  retirements, and clean session/layout teardown. Do not replay its operator
-  sequence as a separate proof requirement.
-  Current focused-gate state is authoritative:
+This section prepares the current xmonad-based promotion candidate. Its
+profile-specific work must remain behind the generic compatibility boundary;
+it must not make xmonad concepts part of Engine or the universal WM API.
 
-  - [x] full-height Firefox rendering and recovery cleanup;
-  - [x] bidirectional cross-window `CLIPBOARD` transfer;
-  - [x] DOM modal open/confirm with stable full-height rendering;
-  - [x] bidirectional cross-window `PRIMARY` transfer;
-  - [x] normal close, restart, and WM-forced close lifecycle.
+- [ ] Modernize the personal xmonad configuration for the packaged xmonad
+  0.18 series without loading mutable `~/.config/xmonad` state at session
+  runtime. Preserve the established Sophia key actions and use only supported
+  blind geometry policy.
+- [ ] Admit `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` one at a
+  time. For each layout, retain deterministic multi-surface geometry,
+  constraint, focus, workspace, floating-toggle, work-area, output-change, and
+  bridge-restart regressions before adding it to the installed policy.
+- [ ] Exclude xmonad `Tabbed`, title/class manage hooks, dzen property control,
+  and xmonad-owned decorations from this candidate. Record any later native-tab
+  design as Engine chrome, not an expansion of fake X drawing or WM metadata.
+- [ ] Package the exact configured xmonad executable and exact xmobar
+  executable as immutable release inputs. Record source revision, build
+  configuration, binary digest, and runtime path; reject home-source discovery
+  and digest mismatch.
+- [ ] Keep xmobar's present static/redacted content for this milestone unless
+  the soak demonstrates that a dynamic status feed is required. Dynamic
+  workspace/layout/focus status belongs to the post-promotion broker slice.
 
-  Do not rerun those gates unless a later change touches their causal boundary.
-  The remaining physical evidence is final integrated promotion.
-- [x] Prove the remaining bounded UTF-8 `PRIMARY` transfers between Firefox
-  and Kitty. The prior page could complete from a synthetic
-  paste handler while Firefox legitimately reused same-process selection data
-  without core `ConvertSelection`. The physical M10 mode now performs real
-  bidirectional Firefox/Kitty handoffs for both selections, advances only from
-  exact default-paste input, publishes two peer checkpoints, and requires an
-  ordered owner-change/conversion pair in all four directions. Offline
-  coordinator, reducer, and fail-closed verifier regressions pass. A focused
-  one-Kitty/one-Firefox slice now stops immediately after the four directional
-  transfers, uses direction-specific tokens, and requires a trusted full-field
-  PRIMARY selection before leaving Firefox. Its first physical run exposed an
-  admission-release FIFO inversion: the current Firefox authority group was
-  assembled before older quarantined groups, making the exact standing-target
-  Present stale and retaining the short fallback window. Released groups now
-  precede current work, with a same-surface generation regression. Its
-  follow-up physically completed both Firefox/Kitty `CLIPBOARD` directions
-  with seven owner changes and fourteen conversions before the operator ended
-  the mixed workflow at PRIMARY. `CLIPBOARD` is accepted and is no longer part
-  of routine rendering reruns. A new PRIMARY-only slice begins directly at a
-  trusted full-field Firefox pointer selection, uses exact direction-specific
-  tokens, and requires an owner-change-to-conversion interval in both
-  directions while rejecting any CLIPBOARD checkpoint. The 2026-08-02 focused
-  run reached Kitty's exact Firefox-token checkpoint, proving the
-  Firefox-to-Kitty PRIMARY direction, then stalled after Kitty selected its
-  return token and Firefox issued conversions. The generic same-namespace wire
-  regression now performs the transfer in both directions without resetting
-  either client. The 20:49 follow-up routed Kitty's property writes and
-  SelectionNotify to Firefox, but Firefox issued no property read. XLibre and
-  yserver both set the `SendEvent` bit on client-sent events; Sophia had erased
-  that bit while decoding and re-encoding the owner's SelectionNotify. The X
-  authority now retains the synthetic-event semantic, and the bidirectional
-  wire regression asserts the complete `0x9f` event type in both directions.
-  The 21:14 physical follow-up used one Firefox and reached the reverse
-  property writes plus two successful routed notifications, but Firefox still
-  issued no property read; preserving `SendEvent` was necessary but not the
-  complete real-client fix. Routing previously proved only queue acceptance.
-  Diagnostic mode now records each selection event only after the recipient
-  socket flushes, with redacted correlation fields, and reports every observed
-  proof-title length. The verifier requires the flushed synthetic notify in
-  each direction. The 21:30 run proved both directions: Firefox's armed title
-  preceded the first owner/conversion/flush interval, Kitty consumed the exact
-  22-byte token, and Firefox emitted its exact-token confirmation immediately
-  after the reverse UTF-8 property-bearing synthetic notify was flushed. The
-  harness alone failed because its reducer required an initial page-ready title
-  that Firefox coalesced before observation. That redundant checkpoint is now
-  removed; the three retained checkpoints are causal, monotonic, and bracketed
-  by the two protocol transfers.
-- [x] Close, restart, and force-close Firefox while both Kitty windows retain
-  their content, focus, workspaces, and interactivity. A focused lifecycle
-  slice removes clipboard, scroll, resize, refocus, and dialog work while
-  retaining two Kitty processes, two status-zero Firefox exits, and ordered
-  normal/WM-forced close checkpoints. The 2026-08-03 physical run completed all
-  six Kitty checkpoints around two action-launched Firefox processes. `Ctrl+Q`
-  and the committed `CloseFocused` action each produced status-zero exits, and
-  session, layout, application, frontend, namespace, and Xauthority cleanup
-  drained cleanly with zero protocol errors or pending input, action, or WM
-  work.
-- [x] Audit only the desktop services observed by this run—such as DBus,
-  PipeWire, or portal helpers—and add session integration only for evidenced
-  failures. The integrated run completed despite the intentionally unavailable
-  session DBus and emitted no PipeWire or portal failure affecting the proof,
-  so no desktop service was added to the bounded session.
-- [x] Retain zero unexpected X11 errors, pending actions/input, native cleanup
-  debt, unrelated-client failure, or protocol-specific state below Engine.
-- [x] Pass one complete integrated workflow from the candidate commit. The
-  2026-08-03 run completed all six promotion stages and six Kitty retention
-  checkpoints around two status-zero Firefox exits, with clean session,
-  layout, application, frontend, namespace, and Xauthority teardown. Both
-  outputs had synchronous startup presentation; the active output retired 710
-  asynchronous flips while the damage-idle secondary correctly issued none.
-  Repeated
-  stability belongs to the unattended installed-session soak; do not multiply
-  the manual operator sequence after its focused causal gates have passed.
+### 12.2 Complete TrueColor Semantics
 
-Milestone 10 exits with one strict physical workflow verifier and one passing
-integrated run backed by the completed focused physical gates.
+- [ ] Make the X Authority's advertised TrueColor contract internally exact:
+  validate the 24-bit XRGB and 32-bit ARGB visual/depth combinations, convert
+  `AllocColor` RGB16 components through the advertised masks, and make
+  `QueryColors` recover the corresponding channel intensities instead of
+  reducing every nonzero pixel to white.
+- [ ] Replace the current “black or white” `AllocNamedColor` behavior with a
+  bounded, deterministic color-name table required by retained clients.
+  Unknown names must return the correct X error rather than silently becoming
+  white. Do not add mutable server-wide colormap allocation to TrueColor.
+- [ ] Keep visual IDs, colormap IDs, channel masks, and X color names inside X
+  Authority. Engine receives only bounded XRGB8888/ARGB8888 pixel content and
+  protocol-neutral opacity facts.
+- [ ] Verify setup, create-window/pixmap/colormap validation, `AllocColor`,
+  `AllocNamedColor`, `QueryColors`, byte order, XRGB upload, ARGB composition,
+  and invalid-resource/error paths against X11 wire rules and the retained
+  XLibre/Yserver references.
+- [ ] Add a deterministic non-gray palette fixture and a real-client physical
+  proof. Require distinct red, green, blue, mixed, and grayscale pixels to
+  survive client rendering, Engine composition, native presentation, and
+  capture without channel swaps or black/white collapse. Include a Kitty
+  24-bit ANSI-color sample, while treating its client-side rendering as an
+  end-to-end pixel proof rather than a colormap-wire proof.
+- [ ] Update the X11 compatibility matrix only after both the wire regression
+  and visible physical proof pass.
 
-Compatibility follow-up outside the Firefox exit gate:
+### 12.3 Rebuild And Re-Prove The Candidate
 
-- [ ] Run the same deterministic wheel/keyboard/pointer fixture in Chromium as
-  an independent native-X consumer after the Chromium package is installed.
+- [ ] Build and install one repository-independent candidate containing the
+  pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
+  entry uses those exact paths and digests without a source checkout.
+- [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
+  Firefox, floating-dialog, VT switch, normal-logout, and emergency-recovery
+  gates on that exact candidate.
+- [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
+  the first failure and return to greetd after aggregate verification, with no
+  manual repair, stale graphical process, or emergency recovery in an ordinary
+  cycle.
 
----
+### 12.4 Interactive Soak And Promotion
 
-## Milestone 12: Stability And Workday Soak
-
-- [x] Establish one bounded, unattended formal-transition gate before the soak:
-  pin an offline TLC toolchain, model visual proposal, preparation, submission,
-  output-scoped retirement, terminal failure, disconnect, removal, and resource
-  release, and check the committed-state, exact-retirement, input-generation,
-  and resource-lifetime invariants. Map every modeled action to its current
-  Rust authority boundary, explicitly record any missing universal reducer,
-  and turn every counterexample that changes implementation behavior into a
-  deterministic Rust regression before accepting the model correction.
-- [x] Pass the 30-minute unattended daily-driver churn precursor on the exact
-  signed candidate commit. QEMU commit `5fbfc849` completed 25 terminal,
-  Firefox, and launcher cycles, 75 close actions, and 11 layout-preserving
-  bridge recoveries in 1,901,036 ms. It ended with zero unexpected protocol
-  errors, rejected page-flip callbacks, pending work, or cleanup debt. This
-  isolates policy and lifecycle repetition; it does not replace the physical
-  login, soak, or workday gates below.
-- [x] Pass the one-shot ten-cycle installed lifecycle gate without emergency
-  recovery, stale graphical processes, or manual repair. One authenticated
-  greetd entry must repeat exact startup readiness, normal logout through the
-  libinput/WM path, KMS and application drain, VT restoration, and immutable
-  per-cycle verification. The runner must stop at the first failed cycle and
-  return to greetd after one final aggregate verification; repeated PAM input
-  is not part of this stability invariant. Signed commit `958fb5e6` passed ten
-  contiguous installed attempts, `0014` through `0023`, with two connected
-  outputs, 291--336 ms startup, status-zero normal logout, exact VT and termios
-  restoration, and no surviving Sophia, bridge, or xmonad process. The final
-  aggregate verifier accepted the immutable sequence through `0023`.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
-  launch/close, focus, workspace, resize, clipboard, and multi-output actions.
-  The installed verifier now requires each named workload from generic redacted
-  session evidence, including clean per-application exits, complete close
-  coverage, workspace round trips, visually committed resizes, selection
-  activity, distinct outputs, and drained input. The physical capture remains.
-- [ ] Pass one full workday using the same committed build and installed
-  session entry.
+  launch/close, focus, workspace, layout, floating, resize, clipboard,
+  TrueColor, and multi-output actions. Every named workload must appear in
+  reduced session evidence without recording typed content or metadata.
+- [ ] Pass one full workday using the same committed build, packaged policy,
+  application digests, and installed session entry.
 - [ ] Require zero unexpected protocol errors, allocator diagnostics, rejected
   page-flip callbacks, stuck keys/buttons, presentation starvation, in-flight
   ownership, cleanup debt, or failed TTY restoration.
-- [ ] Record bounded latency and health summaries without logging typed content,
-  clipboard payloads, window titles, or application metadata. The installed
-  soak command now selects the latest immutable normal archive and binds its
-  reduced latency/health summary to checksums, clean lifecycle evidence, the
-  release commit, and exact application digests. The physical two-hour and
-  workday captures remain.
-- [ ] Rotate retained logs and preserve the exact Sophia commit, binary digest,
-  kernel, Mesa, Kitty, Firefox, xmonad, output, and input-seat identities. The
-  schema-2 runtime identity now records Sophia's executable digest directly,
-  and the schema-4 attempt manifest binds that digest to every checksummed
-  normal, fallback, watchdog, and emergency archive. Capture, recording, and
-  later verification reject a missing, unavailable, or mismatched Sophia
-  digest. Every active reduced log now rotates as one current plus one previous
-  generation; recovery no longer appends records from unrelated launches into
-  a later archive. The aggregate soak gate also requires exact Kitty, Firefox,
-  and xmonad digests and needs no mutable live-log path. A current-release
-  physical soak remains before this item can close.
+- [ ] Record bounded latency and health summaries without logging typed
+  content, clipboard payloads, window titles, classes, PIDs, or application
+  metadata.
+- [ ] Rotate retained logs and preserve the exact Sophia commit and executable
+  digest, configured xmonad and xmobar digests, kernel, Mesa, Kitty, Firefox,
+  output, and input-seat identities.
 
+Milestone 12 exits only when the installed path—not a repository launcher—passes
+the complete Daily-Driver Promotion Contract on one immutable candidate.
 Failures create the next smallest evidence-driven compatibility or lifecycle
-slice. They do not justify broad X11 conformance work. Milestone 12 exits when
-the bounded transition model and its mapped Rust regressions pass and the
-installed path—not a repository launcher—passes the complete Daily-Driver
-Promotion Contract.
+slice; they do not justify broad X11 conformance work.
 
 ---
 
-## Milestone 13: Native Graphics Efficiency
+## Milestone 13: Public Policy Protocol And Hagia
 
-This milestone starts only after the installed workday soak. It optimizes the
-same native-X product; XLibre and Wayland remain external performance
+Architecture and formal-model work may land before Milestone 12 closes because
+it does not change the installed runtime. Production protocol changes begin
+only after the immutable Milestone 12 candidate passes promotion.
+
+### 13.1 Ratify And Model The Boundary
+
+- [x] Reconcile the architecture, WM API, Hagia design, specification draft,
+  and research log around one language-neutral policy protocol. Mark the
+  current workspace-oriented Rust API v7 experimental and reserve
+  `sophia_wm_v1` for the first stable public projection interface.
+- [x] Add bounded `PolicyConnection` and `PolicyProjection` TLA+ models before
+  changing production IPC or Engine policy state. Check negotiation,
+  capabilities, transfer assembly, connection epochs, stale proposals,
+  multi-output atomicity, focus, timeout, disconnect, restart, and
+  last-committed projection preservation.
+- [x] Map every model action to its owning Rust boundary. Preserve each
+  implementation-relevant TLC counterexample as a deterministic Rust
+  regression before correcting the implementation or model.
+
+### 13.2 Publish A Dependency-Free Wire Contract
+
+- [x] Keep the bounded 24-byte little-endian Sophia envelope and owner-only
+  Unix transport. Make the session host role-specific sockets beneath its
+  private runtime directory and admit exactly the expected supervised peer.
+- [x] Define stable layouts in a narrow checked-in KDL schema. Generate and
+  retain dependency-free Rust and C99 codecs, normative byte tables, and
+  golden vectors; normal builds and third-party clients must not run or link
+  the generator.
+- [x] Add strict begin/chunk/end transfers for complete snapshots and
+  projections above the 64-KiB frame limit. Bound the first WM interface to 16
+  outputs, 1,024 manageable surfaces, and 256 registered bindings.
+- [x] Compile an independent C client and run it against the same golden and
+  malformed-frame corpus as the Rust codec. Reject unknown, excessive,
+  partial, duplicate, reordered, stale, and trailing data without mutation.
+
+### 13.3 Replace Workspaces With Output Projections
+
+- [x] Introduce one canonical Engine reducer for complete scene snapshots and
+  complete affected-output projection proposals. Validate generations,
+  capability, constraints, geometry, uniqueness, one-output-per-surface, and
+  visible focus before one logical commit.
+- [x] Keep full snapshots and complete projections as stable semantics. Permit
+  only model-equivalent chunking, coalescing, caching, or later delta encoding;
+  no transport optimization may expose partial policy state.
+- [x] Add the API v7-to-projection adapter and prove the dormant Rust reference
+  WM and generic X11 WM bridge against the canonical reducer.
+- [ ] After Milestone 12 promotion, route the installed xmonad profile through
+  that adapter, migrate production to the public transport, then remove v7 and
+  Engine-owned workspace state before declaring the interface stable.
+- [ ] Preserve registered physical actions and session operations as opaque,
+  capability-gated tokens. Keep raw input, executable commands, client
+  metadata, protocol objects, namespaces, pixels, and renderer handles out of
+  policy IPC.
+
+### 13.4 Prove Hagia And Freeze `sophia_wm_v1`
+
+- [x] Create Hagia as a standalone Nim repository with no Triad history,
+  River/Wayland dependency, inherited binary, or shared build scaffolding. Its
+  independent envelope and record decoder passes Sophia's retained corpus.
+- [x] Complete Hagia's first socket proof: strict snapshot assembly, exact
+  affected-output request, projection encoding, committed outcome, and
+  canonical Engine reduction without generated Sophia or Triad protocol types.
+- [ ] Keep Hagia tags, stable `ViewId` values, ordered per-output views, focus
+  history, reconnect affinity, and session-local checkpoint private. Project
+  them into one-output-per-surface Sophia geometry with no Hagia back door.
+- [ ] Prove one tiling, one scrolling, and one bounded Janet layout plus
+  actions, constraints, focus, hidden surfaces, multi-output moves, output
+  loss/return, crash, restart, and hot-swap.
+- [ ] Run one black-box conformance corpus against the Rust reference WM,
+  Hagia, the X11 bridge, and the independent C client. Publish
+  `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
+  as a permanent compatibility gate.
+
+Milestone 13 exits only when the public wire is independently implementable,
+the formal and deterministic gates pass, Hagia and xmonad use the same Engine
+projection path, and a policy crash or replacement preserves the last coherent
+desktop.
+
+---
+
+## Milestone 14: Native Graphics Efficiency
+
+This milestone starts after the installed workday soak. It optimizes the same
+native-X product; XLibre, Xorg, niri, river, and other mature compositors are
 references rather than Sophia runtime components.
 
 - [ ] Extend the bounded visual-retirement model before changing frame-slot,
   coalescing, multi-output, shared-worker, direct-scanout, or buffer-lifetime
   semantics. Check out-of-order output retirement, supersession, fallback, and
-  release safety, and retain a deterministic Rust regression for every
+  release safety. Retain a deterministic Rust regression for every
   implementation-relevant counterexample.
 - [ ] Recycle three generational frame-surface slots per output through
   explicit page-flip retirement, with bounded deferral when all slots are
   leased.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only
-  accumulated damage; fall back to a full repaint whenever history is
+  accumulated damage. Fall back to a full repaint whenever history is
   incomplete.
-- [x] Add a renderer-private, generation-keyed import cache whose capacity
-  derives from the live-registration bound and whose entries evict only with
-  zero frame and scanout leases. The correctness subset was promoted into
-  Milestone 9 for retained compositor repaints; direct-scanout lease accounting
-  remains part of the later direct-scanout item.
 - [ ] Keep one latest pending frame and one KMS submission in flight per
-  output; prove input remains within half a refresh period at p99.
-- [x] Move production GL execution off the session owner using immutable
-  bounded commands and explicit retirement tokens. The initial physical
-  implementation has one worker per native output and therefore one worker on
-  the current single-output GPU.
+  output; prove physical input remains within half a refresh period at p99.
 - [ ] Coalesce all outputs in the same DRM/render-device group onto one shared
-  renderer worker before multi-output promotion. Preserve one latest pending
-  request per output, bounded response demultiplexing, and explicit per-output
-  retirement tokens. Its multi-output cadence-parity proof is the 9.4 Tier 3
-  workload.
+  renderer worker. Preserve one latest pending request per output, bounded
+  response demultiplexing, explicit per-output retirement tokens, and bounded
+  inter-output service skew under concurrent producers.
 - [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
-  layer, followed by a hardware cursor plane; retain mixed composition as the
-  fail-closed fallback. Its direct-scanout-bypass proof is the 9.4 Tier 3
-  workload.
+  layer, followed by a hardware cursor plane. Retain mixed composition as the
+  fail-closed fallback.
 - [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
-  transaction owner can combine primary and cursor plane state in the same
-  atomic request. It must schedule bounded cursor-only work while primary
-  content is idle, expose no independent atomic cursor commit path, and retain
-  the pointer-motion GLX cadence gate.
+  transaction owner can combine primary and cursor-plane state in the same
+  atomic request. Retain bounded cursor-only idle work and the pointer-motion
+  GLX cadence gate.
+- [ ] Replace full immutable CPU presentation replacement for stable
+  software-rendered X toplevels with lease-safe damage generations or
+  copy-on-write backing. Preserve child composition, bounded storage,
+  historical-handle immutability, and exact admission extents.
 - [ ] Compare identical Kitty, Firefox, resize, launch-burst, and soak
   workloads against separate XLibre+xmonad and mature Wayland-compositor
   sessions on the same hardware. Comparative results are diagnostic; Sophia's
   absolute correctness and latency gates remain authoritative.
-- [ ] Replace full immutable CPU presentation replacement for stable
-  software-rendered X toplevels with lease-safe damage generations or
-  copy-on-write backing. Preserve child-to-toplevel composition, bounded
-  storage, historical-handle immutability, and exact admission extents while
-  measuring xterm redraw latency and copied bytes.
 
-Milestone 13 exits with bounded warmed resource counts, no steady-state
+Milestone 14 exits with bounded warmed resource counts, no steady-state
 allocation growth, refresh-relative latency evidence, and no change to
 Sophia's native-X authority model.
+
+---
+
+## Post-Promotion Capability Roadmap
+
+These are ordered product capabilities, not Milestone 12 blockers unless a
+named soak failure promotes one.
+
+### Blind WM And Multi-Output Policy
+
+- [ ] Add opaque actions for focus master, swap master/up/down, shrink/expand,
+  master count, reset layout, focus output, move surface to output, and
+  supervised WM restart.
+- [ ] Replace the bridge's singular active-workspace view with output-scoped
+  active workspace and focus state. Prove independent workspace changes,
+  surface moves, output removal, output return, and bridge restart without
+  exposing application identity.
+- [ ] Add trusted launch-placement provenance for configured applications.
+  Keep class/title matching out of the WM and Engine.
+- [ ] If tabs are justified, design metadata-free Engine-owned native tab
+  chrome and opaque tab actions. Do not emulate title-aware xmonad decorations.
+
+### Classical X11 WM Compatibility
+
+- [ ] Separate profile-independent synthetic-X lifecycle, layout translation,
+  validation, supervision, and recovery from xmonad-specific bindings and
+  request patterns. Keep one shared conformance suite for every compatibility
+  profile.
+- [ ] Define profile admission criteria: a named upstream WM and version,
+  frozen configuration, minimal captured synthetic-X request surface,
+  complete opaque-action map, deterministic layout/focus/workspace/restart
+  tests, and one real installed-session proof.
+- [ ] Add classical WMs incrementally from retained user workflows. Likely
+  candidates include i3, dwm, and qtile, but ordering follows user demand and
+  evidence rather than nominal X11 compatibility.
+- [ ] Reject profiles that require real client metadata, global X server
+  ownership, drawing through the fake server, raw input, arbitrary command
+  execution, or protocol-specific authority below Engine. Supply missing
+  metadata, shell, and session behavior through their proper bounded brokers.
+
+### Native Sophia Follow-Ups
+
+- [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
+  Engine owns hit-testing, grabs, raw physical input, cursor state, and
+  animation; Hagia receives only opaque targets and reduced geometry updates.
+- [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
+  client, and permanent-compatibility process. Keep its endpoint and
+  capabilities separate from `sophia_wm_v1`.
+- [ ] Build `hagia-shell` as one ordinary separately authorized shell client
+  for tabs, overview, switchers, previews, and other visible furniture. Shell
+  metadata must never leak into Hagia's blind spatial-policy projection.
+- [ ] Add trusted classification, launch, lock, capture, output, and transfer
+  services through brokers, session capabilities, and portals. Hagia may
+  request opaque actions but may not receive executable paths, client
+  metadata, portal payloads, or compositor authority.
+
+### Status, Launcher, And Shell Integration
+
+- [ ] Define a bounded redacted status feed for workspace number, approved
+  layout name, focus state, output health, and supervised-component health.
+  Feed xmobar through a trusted shell broker without exposing client metadata.
+- [ ] Register a bounded launcher as physical action 3 and decide whether the
+  compatibility UI is dmenu or native Engine/shell chrome.
+- [ ] Implement lock, screenshot, wallpaper, and audio actions through their
+  owning shell or portal boundaries.
+- [ ] Admit tray/XEmbed only from a retained application workflow and keep it
+  outside blind WM policy.
+
+### Portals And Namespace Promotion
+
+- [ ] Promote a confined daily-driver application group only after Firefox and
+  Kitty pass the same workflow under explicit grants.
+- [ ] Implement large X11 `INCR` clipboard transfers from retained evidence.
+- [ ] Implement Xdnd and URI/file launching through portal grants.
+- [ ] Implement prompt UI, notification actions, and capture/FD handoff through
+  the existing reducers and bounded executors.
+
+### Rendering And Compatibility Follow-Ups
+
+- [ ] Retain the bounded physical `glxgears` proof with visible animation,
+  advancing Present/KMS cadence, matching reference provider, clean retirement,
+  and zero protocol or renderer debt.
+- [ ] Obtain an unredirected Xorg/XLibre `Flip` reference only if end-to-end
+  presentation-latency parity is needed. Keep composited `Copy` results labeled
+  as client-cadence evidence.
+- [ ] Complete the two-output concurrent-producer workload after the shared
+  renderer-worker prerequisite in Milestone 13. Require bounded inter-output
+  service skew and no producer starvation.
+- [ ] Replace per-frame CPU GBM allocation with an output-scoped,
+  retirement-fed three-slot pool only if measured software fallback remains
+  outside its parity gate.
+- [ ] Run the deterministic Firefox pointer/keyboard/wheel fixture in Chromium
+  as an independent native-X consumer after Chromium is installed.
+- [ ] Add client-selected classic X11 cursor images or further toolkit,
+  extension, font, color, and WM behavior only when a retained workflow exposes
+  the missing protocol fact.
+
+### Hardware Diagnostics And Hotplug
+
+- [ ] Retain the exhaustive pc105 US shifted-punctuation and Ctrl-Alt-F1
+  through Ctrl-Alt-F12 physical runner as a focused diagnostic. Repeat it after
+  input/seat changes or for release burn-in; ordinary candidate promotion
+  requires one real VT round-trip plus the deterministic XKB suite.
+- [ ] After work-area, output, or seat changes, re-run the exhaustive xmobar
+  reservation lifecycle and require no stale gap, overlap, resize timeout, or
+  focus change. Pair dynamic output-topology behavior with the later physical
+  multi-output hotplug gate.
 
 ---
 
 ## Secondary Development Tooling
 
 Interactive QEMU is useful for reproduction but is not a physical daily-driver
-blocker. Work on it only when it shortens one of the active milestones.
+blocker. Work on it only when it shortens an active milestone.
 
-- [x] Replace the acceptance-oriented `xmonad-m8-soak` guest with a dedicated
-  `xmonad-interactive` scenario: manual shutdown, no scheduled bridge restart,
-  and no proof watchdog. The one-shot runner packages the M8 application set,
-  opens a private Unix-domain VNC viewer, accepts freeform input, and powers the
-  guest off only after ordinary xmonad logout.
-- [x] Retain host and guest diagnostics that distinguish host grab delivery,
-  guest device discovery, key/button/motion intake, Engine routing, and
-  focus/display targeting without recording input content. QEMU's VNC and
-  input-core tracepoints feed a FIFO reducer that emits only one stage marker
-  per input kind; the verifier rejects any retained raw trace record.
-- [ ] Gate the supported interactive backend with visible pointer movement,
-  terminal launch, typed text, focus change, application close, and clean
-  manual shutdown. The fail-closed verifier, mutations, and an end-to-end RFB
-  capture pass; one human-visible viewer capture remains.
-
-## Evidence-Driven Compatibility Follow-ups
-
-These are admitted only when a named daily-driver workflow fails:
-
-- Large X11 `INCR` clipboard transfers.
-- Full Xdnd and URI/file launching.
-- Prompt UI, notification actions, and capture/FD handoff.
-- Client-selected classic X11 cursor images.
-- Additional toolkit, extension, font, color, or window-manager behavior.
-
-Each follow-up begins with the first missing request, reply, event, state
-transition, or lifecycle fact and ends with a focused wire regression plus the
-real-client gate that exposed it.
+- [ ] Complete one human-visible `xmonad-interactive` capture proving pointer
+  movement, terminal launch, typed text, focus change, application close, and
+  clean manual shutdown. The fail-closed verifier, mutations, and RFB capture
+  already pass.
 
 ## Deferred
 
