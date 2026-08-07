@@ -103,8 +103,9 @@ the correct authority.
 
 - Release `0.1.0-56dad4de8b5f` is the installed candidate. It freezes the
   intended xmonad and xmobar policy and restores the conventional auxiliary
-  pixmap depths rejected by its predecessor. Its focused live gates have not
-  yet run.
+  pixmap depths rejected by its predecessor. Its corrected xterm startup,
+  switch-away/resume, and normal-logout slice passes; the remaining focused
+  application and layout gates are still open.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -214,6 +215,10 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [x] Build and install one repository-independent candidate containing the
   pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
   entry uses those exact paths and digests without a source checkout.
+- [x] Re-run the installed xterm startup that exposed the auxiliary-pixmap
+  defect. Require exact two-output and work-area readiness, a presented
+  correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
+  protocol errors, exact TTY restoration, and no host process residue.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
   Firefox, floating-dialog, VT switch, normal-logout, and emergency-recovery
   gates on that exact candidate.
