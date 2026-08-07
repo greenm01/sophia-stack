@@ -49,7 +49,7 @@ the remaining promotion boundary. Immutable xterm attempt `0003` closes the
 corrected CPU-scene VT-recovery boundary. The same archive now also closes the focused
 xmobar/work-area gate through exact two-output reservations, repeated exact
 bar repaints, primary retirement, clean logout, and packaged xmobar identity.
-TrueColor attempt `0002` from `c62eabd6` closes the physical color boundary
+TrueColor attempt `0003` from `883666a2` closes the physical color boundary
 through exact X11 color requests, final primary-output composition evidence,
 Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
 Independent emergency recovery, the repeated lifecycle gate, the two-hour
@@ -266,7 +266,8 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   one 14-pixel reservation on both outputs, repeated exact 2560-by-14 primary
   repaints, native retirement, packaged xmobar identity, normal logout, clean
   lifecycle, and unmodified archive checksums.
-- [ ] Run the automatic physical TrueColor gate on the source successor.
+- [x] Run the automatic physical TrueColor gate on the source successor.
+  Installed attempt `0003` passes directly with `reverified=0` on `883666a2`.
 - [ ] Run the independent emergency-recovery gate on that same candidate.
 - [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no

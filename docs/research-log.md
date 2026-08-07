@@ -40,6 +40,14 @@ that fails any current semantic check. Attempt `0002` consequently closes the
 physical TrueColor gate without asking the operator to replay an already valid
 physical sequence.
 
+The operator subsequently ran the corrected installed gate once more. Attempt
+`0003` from commit `883666a2` passed at capture time and under the run-set gate
+with `reverified=0`. It independently reproduces the exact palette, Kitty
+DMA-BUF, two-output startup, native retirement, logout, ownership drain, and
+TTY-recovery evidence. Attempt `0003` is therefore the canonical promotion
+record; attempts `0001` and `0002` remain immutable diagnostics of the
+cross-output placement and verifier-ordering defects.
+
 ## 2026-08-07: Color promotion measures a real X11 region before scanout
 
 The physical TrueColor gate cannot rely on visual inspection or a screenshot
