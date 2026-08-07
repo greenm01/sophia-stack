@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
+source "$ROOT_DIR/tools/lib/session_terminal.sh"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
 SOPHIA_NATIVE_WM_BIN="${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
@@ -474,7 +475,15 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
 else
     terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
     if [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
-        echo "The graphical session requires Kitty; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
+        echo "The graphical session requires Kitty or xterm; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
+        exit 1
+    fi
+    terminal_kind="$(
+        sophia_resolve_session_terminal_kind \
+            "$terminal_bin" "${SOPHIA_TERMINAL_KIND:-}"
+    )"
+    if [[ "$FIREFOX_M10_ANY_PROOF" == true && "$terminal_kind" != kitty ]]; then
+        echo "The Firefox proof profiles require the Kitty terminal adapter." >&2
         exit 1
     fi
 fi
@@ -541,16 +550,8 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         )
     fi
 else
-    session_args+=(
-        "--session-app=terminal=$terminal_bin"
-        --session-start=terminal
-        --session-app-arg=terminal=--config
-        --session-app-arg=terminal=NONE
-        --session-app-arg=terminal=--override
-        --session-app-arg=terminal=linux_display_server=x11
-        --session-app-arg=terminal=--override
-        --session-app-arg=terminal=background_opacity=1
-    )
+    sophia_append_session_terminal_base_args \
+        session_args "$terminal_kind" "$terminal_bin"
     if [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
         session_args+=(
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_primary_kitty_probe.sh"
@@ -564,10 +565,8 @@ else
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_kitty_probe.sh"
         )
     else
-        session_args+=(
-            --session-app-arg=terminal=--title
-            "--session-app-arg=terminal=Sophia ${SESSION_PROFILE^} TTY3"
-        )
+        sophia_append_session_terminal_title_args \
+            session_args "$terminal_kind" "Sophia ${SESSION_PROFILE^} TTY3"
     fi
 fi
 if [[ "$SESSION_PROFILE" == xmonad ]]; then

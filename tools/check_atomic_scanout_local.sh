@@ -238,13 +238,15 @@ tools/check_sophia_session_watchdog.sh
 tools/check_installed_watchdog_recovery.sh
 grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
-grep -Fq -- '--session-start=terminal' tools/run_sophia_xmonad_session.sh
+grep -Fq -- '--session-start=terminal' tools/lib/session_terminal.sh
 grep -Fq -- '--session-start=statusbar' tools/run_sophia_xmonad_session.sh
 grep -Fq 'SOPHIA_TTY_PROFILE=kitty' tools/run_sophia_kitty_session.sh
 grep -Fq 'DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null' tools/run_sophia_xmonad_session.sh
-grep -Fq -- '--session-app-arg=terminal=NONE' tools/run_sophia_xmonad_session.sh
-grep -Fq 'linux_display_server=x11' tools/run_sophia_xmonad_session.sh
-grep -Fq 'background_opacity=1' tools/run_sophia_xmonad_session.sh
+bash -n tools/lib/session_terminal.sh tools/check_session_terminal_arguments.sh
+tools/check_session_terminal_arguments.sh
+grep -Fq -- '--session-app-arg=terminal=NONE' tools/lib/session_terminal.sh
+grep -Fq 'linux_display_server=x11' tools/lib/session_terminal.sh
+grep -Fq 'background_opacity=1' tools/lib/session_terminal.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_DIAGNOSTIC=1' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--startup-ready-timeout-ms=8000' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-app=standalone=' tools/run_sophia_xmonad_session.sh
@@ -307,6 +309,7 @@ grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=xterm' \
     tools/installed/sophia-xterm-proof
+grep -Fq 'SOPHIA_TERMINAL_KIND=xterm' tools/installed/sophia-xterm-proof
 grep -Fq 'firefox_m10_kitty_probe.sh' tools/package_live_session.sh
 grep -Fq 'tools/record_installed_firefox_attempt.sh' \
     tools/package_live_session.sh
@@ -324,6 +327,7 @@ grep -Fq 'tools/record_installed_native_chrome_run.sh' tools/package_live_sessio
 grep -Fq 'tools/verify_installed_native_chrome_archive.sh' tools/package_live_session.sh
 grep -Fq 'target/release/sophia-wm-demo' tools/package_live_session.sh
 grep -Fq 'tools/lib/installed_attempt_ledger.sh' tools/package_live_session.sh
+grep -Fq 'tools/lib/session_terminal.sh' tools/package_live_session.sh
 grep -Fq 'tools/verify_installed_soak_archive.sh' tools/package_live_session.sh
 grep -Fq 'sophia-verify-soak-session' tools/package_live_session.sh
 bash -n tools/verify_installed_runtime_identity.sh

@@ -146,6 +146,8 @@ install -m 644 tools/config/sophia-uinput.conf \
     "$artifact/tools/config/sophia-uinput.conf"
 install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
+install -m 644 tools/lib/session_terminal.sh \
+    "$artifact/tools/lib/session_terminal.sh"
 install -m 644 tools/lib/installed_attempt_ledger.sh \
     "$artifact/tools/lib/installed_attempt_ledger.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
