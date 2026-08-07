@@ -3,6 +3,27 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: The first color run exposed the active-output boundary
+
+Automatic TrueColor attempt `0001` exited normally and proved the real Kitty
+DMA-BUF path and the X Authority's exact core color round trip, but correctly
+failed promotion. The proof client had placed its palette at global x=2800 on
+output 2. The present classical-WM compatibility path builds its retained
+client scene for output 1; output 2 owns an independent startup baseline but
+does not yet receive active client projection. The renderer therefore rejected
+the global palette rectangle as outside its output-local composition target,
+and no later output-2 frame could retire.
+
+The corrected gate keeps both real clients inside output 1, where their final
+regions can be correlated with actual native submissions and retirements, and
+continues to require output 2's nonzero startup baseline. This proves TrueColor
+through the implemented boundary without pretending to close active
+cross-output projection. The attempt also exposed a diagnostic-label defect:
+the session banner still prints its legacy `terminal=xterm` constant even when
+Kitty is the configured application. The verifier now identifies Kitty through
+its selected PresentedBuffer/DMA-BUF evidence and immutable runtime identity;
+changing that banner belongs to a separate schema correction.
+
 ## 2026-08-07: Color promotion measures a real X11 region before scanout
 
 The physical TrueColor gate cannot rely on visual inspection or a screenshot
@@ -18,11 +39,12 @@ framebuffer and the exact rectangle just drawn. Generic channel-population
 metrics distinguish red, green, blue, yellow, cyan, magenta, gray, and other
 pixels without learning X11 identities or application metadata. Unequal bar
 widths make every expected population unique, so a channel swap, collapse, or
-contamination fails deterministically. The palette is placed on output 2 while
-Kitty remains on output 1, so each final rectangle must reach its own matching
-submission and KMS retirement. The proof repeats only final-region readback;
-it does not enable the older full-frame-after-every-layer diagnostic. Ordinary
-sessions keep the previous cost and privacy boundary.
+contamination fails deterministically. The palette and Kitty stay inside the
+implemented primary-output projection, and each final rectangle must precede
+a matching output-1 submission and KMS retirement. Output 2 independently
+retains its nonzero startup baseline. The proof repeats only final-region
+readback; it does not enable the older full-frame-after-every-layer diagnostic.
+Ordinary sessions keep the previous cost and privacy boundary.
 
 The same work closes the focused xmobar gate without repeating a physical
 sequence. Checksummed xterm attempt `0003` already contains one exact 14-pixel

@@ -50,9 +50,12 @@ the remaining promotion boundary. Installed release
 CPU-scene VT-recovery boundary. The same archive now also closes the focused
 xmobar/work-area gate through exact two-output reservations, repeated exact
 bar repaints, primary retirement, clean logout, and packaged xmobar identity.
-The source successor adds the automatic physical TrueColor proof; rebuild and
-run that gate before independent emergency recovery, the repeated lifecycle
-gate, the two-hour interactive soak, and the full-workday gate.
+The source successor adds the automatic physical TrueColor proof. Attempt
+`0001` exposed and rejected an invalid cross-output proof placement; rebuild
+the corrected primary-output gate before independent emergency recovery, the
+repeated lifecycle gate, the two-hour interactive soak, and the full-workday
+gate. Active client projection onto output 2 remains a separate compatibility
+boundary and is not claimed by the TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an

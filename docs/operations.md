@@ -215,8 +215,13 @@ ANSI sample and a fixed 640-by-240 X11 palette. Wait until both are visible,
 then use `Super+Shift+Q` once. The wrapper archives and verifies the attempt
 automatically. It requires exact `AllocColor`, `AllocNamedColor`, `QueryColors`,
 `PutImage`, and `GetImage` behavior; asymmetric RGB/CMY/gray populations after
-Engine composition; a later retired output-2 KMS frame; a final chromatic Kitty
-DMA-BUF frame retired on output 1; clean logout; and exact VT restoration.
+Engine composition; a later retired output-1 KMS frame; a final chromatic Kitty
+DMA-BUF frame retired on output 1; the independent output-2 startup baseline;
+clean logout; and exact VT restoration. The palette stays inside the primary
+output because the current classical-WM compatibility boundary projects
+client composition through that output; active cross-output client projection
+remains a separate milestone.
+
 Verify the newest immutable attempt from a text VT:
 
 ```sh

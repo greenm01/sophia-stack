@@ -42,8 +42,8 @@ if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degrad
     fail "session log contains a Sophia error, panic, or degraded status"
 fi
 require_line \
-    '^sophia_live_session schema=7 status=running .*terminal=kitty .*native_presentation=enabled .*physical_input=enabled .*wm_policy=external ' \
-    "$SESSION_LOG" "the installed proof did not run Kitty under xmonad"
+    '^sophia_live_session schema=7 status=running .*native_presentation=enabled .*physical_input=enabled .*wm_policy=external ' \
+    "$SESSION_LOG" "the installed proof did not run under the external xmonad policy"
 for app in terminal palette statusbar; do
     require_line "^sophia_session_app schema=1 status=started id=${app} source=startup$" \
         "$SESSION_LOG" "startup application is missing: $app"
@@ -55,7 +55,7 @@ require_line \
     '^sophia_live_session_startup schema=2 status=ready .*outputs_ready=2/2 .*presented=true ' \
     "$SESSION_LOG" "both outputs did not become presentation-ready"
 require_line \
-    '^sophia_truecolor_client schema=1 status=ready width=640 height=240 palette=asymmetric_rgb_cmy_gray put_image=exact get_image=exact alloc_color=exact alloc_named_color=exact query_colors=exact$' \
+    '^sophia_truecolor_client schema=2 status=ready width=640 height=240 target=640x240_1600_64 palette=asymmetric_rgb_cmy_gray put_image=exact get_image=exact alloc_color=exact alloc_named_color=exact query_colors=exact$' \
     "$SESSION_LOG" "the X11 palette did not round-trip through core TrueColor requests"
 
 palette_line=""
@@ -82,12 +82,14 @@ done < <(grep -nE 'sophia_native_composition_region schema=1 status=read composi
 [[ -n "$palette_line" ]] ||
     fail "the composed palette has a missing, swapped, collapsed, or contaminated color channel"
 
-submit_line="$(line_after 'sophia_live_native_page_flip schema=1 status=submitted output=2 ' "$palette_number")"
-[[ "$submit_line" =~ ^[0-9]+$ ]] || fail "the final exact palette was not submitted to output 2"
+submit_line="$(line_after 'sophia_live_native_page_flip schema=1 status=submitted output=[0-9]+ ' "$palette_number")"
+[[ "$submit_line" =~ ^[0-9]+$ ]] || fail "the final exact palette was not submitted"
 submission_record="$(sed -n "${submit_line}p" "$SESSION_LOG")"
+[[ "$submission_record" == *" status=submitted output=1 "* ]] ||
+    fail "the exact palette's next native submission did not target output 1"
 submission="$(field "$submission_record" submission)" || fail "palette submission omitted its ID"
 frame="$(field "$submission_record" frame)" || fail "palette submission omitted its frame"
-retire_line="$(line_after "sophia_live_native_page_flip schema=1 status=retired output=2 submission=${submission} frame=${frame}$" "$submit_line")"
+retire_line="$(line_after "sophia_live_native_page_flip schema=1 status=retired output=1 submission=${submission} frame=${frame}$" "$submit_line")"
 [[ "$retire_line" =~ ^[0-9]+$ ]] || fail "the exact palette frame did not retire through KMS"
 
 kitty_dma_buf=false
@@ -118,9 +120,11 @@ while IFS=: read -r number line; do
     fi
 done < <(grep -nE 'sophia_native_composition_region schema=1 status=read composition=final source_stage=dmabuf ' "$SESSION_LOG" || true)
 [[ "$kitty_palette" == true ]] || fail "Kitty's 24-bit ANSI sample did not compose all RGB/CMY channels"
-kitty_submit_line="$(line_after 'sophia_live_native_page_flip schema=1 status=submitted output=1 ' "$kitty_number")"
-[[ "$kitty_submit_line" =~ ^[0-9]+$ ]] || fail "the final Kitty color frame was not submitted to output 1"
+kitty_submit_line="$(line_after 'sophia_live_native_page_flip schema=1 status=submitted output=[0-9]+ ' "$kitty_number")"
+[[ "$kitty_submit_line" =~ ^[0-9]+$ ]] || fail "the final Kitty color frame was not submitted"
 kitty_submission_record="$(sed -n "${kitty_submit_line}p" "$SESSION_LOG")"
+[[ "$kitty_submission_record" == *" status=submitted output=1 "* ]] ||
+    fail "Kitty's chromatic frame next submitted to an unexpected output"
 kitty_submission="$(field "$kitty_submission_record" submission)" ||
     fail "Kitty submission omitted its ID"
 kitty_frame="$(field "$kitty_submission_record" frame)" || fail "Kitty submission omitted its frame"

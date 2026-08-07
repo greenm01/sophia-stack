@@ -1200,9 +1200,12 @@ The installed physical color gate also stays out of the greetd menu. Run
 `sophia-truecolor-proof` from a local text VT, wait for the Kitty ANSI sample
 and asymmetric X11 palette, then use `Super+Shift+Q`. Its automatic
 `record_kind=truecolor` archive requires an exact core X11 color and image
-round trip, exact per-channel populations from the final output-2 palette
-rectangle, a chromatic final Kitty DMA-BUF rectangle on output 1, matching KMS
-retirements, clean protocol and process ownership, and exact TTY restoration.
+round trip, exact per-channel populations from the final primary-output palette
+rectangle, a chromatic final Kitty DMA-BUF rectangle, matching output-1 KMS
+retirements, the independent output-2 startup baseline, clean protocol and
+process ownership, and exact TTY restoration. This gate does not claim active
+cross-output client projection, which remains outside the current classical-WM
+compatibility boundary.
 Reverify it with `sophia-verify-truecolor-runs 1`. Repeated final-region
 readback is scoped to this explicit proof environment and is not enabled for
 ordinary sessions.

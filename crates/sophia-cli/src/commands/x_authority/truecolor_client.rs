@@ -10,6 +10,8 @@ use x11rb::wrapper::ConnectionExt as _;
 
 const WIDTH: u16 = 640;
 const HEIGHT: u16 = 240;
+const X: i16 = 1600;
+const Y: i16 = 64;
 const PUT_IMAGE_ROWS: u16 = 60;
 const BARS: [(u16, u32); 7] = [
     (40, 0x00ff_0000),
@@ -71,8 +73,8 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
         screen.root_depth,
         window,
         screen.root,
-        2800,
-        64,
+        X,
+        Y,
         WIDTH,
         HEIGHT,
         0,
@@ -109,7 +111,7 @@ pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "sophia_truecolor_client schema=1 status=ready width={WIDTH} height={HEIGHT} palette=asymmetric_rgb_cmy_gray put_image=exact get_image=exact alloc_color=exact alloc_named_color=exact query_colors=exact"
+        "sophia_truecolor_client schema=2 status=ready width={WIDTH} height={HEIGHT} target={WIDTH}x{HEIGHT}_{X}_{Y} palette=asymmetric_rgb_cmy_gray put_image=exact get_image=exact alloc_color=exact alloc_named_color=exact query_colors=exact"
     );
     connection.flush()?;
 

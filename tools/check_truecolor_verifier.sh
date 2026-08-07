@@ -26,5 +26,11 @@ if "$VERIFY" "$tmp/not-final.log" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     echo "TrueColor verifier accepted pre-overdraw palette evidence" >&2
     exit 1
 fi
+sed '0,/submitted output=1 submission=7/s//submitted output=2 submission=7/' \
+    "$SESSION" >"$tmp/wrong-output.log"
+if "$VERIFY" "$tmp/wrong-output.log" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "TrueColor verifier accepted a palette outside the primary composition target" >&2
+    exit 1
+fi
 
 echo "TrueColor verifier regression passed"
