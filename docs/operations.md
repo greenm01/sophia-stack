@@ -227,13 +227,15 @@ Install the bounded uinput permission once with `sophia-setup-uinput`, then
 select `Sophia Cycle Gate (Automated)` in greetd. The runner creates a fresh
 virtual keyboard for each cycle, waits for the new input guard's exact path
 readiness, and sends one Ctrl-Alt-Backspace chord to arm the production
-recovery interlock. Only after exact two-output startup readiness does that
-same keyboard send `Super+Shift+Q` through the normal libinput and blind-WM
-path. The runner verifies the new immutable archive before continuing, stops
-at the first failure, and returns to greetd after the aggregate ten-cycle
-verifier passes. The gate uses physical DRM, VT, and libseat ownership; uinput
-replaces repetitive human key presses, not the separately retained
-physical-input evidence.
+recovery interlock. The guard publishes its armed state only after the complete
+chord is released, and the runner separately requires the injector's completion
+receipt. Only after exact two-output startup readiness does that same keyboard
+send `Super+Shift+Q` through the normal libinput and blind-WM path. The runner
+verifies the new immutable archive before continuing, stops at the first
+failure, and returns to greetd after the aggregate ten-cycle verifier passes.
+The gate uses physical DRM, VT, and libseat ownership; uinput replaces
+repetitive human key presses, not the separately retained physical-input
+evidence.
 
 Each inner lifecycle records `handoff=cycle_runner`. The runner itself is the
 single greetd-owned session and returns once when the gate ends. This preserves

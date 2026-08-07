@@ -97,6 +97,19 @@ process_is_running() {
     [[ -n "$state" && "$state" != Z* ]]
 }
 
+wait_for_receipt() {
+    local path="$1" deadline="$2"
+    shift 2
+    while [[ ! -s "$path" ]]; do
+        local pid
+        for pid in "$@"; do
+            process_is_running "$pid" || return 1
+        done
+        ((SECONDS < deadline)) || return 1
+        sleep 0.01
+    done
+}
+
 launch_installed_session() {
     local input_device="$1" wrapper_log="$2"
     (
@@ -136,7 +149,7 @@ cleanup() {
 }
 
 self_test() {
-    local fixture previous_identity test_fd test_pid injector_self_test
+    local fixture previous_identity receipt_pid test_fd test_pid injector_self_test
     fixture="$(mktemp -d)"
     SESSION_LOG="$fixture/session.log"
     RUN_ROOT="$fixture/runs"
@@ -225,6 +238,24 @@ self_test() {
     stop_process "$test_pid"
     if process_is_running "$test_pid"; then
         echo "cycle runner left a stopped child running" >&2
+        rm -rf -- "$fixture"
+        return 1
+    fi
+
+    (
+        sleep 0.05
+        printf 'complete\n' >"$fixture/receipt"
+    ) &
+    receipt_pid=$!
+    wait_for_receipt "$fixture/receipt" "$((SECONDS + 2))" "$receipt_pid" || {
+        echo "cycle runner did not wait for a delayed injection receipt" >&2
+        stop_process "$receipt_pid"
+        rm -rf -- "$fixture"
+        return 1
+    }
+    wait "$receipt_pid"
+    if wait_for_receipt "$fixture/missing-receipt" "$((SECONDS + 2))" "$receipt_pid"; then
+        echo "cycle runner accepted a missing injection receipt" >&2
         rm -rf -- "$fixture"
         return 1
     fi
@@ -373,7 +404,10 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
     done
     new_input_guard_is_armed "$previous_guard_identity" ||
         fail "cycle $cycle input guard did not arm"
-    [[ -s "$arm_result_file" ]] ||
+    # Guard readiness is release-gated, but the injector receipt is the
+    # independent proof that the complete evdev sequence was written.
+    wait_for_receipt \
+        "$arm_result_file" "$startup_deadline" "$SESSION_PID" "$INJECTOR_PID" ||
         fail "cycle $cycle did not inject the recovery-arm chord"
 
     while ! new_session_is_ready "$previous_log_identity"; do

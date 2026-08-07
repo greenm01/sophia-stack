@@ -20,6 +20,7 @@ pub struct EmergencyChordState {
     backspace: bool,
     armed: bool,
     waiting_for_full_release: bool,
+    arm_on_full_release: bool,
 }
 
 impl EmergencyChordState {
@@ -32,6 +33,7 @@ impl EmergencyChordState {
             backspace: false,
             armed: false,
             waiting_for_full_release: false,
+            arm_on_full_release: false,
         }
     }
 
@@ -64,6 +66,11 @@ impl EmergencyChordState {
                 && !self.backspace
             {
                 self.waiting_for_full_release = false;
+                if self.arm_on_full_release {
+                    self.arm_on_full_release = false;
+                    self.armed = true;
+                    return EmergencyChordAction::Armed;
+                }
             }
             return EmergencyChordAction::None;
         }
@@ -78,8 +85,10 @@ impl EmergencyChordState {
         if self.armed {
             EmergencyChordAction::Triggered
         } else {
-            self.armed = true;
-            EmergencyChordAction::Armed
+            // The guard may hand input to Engine after this transition. Do
+            // not publish readiness while any key in the arm chord is down.
+            self.arm_on_full_release = true;
+            EmergencyChordAction::None
         }
     }
 }

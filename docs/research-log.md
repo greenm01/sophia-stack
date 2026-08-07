@@ -73,6 +73,15 @@ unowned listener. A Rust socket-lifecycle regression requires that teardown,
 and every installed cycle now rejects preexisting helpers and requires the WM
 process set to drain before accepting its immutable attempt.
 
+The first clean-host rerun exposed a separate arm-boundary race. The recovery
+guard published `status=armed` when the three keys were pressed, while the
+uinput producer wrote its completion receipt only after releasing them. The
+runner sampled that receipt once and could reject the cycle during the roughly
+30-millisecond release interval, terminating an otherwise healthy startup.
+`EmergencyChordAction::Armed` now means the complete first chord has been
+released. The runner also waits independently for the producer receipt, so
+neither guard observation nor producer completion stands in for the other.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

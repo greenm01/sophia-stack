@@ -12,7 +12,7 @@ fn release(state: &mut EmergencyChordState, keycode: u32) -> EmergencyChordActio
 }
 
 #[test]
-fn first_complete_chord_arms_and_second_triggers_after_full_release() {
+fn first_complete_chord_arms_only_after_full_release_and_second_triggers() {
     let mut state = EmergencyChordState::awaiting_arm();
 
     assert_eq!(
@@ -25,9 +25,9 @@ fn first_complete_chord_arms_and_second_triggers_after_full_release() {
     );
     assert_eq!(
         press(&mut state, EVDEV_KEY_BACKSPACE),
-        EmergencyChordAction::Armed
+        EmergencyChordAction::None
     );
-    assert!(state.is_armed());
+    assert!(!state.is_armed());
 
     assert_eq!(
         release(&mut state, EVDEV_KEY_BACKSPACE),
@@ -47,8 +47,9 @@ fn first_complete_chord_arms_and_second_triggers_after_full_release() {
     );
     assert_eq!(
         release(&mut state, EVDEV_KEY_LEFTCTRL),
-        EmergencyChordAction::None
+        EmergencyChordAction::Armed
     );
+    assert!(state.is_armed());
 
     assert_eq!(
         press(&mut state, EVDEV_KEY_BACKSPACE),
