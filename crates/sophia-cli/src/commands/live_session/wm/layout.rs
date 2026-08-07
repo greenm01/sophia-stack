@@ -519,18 +519,6 @@ impl PersistentLiveLayout {
             == Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
     }
 
-    fn surface_requires_admission(&self, surface: SurfaceId) -> bool {
-        !self.bypass_policy_admission
-            && self.presentation_roles.get(&surface)
-            == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
-            && !matches!(
-                self.admissions.state(surface),
-                sophia_engine::SurfacePresentationAdmissionState::Inactive
-                    |
-                sophia_engine::SurfacePresentationAdmissionState::Managed
-            )
-    }
-
     fn top_client_positioned_surface(&self) -> Option<SurfaceId> {
         self.layers
             .values()
@@ -994,4 +982,5 @@ impl PersistentLiveLayout {
     }
 
 }
+include!("layout/admission.rs");
 include!("layout/commit.rs");

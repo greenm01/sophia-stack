@@ -40,9 +40,11 @@ SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
 ```
 
 The bounded configurations explore retirement and supersession ordering,
-exact PresentedBuffer selection through timeout recovery, ownership of a
-software Present by one native frame, move/resize geometry feedback, public
-policy negotiation and transfer assembly, and atomic multi-output projection.
+exact PresentedBuffer selection through proactive or timeout recovery,
+ownership of a software Present by one native frame, move/resize geometry
+feedback, stale legacy-WM configure and focus after workspace replacement,
+public policy negotiation and transfer assembly, and atomic multi-output
+projection.
 The frame-ownership model permits an unrelated frame to submit and retire first
 and proves that only the exact bound frame can emit feedback.
 `GeometryFeedback` separates full rectangles from pixel readiness and proves
@@ -50,7 +52,9 @@ no-op silence plus convergence after late-target/FIFO rollback.
 `PolicyConnection` requires the full client, connection-epoch, and transaction
 identity for admitted work.
 `PolicyProjection` requires proposals to answer an outstanding server-issued
-request for the current scene generation. They remain suitable for routine
+request for the current scene generation. `LegacyWmProjection` permits delayed
+private WM requests but proves that only the current complete workspace
+projection crosses the compatibility bridge. They remain suitable for routine
 validation. A TLC counterexample that changes implementation behavior must
 become a deterministic Rust regression before the model or implementation is
 corrected. The models are not refinement proofs and must not be weakened to
@@ -548,6 +552,16 @@ guards against initial-focus reconciliation selecting a committed surface that
 the external WM has projected out. Together these checks prove the stateful
 raw-to-logical pointer path and hidden-surface exclusion without claiming
 physical cursor visibility or the required all-edge hardware exercise.
+
+The compatibility-bridge regression also retains a synthetic window across an
+unmap, admits a new surface on the next workspace, and deliberately emits late
+geometry for both. Translation must produce configure, render, and focus
+commands only for the mapped window. The live admission reducer separately
+primes a new policy-managed surface with its strongest complete observed pixel
+extent, keeps the blind WM's different size as a standing target, and releases
+that temporary constraint only through the ordinary visual-retirement path.
+These checks prevent a private legacy layout from resizing hidden clients and
+prevent a first-launch extent mismatch from consuming the timeout/restart path.
 
 The unattended launch-capacity gate is:
 

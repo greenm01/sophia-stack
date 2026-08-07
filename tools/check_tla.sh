@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in VisualRetirement AdmissionRecovery PresentFrameOwnership PresentCopyOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection; do
+for model in VisualRetirement AdmissionRecovery PresentFrameOwnership PresentCopyOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection LegacyWmProjection; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (

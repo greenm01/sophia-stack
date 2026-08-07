@@ -25,7 +25,7 @@
     if pending_wm_update.is_none()
         && layout.pending.is_none()
         && let Some(wm) = wm_session.as_mut()
-        && let Some(proposal) = wm.poll_request(&layout, output)?
+        && let Some(proposal) = wm.poll_request(&mut layout, output)?
     {
         let previous_focus = focus.focused_surface(seat);
         if let Some(result) = layout.stage(proposal, &mut session_controls)? {

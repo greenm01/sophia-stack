@@ -312,6 +312,81 @@ fn workspace_activation_unmaps_hidden_windows_and_remaps_only_the_target_workspa
 }
 
 #[test]
+fn hidden_legacy_geometry_cannot_cross_the_workspace_projection() {
+    let output = OutputId::from_raw(1);
+    let first_workspace = WorkspaceId::from_raw(1);
+    let second_workspace = WorkspaceId::from_raw(2);
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 1200,
+        height: 800,
+    };
+    let hidden = node(22);
+    let mut visible = node(23);
+    visible.workspace = second_workspace;
+    let mut bridge = X11WmBridgeState::new();
+
+    for (transaction, workspace, nodes) in [
+        (76, first_workspace, vec![hidden.clone()]),
+        (77, second_workspace, vec![visible.clone()]),
+    ] {
+        bridge
+            .apply_engine_request(&WmRequestPacket {
+                transaction: TransactionId::from_raw(transaction),
+                kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                    output,
+                    workspace,
+                    bounds,
+                    nodes,
+                }),
+            })
+            .unwrap();
+    }
+
+    let hidden_window = bridge.synthetic_window(hidden.surface).unwrap();
+    let visible_window = bridge.synthetic_window(visible.surface).unwrap();
+    let response = bridge
+        .translate_legacy_requests(
+            TransactionId::from_raw(78),
+            &[
+                LegacyWmRequest::ConfigureWindow {
+                    window: hidden_window,
+                    geometry: bounds,
+                    z_index: 0,
+                },
+                LegacyWmRequest::ConfigureWindow {
+                    window: visible_window,
+                    geometry: bounds,
+                    z_index: 0,
+                },
+                LegacyWmRequest::FocusWindow {
+                    window: hidden_window,
+                },
+                LegacyWmRequest::FocusWindow {
+                    window: visible_window,
+                },
+            ],
+            300,
+        )
+        .unwrap();
+
+    assert_eq!(response.commands.len(), 3);
+    assert!(matches!(
+        response.commands[0],
+        WmCommand::ConfigureSurface(request) if request.surface == visible.surface
+    ));
+    assert!(matches!(
+        response.commands[1],
+        WmCommand::RenderSurface(placement) if placement.surface == visible.surface
+    ));
+    assert_eq!(
+        response.commands[2],
+        WmCommand::FocusSurface(visible.surface)
+    );
+}
+
+#[test]
 fn client_size_constraints_bound_both_configure_and_render_geometry() {
     let transaction = TransactionId::from_raw(72);
     let mut constrained = node(12);

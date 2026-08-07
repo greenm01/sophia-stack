@@ -660,7 +660,7 @@ impl LiveWmSession {
 
     fn poll_request(
         &mut self,
-        layout: &PersistentLiveLayout,
+        layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         if self.work_area_relayout_required {
@@ -775,9 +775,12 @@ impl LiveWmSession {
         response: WmResponsePacket,
         planning_state: WmWorkspaceState,
         source: LiveWmProposalSource,
-        layout: &PersistentLiveLayout,
+        layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
+        if let LiveWmProposalSource::Manage(surface) = source {
+            layout.prime_admission_extent(surface);
+        }
         let bounds = planning_state
             .output(output.id)
             .ok_or("WM output is not configured")?
@@ -787,6 +790,17 @@ impl LiveWmSession {
             &plan.layout,
             self.candidate_chrome_style(),
         )?;
+        let standing_targets = transaction
+            .requested_sizes
+            .iter()
+            .filter_map(|request| {
+                layout
+                    .layout_epochs
+                    .recovery_extent(request.surface)
+                    .filter(|extent| *extent != request.size)
+                    .map(|_| (request.surface, request.size))
+            })
+            .collect::<Vec<_>>();
         let reconciliation = layout
             .layout_epochs
             .reconcile_transaction(&transaction, bounds)?;
@@ -809,6 +823,9 @@ impl LiveWmSession {
         let commit = engine.commit_layout_transaction(&transaction, &mut proposed);
         if commit.outcome != TransactionOutcome::Committed {
             return Err(format!("Engine rejected live WM proposal: {:?}", commit.outcome).into());
+        }
+        for (surface, target) in standing_targets {
+            layout.layout_epochs.set_pending_target(surface, target);
         }
         let requested_sizes = transaction
             .requested_sizes

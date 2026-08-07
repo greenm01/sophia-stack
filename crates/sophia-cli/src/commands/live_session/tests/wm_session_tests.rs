@@ -160,6 +160,63 @@ fn newer_committed_policy_replaces_deferred_retirement_focus() {
     assert_eq!(layout.focus_to_apply, Some((new_transaction, new_surface)));
 }
 
+#[test]
+fn first_admission_primes_the_selected_safe_pixel_extent() {
+    let surface = SurfaceId::new(7, 1);
+    let extent = Size {
+        width: 500,
+        height: 570,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.unmanaged_surfaces.insert(surface);
+    layout.presentation_roles.insert(
+        surface,
+        sophia_protocol::SurfacePresentationRole::PolicyManaged,
+    );
+    layout
+        .admissions
+        .observe_intent(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: extent.width,
+                height: extent.height,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    layout
+        .layout_epochs
+        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Unmanaged);
+    layout.layout_epochs.record_safe_observation(
+        dma_candidate(
+            TransactionId::from_raw(20),
+            surface,
+            BufferHandle::from_raw(9),
+        ),
+        extent,
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+    );
+
+    layout.prime_admission_extent(surface);
+
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), Some(extent));
+    assert_eq!(
+        layout.layout_epochs.admission(surface),
+        sophia_engine::SurfaceAdmissionState::PendingLayout
+    );
+}
+
 fn hold_test_resize(
     layout: &mut PersistentLiveLayout,
     surface: SurfaceId,

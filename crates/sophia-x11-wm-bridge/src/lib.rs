@@ -445,6 +445,11 @@ impl X11WmBridgeState {
                         .window_to_node
                         .get(&window)
                         .ok_or(X11WmBridgeError::UnknownSyntheticWindow)?;
+                    // A legacy WM may finish private relayout work after
+                    // Sophia has hidden the window on a workspace transition.
+                    if !self.mapped_windows.contains(&window) {
+                        continue;
+                    }
                     let mut size = clamp_size(
                         Size {
                             width: geometry.width,

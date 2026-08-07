@@ -53,9 +53,12 @@ TrueColor attempt `0003` from `883666a2` closes the physical color boundary
 through exact X11 color requests, final primary-output composition evidence,
 Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
 Independent emergency attempt `0004` and ten-cycle range `0044` through `0053`
-also pass on `883666a2`. The two-hour interactive soak and the full-workday
-gate remain. Active client projection onto output 2 is a separate compatibility
-boundary and is not claimed by the TrueColor gate.
+also pass on `883666a2`. Preliminary soak attempt `0054` then retained a
+workspace-isolation and first-admission failure in that candidate. The bridge
+and admission fixes require one short successor proof before restarting the
+two-hour soak; the full-workday gate remains after it. Active client projection
+onto output 2 is a separate compatibility boundary and is not claimed by the
+TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -279,6 +282,18 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.4 Interactive Soak And Promotion
 
+- [x] Retain preliminary soak attempt `0054` as a failed immutable artifact.
+  It completed clean logout and TTY recovery after 413,133 milliseconds but
+  recorded four layout timeouts and WM restarts. Hidden synthetic-window
+  geometry now stops at the compatibility bridge, and first admission uses
+  the selected safe pixel extent before driving the WM's standing target.
+- [x] Add bounded formal regressions for delayed configure/focus after a
+  complete workspace projection replacement and for proactive safe-pixel
+  admission before the timeout-only recovery path.
+- [ ] Install the successor and pass one short workspace/admission proof with
+  Kitty, Firefox, glxgears, and vkcube before repeating a long soak. Require no
+  hidden-surface configure/render command, layout timeout, resize abort, or WM
+  restart.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
   launch/close, focus, workspace, layout, floating, resize, clipboard,
   TrueColor, and multi-output actions. Every named workload must appear in

@@ -75,6 +75,13 @@ fn silent_focus_noop_fixture_process() {
 }
 
 #[test]
+fn stale_hidden_configure_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::StaleHiddenConfigure);
+    }
+}
+
+#[test]
 fn next_layout_ignores_pre_action_reconciliation_and_waits_for_delayed_wm_output() {
     let mut runtime = fixture_runtime("delayed_next_layout_fixture_process");
     configure_session(&mut runtime);
@@ -221,6 +228,68 @@ fn workspace_remap_without_configure_focuses_the_sole_committed_action_node() {
             .commands
             .contains(&WmCommand::FocusSurface(surface))
     );
+}
+
+#[test]
+fn stale_hidden_configure_is_filtered_during_new_workspace_admission() {
+    let mut runtime = fixture_runtime("stale_hidden_configure_fixture_process");
+    configure_session_with_workspaces(
+        &mut runtime,
+        vec![WorkspaceId::from_raw(1), WorkspaceId::from_raw(2)],
+    );
+    let hidden = SurfaceId::new(10, 1);
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(10),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: BOUNDS,
+                node: node(10, BOUNDS),
+            }),
+        })
+        .unwrap();
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(11),
+            kind: WmRequestKind::ActionActivated(WmActionActivation {
+                action: WmActionId::from_raw(XMONAD_ACTION_VIEW_WORKSPACE_BASE + 2),
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                focused_surface: Some(hidden),
+                nodes: vec![node(10, BOUNDS)],
+            }),
+        })
+        .unwrap();
+
+    let visible = SurfaceId::new(11, 1);
+    let mut visible_node = node(11, BOUNDS);
+    visible_node.workspace = WorkspaceId::from_raw(2);
+    let response = runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(12),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(2),
+                bounds: BOUNDS,
+                node: visible_node,
+            }),
+        })
+        .unwrap();
+
+    assert!(response.commands.iter().any(|command| matches!(
+        command,
+        WmCommand::ConfigureSurface(request) if request.surface == visible
+    )));
+    assert!(response.commands.iter().any(|command| matches!(
+        command,
+        WmCommand::RenderSurface(placement) if placement.surface == visible
+    )));
+    assert!(response.commands.iter().all(|command| match command {
+        WmCommand::ConfigureSurface(request) => request.surface != hidden,
+        WmCommand::RenderSurface(placement) => placement.surface != hidden,
+        _ => true,
+    }));
 }
 
 #[test]
@@ -485,6 +554,7 @@ enum FixtureBehavior {
     ManageFocus,
     PointerGesture,
     SilentFocusNoop,
+    StaleHiddenConfigure,
 }
 
 fn run_fixture(behavior: FixtureBehavior) {
@@ -499,6 +569,7 @@ fn run_fixture(behavior: FixtureBehavior) {
             write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE)
         }
         FixtureBehavior::SilentFocusNoop => write_grab_key(&mut stream, FOCUS_NEXT_KEYCODE),
+        FixtureBehavior::StaleHiddenConfigure => {}
         FixtureBehavior::ManageFocus => {}
         FixtureBehavior::PointerGesture => {}
     }
@@ -567,7 +638,9 @@ fn run_fixture(behavior: FixtureBehavior) {
             }
             18 => {
                 let window = read_u32(&event, 8);
-                windows.retain(|candidate| *candidate != window);
+                if behavior != FixtureBehavior::StaleHiddenConfigure {
+                    windows.retain(|candidate| *candidate != window);
+                }
                 assert_unmapped_child_is_retained(&mut stream, window, &mut pending_events);
             }
             5 => {}

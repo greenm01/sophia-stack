@@ -70,6 +70,14 @@ and last-projection preservation while policy is absent.
 The bounded configuration explores 1,342,325 generated states and 524,396
 distinct states to depth 18.
 
+`LegacyWmProjection.tla` models the compatibility bridge boundary after a
+workspace switch. A legacy WM may retain a synthetic window and emit delayed
+configure or focus requests for it. The model permits those stale private
+requests but requires translation to expose only requests for surfaces in the
+current complete workspace projection. Weak fairness also requires the finite
+request backlog to settle. The bounded configuration explores 919 generated
+states and 270 distinct states to depth 10.
+
 The first connection run found that `(client, connection epoch)` was not a
 unique transfer identity when one connection reused it for later work. The
 model now includes the transaction in that identity and rejects transaction
@@ -107,6 +115,10 @@ the current owning Rust boundaries as follows:
 | `DeliverControl` | `XAuthorityRuntime::configure_window_from_engine` followed by Present ConfigureNotify and core ConfigureNotify for a real change |
 | `CommitMove`, `CommitResize` | logical layout commit, with only the resize path gated by exact candidate retirement |
 | `Timeout` | layout recovery queuing the complete last-committed rectangle behind any late target control |
+| `PrimeAdmission` | `PersistentLiveLayout::prime_admission_extent` selecting complete safe pixels before the first blind-WM target |
+| `IssueConfigure`, `IssueFocus` | delayed synthetic requests emitted by the legacy WM process |
+| `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` replacing the complete mapped-window projection |
+| `TranslateConfigure`, `TranslateFocus` | `X11WmBridgeState::translate_legacy_requests_for_output` filtering requests through the current mapped-window set |
 
 The public policy model is intentionally ahead of production implementation.
 Its actions map to the following target boundaries:
@@ -173,7 +185,8 @@ generation is valid quiescence. Safety invariants and the explicit liveness
 property remain enabled.
 
 `AdmissionRecovery.tla` covers exact PresentedBuffer selection, a later
-backing observation, layout timeout, fallback admission, temporary-constraint
+backing observation, proactive safe-extent admission, timeout only when no
+complete pixels have been observed, fallback admission, temporary-constraint
 release, one relayout, and exact standing-target retirement. It explores target
 observation both before and after fallback retirement. Its actions map to
 `LayoutEpochCoordinator`, the bounded visual-candidate tracker, pre-admission
@@ -182,4 +195,5 @@ model nondeterministically gives the selected fallback Present DMA or CPU
 storage and requires the same retirement lifecycle for either choice. Content
 identity remains distinct from geometry and storage: an extent or
 materialization can choose a rendering path without choosing which candidate
-owns admission.
+owns admission. The bounded configuration explores 160 generated states and
+84 distinct states to depth 12.
