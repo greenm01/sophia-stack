@@ -98,18 +98,23 @@ impl LiveSeatDeviceOpener {
 impl LiveSeatDevice {
     pub fn try_clone(&self) -> std::io::Result<Self> {
         Ok(Self {
-            fd: rustix::io::dup(&self.fd)?,
+            fd: duplicate_cloexec(&self.fd)?,
             lease: Arc::clone(&self.lease),
         })
     }
 
     pub fn try_clone_file(&self) -> std::io::Result<std::fs::File> {
-        Ok(rustix::io::dup(&self.fd)?.into())
+        Ok(duplicate_cloexec(&self.fd)?.into())
     }
 
     pub fn duplicate_owned_fd(&self) -> std::io::Result<OwnedFd> {
-        rustix::io::dup(&self.fd).map_err(Into::into)
+        duplicate_cloexec(&self.fd)
     }
+}
+
+fn duplicate_cloexec(fd: impl AsFd) -> std::io::Result<OwnedFd> {
+    // Seat authority must not cross an application or WM exec boundary.
+    rustix::io::fcntl_dupfd_cloexec(fd, 0).map_err(Into::into)
 }
 
 impl AsFd for LiveSeatDevice {
@@ -229,7 +234,7 @@ fn run_broker(
                     .open_device(&path)
                     .map_err(|error| format!("libseat open {} failed: {error}", path.display()))
                     .and_then(|device| {
-                        let fd = rustix::io::dup(&device)
+                        let fd = duplicate_cloexec(&device)
                             .map_err(|error| format!("libseat device dup failed: {error}"))?;
                         let token = next_token;
                         next_token = next_token.saturating_add(1);

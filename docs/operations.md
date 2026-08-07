@@ -242,9 +242,10 @@ authentication; the latter is not a desktop stability invariant.
 
 The gate rechecks release and evidence digests, launch uniqueness, runtime
 identity, two-output startup, page-flip retirement, normal logout, protocol and
-session health, application cleanup, guard state, VT restoration, and the
-display-manager handoff. After a later recovery attempt, preserve an earlier
-gate's reproducibility by naming its immutable ending run, for example
+session health, application cleanup, guard state, VT restoration, the
+cycle-runner handoff, and complete bridge/xmonad process drain. After a later
+recovery attempt, preserve an earlier gate's reproducibility by naming its
+immutable ending run, for example
 `sophia-verify-cycles 3 0005`. The verifier selects that run and its two direct
 predecessors; it does not skip intervening failures or pending attempts. The
 longer Milestone 12 gates use the same ledger with

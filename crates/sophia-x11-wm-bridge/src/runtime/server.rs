@@ -13,72 +13,102 @@ pub fn run_wm_socket_server(
             )));
         }
     }
-    let profile = wm.profile;
-    let mut runtime: Option<LegacyX11WmBridgeRuntime> = None;
     let listener = UnixListener::bind(path).map_err(|error| {
         BridgeRuntimeError::new(format!(
             "failed to bind WM socket {}: {error}",
             path.display()
         ))
     })?;
-    for stream in listener.incoming() {
-        let mut stream = stream.map_err(|error| {
-            BridgeRuntimeError::new(format!("failed to accept WM socket client: {error}"))
+    let _socket_path = WmSocketPathGuard(path.to_path_buf());
+    let profile = wm.profile;
+    let mut runtime: Option<LegacyX11WmBridgeRuntime> = None;
+    let mut stream = accept_wm_client(&listener)?;
+    let hello = encode_wm_hello_frame(&profile.hello()).map_err(|error| {
+        BridgeRuntimeError::new(format!("failed to encode WM hello: {error:?}"))
+    })?;
+    stream
+        .write_all(&hello)
+        .and_then(|()| stream.flush())
+        .map_err(|error| {
+            BridgeRuntimeError::new(format!("failed to write WM hello: {error}"))
         })?;
-        let hello = encode_wm_hello_frame(&profile.hello()).map_err(|error| {
-            BridgeRuntimeError::new(format!("failed to encode WM hello: {error:?}"))
-        })?;
-        stream
-            .write_all(&hello)
-            .and_then(|()| stream.flush())
-            .map_err(|error| {
-                BridgeRuntimeError::new(format!("failed to write WM hello: {error}"))
-            })?;
-        let descriptor = read_wm_session_descriptor(&mut stream)?;
+    let descriptor = read_wm_session_descriptor(&mut stream)?;
 
-        while let Some(request) = read_wm_request(&mut stream)? {
-            if runtime.is_none() {
-                let initial_root = match &request.kind {
-                    WmRequestKind::ManageSurface(manage) => Some(manage.bounds),
-                    WmRequestKind::RelayoutWorkspace(relayout) => Some(relayout.bounds),
-                    _ => None,
-                };
-                if let Some(initial_root) = initial_root {
-                    let mut started =
-                        LegacyX11WmBridgeRuntime::start_with_root(wm.clone(), initial_root)?;
-                    started.configure_session(descriptor.clone())?;
-                    runtime = Some(started);
-                }
-            }
-            let response = if let Some(runtime) = runtime.as_mut() {
-                runtime.handle_request(&request)?
-            } else if profile == LegacyWmProfile::Xmonad {
-                translate_xmonad_profile_action(&request, &descriptor)?.unwrap_or(
-                    WmResponsePacket {
-                        transaction: request.transaction,
-                        commands: Vec::new(),
-                        timeout_msec: 0,
-                    },
-                )
-            } else {
-                WmResponsePacket {
-                    transaction: request.transaction,
-                    commands: Vec::new(),
-                    timeout_msec: 0,
-                }
+    while let Some(request) = read_wm_request(&mut stream)? {
+        if runtime.is_none() {
+            let initial_root = match &request.kind {
+                WmRequestKind::ManageSurface(manage) => Some(manage.bounds),
+                WmRequestKind::RelayoutWorkspace(relayout) => Some(relayout.bounds),
+                _ => None,
             };
-            let frame = encode_wm_response_frame(&response).map_err(|error| {
-                BridgeRuntimeError::new(format!("failed to encode WM response: {error:?}"))
-            })?;
-            stream.write_all(&frame).map_err(|error| {
-                BridgeRuntimeError::new(format!("failed to write WM response: {error}"))
-            })?;
-            stream.flush().map_err(|error| {
-                BridgeRuntimeError::new(format!("failed to flush WM response: {error}"))
-            })?;
+            if let Some(initial_root) = initial_root {
+                let mut started =
+                    LegacyX11WmBridgeRuntime::start_with_root(wm.clone(), initial_root)?;
+                started.configure_session(descriptor.clone())?;
+                runtime = Some(started);
+            }
         }
+        let response = if let Some(runtime) = runtime.as_mut() {
+            runtime.handle_request(&request)?
+        } else if profile == LegacyWmProfile::Xmonad {
+            translate_xmonad_profile_action(&request, &descriptor)?.unwrap_or(WmResponsePacket {
+                transaction: request.transaction,
+                commands: Vec::new(),
+                timeout_msec: 0,
+            })
+        } else {
+            WmResponsePacket {
+                transaction: request.transaction,
+                commands: Vec::new(),
+                timeout_msec: 0,
+            }
+        };
+        let frame = encode_wm_response_frame(&response).map_err(|error| {
+            BridgeRuntimeError::new(format!("failed to encode WM response: {error:?}"))
+        })?;
+        stream.write_all(&frame).map_err(|error| {
+            BridgeRuntimeError::new(format!("failed to write WM response: {error}"))
+        })?;
+        stream.flush().map_err(|error| {
+            BridgeRuntimeError::new(format!("failed to flush WM response: {error}"))
+        })?;
     }
     Ok(())
+}
+
+struct WmSocketPathGuard(PathBuf);
+
+impl Drop for WmSocketPathGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+fn accept_wm_client(listener: &UnixListener) -> Result<UnixStream, BridgeRuntimeError> {
+    listener.set_nonblocking(true).map_err(|error| {
+        BridgeRuntimeError::new(format!("failed to configure WM socket listener: {error}"))
+    })?;
+    let deadline = Instant::now() + BRIDGE_TIMEOUT;
+    loop {
+        match listener.accept() {
+            Ok((stream, _address)) => return Ok(stream),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(BridgeRuntimeError::new(format!(
+                        "WM client did not connect within {} ms",
+                        BRIDGE_TIMEOUT.as_millis()
+                    )));
+                }
+                thread::sleep(IO_POLL);
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => {
+                return Err(BridgeRuntimeError::new(format!(
+                    "failed to accept WM socket client: {error}"
+                )));
+            }
+        }
+    }
 }
 
 fn read_wm_request(stream: &mut UnixStream) -> Result<Option<WmRequestPacket>, BridgeRuntimeError> {

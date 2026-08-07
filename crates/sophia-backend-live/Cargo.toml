@@ -25,7 +25,7 @@ gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix"]
 libinput-events = ["dep:input", "dep:rustix"]
-seat-control = ["dep:libseat"]
+seat-control = ["dep:libseat", "dep:rustix"]
 
 [lints]
 workspace = true

@@ -99,13 +99,22 @@ process_is_running() {
 
 launch_installed_session() {
     local input_device="$1" wrapper_log="$2"
-    env \
-        SOPHIA_OPERATOR_INPUT_DEVICES="$input_device" \
-        SOPHIA_SESSION_HANDOFF=cycle_runner \
-        SOPHIA_ATTEMPT_LIFECYCLE_MODE=cycle \
-        "$SESSION" \
-        <&"$SESSION_INPUT_FD" >"$wrapper_log" 2>&1 &
+    (
+        exec <&"$SESSION_INPUT_FD"
+        # The session needs stdin, but its descendants must not retain this VT fd.
+        exec {SESSION_INPUT_FD}<&-
+        exec env \
+            SOPHIA_OPERATOR_INPUT_DEVICES="$input_device" \
+            SOPHIA_SESSION_HANDOFF=cycle_runner \
+            SOPHIA_ATTEMPT_LIFECYCLE_MODE=cycle \
+            "$SESSION"
+    ) >"$wrapper_log" 2>&1 &
     SESSION_PID=$!
+}
+
+wm_helpers_are_drained() {
+    ! pgrep -u "$UID" -x sophia-x11-wm-b >/dev/null 2>&1 &&
+        ! pgrep -u "$UID" -x xmonad-x86_64-l >/dev/null 2>&1
 }
 
 cleanup() {
@@ -291,6 +300,8 @@ exec {SESSION_INPUT_FD}<&0 || fail "the local VT could not be retained"
     fail "the installed release is missing cycle-runner components"
 [[ -e /dev/uinput && -w /dev/uinput ]] ||
     fail "/dev/uinput is not writable; run sophia-setup-uinput once"
+wm_helpers_are_drained ||
+    fail "stale Sophia WM helpers remain from a preceding session"
 
 (
     cd "$RELEASE_DIR"
@@ -399,6 +410,11 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
     [[ ! -e "$timeout_file" ]] || fail "cycle $cycle exceeded its session deadline"
     ((session_status == 0)) || fail "cycle $cycle exited with status $session_status"
     [[ -s "$logout_result_file" ]] || fail "cycle $cycle did not inject the logout chord"
+    for _ in {1..100}; do
+        wm_helpers_are_drained && break
+        sleep 0.02
+    done
+    wm_helpers_are_drained || fail "cycle $cycle left stale Sophia WM helpers"
     current_run="$(latest_run || true)"
     [[ -n "$current_run" && "$current_run" != "$previous_run" ]] ||
         fail "cycle $cycle did not create one new immutable attempt"

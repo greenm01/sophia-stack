@@ -55,6 +55,24 @@ record; after exact two-output readiness it injects Super-Shift-Q. Fresh log
 identity checks prevent either phase from accepting evidence from a preceding
 cycle. This exercises the production interlock instead of bypassing it.
 
+The armed rerun then reached graphics takeover but never presented its startup
+surface. Host process and file-descriptor evidence found four orphaned legacy
+WM bridges from earlier releases. Three retained xmonad children, and the
+bridges retained Sophia-owned DRM and physical-input descriptors. The seat
+broker had duplicated libseat descriptors without close-on-exec; separately,
+the bridge socket server retained its runtime and returned to `accept` after
+its sole Sophia client disconnected. Those orphans kept kernel ownership alive
+after the Engine process disappeared and poisoned the next startup.
+
+Seat-device duplicates are now close-on-exec, and the cycle launcher closes
+its extra retained VT descriptor before executing the installed wrapper. The
+legacy bridge server owns exactly one Sophia control-client lifetime, removes
+its socket on exit, and bounds the preconnection wait. Client disconnect now
+drops the bridge runtime and its xmonad child instead of returning to an
+unowned listener. A Rust socket-lifecycle regression requires that teardown,
+and every installed cycle now rejects preexisting helpers and requires the WM
+process set to drain before accepting its immutable attempt.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

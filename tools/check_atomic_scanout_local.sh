@@ -271,9 +271,15 @@ bash -n tools/package_live_session.sh tools/install_live_session.sh \
     tools/install_current_live_session.sh tools/run_installed_cycle_gate_tty3.sh
 tools/run_installed_cycle_gate_tty3.sh --self-test
 grep -Fq 'exec {SESSION_INPUT_FD}<&0' tools/run_installed_cycle_gate_tty3.sh
+grep -Fq 'wm_helpers_are_drained' tools/run_installed_cycle_gate_tty3.sh
 if grep -Fq 'exec {SESSION_INPUT_FD}<>/dev/tty' \
     tools/run_installed_cycle_gate_tty3.sh; then
     echo "Installed cycle runner must preserve the concrete greetd VT descriptor." >&2
+    exit 1
+fi
+grep -Fq 'rustix::io::fcntl_dupfd_cloexec' crates/sophia-backend-live/src/seat.rs
+if grep -Fq 'rustix::io::dup(' crates/sophia-backend-live/src/seat.rs; then
+    echo "Seat authority descriptors must be close-on-exec." >&2
     exit 1
 fi
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
