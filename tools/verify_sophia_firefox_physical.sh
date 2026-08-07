@@ -173,6 +173,22 @@ for index in 0 1; do
         seed_commit_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' "$manage_phase_line")"
         [[ -n "$seed_commit_line" ]] && (( seed_commit_line < admitted_line )) ||
             fail "Firefox recovery lacks a committed-layout reseed"
+        seed_commit="$(sed -n "${seed_commit_line}p" "$SESSION_LOG")"
+        seed_transaction="$(field "$seed_commit" transaction)" ||
+            fail "Firefox committed-layout reseed lacks a transaction"
+        seed_configures="$(field "$seed_commit" configure_deliveries)" ||
+            fail "Firefox committed-layout reseed lacks a geometry-control count"
+        [[ "$seed_configures" =~ ^[1-9][0-9]*$ ]] ||
+            fail "Firefox committed-layout reseed did not reassert stale client geometry"
+        seed_geometry_acks="$(awk -v first="$restart_line" -v last="$seed_commit_line" \
+            -v transaction="$seed_transaction" '
+            NR > first && NR < last &&
+                /^sophia_live_surface_geometry schema=1 status=frontend_configured / &&
+                $0 ~ ("transaction=" transaction " ") { count++ }
+            END { print count + 0 }
+        ' "$SESSION_LOG")"
+        (( seed_geometry_acks == seed_configures )) ||
+            fail "Firefox committed-layout reseed did not acknowledge every geometry reassertion"
         if awk -v first="$restart_line" -v last="$seed_commit_line" -v surface="$firefox_admission_surface" '
             NR > first && NR < last &&
                 $0 ~ /^sophia_live_visual_admission schema=1 status=armed / &&

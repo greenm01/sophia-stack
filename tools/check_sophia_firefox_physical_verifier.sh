@@ -39,11 +39,20 @@ awk '
         print "sophia_live_wm schema=1 status=restarted restarts=1 preserved_layout=true"
         print "sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout"
         print "sophia_live_wm schema=4 status=reseed_queued phase=pending_admission request=manage surface=4"
+        print "sophia_live_surface_geometry schema=1 status=frontend_configured transaction=16 surface=2"
+        print "sophia_live_surface_geometry schema=1 status=frontend_configured transaction=16 surface=3"
         print "sophia_live_wm schema=1 status=layout_committed transaction=16 surfaces=3 moved_surfaces=0 configure_deliveries=2 outcome=Committed"
     }
 ' "$SESSION" | sed 's/wm_restarts=0/wm_restarts=1/' >"$RECOVERY_SESSION"
 "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$RECOVERY_SESSION" "$GUARD" "$RECOVERY"
+grep -Fv 'sophia_live_surface_geometry schema=1 status=frontend_configured transaction=16 surface=2' \
+    "$RECOVERY_SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted an incomplete committed-layout reseed" >&2
+    exit 1
+fi
 sed '/status=restarted restarts=1 /a sophia_live_wm schema=1 status=restarted restarts=2 preserved_layout=true' \
     "$RECOVERY_SESSION" | sed 's/wm_restarts=1/wm_restarts=2/' >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \

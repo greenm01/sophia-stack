@@ -700,7 +700,12 @@ impl PersistentLiveLayout {
                     .layers
                     .get(&layer.surface)
                     .is_none_or(|current| current.geometry != layer.geometry);
-                (moved || self.surface_awaits_visual_candidate(layer.surface))
+                // A recovery reseed can retain Engine geometry while late
+                // pixels from the aborted target leave the client at another
+                // size. Its resize obligation must reassert the same rectangle.
+                (moved
+                    || proposal.requested_sizes.contains_key(&layer.surface)
+                    || self.surface_awaits_visual_candidate(layer.surface))
                     .then_some((layer.surface, layer.geometry))
             })
             .collect::<BTreeMap<_, _>>();

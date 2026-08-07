@@ -193,8 +193,70 @@ fn focus_only_layout_emits_no_geometry_control() {
 }
 
 #[test]
-fn resize_timeout_restores_the_complete_committed_rectangle() {
+fn recovery_reseed_reasserts_geometry_when_only_committed_pixels_are_stale() {
     let surface = SurfaceId::new(5, 1);
+    let geometry = Rect {
+        x: 7,
+        y: 21,
+        width: 1276,
+        height: 1422,
+    };
+    let transaction = TransactionId::from_raw(11);
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout.layout_epochs.record_committed(
+        surface,
+        Size {
+            width: 636,
+            height: 1422,
+        },
+    );
+    let requested_size = Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::from([(surface, requested_size)]),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+    let pending = layout.pending.as_ref().unwrap();
+    assert_eq!(pending.requested_sizes, BTreeMap::from([(surface, requested_size)]));
+    assert_eq!(pending.moved_surfaces, 0);
+    assert_eq!(pending.configure_deliveries, 1);
+    let commands = drain_test_controls(&mut controls);
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].command,
+        sophia_x_authority::XAuthorityControlCommand::ConfigureSurface {
+            transaction,
+            surface,
+            geometry,
+        }
+    );
+}
+
+#[test]
+fn resize_timeout_restores_the_complete_committed_rectangle() {
+    let surface = SurfaceId::new(6, 1);
     let committed = Rect {
         x: 647,
         y: 21,
@@ -207,7 +269,7 @@ fn resize_timeout_restores_the_complete_committed_rectangle() {
         width: 1000,
         height: 700,
     };
-    let transaction = TransactionId::from_raw(11);
+    let transaction = TransactionId::from_raw(12);
     let mut layout = PersistentLiveLayout::default();
     register_test_routes(&mut layout, &[surface]);
     layout.layers.insert(surface, test_layer(surface, committed));
