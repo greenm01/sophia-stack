@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: The corrected successor candidate is installed
+
+Release `0.1.0-56dad4de8b5f` packages signed Sophia commit `56dad4de`, the
+configured xmonad 0.18.1 executable with xmonad-contrib 0.18.2, and xmobar
+0.51.1 from clean source commit `f3d7fb5461c1`. Its complete `SHA256SUMS` set
+and packaged-policy verifier pass from
+`/opt/sophia/releases/0.1.0-56dad4de8b5f`. `/opt/sophia/current` and all six
+greetd entries resolve through that repository-independent release; the failed
+`0.1.0-199fa11d6876` release remains available as `/opt/sophia/previous` for
+comparison.
+
+This closes the corrected build/install criterion only. Runtime identity still
+describes the most recently completed session until this release launches. Its
+focused physical gates, visible TrueColor capture, repeated lifecycle proof,
+and soak evidence remain open.
+
 ## 2026-08-07: Auxiliary pixmap depths are separate from TrueColor visuals
 
 The first `199fa11d` installed-session start reached both outputs, xmonad, and
@@ -24,8 +40,8 @@ exact setup catalog, creation and geometry for every retained depth, and
 rejection of depths outside the catalog.
 
 The failed installed release remains useful evidence but is not a promotion
-candidate. Milestone 12 build/install status is open again until this correction
-is committed, packaged, and installed.
+candidate. The corrected successor above supersedes it for all remaining live
+gates.
 
 ## 2026-08-07: The immutable successor candidate is installed
 

@@ -46,9 +46,10 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. The first immutable successor exposed a
-missing core depth-1 pixmap format during its focused startup gate. Install the
-corrected successor, run its focused and automated lifecycle gates, then pass
-the visible color proof, two-hour interactive soak, and one full workday.
+missing core depth-1 pixmap format during its focused startup gate. The
+corrected successor is installed; run its focused and automated lifecycle
+gates, then pass the visible color proof, two-hour interactive soak, and one
+full workday.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -100,10 +101,10 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-199fa11d6876` freezes the intended xmonad and xmobar policy,
-  but its first focused start rejected xterm's legal depth-1 cursor pixmap.
-  The corrected X Authority must be rebuilt and installed before live gates
-  resume.
+- Release `0.1.0-56dad4de8b5f` is the installed candidate. It freezes the
+  intended xmonad and xmobar policy and restores the conventional auxiliary
+  pixmap depths rejected by its predecessor. Its focused live gates have not
+  yet run.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -210,7 +211,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.3 Rebuild And Re-Prove The Candidate
 
-- [ ] Build and install one repository-independent candidate containing the
+- [x] Build and install one repository-independent candidate containing the
   pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
   entry uses those exact paths and digests without a source checkout.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
