@@ -240,7 +240,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   artifacts. Verify the greetd entry uses those exact paths and digests without
   a source checkout. Installed `4c312142` and Firefox run `0002` prove the
   immutable artifact, runtime identity, automatic recorder, and handoff fix.
-- [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
+- [x] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
   protocol errors, exact TTY restoration, and no host process residue. The
@@ -250,7 +250,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   the corrected launcher and clean CPU-backed VT recovery, while exposing that
   the first verifier fixture had incorrectly modeled xterm as a Present client
   with an imported image. The corrected CPU-snapshot contract and a fresh
-  immutable run remain.
+  immutable run remained. Installed attempt `0003` passes on `7e18ea3a`: exact
+  inset CPU geometry, two-output scene rehydration, normal VT recovery and WM
+  logout, zero protocol errors, exact TTY restoration, and no process residue.
 - [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
   and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
   passes the immutable aggregate verifier.
