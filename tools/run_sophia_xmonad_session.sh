@@ -19,6 +19,7 @@ REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
+SESSION_HANDOFF="${SOPHIA_SESSION_HANDOFF:-display_manager}"
 FIREFOX_M10_PROOF=false
 FIREFOX_M10_RENDERING_PROOF=false
 FIREFOX_M10_DIALOG_PROOF=false
@@ -54,6 +55,10 @@ fi
 if [[ -n "$SESSION_WATCHDOG_SECONDS"
     && ! "$SESSION_WATCHDOG_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
     echo "SOPHIA_SESSION_WATCHDOG_SECONDS must be a positive integer when set." >&2
+    exit 1
+fi
+if [[ "$SESSION_HANDOFF" != display_manager && "$SESSION_HANDOFF" != cycle_runner ]]; then
+    echo "SOPHIA_SESSION_HANDOFF must be display_manager or cycle_runner." >&2
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
@@ -313,8 +318,9 @@ cleanup() {
         && ( "$operator_emergency" == false || "$watchdog_failure" == true ) ]]; then
         record_lifecycle_failure "$lifecycle_current_phase" "$status"
     fi
-    printf 'sophia_session_lifecycle schema=1 status=returned phase=handoff installed=%s exit_status=%s emergency=%s handoff=display_manager\n' \
-        "$INSTALLED_SESSION" "$status" "$emergency" >>"$LIFECYCLE_LOG"
+    printf 'sophia_session_lifecycle schema=1 status=returned phase=handoff installed=%s exit_status=%s emergency=%s handoff=%s\n' \
+        "$INSTALLED_SESSION" "$status" "$emergency" "$SESSION_HANDOFF" \
+        >>"$LIFECYCLE_LOG"
     return "$status"
 }
 stop_from_signal() {

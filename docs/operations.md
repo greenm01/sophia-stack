@@ -44,7 +44,7 @@ tools/install_live_session.sh
 The command builds before requesting privilege, verifies every artifact
 digest, installs a new immutable directory below `/opt/sophia/releases`, and
 atomically updates `current` while retaining the former release as `previous`.
-It installs five greetd entries:
+It installs six greetd entries:
 
 - `Sophia xmonad (Experimental)` is the ordinary candidate.
 - `Sophia Kitty (Baseline)` is the known-good reduced fallback.
@@ -53,6 +53,9 @@ It installs five greetd entries:
   evidence gate, not the ordinary desktop.
 - `Sophia Native Chrome Proof` advances ring-only, frame-only, and combined
   native-WM chrome and records one immutable physical proof.
+- `Sophia Cycle Gate (Automated)` performs ten installed startup and normal
+  logout cycles after one authenticated selection. It is a lifecycle gate, not
+  the ordinary desktop.
 
 ## Status And Logs
 
@@ -218,6 +221,21 @@ Verify the latest three consecutive attempts with:
 ```sh
 sophia-verify-cycles 3
 ```
+
+Milestone 12 does not require an operator to repeat that sequence ten times.
+Install the bounded uinput permission once with `sophia-setup-uinput`, then
+select `Sophia Cycle Gate (Automated)` in greetd. The runner creates a fresh
+virtual keyboard for each cycle, waits for exact two-output startup readiness,
+sends `Super+Shift+Q` through the normal libinput and blind-WM path, and verifies
+the new immutable archive before continuing. It stops at the first failure and
+returns to greetd after the aggregate ten-cycle verifier passes. The gate uses
+physical DRM, VT, and libseat ownership; uinput replaces repetitive human key
+presses, not the separately retained physical-input evidence.
+
+Each inner lifecycle records `handoff=cycle_runner`. The runner itself is the
+single greetd-owned session and returns once when the gate ends. This preserves
+the distinction between repeated Sophia ownership cleanup and repeated PAM
+authentication; the latter is not a desktop stability invariant.
 
 The gate rechecks release and evidence digests, launch uniqueness, runtime
 identity, two-output startup, page-flip retirement, normal logout, protocol and

@@ -3,6 +3,31 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-06: Lifecycle repetition is a runner, not an operator ritual
+
+The first Milestone 12 instruction asked the operator to select the ordinary
+greetd entry and press the logout chord ten times. That contradicted the
+existing decision that installed cycles identify distinct launches rather than
+repeat broader operator choreography. It also spent human attention replaying
+the same shortcut already exercised by physical and QEMU input gates.
+
+The installed artifact now carries one automated cycle entry. After one greetd
+selection, its external runner creates a fresh bounded uinput keyboard and a
+fresh installed Sophia launch for each cycle. It waits for an exact schema-2,
+two-output startup-ready record from the new log inode, then sends
+`Super+Shift+Q` through libinput, Engine input authority, and the blind WM. A
+per-cycle deadline remains outside Engine. The runner requires a new immutable
+attempt, verifies it immediately, stops on the first failure, and runs the
+contiguous aggregate verifier before returning to greetd.
+
+Nested lifecycles explicitly record `handoff=cycle_runner`; ordinary,
+emergency, and watchdog sessions retain `handoff=display_manager`. This avoids
+claiming ten PAM or display-manager round trips when the invariant is repeated
+Sophia acquisition and cleanup on one authenticated local VT. The gate still
+uses physical DRM, KMS, libseat, and VT ownership. Uinput removes repetitive
+human key presses without adding an Engine test mode or replacing the retained
+physical keyboard evidence.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

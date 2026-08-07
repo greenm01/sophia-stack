@@ -21,6 +21,8 @@ OPERATOR_COMMANDS=(
     sophia-status
     sophia-stop
     sophia-rollback
+    sophia-run-cycles
+    sophia-setup-uinput
     sophia-record-run
     sophia-record-fallback-run
     sophia-record-emergency-run
@@ -77,6 +79,8 @@ make_artifact() {
         >"$artifact/share/wayland-sessions/sophia-recovery-proof.desktop"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-native-chrome-proof\n' \
         >"$artifact/share/wayland-sessions/sophia-native-chrome-proof.desktop"
+    printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-run-cycles\n' \
+        >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
     printf 'schema=1\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\n' \
         "$release_id" "$release_id" >"$artifact/manifest"
     (
@@ -105,6 +109,8 @@ grep -Fq "Exec=$PREFIX/current/bin/sophia-recovery-proof" \
     "$SESSION_DIR/sophia-recovery-proof.desktop"
 grep -Fq "Exec=$PREFIX/current/bin/sophia-native-chrome-proof" \
     "$SESSION_DIR/sophia-native-chrome-proof.desktop"
+grep -Fq "Exec=$PREFIX/current/bin/sophia-run-cycles" \
+    "$SESSION_DIR/sophia-cycle-proof.desktop"
 for command in "${OPERATOR_COMMANDS[@]}"; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done

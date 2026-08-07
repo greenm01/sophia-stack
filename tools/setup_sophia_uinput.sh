@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 TARGET_USER="${SUDO_USER:-${USER:-}}"
 
 fail() {
@@ -13,8 +14,8 @@ if [[ "${1:-}" == --help ]]; then
     cat <<EOF
 Usage: tools/setup_sophia_uinput.sh
 
-Install the uinput module-load entry and udev permissions required by the
-physical input-latency gate. Run from an interactive terminal; the script
+Install the uinput module-load entry and udev permissions required by Sophia's
+bounded physical test runners. Run from an interactive terminal; the script
 re-executes itself through sudo when necessary.
 EOF
     exit 0

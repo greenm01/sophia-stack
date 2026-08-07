@@ -1240,7 +1240,8 @@ sophia-verify-native-chrome
 # ten terminal and five Firefox action launches:
 sophia-verify-soak
 
-# Ten clean installed login cycles:
+# Run and then reverify ten clean installed lifecycle cycles:
+sophia-run-cycles
 sophia-verify-cycles 10
 
 # Full eight-hour workday, with proportionally broader app exercise:

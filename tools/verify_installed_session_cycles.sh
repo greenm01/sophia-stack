@@ -86,7 +86,13 @@ for run in "${runs[@]}"; do
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     sophia_binary_sha256="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
     "$VERIFY_IDENTITY" "$run/runtime-identity.log" "$sophia_binary_sha256"
-    "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
+    lifecycle_mode="$(sed -n 's/^lifecycle_mode=//p' "$run/manifest")"
+    [[ -n "$lifecycle_mode" ]] || lifecycle_mode=normal
+    [[ "$lifecycle_mode" == normal || "$lifecycle_mode" == cycle ]] || {
+        echo "installed cycle has an invalid lifecycle mode: $run" >&2
+        exit 1
+    }
+    "$VERIFY_LIFECYCLE" "$run/lifecycle.log" "$lifecycle_mode"
     record_schema="$(sed -n 's/^record_schema=//p' "$run/manifest")"
     case "$record_schema" in
         4)

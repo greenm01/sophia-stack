@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a bounded virtual keyboard and inject text through Linux uinput."""
+"""Create a bounded virtual keyboard and inject input through Linux uinput."""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ EV_SYN = 0
 EV_KEY = 1
 SYN_REPORT = 0
 BUS_USB = 0x03
+DEFAULT_TEXT = "sophia\n"
+KEY_LEFTSHIFT = 42
+KEY_LEFTMETA = 125
 
 KEY_CODES = {
     "a": 30,
@@ -82,10 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Create a virtual keyboard, publish its /dev/input/event path, "
-            "then inject lowercase text after a trigger file appears."
+            "then inject bounded input after a trigger file appears."
         )
     )
-    parser.add_argument("--text", default="sophia\n")
+    parser.add_argument("--text")
+    parser.add_argument("--chord", choices=("logout",))
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--trigger-file", type=Path)
     parser.add_argument("--result-file", type=Path)
@@ -103,6 +107,25 @@ def validate_text(text: str) -> list[int]:
     if not text:
         raise ValueError("text must not be empty")
     return [KEY_CODES[character] for character in text]
+
+
+def input_sequence(
+    text: str | None, chord: str | None
+) -> tuple[str, str, list[tuple[int, int]]]:
+    if text is not None and chord is not None:
+        raise ValueError("--text and --chord are mutually exclusive")
+    if chord == "logout":
+        keys = [KEY_LEFTMETA, KEY_LEFTSHIFT, KEY_CODES["q"]]
+        sequence = [(keycode, 1) for keycode in keys]
+        sequence.extend((keycode, 0) for keycode in reversed(keys))
+        return "chord", "chord=logout keys=3", sequence
+
+    resolved_text = DEFAULT_TEXT if text is None else text
+    keycodes = validate_text(resolved_text)
+    sequence = []
+    for keycode in keycodes:
+        sequence.extend(((keycode, 1), (keycode, 0)))
+    return "text", f"characters={len(resolved_text)}", sequence
 
 
 def publish(path: Path | None, value: str) -> None:
@@ -146,20 +169,15 @@ def emit(device: int, event_type: int, code: int, value: int) -> None:
     os.write(device, INPUT_EVENT.pack(0, 0, event_type, code, value))
 
 
-def inject(device: int, keycodes: list[int], interval: float) -> None:
-    for keycode in keycodes:
-        emit(device, EV_KEY, keycode, 1)
-        emit(device, EV_SYN, SYN_REPORT, 0)
-        if interval:
-            time.sleep(interval)
-        emit(device, EV_KEY, keycode, 0)
+def inject(device: int, sequence: list[tuple[int, int]], interval: float) -> None:
+    for keycode, value in sequence:
+        emit(device, EV_KEY, keycode, value)
         emit(device, EV_SYN, SYN_REPORT, 0)
         if interval:
             time.sleep(interval)
 
 
-def self_test(text: str) -> int:
-    keycodes = validate_text(text)
+def self_test(mode: str, description: str, sequence: list[tuple[int, int]]) -> int:
     if INPUT_EVENT.size != 24 or UINPUT_SETUP.size != 92:
         raise RuntimeError(
             f"unexpected Linux ABI sizes: input_event={INPUT_EVENT.size} "
@@ -167,7 +185,7 @@ def self_test(text: str) -> int:
         )
     print(
         "sophia_uinput schema=1 status=self_test_passed "
-        f"characters={len(text)} events={len(keycodes) * 4}"
+        f"mode={mode} {description} events={len(sequence) * 2}"
     )
     return 0
 
@@ -178,12 +196,12 @@ def main() -> int:
         raise ValueError("--timeout-seconds must be positive")
     if args.key_interval_ms < 0 or args.key_interval_ms > 1000:
         raise ValueError("--key-interval-ms must be between 0 and 1000")
+    mode, description, sequence = input_sequence(args.text, args.chord)
     if args.self_test:
-        return self_test(args.text)
+        return self_test(mode, description, sequence)
     if args.ready_file is None or args.trigger_file is None:
         raise ValueError("--ready-file and --trigger-file are required")
 
-    keycodes = validate_text(args.text)
     stopped = [False]
 
     def stop(_signum: int, _frame: object) -> None:
@@ -191,14 +209,14 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    name = f"Sophia Latency Keyboard {os.getpid()}"
+    name = f"Sophia Virtual Keyboard {os.getpid()}"
     deadline = time.monotonic() + args.timeout_seconds
     device = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
     created = False
     try:
         fcntl.ioctl(device, UI_SET_EVBIT, EV_SYN)
         fcntl.ioctl(device, UI_SET_EVBIT, EV_KEY)
-        for keycode in sorted(set(KEY_CODES.values())):
+        for keycode in sorted({keycode for keycode, _value in sequence}):
             fcntl.ioctl(device, UI_SET_KEYBIT, keycode)
         encoded_name = name.encode("utf-8")
         setup = UINPUT_SETUP.pack(
@@ -216,16 +234,16 @@ def main() -> int:
         publish(args.ready_file, str(event_path))
         print(
             "sophia_uinput schema=1 status=ready "
-            f"device={event_path} characters={len(args.text)}",
+            f"device={event_path} mode={mode} {description}",
             flush=True,
         )
         wait_for_trigger(args.trigger_file, deadline, stopped)
         injected_at_usec = time.monotonic_ns() // 1_000
-        inject(device, keycodes, args.key_interval_ms / 1000.0)
+        inject(device, sequence, args.key_interval_ms / 1000.0)
         publish(args.result_file, str(injected_at_usec))
         print(
             "sophia_uinput schema=1 status=injected "
-            f"characters={len(args.text)} events={len(keycodes) * 4}",
+            f"mode={mode} {description} events={len(sequence) * 2}",
             flush=True,
         )
         while not stopped[0]:

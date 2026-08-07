@@ -177,4 +177,20 @@ if env \
     exit 1
 fi
 
+CYCLE_ROOT="$STATE_HOME/sophia/promotion/cycle-runs"
+set_identity 2026-08-05T12:14:00Z
+sed -i 's/handoff=display_manager/handoff=cycle_runner/' \
+    "$SESSION_DIR/lifecycle.log"
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_INSTALL_PREFIX="$PREFIX" \
+    SOPHIA_PROMOTION_RUN_ROOT="$CYCLE_ROOT" \
+    SOPHIA_ATTEMPT_LIFECYCLE_MODE=cycle \
+    "$ROOT_DIR/tools/record_installed_session_run.sh"
+grep -Fxq 'lifecycle_mode=cycle' "$CYCLE_ROOT/0001/manifest"
+env \
+    XDG_STATE_HOME="$STATE_HOME" \
+    SOPHIA_PROMOTION_RUN_ROOT="$CYCLE_ROOT" \
+    "$ROOT_DIR/tools/verify_installed_session_cycles.sh" 1
+
 echo "installed cycle recorder and ledger checks passed"

@@ -4,8 +4,9 @@ set -euo pipefail
 lifecycle="${1:-}"
 mode="${2:-normal}"
 [[ -s "$lifecycle" \
-    && ( "$mode" == normal || "$mode" == emergency || "$mode" == watchdog ) ]] || {
-    echo "usage: tools/verify_installed_session_lifecycle.sh LIFECYCLE_LOG [normal|emergency|watchdog]" >&2
+    && ( "$mode" == normal || "$mode" == cycle \
+        || "$mode" == emergency || "$mode" == watchdog ) ]] || {
+    echo "usage: tools/verify_installed_session_lifecycle.sh LIFECYCLE_LOG [normal|cycle|emergency|watchdog]" >&2
     exit 1
 }
 fail() {
@@ -48,6 +49,9 @@ case "$mode" in
     normal)
         returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=0 emergency=false handoff=display_manager'
         ;;
+    cycle)
+        returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=0 emergency=false handoff=cycle_runner'
+        ;;
     emergency)
         returned='sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=130 emergency=true handoff=display_manager'
         ;;
@@ -57,9 +61,8 @@ case "$mode" in
             "$lifecycle" || fail "watchdog deadline diagnostic is missing"
         ;;
 esac
-grep -Fxq "$returned" "$lifecycle" ||
-    fail "display-manager handoff does not match $mode recovery"
+grep -Fxq "$returned" "$lifecycle" || fail "handoff does not match $mode recovery"
 returned_line="$(line_number "$returned")"
-(( returned_line > previous )) || fail "display-manager handoff preceded the session"
+(( returned_line > previous )) || fail "handoff preceded the session"
 
 echo "installed Sophia lifecycle verified: mode=$mode log=$lifecycle"

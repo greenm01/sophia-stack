@@ -67,6 +67,8 @@ commands=(
     sophia-status
     sophia-stop
     sophia-rollback
+    sophia-run-cycles
+    sophia-setup-uinput
     sophia-record-run
     sophia-record-fallback-run
     sophia-record-emergency-run
@@ -91,7 +93,7 @@ for command in "${commands[@]}"; do
 done
 for desktop in \
     sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
-    sophia-native-chrome-proof; do
+    sophia-native-chrome-proof sophia-cycle-proof; do
     install -m 644 "$target/share/wayland-sessions/$desktop.desktop" \
         "$SESSION_DIR/$desktop.desktop.template"
     sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
@@ -107,7 +109,7 @@ echo "Operator guide: $PREFIX/current/share/doc/sophia/operations.md"
 echo "Session entries:"
 for desktop in \
     sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
-    sophia-native-chrome-proof; do
+    sophia-native-chrome-proof sophia-cycle-proof; do
     echo "  $SESSION_DIR/$desktop.desktop"
 done
 echo "Operator commands: ${commands[*]}"

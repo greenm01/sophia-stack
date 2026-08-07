@@ -32,6 +32,7 @@ install -d -m 755 \
     "$artifact/target/release" \
     "$artifact/tools/fixtures" \
     "$artifact/tools/lib" \
+    "$artifact/tools/probes" \
     "$artifact/share/doc/sophia" \
     "$artifact/share/wayland-sessions"
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
@@ -51,6 +52,10 @@ install -m 755 tools/installed/sophia-native-chrome-proof \
     "$artifact/bin/sophia-native-chrome-proof"
 install -m 755 tools/installed/capture-runtime-identity.sh \
     "$artifact/bin/capture-runtime-identity"
+install -m 755 tools/run_installed_cycle_gate_tty3.sh \
+    "$artifact/bin/sophia-run-cycles"
+install -m 755 tools/setup_sophia_uinput.sh \
+    "$artifact/bin/sophia-setup-uinput"
 install -m 755 tools/status_live_session.sh "$artifact/bin/sophia-status"
 install -m 755 tools/installed/sophia-stop "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
@@ -108,8 +113,14 @@ install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/stop_sophia_session.sh \
     tools/start_sophia_native_hot_reload_tty3.sh "$artifact/tools/"
 install -d -m 755 "$artifact/tools/config"
+install -m 755 tools/probes/uinput_text_injector.py \
+    "$artifact/tools/probes/uinput_text_injector.py"
 install -m 644 tools/config/proof_helpers.sh \
     "$artifact/tools/config/proof_helpers.sh"
+install -m 644 tools/config/99-sophia-uinput.rules \
+    "$artifact/tools/config/99-sophia-uinput.rules"
+install -m 644 tools/config/sophia-uinput.conf \
+    "$artifact/tools/config/sophia-uinput.conf"
 install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
 install -m 644 tools/lib/installed_attempt_ledger.sh \
@@ -165,6 +176,14 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-native-chrome-proof.desktop"
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Name=Sophia Cycle Gate (Automated)' \
+    'Comment=Ten automatic installed startup and normal-logout cycles' \
+    'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-run-cycles' \
+    'Type=Application' \
+    'DesktopNames=Sophia' \
+    >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
 printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >"$artifact/manifest"

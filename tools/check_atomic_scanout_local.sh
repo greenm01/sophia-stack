@@ -268,7 +268,8 @@ fi
 bash -n tools/stop_sophia_xmonad_session.sh
 bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
 bash -n tools/package_live_session.sh tools/install_live_session.sh \
-    tools/install_current_live_session.sh
+    tools/install_current_live_session.sh tools/run_installed_cycle_gate_tty3.sh
+tools/run_installed_cycle_gate_tty3.sh --self-test
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
@@ -319,5 +320,6 @@ tools/check_live_session_milestone5_verifier.sh
 python3 -c 'compile(open("tools/sophia_tty_mode.py", encoding="utf-8").read(), "tools/sophia_tty_mode.py", "exec")'
 python3 -c 'compile(open("tools/probes/uinput_text_injector.py", encoding="utf-8").read(), "tools/probes/uinput_text_injector.py", "exec")'
 tools/probes/uinput_text_injector.py --self-test
+tools/probes/uinput_text_injector.py --chord=logout --self-test
 
 echo "atomic scanout local checks passed"

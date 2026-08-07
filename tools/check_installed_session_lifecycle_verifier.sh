@@ -13,6 +13,13 @@ trap 'rm -f -- "$TEMP_FILE"' EXIT
 "$VERIFY" "$EMERGENCY" emergency
 "$VERIFY" "$WATCHDOG" watchdog
 
+sed 's/handoff=display_manager/handoff=cycle_runner/' "$NORMAL" >"$TEMP_FILE"
+"$VERIFY" "$TEMP_FILE" cycle
+if "$VERIFY" "$TEMP_FILE" normal; then
+    echo "installed lifecycle verifier confused runner and display-manager handoff" >&2
+    exit 1
+fi
+
 sed 's/runtime=owner/runtime=temporary/' "$NORMAL" >"$TEMP_FILE"
 if "$VERIFY" "$TEMP_FILE" normal; then
     echo "installed lifecycle verifier accepted temporary runtime state" >&2

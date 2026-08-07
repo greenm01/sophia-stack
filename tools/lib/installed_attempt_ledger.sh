@@ -133,6 +133,12 @@ sophia_installed_attempt_load_identity() {
 
 sophia_installed_attempt_begin() {
     sophia_installed_attempt_load_identity
+    local lifecycle_mode="${SOPHIA_ATTEMPT_LIFECYCLE_MODE:-normal}"
+    [[ "$lifecycle_mode" == normal || "$lifecycle_mode" == cycle \
+        || "$lifecycle_mode" == emergency || "$lifecycle_mode" == watchdog ]] || {
+        echo "installed attempt has an invalid lifecycle mode: $lifecycle_mode" >&2
+        return 1
+    }
     install -d -m 700 "$SOPHIA_ATTEMPT_RUN_ROOT"
     local -a duplicate_runs
     mapfile -t duplicate_runs < <(
@@ -159,8 +165,8 @@ sophia_installed_attempt_begin() {
     install -m 600 "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
         "$run_dir/runtime-identity.log"
     install -m 600 "$SOPHIA_ATTEMPT_PREFIX/current/manifest" "$run_dir/manifest"
-    printf 'record_schema=4\nrecord_kind=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\nsophia_binary_sha256=%s\n' \
-        "$SOPHIA_ATTEMPT_KIND" "$sophia_attempt_started_at_utc" \
+    printf 'record_schema=4\nrecord_kind=%s\nlifecycle_mode=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\nsophia_binary_sha256=%s\n' \
+        "$SOPHIA_ATTEMPT_KIND" "$lifecycle_mode" "$sophia_attempt_started_at_utc" \
         "$sophia_attempt_identity_sha256" "$sophia_attempt_binary_sha256" \
         >>"$run_dir/manifest"
     if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
