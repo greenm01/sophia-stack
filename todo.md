@@ -52,10 +52,10 @@ bar repaints, primary retirement, clean logout, and packaged xmobar identity.
 TrueColor attempt `0003` from `883666a2` closes the physical color boundary
 through exact X11 color requests, final primary-output composition evidence,
 Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
-Independent emergency recovery, the repeated lifecycle gate, the two-hour
-interactive soak, and the full-workday gate remain. Active client projection
-onto output 2 is a separate compatibility boundary and is not claimed by the
-TrueColor gate.
+Independent emergency attempt `0004` also passes on `883666a2`. The repeated
+lifecycle gate, the two-hour interactive soak, and the full-workday gate
+remain. Active client projection onto output 2 is a separate compatibility
+boundary and is not claimed by the TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -268,7 +268,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   lifecycle, and unmodified archive checksums.
 - [x] Run the automatic physical TrueColor gate on the source successor.
   Installed attempt `0003` passes directly with `reverified=0` on `883666a2`.
-- [ ] Run the independent emergency-recovery gate on that same candidate.
+- [x] Run the independent emergency-recovery gate on that same candidate.
+  Installed attempt `0004` passes on `883666a2` with both observers, drained
+  keys and native presentation, status-130 handoff, and exact TTY restoration.
 - [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary
