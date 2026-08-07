@@ -281,6 +281,7 @@ where
         Option<sophia_renderer_live::LiveRendererImageSnapshot>,
         sophia_renderer_live::LiveRendererScanoutBufferExportDetail,
     > {
+        self.settle_worker_for_image_maintenance()?;
         if let Some(worker) = &mut self.worker {
             return worker.export_promoted_renderer_image(image_id);
         }
@@ -304,19 +305,29 @@ where
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        self.settle_worker_for_image_maintenance()?;
         if let Some(worker) = &mut self.worker {
-            if worker.discard_in_flight_for_maintenance()? {
-                self.worker_frame_kind = None;
-                tracing::info!(
-                    "sophia_renderer_worker schema=1 status=maintenance_frame_discarded"
-                );
-            }
             return worker.clear_renderer_images();
         }
         self.context.as_mut().map_or(
             Ok(0),
             sophia_renderer_live::NativeGbmRenderedScanoutContext::clear_renderer_images,
         )
+    }
+
+    fn settle_worker_for_image_maintenance(
+        &mut self,
+    ) -> Result<(), sophia_renderer_live::LiveRendererScanoutBufferExportDetail> {
+        let Some(worker) = &mut self.worker else {
+            return Ok(());
+        };
+        // Handoff or teardown has detached the skipped Present. Collect its
+        // worker result before touching the older promoted image set.
+        if worker.discard_in_flight_for_maintenance()? {
+            self.worker_frame_kind = None;
+            tracing::info!("sophia_renderer_worker schema=1 status=maintenance_frame_discarded");
+        }
+        Ok(())
     }
 
     pub const fn cpu_frame_export_attempts(&self) -> usize {

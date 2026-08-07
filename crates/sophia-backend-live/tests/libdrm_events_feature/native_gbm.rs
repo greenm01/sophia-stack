@@ -276,6 +276,48 @@ fn native_gbm_renderer_worker_defers_then_fails_closed_without_blocking_owner() 
 
 #[cfg(feature = "gbm-probe")]
 #[test]
+fn renderer_image_handoff_settles_an_unsubmitted_worker_frame() {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new_worker(
+        MissingRenderDevice,
+    )
+    .expect("worker thread should start without a render device");
+    let target = LiveGbmEglFrameTargetRecord::new(Size {
+        width: 16,
+        height: 16,
+    });
+    exporter.set_pending_cpu_frame(LiveCpuComposedFrame {
+        size: target.size,
+        stride: 16 * 4,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        bytes: vec![0; 16 * 16 * 4].into(),
+    });
+
+    let submitted = exporter.export_rendered_scanout_buffer(target);
+    assert_eq!(
+        submitted.status,
+        LiveRendererScanoutBufferExportStatus::Pending
+    );
+    let error = exporter
+        .export_promoted_renderer_image(sophia_renderer_live::LiveRendererImageId::from_raw(1))
+        .expect_err("the missing render device must remain a hard failure");
+
+    assert_eq!(
+        error,
+        sophia_renderer_live::LiveRendererScanoutBufferExportDetail::BackendDeviceUnavailable
+    );
+    assert_ne!(
+        error,
+        sophia_renderer_live::LiveRendererScanoutBufferExportDetail::WorkerPending
+    );
+    let metrics = exporter
+        .worker_metrics()
+        .expect("worker exporter should expose bounded metrics");
+    assert_eq!(metrics.requests, 1);
+    assert_eq!(metrics.failures, 1);
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
 fn native_gbm_renderer_image_owner_exists_only_after_renderer_initialization() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     assert!(!exporter.renderer_image_owner_initialized());
