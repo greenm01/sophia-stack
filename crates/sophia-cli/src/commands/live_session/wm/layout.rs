@@ -2,6 +2,7 @@ struct PendingLiveWmLayout {
     transaction: TransactionId,
     layers: Vec<LayerSnapshot>,
     requested_sizes: BTreeMap<SurfaceId, Size>,
+    configure_deliveries: usize,
     focus: Option<SurfaceId>,
     deadline: Instant,
     update: WmTransactionUpdate,
@@ -689,25 +690,43 @@ impl PersistentLiveLayout {
                 layer.generation = transaction.previous_committed_generation.saturating_add(1);
             }
         }
+        // X position feedback is required even when committed pixels remain
+        // reusable. Keep it separate from the resize-only readiness map.
+        let changed_geometries = proposal
+            .layers
+            .iter()
+            .filter_map(|layer| {
+                let moved = self
+                    .layers
+                    .get(&layer.surface)
+                    .is_none_or(|current| current.geometry != layer.geometry);
+                (moved || self.surface_awaits_visual_candidate(layer.surface))
+                    .then_some((layer.surface, layer.geometry))
+            })
+            .collect::<BTreeMap<_, _>>();
+        proposal.moved_surfaces = proposal
+            .layers
+            .iter()
+            .filter(|layer| {
+                self.layers
+                    .get(&layer.surface)
+                    .is_none_or(|current| current.geometry != layer.geometry)
+            })
+            .count();
         let mut admission_surfaces = BTreeSet::new();
-        for (surface, size) in &proposal.requested_sizes {
-            let geometry = proposal
-                .layers
-                .iter()
-                .find(|layer| layer.surface == *surface)
-                .map(|layer| layer.geometry)
-                .ok_or("live WM configure has no planned geometry")?;
+        for (surface, geometry) in changed_geometries {
             let stage =
-                self.stage_surface_control(proposal.transaction, *surface, geometry, *size)?;
+                self.stage_surface_control(proposal.transaction, surface, geometry)?;
             if stage.admission_owned {
-                admission_surfaces.insert(*surface);
+                admission_surfaces.insert(surface);
             }
             let Some(command) = stage.command else {
                 continue;
             };
+            proposal.configure_deliveries = proposal.configure_deliveries.saturating_add(1);
             let client = self
                 .client_routes
-                .client_for_surface(*surface)
+                .client_for_surface(surface)
                 .ok_or("live WM configure has no X11 client route for its surface")?;
             session_controls
                 .enqueue(
@@ -732,6 +751,7 @@ impl PersistentLiveLayout {
             transaction: proposal.transaction,
             layers: proposal.layers,
             requested_sizes: proposal.requested_sizes,
+            configure_deliveries: proposal.configure_deliveries,
             focus: proposal.focus,
             deadline: Instant::now() + proposal.timeout,
             update: proposal.update,
@@ -831,7 +851,7 @@ impl PersistentLiveLayout {
         // and mark the blind-WM target as rejected, welding the client to the
         // size it happened to map at (e.g. Firefox's 1280x1040 default) instead
         // of converging on the WM tile. Only already-managed surfaces roll back
-        // to a known-good size.
+        // to known-good geometry.
         let rollback = self.layout_epochs.begin_recovery(
             pending
                 .requested_sizes
@@ -864,6 +884,15 @@ impl PersistentLiveLayout {
         for request in rollback {
             let surface = request.surface;
             let size = request.size;
+            let geometry = self
+                .layers
+                .get(&surface)
+                .map(|layer| Rect {
+                    width: size.width,
+                    height: size.height,
+                    ..layer.geometry
+                })
+                .ok_or("live WM rollback has no committed geometry")?;
             let client = self
                 .client_routes
                 .client_for_surface(surface)
@@ -873,7 +902,7 @@ impl PersistentLiveLayout {
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: rollback_transaction,
                     surface,
-                    size,
+                    geometry,
                 },
             }, Instant::now()).map_err(|error| {
                 format!("failed to queue WM rollback control: {error:?}")

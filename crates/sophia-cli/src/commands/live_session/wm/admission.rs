@@ -161,7 +161,6 @@ impl PersistentLiveLayout {
         transaction: TransactionId,
         surface: SurfaceId,
         geometry: Rect,
-        size: Size,
     ) -> Result<LiveSurfaceControlStage, Box<dyn std::error::Error>> {
         use sophia_engine::SurfacePresentationAdmissionState::{
             AwaitingPixels, AwaitingRetirement, ControlPending, Inactive, Managed, PolicyPending,
@@ -193,7 +192,7 @@ impl PersistentLiveLayout {
                 command: Some(XAuthorityControlCommand::ConfigureSurface {
                     transaction,
                     surface,
-                    size,
+                    geometry,
                 }),
             },
             Inactive | Managed => LiveSurfaceControlStage {
@@ -201,7 +200,7 @@ impl PersistentLiveLayout {
                 command: Some(XAuthorityControlCommand::ConfigureSurface {
                     transaction,
                     surface,
-                    size,
+                    geometry,
                 }),
             },
         };

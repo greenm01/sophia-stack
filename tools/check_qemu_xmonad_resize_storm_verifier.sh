@@ -16,7 +16,7 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
         transaction=$((1999999 + step))
         if (( step % 2 == 0 )); then width=800 height=600; else width=960 height=640; fi
         echo "sophia_live_resize schema=2 status=requested transaction=$transaction surface=3 width=$width height=$height step=$step total=12"
-        echo "sophia_live_wm schema=1 status=layout_committed transaction=$transaction surfaces=1 moved_surfaces=0 configure_deliveries=1 outcome=Committed"
+        echo "sophia_live_wm schema=1 status=layout_committed transaction=$transaction surfaces=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed"
         echo "sophia_live_resize_epoch schema=1 status=committed transaction=$transaction matched_surfaces=1"
         echo "sophia_live_resize schema=2 status=committed transaction=$transaction surface=3 width=$width height=$height configure_delivered=true pixels=true step=$step total=12"
         echo "sophia_live_native_page_flip schema=1 status=retired output=1 submission=$step frame=$step"

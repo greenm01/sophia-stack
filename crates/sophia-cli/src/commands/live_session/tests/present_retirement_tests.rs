@@ -32,6 +32,7 @@ fn hold_resize(
                 height: geometry.height,
             },
         )]),
+        configure_deliveries: 0,
         focus: Some(surface),
         deadline: Instant::now() + Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {

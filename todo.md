@@ -45,17 +45,17 @@ The current installed candidate provides:
 
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
-the remaining promotion boundary. The first immutable successor exposed a
-missing core depth-1 pixmap format during its focused startup gate. The
-corrected predecessor passes both that startup regression and its automated
-ten-cycle lifecycle gate. Installed release `0.1.0-1a7d67c30615` separates
-inset Present content from logical outer geometry, but its live Super+Space
-run exposed a deterministic admission-recovery loop that retained Firefox's
-short fallback extent. The source successor implements a two-phase fallback
-and standing-target lifecycle and restores the established xmonad layout
-order; it is not installed or physically proven yet. Build that successor,
-run its focused gate once, then pass the remaining lifecycle, visible color,
-two-hour interactive soak, and full-workday gates.
+the remaining promotion boundary. Installed release
+`0.1.0-7bd3e7db0a90` proves two-phase admission recovery and restores the
+established xmonad layout order. Its focused Super+Space run exposed the next
+boundary defect: three surfaces moved, only the two resized Kitty surfaces
+received X Authority configure controls, and move-only Firefox retained stale
+X root geometry while Engine rendered it in the new column. The source
+successor sends complete rectangles for every changed surface while keeping
+pixel readiness resize-only, restores complete geometry on timeout, and locks
+the contract into Rust, physical-verifier, and TLA+ regressions. Build that
+successor, run its focused gate once, then pass the remaining lifecycle,
+visible color, two-hour interactive soak, and full-workday gates.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -107,13 +107,14 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-1a7d67c30615` remains installed, but its short Firefox
-  fallback after Super+Space is retained failure evidence, not a promotion
-  candidate. The source successor clears admission-only recovery before one
-  ordinary standing-target relayout and restores `ThreeColMid`, `Tall`,
-  `Mirror Tall`, `Full`, `Spiral`. Its predecessor's xterm and ten-cycle
-  results remain historical evidence; the next immutable build must repeat
-  every physical and lifecycle gate affected by executable and policy changes.
+- Release `0.1.0-7bd3e7db0a90` remains installed, but its move-only Firefox
+  failure after Super+Space is retained evidence, not a promotion candidate.
+  Its recovery lifecycle is correct; its size-only X Authority control is not.
+  The source successor delivers complete geometry independently of resize
+  pixels and restores complete committed geometry after timeout. Earlier xterm
+  and ten-cycle results remain historical evidence; the next immutable build
+  must repeat every physical and lifecycle gate affected by the executable
+  change.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -158,11 +159,12 @@ the correct authority.
 ## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
 The previous ten-cycle gates remain valid historical evidence for commits
-`958fb5e6` and `56dad4de`. Installed `1a7d67c3` is also retained as the
-admission-recovery failure reproduction. The source successor changes Sophia's
-recovery lifecycle, completion health contract, physical verifier, and packaged
-xmonad order, so all promotion gates and soaks must use a newly installed
-immutable build of that successor.
+`958fb5e6` and `56dad4de`. Installed `1a7d67c3` retains the admission-recovery
+failure, while installed `7bd3e7db` proves that recovery fix and retains the
+move-feedback failure. The source successor changes Sophia's X geometry
+control contract, timeout rollback, physical verifier, and formal model, so all
+promotion gates and soaks must use a newly installed immutable build of that
+successor.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -227,10 +229,15 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   clear only its temporary constraint, retain one bounded standing-target
   successor, queue one normal relayout, and commit the target only after exact
   native retirement. Fail session completion on any standing-target debt.
+- [x] Deliver complete position-and-size geometry to X Authority for every
+  changed surface while retaining resize-only pixel epochs. Require pure-move
+  Present-before-core ConfigureNotify, no-op silence, complete timeout
+  rollback, focus-only stability, and terminal Engine/X convergence in Rust,
+  verifier, and TLA+ gates.
 - [ ] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. The installed `1a7d67c3` release predates this recovery
+  a source checkout. Installed `7bd3e7db` predates the full-geometry control
   fix and does not satisfy this item.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented

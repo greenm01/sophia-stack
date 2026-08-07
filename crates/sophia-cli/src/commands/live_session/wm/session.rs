@@ -132,6 +132,7 @@ struct LiveWmProposal {
     transaction: TransactionId,
     layers: Vec<LayerSnapshot>,
     requested_sizes: BTreeMap<SurfaceId, Size>,
+    configure_deliveries: usize,
     focus: Option<SurfaceId>,
     timeout: Duration,
     update: WmTransactionUpdate,
@@ -833,6 +834,7 @@ impl LiveWmSession {
             transaction: transaction.transaction,
             layers: proposed,
             requested_sizes,
+            configure_deliveries: 0,
             focus: transaction.focus,
             timeout,
             update: WmTransactionUpdate {

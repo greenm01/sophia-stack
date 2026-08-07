@@ -98,10 +98,36 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted a layout with no moved surfaces" >&2
     exit 1
 fi
+grep -Fv 'sophia_live_surface_geometry schema=1 status=frontend_configured transaction=18 surface=4' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a missing move-only geometry acknowledgement" >&2
+    exit 1
+fi
+sed '/sophia_live_surface_geometry schema=1 status=frontend_configured transaction=18 surface=4/a sophia_live_surface_geometry schema=1 status=frontend_configured transaction=18 surface=4' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a duplicate move-only geometry acknowledgement" >&2
+    exit 1
+fi
 grep -Fv 'status=retired transaction=182 surface=4 ' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted no post-layout Firefox Present" >&2
+    exit 1
+fi
+awk '
+    /sophia_live_session_present .* surface=4 .*target=1276x1422_2_16/ {
+        seen++
+        if (seen == 2) sub(/target=1276x1422_2_16/, "target=1276x1422_7_16")
+    }
+    { print }
+' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted Firefox geometry drift during focus-only activity" >&2
     exit 1
 fi
 sed 's/workspace_projection_committed transaction=18/workspace_projection_committed transaction=17/' \
@@ -133,6 +159,13 @@ sed 's/index: 4, generation: 1/index: 2, generation: 1/' "$SESSION" >"$TEMP_FILE
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted no focus return" >&2
+    exit 1
+fi
+sed '/window=4 focused=false core_selected=true xi2_selected=true/a sophia_live_wm schema=1 status=layout_committed transaction=181 surfaces=4 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted geometry changes during focus-only activity" >&2
     exit 1
 fi
 sed '/status=dialog_ready /d' "$SESSION" >"$TEMP_FILE"

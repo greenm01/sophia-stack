@@ -27,8 +27,8 @@ cargo test --workspace --offline
 
 Milestone 12 adds unattended TLA+ gates for visual candidate preparation,
 submission, output-scoped retirement, terminal settlement, resource release,
-and X11 admission recovery. They are not Milestone 11 installed-session
-requirements and add no physical operator steps.
+X11 admission recovery, and full-geometry feedback. They are not Milestone 11
+installed-session requirements and add no physical operator steps.
 
 The model and its action-to-Rust boundary map live under `validation/tla`.
 Sophia pins the command-line TLA+ Tools v1.7.4 jar by SHA-256. Once that
@@ -41,11 +41,14 @@ SOPHIA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar tools/check_tla.sh
 
 The bounded configurations explore retirement and supersession ordering,
 exact PresentedBuffer selection through timeout recovery, ownership of a
-software Present by one native frame, public policy negotiation and transfer
-assembly, and atomic multi-output projection. The frame-ownership model permits
-an unrelated frame to submit and retire first and proves that only the exact
-bound frame can emit feedback. `PolicyConnection` requires the full client,
-connection-epoch, and transaction identity for admitted work.
+software Present by one native frame, move/resize geometry feedback, public
+policy negotiation and transfer assembly, and atomic multi-output projection.
+The frame-ownership model permits an unrelated frame to submit and retire first
+and proves that only the exact bound frame can emit feedback.
+`GeometryFeedback` separates full rectangles from pixel readiness and proves
+no-op silence plus convergence after late-target/FIFO rollback.
+`PolicyConnection` requires the full client, connection-epoch, and transaction
+identity for admitted work.
 `PolicyProjection` requires proposals to answer an outstanding server-issued
 request for the current scene generation. They remain suitable for routine
 validation. A TLC counterexample that changes implementation behavior must

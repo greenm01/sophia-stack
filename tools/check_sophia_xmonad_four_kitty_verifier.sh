@@ -19,7 +19,7 @@ sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_wm_chrome schema=1 status=negotiated source=core_fallback capability=false clearance=2
 sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1426_0_14
 sophia_live_resize_epoch schema=1 status=held transaction=4 surfaces=4
-sophia_live_wm schema=1 status=layout_committed transaction=4 surfaces=5 moved_surfaces=4 configure_deliveries=3 outcome=Committed
+sophia_live_wm schema=1 status=layout_committed transaction=4 surfaces=5 moved_surfaces=4 configure_deliveries=4 outcome=Committed
 sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=4
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=4 output=1 workspace=1 visible_surfaces=4 focus=surface
 sophia_live_session_present schema=2 status=retired transaction=10 surface=4 source=1276x1422 target=1276x1422_2_16 clip=1276x1422_2_16 unit_scale=true

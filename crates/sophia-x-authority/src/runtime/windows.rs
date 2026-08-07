@@ -556,41 +556,42 @@ impl XAuthorityRuntime {
          Ok(release)
      }
  
-     pub fn configure_window_size_from_engine(
-         &mut self,
-         namespace: NamespaceId,
-         window: crate::XResourceId,
-         size: Size,
-     ) -> Result<Rect, XAuthorityRuntimeError> {
-         if size.width <= 0
-             || size.height <= 0
-             || size.width > i32::from(u16::MAX)
-             || size.height > i32::from(u16::MAX)
-         {
-             return Err(XAuthorityRuntimeError::InvalidResource);
-         }
-         let current = self.window_geometry(namespace, window)?;
-         let generation = self
-             .windows
-             .get(window)
+    /// Applies Engine-owned outer geometry without advancing client drawing
+    /// generation.
+    pub fn configure_window_from_engine(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        geometry: Rect,
+    ) -> Result<Rect, XAuthorityRuntimeError> {
+        if geometry.is_empty()
+            || geometry.width > i32::from(u16::MAX)
+            || geometry.height > i32::from(u16::MAX)
+            || geometry.x < i32::from(i16::MIN)
+            || geometry.x > i32::from(i16::MAX)
+            || geometry.y < i32::from(i16::MIN)
+            || geometry.y > i32::from(i16::MAX)
+        {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        let generation = self
+            .windows
+            .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?
              .generation;
          self.configure_window_geometry(
              namespace,
-             window,
-             XWindowGeometryUpdate {
-                 width: Some(u16::try_from(size.width).expect("validated above")),
-                 height: Some(u16::try_from(size.height).expect("validated above")),
-                 generation,
-                 ..XWindowGeometryUpdate::default()
-             },
-         )?;
-         Ok(Rect {
-             width: size.width,
-             height: size.height,
-             ..current
-         })
-     }
+            window,
+            XWindowGeometryUpdate {
+                x: Some(i16::try_from(geometry.x).expect("validated above")),
+                y: Some(i16::try_from(geometry.y).expect("validated above")),
+                width: Some(u16::try_from(geometry.width).expect("validated above")),
+                height: Some(u16::try_from(geometry.height).expect("validated above")),
+                generation,
+            },
+        )?;
+        Ok(geometry)
+    }
 
      pub fn admit_window_from_engine(
          &mut self,

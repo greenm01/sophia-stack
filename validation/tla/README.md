@@ -43,6 +43,15 @@ retires, while unrelated work may progress. Retirement publishes the Present
 generation before any deferred operation can advance the visible generation;
 weak fairness then requires the complete backlog to drain.
 
+`GeometryFeedback.tla` separates a surface's full X geometry from pixel
+readiness. It explores move-only and resize commits, an unchanged proposal,
+control delivery before or after logical commit, and a timeout whose FIFO
+rollback follows a late target control. It requires move-only work to reuse
+committed pixels, resize commits to wait for pixels, unchanged geometry to
+remain silent, and every settled Engine/X Authority pair to converge. This is
+the protocol invariant behind `ConfigureNotify`: position feedback is not a
+resize side effect.
+
 `PolicyConnection.tla` models one exclusive public policy role across
 negotiation, bounded begin/chunk/end proposal assembly, disconnect, replacement,
 and settlement of work already queued by the transport worker. It checks that
@@ -94,6 +103,10 @@ the current owning Rust boundaries as follows:
 | `QueueNext` | `SurfaceContentStream::admit` carrying a complete `LiveProductionAuthorityGroup` |
 | `RetirePresent` | `finish_surface_content_owner` after exact DMA or software frame retirement |
 | `ApplyReady` | the next production cycle's sequential rebase, CPU update, and authority commit |
+| `BeginMove`, `BeginResize` | `LiveWmLayoutManager::stage` deriving full geometry controls separately from pixel resize obligations |
+| `DeliverControl` | `XAuthorityRuntime::configure_window_from_engine` followed by Present ConfigureNotify and core ConfigureNotify for a real change |
+| `CommitMove`, `CommitResize` | logical layout commit, with only the resize path gated by exact candidate retirement |
+| `Timeout` | layout recovery queuing the complete last-committed rectangle behind any late target control |
 
 The public policy model is intentionally ahead of production implementation.
 Its actions map to the following target boundaries:

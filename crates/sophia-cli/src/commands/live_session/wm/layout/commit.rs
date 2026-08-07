@@ -4,6 +4,7 @@ impl PersistentLiveLayout {
             transaction: proposal.transaction,
             layers: proposal.layers,
             requested_sizes: proposal.requested_sizes,
+            configure_deliveries: proposal.configure_deliveries,
             focus: proposal.focus,
             deadline: Instant::now(),
             update: proposal.update,
@@ -165,7 +166,7 @@ impl PersistentLiveLayout {
             pending.transaction.raw(),
             self.layers.len(),
             pending.moved_surfaces,
-            pending.requested_sizes.len(),
+            pending.configure_deliveries,
             pending.update.commit.outcome
         );
         println!(

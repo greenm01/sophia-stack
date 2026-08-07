@@ -414,6 +414,7 @@
                         transaction,
                         layers,
                         requested_sizes: BTreeMap::from([(surface, size)]),
+                        configure_deliveries: 0,
                         focus: None,
                         timeout: Duration::from_secs(2),
                         update: WmTransactionUpdate {

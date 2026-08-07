@@ -3,6 +3,43 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: Move feedback is a full-geometry X Authority operation
+
+Installed release `0.1.0-7bd3e7db0a90` proved the two-phase admission
+successor, then exposed the next independent boundary defect. Super+Space
+committed xmonad transaction 9 with three moved surfaces, but the session
+reported only two configure deliveries and two matched resize candidates.
+Those two Kitty surfaces changed size. Firefox retained its `1266x1412`
+content while moving from the right column to the left, so the old size-only
+control path sent it nothing. Engine rendered Firefox at `1266x1412_7_21`
+while X Authority retained the old root-relative position. The proof page's
+`screenX` therefore stayed stale and the layout stage did not advance. Later
+pointer-focus transactions moved no surfaces; they merely made the split
+Engine/X geometry visible as apparent Firefox jumping.
+
+This is not xmonad policy or an Engine rendering defect. XLibre's
+`ConfigureWindow` emits `ConfigureNotify` for a real pure move and invokes the
+Present configure hook before core delivery. Yserver retains the same
+position-and-size operation and has a pure-move ordering regression. Sophia's
+X Authority now follows that ownership: `ConfigureSurface` carries the whole
+logical rectangle, updates X position and size together, emits Present
+ConfigureNotify before core ConfigureNotify for any real change, and remains
+silent for an identical rectangle.
+
+The session coordinator separately derives geometry controls and pixel
+obligations. Every changed surface receives one full-rectangle control, while
+only resized surfaces await new pixels; a move-only surface keeps its committed
+pixels. Timeout recovery queues the complete last-committed rectangle, so a
+late target control cannot leave X Authority at a stale position. Focus-only
+proposals emit no geometry control. Deterministic Rust tests cover pure move,
+no-op silence, move-only layout, focus-only layout, and full-rectangle
+rollback. The `GeometryFeedback` TLA+ model explores delivery on either side
+of logical commit plus late-target/FIFO rollback and requires terminal
+Engine/X convergence. The physical Firefox verifier now requires the
+correlated geometry acknowledgement and stable Present target through the
+focus cycle. A new immutable successor and one focused physical proof remain
+required.
+
 ## 2026-08-07: Admission recovery now has a deterministic successor phase
 
 The installed `1a7d67c3` session reproduced the short, black Firefox window on
@@ -32,9 +69,9 @@ retains its resize-specific checkpoint. The strict verifier correlates Firefox
 from its launch transaction, requires one moved layout, every affected exact
 retirement, three visible managed surfaces, a post-action Firefox Present, and
 clean recovery. Deterministic Rust, proof-page, canary, verifier, configured
-xmonad, and TLC gates cover the source change. The installed `1a7d67c3`
-evidence is a failure reproduction; a new immutable build and one focused
-physical proof remain required.
+xmonad, and TLC gates cover the recovery change. Installed `7bd3e7db` proves
+that recovery phase but exposes the separate move-feedback defect recorded
+above; its focused Firefox run is not promotion evidence.
 
 The local source audit also exposed the already-generated `sophia_wm_v1` Rust
 wire table above the review threshold. It remains one generator-owned protocol

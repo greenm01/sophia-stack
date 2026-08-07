@@ -93,6 +93,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
                 height: geometry.height,
             },
         )]),
+        configure_deliveries: 0,
         focus: Some(surface),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -373,6 +374,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
                 height: geometry.height,
             },
         )]),
+        configure_deliveries: 0,
         focus: Some(surface),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -530,6 +532,7 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
         transaction: recovery_transaction,
         layers: planning_layers_for(&layout, [surface]),
         requested_sizes: BTreeMap::new(),
+        configure_deliveries: 0,
         focus: Some(surface),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {

@@ -53,6 +53,14 @@ macro_rules! service_session_controls {
                 );
             }
             if completion.key.kind == XAuthorityControlKind::ConfigureSurface
+            {
+                println!(
+                    "sophia_live_surface_geometry schema=1 status=frontend_configured transaction={} surface={}",
+                    completion.key.transaction.raw(),
+                    completion.key.surface.index(),
+                );
+            }
+            if completion.key.kind == XAuthorityControlKind::ConfigureSurface
                 && layout.layout_epochs.acknowledge_recovery_configure(
                     completion.key.transaction,
                     completion.key.surface,

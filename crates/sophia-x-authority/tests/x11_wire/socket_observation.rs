@@ -641,7 +641,9 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: TransactionId::from_raw(88 + index as u64),
                     surface,
-                    size: Size {
+                    geometry: Rect {
+                        x: 41 + index as i32,
+                        y: 51 + index as i32,
                         width: 301 + index as i32,
                         height: 201 + index as i32,
                     },
@@ -680,6 +682,8 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         read_u32(XByteOrder::LittleEndian, &first_present[16..20]),
         0x0020_0701
     );
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &first_present[20..22]), 41);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &first_present[22..24]), 51);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[24..26]), 301);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &first_present[26..28]), 201);
     assert_eq!(read_x_record(&mut first)[0], 22);
@@ -694,9 +698,75 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         read_u32(XByteOrder::LittleEndian, &second_present[16..20]),
         0x0040_0702
     );
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &second_present[20..22]), 42);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &second_present[22..24]), 52);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[24..26]), 302);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &second_present[26..28]), 202);
     assert_eq!(read_x_record(&mut second)[0], 22);
+
+    let (first_client, first_surface) = routes[0];
+    let moved = Rect {
+        x: 71,
+        y: 81,
+        width: 301,
+        height: 201,
+    };
+    control_sender
+        .send(XAuthorityClientControlCommand {
+            client: first_client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(100),
+                surface: first_surface,
+                geometry: moved,
+            },
+        })
+        .unwrap();
+    assert_eq!(
+        acknowledgement_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .acknowledgement
+            .outcome,
+        XAuthorityControlOutcome::Delivered
+    );
+    let move_present = read_x_reply(&mut first, XByteOrder::LittleEndian);
+    assert_eq!(move_present[0], 35, "Present must precede core configure");
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &move_present[20..22]), 71);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &move_present[22..24]), 81);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &move_present[24..26]), 301);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &move_present[26..28]), 201);
+    let move_core = read_x_record(&mut first);
+    assert_eq!(move_core[0], 22);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &move_core[16..18]), 71);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &move_core[18..20]), 81);
+
+    control_sender
+        .send(XAuthorityClientControlCommand {
+            client: first_client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(101),
+                surface: first_surface,
+                geometry: moved,
+            },
+        })
+        .unwrap();
+    assert_eq!(
+        acknowledgement_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .acknowledgement
+            .outcome,
+        XAuthorityControlOutcome::Delivered
+    );
+    first
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let mut unexpected = [0_u8; 1];
+    let error = first.read(&mut unexpected).unwrap_err();
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ));
 
     drop(first);
     drop(second);

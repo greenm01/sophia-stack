@@ -406,7 +406,7 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
 }
 
 #[test]
-fn engine_size_control_updates_authority_geometry_without_consuming_client_generation() {
+fn engine_geometry_control_updates_authority_geometry_without_consuming_client_generation() {
     let namespace = NamespaceId::from_raw(18);
     let window = XResourceId::new(0x62, 1);
     let surface = SurfaceId::new(18, 1);
@@ -434,18 +434,20 @@ fn engine_size_control_updates_authority_geometry_without_consuming_client_gener
 
     assert_eq!(
         runtime
-            .configure_window_size_from_engine(
+            .configure_window_from_engine(
                 namespace,
                 window,
-                Size {
+                Rect {
+                    x: 19,
+                    y: 23,
                     width: 120,
                     height: 70,
                 },
             )
             .unwrap(),
         Rect {
-            x: 9,
-            y: 11,
+            x: 19,
+            y: 23,
             width: 120,
             height: 70,
         }
@@ -536,10 +538,12 @@ fn cpu_buffer_submissions_use_stable_damage_generations_and_resize_replacement()
     );
 
     runtime
-        .configure_window_size_from_engine(
+        .configure_window_from_engine(
             namespace,
             window,
-            Size {
+            Rect {
+                x: 0,
+                y: 0,
                 width: 120,
                 height: 70,
             },

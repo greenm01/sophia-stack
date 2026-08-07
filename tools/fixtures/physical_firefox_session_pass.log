@@ -67,6 +67,7 @@ sophia_live_session_pointer schema=3 status=axis_routed
 sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
 sophia_live_session_pointer schema=9 status=axis_batch observed=1 routed=1
 sophia_firefox_m8 schema=1 status=stage_complete stage=scroll index=2 title_bytes=88 content=redacted
+sophia_live_surface_geometry schema=1 status=frontend_configured transaction=18 surface=4
 sophia_live_wm schema=1 status=layout_committed transaction=18 surfaces=4 moved_surfaces=3 configure_deliveries=3 outcome=Committed
 sophia_live_resize_epoch schema=1 status=committed transaction=18 matched_surfaces=2
 sophia_live_resize_epoch schema=3 status=visual_armed epoch=18 transaction=180 surface=2 width=1276 height=709
@@ -76,11 +77,12 @@ sophia_live_wm schema=2 status=workspace_projection_committed transaction=18 out
 sophia_firefox_m8 schema=1 status=stage_complete stage=layout index=3 title_bytes=104 content=redacted
 sophia_live_resize_epoch schema=3 status=visual_committed transaction=180 surface=2 width=1276 height=709
 sophia_live_resize_epoch schema=3 status=visual_committed transaction=181 surface=3 width=1276 height=709
-sophia_live_session_present schema=2 status=retired transaction=182 surface=4 source=1276x709 target=1276x709_2_16 clip=1276x709_2_16 unit_scale=true
+sophia_live_session_present schema=2 status=retired transaction=182 surface=4 source=1276x1422 target=1276x1422_2_16 clip=1276x1422_2_16 unit_scale=true
 sophia_live_wm schema=1 status=physical_action_committed action=1
 TRACE sophia_x11_focus_delivery schema=1 client=3 window=4 focused=false core_selected=true xi2_selected=true content=redacted
 sophia_live_wm schema=1 status=focus_reconciled transaction=181 target=surface surface=SurfaceId { index: 2, generation: 1 } outcome=Focused
 sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control
+sophia_live_session_present schema=2 status=retired transaction=183 surface=4 source=1276x1422 target=1276x1422_2_16 clip=1276x1422_2_16 unit_scale=true
 sophia_live_wm schema=1 status=physical_action_committed action=1
 TRACE sophia_x11_focus_delivery schema=1 client=3 window=4 focused=true core_selected=true xi2_selected=true content=redacted
 sophia_live_wm schema=1 status=focus_reconciled transaction=182 target=surface surface=SurfaceId { index: 4, generation: 1 } outcome=Focused

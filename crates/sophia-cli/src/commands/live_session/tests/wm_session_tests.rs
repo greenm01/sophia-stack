@@ -140,6 +140,7 @@ fn newer_committed_policy_replaces_deferred_retirement_focus() {
         transaction: new_transaction,
         layers: vec![test_layer(new_surface, geometry)],
         requested_sizes: BTreeMap::new(),
+        configure_deliveries: 0,
         focus: Some(new_surface),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -175,6 +176,7 @@ fn hold_test_resize(
                 height: geometry.height,
             },
         )]),
+        configure_deliveries: 0,
         focus: Some(surface),
         deadline: Instant::now() + Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -456,6 +458,7 @@ fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
         transaction,
         layers: vec![test_layer(surface, geometry)],
         requested_sizes: BTreeMap::new(),
+        configure_deliveries: 0,
         focus: None,
         deadline: Instant::now(),
         update: sophia_engine::WmTransactionUpdate {
@@ -654,6 +657,7 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         transaction: relayout_transaction,
         layers: relayout_layers,
         requested_sizes: BTreeMap::new(),
+        configure_deliveries: 0,
         focus: Some(committed_b),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -705,6 +709,7 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         transaction: manage_transaction,
         layers: manage_layers,
         requested_sizes: BTreeMap::from([(firefox, fallback)]),
+        configure_deliveries: 0,
         focus: Some(firefox),
         timeout: Duration::from_secs(1),
         update: sophia_engine::WmTransactionUpdate {
@@ -915,6 +920,7 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
 
 include!("wm_session_tests/admission.rs");
 include!("wm_session_tests/direct_map.rs");
+include!("wm_session_tests/geometry.rs");
 include!("wm_session_tests/pre_admission.rs");
 include!("wm_session_tests/recovery.rs");
 include!("wm_session_tests/response_lifetime.rs");

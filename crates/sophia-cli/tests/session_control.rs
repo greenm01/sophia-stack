@@ -37,7 +37,9 @@ fn control(
         XAuthorityControlKind::ConfigureSurface => XAuthorityControlCommand::ConfigureSurface {
             transaction,
             surface,
-            size: sophia_protocol::Size {
+            geometry: sophia_protocol::Rect {
+                x: 0,
+                y: 0,
                 width: 800,
                 height: 600,
             },

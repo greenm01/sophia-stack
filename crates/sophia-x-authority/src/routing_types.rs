@@ -1,8 +1,6 @@
 use std::sync::mpsc::SyncSender;
 
-use sophia_protocol::{
-    ClientAdmissionId, Rect, RoutedInputRequest, Size, SurfaceId, TransactionId,
-};
+use sophia_protocol::{ClientAdmissionId, Rect, RoutedInputRequest, SurfaceId, TransactionId};
 
 use crate::{XAuthorityOutputUpdateOutcome, XResourceId, XServerFrontendClientId};
 
@@ -128,7 +126,7 @@ pub enum XAuthorityControlCommand {
     ConfigureSurface {
         transaction: TransactionId,
         surface: SurfaceId,
-        size: Size,
+        geometry: Rect,
     },
     FocusSurface {
         transaction: TransactionId,

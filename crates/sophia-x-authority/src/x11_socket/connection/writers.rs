@@ -476,11 +476,14 @@ fn spawn_x11_control_writer(
                         protocol_routing.as_ref(),
                     )?
                 }
-                XAuthorityControlCommand::ConfigureSurface { size, .. } => {
-                    if size.width <= 0
-                        || size.height <= 0
-                        || size.width > i32::from(u16::MAX)
-                        || size.height > i32::from(u16::MAX)
+                XAuthorityControlCommand::ConfigureSurface { geometry, .. } => {
+                    if geometry.is_empty()
+                        || geometry.width > i32::from(u16::MAX)
+                        || geometry.height > i32::from(u16::MAX)
+                        || geometry.x < i32::from(i16::MIN)
+                        || geometry.x > i32::from(i16::MAX)
+                        || geometry.y < i32::from(i16::MIN)
+                        || geometry.y > i32::from(i16::MAX)
                     {
                         channels.send_ack(
                             client,
@@ -496,9 +499,11 @@ fn spawn_x11_control_writer(
                     let mut runtime =
                         lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                     let previous_geometry = runtime.window_geometry(namespace, window).ok();
-                    let geometry = match runtime
-                        .configure_window_size_from_engine(namespace, window, size)
-                    {
+                    let geometry = match runtime.configure_window_from_engine(
+                        namespace,
+                        window,
+                        geometry,
+                    ) {
                         Ok(geometry) => geometry,
                         Err(_) => {
                             channels.send_ack(
@@ -520,18 +525,25 @@ fn spawn_x11_control_writer(
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
                     selections.update_geometry(window, geometry);
-                    x11_surface_geometry_records(
-                        byte_order,
-                        event_sequence,
-                        client,
-                        window,
-                        geometry,
-                        false,
-                        None,
-                        previous_geometry != Some(geometry),
-                        &selections,
-                        protocol_routing.as_ref(),
-                    )?
+                    if previous_geometry == Some(geometry) {
+                        Vec::new()
+                    } else {
+                        // XLibre's Present hook runs before core event
+                        // delivery for every real geometry change, including
+                        // a pure move. Clients may merge both streams.
+                        x11_surface_geometry_records(
+                            byte_order,
+                            event_sequence,
+                            client,
+                            window,
+                            geometry,
+                            false,
+                            None,
+                            true,
+                            &selections,
+                            protocol_routing.as_ref(),
+                        )?
+                    }
                 }
                 XAuthorityControlCommand::CloseSurface { .. } => {
                     let atoms = atoms

@@ -231,6 +231,14 @@ focus_away_action="$(line_number_after '^sophia_live_wm schema=1 status=physical
 layout_commit="$(sed -n "${layout_commit_line}p" "$SESSION_LOG")"
 layout_transaction="$(field "$layout_commit" transaction)" ||
     fail "the Firefox layout commit has no transaction identity"
+layout_moved_surfaces="$(field "$layout_commit" moved_surfaces)" ||
+    fail "the Firefox layout commit has no moved-surface count"
+layout_configure_deliveries="$(field "$layout_commit" configure_deliveries)" ||
+    fail "the Firefox layout commit has no geometry-control count"
+[[ "$layout_moved_surfaces" =~ ^[0-9]+$ && "$layout_configure_deliveries" =~ ^[0-9]+$ ]] ||
+    fail "the Firefox layout geometry counts are not integers"
+(( layout_configure_deliveries == layout_moved_surfaces )) ||
+    fail "the Firefox layout did not deliver geometry for every moved surface"
 layout_epoch_line="$(line_number_after "^sophia_live_resize_epoch schema=1 status=committed transaction=${layout_transaction} matched_surfaces=[1-9][0-9]*$" "$scroll_line")"
 [[ -n "$layout_epoch_line" ]] || fail "the Firefox layout stage lacks a complete resize epoch"
 layout_epoch="$(sed -n "${layout_epoch_line}p" "$SESSION_LOG")"
@@ -252,6 +260,19 @@ layout_action_count="$(awk -v first="$scroll_line" -v last="$layout_line" '
     fail "the Firefox layout stage did not retain all three managed surfaces"
 layout_projection_record="$(sed -n "${layout_projection}p" "$SESSION_LOG")"
 require_eq "$layout_projection_record" transaction "$layout_transaction"
+geometry_ack_line="$(line_number_after "^sophia_live_surface_geometry schema=1 status=frontend_configured transaction=${layout_transaction} surface=${firefox_surface}$" "$scroll_line")"
+[[ -n "$geometry_ack_line" ]] \
+    && (( scroll_line < geometry_ack_line && geometry_ack_line < layout_line )) ||
+    fail "the move-only Firefox surface lacks a correlated geometry acknowledgement"
+geometry_ack_count="$(awk -v first="$scroll_line" -v last="$layout_line" \
+    -v transaction="$layout_transaction" -v surface="$firefox_surface" '
+    NR > first && NR < last &&
+        /^sophia_live_surface_geometry schema=1 status=frontend_configured / &&
+        $0 ~ ("transaction=" transaction " ") && $0 ~ ("surface=" surface "$") { count++ }
+    END { print count + 0 }
+' "$SESSION_LOG")"
+(( geometry_ack_count == 1 )) ||
+    fail "the move-only Firefox geometry was not acknowledged exactly once"
 
 mapfile -t visual_armed_records < <(awk -v first="$scroll_line" -v last="$focus_away_action" -v epoch="$layout_transaction" '
     NR > first && NR < last && /^sophia_live_resize_epoch schema=3 status=visual_armed / &&
@@ -316,6 +337,35 @@ xi_focus_in="$(line_number_after "sophia_x11_focus_delivery schema=1 .* window=$
     && xi_focus_out < xi_focus_in
     && xi_focus_in < refocus_line )) ||
     fail "Firefox DOM refocus is not ordered after focus-away, XI2 out/in, and focus return"
+if awk -v first="$layout_line" -v last="$refocus_line" '
+    NR > first && NR < last &&
+        /^sophia_live_wm schema=1 status=layout_committed / &&
+        $0 ~ /moved_surfaces=[1-9][0-9]*/ { found=1 }
+    END { exit !found }
+' "$SESSION_LOG"; then
+    fail "focus-only activity changed surface geometry"
+fi
+firefox_present_target="$(sed -n "${firefox_present_line}p" "$SESSION_LOG")"
+firefox_present_target="$(field "$firefox_present_target" target)" ||
+    fail "the post-layout Firefox Present has no target geometry"
+if awk -v first="$layout_action" -v last="$refocus_line" -v surface="$firefox_surface" \
+    -v expected="$firefox_present_target" '
+    NR > first && NR < last &&
+        /^sophia_live_session_present schema=(2|4) status=retired / &&
+        $0 ~ ("surface=" surface " ") {
+            target = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^target=/) {
+                    split($i, field, "=")
+                    target = field[2]
+                }
+            }
+            if (target != expected) drift=1
+        }
+    END { exit !drift }
+' "$SESSION_LOG"; then
+    fail "Firefox Present target drifted during focus-only activity"
+fi
 dialog_ready_line="$(require_line_number '^sophia_firefox_m8 schema=1 status=dialog_ready content=redacted$' 'Firefox modal never became ready')"
 dialog_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=dialog ')"
 if awk -v first="$refocus_line" -v last="$dialog_line" '
