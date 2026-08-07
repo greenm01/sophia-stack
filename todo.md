@@ -1316,6 +1316,13 @@ Compatibility follow-up outside the Firefox exit gate:
   Rust authority boundary, explicitly record any missing universal reducer,
   and turn every counterexample that changes implementation behavior into a
   deterministic Rust regression before accepting the model correction.
+- [x] Pass the 30-minute unattended daily-driver churn precursor on the exact
+  signed candidate commit. QEMU commit `5fbfc849` completed 25 terminal,
+  Firefox, and launcher cycles, 75 close actions, and 11 layout-preserving
+  bridge recoveries in 1,901,036 ms. It ended with zero unexpected protocol
+  errors, rejected page-flip callbacks, pending work, or cleanup debt. This
+  isolates policy and lifecycle repetition; it does not replace the physical
+  login, soak, or workday gates below.
 - [ ] Pass ten consecutive installed login/startup/logout cycles without
   emergency recovery, stale graphical processes, or display-manager repair.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
