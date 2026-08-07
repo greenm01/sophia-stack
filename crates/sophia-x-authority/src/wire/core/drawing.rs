@@ -31,29 +31,14 @@ fn decode_get_image(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_IMAGE, X_GET_IMAGE_REQ_LEN, bytes.len())?;
-    validate_wire_image_format(bytes[1])?;
-    let width = context.byte_order.u16(&bytes[12..14]);
-    let height = context.byte_order.u16(&bytes[14..16]);
-    let byte_len = usize::from(width)
-        .checked_mul(usize::from(height))
-        .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or(XWireParseError::PropertyValueTooLarge {
-            len: usize::MAX,
-            max: X_PUT_IMAGE_MAX_DATA_BYTES,
-        })?;
-    if byte_len > X_PUT_IMAGE_MAX_DATA_BYTES {
-        return Err(XWireParseError::PropertyValueTooLarge {
-            len: byte_len,
-            max: X_PUT_IMAGE_MAX_DATA_BYTES,
-        });
-    }
+    validate_wire_get_image_format(bytes[1])?;
     Ok(XWireRequest::GetImage {
         format: bytes[1],
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         x: context.byte_order.i16(&bytes[8..10]),
         y: context.byte_order.i16(&bytes[10..12]),
-        width,
-        height,
+        width: context.byte_order.u16(&bytes[12..14]),
+        height: context.byte_order.u16(&bytes[14..16]),
         plane_mask: context.byte_order.u32(&bytes[16..20]),
     })
 }
@@ -359,4 +344,3 @@ fn arc_damage_bounds(
     }
     Ok(damage)
 }
-

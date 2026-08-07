@@ -456,7 +456,7 @@ int main(void) {
 
     int screen = DefaultScreen(display);
     Window root = RootWindow(display, screen);
-    Window window = XCreateSimpleWindow(display, root, 10, 20, 240, 160, 0, 0, 0);
+    Window window = XCreateSimpleWindow(display, root, 10, 20, 400, 200, 0, 0, 0);
     GC gc = XCreateGC(display, window, 0, NULL);
     XMapWindow(display, window);
 
@@ -488,8 +488,32 @@ int main(void) {
 
     XPutImage(display, window, gc, image, 0, 0, 3, 5, width, height);
     XSync(display, False);
-    printf("window=0x%lx image_ops=1\n", window);
 
+    unsigned long expected = XGetPixel(image, 0, 0);
+    XImage *readback = XGetImage(display, window, 0, 0, 400, 200,
+                                 AllPlanes, ZPixmap);
+    if (!readback) {
+        fprintf(stderr, "get_image=0\n");
+        XDestroyImage(image);
+        XFreeGC(display, gc);
+        XDestroyWindow(display, window);
+        XCloseDisplay(display);
+        return 5;
+    }
+    unsigned long actual = XGetPixel(readback, 3, 5);
+    if (actual != expected) {
+        fprintf(stderr, "pixel_match=0 expected=0x%lx actual=0x%lx\n",
+                expected, actual);
+        XDestroyImage(readback);
+        XDestroyImage(image);
+        XFreeGC(display, gc);
+        XDestroyWindow(display, window);
+        XCloseDisplay(display);
+        return 6;
+    }
+    printf("window=0x%lx image_ops=2 readback_bytes=320000\n", window);
+
+    XDestroyImage(readback);
     XDestroyImage(image);
     XFreeGC(display, gc);
     XDestroyWindow(display, window);

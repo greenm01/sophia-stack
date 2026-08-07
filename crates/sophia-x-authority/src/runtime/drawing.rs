@@ -1,4 +1,113 @@
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct XDrawableImageDescriptor {
+    pub size: Size,
+    pub depth: u8,
+    pub visual: u32,
+    /// Pixmaps have no root-relative visibility requirement.
+    pub root_position: Option<(i32, i32)>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XDrawableImageError {
+    Access(XAuthorityRuntimeError),
+    BadMatch,
+    AllocationFailed,
+}
+
 impl XAuthorityRuntime {
+     pub(crate) fn drawable_image_descriptor(
+         &self,
+         namespace: NamespaceId,
+         drawable: crate::XResourceId,
+     ) -> Result<XDrawableImageDescriptor, XDrawableImageError> {
+         if drawable.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             let size = self
+                 .output_topology
+                 .root_size()
+                 .map_err(|_| XDrawableImageError::BadMatch)?;
+             return Ok(XDrawableImageDescriptor {
+                 size,
+                 depth: 24,
+                 visual: crate::X_SETUP_DEFAULT_VISUAL,
+                 root_position: Some((0, 0)),
+             });
+         }
+         self.validate_drawable_access(namespace, drawable)
+             .map_err(XDrawableImageError::Access)?;
+         if let Ok(geometry) = self.window_geometry(namespace, drawable) {
+             if self
+                 .window_map_state(namespace, drawable)
+                 .map_err(XDrawableImageError::Access)?
+                 != crate::XMapState::Viewable
+             {
+                 return Err(XDrawableImageError::BadMatch);
+             }
+             let (depth, visual, _) = self.window_visual(drawable);
+             return Ok(XDrawableImageDescriptor {
+                 size: Size {
+                     width: geometry.width,
+                     height: geometry.height,
+                 },
+                 depth,
+                 visual,
+                 root_position: Some(
+                     self.window_absolute_position(namespace, drawable)
+                         .map_err(XDrawableImageError::Access)?,
+                 ),
+             });
+         }
+         let (size, depth) = self
+             .pixmap_geometry(namespace, drawable)
+             .map_err(XDrawableImageError::Access)?;
+         Ok(XDrawableImageDescriptor {
+             size,
+             depth,
+             visual: crate::X_ATOM_NONE,
+             root_position: None,
+         })
+     }
+
+     pub(crate) fn validate_drawable_image_region(
+         &self,
+         descriptor: XDrawableImageDescriptor,
+         region: Rect,
+     ) -> Result<(), XDrawableImageError> {
+         if region.x < 0 || region.y < 0 || region.width < 0 || region.height < 0 {
+             return Err(XDrawableImageError::BadMatch);
+         }
+         let right = region
+             .x
+             .checked_add(region.width)
+             .ok_or(XDrawableImageError::BadMatch)?;
+         let bottom = region
+             .y
+             .checked_add(region.height)
+             .ok_or(XDrawableImageError::BadMatch)?;
+         if right > descriptor.size.width || bottom > descriptor.size.height {
+             return Err(XDrawableImageError::BadMatch);
+         }
+         if let Some((root_x, root_y)) = descriptor.root_position {
+             let root_size = self
+                 .output_topology
+                 .root_size()
+                 .map_err(|_| XDrawableImageError::BadMatch)?;
+             let root_right = root_x
+                 .checked_add(right)
+                 .ok_or(XDrawableImageError::BadMatch)?;
+             let root_bottom = root_y
+                 .checked_add(bottom)
+                 .ok_or(XDrawableImageError::BadMatch)?;
+             if root_x.checked_add(region.x).is_none_or(|x| x < 0)
+                 || root_y.checked_add(region.y).is_none_or(|y| y < 0)
+                 || root_right > root_size.width
+                 || root_bottom > root_size.height
+             {
+                 return Err(XDrawableImageError::BadMatch);
+             }
+         }
+         Ok(())
+     }
+
      pub fn validate_drawable_access(
          &self,
          namespace: NamespaceId,
@@ -408,6 +517,18 @@ impl XAuthorityRuntime {
          self.software_buffers
              .image_region(drawable, region)
              .ok_or(XAuthorityRuntimeError::InvalidResource)
+     }
+
+     pub(crate) fn read_drawable_image_region(
+         &self,
+         drawable: crate::XResourceId,
+         descriptor: XDrawableImageDescriptor,
+         region: Rect,
+     ) -> Result<Vec<u8>, XDrawableImageError> {
+         self.validate_drawable_image_region(descriptor, region)?;
+         self.software_buffers
+             .image_region(drawable, region)
+             .ok_or(XDrawableImageError::AllocationFailed)
      }
  
      pub(crate) fn apply_text_draw(

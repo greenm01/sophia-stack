@@ -210,6 +210,103 @@ fn x11_core_socket_observer_sees_put_image_transaction() {
 
 #[cfg(unix)]
 #[test]
+fn x11_core_socket_returns_large_get_image_reply() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-get-image-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        run_x11_core_socket_server_once_observed(
+            &server_path,
+            NamespaceId::from_raw(54),
+            |_| {},
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            0x220601,
+            1,
+            2,
+            400,
+            200,
+        ))
+        .unwrap();
+    stream
+        .write_all(&resource_request(
+            XByteOrder::LittleEndian,
+            8,
+            0x220601,
+        ))
+        .unwrap();
+    stream
+        .write_all(&create_gc_request(
+            XByteOrder::LittleEndian,
+            0x220602,
+            0x220601,
+        ))
+        .unwrap();
+    stream
+        .write_all(&put_image_request(
+            XByteOrder::LittleEndian,
+            0x220601,
+            0x220602,
+            PutImageGeometry {
+                width: 1,
+                height: 1,
+                dst_x: 3,
+                dst_y: 5,
+            },
+            &[0x44, 0x33, 0x22, 0x11],
+        ))
+        .unwrap();
+    stream
+        .write_all(&get_image_request(
+            XByteOrder::LittleEndian,
+            2,
+            0x220601,
+            0,
+            0,
+            400,
+            200,
+            u32::MAX,
+        ))
+        .unwrap();
+
+    let reply = read_x_reply(&mut stream, XByteOrder::LittleEndian);
+    assert_eq!(reply.len(), 32 + 400 * 200 * 4);
+    assert_eq!(reply[0], 1);
+    assert_eq!(reply[1], 24);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[4..8]), 80_000);
+    let marker = 32 + ((5 * 400 + 3) * 4);
+    assert_eq!(&reply[marker..marker + 4], &[0x44, 0x33, 0x22, 0]);
+
+    drop(stream);
+    server.join().unwrap();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[cfg(unix)]
+#[test]
 fn x11_core_socket_observer_sees_sophia_present_transaction() {
     use std::io::Write;
     use std::os::unix::net::UnixStream;

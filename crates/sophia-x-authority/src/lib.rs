@@ -17,6 +17,7 @@ mod event;
 mod frontend_config;
 mod frontend_types;
 mod graphics_context;
+mod image;
 mod input_authority;
 mod keyboard;
 mod observation;

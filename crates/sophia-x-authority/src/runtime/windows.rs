@@ -212,6 +212,25 @@ impl XAuthorityRuntime {
         Ok((root, record.surface, x, y))
     }
 
+    pub(crate) fn window_absolute_position(
+        &self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+    ) -> Result<(i32, i32), XAuthorityRuntimeError> {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        let (root, offset_x, offset_y) = self.windows.presentation_root_and_offset(window)?;
+        let root_geometry = self
+            .windows
+            .get(root)
+            .map(|record| record.geometry)
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        Ok((
+            root_geometry.x.saturating_add(offset_x),
+            root_geometry.y.saturating_add(offset_y),
+        ))
+    }
+
      pub fn window_parent_and_children(
          &self,
          namespace: NamespaceId,

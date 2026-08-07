@@ -46,16 +46,18 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. Installed release
-`0.1.0-a50dfb672794` sends complete rectangles for move-only surfaces, but its
-first Super+F run exposed a recovery-reseed omission. Late Kitty pixels from
-an aborted resize left pixel state at `636x1422` while Engine retained the
-rolled-back `1276x1422` rectangles. The reseed held the correct resize
-obligations but emitted no controls because Engine geometry already matched,
-causing ten deterministic WM restarts. The source successor reasserts geometry
-for every retained resize obligation even when `moved_surfaces=0`, with Rust
-and physical-verifier regressions. Build that successor, run Super+F once,
-then pass the remaining lifecycle, visible color, two-hour interactive soak,
-and full-workday gates.
+`0.1.0-53a213655a41` fixes committed-layout reseeding: physical run `0040`
+reasserted the stale Kitty geometry, admitted Firefox, completed the automated
+workflow through normal logout, and retained correct presentation. Its strict
+verifier rejected the run only because Firefox received eight core
+`GetImage` errors (`BadValue`, major opcode 73). The decoder had treated a
+reply-size estimate as request data and imposed the 256 KiB `PutImage` request
+ceiling on an ordinary multi-megabyte readback. The source successor validates
+the fixed request independently, bounds replies by X Authority's 64 MiB CPU
+buffer limit, and shares one checked readback/packing path between core X11 and
+MIT-SHM. Build that successor, repeat the focused Firefox gate, then pass the
+remaining lifecycle, visible color, two-hour interactive soak, and full-workday
+gates.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -107,14 +109,14 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-a50dfb672794` remains installed, but its Super+F recovery
-  loop is retained evidence, not a promotion candidate. Its full-geometry X
-  control is correct; its committed-layout reseed omits resize controls when
-  Engine geometry already matches stale client pixels. The source successor
-  reasserts those obligations without treating them as logical movement.
-  Earlier xterm and ten-cycle results remain historical evidence; the next
-  immutable build must repeat every physical and lifecycle gate affected by
-  the executable change.
+- Release `0.1.0-53a213655a41` remains installed. It corrects the prior
+  geometry-reseed failure, but physical run `0040` exposed eight Firefox
+  `GetImage` `BadValue` replies caused by a false 256 KiB reply ceiling. The
+  source successor removes that request/reply category error, retains a 64 MiB
+  authority-owned allocation bound, and covers ZPixmap, XYPixmap, byte order,
+  drawable errors, a 320,000-byte socket reply, and a compiled Xlib pixel
+  round trip. It is not promoted until a newly installed physical Firefox run
+  completes with zero protocol errors.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -161,10 +163,10 @@ the correct authority.
 The previous ten-cycle gates remain valid historical evidence for commits
 `958fb5e6` and `56dad4de`. Installed `1a7d67c3` retains the admission-recovery
 failure, installed `7bd3e7db` retains the move-feedback failure, and installed
-`a50dfb67` retains the committed-layout reseed failure. The source successor
-reasserts resize obligations whose logical rectangle is unchanged, so all
-promotion gates and soaks must use a newly installed immutable build of that
-successor.
+`a50dfb67` retains the committed-layout reseed failure. Installed `53a21365`
+fixes that failure and reached normal logout in run `0040`, but retains the
+false core `GetImage` reply ceiling. All promotion gates and soaks must use a
+new immutable build containing both corrections.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -238,8 +240,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [ ] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. Installed `a50dfb67` predates the recovery-reseed
-  reassertion and does not satisfy this item.
+  a source checkout. Installed `53a21365` proves the recovery-reseed
+  reassertion but predates the corrected `GetImage` readback path and does not
+  satisfy this item.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero

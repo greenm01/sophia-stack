@@ -270,10 +270,15 @@ impl XSoftwareBufferStore {
         let width = usize::try_from(region.width).ok()?;
         let height = usize::try_from(region.height).ok()?;
         let byte_len = width.checked_mul(height)?.checked_mul(4)?;
-        if width == 0 || height == 0 || byte_len > X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
+        if byte_len > X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
             return None;
         }
-        let mut image = vec![0; byte_len];
+        if width == 0 || height == 0 {
+            return Some(Vec::new());
+        }
+        let mut image = Vec::new();
+        image.try_reserve_exact(byte_len).ok()?;
+        image.resize(byte_len, 0);
         let Some(buffer) = self.buffers.get(&drawable) else {
             return Some(image);
         };

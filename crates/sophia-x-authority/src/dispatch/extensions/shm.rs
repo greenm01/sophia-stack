@@ -221,62 +221,74 @@ fn dispatch_shm_request(
                     width,
                     height,
                     format,
+                    plane_mask,
                     segment,
                     offset,
-                    ..
                 } => {
-                    let image_len = usize::from(width)
-                        .checked_mul(usize::from(height))
-                        .and_then(|pixels| pixels.checked_mul(4))
-                        .filter(|len| *len <= crate::X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES);
+                    let region = Rect {
+                        x: i32::from(x),
+                        y: i32::from(y),
+                        width: i32::from(width),
+                        height: i32::from(height),
+                    };
                     let result = runtime
-                        .validate_drawable_access(context.namespace, drawable)
+                        .validate_shm_segment_access(context.namespace, segment)
+                        .map_err(XShmGetImageError::Runtime)
                         .and_then(|()| {
-                            runtime.validate_shm_segment_access(context.namespace, segment)
-                        })
-                        .and_then(|()| {
-                            (format == 2)
-                                .then_some(())
-                                .ok_or(XAuthorityRuntimeError::InvalidResource)
-                        })
-                        .and_then(|()| {
-                            image_len.ok_or(XAuthorityRuntimeError::InvalidResource)?;
-                            let shmid =
-                                runtime.shm_segment_shmid(context.namespace, segment)?;
-                            let image = runtime.drawable_image_region(
+                            crate::image::read_drawable_image(
+                                runtime,
                                 context.namespace,
                                 drawable,
-                                Rect {
-                                    x: i32::from(x),
-                                    y: i32::from(y),
-                                    width: i32::from(width),
-                                    height: i32::from(height),
-                                },
-                            )?;
+                                region,
+                                format,
+                                plane_mask,
+                                context.byte_order,
+                            )
+                            .map_err(XShmGetImageError::Image)
+                        })
+                        .and_then(|readback| {
+                            let shmid = runtime
+                                .shm_segment_shmid(context.namespace, segment)
+                                .map_err(XShmGetImageError::Runtime)?;
                             sophia_sysv_shm::write_bytes(
                                 shmid,
-                                usize::try_from(offset)
-                                    .map_err(|_| XAuthorityRuntimeError::InvalidResource)?,
-                                &image,
+                                usize::try_from(offset).map_err(|_| {
+                                    XShmGetImageError::Runtime(
+                                        XAuthorityRuntimeError::InvalidResource,
+                                    )
+                                })?,
+                                &readback.data,
                             )
-                            .map_err(|_| XAuthorityRuntimeError::InvalidResource)
+                            .map_err(|_| {
+                                XShmGetImageError::Runtime(XAuthorityRuntimeError::InvalidResource)
+                            })?;
+                            Ok(readback)
                         });
                     let outputs = match result {
-                        Ok(()) => {
-                            let (depth, visual, _) = runtime.window_visual(drawable);
-                            vec![XClientOutput::Reply(XClientReply::ShmGetImage {
-                                sequence: context.sequence,
-                                depth,
-                                visual,
-                                size: u32::try_from(image_len.unwrap_or(0)).unwrap_or(u32::MAX),
-                            })]
+                        Ok(readback) => vec![XClientOutput::Reply(XClientReply::ShmGetImage {
+                            sequence: context.sequence,
+                            depth: readback.depth,
+                            visual: readback.visual,
+                            size: u32::try_from(readback.data.len()).unwrap_or(u32::MAX),
+                        })],
+                        Err(XShmGetImageError::Image(error)) => {
+                            vec![XClientOutput::Error(crate::image::image_client_error(
+                                context.sequence,
+                                context.major_opcode,
+                                u16::from(crate::X_MIT_SHM_GET_IMAGE_MINOR_OPCODE),
+                                drawable,
+                                format,
+                                error,
+                            ))]
                         }
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
-                            u32::try_from(drawable.local.raw()).unwrap_or(0),
-                        ))],
+                        Err(XShmGetImageError::Runtime(error)) => {
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u32::try_from(segment.local.raw()).unwrap_or(0),
+                            ))]
+                        }
                     };
                     XDispatchResult {
                         response: None,
@@ -286,4 +298,9 @@ fn dispatch_shm_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     })
+}
+
+enum XShmGetImageError {
+    Runtime(XAuthorityRuntimeError),
+    Image(crate::image::XImageReadbackError),
 }

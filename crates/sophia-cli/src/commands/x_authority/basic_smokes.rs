@@ -326,9 +326,9 @@ fn run_x_authority_xlib_put_image_smoke()
         .map_err(|error| format!("X authority X11 socket server failed: {error}"))?;
     let runtime_state = runtime_state_from_observed_transactions(&transactions)?;
 
-    if !output.status.success() {
+    if !output.status.success() || image_ops != 2 {
         return Err(format!(
-            "Xlib PutImage smoke failed for {display}: status={status} stdout={} stderr={}",
+            "Xlib PutImage/GetImage smoke failed for {display}: status={status} image_ops={image_ops} stdout={} stderr={}",
             stdout.trim(),
             stderr.trim()
         )

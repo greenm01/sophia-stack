@@ -684,8 +684,8 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         push_u32(&mut get_image, byte_order, 0x220009);
         push_i16(&mut get_image, byte_order, 3);
         push_i16(&mut get_image, byte_order, 4);
-        push_u16(&mut get_image, byte_order, 1);
-        push_u16(&mut get_image, byte_order, 1);
+        push_u16(&mut get_image, byte_order, 1290);
+        push_u16(&mut get_image, byte_order, 1050);
         push_u32(&mut get_image, byte_order, u32::MAX);
         assert_eq!(
             decode_x11_core_request(context(namespace, 540, byte_order), &get_image).unwrap(),
@@ -694,8 +694,8 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
                 drawable: XResourceId::new(0x220009, 1),
                 x: 3,
                 y: 4,
-                width: 1,
-                height: 1,
+                width: 1290,
+                height: 1050,
                 plane_mask: u32::MAX,
             }
         );

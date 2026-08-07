@@ -579,24 +579,44 @@ fn dispatch_core_window_request(
                 }
                 XWireRequest::GetImage {
                     drawable,
+                    format,
+                    x,
+                    y,
                     width,
                     height,
-                    ..
+                    plane_mask,
                 } => {
-                    let outputs = match runtime.validate_drawable_access(context.namespace, drawable) {
-                        Ok(()) => vec![XClientOutput::Reply(XClientReply::GetImage {
+                    let region = Rect {
+                        x: i32::from(x),
+                        y: i32::from(y),
+                        width: i32::from(width),
+                        height: i32::from(height),
+                    };
+                    let reply = crate::image::read_drawable_image(
+                        runtime,
+                        context.namespace,
+                        drawable,
+                        region,
+                        format,
+                        plane_mask,
+                        context.byte_order,
+                    );
+                    let outputs = vec![match reply {
+                        Ok(readback) => XClientOutput::Reply(XClientReply::GetImage {
                             sequence: context.sequence,
-                            depth: 24,
-                            visual: crate::X_SETUP_DEFAULT_VISUAL,
-                            data: vec![0; usize::from(width) * usize::from(height) * 4],
-                        })],
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
+                            depth: readback.depth,
+                            visual: readback.visual,
+                            data: readback.data,
+                        }),
+                        Err(error) => XClientOutput::Error(crate::image::image_client_error(
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(drawable.local.raw()).unwrap_or(0),
-                        ))],
-                    };
+                            0,
+                            drawable,
+                            format,
+                            error,
+                        )),
+                    }];
                     XDispatchResult {
                         response: None,
                         outputs,

@@ -33,3 +33,10 @@ fn validate_wire_image_format(format: u8) -> Result<(), XWireParseError> {
         other => Err(XWireParseError::InvalidPropertyFormat(other)),
     }
 }
+
+fn validate_wire_get_image_format(format: u8) -> Result<(), XWireParseError> {
+    match format {
+        1 | 2 => Ok(()),
+        other => Err(XWireParseError::InvalidValue(u32::from(other))),
+    }
+}

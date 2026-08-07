@@ -823,3 +823,25 @@ fn put_image_request(
     pad_to_four(&mut out);
     out
 }
+
+#[allow(clippy::too_many_arguments)]
+fn get_image_request(
+    byte_order: XByteOrder,
+    format: u8,
+    drawable: u32,
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+    plane_mask: u32,
+) -> Vec<u8> {
+    let mut out = vec![73, format];
+    push_u16(&mut out, byte_order, 5);
+    push_u32(&mut out, byte_order, drawable);
+    push_i16(&mut out, byte_order, x);
+    push_i16(&mut out, byte_order, y);
+    push_u16(&mut out, byte_order, width);
+    push_u16(&mut out, byte_order, height);
+    push_u32(&mut out, byte_order, plane_mask);
+    out
+}
