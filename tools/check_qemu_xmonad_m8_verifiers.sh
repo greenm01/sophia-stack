@@ -7,6 +7,12 @@ grep -Fq 'require_command dbus-run-session' "$ROOT_DIR/tools/build_qemu_session_
 grep -Fq '/usr/bin/dbus-run-session -- /usr/bin/sophia "$@"' "$ROOT_DIR/tools/qemu_guest_init.sh"
 grep -Fq 'export GTK_A11Y=none' "$ROOT_DIR/tools/qemu_guest_init.sh"
 grep -Fq 'export RUST_LOG=warn' "$ROOT_DIR/tools/qemu_guest_init.sh"
+grep -Fq "status=admitted source=action transaction=[0-9]+ surface=[0-9]+" \
+    "$ROOT_DIR/tools/qemu_session_harness.sh"
+if grep -Fq 'reason=action_layout_timeout' "$ROOT_DIR/tools/qemu_session_harness.sh"; then
+    echo "M8 harness still treats unrelated layout as launch admission" >&2
+    exit 1
+fi
 "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$mix"
 "$ROOT_DIR/tools/verify_qemu_xmonad_m8_soak_evidence.sh" "$soak"
 

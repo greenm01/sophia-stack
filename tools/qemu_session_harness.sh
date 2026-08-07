@@ -324,17 +324,14 @@ send_launch_and_wait() {
     local chord=$1
     local pattern=$2
     local label=$3
-    local layout_baseline
-    local focus_baseline
-    layout_baseline="$(evidence_count '^sophia_live_wm schema=1 status=layout_committed ')"
-    focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
+    local admission_baseline
+    admission_baseline="$(evidence_count '^sophia_session_app schema=2 status=admitted source=action ')"
     send_chord_and_wait "$chord" "$pattern" "$label"
-    if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=layout_committed ' "$layout_baseline"; then
-        echo "sophia_qemu_xmonad schema=1 status=failed reason=action_layout_timeout action=$label chord=$chord" | tee -a "$EVIDENCE_FILE"
-        return 1
-    fi
-    if ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_baseline"; then
-        echo "sophia_qemu_xmonad schema=1 status=failed reason=action_focus_timeout action=$label chord=$chord" | tee -a "$EVIDENCE_FILE"
+    # The launch action itself publishes layout and focus records before the
+    # new surface exists. Only the session's stable admission record proves
+    # that a following close or input action can target the launched client.
+    if ! wait_for_new_evidence '^sophia_session_app schema=2 status=admitted source=action transaction=[0-9]+ surface=[0-9]+$' "$admission_baseline" 800; then
+        echo "sophia_qemu_xmonad schema=1 status=failed reason=action_admission_timeout action=$label chord=$chord" | tee -a "$EVIDENCE_FILE"
         return 1
     fi
 }
