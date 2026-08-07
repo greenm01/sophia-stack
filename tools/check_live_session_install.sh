@@ -16,6 +16,7 @@ OPERATOR_COMMANDS=(
     sophia-session
     sophia-kitty-session
     sophia-firefox-proof
+    sophia-xterm-proof
     sophia-recovery-proof
     sophia-native-chrome-proof
     sophia-status
@@ -36,6 +37,7 @@ OPERATOR_COMMANDS=(
     sophia-verify-watchdog
     sophia-verify-native-chrome
     sophia-verify-firefox-runs
+    sophia-verify-xterm-runs
     sophia-verify-soak
 )
 
@@ -176,12 +178,15 @@ env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-rollback"
 [[ -f "$PREFIX/current/share/doc/sophia/operations.md" ]]
 operator_state="$TEMP_DIR/operator-state"
 install -d -m 700 "$operator_state/sophia/promotion/runs/0001"
+install -d -m 700 "$operator_state/sophia/promotion/xterm-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/fallback-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/emergency-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/watchdog-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/native-chrome-runs/0001"
 printf 'sophia_installed_cycle schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/runs/0001/result.kdl"
+printf 'sophia_installed_xterm schema=1 status=passed exit_status=0\n' \
+    >"$operator_state/sophia/promotion/xterm-runs/0001/result.kdl"
 printf 'sophia_installed_fallback schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/fallback-runs/0001/result.kdl"
 printf 'sophia_installed_emergency schema=1 status=passed exit_status=130\n' \
@@ -200,6 +205,11 @@ grep -Fq "operator_guide=$PREFIX/current/share/doc/sophia/operations.md" \
 grep -Fq "latest_installed_cycle=$operator_state/sophia/promotion/runs/0001" \
     <<<"$status_output"
 grep -Fq 'sophia_installed_cycle schema=1 status=passed exit_status=0' \
+    <<<"$status_output"
+grep -Fq \
+    "latest_installed_xterm=$operator_state/sophia/promotion/xterm-runs/0001" \
+    <<<"$status_output"
+grep -Fq 'sophia_installed_xterm schema=1 status=passed exit_status=0' \
     <<<"$status_output"
 grep -Fq \
     "latest_installed_fallback=$operator_state/sophia/promotion/fallback-runs/0001" \

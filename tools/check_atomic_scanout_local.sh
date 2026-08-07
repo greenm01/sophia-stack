@@ -191,6 +191,9 @@ bash -n tools/verify_installed_session_lifecycle.sh
 bash -n tools/check_installed_session_lifecycle_verifier.sh
 bash -n tools/verify_installed_login_cycle.sh \
     tools/check_installed_login_cycle_verifier.sh \
+    tools/verify_installed_xterm_session.sh \
+    tools/verify_installed_xterm_runs.sh \
+    tools/check_installed_xterm_verifier.sh \
     tools/verify_installed_fallback_session.sh \
     tools/check_installed_fallback_verifier.sh \
     tools/verify_installed_native_chrome_session.sh \
@@ -199,6 +202,7 @@ bash -n tools/verify_installed_login_cycle.sh \
     tools/check_installed_cycle_ledger.sh \
     tools/check_installed_session_auto_record.sh
 tools/check_installed_login_cycle_verifier.sh
+tools/check_installed_xterm_verifier.sh
 tools/check_installed_fallback_verifier.sh
 tools/check_installed_native_chrome_verifier.sh
 tools/check_installed_cycle_ledger.sh
@@ -293,6 +297,7 @@ tools/check_session_lifecycle_diagnostics.sh
 bash -n tools/installed/sophia-session
 bash -n tools/installed/sophia-kitty-session
 bash -n tools/installed/sophia-firefox-proof
+bash -n tools/installed/sophia-xterm-proof
 bash -n tools/installed/sophia-recovery-proof
 bash -n tools/installed/sophia-native-chrome-proof
 bash -n tools/installed/sophia-stop
@@ -300,9 +305,14 @@ bash -n tools/installed/capture-runtime-identity.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof
+grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=xterm' \
+    tools/installed/sophia-xterm-proof
 grep -Fq 'firefox_m10_kitty_probe.sh' tools/package_live_session.sh
 grep -Fq 'tools/record_installed_firefox_attempt.sh' \
     tools/package_live_session.sh
+grep -Fq 'tools/record_installed_xterm_run.sh' tools/package_live_session.sh
+grep -Fq 'tools/verify_installed_xterm_session.sh' tools/package_live_session.sh
+grep -Fq 'tools/verify_installed_xterm_runs.sh' tools/package_live_session.sh
 grep -Fq 'tools/installed/sophia-recovery-proof' tools/package_live_session.sh
 grep -Fq 'tools/verify_installed_emergency_archive.sh' tools/package_live_session.sh
 grep -Fq 'tools/record_installed_watchdog_run.sh' tools/package_live_session.sh
@@ -319,6 +329,7 @@ grep -Fq 'sophia-verify-soak-session' tools/package_live_session.sh
 bash -n tools/verify_installed_runtime_identity.sh
 bash -n tools/record_installed_session_run.sh \
     tools/record_installed_firefox_attempt.sh \
+    tools/record_installed_xterm_run.sh \
     tools/record_installed_emergency_run.sh \
     tools/record_installed_watchdog_run.sh tools/record_installed_fallback_run.sh \
     tools/record_installed_native_chrome_run.sh

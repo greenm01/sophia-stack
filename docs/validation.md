@@ -1179,6 +1179,16 @@ that was not launched through the installed entry. Both paths verify immutable
 release digests and privacy-safe runtime identities in addition to the browser,
 WM, input, renderer, and teardown evidence.
 
+The installed xterm/work-area gate stays out of the greetd menu. Run
+`sophia-xterm-proof` from a local text VT, switch away and back after xterm is
+visible, and log out with `Super+Shift+Q`. The wrapper records a schema-4
+`record_kind=xterm` archive under `sophia/promotion/xterm-runs/`. Its verifier
+binds xterm's executable identity to the run and requires two reduced work
+areas, exact source-to-target pixels inside the primary work area, ordered
+renderer-image handoff, post-resume presentation, normal logout, clean X11 and
+process ownership, and exact TTY restoration. Verify the newest archive with
+`sophia-verify-xterm-runs 1`.
+
 ## Installed Daily-Driver Candidate
 
 The packaged [installed operations runbook](operations.md) is the canonical

@@ -32,6 +32,7 @@ digest_or_unavailable() {
 
 kitty="$(command_path kitty)"
 firefox="$(command_path firefox)"
+xterm="$(command_path xterm)"
 release_version="$(sed -n 's/^version=//p' "$release_dir/manifest" | head -n 1 | normalize)"
 [[ -n "$release_version" ]] || {
     echo "installed release manifest has no usable version" >&2
@@ -66,6 +67,15 @@ input_identity="$(
         "$(version_of "$kitty")" "$(digest_or_unavailable "$kitty")"
     printf 'sophia_runtime_identity schema=2 kind=application name=firefox version=%s digest=%s\n' \
         "$(version_of "$firefox")" "$(digest_or_unavailable "$firefox")"
+    # Xterm uses the historical single-dash spelling and may open a client for
+    # an unknown long option, so do not send it through the generic probe.
+    if [[ -x "$xterm" ]]; then
+        xterm_version="$("$xterm" -version 2>&1 | head -n 1 | normalize)"
+    else
+        xterm_version=unavailable
+    fi
+    printf 'sophia_runtime_identity schema=2 kind=application name=xterm version=%s digest=%s\n' \
+        "$xterm_version" "$(digest_or_unavailable "$xterm")"
     printf 'sophia_runtime_identity schema=2 kind=application name=xmonad version=packaged digest=%s\n' \
         "$(digest_or_unavailable "$release_dir/target/release/xmonad")"
     printf 'sophia_runtime_identity schema=2 kind=application name=xmobar version=packaged digest=%s\n' \

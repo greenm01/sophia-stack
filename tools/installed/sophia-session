@@ -50,6 +50,10 @@ case "$attempt_mode" in
         attempt_record="$RELEASE_DIR/bin/sophia-record-firefox-attempt"
         attempt_result_record=sophia_installed_firefox
         ;;
+    xterm)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-xterm-run"
+        attempt_result_record=sophia_installed_xterm
+        ;;
     kitty)
         attempt_record="$RELEASE_DIR/bin/sophia-record-fallback-run"
         attempt_result_record=sophia_installed_fallback
@@ -76,7 +80,7 @@ set +e
 "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
 session_status=$?
 set -e
-if [[ "$attempt_mode" =~ ^(xmonad|firefox)$ && "$session_status" == 130 ]] &&
+if [[ "$attempt_mode" =~ ^(xmonad|firefox|xterm)$ && "$session_status" == 130 ]] &&
     ! "$RELEASE_DIR/bin/sophia-record-emergency-run"; then
     # The normal pending attempt still preserves the launch if archival fails.
     echo "sophia_installed_emergency schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2

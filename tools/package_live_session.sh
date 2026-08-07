@@ -57,6 +57,8 @@ install -m 755 tools/installed/sophia-kitty-session \
     "$artifact/bin/sophia-kitty-session"
 install -m 755 tools/installed/sophia-firefox-proof \
     "$artifact/bin/sophia-firefox-proof"
+install -m 755 tools/installed/sophia-xterm-proof \
+    "$artifact/bin/sophia-xterm-proof"
 install -m 755 tools/installed/sophia-recovery-proof \
     "$artifact/bin/sophia-recovery-proof"
 install -m 755 tools/installed/sophia-native-chrome-proof \
@@ -74,6 +76,8 @@ install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
 install -m 755 tools/record_installed_firefox_attempt.sh \
     "$artifact/bin/sophia-record-firefox-attempt"
+install -m 755 tools/record_installed_xterm_run.sh \
+    "$artifact/bin/sophia-record-xterm-run"
 install -m 755 tools/record_installed_fallback_run.sh \
     "$artifact/bin/sophia-record-fallback-run"
 install -m 755 tools/record_installed_emergency_run.sh \
@@ -92,6 +96,10 @@ install -m 755 tools/verify_sophia_xmonad_tty3.sh \
     "$artifact/bin/sophia-verify-xmonad-run"
 install -m 755 tools/verify_installed_login_cycle.sh \
     "$artifact/bin/sophia-verify-login-cycle"
+install -m 755 tools/verify_installed_xterm_session.sh \
+    "$artifact/bin/sophia-verify-xterm-run"
+install -m 755 tools/verify_installed_xterm_runs.sh \
+    "$artifact/bin/sophia-verify-xterm-runs"
 install -m 755 tools/verify_installed_fallback_session.sh \
     "$artifact/bin/sophia-verify-fallback-session"
 install -m 755 tools/verify_installed_fallback_run.sh \

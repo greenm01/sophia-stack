@@ -26,8 +26,9 @@ An installed candidate requires:
   daily-driver proof also requires a pointer.
 - The runtime libraries used by the packaged binary: libdrm, GBM/Mesa,
   libseat, libudev, libinput, and libxkbcommon.
-- Bash, Python 3, GNU core utilities, procps, and Kitty on `PATH`. Firefox is
-  optional for a basic login but required for the daily-driver and soak gates.
+- Bash, Python 3, GNU core utilities, procps, Kitty, and xterm on `PATH`.
+  Firefox is optional for a basic login but required for the daily-driver and
+  soak gates.
   Xmonad and xmobar are frozen inside the release; neither is discovered from
   the login environment or a home source checkout.
 
@@ -71,7 +72,7 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal, Firefox, fallback, emergency,
+runtime identity, and the newest normal, Firefox, xterm, fallback, emergency,
 watchdog, and native-chrome attempts. An `OK` line for every packaged file is
 expected.
 Investigate any checksum failure before launching or rolling back.
@@ -89,6 +90,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
 | automatic native-chrome attempts | `sophia/promotion/native-chrome-runs/` |
 | automatic Firefox proof attempts | `sophia/promotion/firefox-runs/` |
+| automatic xterm proof attempts | `sophia/promotion/xterm-runs/` |
 
 Every active launch, runtime-identity, session, input-guard, recovery, and
 lifecycle log keeps at most one `.previous` generation. Promotion attempts are
@@ -178,6 +180,19 @@ graphics takeover. Normal handoff finalizes it as passed or failed; a wrapper
 crash leaves it pending. Failed and pending attempts intentionally interrupt
 the consecutive-cycle gate. No recording command is needed after an ordinary
 login.
+
+The focused xterm gate is a command instead of another greetd entry. From a
+local text VT, run `sophia-xterm-proof`. Once xterm is visible, switch to
+another VT and back, then use `Super+Shift+Q` for normal logout. The command
+selects xterm before takeover and automatically records a dedicated attempt.
+It requires two reduced xmobar work areas, pixel-matched xterm presentation
+inside the primary work area, retained-image capture and restore, a new xterm
+retirement after resume, clean protocol and process ownership, and exact TTY
+restoration. Verify the newest archive with:
+
+```sh
+sophia-verify-xterm-runs 1
+```
 
 Every `Sophia Kitty (Baseline)` launch follows the same fail-closed pattern in
 a separate fallback ledger. A passing attempt requires the reduced one-Kitty,

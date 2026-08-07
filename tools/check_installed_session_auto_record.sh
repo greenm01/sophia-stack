@@ -24,6 +24,9 @@ install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-firefox-proof" \
     "$RELEASE/bin/sophia-firefox-proof"
 install -m 755 \
+    "$ROOT_DIR/tools/installed/sophia-xterm-proof" \
+    "$RELEASE/bin/sophia-xterm-proof"
+install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-recovery-proof" \
     "$RELEASE/bin/sophia-recovery-proof"
 install -m 755 \
@@ -32,6 +35,9 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_firefox_attempt.sh" \
     "$RELEASE/bin/sophia-record-firefox-attempt"
+install -m 755 \
+    "$ROOT_DIR/tools/record_installed_xterm_run.sh" \
+    "$RELEASE/bin/sophia-record-xterm-run"
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-record-fallback-run"
@@ -53,6 +59,12 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_sophia_firefox_physical_runs.sh" \
     "$RELEASE/bin/sophia-verify-firefox-runs"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_xterm_session.sh" \
+    "$RELEASE/bin/sophia-verify-xterm-run"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_xterm_runs.sh" \
+    "$RELEASE/bin/sophia-verify-xterm-runs"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_fallback_session.sh" \
     "$RELEASE/bin/sophia-verify-fallback-session"
@@ -116,6 +128,11 @@ printf '%s\n' \
     'fi' \
     'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == firefox ]]; then' \
     '    session_fixture=physical_firefox_session_pass.log' \
+    '    guard_fixture=physical_firefox_guard_pass.log' \
+    '    recovery_fixture=physical_firefox_recovery_pass.log' \
+    'fi' \
+    'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == xterm ]]; then' \
+    '    session_fixture=installed_xterm_session_pass.log' \
     '    guard_fixture=physical_firefox_guard_pass.log' \
     '    recovery_fixture=physical_firefox_recovery_pass.log' \
     'fi' \
@@ -191,6 +208,28 @@ grep -Fxq 'record_kind=firefox' "$firefox_run/manifest"
 env "${session_env[@]}" "$RELEASE/bin/sophia-verify-firefox-runs" 1
 [[ "$(find "$STATE_HOME/sophia/promotion/runs" -mindepth 1 -maxdepth 1 \
     -type d | wc -l)" == 1 ]]
+
+env "${session_env[@]}" "$RELEASE/bin/sophia-xterm-proof"
+xterm_run="$STATE_HOME/sophia/promotion/xterm-runs/0001"
+grep -Fxq \
+    'sophia_installed_xterm schema=1 status=passed exit_status=0' \
+    "$xterm_run/result.kdl"
+grep -Fxq 'record_schema=4' "$xterm_run/manifest"
+grep -Fxq 'record_kind=xterm' "$xterm_run/manifest"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-xterm-runs" 1
+[[ "$(find "$STATE_HOME/sophia/promotion/runs" -mindepth 1 -maxdepth 1 \
+    -type d | wc -l)" == 1 ]]
+sed -i '/kind=application name=xterm /d' "$xterm_run/runtime-identity.log"
+(
+    cd "$xterm_run"
+    sha256sum manifest result.kdl identity.log runtime-identity.log \
+        session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+)
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-xterm-runs" 1 \
+    >/dev/null 2>&1; then
+    echo "xterm verifier accepted a checksummed archive without xterm identity" >&2
+    exit 1
+fi
 
 if env "${session_env[@]}" SOPHIA_TEST_SESSION_STATUS=1 \
     "$RELEASE/bin/sophia-session" >/dev/null 2>&1; then

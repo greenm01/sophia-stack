@@ -243,7 +243,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
-  protocol errors, exact TTY restoration, and no host process residue.
+  protocol errors, exact TTY restoration, and no host process residue. The
+  installed `sophia-xterm-proof` command now reserves and verifies this
+  profile-specific archive automatically; the fresh physical run remains.
 - [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
   and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
   passes the immutable aggregate verifier.

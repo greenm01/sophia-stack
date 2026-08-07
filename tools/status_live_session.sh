@@ -18,7 +18,7 @@ operator_guide="$PREFIX/current/share/doc/sophia/operations.md"
 printf 'operator_guide=%s\n' "$operator_guide"
 printf 'graphical_processes='
 found_graphical=false
-for process in sophia xmonad sophia-wm-demo kitty firefox; do
+for process in sophia xmonad sophia-wm-demo kitty firefox xterm; do
     if pgrep -a -x "$process" 2>/dev/null; then
         found_graphical=true
     fi
@@ -62,6 +62,8 @@ print_latest_attempt() {
 print_latest_attempt installed_cycle "$STATE_HOME/sophia/promotion/runs"
 print_latest_attempt installed_firefox \
     "$STATE_HOME/sophia/promotion/firefox-runs"
+print_latest_attempt installed_xterm \
+    "$STATE_HOME/sophia/promotion/xterm-runs"
 print_latest_attempt installed_fallback \
     "$STATE_HOME/sophia/promotion/fallback-runs"
 print_latest_attempt installed_emergency \
