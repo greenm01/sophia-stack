@@ -382,7 +382,7 @@ fn dispatch_core_resource_request(
                                 context.major_opcode,
                                 u32::try_from(drawable.local.raw()).unwrap_or(0),
                             ))]
-                        } else if !matches!(depth, 24 | 32) {
+                        } else if crate::x11_pixmap_format(depth).is_none() {
                             vec![XClientOutput::Error(crate::XClientError {
                                 code: XErrorCode::BadValue,
                                 sequence: context.sequence,
@@ -398,6 +398,7 @@ fn dispatch_core_resource_request(
                                     width: i32::from(width),
                                     height: i32::from(height),
                                 },
+                                depth,
                                 u64::from(context.sequence),
                             )
                         {

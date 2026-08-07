@@ -70,15 +70,16 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          pixmap: crate::XResourceId,
          size: Size,
+         depth: u8,
          generation: u64,
      ) -> Result<(), XAuthorityRuntimeError> {
-         if size.width <= 0 || size.height <= 0 {
+         if size.width <= 0 || size.height <= 0 || crate::x11_pixmap_format(depth).is_none() {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
          self.resources
              .insert(pixmap, XResourceKind::Pixmap, namespace, generation)
              .map_err(XAuthorityRuntimeError::from)?;
-         self.pixmap_sizes.insert(pixmap, size);
+         self.pixmaps.insert(pixmap, XPixmapRecord { size, depth });
          Ok(())
      }
  
@@ -90,7 +91,7 @@ impl XAuthorityRuntime {
          self.resources
              .lookup(namespace, pixmap, XResourceKind::Pixmap)?;
          self.resources.remove(pixmap);
-         self.pixmap_sizes.remove(&pixmap);
+         self.pixmaps.remove(&pixmap);
          self.shm_pixmaps.remove(&pixmap);
          self.shm_mappings
              .retain(|_, mapping| mapping.strong_count() != 0);
@@ -107,6 +108,7 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          pixmap: crate::XResourceId,
          size: Size,
+         depth: u8,
          generation: u64,
          segment: crate::XResourceId,
          offset: u32,
@@ -136,7 +138,7 @@ impl XAuthorityRuntime {
          if end > mapping.len() {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
-         self.create_pixmap(namespace, pixmap, size, generation)?;
+         self.create_pixmap(namespace, pixmap, size, depth, generation)?;
          self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
          self.shm_pixmaps.insert(
              pixmap,
@@ -165,11 +167,29 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          pixmap: crate::XResourceId,
      ) -> Result<Size, XAuthorityRuntimeError> {
+         self.pixmap_geometry(namespace, pixmap)
+             .map(|(size, _)| size)
+     }
+
+     pub fn pixmap_geometry(
+         &self,
+         namespace: NamespaceId,
+         pixmap: crate::XResourceId,
+     ) -> Result<(Size, u8), XAuthorityRuntimeError> {
          self.validate_pixmap_access(namespace, pixmap)?;
-         self.pixmap_sizes
+         self.pixmaps
              .get(&pixmap)
-             .copied()
+             .map(|record| (record.size, record.depth))
              .ok_or(XAuthorityRuntimeError::UnknownResource)
+     }
+
+     pub fn pixmap_depth(
+         &self,
+         namespace: NamespaceId,
+         pixmap: crate::XResourceId,
+     ) -> Result<u8, XAuthorityRuntimeError> {
+         self.pixmap_geometry(namespace, pixmap)
+             .map(|(_, depth)| depth)
      }
  
      #[allow(clippy::too_many_arguments)]
@@ -216,7 +236,7 @@ impl XAuthorityRuntime {
          if u64::from(stride).saturating_mul(u64::from(height)) > u64::from(size_bytes) {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
-         self.create_pixmap(namespace, pixmap, descriptor.size, generation)?;
+         self.create_pixmap(namespace, pixmap, descriptor.size, depth, generation)?;
          self.next_dma_buf_handle = handle.saturating_add(1).max(1);
          self.dri3_pixmaps.insert(pixmap, descriptor);
          Ok(descriptor)
@@ -267,7 +287,7 @@ impl XAuthorityRuntime {
          descriptor
              .validate()
              .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
-         self.create_pixmap(namespace, pixmap, descriptor.size, generation)?;
+         self.create_pixmap(namespace, pixmap, descriptor.size, depth, generation)?;
          self.next_dma_buf_handle = handle.saturating_add(1).max(1);
          self.dri3_pixmaps.insert(pixmap, descriptor);
          Ok(descriptor)
@@ -317,7 +337,7 @@ impl XAuthorityRuntime {
                  XAuthorityRuntimeError::InvalidResource,
              );
          }
-         let Some(pixmap_size) = self.pixmap_sizes.get(&pixmap).copied() else {
+         let Some(pixmap_size) = self.pixmaps.get(&pixmap).map(|record| record.size) else {
              return XAuthorityResponsePacket::rejected(
                  transaction,
                  XAuthorityRuntimeError::UnknownResource,

@@ -393,6 +393,63 @@ fn x11_dispatch_get_geometry_reports_root_dimensions() {
 }
 
 #[test]
+fn x11_dispatch_retains_every_advertised_pixmap_depth_and_geometry() {
+    for (order_index, byte_order) in [XByteOrder::LittleEndian, XByteOrder::BigEndian]
+        .into_iter()
+        .enumerate()
+    {
+        let namespace = NamespaceId::from_raw(90 + order_index as u64);
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+
+        for (format_index, format) in X_SETUP_PIXMAP_FORMATS.into_iter().enumerate() {
+            let sequence = 1 + u16::try_from(format_index).unwrap() * 2;
+            let pixmap = 0x0022_0300 + order_index as u32 * 0x10 + format_index as u32;
+            let width = 17 + u16::try_from(format_index).unwrap();
+            let height = 23 + u16::try_from(format_index).unwrap();
+            let create = decode_x11_core_request(
+                context(namespace, 526, byte_order),
+                &create_pixmap_request(
+                    byte_order,
+                    format.depth,
+                    pixmap,
+                    X_SETUP_DEFAULT_ROOT,
+                    width,
+                    height,
+                ),
+            )
+            .unwrap();
+            let create = dispatch_x11_wire_request(
+                dispatch_context(namespace, sequence, byte_order, 53),
+                create,
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+            assert!(create.outputs.is_empty());
+
+            let geometry = decode_x11_core_request(
+                context(namespace, 527, byte_order),
+                &resource_request(byte_order, 14, pixmap),
+            )
+            .unwrap();
+            let geometry = dispatch_x11_wire_request(
+                dispatch_context(namespace, sequence + 1, byte_order, 14),
+                geometry,
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            )
+            .encoded_outputs(byte_order);
+            assert_eq!(geometry[0][1], format.depth);
+            assert_eq!(read_u16(byte_order, &geometry[0][16..18]), width);
+            assert_eq!(read_u16(byte_order, &geometry[0][18..20]), height);
+        }
+    }
+}
+
+#[test]
 fn x11_dispatch_get_window_attributes_reports_root_visual_state() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

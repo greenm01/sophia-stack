@@ -237,9 +237,12 @@ Required baseline:
   buffers continue through DRI3/Present.
 
 The core color contract is fixed TrueColor, not a mutable indexed palette.
-Setup advertises one 24-bit XRGB visual and one 32-bit ARGB visual with 8-bit
-red, green, and blue masks. X Authority owns passive colormap records and
-requires every window depth, visual, and colormap to agree. `AllocColor`
+Setup advertises the conventional 1/4/8/15/16 auxiliary pixmap depths without
+visuals, one 24-bit XRGB visual, and one 32-bit ARGB visual with 8-bit red,
+green, and blue masks. Pixmap depth is retained for masks, stipples, cursors,
+and drawable geometry; auxiliary pixmaps never become Engine color surfaces.
+X Authority owns passive colormap records and requires every window depth,
+visual, and colormap to agree. `AllocColor`
 quantizes each RGB16 component to the advertised high eight bits and expands
 the returned screen values by `0x0101`; ARGB allocation supplies an opaque
 alpha byte. `QueryColors` performs the inverse mask lookup and rejects bits

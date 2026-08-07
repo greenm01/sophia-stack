@@ -45,9 +45,9 @@ The current installed candidate provides:
 
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
-the remaining promotion boundary. The intended xmonad/xmobar policy and X11
-TrueColor wire semantics are closed, and their immutable successor candidate
-is installed. Run its focused gates and automated lifecycle gate, then pass
+the remaining promotion boundary. The first immutable successor exposed a
+missing core depth-1 pixmap format during its focused startup gate. Install the
+corrected successor, run its focused and automated lifecycle gates, then pass
 the visible color proof, two-hour interactive soak, and one full workday.
 
 The current Void host has the required xmonad-configuration build and runtime
@@ -100,9 +100,10 @@ the correct authority.
 
 ### Current Limitations
 
-- The installed successor freezes the checked-in xmonad policy and exact clean
-  xmobar source revision, executable, configuration, and digests. It remains
-  unpromoted until that exact release passes the focused and soak gates.
+- Release `0.1.0-199fa11d6876` freezes the intended xmonad and xmobar policy,
+  but its first focused start rejected xterm's legal depth-1 cursor pixmap.
+  The corrected X Authority must be rebuilt and installed before live gates
+  resume.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -193,6 +194,10 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   `AllocNamedColor`, `QueryColors`, both byte orders, XRGB upload, ARGB
   allocation facts, disconnect cleanup, and invalid-resource/error paths
   against X11 wire rules and the retained XLibre/Yserver references.
+- [x] Advertise and retain the conventional 1/4/8/15/16 auxiliary pixmap
+  formats separately from 24-bit XRGB and 32-bit ARGB visuals. Prove creation
+  and geometry for every retained depth in both byte orders while keeping others
+  fail-closed.
 - [x] Add a deterministic non-gray XRGB upload fixture with distinct red,
   green, blue, mixed, and grayscale pixels and exact byte preservation.
 - [ ] Run the real-client physical proof. Require the same palette to survive
@@ -205,7 +210,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.3 Rebuild And Re-Prove The Candidate
 
-- [x] Build and install one repository-independent candidate containing the
+- [ ] Build and install one repository-independent candidate containing the
   pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
   entry uses those exact paths and digests without a source checkout.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,

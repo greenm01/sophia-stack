@@ -3,6 +3,30 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: Auxiliary pixmap depths are separate from TrueColor visuals
+
+The first `199fa11d` installed-session start reached both outputs, xmonad, and
+xmobar, then xterm exited on `CreatePixmap(depth=1)` with `BadValue`. The
+TrueColor closure had incorrectly reduced all core pixmaps to the two color
+visual depths. This is a setup/authority defect, not an Engine rendering or WM
+policy failure.
+
+XLibre's `ProcCreatePixmap` admits depth 1 as the core bitmap case independently
+of the screen's ordinary visual depths and derives other nonvisual depths from
+its pixmap-format table. Yserver advertises the conventional
+1/4/8/15/16/24/32 storage formats, retains pixmap depth, and exercises depth-1
+masks and stipples. A real xterm smoke confirmed that depths 4 and 8 are probed
+before its depth-1 mask. Sophia now uses that shared bounded format family for
+setup and request validation, while only depths 24 and 32 have TrueColor
+visuals. Pixmap records retain depth and return it through `GetGeometry`;
+auxiliary pixmaps never become XRGB Engine surfaces. Both byte orders prove the
+exact setup catalog, creation and geometry for every retained depth, and
+rejection of depths outside the catalog.
+
+The failed installed release remains useful evidence but is not a promotion
+candidate. Milestone 12 build/install status is open again until this correction
+is committed, packaged, and installed.
+
 ## 2026-08-07: The immutable successor candidate is installed
 
 Release `0.1.0-199fa11d6876` packages signed Sophia commit `199fa11d`, xmonad

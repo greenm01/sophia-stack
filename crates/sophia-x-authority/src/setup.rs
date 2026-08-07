@@ -100,6 +100,58 @@ const X_SETUP_VISUAL_LEN: usize = 24;
 const X_SETUP_ROOT_DEPTH: u8 = 24;
 const X_SETUP_TRUE_COLOR: u8 = 4;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XPixmapFormat {
+    pub depth: u8,
+    pub bits_per_pixel: u8,
+    pub scanline_pad: u8,
+}
+
+pub const X_SETUP_PIXMAP_FORMATS: [XPixmapFormat; 7] = [
+    XPixmapFormat {
+        depth: 1,
+        bits_per_pixel: 1,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 4,
+        bits_per_pixel: 4,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 8,
+        bits_per_pixel: 8,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 15,
+        bits_per_pixel: 16,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 16,
+        bits_per_pixel: 16,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 24,
+        bits_per_pixel: 32,
+        scanline_pad: 32,
+    },
+    XPixmapFormat {
+        depth: 32,
+        bits_per_pixel: 32,
+        scanline_pad: 32,
+    },
+];
+
+#[must_use]
+pub fn x11_pixmap_format(depth: u8) -> Option<XPixmapFormat> {
+    X_SETUP_PIXMAP_FORMATS
+        .into_iter()
+        .find(|format| format.depth == depth)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XSetupRequest {
     pub byte_order: XByteOrder,
@@ -145,7 +197,7 @@ impl XSetupSuccess {
     pub fn client_compatible() -> Self {
         Self {
             roots: 1,
-            formats: 2,
+            formats: X_SETUP_PIXMAP_FORMATS.len() as u8,
             ..Self::minimal()
         }
     }
@@ -298,8 +350,19 @@ pub fn encode_x11_setup_success(
         });
     }
 
+    if usize::from(setup.formats) > X_SETUP_PIXMAP_FORMATS.len() {
+        return Err(XSetupParseError::ReplyFieldTooLarge {
+            field: "setup_formats",
+            len: usize::from(setup.formats),
+            max: X_SETUP_PIXMAP_FORMATS.len(),
+        });
+    }
     let root_section_len = usize::from(setup.roots)
-        .checked_mul(X_SETUP_ROOT_LEN + 2 * (X_SETUP_DEPTH_LEN + X_SETUP_VISUAL_LEN))
+        .checked_mul(
+            X_SETUP_ROOT_LEN
+                + X_SETUP_PIXMAP_FORMATS.len() * X_SETUP_DEPTH_LEN
+                + 2 * X_SETUP_VISUAL_LEN,
+        )
         .ok_or(XSetupParseError::ReplyFieldTooLarge {
             field: "setup_roots",
             len: usize::MAX,
@@ -347,8 +410,11 @@ pub fn encode_x11_setup_success(
     byte_order.push_u32(&mut out, 0);
     out.extend_from_slice(&setup.vendor);
     pad_to_four(&mut out);
-    for index in 0..setup.formats {
-        encode_pixmap_format(&mut out, if index == 0 { 24 } else { 32 });
+    for format in X_SETUP_PIXMAP_FORMATS
+        .iter()
+        .take(usize::from(setup.formats))
+    {
+        encode_pixmap_format(&mut out, *format);
     }
     for _ in 0..setup.roots {
         encode_root(byte_order, &mut out, setup.root_size);
@@ -406,10 +472,10 @@ fn pad_to_four(out: &mut Vec<u8>) {
     out.resize(padded_len(out.len()), 0);
 }
 
-fn encode_pixmap_format(out: &mut Vec<u8>, depth: u8) {
-    out.push(depth);
-    out.push(32);
-    out.push(32);
+fn encode_pixmap_format(out: &mut Vec<u8>, format: XPixmapFormat) {
+    out.push(format.depth);
+    out.push(format.bits_per_pixel);
+    out.push(format.scanline_pad);
     out.extend_from_slice(&[0; 5]);
 }
 
@@ -429,28 +495,26 @@ fn encode_root(byte_order: XByteOrder, out: &mut Vec<u8>, root_size: Size) {
     out.push(0);
     out.push(0);
     out.push(X_SETUP_ROOT_DEPTH);
-    out.push(2);
+    out.push(X_SETUP_PIXMAP_FORMATS.len() as u8);
 
-    out.push(X_SETUP_ROOT_DEPTH);
-    out.push(0);
-    byte_order.push_u16(out, 1);
-    byte_order.push_u32(out, 0);
+    for format in X_SETUP_PIXMAP_FORMATS {
+        let visual = match format.depth {
+            24 => Some(X_SETUP_DEFAULT_VISUAL),
+            32 => Some(X_SETUP_ARGB_VISUAL),
+            _ => None,
+        };
+        out.push(format.depth);
+        out.push(0);
+        byte_order.push_u16(out, u16::from(visual.is_some()));
+        byte_order.push_u32(out, 0);
+        if let Some(visual) = visual {
+            encode_true_color_visual(byte_order, out, visual);
+        }
+    }
+}
 
-    byte_order.push_u32(out, X_SETUP_DEFAULT_VISUAL);
-    out.push(X_SETUP_TRUE_COLOR);
-    out.push(8);
-    byte_order.push_u16(out, 256);
-    byte_order.push_u32(out, X_TRUE_COLOR_RED_MASK);
-    byte_order.push_u32(out, X_TRUE_COLOR_GREEN_MASK);
-    byte_order.push_u32(out, X_TRUE_COLOR_BLUE_MASK);
-    byte_order.push_u32(out, 0);
-
-    out.push(32);
-    out.push(0);
-    byte_order.push_u16(out, 1);
-    byte_order.push_u32(out, 0);
-
-    byte_order.push_u32(out, X_SETUP_ARGB_VISUAL);
+fn encode_true_color_visual(byte_order: XByteOrder, out: &mut Vec<u8>, visual: u32) {
+    byte_order.push_u32(out, visual);
     out.push(X_SETUP_TRUE_COLOR);
     out.push(8);
     byte_order.push_u16(out, 256);

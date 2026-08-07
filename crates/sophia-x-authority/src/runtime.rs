@@ -58,6 +58,12 @@ struct XShmPixmapBinding {
     mapping: Arc<sophia_sysv_shm::ReadOnlyMapping>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct XPixmapRecord {
+    size: Size,
+    depth: u8,
+}
+
 #[derive(Debug)]
 pub struct XAuthorityRuntime {
     resources: XResourceTable,
@@ -69,7 +75,7 @@ pub struct XAuthorityRuntime {
     clipboard_proxies: BTreeMap<crate::XResourceId, ClipboardSelectionProxy>,
     next_clipboard_proxy: u32,
     software_buffers: XSoftwareBufferStore,
-    pixmap_sizes: BTreeMap<crate::XResourceId, Size>,
+    pixmaps: BTreeMap<crate::XResourceId, XPixmapRecord>,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ReadOnlyMapping>>,
     dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
@@ -104,7 +110,7 @@ impl Default for XAuthorityRuntime {
             clipboard_proxies: Default::default(),
             next_clipboard_proxy: 0,
             software_buffers: Default::default(),
-            pixmap_sizes: Default::default(),
+            pixmaps: Default::default(),
             shm_pixmaps: Default::default(),
             shm_mappings: Default::default(),
             dri3_pixmaps: Default::default(),

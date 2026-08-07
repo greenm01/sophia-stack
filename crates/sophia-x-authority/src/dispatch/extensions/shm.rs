@@ -103,6 +103,7 @@ fn dispatch_shm_request(
                                     width: i32::from(width),
                                     height: i32::from(height),
                                 },
+                                depth,
                                 u64::from(context.sequence),
                                 segment,
                                 offset,

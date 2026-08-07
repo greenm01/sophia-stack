@@ -638,7 +638,7 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
         context(namespace, 622, XByteOrder::LittleEndian),
         &create_pixmap_request(
             XByteOrder::LittleEndian,
-            8,
+            2,
             0x220124,
             0x220121,
             64,
@@ -657,7 +657,7 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
     assert_eq!(invalid_depth[0][1], XErrorCode::BadValue.wire_code());
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &invalid_depth[0][4..8]),
-        8
+        2
     );
 
     let put = decode_x11_core_request(

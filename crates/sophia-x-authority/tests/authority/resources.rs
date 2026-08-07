@@ -322,6 +322,7 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
                 width: 16,
                 height: 16,
             },
+            24,
             1,
         )
         .unwrap();
@@ -700,6 +701,7 @@ fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
                 width: 4,
                 height: 4,
             },
+            24,
             1,
         )
         .unwrap();
@@ -779,6 +781,7 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
                 width: 4,
                 height: 4,
             },
+            24,
             1,
         )
         .unwrap();
@@ -958,7 +961,9 @@ fn present_shm_clear_and_core_draw_share_one_surface_generation_stream() {
             generation: 1,
         },
     });
-    runtime.create_pixmap(namespace, pixmap, size, 1).unwrap();
+    runtime
+        .create_pixmap(namespace, pixmap, size, 24, 1)
+        .unwrap();
     runtime.apply_put_image(
         TransactionId::from_raw(91),
         namespace,
@@ -1071,6 +1076,7 @@ fn software_present_rejects_pixmap_without_materialized_pixels() {
                 width: 4,
                 height: 4,
             },
+            24,
             1,
         )
         .unwrap();

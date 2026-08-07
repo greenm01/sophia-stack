@@ -542,12 +542,33 @@ fn dispatch_core_window_request(
                                 geometry,
                                 border_width: 0,
                             }),
-                            Err(error) => XClientOutput::Error(x_error_from_runtime(
-                                error,
-                                context.sequence,
-                                context.major_opcode,
-                                u32::try_from(drawable.local.raw()).unwrap_or(0),
-                            )),
+                            Err(window_error) => {
+                                match runtime.pixmap_geometry(context.namespace, drawable) {
+                                    Ok((size, depth)) => {
+                                        XClientOutput::Reply(XClientReply::GetGeometry {
+                                        sequence: context.sequence,
+                                        depth,
+                                        root: XResourceId::new(
+                                            u64::from(X_SETUP_DEFAULT_ROOT),
+                                            1,
+                                        ),
+                                        geometry: Rect {
+                                            x: 0,
+                                            y: 0,
+                                            width: size.width,
+                                            height: size.height,
+                                        },
+                                        border_width: 0,
+                                    })
+                                    }
+                                    Err(_) => XClientOutput::Error(x_error_from_runtime(
+                                        window_error,
+                                        context.sequence,
+                                        context.major_opcode,
+                                        u32::try_from(drawable.local.raw()).unwrap_or(0),
+                                    )),
+                                }
+                            }
                         }
                     };
                     XDispatchResult {

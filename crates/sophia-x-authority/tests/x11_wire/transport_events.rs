@@ -576,21 +576,34 @@ fn x11_setup_success_reply_advertises_exact_true_color_visuals_in_both_orders() 
 
         assert_eq!(reply[0], 1);
         assert_eq!(reply[28], 1);
-        assert_eq!(reply[29], 2);
-        assert_eq!(reply[48], 24);
-        assert_eq!(reply[56], 32);
-        assert_eq!(read_u32(byte_order, &reply[64..68]), X_SETUP_DEFAULT_ROOT);
+        assert_eq!(reply[29], 7);
+        for (offset, expected) in [
+            (48, [1, 1, 32]),
+            (56, [4, 4, 32]),
+            (64, [8, 8, 32]),
+            (72, [15, 16, 32]),
+            (80, [16, 16, 32]),
+            (88, [24, 32, 32]),
+            (96, [32, 32, 32]),
+        ] {
+            assert_eq!(&reply[offset..offset + 3], &expected);
+        }
+        assert_eq!(read_u32(byte_order, &reply[104..108]), X_SETUP_DEFAULT_ROOT);
         assert_eq!(
-            read_u32(byte_order, &reply[68..72]),
+            read_u32(byte_order, &reply[108..112]),
             X_SETUP_DEFAULT_COLORMAP
         );
-        assert_eq!(read_u32(byte_order, &reply[96..100]), X_SETUP_DEFAULT_VISUAL);
-        assert_eq!(reply[102], 24);
-        assert_eq!(reply[103], 2);
+        assert_eq!(read_u32(byte_order, &reply[136..140]), X_SETUP_DEFAULT_VISUAL);
+        assert_eq!(reply[142], 24);
+        assert_eq!(reply[143], 7);
+        for (offset, depth) in [(144, 1), (152, 4), (160, 8), (168, 15), (176, 16)] {
+            assert_eq!(reply[offset], depth);
+            assert_eq!(read_u16(byte_order, &reply[offset + 2..offset + 4]), 0);
+        }
 
         for (offset, visual, depth) in [
-            (112, X_SETUP_DEFAULT_VISUAL, 24),
-            (144, X_SETUP_ARGB_VISUAL, 32),
+            (192, X_SETUP_DEFAULT_VISUAL, 24),
+            (224, X_SETUP_ARGB_VISUAL, 32),
         ] {
             assert_eq!(read_u32(byte_order, &reply[offset..offset + 4]), visual);
             assert_eq!(reply[offset + 4], 4);
