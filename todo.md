@@ -46,9 +46,9 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. The intended xmonad/xmobar policy and X11
-TrueColor wire semantics are now closed in the repository; build and install
-their successor candidate, repeat its automated lifecycle gate, then pass the
-visible color proof, two-hour interactive soak, and one full workday.
+TrueColor wire semantics are closed, and their immutable successor candidate
+is installed. Run its focused gates and automated lifecycle gate, then pass
+the visible color proof, two-hour interactive soak, and one full workday.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -100,10 +100,9 @@ the correct authority.
 
 ### Current Limitations
 
-- The release tooling freezes the checked-in xmonad policy and exact clean
-  xmobar source revision, executable, configuration, and digests. The current
-  installed candidate predates that closure; it remains unpromoted until a
-  clean successor artifact passes the installed gates.
+- The installed successor freezes the checked-in xmonad policy and exact clean
+  xmobar source revision, executable, configuration, and digests. It remains
+  unpromoted until that exact release passes the focused and soak gates.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -206,7 +205,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.3 Rebuild And Re-Prove The Candidate
 
-- [ ] Build and install one repository-independent candidate containing the
+- [x] Build and install one repository-independent candidate containing the
   pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
   entry uses those exact paths and digests without a source checkout.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,

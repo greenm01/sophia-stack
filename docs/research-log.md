@@ -3,6 +3,21 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: The immutable successor candidate is installed
+
+Release `0.1.0-199fa11d6876` packages signed Sophia commit `199fa11d`, xmonad
+0.18.1 with xmonad-contrib 0.18.2, and xmobar 0.51.1 from clean source commit
+`f3d7fb5461c1`. The package verifier and complete `SHA256SUMS` set pass from
+`/opt/sophia/releases/0.1.0-199fa11d6876`; `/opt/sophia/current`, every
+operator-command symlink, and all six greetd entries resolve through that
+repository-independent release. The preceding `958fb5e6` installation remains
+available as `/opt/sophia/previous`.
+
+This closes only the build/install criterion. Runtime identity still describes
+the most recently completed older session until the successor launches. Its
+focused physical gates, visible TrueColor capture, repeated lifecycle proof,
+and soak evidence remain open.
+
 ## 2026-08-07: The promotion policy and TrueColor contract are closed inputs
 
 The Milestone 12 desktop policy no longer depends on mutable home
