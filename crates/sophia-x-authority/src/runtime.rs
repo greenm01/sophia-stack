@@ -23,6 +23,7 @@ use crate::{
 };
 
 include!("runtime/clipboard.rs");
+include!("runtime/color.rs");
 include!("runtime/drawing.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/sync.rs");
@@ -39,6 +40,7 @@ pub struct XAuthorityClientResourceRelease {
     pub released_pixmaps: usize,
     pub released_fonts: usize,
     pub released_cursors: usize,
+    pub released_colormaps: usize,
     pub released_graphics_contexts: usize,
     pub released_shm_segments: usize,
     pub released_glx_contexts: usize,
@@ -79,6 +81,7 @@ pub struct XAuthorityRuntime {
     graphics_contexts: XGraphicsContextTable,
     window_background_pixels: BTreeMap<crate::XResourceId, u32>,
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
+    colormaps: BTreeMap<crate::XResourceId, u32>,
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
     glx_windows: BTreeMap<crate::XResourceId, (NamespaceId, crate::XResourceId, u32)>,
     last_cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
@@ -113,6 +116,7 @@ impl Default for XAuthorityRuntime {
             graphics_contexts: Default::default(),
             window_background_pixels: Default::default(),
             window_visuals: Default::default(),
+            colormaps: Default::default(),
             glx_contexts: Default::default(),
             glx_windows: Default::default(),
             last_cpu_buffer_update: None,

@@ -361,6 +361,10 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
         .change_sync_counter(namespace, sync_counter, 1)
         .unwrap();
     assert_eq!(runtime.sync_counter(namespace, sync_counter), Ok(42));
+    let colormap = XResourceId::new(0x0020_000a, 1);
+    runtime
+        .create_colormap(namespace, colormap, X_SETUP_ARGB_VISUAL, 1)
+        .unwrap();
 
     let release = runtime
         .release_client_resource_range(
@@ -377,6 +381,7 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
     assert_eq!(release.released_pixmaps, 1);
     assert_eq!(release.released_fonts, 1);
     assert_eq!(release.released_cursors, 1);
+    assert_eq!(release.released_colormaps, 1);
     assert_eq!(release.released_graphics_contexts, 1);
     assert_eq!(release.released_shm_segments, 1);
     assert_eq!(release.released_glx_contexts, 1);
@@ -396,6 +401,7 @@ fn client_resource_range_release_reclaims_only_its_supported_resources() {
         runtime.sync_counter(namespace, sync_counter),
         Err(XAuthorityRuntimeError::UnknownResource)
     );
+    assert!(runtime.colormap_visual(namespace, colormap).is_err());
 }
 
 #[test]

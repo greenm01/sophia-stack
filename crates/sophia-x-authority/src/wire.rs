@@ -269,6 +269,7 @@ pub enum XWireRequest {
         text: Vec<u8>,
     },
     CreateColormap {
+        alloc: u8,
         colormap: XResourceId,
         window: XResourceId,
         visual: u32,

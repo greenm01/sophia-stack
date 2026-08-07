@@ -45,9 +45,10 @@ The current installed candidate provides:
 
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
-the remaining promotion boundary: close the intended xmonad/xmobar and color
-configuration into a new immutable candidate, repeat its automated lifecycle
-gate, then pass the two-hour interactive soak and one full workday.
+the remaining promotion boundary. The intended xmonad/xmobar policy and X11
+TrueColor wire semantics are now closed in the repository; build and install
+their successor candidate, repeat its automated lifecycle gate, then pass the
+visible color proof, two-hour interactive soak, and one full workday.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -99,10 +100,10 @@ the correct authority.
 
 ### Current Limitations
 
-- The release freezes Sophia and the stock xmonad policy, but its xmobar
-  resolver can still discover or build `~/src/xmobar`. A release is not fully
-  repository-independent until it packages the exact configured xmonad and
-  xmobar executables and verifies their digests at runtime.
+- The release tooling freezes the checked-in xmonad policy and exact clean
+  xmobar source revision, executable, configuration, and digests. The current
+  installed candidate predates that closure; it remains unpromoted until a
+  clean successor artifact passes the installed gates.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -110,11 +111,11 @@ the correct authority.
 - The opaque WM API lacks focus-master, swap-master/up/down, shrink/expand,
   master-count, reset-layout, focus-output, move-to-output, and supervised
   WM-restart actions.
-- `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` are compatible
-  geometry policies once each has deterministic bridge coverage. Xmonad's
-  `Tabbed` layout depends on title-aware, WM-drawn decorations and therefore
-  does not fit the blind-WM contract. If tabs are admitted later, Engine must
-  draw metadata-free native tabs.
+- `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` have exact
+  configured-bridge geometry coverage. Xmonad's `Tabbed` layout depends on
+  title-aware, WM-drawn decorations and therefore does not fit the blind-WM
+  contract. If tabs are admitted later, Engine must draw metadata-free native
+  tabs.
 - Xmobar can render, reserve a work area, update, and retire cleanly, but it has
   no private workspace/layout/focus feed. Such a feed must be emitted by
   Engine or a trusted shell broker and contain only workspace number, approved
@@ -122,10 +123,10 @@ the correct authority.
 - Application placement cannot use xmonad class/title rules. Requested launch
   placement, such as Firefox on workspace 2, must come from trusted launch
   provenance or explicit user action.
-- The X setup catalog already advertises 24-bit XRGB and 32-bit ARGB TrueColor
-  visuals, and arbitrary `AllocColor` pixels work. Color-query and named-color
-  behavior is still reduced to a black/white approximation, so the advertised
-  TrueColor contract is not yet internally consistent.
+- The X setup catalog, passive colormap ownership, RGB16 allocation,
+  named-color lookup, color query, and error paths now agree on fixed 24-bit
+  XRGB and 32-bit ARGB TrueColor semantics. The remaining color gate is a
+  physical captured-pixel proof on the successor installed candidate.
 - The daily-driver session still uses the `classic-shared` X namespace. The
   confined-group architecture and most portal executors are not yet promoted
   into the normal Firefox session.
@@ -147,9 +148,8 @@ the correct authority.
 ## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
 The previous ten-cycle gate remains valid evidence for commit `958fb5e6`, but
-the intended xmonad/xmobar configuration and complete TrueColor semantics will
-produce a successor candidate. Do not begin the final soak on a build that is
-about to change.
+the closed xmonad/xmobar configuration and TrueColor semantics require a new
+successor candidate. Do not begin the final soak on the older installed build.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -157,49 +157,50 @@ This section prepares the current xmonad-based promotion candidate. Its
 profile-specific work must remain behind the generic compatibility boundary;
 it must not make xmonad concepts part of Engine or the universal WM API.
 
-- [ ] Modernize the personal xmonad configuration for the packaged xmonad
+- [x] Modernize the personal xmonad configuration for the packaged xmonad
   0.18 series without loading mutable `~/.config/xmonad` state at session
   runtime. Preserve the established Sophia key actions and use only supported
   blind geometry policy.
-- [ ] Admit `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` one at a
-  time. For each layout, retain deterministic multi-surface geometry,
-  constraint, focus, workspace, floating-toggle, work-area, output-change, and
-  bridge-restart regressions before adding it to the installed policy.
-- [ ] Exclude xmonad `Tabbed`, title/class manage hooks, dzen property control,
+- [x] Admit `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` with
+  exact configured multi-surface geometry. Retain profile-level constraint,
+  focus, workspace, floating-pointer, work-area, output-change, release, and
+  bridge-restart regressions around those layout transitions.
+- [x] Exclude xmonad `Tabbed`, title/class manage hooks, dzen property control,
   and xmonad-owned decorations from this candidate. Record any later native-tab
   design as Engine chrome, not an expansion of fake X drawing or WM metadata.
-- [ ] Package the exact configured xmonad executable and exact xmobar
+- [x] Package the exact configured xmonad executable and exact xmobar
   executable as immutable release inputs. Record source revision, build
   configuration, binary digest, and runtime path; reject home-source discovery
   and digest mismatch.
-- [ ] Keep xmobar's present static/redacted content for this milestone unless
+- [x] Keep xmobar's present static/redacted content for this milestone unless
   the soak demonstrates that a dynamic status feed is required. Dynamic
   workspace/layout/focus status belongs to the post-promotion broker slice.
 
 ### 12.2 Complete TrueColor Semantics
 
-- [ ] Make the X Authority's advertised TrueColor contract internally exact:
+- [x] Make the X Authority's advertised TrueColor contract internally exact:
   validate the 24-bit XRGB and 32-bit ARGB visual/depth combinations, convert
   `AllocColor` RGB16 components through the advertised masks, and make
   `QueryColors` recover the corresponding channel intensities instead of
   reducing every nonzero pixel to white.
-- [ ] Replace the current “black or white” `AllocNamedColor` behavior with a
+- [x] Replace the current “black or white” `AllocNamedColor` behavior with a
   bounded, deterministic color-name table required by retained clients.
   Unknown names must return the correct X error rather than silently becoming
   white. Do not add mutable server-wide colormap allocation to TrueColor.
-- [ ] Keep visual IDs, colormap IDs, channel masks, and X color names inside X
+- [x] Keep visual IDs, colormap IDs, channel masks, and X color names inside X
   Authority. Engine receives only bounded XRGB8888/ARGB8888 pixel content and
   protocol-neutral opacity facts.
-- [ ] Verify setup, create-window/pixmap/colormap validation, `AllocColor`,
-  `AllocNamedColor`, `QueryColors`, byte order, XRGB upload, ARGB composition,
-  and invalid-resource/error paths against X11 wire rules and the retained
-  XLibre/Yserver references.
-- [ ] Add a deterministic non-gray palette fixture and a real-client physical
-  proof. Require distinct red, green, blue, mixed, and grayscale pixels to
-  survive client rendering, Engine composition, native presentation, and
-  capture without channel swaps or black/white collapse. Include a Kitty
-  24-bit ANSI-color sample, while treating its client-side rendering as an
-  end-to-end pixel proof rather than a colormap-wire proof.
+- [x] Verify setup, create-window/pixmap/colormap validation, `AllocColor`,
+  `AllocNamedColor`, `QueryColors`, both byte orders, XRGB upload, ARGB
+  allocation facts, disconnect cleanup, and invalid-resource/error paths
+  against X11 wire rules and the retained XLibre/Yserver references.
+- [x] Add a deterministic non-gray XRGB upload fixture with distinct red,
+  green, blue, mixed, and grayscale pixels and exact byte preservation.
+- [ ] Run the real-client physical proof. Require the same palette to survive
+  client rendering, Engine composition, native presentation, and capture
+  without channel swaps or black/white collapse. Include a Kitty 24-bit
+  ANSI-color sample, while treating its client-side rendering as an end-to-end
+  pixel proof rather than a colormap-wire proof.
 - [ ] Update the X11 compatibility matrix only after both the wire regression
   and visible physical proof pass.
 

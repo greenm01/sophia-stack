@@ -36,15 +36,47 @@ fn dispatch_core_window_request(
                     let kind = packet.kind.clone();
                     let namespace = packet.namespace;
                     let transaction = packet.transaction;
-                    let parent_access = if parent.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-                        Ok(())
-                    } else {
-                        runtime.validate_window_access(namespace, parent)
+                    let XAuthorityRequestKind::CreateWindow { window, .. } = &kind else {
+                        unreachable!("CreateWindow wire requests carry CreateWindow authority packets")
                     };
-                    let mut response = match parent_access {
-                        Ok(()) => runtime.apply(packet),
-                        Err(error) => XAuthorityResponsePacket::rejected(transaction, error),
-                    };
+                    if runtime.resource_id_in_use(*window) {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadIdChoice,
+                                sequence: context.sequence,
+                                resource_id: u32::try_from(window.local.raw()).unwrap_or(0),
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    let (resolved_depth, resolved_visual, resolved_colormap) =
+                        match resolve_window_visual(
+                            runtime,
+                            namespace,
+                            parent,
+                            depth,
+                            visual,
+                            colormap,
+                        ) {
+                            Ok(resolved) => resolved,
+                            Err((code, resource_id)) => {
+                                return Handled(XDispatchResult {
+                                    response: None,
+                                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                                        code,
+                                        sequence: context.sequence,
+                                        resource_id,
+                                        minor_code: 0,
+                                        major_code: context.major_opcode,
+                                    })],
+                                    metadata_candidates: Vec::new(),
+                                });
+                            }
+                        };
+                    let mut response = runtime.apply(packet);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
                     {
@@ -69,25 +101,11 @@ fn dispatch_core_window_request(
                             *window,
                             background_pixel.unwrap_or(0),
                         );
-                        let resolved_visual = if visual == 0 {
-                            X_SETUP_DEFAULT_VISUAL
-                        } else {
-                            visual
-                        };
-                        let resolved_depth = if depth == 0 {
-                            if resolved_visual == X_SETUP_ARGB_VISUAL {
-                                32
-                            } else {
-                                24
-                            }
-                        } else {
-                            depth
-                        };
                         runtime.set_window_visual(
                             *window,
                             resolved_depth,
                             resolved_visual,
-                            colormap.unwrap_or(XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1)),
+                            resolved_colormap,
                         );
                     }
                     let mut outputs = outputs_from_authority_response(context, &kind, &response);
@@ -593,6 +611,67 @@ fn dispatch_core_window_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     })
+}
+
+fn resolve_window_visual(
+    runtime: &XAuthorityRuntime,
+    namespace: NamespaceId,
+    parent: XResourceId,
+    depth: u8,
+    visual: u32,
+    colormap: Option<XResourceId>,
+) -> Result<(u8, u32, XResourceId), (XErrorCode, u32)> {
+    let (parent_depth, parent_visual, parent_colormap) =
+        if parent.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
+            (
+                24,
+                X_SETUP_DEFAULT_VISUAL,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
+            )
+        } else {
+            runtime
+                .validate_window_access(namespace, parent)
+                .map_err(|_| {
+                    (
+                        XErrorCode::BadWindow,
+                        u32::try_from(parent.local.raw()).unwrap_or(0),
+                    )
+                })?;
+            runtime.window_visual(parent)
+        };
+
+    let resolved_depth = if depth == 0 { parent_depth } else { depth };
+    let resolved_visual = if visual == 0 { parent_visual } else { visual };
+    let advertised = x_true_color_visual(resolved_visual)
+        .ok_or((XErrorCode::BadMatch, resolved_visual))?;
+    if advertised.depth != resolved_depth {
+        return Err((XErrorCode::BadMatch, resolved_visual));
+    }
+
+    let copy_parent_colormap = colormap.is_none_or(|value| value.local.raw() == 0);
+    if copy_parent_colormap {
+        if resolved_visual != parent_visual {
+            return Err((XErrorCode::BadMatch, resolved_visual));
+        }
+        return Ok((resolved_depth, resolved_visual, parent_colormap));
+    }
+
+    let resolved_colormap = colormap.expect("an explicit colormap was checked above");
+    let colormap_visual = runtime
+        .colormap_visual(namespace, resolved_colormap)
+        .map_err(|_| {
+            (
+                XErrorCode::BadColor,
+                u32::try_from(resolved_colormap.local.raw()).unwrap_or(0),
+            )
+        })?;
+    if colormap_visual != resolved_visual {
+        return Err((
+            XErrorCode::BadMatch,
+            u32::try_from(resolved_colormap.local.raw()).unwrap_or(0),
+        ));
+    }
+    Ok((resolved_depth, resolved_visual, resolved_colormap))
 }
 
 fn outputs_from_map_response(

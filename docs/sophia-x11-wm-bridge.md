@@ -146,15 +146,18 @@ may require extending the bridge's bounded fake-X11 request coverage, but must
 not require an Engine change or a WM-specific Engine branch.
 
 The official xmonad source may be checked out under `~/src/xmonad` and inspected
-as a compatibility reference. It is not vendored, linked, or required at
-Sophia runtime. The real smoke resolves the xmonad executable through `PATH`
-with an explicit environment override for local builds.
+as a compatibility reference. It is not vendored, linked, or required by an
+installed Sophia session. Development builds compile the checked-in
+`tools/config/sophia-xmonad/Main.hs` against exactly xmonad 0.18.1 and
+xmonad-contrib 0.18.2. Packaging copies that executable, its source, the exact
+xmobar executable and configuration, and their digests into one release.
 
-The reference checkout used for the first real proof is at commit `a9a8b5c`.
-The workspace crate owns bounded synthetic XID allocation, lifecycle event
-reduction, and metadata-blind configure/focus translation. The proof builds the
-reference checkout through its Nix flake, so it does not require a host GHC,
-Cabal, Stack, or distro xmonad installation.
+Installed resolution fails closed unless the release wrapper supplies those
+packaged absolute paths. It never falls back to `PATH`, `~/.config/xmonad`, or a
+home source checkout. `tools/verify_packaged_policy.sh` verifies the source
+versions, source revision, configuration digests, binary digests, and executable
+paths before installation and whenever the installed runtime identity is
+checked.
 
 ## Running The Bridge
 
@@ -195,18 +198,15 @@ Run the real policy proof with:
 tools/xmonad_wm_bridge_smoke.sh
 ```
 
-The xmonad-only proof command is `xmonad-smoke`. The script uses
-`SOPHIA_XMONAD_BIN`, an installed `xmonad`, or the pinned
-`~/src/xmonad` Nix flake in that order. It requires two distinct rectangles from
-real xmonad `ConfigureWindow` requests, then manages a third surface and
-requires the exact Tall geometry. It activates opaque action 3 and requires the
-exact three-surface Mirror geometry returned after xmonad processes its private
-Mod1+Space grab. The same smoke then changes one existing opaque node to an
-exact 500 by 500 constraint, requires a new private synthetic window, and
-proves unmodified xmonad returns that floating placement through standard size
-hints. Set `SOPHIA_X11_WM_TRACE=1` to print core request opcodes during
-compatibility work; the trace contains no client metadata because none is
-served.
+The xmonad-only proof command is `xmonad-smoke`. The script accepts an explicit
+`SOPHIA_XMONAD_BIN`; otherwise it builds the checked-in configuration through
+`tools/build_sophia_xmonad.sh`. It requires exact three-surface geometry for
+`ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral`, then proves layout
+wrap, focus, fixed constraints, resource release, and bridge restart. The
+profile's broader deterministic suite retains workspace, floating-pointer,
+work-area, and output-change behavior. Set `SOPHIA_X11_WM_TRACE=1` to print
+core request opcodes during compatibility work; the trace contains no client
+metadata because none is served.
 
 Xmonad's proof setup uses the launcher's generic private-executable-alias
 facility because xmonad re-executes a compiled binary from a fixed path below

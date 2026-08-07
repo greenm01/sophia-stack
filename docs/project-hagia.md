@@ -5,8 +5,9 @@
 ## The Name
 
 Hagia is a working name for a standalone Sophia-native spatial-policy project.
-The reference is Hagia Sophia: Holy Wisdom. Triad informs parts of its policy
-design, but Hagia is not a Triad descendant or compatibility branch.
+The reference is Hagia Sophia: Holy Wisdom. Its long-term purpose is to carry
+Triad's useful policy and desktop experience from River to Sophia without
+turning either Sophia or Triad into a compatibility layer.
 
 ## The Decision
 
@@ -18,10 +19,11 @@ turning every Sophia experiment into a compatibility burden for River users.
 
 Hagia begins as a clean standalone repository. It carries no Triad history,
 River or Wayland dependency, inherited binary, configuration surface, or build
-scaffolding. It may deliberately reimplement or port useful data-oriented
-models, layout mathematics, tag semantics, Janet support, and shell-facing
-ideas after they are reviewed against Sophia's authority boundaries. The two
-projects need not share an abstraction merely to make that exchange easier.
+scaffolding. A later Hagia milestone may deliberately port Triad's useful
+data-oriented models, layout mathematics, tag semantics, Janet support, and
+shell-facing ideas after they are reviewed against Sophia's authority
+boundaries. That port is not current Sophia work, and the two projects need
+not share an abstraction merely to make it easier.
 
 ## The Architectural Idea
 
@@ -217,10 +219,11 @@ configuration should have their own authority and validation.
 ### 1. Geometry Proof
 
 Create Hagia as a standalone repository and run it as a blind external policy
-process. Implement the public Sophia wire independently in Nim. Support
-complete snapshots and output projections, registered actions, placement,
-sizing, focus, removal, restart, one ordinary tiling layout, one scrolling
-layout, and one bounded Janet layout.
+process. Implement the public Sophia wire independently in Nim. During Sophia
+protocol development, keep this client deliberately narrow: complete snapshots,
+output projections, registered actions, placement, sizing, focus, removal, and
+restart. Add an ordinary tiling layout, a scrolling layout, or a bounded Janet
+layout only when a Sophia protocol milestone needs the independent proof.
 
 The standalone repository's independent Nim envelope and record decoder passes
 Sophia's retained valid and malformed corpus. Its proof client also passes one
@@ -277,9 +280,11 @@ Hagia is on the right side of the boundary if these statements remain true:
 
 ## Relationship to Triad
 
-Triad remains the River window manager. Hagia is a separate Sophia-native
-project with independent history, dependencies, releases, and compatibility
-policy.
+Triad remains the River window manager. Hagia is its planned standalone
+Sophia-native successor and eventual port, with independent history,
+dependencies, releases, and compatibility policy. That migration begins only
+after Sophia's policy boundary is stable enough to require it; until then,
+Hagia remains a small independent conformance client.
 
 Good layout mathematics, reducer fixes, configuration improvements, and
 language-independent test cases may be deliberately ported in either direction.

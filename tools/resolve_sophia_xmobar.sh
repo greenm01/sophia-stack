@@ -10,6 +10,11 @@ if [[ -n "${SOPHIA_XMOBAR_BIN:-}" ]]; then
     exit 0
 fi
 
+if [[ "${SOPHIA_INSTALLED_SESSION:-false}" == true ]]; then
+    echo "An installed Sophia session requires its packaged xmobar binary." >&2
+    exit 1
+fi
+
 if xmobar_bin="$(command -v xmobar 2>/dev/null)" && [[ -x "$xmobar_bin" ]]; then
     printf '%s\n' "$xmobar_bin"
     exit 0

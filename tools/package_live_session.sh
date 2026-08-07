@@ -25,7 +25,16 @@ artifact="$ARTIFACT_ROOT/sophia-$release_id"
 cargo build --offline --release -p sophia-cli --features atomic-scanout-live
 cargo build --offline --release -p sophia-x11-wm-bridge
 cargo build --offline --release -p sophia-wm-demo
-xmonad_bin="$(tools/resolve_sophia_xmonad.sh)"
+xmonad_bin="$(tools/build_sophia_xmonad.sh)"
+xmobar_bin="$(tools/build_sophia_xmobar.sh)"
+xmobar_source="${SOPHIA_XMOBAR_SOURCE:-$HOME/src/xmobar}"
+xmobar_source_commit="$(git -C "$xmobar_source" rev-parse HEAD)"
+xmonad_version="$($xmonad_bin --version 2>&1 | head -n 1 | tr ' ' '_')"
+xmobar_version="$($xmobar_bin --version 2>&1 | head -n 1 | tr ' ' '_')"
+xmonad_config_sha256="$(sha256sum tools/config/sophia-xmonad/Main.hs | awk '{print $1}')"
+xmonad_cabal_sha256="$(sha256sum tools/config/sophia-xmonad/sophia-xmonad.cabal | awk '{print $1}')"
+xmonad_project_sha256="$(sha256sum tools/config/sophia-xmonad/cabal.project | awk '{print $1}')"
+xmobar_config_sha256="$(sha256sum tools/fixtures/xmobar_sophia.config | awk '{print $1}')"
 
 install -d -m 755 \
     "$artifact/bin" \
@@ -34,6 +43,7 @@ install -d -m 755 \
     "$artifact/tools/lib" \
     "$artifact/tools/probes" \
     "$artifact/share/doc/sophia" \
+    "$artifact/share/sophia-policy/xmonad" \
     "$artifact/share/wayland-sessions"
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
 install -m 755 target/release/sophia-x11-wm-bridge \
@@ -41,6 +51,7 @@ install -m 755 target/release/sophia-x11-wm-bridge \
 install -m 755 target/release/sophia-wm-demo \
     "$artifact/target/release/sophia-wm-demo"
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
+install -m 755 "$xmobar_bin" "$artifact/target/release/xmobar"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
 install -m 755 tools/installed/sophia-kitty-session \
     "$artifact/bin/sophia-kitty-session"
@@ -112,6 +123,8 @@ install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmobar.sh \
     tools/stop_sophia_session.sh \
     tools/start_sophia_native_hot_reload_tty3.sh "$artifact/tools/"
+install -m 755 tools/verify_packaged_policy.sh \
+    "$artifact/tools/verify_packaged_policy.sh"
 install -d -m 755 "$artifact/tools/config"
 install -m 755 tools/probes/uinput_text_injector.py \
     "$artifact/tools/probes/uinput_text_injector.py"
@@ -134,6 +147,10 @@ install -m 755 tools/fixtures/firefox_m10_selection_kitty_probe.sh \
     "$artifact/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
 install -m 644 tools/fixtures/xmobar_sophia.config \
     "$artifact/tools/fixtures/xmobar_sophia.config"
+install -m 644 tools/config/sophia-xmonad/Main.hs \
+    tools/config/sophia-xmonad/sophia-xmonad.cabal \
+    tools/config/sophia-xmonad/cabal.project \
+    "$artifact/share/sophia-policy/xmonad/"
 install -m 644 docs/operations.md "$artifact/share/doc/sophia/operations.md"
 
 printf '%s\n' \
@@ -184,9 +201,14 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
-printf 'schema=1\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\n' \
+printf 'schema=2\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_version=%s\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=%s\nxmobar_source_commit=%s\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$xmonad_version" "$xmonad_config_sha256" "$xmonad_cabal_sha256" \
+    "$xmonad_project_sha256" "$(sha256sum "$xmonad_bin" | awk '{print $1}')" \
+    "$xmobar_version" "$xmobar_source_commit" "$xmobar_config_sha256" \
+    "$(sha256sum "$xmobar_bin" | awk '{print $1}')" \
     >"$artifact/manifest"
+"$artifact/tools/verify_packaged_policy.sh" "$artifact"
 (
     cd "$artifact"
     find bin target tools share -type f -print0 |

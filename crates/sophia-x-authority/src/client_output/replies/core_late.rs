@@ -191,19 +191,18 @@ fn encode_core_late_reply(
                 XClientReply::AllocNamedColor {
                     sequence,
                     pixel,
-                    red,
-                    green,
-                    blue,
+                    exact,
+                    screen,
                 } => {
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     put_u32(byte_order, &mut out[8..12], pixel);
-                    put_u16(byte_order, &mut out[12..14], red);
-                    put_u16(byte_order, &mut out[14..16], green);
-                    put_u16(byte_order, &mut out[16..18], blue);
-                    put_u16(byte_order, &mut out[18..20], red);
-                    put_u16(byte_order, &mut out[20..22], green);
-                    put_u16(byte_order, &mut out[22..24], blue);
+                    put_u16(byte_order, &mut out[12..14], exact.red);
+                    put_u16(byte_order, &mut out[14..16], exact.green);
+                    put_u16(byte_order, &mut out[16..18], exact.blue);
+                    put_u16(byte_order, &mut out[18..20], screen.red);
+                    put_u16(byte_order, &mut out[20..22], screen.green);
+                    put_u16(byte_order, &mut out[22..24], screen.blue);
                     out
                 }
                 XClientReply::AllocColor {
@@ -242,8 +241,8 @@ fn encode_core_late_reply(
                     }
                     out
                 }
-                XClientReply::QueryColors { sequence, pixels } => {
-                    let colors_len = pixels.len().saturating_mul(8);
+                XClientReply::QueryColors { sequence, colors } => {
+                    let colors_len = colors.len().saturating_mul(8);
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + colors_len];
                     write_reply_header(
                         byte_order,
@@ -254,14 +253,13 @@ fn encode_core_late_reply(
                     put_u16(
                         byte_order,
                         &mut out[8..10],
-                        u16::try_from(pixels.len()).unwrap_or(0),
+                        u16::try_from(colors.len()).unwrap_or(0),
                     );
                     let mut offset = X_CLIENT_OUTPUT_RECORD_LEN;
-                    for pixel in pixels {
-                        let intensity = if pixel == 0 { 0 } else { u16::MAX };
-                        put_u16(byte_order, &mut out[offset..offset + 2], intensity);
-                        put_u16(byte_order, &mut out[offset + 2..offset + 4], intensity);
-                        put_u16(byte_order, &mut out[offset + 4..offset + 6], intensity);
+                    for color in colors {
+                        put_u16(byte_order, &mut out[offset..offset + 2], color.red);
+                        put_u16(byte_order, &mut out[offset + 2..offset + 4], color.green);
+                        put_u16(byte_order, &mut out[offset + 4..offset + 6], color.blue);
                         offset += 8;
                     }
                     out

@@ -1,6 +1,6 @@
 use crate::{
-    X_ATOM_NONE, XAuthorityRuntimeError, XByteOrder, XResourceId, XTimestamp, XWireParseError,
-    padded_len,
+    X_ATOM_NONE, XAuthorityRuntimeError, XByteOrder, XColorRgb16, XResourceId, XTimestamp,
+    XWireParseError, padded_len,
 };
 use sophia_protocol::Rect;
 
@@ -41,8 +41,11 @@ pub enum XErrorCode {
     BadValue,
     BadWindow,
     BadAtom,
+    BadMatch,
     BadAccess,
+    BadColor,
     BadIdChoice,
+    BadName,
     BadLength,
     BadImplementation,
 }
@@ -54,8 +57,11 @@ impl XErrorCode {
             Self::BadValue => 2,
             Self::BadWindow => 3,
             Self::BadAtom => 5,
+            Self::BadMatch => 8,
             Self::BadAccess => 10,
+            Self::BadColor => 12,
             Self::BadIdChoice => 14,
+            Self::BadName => 15,
             Self::BadLength => 16,
             Self::BadImplementation => 17,
         }
@@ -651,9 +657,8 @@ pub enum XClientReply {
     AllocNamedColor {
         sequence: u16,
         pixel: u32,
-        red: u16,
-        green: u16,
-        blue: u16,
+        exact: XColorRgb16,
+        screen: XColorRgb16,
     },
     AllocColor {
         sequence: u16,
@@ -668,7 +673,7 @@ pub enum XClientReply {
     },
     QueryColors {
         sequence: u16,
-        pixels: Vec<u32>,
+        colors: Vec<XColorRgb16>,
     },
 }
 

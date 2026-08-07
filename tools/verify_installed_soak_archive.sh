@@ -80,7 +80,7 @@ sophia_binary_sha256="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
 
 # A soak is a daily-driver gate, so unlike recovery-only archives it requires
 # every exercised application binary to have an exact retained digest.
-for application in sophia kitty firefox xmonad; do
+for application in sophia kitty firefox xmonad xmobar; do
     application_lines="$(
         grep -Ec "^sophia_runtime_identity schema=2 kind=application name=$application " \
             "$run/runtime-identity.log" || true

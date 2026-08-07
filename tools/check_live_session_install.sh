@@ -45,8 +45,10 @@ make_artifact() {
     install -d -m 755 \
         "$artifact/bin" \
         "$artifact/share/doc/sophia" \
+        "$artifact/share/sophia-policy/xmonad" \
         "$artifact/share/wayland-sessions" \
-        "$artifact/tools"
+        "$artifact/target/release" \
+        "$artifact/tools/fixtures"
     install -m 644 "$ROOT_DIR/docs/operations.md" \
         "$artifact/share/doc/sophia/operations.md"
     for command in "${OPERATOR_COMMANDS[@]}"; do
@@ -69,6 +71,19 @@ make_artifact() {
     done
     install -m 755 "$ROOT_DIR/tools/stop_sophia_session.sh" \
         "$artifact/tools/stop_sophia_session.sh"
+    install -m 755 "$ROOT_DIR/tools/verify_packaged_policy.sh" \
+        "$artifact/tools/verify_packaged_policy.sh"
+    printf '#!/usr/bin/env bash\necho xmonad_0.18.1\n' \
+        >"$artifact/target/release/xmonad"
+    printf '#!/usr/bin/env bash\necho xmobar_0.51.1\n' \
+        >"$artifact/target/release/xmobar"
+    chmod 755 "$artifact/target/release/xmonad" \
+        "$artifact/target/release/xmobar"
+    printf 'main = pure ()\n' >"$artifact/share/sophia-policy/xmonad/Main.hs"
+    printf 'name: sophia-xmonad\n' \
+        >"$artifact/share/sophia-policy/xmonad/sophia-xmonad.cabal"
+    printf 'offline: True\n' >"$artifact/share/sophia-policy/xmonad/cabal.project"
+    printf 'Config {}\n' >"$artifact/tools/fixtures/xmobar_sophia.config"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-session\n' \
         >"$artifact/share/wayland-sessions/sophia.desktop"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-kitty-session\n' \
@@ -81,17 +96,54 @@ make_artifact() {
         >"$artifact/share/wayland-sessions/sophia-native-chrome-proof.desktop"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-run-cycles\n' \
         >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
-    printf 'schema=1\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\n' \
-        "$release_id" "$release_id" >"$artifact/manifest"
+    xmonad_digest="$(sha256sum "$artifact/target/release/xmonad" | awk '{print $1}')"
+    xmobar_digest="$(sha256sum "$artifact/target/release/xmobar" | awk '{print $1}')"
+    xmonad_config_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/Main.hs" | awk '{print $1}')"
+    xmonad_cabal_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/sophia-xmonad.cabal" | awk '{print $1}')"
+    xmonad_project_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/cabal.project" | awk '{print $1}')"
+    xmobar_config_digest="$(sha256sum "$artifact/tools/fixtures/xmobar_sophia.config" | awk '{print $1}')"
+    printf 'schema=2\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\nxmonad_version=xmonad_0.18.1\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=xmobar_0.51.1\nxmobar_source_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
+        "$release_id" "$release_id" "$xmonad_config_digest" "$xmonad_cabal_digest" \
+        "$xmonad_project_digest" "$xmonad_digest" \
+        "$xmobar_config_digest" "$xmobar_digest" >"$artifact/manifest"
     (
         cd "$artifact"
-        find bin share tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+        find bin share target tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
     )
     printf '%s\n' "$artifact"
 }
 
 first="$(make_artifact 0001)"
 second="$(make_artifact 0002)"
+expect_policy_rejection() {
+    local artifact="$1" label="$2"
+    if "$ROOT_DIR/tools/verify_packaged_policy.sh" "$artifact" >/dev/null 2>&1; then
+        echo "packaged policy verifier accepted $label" >&2
+        exit 1
+    fi
+}
+
+invalid_cabal="$TEMP_DIR/invalid-cabal"
+cp -a "$first" "$invalid_cabal"
+printf 'build-depends: unexpected\n' \
+    >>"$invalid_cabal/share/sophia-policy/xmonad/sophia-xmonad.cabal"
+expect_policy_rejection "$invalid_cabal" "a mutated xmonad build configuration"
+
+invalid_version="$TEMP_DIR/invalid-version"
+cp -a "$first" "$invalid_version"
+printf '#!/usr/bin/env bash\necho xmonad 9.0.0\n' \
+    >"$invalid_version/target/release/xmonad"
+invalid_version_digest="$(sha256sum "$invalid_version/target/release/xmonad" | awk '{print $1}')"
+sed -i "s/^xmonad_binary_sha256=.*/xmonad_binary_sha256=$invalid_version_digest/" \
+    "$invalid_version/manifest"
+expect_policy_rejection "$invalid_version" "a wrong xmonad executable version"
+
+invalid_source="$TEMP_DIR/invalid-source"
+cp -a "$first" "$invalid_source"
+sed -i 's/^xmonad_source_version=.*/xmonad_source_version=0.19.0/' \
+    "$invalid_source/manifest"
+expect_policy_rejection "$invalid_source" "an unapproved xmonad source version"
+
 install_env=(
     SOPHIA_INSTALL_PREFIX="$PREFIX"
     SOPHIA_SESSION_DIR="$SESSION_DIR"
@@ -200,7 +252,7 @@ sed -i \
     "$current_artifact/manifest"
 (
     cd "$current_artifact"
-    find bin share tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+    find bin share target tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
 )
 env \
     SOPHIA_ARTIFACT_ROOT="$current_artifact_root" \

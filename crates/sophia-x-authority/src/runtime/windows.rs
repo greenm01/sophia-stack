@@ -2,6 +2,13 @@ impl XAuthorityRuntime {
      pub fn resource_count(&self) -> usize {
          self.resources.len()
      }
+
+     pub fn resource_id_in_use(&self, resource: crate::XResourceId) -> bool {
+         matches!(
+             u32::try_from(resource.local.raw()),
+             Ok(crate::X_SETUP_DEFAULT_ROOT | crate::X_SETUP_DEFAULT_COLORMAP)
+         ) || self.resources.get(resource).is_some()
+     }
  
      pub fn window_count(&self) -> usize {
          self.windows.len()
@@ -515,9 +522,18 @@ impl XAuthorityRuntime {
                      self.free_cursor(namespace, record.id)?;
                      release.released_cursors = release.released_cursors.saturating_add(1);
                  }
-                 // The reduced frontend does not currently persist client atoms,
-                 // colormaps, or GCs in the resource table. Remove any future
-                 // record in this range rather than retaining a disconnect leak.
+                 XResourceKind::Colormap => {
+                     self.free_colormap(namespace, record.id).map_err(|error| match error {
+                         crate::XColormapError::Access(error) => error.into(),
+                         crate::XColormapError::DuplicateId
+                         | crate::XColormapError::UnknownVisual => {
+                             XAuthorityRuntimeError::UnknownResource
+                         }
+                     })?;
+                     release.released_colormaps = release.released_colormaps.saturating_add(1);
+                 }
+                 // The reduced frontend does not persist client atoms or GCs in
+                 // the resource table. Remove future records instead of leaking.
                  XResourceKind::Atom | XResourceKind::Property | XResourceKind::GraphicsContext => {
                      self.resources.remove(record.id);
                  }

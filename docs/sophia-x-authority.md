@@ -236,6 +236,19 @@ Required baseline:
   Direct MakeCurrent binds a validated context/drawable pair while actual
   buffers continue through DRI3/Present.
 
+The core color contract is fixed TrueColor, not a mutable indexed palette.
+Setup advertises one 24-bit XRGB visual and one 32-bit ARGB visual with 8-bit
+red, green, and blue masks. X Authority owns passive colormap records and
+requires every window depth, visual, and colormap to agree. `AllocColor`
+quantizes each RGB16 component to the advertised high eight bits and expands
+the returned screen values by `0x0101`; ARGB allocation supplies an opaque
+alpha byte. `QueryColors` performs the inverse mask lookup and rejects bits
+outside the selected visual. `AllocNamedColor` accepts only the bounded,
+checked-in retained-client table and returns `BadName` for anything else.
+Invalid colormaps, pixels, visuals, depths, allocation modes, and duplicate
+resource IDs retain their core X11 errors. No color identity crosses into
+Engine; only normalized XRGB8888 or ARGB8888 content and opacity facts do.
+
 Deferred unless a real app requires them:
 
 - network transparency beyond local Unix sockets;

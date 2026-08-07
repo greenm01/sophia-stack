@@ -34,7 +34,7 @@ if [[ -n "$expected_sophia_digest" \
     echo "installed runtime identity has the wrong Sophia executable digest" >&2
     exit 1
 fi
-for application in kitty firefox xmonad; do
+for application in kitty firefox xmonad xmobar; do
     require_line "^sophia_runtime_identity schema=2 kind=application name=$application version=[^ ]+ digest=([0-9a-f]{64}|unavailable)$" \
         "$application identity"
 done

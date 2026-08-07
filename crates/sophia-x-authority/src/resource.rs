@@ -32,6 +32,7 @@ pub enum XResourceKind {
     GraphicsContext,
     Font,
     Cursor,
+    Colormap,
     Fence,
     Region,
     SyncCounter,

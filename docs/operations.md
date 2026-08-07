@@ -1,7 +1,7 @@
 # Installed Sophia Operations
 
 This is the operator runbook for an immutable Sophia release installed below
-`/opt/sophia`. It describes the current Milestone 11 candidate, not the
+`/opt/sophia`. It describes the Milestone 12 promotion candidate, not the
 checkout-based development launchers.
 
 ## Support Boundary
@@ -28,7 +28,8 @@ An installed candidate requires:
   libseat, libudev, libinput, and libxkbcommon.
 - Bash, Python 3, GNU core utilities, procps, and Kitty on `PATH`. Firefox is
   optional for a basic login but required for the daily-driver and soak gates.
-  Xmonad is frozen inside the release. Xmobar is optional.
+  Xmonad and xmobar are frozen inside the release; neither is discovered from
+  the login environment or a home source checkout.
 
 The QEMU virtio-gpu gates prove deterministic protocol and lifecycle semantics;
 they do not extend the physical hardware support claim.
@@ -44,6 +45,9 @@ tools/install_live_session.sh
 The command builds before requesting privilege, verifies every artifact
 digest, installs a new immutable directory below `/opt/sophia/releases`, and
 atomically updates `current` while retaining the former release as `previous`.
+The artifact manifest records the configured xmonad and xmobar source
+identities plus their configuration and executable digests. Installation
+rejects a missing path, wrong version, dirty xmobar source, or digest mismatch.
 It installs six greetd entries:
 
 - `Sophia xmonad (Experimental)` is the ordinary candidate.

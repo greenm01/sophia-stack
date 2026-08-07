@@ -266,7 +266,10 @@ if grep -Fq -- '*-event-kbd' tools/run_sophia_xmonad_session.sh; then
     exit 1
 fi
 bash -n tools/stop_sophia_xmonad_session.sh
-bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
+bash -n tools/build_sophia_xmonad.sh tools/build_sophia_xmobar.sh \
+    tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh \
+    tools/verify_packaged_policy.sh tools/check_sophia_desktop_policy.sh
+tools/check_sophia_desktop_policy.sh
 bash -n tools/package_live_session.sh tools/install_live_session.sh \
     tools/install_current_live_session.sh tools/run_installed_cycle_gate_tty3.sh
 tools/run_installed_cycle_gate_tty3.sh --self-test

@@ -368,11 +368,11 @@ fn dispatch_core_resource_request(
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::CreatePixmap {
+                    depth,
                     pixmap,
                     drawable,
                     width,
                     height,
-                    ..
                 } => {
                     let outputs =
                         if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
@@ -382,6 +382,14 @@ fn dispatch_core_resource_request(
                                 context.major_opcode,
                                 u32::try_from(drawable.local.raw()).unwrap_or(0),
                             ))]
+                        } else if !matches!(depth, 24 | 32) {
+                            vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadValue,
+                                sequence: context.sequence,
+                                resource_id: u32::from(depth),
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })]
                         } else if let Err(error) =
                             runtime.create_pixmap(
                                 context.namespace,

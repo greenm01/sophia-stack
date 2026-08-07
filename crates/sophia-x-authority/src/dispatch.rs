@@ -4,12 +4,13 @@ use crate::{
     X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_COLORMAP, X_SETUP_DEFAULT_ROOT, X_SETUP_DEFAULT_VISUAL,
     X_SOPHIA_PRESENT_EXTENSION_NAME, X_SOPHIA_PRESENT_MAJOR_OPCODE, XAtomTable,
     XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket, XAuthorityRuntime,
-    XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XErrorCode,
-    XGlxContextConfig, XMetadataPropertyCandidate, XPropertyError, XPropertyTable, XRandrModeInfo,
-    XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError,
-    XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints, decode_x_transient_for,
-    decode_x_window_type_facts, encode_x_client_output, metadata_property_candidate,
-    x_error_from_runtime, x_error_from_wire_parse, x_selection_failure_event,
+    XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XColorRgb16,
+    XColormapError, XErrorCode, XGlxContextConfig, XMetadataPropertyCandidate, XPropertyError,
+    XPropertyTable, XRandrModeInfo, XRandrMonitorInfo, XResourceId, XTextDraw,
+    XWindowGeometryUpdate, XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo,
+    decode_x_size_hints, decode_x_transient_for, decode_x_window_type_facts,
+    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
+    x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
@@ -810,8 +811,4 @@ pub(crate) fn clamp_i16(value: i32) -> i16 {
 
 pub(crate) fn clamp_u16(value: i32) -> u16 {
     value.clamp(0, i32::from(u16::MAX)) as u16
-}
-
-fn true_color_pixel_from_rgb16(red: u16, green: u16, blue: u16) -> u32 {
-    (u32::from(red & 0xff00) << 8) | u32::from(green & 0xff00) | (u32::from(blue) >> 8)
 }

@@ -1,5 +1,7 @@
 use sophia_protocol::Size;
 
+use crate::{X_TRUE_COLOR_BLUE_MASK, X_TRUE_COLOR_GREEN_MASK, X_TRUE_COLOR_RED_MASK};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XByteOrder {
     LittleEndian,
@@ -438,9 +440,9 @@ fn encode_root(byte_order: XByteOrder, out: &mut Vec<u8>, root_size: Size) {
     out.push(X_SETUP_TRUE_COLOR);
     out.push(8);
     byte_order.push_u16(out, 256);
-    byte_order.push_u32(out, 0x00ff_0000);
-    byte_order.push_u32(out, 0x0000_ff00);
-    byte_order.push_u32(out, 0x0000_00ff);
+    byte_order.push_u32(out, X_TRUE_COLOR_RED_MASK);
+    byte_order.push_u32(out, X_TRUE_COLOR_GREEN_MASK);
+    byte_order.push_u32(out, X_TRUE_COLOR_BLUE_MASK);
     byte_order.push_u32(out, 0);
 
     out.push(32);
@@ -452,9 +454,9 @@ fn encode_root(byte_order: XByteOrder, out: &mut Vec<u8>, root_size: Size) {
     out.push(X_SETUP_TRUE_COLOR);
     out.push(8);
     byte_order.push_u16(out, 256);
-    byte_order.push_u32(out, 0x00ff_0000);
-    byte_order.push_u32(out, 0x0000_ff00);
-    byte_order.push_u32(out, 0x0000_00ff);
+    byte_order.push_u32(out, X_TRUE_COLOR_RED_MASK);
+    byte_order.push_u32(out, X_TRUE_COLOR_GREEN_MASK);
+    byte_order.push_u32(out, X_TRUE_COLOR_BLUE_MASK);
     byte_order.push_u32(out, 0);
 }
 

@@ -569,25 +569,48 @@ fn x11_setup_success_reply_encodes_resource_id_facts() {
 }
 
 #[test]
-fn x11_setup_success_reply_can_advertise_minimal_root_screen() {
-    let reply = encode_x11_setup_success(
-        XByteOrder::LittleEndian,
-        &XSetupSuccess::client_compatible(),
-    )
-    .unwrap();
+fn x11_setup_success_reply_advertises_exact_true_color_visuals_in_both_orders() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let reply =
+            encode_x11_setup_success(byte_order, &XSetupSuccess::client_compatible()).unwrap();
 
-    assert_eq!(reply[0], 1);
-    assert_eq!(reply[28], 1);
-    assert_eq!(reply[29], 2);
-    assert_eq!(reply[48], 24);
-    assert_eq!(reply[56], 32);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[64..68]), 0x20);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[96..100]), 0x22);
-    assert_eq!(reply[102], 24);
-    assert_eq!(reply[103], 2);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[112..116]), 0x22);
-    assert_eq!(reply[136], 32);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[144..148]), 0x23);
+        assert_eq!(reply[0], 1);
+        assert_eq!(reply[28], 1);
+        assert_eq!(reply[29], 2);
+        assert_eq!(reply[48], 24);
+        assert_eq!(reply[56], 32);
+        assert_eq!(read_u32(byte_order, &reply[64..68]), X_SETUP_DEFAULT_ROOT);
+        assert_eq!(
+            read_u32(byte_order, &reply[68..72]),
+            X_SETUP_DEFAULT_COLORMAP
+        );
+        assert_eq!(read_u32(byte_order, &reply[96..100]), X_SETUP_DEFAULT_VISUAL);
+        assert_eq!(reply[102], 24);
+        assert_eq!(reply[103], 2);
+
+        for (offset, visual, depth) in [
+            (112, X_SETUP_DEFAULT_VISUAL, 24),
+            (144, X_SETUP_ARGB_VISUAL, 32),
+        ] {
+            assert_eq!(read_u32(byte_order, &reply[offset..offset + 4]), visual);
+            assert_eq!(reply[offset + 4], 4);
+            assert_eq!(reply[offset + 5], 8);
+            assert_eq!(read_u16(byte_order, &reply[offset + 6..offset + 8]), 256);
+            assert_eq!(
+                read_u32(byte_order, &reply[offset + 8..offset + 12]),
+                X_TRUE_COLOR_RED_MASK
+            );
+            assert_eq!(
+                read_u32(byte_order, &reply[offset + 12..offset + 16]),
+                X_TRUE_COLOR_GREEN_MASK
+            );
+            assert_eq!(
+                read_u32(byte_order, &reply[offset + 16..offset + 20]),
+                X_TRUE_COLOR_BLUE_MASK
+            );
+            assert_eq!(reply[offset - 8], depth);
+        }
+    }
 }
 
 #[test]

@@ -172,6 +172,44 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let actual = response_placements(&response);
     let expected = vec![
         (
+            11,
+            Rect {
+                x: 0,
+                y: 14,
+                width: 640,
+                height: 1426,
+            },
+        ),
+        (
+            12,
+            Rect {
+                x: 640,
+                y: 14,
+                width: 1280,
+                height: 1426,
+            },
+        ),
+        (
+            10,
+            Rect {
+                x: 1920,
+                y: 14,
+                width: 640,
+                height: 1426,
+            },
+        ),
+    ];
+    if response.transaction != third.transaction || actual != expected {
+        return Err(format!(
+            "xmonad did not produce the strict sequential three-tile response: transaction={:?} actual={actual:?}",
+            response.transaction
+        )
+        .into());
+    }
+    let layout = runtime.handle_request(&next_layout_request(4, workspace, &expected))?;
+    let tall = response_placements(&layout);
+    let expected_tall = vec![
+        (
             12,
             Rect {
                 x: 0,
@@ -199,27 +237,16 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             },
         ),
     ];
-    if response.transaction != third.transaction || actual != expected {
+    if layout.transaction != TransactionId::from_raw(4) || tall != expected_tall {
         return Err(format!(
-            "xmonad did not produce the strict sequential three-tile response: transaction={:?} actual={actual:?}",
-            response.transaction
+            "xmonad did not produce the strict ThreeColMid-to-Tall action response: transaction={:?} actual={tall:?}",
+            layout.transaction
         )
         .into());
     }
-    let layout = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(4),
-        kind: WmRequestKind::ActionActivated(WmActionActivation {
-            action: WmActionId::from_raw(XMONAD_ACTION_NEXT_LAYOUT),
-            output: OutputId::from_raw(1),
-            workspace,
-            focused_surface: Some(SurfaceId::new(12, 1)),
-            nodes: expected
-                .iter()
-                .map(|(raw, geometry)| node(*raw, workspace, *geometry))
-                .collect(),
-        }),
-    })?;
-    let mirror = response_placements(&layout);
+    let mirror_response =
+        runtime.handle_request(&next_layout_request(5, workspace, &expected_tall))?;
+    let mirror = response_placements(&mirror_response);
     let expected_mirror = vec![
         (
             12,
@@ -249,16 +276,84 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             },
         ),
     ];
-    if layout.transaction != TransactionId::from_raw(4) || mirror != expected_mirror {
+    if mirror_response.transaction != TransactionId::from_raw(5) || mirror != expected_mirror {
         return Err(format!(
             "xmonad did not produce the strict Tall-to-Mirror action response: transaction={:?} actual={mirror:?}",
-            layout.transaction
+            mirror_response.transaction
+        )
+        .into());
+    }
+    let full_response =
+        runtime.handle_request(&next_layout_request(6, workspace, &expected_mirror))?;
+    let full = response_placements(&full_response);
+    let expected_full = vec![(
+        12,
+        Rect {
+            x: 0,
+            y: 14,
+            width: 2560,
+            height: 1426,
+        },
+    )];
+    if full_response.transaction != TransactionId::from_raw(6) || full != expected_full {
+        return Err(format!(
+            "xmonad did not produce the strict Mirror-to-Full action response: transaction={:?} actual={full:?}",
+            full_response.transaction
+        )
+        .into());
+    }
+    let full_scene = merge_placements(&expected_mirror, &full);
+    let spiral_response =
+        runtime.handle_request(&next_layout_request(7, workspace, &full_scene))?;
+    let spiral = response_placements(&spiral_response);
+    let expected_spiral = vec![
+        (
+            12,
+            Rect {
+                x: 0,
+                y: 14,
+                width: 1523,
+                height: 1426,
+            },
+        ),
+        (
+            11,
+            Rect {
+                x: 1523,
+                y: 14,
+                width: 1037,
+                height: 713,
+            },
+        ),
+        (
+            10,
+            Rect {
+                x: 1523,
+                y: 727,
+                width: 1037,
+                height: 713,
+            },
+        ),
+    ];
+    if spiral_response.transaction != TransactionId::from_raw(7) || spiral != expected_spiral {
+        return Err(format!(
+            "xmonad did not produce the strict Full-to-Spiral action response: transaction={:?} actual={spiral:?}",
+            spiral_response.transaction
+        )
+        .into());
+    }
+    let three_col_response = runtime.handle_request(&next_layout_request(8, workspace, &spiral))?;
+    let three_col = response_placements(&three_col_response);
+    if three_col_response.transaction != TransactionId::from_raw(8) || three_col != expected {
+        return Err(format!(
+            "xmonad did not wrap Spiral to ThreeColMid: transaction={:?} actual={three_col:?}",
+            three_col_response.transaction
         )
         .into());
     }
     let focus_target = SurfaceId::new(10, 1);
     let focus = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(5),
+        transaction: TransactionId::from_raw(9),
         kind: WmRequestKind::FocusRequested(WmFocusRequest {
             surface: focus_target,
             output: OutputId::from_raw(1),
@@ -293,7 +388,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         max_size: Some(recovery_extent),
     };
     let recovery = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(6),
+        transaction: TransactionId::from_raw(10),
         kind: WmRequestKind::ManageSurface(WmManageSurface {
             output: OutputId::from_raw(1),
             workspace,
@@ -321,7 +416,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let released = runtime.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(7),
+        transaction: TransactionId::from_raw(11),
         kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
             output: OutputId::from_raw(1),
             workspace,
@@ -333,7 +428,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         }),
     })?;
     let released_placements = response_placements(&released);
-    if released_placements != expected_mirror
+    if released_placements != expected
         || !released
             .commands
             .contains(&WmCommand::FocusSurface(SurfaceId::new(12, 1)))
@@ -357,7 +452,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         session_actions: Vec::new(),
     })?;
     let committed_seed = restarted.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(8),
+        transaction: TransactionId::from_raw(12),
         kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
             output: OutputId::from_raw(1),
             workspace,
@@ -415,7 +510,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let replayed_manage = restarted.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(9),
+        transaction: TransactionId::from_raw(13),
         kind: WmRequestKind::ManageSurface(WmManageSurface {
             output: OutputId::from_raw(1),
             workspace,
@@ -444,7 +539,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let post_recovery = restarted.handle_request(&WmRequestPacket {
-        transaction: TransactionId::from_raw(10),
+        transaction: TransactionId::from_raw(14),
         kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
             output: OutputId::from_raw(1),
             workspace,
@@ -467,18 +562,14 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     println!(
-        "real-xmonad-sequential-three-window-smoke: pass transaction={} layout_transaction={} focus_transaction={} recovery_transaction={} release_transaction={} restart_seed_transaction={} restart_manage_transaction={} restart_release_transaction={} master={:?} stack_top={:?} stack_bottom={:?} mirror={mirror:?} recovery={recovery_geometry:?}",
+        "real-xmonad-configured-layout-smoke: pass transaction={} layout_transactions=4,5,6,7,8 focus_transaction={} recovery_transaction={} release_transaction={} restart_seed_transaction={} restart_manage_transaction={} restart_release_transaction={} three_col={expected:?} tall={tall:?} mirror={mirror:?} full={full:?} spiral={spiral:?} recovery={recovery_geometry:?}",
         response.transaction.raw(),
-        layout.transaction.raw(),
         focus.transaction.raw(),
         recovery.transaction.raw(),
         released.transaction.raw(),
         committed_seed.transaction.raw(),
         replayed_manage.transaction.raw(),
         post_recovery.transaction.raw(),
-        actual[0].1,
-        actual[1].1,
-        actual[2].1,
     );
     Ok(())
 }
@@ -498,6 +589,39 @@ fn response_placements(response: &sophia_protocol::WmResponsePacket) -> Vec<(u32
         .collect::<Vec<_>>();
     actual.sort_by_key(|(_, geometry)| (geometry.x, geometry.y));
     actual
+}
+
+fn next_layout_request(
+    transaction: u64,
+    workspace: WorkspaceId,
+    placements: &[(u32, Rect)],
+) -> WmRequestPacket {
+    WmRequestPacket {
+        transaction: TransactionId::from_raw(transaction),
+        kind: WmRequestKind::ActionActivated(WmActionActivation {
+            action: WmActionId::from_raw(XMONAD_ACTION_NEXT_LAYOUT),
+            output: OutputId::from_raw(1),
+            workspace,
+            focused_surface: Some(SurfaceId::new(12, 1)),
+            nodes: placements
+                .iter()
+                .map(|(raw, geometry)| node(*raw, workspace, *geometry))
+                .collect(),
+        }),
+    }
+}
+
+fn merge_placements(base: &[(u32, Rect)], updates: &[(u32, Rect)]) -> Vec<(u32, Rect)> {
+    let mut merged = base.to_vec();
+    for (surface, geometry) in updates {
+        if let Some((_, current)) = merged.iter_mut().find(|(raw, _)| raw == surface) {
+            *current = *geometry;
+        } else {
+            merged.push((*surface, *geometry));
+        }
+    }
+    merged.sort_by_key(|(_, geometry)| (geometry.x, geometry.y));
+    merged
 }
 
 fn node(raw: u32, workspace: WorkspaceId, geometry: Rect) -> LayoutNodeSnapshot {

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+XMONAD_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/Main.hs"
+
+bash -n \
+    "$ROOT_DIR/tools/build_sophia_xmonad.sh" \
+    "$ROOT_DIR/tools/build_sophia_xmobar.sh" \
+    "$ROOT_DIR/tools/resolve_sophia_xmonad.sh" \
+    "$ROOT_DIR/tools/resolve_sophia_xmobar.sh" \
+    "$ROOT_DIR/tools/verify_packaged_policy.sh"
+
+for layout in ThreeColMid Tall Mirror Full spiral; do
+    grep -Fq "$layout" "$XMONAD_CONFIG" || {
+        echo "Sophia's configured xmonad is missing $layout." >&2
+        exit 1
+    }
+done
+if grep -Eq '\b(spawn|kill|className|title|doFloat|doShift|Tabbed|DynamicLog)\b' \
+    "$XMONAD_CONFIG"; then
+    echo "Sophia's configured xmonad contains forbidden application or metadata policy." >&2
+    exit 1
+fi
+grep -Fq 'modMask = mod1Mask' "$XMONAD_CONFIG"
+grep -Fq 'terminal = "/bin/false"' "$XMONAD_CONFIG"
+
+xmonad_bin="$($ROOT_DIR/tools/build_sophia_xmonad.sh 2>/dev/null)"
+xmobar_bin="$($ROOT_DIR/tools/build_sophia_xmobar.sh 2>/dev/null)"
+[[ "$($xmonad_bin --version 2>&1 | head -n 1)" == 'xmonad 0.18.1' ]] || {
+    echo "Sophia's configured xmonad has the wrong version." >&2
+    exit 1
+}
+[[ "$($xmobar_bin --version 2>&1 | head -n 1)" == 'xmobar 0.51.1' ]] || {
+    echo "Sophia's packaged xmobar has the wrong version." >&2
+    exit 1
+}
+
+grep -Fq 'SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"' \
+    "$ROOT_DIR/tools/installed/sophia-session"
+grep -Fq 'SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"' \
+    "$ROOT_DIR/tools/installed/sophia-session"
+
+echo "Sophia desktop policy build checks passed."

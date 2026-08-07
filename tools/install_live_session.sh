@@ -40,6 +40,7 @@ release_id="$(sed -n 's/^release_id=//p' "$artifact/manifest" | head -n 1)"
     cd "$artifact"
     sha256sum -c SHA256SUMS
 )
+"$artifact/tools/verify_packaged_policy.sh" "$artifact"
 
 releases="$PREFIX/releases"
 target="$releases/$release_id"

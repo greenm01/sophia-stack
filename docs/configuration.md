@@ -37,9 +37,12 @@ to an application identity. Both layouts consume the same metadata-blind node
 snapshot and remain subject to Engine constraint reconciliation and atomic
 admission.
 
-An external WM does not consume `wm.kdl`. It keeps its native configuration,
-such as `xmonad.hs`. Its compatibility bridge still crosses the same blind,
-versioned Sophia WM API. A WM never overrides or mutates `config.kdl`.
+An external WM does not consume `wm.kdl`. A generic compatibility profile may
+name its own native configuration. Sophia's installed xmonad profile is
+stricter: the release contains the checked-in policy executable and rejects
+mutable `~/.config/xmonad` or home-source discovery. In either case, the
+compatibility bridge crosses the same blind, versioned Sophia WM API, and a WM
+never overrides or mutates `config.kdl`.
 
 ## Discovery
 

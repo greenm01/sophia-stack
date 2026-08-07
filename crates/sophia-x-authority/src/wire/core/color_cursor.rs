@@ -35,6 +35,7 @@ fn decode_create_colormap(
     let colormap = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(colormap)?;
     Ok(XWireRequest::CreateColormap {
+        alloc: bytes[1],
         colormap: XResourceId::new(u64::from(colormap), 1),
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         visual: context.byte_order.u32(&bytes[12..16]),
@@ -177,4 +178,3 @@ fn decode_set_clip_rectangles(
         rectangles,
     })
 }
-

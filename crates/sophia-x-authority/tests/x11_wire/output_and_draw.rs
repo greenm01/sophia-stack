@@ -634,6 +634,32 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
     );
     assert!(pixmap.outputs.is_empty());
 
+    let invalid_depth = decode_x11_core_request(
+        context(namespace, 622, XByteOrder::LittleEndian),
+        &create_pixmap_request(
+            XByteOrder::LittleEndian,
+            8,
+            0x220124,
+            0x220121,
+            64,
+            32,
+        ),
+    )
+    .unwrap();
+    let invalid_depth = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 53),
+        invalid_depth,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(invalid_depth[0][1], XErrorCode::BadValue.wire_code());
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &invalid_depth[0][4..8]),
+        8
+    );
+
     let put = decode_x11_core_request(
         context(namespace, 623, XByteOrder::LittleEndian),
         &put_image_request(
@@ -699,4 +725,66 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
             height: 4,
         })
     );
+}
+
+#[test]
+fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x220131;
+    let create = decode_x11_core_request(
+        context(namespace, 631, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 6, 1),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    // ZPixmap bytes follow the setup image order: blue, green, red, padding.
+    let palette = [
+        0x00, 0x00, 0x00, 0x00, // black
+        0x00, 0x00, 0xff, 0x00, // red
+        0x00, 0xff, 0x00, 0x00, // green
+        0xff, 0x00, 0x00, 0x00, // blue
+        0x80, 0xab, 0x12, 0x00, // mixed
+        0x7f, 0x7f, 0x7f, 0x00, // gray
+    ];
+    let put = decode_x11_core_request(
+        context(namespace, 632, XByteOrder::LittleEndian),
+        &put_image_request(
+            XByteOrder::LittleEndian,
+            window,
+            XResourceId::NONE.local.raw() as u32,
+            PutImageGeometry {
+                width: 6,
+                height: 1,
+                dst_x: 0,
+                dst_y: 0,
+            },
+            &palette,
+        ),
+    )
+    .unwrap();
+    let put = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 72),
+        put,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(put.response.unwrap().outcome, XAuthorityResponseOutcome::Accepted);
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime.take_cpu_buffer_update().unwrap()
+    else {
+        panic!("the first palette upload must publish a replacement buffer");
+    };
+    assert_eq!(snapshot.format, X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888);
+    assert_eq!(snapshot.stride, 24);
+    assert_eq!(snapshot.bytes, palette);
 }

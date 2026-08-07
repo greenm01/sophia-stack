@@ -196,7 +196,9 @@ Hagia is a standalone Nim repository with no Triad history or River/Wayland
 runtime dependency. Its independent envelope and record decoder passes the
 same retained valid and malformed corpus, and its proof client completes one
 authenticated snapshot/request/projection/outcome cycle through the canonical
-reducer. Its private spatial-policy model remains pre-stability work.
+reducer. Hagia is the eventual Sophia-native port of Triad's useful policy and
+desktop experience, but that product migration is deferred. Its current role
+is only to challenge this protocol as an independent client.
 
 The first public revision is declared stable only after all three paths prove
 negotiation, capabilities, complete and chunked transfers, actions, geometry,

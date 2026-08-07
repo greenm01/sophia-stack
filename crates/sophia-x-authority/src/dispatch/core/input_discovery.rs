@@ -221,26 +221,110 @@ fn dispatch_core_input_discovery_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::QueryColors { pixels, .. } => XDispatchResult {
-                    response: None,
-                    outputs: vec![XClientOutput::Reply(XClientReply::QueryColors {
-                        sequence: context.sequence,
-                        pixels,
-                    })],
-                    metadata_candidates: Vec::new(),
-                },
-                XWireRequest::CreateColormap { window, .. } => {
-                    let outputs = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-                        Vec::new()
-                    } else if let Err(error) = runtime.validate_window_access(context.namespace, window) {
-                        vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
+                XWireRequest::QueryColors { colormap, pixels } => {
+                    let output = match runtime.colormap_visual(context.namespace, colormap) {
+                        Err(_) => color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        ),
+                        Ok(visual_id) => {
+                            let visual = x_true_color_visual(visual_id)
+                                .expect("registered colormaps must name advertised visuals");
+                            if let Some(invalid) = pixels
+                                .iter()
+                                .copied()
+                                .find(|pixel| visual.query(*pixel).is_none())
+                            {
+                                color_error(context, XErrorCode::BadValue, invalid)
+                            } else {
+                                XClientOutput::Reply(XClientReply::QueryColors {
+                                    sequence: context.sequence,
+                                    colors: pixels
+                                        .into_iter()
+                                        .map(|pixel| {
+                                            visual
+                                                .query(pixel)
+                                                .expect("pixels were validated before encoding")
+                                        })
+                                        .collect(),
+                                })
+                            }
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![output],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::CreateColormap {
+                    alloc,
+                    colormap,
+                    window,
+                    visual,
+                } => {
+                    let output = if alloc > 1 {
+                        Some(color_error(
+                            context,
+                            XErrorCode::BadValue,
+                            u32::from(alloc),
+                        ))
+                    } else if runtime.resource_id_in_use(colormap) {
+                        Some(color_error(
+                            context,
+                            XErrorCode::BadIdChoice,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        ))
+                    } else if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
+                        && runtime
+                            .validate_window_access(context.namespace, window)
+                            .is_err()
+                    {
+                        Some(color_error(
+                            context,
+                            XErrorCode::BadWindow,
                             u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
+                        ))
+                    } else if x_true_color_visual(visual).is_none() || alloc != 0 {
+                        Some(color_error(context, XErrorCode::BadMatch, visual))
                     } else {
-                        Vec::new()
+                        match runtime.create_colormap(
+                            context.namespace,
+                            colormap,
+                            visual,
+                            1,
+                        ) {
+                            Ok(()) => None,
+                            Err(XColormapError::DuplicateId) => Some(color_error(
+                                context,
+                                XErrorCode::BadIdChoice,
+                                u32::try_from(colormap.local.raw()).unwrap_or(0),
+                            )),
+                            Err(XColormapError::UnknownVisual) => {
+                                Some(color_error(context, XErrorCode::BadMatch, visual))
+                            }
+                            Err(XColormapError::Access(_)) => Some(color_error(
+                                context,
+                                XErrorCode::BadAccess,
+                                u32::try_from(colormap.local.raw()).unwrap_or(0),
+                            )),
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: output.into_iter().collect(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::FreeColormap { colormap } => {
+                    let outputs = match runtime.free_colormap(context.namespace, colormap) {
+                        Ok(()) => Vec::new(),
+                        Err(_) => vec![color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        )],
                     };
                     XDispatchResult {
                         response: None,
@@ -248,42 +332,75 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::FreeColormap { .. } => XDispatchResult {
-                    response: None,
-                    outputs: Vec::new(),
-                    metadata_candidates: Vec::new(),
-                },
-                XWireRequest::AllocNamedColor { name, .. } => {
-                    let black = name.eq_ignore_ascii_case("black");
-                    let intensity = if black { 0 } else { u16::MAX };
+                XWireRequest::AllocNamedColor { colormap, name } => {
+                    let output = match runtime.colormap_visual(context.namespace, colormap) {
+                        Err(_) => color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        ),
+                        Ok(visual_id) => match x_lookup_color_name(&name) {
+                            None => color_error(context, XErrorCode::BadName, 0),
+                            Some(exact) => {
+                                let visual = x_true_color_visual(visual_id)
+                                    .expect("registered colormaps must name advertised visuals");
+                                let screen = visual.screen_color(exact);
+                                XClientOutput::Reply(XClientReply::AllocNamedColor {
+                                    sequence: context.sequence,
+                                    pixel: visual.pixel(screen),
+                                    exact,
+                                    screen,
+                                })
+                            }
+                        },
+                    };
                     XDispatchResult {
                         response: None,
-                        outputs: vec![XClientOutput::Reply(XClientReply::AllocNamedColor {
-                            sequence: context.sequence,
-                            pixel: if black { 0 } else { 1 },
-                            red: intensity,
-                            green: intensity,
-                            blue: intensity,
-                        })],
+                        outputs: vec![output],
                         metadata_candidates: Vec::new(),
                     }
                 }
                 XWireRequest::AllocColor {
-                    red, green, blue, ..
+                    colormap,
+                    red,
+                    green,
+                    blue,
                 } => {
-                    let pixel = true_color_pixel_from_rgb16(red, green, blue);
+                    let output = match runtime.colormap_visual(context.namespace, colormap) {
+                        Err(_) => color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        ),
+                        Ok(visual_id) => {
+                            let visual = x_true_color_visual(visual_id)
+                                .expect("registered colormaps must name advertised visuals");
+                            let screen = visual.screen_color(XColorRgb16 { red, green, blue });
+                            XClientOutput::Reply(XClientReply::AllocColor {
+                                sequence: context.sequence,
+                                pixel: visual.pixel(screen),
+                                red: screen.red,
+                                green: screen.green,
+                                blue: screen.blue,
+                            })
+                        }
+                    };
                     XDispatchResult {
                         response: None,
-                        outputs: vec![XClientOutput::Reply(XClientReply::AllocColor {
-                            sequence: context.sequence,
-                            pixel,
-                            red,
-                            green,
-                            blue,
-                        })],
+                        outputs: vec![output],
                         metadata_candidates: Vec::new(),
                     }
                 }
         _ => unreachable!("request family checked before dispatch"),
+    })
+}
+
+fn color_error(context: XDispatchContext, code: XErrorCode, resource_id: u32) -> XClientOutput {
+    XClientOutput::Error(crate::XClientError {
+        code,
+        sequence: context.sequence,
+        resource_id,
+        minor_code: 0,
+        major_code: context.major_opcode,
     })
 }

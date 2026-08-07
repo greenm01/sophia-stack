@@ -138,6 +138,34 @@ fn create_window_request_with_parent(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn create_window_visual_request(
+    byte_order: XByteOrder,
+    window: u32,
+    depth: u8,
+    visual: u32,
+    colormap: Option<u32>,
+) -> Vec<u8> {
+    let mut out = create_window_request(byte_order, window, 0, 0, 320, 200);
+    out[1] = depth;
+    out[24..28].copy_from_slice(&match byte_order {
+        XByteOrder::LittleEndian => visual.to_le_bytes(),
+        XByteOrder::BigEndian => visual.to_be_bytes(),
+    });
+    if let Some(colormap) = colormap {
+        out[2..4].copy_from_slice(&match byte_order {
+            XByteOrder::LittleEndian => 9u16.to_le_bytes(),
+            XByteOrder::BigEndian => 9u16.to_be_bytes(),
+        });
+        out[28..32].copy_from_slice(&match byte_order {
+            XByteOrder::LittleEndian => (1u32 << 13).to_le_bytes(),
+            XByteOrder::BigEndian => (1u32 << 13).to_be_bytes(),
+        });
+        push_u32(&mut out, byte_order, colormap);
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
 fn create_window_background_request(
     byte_order: XByteOrder,
     window: u32,

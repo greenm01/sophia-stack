@@ -620,47 +620,64 @@ fn x11_dispatch_translate_coordinates_echoes_root_coordinates() {
 }
 
 #[test]
-fn x11_dispatch_query_colors_returns_bounded_color_records() {
+fn x11_dispatch_query_colors_returns_true_color_records_in_both_orders() {
     let namespace = NamespaceId::from_raw(45);
-    let mut runtime = XAuthorityRuntime::new();
-    let mut atoms = XAtomTable::new();
-    let mut properties = XPropertyTable::new();
-    let request = decode_x11_core_request(
-        context(namespace, 525, XByteOrder::LittleEndian),
-        &query_colors_request(XByteOrder::LittleEndian, X_SETUP_DEFAULT_ROOT, &[0, 1]),
-    )
-    .unwrap();
+    let pixels = [0, 0x00ff_0000, 0x0000_ff00, 0x0000_00ff, 0x0012_ab80];
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        let request = decode_x11_core_request(
+            context(namespace, 525, byte_order),
+            &query_colors_request(byte_order, X_SETUP_DEFAULT_COLORMAP, &pixels),
+        )
+        .unwrap();
 
-    assert_eq!(
-        request,
-        XWireRequest::QueryColors {
-            colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-            pixels: vec![0, 1],
-        }
-    );
+        assert_eq!(
+            request,
+            XWireRequest::QueryColors {
+                colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
+                pixels: pixels.to_vec(),
+            }
+        );
+        let encoded = dispatch_x11_wire_request(
+            dispatch_context(namespace, 1, byte_order, 91),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+        .encoded_outputs(byte_order);
+        assert_eq!(encoded[0][0], 1);
+        assert_eq!(read_u32(byte_order, &encoded[0][4..8]), 10);
+        assert_eq!(read_u16(byte_order, &encoded[0][8..10]), 5);
+        assert_eq!(read_u16(byte_order, &encoded[0][32..34]), 0);
+        assert_eq!(read_u16(byte_order, &encoded[0][40..42]), u16::MAX);
+        assert_eq!(read_u16(byte_order, &encoded[0][50..52]), u16::MAX);
+        assert_eq!(read_u16(byte_order, &encoded[0][60..62]), u16::MAX);
+        assert_eq!(read_u16(byte_order, &encoded[0][64..66]), 0x1212);
+        assert_eq!(read_u16(byte_order, &encoded[0][66..68]), 0xabab);
+        assert_eq!(read_u16(byte_order, &encoded[0][68..70]), 0x8080);
 
-    let result = dispatch_x11_wire_request(
-        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 91),
-        request,
-        &mut runtime,
-        &mut atoms,
-        &mut properties,
-    );
-    let encoded = result.encoded_outputs(XByteOrder::LittleEndian);
-    assert_eq!(encoded[0][0], 1);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 4);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 2);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][32..34]), 0);
-    assert_eq!(
-        read_u16(XByteOrder::LittleEndian, &encoded[0][40..42]),
-        u16::MAX
-    );
-    assert_eq!(
-        read_u16(XByteOrder::LittleEndian, &encoded[0][42..44]),
-        u16::MAX
-    );
-    assert_eq!(
-        read_u16(XByteOrder::LittleEndian, &encoded[0][44..46]),
-        u16::MAX
-    );
+        let invalid = decode_x11_core_request(
+            context(namespace, 526, byte_order),
+            &query_colors_request(
+                byte_order,
+                X_SETUP_DEFAULT_COLORMAP,
+                &[0, 0x0100_0000],
+            ),
+        )
+        .unwrap();
+        let invalid = dispatch_x11_wire_request(
+            dispatch_context(namespace, 2, byte_order, 91),
+            invalid,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+        .encoded_outputs(byte_order);
+        assert_eq!(invalid[0][0], 0);
+        assert_eq!(invalid[0][1], XErrorCode::BadValue.wire_code());
+        assert_eq!(read_u32(byte_order, &invalid[0][4..8]), 0x0100_0000);
+    }
 }

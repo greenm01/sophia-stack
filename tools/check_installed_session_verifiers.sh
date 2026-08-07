@@ -13,6 +13,7 @@ install -d -m 755 "$CAPTURE_RELEASE/target/release"
 printf 'schema=1\nversion=0.1.0-test\n' >"$CAPTURE_RELEASE/manifest"
 printf 'sophia-test-binary\n' >"$CAPTURE_RELEASE/target/release/sophia"
 printf 'xmonad-test-binary\n' >"$CAPTURE_RELEASE/target/release/xmonad"
+printf 'xmobar-test-binary\n' >"$CAPTURE_RELEASE/target/release/xmobar"
 "$ROOT_DIR/tools/installed/capture-runtime-identity.sh" \
     "$TEMP_DIR/captured.log" "$CAPTURE_RELEASE"
 sophia_digest="$(sha256sum "$CAPTURE_RELEASE/target/release/sophia" | awk '{print $1}')"
