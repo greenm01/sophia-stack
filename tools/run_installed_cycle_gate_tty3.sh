@@ -6,6 +6,7 @@ RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 RUN_ROOT="$STATE_HOME/sophia/promotion/runs"
 SESSION_LOG="$STATE_HOME/sophia/xmonad-session/session.log"
+GUARD_LOG="$STATE_HOME/sophia/xmonad-session/input-guard.log"
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-}"
 COUNT="${1:-10}"
 STARTUP_TIMEOUT_SECONDS="${SOPHIA_CYCLE_STARTUP_TIMEOUT_SECONDS:-20}"
@@ -34,6 +35,10 @@ session_log_identity() {
     stat -c '%d:%i' "$SESSION_LOG" 2>/dev/null || true
 }
 
+guard_log_identity() {
+    stat -c '%d:%i' "$GUARD_LOG" 2>/dev/null || true
+}
+
 new_session_is_ready() {
     local previous_identity="$1" current_identity
     current_identity="$(session_log_identity)"
@@ -42,6 +47,24 @@ new_session_is_ready() {
     grep -Eq \
         '^sophia_live_session_startup schema=2 status=ready .* outputs_ready=2/2 recovery_attempts=0$' \
         "$SESSION_LOG"
+}
+
+new_input_guard_is_ready() {
+    local previous_identity="$1" current_identity
+    current_identity="$(guard_log_identity)"
+    [[ -n "$current_identity" && "$current_identity" != "$previous_identity" ]] ||
+        return 1
+    grep -Fxq \
+        'sophia_session_input_guard schema=2 status=ready source=paths seat=explicit devices=1 keyboards=1' \
+        "$GUARD_LOG"
+}
+
+new_input_guard_is_armed() {
+    local previous_identity="$1" current_identity
+    current_identity="$(guard_log_identity)"
+    [[ -n "$current_identity" && "$current_identity" != "$previous_identity" ]] ||
+        return 1
+    grep -Fxq 'sophia_session_input_guard schema=1 status=armed' "$GUARD_LOG"
 }
 
 terminate_process() {
@@ -104,7 +127,7 @@ cleanup() {
 }
 
 self_test() {
-    local fixture previous_identity test_fd test_pid
+    local fixture previous_identity test_fd test_pid injector_self_test
     fixture="$(mktemp -d)"
     SESSION_LOG="$fixture/session.log"
     RUN_ROOT="$fixture/runs"
@@ -139,6 +162,45 @@ self_test() {
         >>"$SESSION_LOG"
     new_session_is_ready "$previous_identity" || {
         echo "cycle runner rejected exact readiness from a new session" >&2
+        rm -rf -- "$fixture"
+        return 1
+    }
+
+    GUARD_LOG="$fixture/input-guard.log"
+    printf '%s\n' \
+        'sophia_session_input_guard schema=2 status=ready source=paths seat=explicit devices=1 keyboards=1' \
+        >"$GUARD_LOG"
+    previous_identity="$(guard_log_identity)"
+    if new_input_guard_is_ready "$previous_identity"; then
+        echo "cycle runner accepted input-guard readiness from the preceding session" >&2
+        rm -rf -- "$fixture"
+        return 1
+    fi
+    mv "$GUARD_LOG" "$fixture/input-guard.previous.log"
+    printf '%s\n' \
+        'sophia_session_input_guard schema=1 status=ready source=paths seat=explicit devices=1 keyboards=1' \
+        >"$GUARD_LOG"
+    if new_input_guard_is_ready "$previous_identity"; then
+        echo "cycle runner accepted an obsolete input-guard readiness schema" >&2
+        rm -rf -- "$fixture"
+        return 1
+    fi
+    printf '%s\n' \
+        'sophia_session_input_guard schema=2 status=ready source=paths seat=explicit devices=1 keyboards=1' \
+        >"$GUARD_LOG"
+    new_input_guard_is_ready "$previous_identity" || {
+        echo "cycle runner rejected exact readiness from a new input guard" >&2
+        rm -rf -- "$fixture"
+        return 1
+    }
+    if new_input_guard_is_armed "$previous_identity"; then
+        echo "cycle runner accepted an input guard that was not armed" >&2
+        rm -rf -- "$fixture"
+        return 1
+    fi
+    printf '%s\n' 'sophia_session_input_guard schema=1 status=armed' >>"$GUARD_LOG"
+    new_input_guard_is_armed "$previous_identity" || {
+        echo "cycle runner rejected the new input guard's armed state" >&2
         rm -rf -- "$fixture"
         return 1
     }
@@ -180,7 +242,17 @@ self_test() {
     }
 
     rm -rf -- "$fixture"
-    "$INJECTOR" --chord=logout --self-test
+    injector_self_test="$(
+        "$INJECTOR" --chord=recovery --followup-chord=logout --self-test
+    )"
+    grep -Fq 'chord=recovery keys=3 events=12' <<<"$injector_self_test" || {
+        echo "cycle runner injector omitted the recovery-arm chord" >&2
+        return 1
+    }
+    grep -Fq 'chord=logout keys=3 events=12' <<<"$injector_self_test" || {
+        echo "cycle runner injector omitted the logout chord" >&2
+        return 1
+    }
     echo "installed cycle runner checks passed"
 }
 
@@ -234,17 +306,23 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
     mkdir "$cycle_dir"
     chmod 700 "$cycle_dir"
     ready_file="$cycle_dir/device"
-    trigger_file="$cycle_dir/inject"
-    result_file="$cycle_dir/injected-at-usec"
+    arm_trigger_file="$cycle_dir/arm"
+    arm_result_file="$cycle_dir/armed-at-usec"
+    logout_trigger_file="$cycle_dir/logout"
+    logout_result_file="$cycle_dir/logout-at-usec"
     timeout_file="$cycle_dir/session-timeout"
     previous_log_identity="$(session_log_identity)"
+    previous_guard_identity="$(guard_log_identity)"
     previous_run="$(latest_run || true)"
 
     "$INJECTOR" \
-        --chord=logout \
+        --chord=recovery \
+        --followup-chord=logout \
         --ready-file="$ready_file" \
-        --trigger-file="$trigger_file" \
-        --result-file="$result_file" \
+        --trigger-file="$arm_trigger_file" \
+        --result-file="$arm_result_file" \
+        --followup-trigger-file="$logout_trigger_file" \
+        --followup-result-file="$logout_result_file" \
         --timeout-seconds="$((STARTUP_TIMEOUT_SECONDS + SESSION_TIMEOUT_SECONDS))" \
         --key-interval-ms=8 \
         >"$cycle_dir/injector.log" 2>&1 &
@@ -262,9 +340,31 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
         fail "uinput keyboard published an invalid event device"
 
     launch_installed_session "$input_device" "$cycle_dir/wrapper.log"
-    session_deadline=$((SECONDS + SESSION_TIMEOUT_SECONDS))
-
     startup_deadline=$((SECONDS + STARTUP_TIMEOUT_SECONDS))
+
+    while ! new_input_guard_is_ready "$previous_guard_identity"; do
+        kill -0 "$SESSION_PID" 2>/dev/null || break
+        process_is_running "$INJECTOR_PID" || break
+        ((SECONDS < startup_deadline)) || break
+        sleep 0.02
+    done
+    new_input_guard_is_ready "$previous_guard_identity" ||
+        fail "cycle $cycle input guard did not report exact path readiness"
+
+    # Arm the production recovery interlock before allowing graphics takeover.
+    : >"$arm_trigger_file"
+    chmod 600 "$arm_trigger_file"
+    while ! new_input_guard_is_armed "$previous_guard_identity"; do
+        kill -0 "$SESSION_PID" 2>/dev/null || break
+        process_is_running "$INJECTOR_PID" || break
+        ((SECONDS < startup_deadline)) || break
+        sleep 0.02
+    done
+    new_input_guard_is_armed "$previous_guard_identity" ||
+        fail "cycle $cycle input guard did not arm"
+    [[ -s "$arm_result_file" ]] ||
+        fail "cycle $cycle did not inject the recovery-arm chord"
+
     while ! new_session_is_ready "$previous_log_identity"; do
         kill -0 "$SESSION_PID" 2>/dev/null || break
         ((SECONDS < startup_deadline)) || break
@@ -275,8 +375,9 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
 
     # Keep the virtual keyboard alive through release delivery and shutdown.
     sleep 0.25
-    : >"$trigger_file"
-    chmod 600 "$trigger_file"
+    : >"$logout_trigger_file"
+    chmod 600 "$logout_trigger_file"
+    session_deadline=$((SECONDS + SESSION_TIMEOUT_SECONDS))
 
     while process_is_running "$SESSION_PID"; do
         if ((SECONDS >= session_deadline)); then
@@ -297,7 +398,7 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
 
     [[ ! -e "$timeout_file" ]] || fail "cycle $cycle exceeded its session deadline"
     ((session_status == 0)) || fail "cycle $cycle exited with status $session_status"
-    [[ -s "$result_file" ]] || fail "cycle $cycle did not inject the logout chord"
+    [[ -s "$logout_result_file" ]] || fail "cycle $cycle did not inject the logout chord"
     current_run="$(latest_run || true)"
     [[ -n "$current_run" && "$current_run" != "$previous_run" ]] ||
         fail "cycle $cycle did not create one new immutable attempt"

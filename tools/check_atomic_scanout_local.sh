@@ -327,5 +327,7 @@ python3 -c 'compile(open("tools/sophia_tty_mode.py", encoding="utf-8").read(), "
 python3 -c 'compile(open("tools/probes/uinput_text_injector.py", encoding="utf-8").read(), "tools/probes/uinput_text_injector.py", "exec")'
 tools/probes/uinput_text_injector.py --self-test
 tools/probes/uinput_text_injector.py --chord=logout --self-test
+tools/probes/uinput_text_injector.py \
+    --chord=recovery --followup-chord=logout --self-test
 
 echo "atomic scanout local checks passed"

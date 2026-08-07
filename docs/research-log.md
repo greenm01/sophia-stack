@@ -44,6 +44,17 @@ requires a concrete local VT. The runner now duplicates its original stdin
 descriptor. This preserves both the controlling terminal and its kernel device
 identity across the asynchronous launch.
 
+The next rerun reached installed preflight on the concrete VT and exposed an
+ordering omission in the automation. The production input guard still required
+its independent recovery-arm chord, while the runner's virtual keyboard could
+emit only the later logout chord. Sophia therefore failed closed before
+graphics takeover, and the runner correctly withheld logout injection. A cycle
+now uses one bounded virtual keyboard for two ordered phases: after exact guard
+readiness it injects Ctrl-Alt-Backspace and requires the new guard's armed
+record; after exact two-output readiness it injects Super-Shift-Q. Fresh log
+identity checks prevent either phase from accepting evidence from a preceding
+cycle. This exercises the production interlock instead of bypassing it.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

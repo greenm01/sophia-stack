@@ -20,6 +20,9 @@ BUS_USB = 0x03
 DEFAULT_TEXT = "sophia\n"
 KEY_LEFTSHIFT = 42
 KEY_LEFTMETA = 125
+KEY_LEFTCTRL = 29
+KEY_LEFTALT = 56
+KEY_BACKSPACE = 14
 
 KEY_CODES = {
     "a": 30,
@@ -89,10 +92,13 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--text")
-    parser.add_argument("--chord", choices=("logout",))
+    parser.add_argument("--chord", choices=("logout", "recovery"))
     parser.add_argument("--ready-file", type=Path)
     parser.add_argument("--trigger-file", type=Path)
     parser.add_argument("--result-file", type=Path)
+    parser.add_argument("--followup-chord", choices=("logout", "recovery"))
+    parser.add_argument("--followup-trigger-file", type=Path)
+    parser.add_argument("--followup-result-file", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--key-interval-ms", type=float, default=2.0)
     parser.add_argument("--self-test", action="store_true")
@@ -119,6 +125,11 @@ def input_sequence(
         sequence = [(keycode, 1) for keycode in keys]
         sequence.extend((keycode, 0) for keycode in reversed(keys))
         return "chord", "chord=logout keys=3", sequence
+    if chord == "recovery":
+        keys = [KEY_LEFTCTRL, KEY_LEFTALT, KEY_BACKSPACE]
+        sequence = [(keycode, 1) for keycode in keys]
+        sequence.extend((keycode, 0) for keycode in reversed(keys))
+        return "chord", "chord=recovery keys=3", sequence
 
     resolved_text = DEFAULT_TEXT if text is None else text
     keycodes = validate_text(resolved_text)
@@ -190,15 +201,35 @@ def self_test(mode: str, description: str, sequence: list[tuple[int, int]]) -> i
     return 0
 
 
+def validate_followup(args: argparse.Namespace) -> None:
+    followup_paths = (args.followup_trigger_file, args.followup_result_file)
+    if args.followup_chord is None:
+        if any(path is not None for path in followup_paths):
+            raise ValueError("follow-up paths require --followup-chord")
+        return
+    if args.text is not None or args.chord is None:
+        raise ValueError("--followup-chord requires an initial --chord")
+    if args.followup_trigger_file is None and not args.self_test:
+        raise ValueError("--followup-chord requires --followup-trigger-file")
+
+
 def main() -> int:
     args = parse_args()
     if args.timeout_seconds <= 0:
         raise ValueError("--timeout-seconds must be positive")
     if args.key_interval_ms < 0 or args.key_interval_ms > 1000:
         raise ValueError("--key-interval-ms must be between 0 and 1000")
+    validate_followup(args)
     mode, description, sequence = input_sequence(args.text, args.chord)
+    followup = None
+    if args.followup_chord is not None:
+        followup = input_sequence(None, args.followup_chord)
     if args.self_test:
-        return self_test(mode, description, sequence)
+        self_test(mode, description, sequence)
+        if followup is not None:
+            followup_mode, followup_description, followup_sequence = followup
+            self_test(followup_mode, followup_description, followup_sequence)
+        return 0
     if args.ready_file is None or args.trigger_file is None:
         raise ValueError("--ready-file and --trigger-file are required")
 
@@ -216,7 +247,11 @@ def main() -> int:
     try:
         fcntl.ioctl(device, UI_SET_EVBIT, EV_SYN)
         fcntl.ioctl(device, UI_SET_EVBIT, EV_KEY)
-        for keycode in sorted({keycode for keycode, _value in sequence}):
+        # One device retains input ownership across ordered proof phases.
+        keycodes = {keycode for keycode, _value in sequence}
+        if followup is not None:
+            keycodes.update(keycode for keycode, _value in followup[2])
+        for keycode in sorted(keycodes):
             fcntl.ioctl(device, UI_SET_KEYBIT, keycode)
         encoded_name = name.encode("utf-8")
         setup = UINPUT_SETUP.pack(
@@ -246,6 +281,19 @@ def main() -> int:
             f"mode={mode} {description} events={len(sequence) * 2}",
             flush=True,
         )
+        if followup is not None:
+            followup_mode, followup_description, followup_sequence = followup
+            assert args.followup_trigger_file is not None
+            wait_for_trigger(args.followup_trigger_file, deadline, stopped)
+            followup_at_usec = time.monotonic_ns() // 1_000
+            inject(device, followup_sequence, args.key_interval_ms / 1000.0)
+            publish(args.followup_result_file, str(followup_at_usec))
+            print(
+                "sophia_uinput schema=1 status=injected phase=followup "
+                f"mode={followup_mode} {followup_description} "
+                f"events={len(followup_sequence) * 2}",
+                flush=True,
+            )
         while not stopped[0]:
             time.sleep(0.05)
     finally:
