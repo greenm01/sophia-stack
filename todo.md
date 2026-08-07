@@ -47,9 +47,9 @@ Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. The first immutable successor exposed a
 missing core depth-1 pixmap format during its focused startup gate. The
-corrected successor is installed; run its focused and automated lifecycle
-gates, then pass the visible color proof, two-hour interactive soak, and one
-full workday.
+corrected successor is installed and passes both that startup regression and
+its automated ten-cycle lifecycle gate. Run the remaining focused gates, then
+pass the visible color proof, two-hour interactive soak, and one full workday.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -149,9 +149,11 @@ the correct authority.
 
 ## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
-The previous ten-cycle gate remains valid evidence for commit `958fb5e6`, but
-the closed xmonad/xmobar configuration and TrueColor semantics require a new
-successor candidate. Do not begin the final soak on the older installed build.
+The previous ten-cycle gate remains valid historical evidence for commit
+`958fb5e6`. The installed `56dad4de` successor now independently passes the
+same gate with the closed xmonad/xmobar configuration, TrueColor semantics,
+and auxiliary pixmap correction. All remaining gates and soaks must use this
+successor.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -222,7 +224,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
   Firefox, floating-dialog, VT switch, normal-logout, and emergency-recovery
   gates on that exact candidate.
-- [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
+- [x] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary
   cycle.

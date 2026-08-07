@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: The corrected candidate passes ten installed cycles
+
+The one-shot `Sophia Cycle Gate (Automated)` entry produced ten consecutive
+immutable passing attempts, `0026` through `0035`, for installed commit
+`56dad4de8b5f76ba0e3999be60a7865053e0c532`. The packaged verifier accepts the
+exact endpoint with `sophia-verify-cycles 10 0035`: every archive checksum,
+unique launch identity, application digest, two-output startup, input-guard
+interlock, normal cycle-runner handoff, TTY recovery, and runtime identity
+matches. Startup readiness remains between 297 and 324 ms across the set.
+
+The runner stopped after the tenth success and returned once to greetd. No
+manual repair or emergency path was used, and a host-level check finds no
+Sophia, xmonad, xmobar, xterm, or monitoring-process residue. This closes the
+corrected candidate's automated lifecycle gate; focused application and layout
+proofs, visible TrueColor, the interactive soak, and the workday remain open.
+
 ## 2026-08-07: The corrected installed xterm startup passes
 
 The installed `0.1.0-56dad4de8b5f` xmonad profile starts xterm without the
