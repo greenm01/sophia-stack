@@ -4,6 +4,7 @@ use sophia_protocol::{
     BufferHandle, SurfaceConstraints, SurfacePresentationIntent, SurfacePresentationIntentKind,
     TransactionId,
 };
+use std::collections::BTreeMap;
 
 fn rect(width: i32, height: i32) -> Rect {
     Rect {
@@ -15,6 +16,74 @@ fn rect(width: i32, height: i32) -> Rect {
 }
 
 #[test]
+fn inset_present_content_proves_the_outer_layout_extent_without_scaling() {
+    let surface = SurfaceId::new(77, 1);
+    let buffer = BufferHandle::from_raw(770);
+    let outer = rect(1276, 1422);
+    let content = Size {
+        width: 1266,
+        height: 1412,
+    };
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(77),
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: outer,
+        target_content_size: content,
+        target_buffer: BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        },
+        damage: Region::single(outer),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let dma_buf_sizes = BTreeMap::from([(buffer, content)]);
+
+    assert_eq!(
+        live_transaction_observed_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        Size {
+            width: outer.width,
+            height: outer.height,
+        }
+    );
+}
+
+#[test]
+fn mismatched_present_content_cannot_prove_the_outer_layout_extent() {
+    let buffer = BufferHandle::from_raw(771);
+    let stale = Size {
+        width: 1280,
+        height: 1040,
+    };
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(771),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(771, 1),
+        namespace: None,
+        target_geometry: rect(1276, 1422),
+        target_content_size: Size {
+            width: 1266,
+            height: 1412,
+        },
+        target_buffer: BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        },
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let dma_buf_sizes = BTreeMap::from([(buffer, stale)]);
+
+    assert_eq!(
+        live_transaction_observed_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        stale
+    );
+}
+
+#[test]
 fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
     let transaction = SurfaceTransaction {
         transaction: TransactionId::from_raw(79),
@@ -22,6 +91,10 @@ fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
         surface: SurfaceId::new(79, 1),
         namespace: None,
         target_geometry: rect(500, 500),
+        target_content_size: Size {
+            width: 500,
+            height: 500,
+        },
         target_buffer: BufferSource::XPixmap { pixmap: 0x220001 },
         damage: Region::single(rect(500, 500)),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -46,6 +119,10 @@ fn presented_cpu_snapshot_is_complete_present_evidence() {
         surface: SurfaceId::new(78, 1),
         namespace: None,
         target_geometry: rect(500, 500),
+        target_content_size: Size {
+            width: 500,
+            height: 500,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 780 },
         damage: Region::single(rect(500, 500)),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -83,6 +160,10 @@ fn backing_snapshot_cannot_impersonate_same_transaction_present() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::DmaBuf {
             handle: dma_buffer.raw(),
         },
@@ -178,6 +259,10 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: initial,
+        target_content_size: Size {
+            width: initial.width,
+            height: initial.height,
+        },
         target_buffer: BufferSource::DmaBuf {
             handle: present_buffer.raw(),
         },
@@ -215,6 +300,10 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: tiled,
+        target_content_size: Size {
+            width: tiled.width,
+            height: tiled.height,
+        },
         target_buffer: BufferSource::CpuBuffer {
             handle: backing_handle,
         },

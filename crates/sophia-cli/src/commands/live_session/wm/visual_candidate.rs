@@ -20,11 +20,25 @@ fn live_transaction_observed_size(
     dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
     cpu_buffer_sizes: &BTreeMap<u64, Size>,
 ) -> Size {
-    live_transaction_pixel_size(transaction.target_buffer, dma_buf_sizes, cpu_buffer_sizes)
-        .unwrap_or(Size {
-            width: transaction.target_geometry.width,
-            height: transaction.target_geometry.height,
-        })
+    let logical = Size {
+        width: transaction.target_geometry.width,
+        height: transaction.target_geometry.height,
+    };
+    let Some(source) = live_transaction_pixel_size(
+        transaction.target_buffer,
+        dma_buf_sizes,
+        cpu_buffer_sizes,
+    ) else {
+        return logical;
+    };
+    if source == transaction.target_content_size {
+        logical
+    } else {
+        // An old or partial buffer cannot satisfy a new logical extent. Keep
+        // reporting its physical size so exact resize and admission gates
+        // remain closed until the authority publishes matching content.
+        source
+    }
 }
 
 fn live_transaction_visual_evidence(
@@ -77,6 +91,55 @@ fn live_transaction_visual_evidence(
 }
 
 impl PersistentLiveLayout {
+    fn arm_standing_recovery_candidate(
+        &mut self,
+        transaction: &SurfaceTransaction,
+        layout_size: Size,
+        evidence: sophia_engine::SurfaceVisualEvidence,
+        candidate_selected: bool,
+    ) {
+        if !candidate_selected
+            || evidence != sophia_engine::SurfaceVisualEvidence::PresentedBuffer
+            || self.pending.is_some()
+            || self
+                .layout_epochs
+                .recovery_extent(transaction.surface)
+                .is_none()
+            || self.layout_epochs.pending_target(transaction.surface) != Some(layout_size)
+            || self
+                .awaiting_visual_commits
+                .surface_awaiting(transaction.surface)
+        {
+            return;
+        }
+        let Some(source_size) = live_transaction_pixel_size(
+            transaction.target_buffer,
+            &self.dma_buf_sizes,
+            &self.cpu_buffer_sizes,
+        ) else {
+            return;
+        };
+
+        // A client can answer the standing target while its fallback frame is
+        // still retiring. The projected frame may remain clipped to recovery,
+        // but only this exact content's native retirement can release it.
+        self.awaiting_visual_commits
+            .arm(ResizeVisualCommit {
+                candidate: transaction.key(),
+                size: source_size,
+                layout_size,
+            })
+            .expect("one standing recovery target owns one visual candidate");
+        println!(
+            "sophia_live_resize_epoch schema=3 status=visual_armed epoch={} transaction={} surface={} width={} height={} source=standing_target_recovery",
+            transaction.transaction.raw(),
+            transaction.transaction.raw(),
+            transaction.surface.index(),
+            layout_size.width,
+            layout_size.height,
+        );
+    }
+
     fn selected_pre_admission_transaction(
         &self,
         surface: SurfaceId,

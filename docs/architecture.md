@@ -260,9 +260,13 @@ projection advance from committed state after the matching retirement, never
 from a pending Present candidate.
 
 Layout changes use a separate Engine-owned epoch coordinator. It joins opaque
-WM size proposals to authority-observed content extents and keeps declared
-surface constraints separate from temporary recovery constraints. A timed-out
-epoch preserves the complete committed scene. If a surface has safe content at
+WM size proposals to authority-observed logical surface extents and keeps each
+buffer's exact content extent as separate retirement evidence. A protocol
+authority may therefore project an inset child buffer onto a larger managed
+surface without scaling it or teaching Engine about the protocol's hierarchy.
+Declared surface constraints remain separate from temporary recovery
+constraints. A timed-out epoch preserves the complete committed scene. If a
+surface has safe content at
 another extent, Engine may publish `min_size == max_size == safe_extent` and
 `resizable = false` for one bounded blind-WM replan. Engine supplies no
 position, floating decision, client identity, or protocol object. Late pixels

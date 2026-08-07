@@ -1103,6 +1103,13 @@ fn child_dri3_present_projects_onto_the_managed_toplevel() {
     assert_eq!(transaction.target_geometry.width, 64);
     assert_eq!(transaction.target_geometry.height, 80);
     assert_eq!(
+        transaction.target_content_size,
+        Size {
+            width: 64,
+            height: 48,
+        }
+    );
+    assert_eq!(
         transaction.target_buffer,
         BufferSource::DmaBuf {
             handle: descriptor.handle.raw()

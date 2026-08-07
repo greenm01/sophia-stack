@@ -128,6 +128,10 @@ fn production_surface_batch(transaction: u64) -> AuthorityTransactionIntake {
                 width: 320,
                 height: 200,
             },
+            target_content_size: Size {
+                width: 320,
+                height: 200,
+            },
             target_buffer: BufferSource::CpuBuffer { handle: 900 },
             damage: Region::single(Rect {
                 x: 0,
@@ -186,6 +190,10 @@ fn present_candidate_preserves_unrelated_committed_surface_identity() {
         target_geometry: Rect {
             x: 0,
             y: 14,
+            width: 1280,
+            height: 1426,
+        },
+        target_content_size: Size {
             width: 1280,
             height: 1426,
         },

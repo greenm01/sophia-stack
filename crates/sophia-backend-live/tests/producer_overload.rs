@@ -66,6 +66,10 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
                     surface,
                     namespace: None,
                     target_geometry: geometry,
+                    target_content_size: Size {
+                        width: geometry.width,
+                        height: geometry.height,
+                    },
                     target_buffer: BufferSource::DmaBuf {
                         handle: handle.raw(),
                     },

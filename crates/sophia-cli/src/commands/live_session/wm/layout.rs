@@ -265,6 +265,12 @@ impl PersistentLiveLayout {
                     transaction.surface.index(),
                 );
             }
+            self.arm_standing_recovery_candidate(
+                transaction,
+                observed_size,
+                visual_evidence,
+                candidate_selected,
+            );
             let resize_owned = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.contains_key(&transaction.surface)
             }) || self
@@ -565,14 +571,20 @@ impl PersistentLiveLayout {
             .awaiting_visual_commits
             .complete(visual_candidate, size)
         {
+            let surface = candidate.candidate.surface;
             self.layout_epochs
-                .record_committed(candidate.candidate.surface, candidate.size);
+                .record_committed(surface, candidate.layout_size);
+            self.release_recovery_extent_after_commit(
+                surface,
+                Some(candidate.layout_size),
+                "visual_committed",
+            );
             println!(
                 "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
                 candidate.candidate.transaction.raw(),
                 candidate.candidate.surface.index(),
-                candidate.size.width,
-                candidate.size.height,
+                candidate.layout_size.width,
+                candidate.layout_size.height,
             );
             return true;
         }

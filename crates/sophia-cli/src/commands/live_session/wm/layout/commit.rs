@@ -79,11 +79,17 @@ impl PersistentLiveLayout {
                     &self.dma_buf_sizes,
                     &self.cpu_buffer_sizes,
                 ) {
+                    let layout_size = live_transaction_observed_size(
+                        transaction,
+                        &self.dma_buf_sizes,
+                        &self.cpu_buffer_sizes,
+                    );
                     if self.visual_candidate_requires_retirement(transaction) {
                         self.awaiting_visual_commits
                             .arm(ResizeVisualCommit {
                                 candidate: transaction.key(),
                                 size,
+                                layout_size,
                             })
                             .expect("a staged layout owns one bounded visual candidate");
                         println!(
@@ -91,12 +97,12 @@ impl PersistentLiveLayout {
                             pending.transaction.raw(),
                             transaction.transaction.raw(),
                             transaction.surface.index(),
-                            size.width,
-                            size.height,
+                            layout_size.width,
+                            layout_size.height,
                         );
                     } else {
                         self.layout_epochs
-                            .record_committed(transaction.surface, size);
+                            .record_committed(transaction.surface, layout_size);
                     }
                 }
             }

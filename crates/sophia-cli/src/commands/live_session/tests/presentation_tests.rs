@@ -241,6 +241,10 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
             width: 632,
             height: 464,
         },
+        target_content_size: Size {
+            width: 632,
+            height: 464,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 18 },
         damage: Region::single(Rect {
             x: 0,
@@ -304,6 +308,10 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 192 },
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -383,6 +391,10 @@ fn duplicate_software_present_fails_before_renderer_registration() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 195 },
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,

@@ -1,6 +1,6 @@
 use sophia_engine::layer_templates_from_surface_transactions;
 use sophia_protocol::{
-    AuthorityKind, BufferSource, NamespaceId, Rect, Region, SurfaceId, SurfaceTransaction,
+    AuthorityKind, BufferSource, NamespaceId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId,
 };
 
@@ -14,6 +14,10 @@ fn authority_transaction_template_preserves_namespace_and_order() {
         target_geometry: Rect {
             x: i32::try_from(index).expect("small test index"),
             y: 0,
+            width: 64,
+            height: 64,
+        },
+        target_content_size: Size {
             width: 64,
             height: 64,
         },

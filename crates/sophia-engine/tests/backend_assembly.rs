@@ -53,6 +53,10 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
             width: 160,
             height: 90,
         },
+        target_content_size: Size {
+            width: 160,
+            height: 90,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 900 },
         damage: Region::single(Rect {
             x: 0,

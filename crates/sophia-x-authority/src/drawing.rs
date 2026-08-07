@@ -1,5 +1,5 @@
 use sophia_protocol::{
-    AuthorityKind, BufferSource, NamespaceId, Region, SurfaceTransaction,
+    AuthorityKind, BufferSource, NamespaceId, Region, Size, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId,
 };
 
@@ -19,6 +19,9 @@ pub struct XDrawingUpdate {
     pub target_window: XResourceId,
     pub kind: XDrawingUpdateKind,
     pub buffer: BufferSource,
+    /// Pixel extent of the drawing window before any descendant-to-toplevel
+    /// presentation projection.
+    pub target_content_size: Option<Size>,
     pub damage: Region,
     pub previous_committed_generation: u64,
     pub timeout_msec: u32,
@@ -40,6 +43,7 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::PresentPixmap,
             buffer: BufferSource::XPixmap { pixmap },
+            target_content_size: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -51,6 +55,7 @@ impl XDrawingUpdate {
         requester_namespace: NamespaceId,
         target_window: XResourceId,
         buffer: BufferSource,
+        target_content_size: Size,
         damage: Region,
         previous_committed_generation: u64,
         timeout_msec: u32,
@@ -61,6 +66,7 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::PresentPixmap,
             buffer,
+            target_content_size: Some(target_content_size),
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -82,6 +88,7 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::ShmPutImage,
             buffer: BufferSource::CpuBuffer { handle },
+            target_content_size: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -103,6 +110,7 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::CoreDraw,
             buffer: BufferSource::CpuBuffer { handle },
+            target_content_size: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -138,12 +146,21 @@ pub fn surface_transaction_from_drawing_update(
         return Err(XAuthorityAccessError::InvalidSurface);
     }
 
+    let target_content_size = update.target_content_size.unwrap_or(Size {
+        width: window.geometry.width,
+        height: window.geometry.height,
+    });
+    if target_content_size.width <= 0 || target_content_size.height <= 0 {
+        return Err(XAuthorityAccessError::InvalidResource);
+    }
+
     Ok(SurfaceTransaction {
         transaction: update.transaction,
         authority: AuthorityKind::SophiaX,
         surface: window.surface,
         namespace: Some(window.namespace),
         target_geometry: window.geometry,
+        target_content_size,
         target_buffer: update.buffer,
         damage: update.damage,
         readiness: SurfaceTransactionReadiness::Ready,

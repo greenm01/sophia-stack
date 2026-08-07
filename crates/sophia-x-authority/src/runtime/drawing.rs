@@ -554,6 +554,7 @@ impl XAuthorityRuntime {
              update.buffer = sophia_protocol::BufferSource::CpuBuffer {
                  handle: presentation_update.handle(),
              };
+             update.target_content_size = Some(presentation_update.size());
              update.damage = Region {
                  rects: update
                      .damage

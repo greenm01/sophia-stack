@@ -63,6 +63,10 @@ fn scheduler_batch(
                     width: 64,
                     height: 48,
                 },
+                target_content_size: Size {
+                    width: 64,
+                    height: 48,
+                },
                 target_buffer: BufferSource::DmaBuf {
                     handle: handle.raw(),
                 },
@@ -133,6 +137,10 @@ fn in_flight_present(
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: buffer,
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -339,6 +347,10 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
                 target_geometry: Rect {
                     x: 0,
                     y: 0,
+                    width: 2560,
+                    height: 14,
+                },
+                target_content_size: Size {
                     width: 2560,
                     height: 14,
                 },

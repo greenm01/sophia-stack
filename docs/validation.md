@@ -1140,11 +1140,17 @@ input/actions, protocol errors, native/frontend/authority cleanup debt, or
 retained temporary layout constraints. Its resize checkpoint requires the
 actual Super+Space action, a committed layout with an exact Firefox resize
 epoch and post-configure pixel retirement, and all three managed surfaces
-remaining visible. Its dialog checkpoint requires
-popup-document readiness, a five-surface layout snapshot, confirmation, and a
-return to the four-surface physical xmobar baseline before Firefox exits.
-During resize, a buffer whose pixel-aligned target is larger or smaller than
-the current child surface may be clipped but must never be scaled. A click on a
+remaining visible. The configured first cycle is `ThreeColMid` to `Mirror
+Tall`, so the focused master changes from a vertical to a horizontal extent in
+one action; the real-xmonad smoke locks that order down. Its dialog checkpoint
+requires popup-document readiness, a five-surface layout snapshot,
+confirmation, and a return to the four-surface physical xmobar baseline before
+Firefox exits.
+During resize, a descendant Present may be smaller than its policy-managed
+outer surface only when X Authority reports that exact child content extent.
+The renderer applies the accumulated child offset and clips, but never scales;
+native retirement must match the content extent before it commits the outer
+layout extent. A click on a
 client-positioned Firefox render child must hand focus to its containing
 policy-managed Firefox surface while the X event still reaches the selected
 descendant window. A `WM_TRANSIENT_FOR` popup remains attached to that managed

@@ -1,6 +1,6 @@
 use sophia_protocol::{
     AuthorityKind, AuthorityLocalId, AuthoritySurface, BufferSource, NamespaceId, Rect, Region,
-    SurfaceConstraints, SurfaceId, SurfacePresentationIntentKind, SurfacePresentationRole,
+    Size, SurfaceConstraints, SurfaceId, SurfacePresentationIntentKind, SurfacePresentationRole,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId,
 };
 use sophia_x_authority::{
@@ -195,6 +195,10 @@ fn present_request_preserves_complete_frame_evidence_for_cpu_storage() {
         target_geometry: Rect {
             x: 0,
             y: 0,
+            width: 500,
+            height: 500,
+        },
+        target_content_size: Size {
             width: 500,
             height: 500,
         },

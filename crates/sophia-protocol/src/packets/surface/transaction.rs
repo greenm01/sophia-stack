@@ -6,7 +6,15 @@ pub struct SurfaceTransaction {
     pub authority: AuthorityKind,
     pub surface: SurfaceId,
     pub namespace: Option<NamespaceId>,
+    /// Logical placement of the authority-owned surface.
     pub target_geometry: Rect,
+    /// Exact pixel extent expected from `target_buffer`.
+    ///
+    /// Protocol authorities may project a descendant content window onto a
+    /// larger policy-managed surface. Keeping the two extents distinct lets
+    /// the Engine retain pixel-exact presentation without teaching it a
+    /// client protocol's window hierarchy.
+    pub target_content_size: Size,
     pub target_buffer: BufferSource,
     pub damage: Region,
     pub readiness: SurfaceTransactionReadiness,

@@ -330,6 +330,13 @@ fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
     assert_eq!(transaction.surface, SurfaceId::new(4, 1));
     assert_eq!(transaction.target_geometry.width, 800);
     assert_eq!(
+        transaction.target_content_size,
+        Size {
+            width: 800,
+            height: 600,
+        }
+    );
+    assert_eq!(
         transaction.target_buffer,
         BufferSource::DmaBuf { handle: 55 }
     );

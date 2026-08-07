@@ -21,6 +21,10 @@ fn renderer_residency_tracks_only_cpu_buffers_owned_by_admission_groups() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            target_content_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             target_buffer: BufferSource::CpuBuffer { handle: 369 },
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
@@ -67,6 +71,10 @@ fn released_admission_pixels_wait_for_policy_assignment() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            target_content_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             target_buffer: BufferSource::CpuBuffer { handle: 371 },
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
@@ -122,6 +130,7 @@ fn exact_armed_launch_candidate_bypasses_a_different_standing_target() {
                 },
             },
             size: launch,
+            layout_size: launch,
         })
         .unwrap();
 
@@ -194,6 +203,10 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            target_content_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             target_buffer: BufferSource::DmaBuf {
                 handle: transaction.raw(),
             },

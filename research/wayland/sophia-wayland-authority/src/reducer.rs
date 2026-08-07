@@ -386,15 +386,20 @@ impl WaylandAuthorityReducer {
 
         let configure_acked =
             state.required_configure.is_none() || state.acked_configure >= state.required_configure;
+        let target_geometry = if configure_acked {
+            state.pending_geometry.unwrap_or(base_geometry)
+        } else {
+            base_geometry
+        };
         let surface_transaction = SurfaceTransaction {
             transaction,
             authority: AuthorityKind::SophiaWayland,
             surface: state.surface,
             namespace: Some(state.namespace),
-            target_geometry: if configure_acked {
-                state.pending_geometry.unwrap_or(base_geometry)
-            } else {
-                base_geometry
+            target_geometry,
+            target_content_size: Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
             },
             target_buffer,
             damage: state.pending_damage.clone(),

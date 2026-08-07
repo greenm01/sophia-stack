@@ -34,6 +34,7 @@ fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
         .arm(ResizeVisualCommit {
             candidate,
             size: target,
+            layout_size: target,
         })
         .unwrap();
 
@@ -49,7 +50,7 @@ fn resize_target_is_not_visually_committed_until_its_exact_present_retires() {
     assert_eq!(visual.complete(candidate, launch), None);
 
     let committed = visual.complete(candidate, target).unwrap();
-    coordinator.record_committed(committed.candidate.surface, committed.size);
+    coordinator.record_committed(committed.candidate.surface, committed.layout_size);
     assert_eq!(coordinator.committed_size(surface), Some(target));
     assert_eq!(coordinator.pending_target(surface), None);
     assert!(visual.is_empty());
@@ -66,6 +67,7 @@ fn removing_a_surface_cancels_only_its_awaiting_visual_commits() {
             .arm(ResizeVisualCommit {
                 candidate: visual_candidate(TransactionId::from_raw(raw), surface),
                 size: target,
+                layout_size: target,
             })
             .unwrap();
     }
@@ -92,12 +94,14 @@ fn one_layout_transaction_tracks_multiple_surface_retirements_independently() {
         .arm(ResizeVisualCommit {
             candidate: firefox_candidate,
             size,
+            layout_size: size,
         })
         .unwrap();
     tracker
         .arm(ResizeVisualCommit {
             candidate: kitty_candidate,
             size,
+            layout_size: size,
         })
         .unwrap();
 
@@ -107,10 +111,37 @@ fn one_layout_transaction_tracks_multiple_surface_retirements_independently() {
         Some(ResizeVisualCommit {
             candidate: firefox_candidate,
             size,
+            layout_size: size,
         })
     );
     assert!(tracker.surface_awaiting(kitty));
     assert_eq!(tracker.len(), 1);
+}
+
+#[test]
+fn inset_content_retirement_commits_its_distinct_outer_layout_extent() {
+    let surface = SurfaceId::new(94, 1);
+    let candidate = visual_candidate(TransactionId::from_raw(940), surface);
+    let source_size = size(1266, 1412);
+    let layout_size = size(1276, 1422);
+    let mut tracker = ResizeVisualCommitTracker::default();
+    tracker
+        .arm(ResizeVisualCommit {
+            candidate,
+            size: source_size,
+            layout_size,
+        })
+        .unwrap();
+
+    assert_eq!(tracker.complete(candidate, layout_size), None);
+    assert_eq!(
+        tracker.complete(candidate, source_size),
+        Some(ResizeVisualCommit {
+            candidate,
+            size: source_size,
+            layout_size,
+        })
+    );
 }
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
@@ -218,6 +249,10 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
         target_geometry: Rect {
             x: 0,
             y: 0,
+            width: 640,
+            height: 800,
+        },
+        target_content_size: Size {
             width: 640,
             height: 800,
         },

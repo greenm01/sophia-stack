@@ -108,6 +108,10 @@ fn live_runtime_driver_adapter_commits_authority_batches_before_rendering() {
             width: 140,
             height: 90,
         },
+        target_content_size: Size {
+            width: 140,
+            height: 90,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 700 },
         damage: Region::single(Rect {
             x: 0,

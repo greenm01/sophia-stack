@@ -386,6 +386,7 @@ fn encode_surface_transaction(
     encode_surface_id(transaction.surface, out);
     encode_optional_namespace_id(transaction.namespace, out);
     encode_rect(transaction.target_geometry, out);
+    encode_size(transaction.target_content_size, out);
     encode_buffer_source(transaction.target_buffer, out);
     encode_region(&transaction.damage, out)?;
     encode_readiness(transaction.readiness, out);
@@ -403,6 +404,7 @@ fn decode_surface_transaction(
         surface: decode_surface_id(cursor)?,
         namespace: decode_optional_namespace_id(cursor)?,
         target_geometry: decode_rect(cursor)?,
+        target_content_size: decode_size(cursor)?,
         target_buffer: decode_buffer_source(cursor)?,
         damage: decode_region(cursor)?,
         readiness: decode_readiness(cursor.u16()?)?,

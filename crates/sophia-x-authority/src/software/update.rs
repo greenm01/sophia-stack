@@ -72,6 +72,14 @@ impl XAuthorityCpuBufferUpdate {
         }
     }
 
+    pub const fn size(&self) -> Size {
+        match self {
+            Self::Replace(snapshot) => snapshot.size,
+            Self::Patch(patch) => patch.size,
+            Self::PatchBatch(batch) => batch.size,
+        }
+    }
+
     pub fn payload_bytes(&self) -> usize {
         match self {
             Self::Replace(snapshot) => snapshot.bytes.len(),

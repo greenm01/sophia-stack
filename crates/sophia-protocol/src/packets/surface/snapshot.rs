@@ -52,6 +52,10 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
+            target_content_size: Size {
+                width: self.geometry.width,
+                height: self.geometry.height,
+            },
             target_buffer: self.source,
             damage: self.damage.clone(),
             readiness,
@@ -92,6 +96,10 @@ impl LayerSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
+            target_content_size: Size {
+                width: self.geometry.width,
+                height: self.geometry.height,
+            },
             target_buffer: self.source,
             damage: self.damage.clone(),
             readiness,

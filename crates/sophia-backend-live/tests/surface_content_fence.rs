@@ -7,7 +7,7 @@ use sophia_engine::{
     SurfaceContentAdmission, SurfaceContentStream,
 };
 use sophia_protocol::{
-    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, SurfaceId,
+    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, Size, SurfaceId,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 
@@ -23,6 +23,10 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
             target_geometry: Rect {
                 x: 2,
                 y: 16,
+                width: 1276,
+                height: 1422,
+            },
+            target_content_size: Size {
                 width: 1276,
                 height: 1422,
             },
@@ -158,6 +162,10 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
         surface: firefox,
         namespace: None,
         target_geometry,
+        target_content_size: Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         target_buffer: BufferSource::DmaBuf { handle: 805 },
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,

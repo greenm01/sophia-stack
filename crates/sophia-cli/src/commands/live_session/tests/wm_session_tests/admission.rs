@@ -22,6 +22,10 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
             y: 0,
             ..geometry
         },
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::DmaBuf { handle: 45 },
         damage: Region::single(Rect {
             x: 0,
@@ -163,6 +167,10 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            target_content_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             target_buffer,
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
@@ -275,6 +283,10 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::DmaBuf {
             handle: buffer.raw(),
         },
@@ -512,6 +524,80 @@ fn fallback_admission_keeps_recovery_extent_until_the_standing_target_commits() 
 }
 
 #[test]
+fn inset_present_retires_the_standing_outer_target_and_releases_recovery() {
+    let surface = SurfaceId::new(72, 1);
+    let buffer = sophia_protocol::BufferHandle::from_raw(720);
+    let fallback = Size {
+        width: 1280,
+        height: 1040,
+    };
+    let outer = Size {
+        width: 1276,
+        height: 1422,
+    };
+    let content = Size {
+        width: 1266,
+        height: 1412,
+    };
+    let geometry = Rect {
+        x: 642,
+        y: 16,
+        width: outer.width,
+        height: outer.height,
+    };
+    let transaction_id = TransactionId::from_raw(720);
+    let transaction = SurfaceTransaction {
+        transaction: transaction_id,
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_content_size: content,
+        target_buffer: BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        },
+        damage: Region::single(geometry),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    };
+    let candidate = transaction.key();
+    let mut batch = crate::commands::live_session::wm_update_coordinator_batch(transaction_id);
+    batch.transactions.push(transaction);
+    batch
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: transaction_id,
+            surface,
+            buffer,
+            x_offset: 5,
+            y_offset: 5,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+
+    let mut layout = PersistentLiveLayout::default();
+    layout.dma_buf_sizes.insert(buffer, content);
+    layout.layout_epochs.record_committed(surface, fallback);
+    layout
+        .layout_epochs
+        .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
+    layout.layout_epochs.set_recovery_extent(surface, fallback);
+    layout.layout_epochs.set_pending_target(surface, outer);
+    layout.observe_authority_batch(&batch);
+
+    assert!(
+        layout
+            .awaiting_visual_commits
+            .exact_candidate(candidate, content)
+    );
+    assert!(layout.complete_visual_commit(candidate, content));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(outer));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+}
+
+#[test]
 fn unarmed_target_without_a_recovery_extent_cannot_bypass_the_layout_epoch() {
     let surface = SurfaceId::new(70, 1);
     let target = Size {
@@ -686,6 +772,10 @@ fn selected_present_settles_older_present_group_without_committing_it() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            target_content_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             target_buffer: BufferSource::DmaBuf {
                 handle: buffer.raw(),
             },
@@ -810,6 +900,10 @@ fn backing_admission_releases_cpu_replacement_before_selected_patch() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::CpuBuffer { handle },
         damage: Region::single(geometry),
         readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,

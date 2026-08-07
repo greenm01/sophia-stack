@@ -207,46 +207,7 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let layout = runtime.handle_request(&next_layout_request(4, workspace, &expected))?;
-    let tall = response_placements(&layout);
-    let expected_tall = vec![
-        (
-            12,
-            Rect {
-                x: 0,
-                y: 14,
-                width: 1280,
-                height: 1426,
-            },
-        ),
-        (
-            11,
-            Rect {
-                x: 1280,
-                y: 14,
-                width: 1280,
-                height: 713,
-            },
-        ),
-        (
-            10,
-            Rect {
-                x: 1280,
-                y: 727,
-                width: 1280,
-                height: 713,
-            },
-        ),
-    ];
-    if layout.transaction != TransactionId::from_raw(4) || tall != expected_tall {
-        return Err(format!(
-            "xmonad did not produce the strict ThreeColMid-to-Tall action response: transaction={:?} actual={tall:?}",
-            layout.transaction
-        )
-        .into());
-    }
-    let mirror_response =
-        runtime.handle_request(&next_layout_request(5, workspace, &expected_tall))?;
-    let mirror = response_placements(&mirror_response);
+    let mirror = response_placements(&layout);
     let expected_mirror = vec![
         (
             12,
@@ -276,15 +237,54 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             },
         ),
     ];
-    if mirror_response.transaction != TransactionId::from_raw(5) || mirror != expected_mirror {
+    if layout.transaction != TransactionId::from_raw(4) || mirror != expected_mirror {
         return Err(format!(
-            "xmonad did not produce the strict Tall-to-Mirror action response: transaction={:?} actual={mirror:?}",
-            mirror_response.transaction
+            "xmonad did not produce the strict ThreeColMid-to-Mirror action response: transaction={:?} actual={mirror:?}",
+            layout.transaction
+        )
+        .into());
+    }
+    let tall_response =
+        runtime.handle_request(&next_layout_request(5, workspace, &expected_mirror))?;
+    let tall = response_placements(&tall_response);
+    let expected_tall = vec![
+        (
+            12,
+            Rect {
+                x: 0,
+                y: 14,
+                width: 1280,
+                height: 1426,
+            },
+        ),
+        (
+            11,
+            Rect {
+                x: 1280,
+                y: 14,
+                width: 1280,
+                height: 713,
+            },
+        ),
+        (
+            10,
+            Rect {
+                x: 1280,
+                y: 727,
+                width: 1280,
+                height: 713,
+            },
+        ),
+    ];
+    if tall_response.transaction != TransactionId::from_raw(5) || tall != expected_tall {
+        return Err(format!(
+            "xmonad did not produce the strict Mirror-to-Tall action response: transaction={:?} actual={tall:?}",
+            tall_response.transaction
         )
         .into());
     }
     let full_response =
-        runtime.handle_request(&next_layout_request(6, workspace, &expected_mirror))?;
+        runtime.handle_request(&next_layout_request(6, workspace, &expected_tall))?;
     let full = response_placements(&full_response);
     let expected_full = vec![(
         12,
@@ -297,12 +297,12 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     )];
     if full_response.transaction != TransactionId::from_raw(6) || full != expected_full {
         return Err(format!(
-            "xmonad did not produce the strict Mirror-to-Full action response: transaction={:?} actual={full:?}",
+            "xmonad did not produce the strict Tall-to-Full action response: transaction={:?} actual={full:?}",
             full_response.transaction
         )
         .into());
     }
-    let full_scene = merge_placements(&expected_mirror, &full);
+    let full_scene = merge_placements(&expected_tall, &full);
     let spiral_response =
         runtime.handle_request(&next_layout_request(7, workspace, &full_scene))?;
     let spiral = response_placements(&spiral_response);

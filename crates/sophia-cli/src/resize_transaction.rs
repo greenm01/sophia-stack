@@ -15,7 +15,10 @@ pub const RESIZE_VISUAL_COMMIT_CAPACITY: usize = 256;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResizeVisualCommit {
     pub candidate: SurfaceTransactionKey,
+    /// Exact buffer extent that native retirement must report.
     pub size: Size,
+    /// Logical surface extent made durable by that retirement.
+    pub layout_size: Size,
 }
 
 /// Bounded visual candidates selected by a layout epoch but not yet committed
@@ -32,6 +35,9 @@ impl ResizeVisualCommitTracker {
         }
         if candidate.size.width <= 0 || candidate.size.height <= 0 {
             return Err("resize visual commit candidate has an invalid size");
+        }
+        if candidate.layout_size.width <= 0 || candidate.layout_size.height <= 0 {
+            return Err("resize visual commit candidate has an invalid layout size");
         }
         let key = (candidate.candidate.transaction, candidate.candidate.surface);
         if self.awaiting.contains_key(&key) {

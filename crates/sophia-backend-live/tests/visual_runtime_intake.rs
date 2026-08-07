@@ -39,6 +39,10 @@ fn initial_transaction(previous_committed_generation: u64) -> SurfaceTransaction
             width: 640,
             height: 480,
         },
+        target_content_size: Size {
+            width: 640,
+            height: 480,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: 1 },
         damage: Region::single(Rect {
             x: 0,

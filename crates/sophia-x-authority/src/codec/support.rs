@@ -136,6 +136,18 @@ pub(super) fn decode_rect(cursor: &mut Cursor<'_>) -> Result<Rect, IpcCodecError
     })
 }
 
+pub(super) fn encode_size(size: Size, out: &mut Vec<u8>) {
+    push_i32(out, size.width);
+    push_i32(out, size.height);
+}
+
+pub(super) fn decode_size(cursor: &mut Cursor<'_>) -> Result<Size, IpcCodecError> {
+    Ok(Size {
+        width: cursor.i32()?,
+        height: cursor.i32()?,
+    })
+}
+
 pub(super) fn encode_constraints(constraints: SurfaceConstraints, out: &mut Vec<u8>) {
     encode_option_size(constraints.min_size, out);
     encode_option_size(constraints.max_size, out);

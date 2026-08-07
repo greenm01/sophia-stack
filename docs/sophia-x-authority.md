@@ -369,6 +369,16 @@ Sophia Engine commits only ready transactions whose previous committed
 generation matches. Pending, failed, timed-out, stale, or invalid transactions
 preserve the last committed visual state.
 
+`target_geometry` is the logical policy-managed surface rectangle;
+`target_content_size` is the exact extent expected from the transaction's
+buffer. They are equal for a direct toplevel buffer. When a descendant window
+presents, the frontend keeps the toplevel geometry, publishes the descendant's
+content extent, and carries the accumulated child offset in the Present
+submission. The live layout gate compares the imported buffer with the content
+extent, while native retirement commits the logical extent. This mirrors
+XLibre and yserver's separate window-tree geometry and Present offsets without
+exporting X11 hierarchy into Engine.
+
 ## Drawing To Buffer Readiness
 
 Authority drawing paths should reduce to one readiness model:

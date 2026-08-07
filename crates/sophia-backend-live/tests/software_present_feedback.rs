@@ -145,6 +145,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
                         width: size.width,
                         height: size.height,
                     },
+                    target_content_size: size,
                     target_buffer: BufferSource::CpuBuffer {
                         handle: update.handle(),
                     },
@@ -269,6 +270,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: size,
         target_buffer: BufferSource::CpuBuffer { handle: 72 },
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -397,6 +399,7 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         surface: cpu_surface,
         namespace: None,
         target_geometry: cpu_geometry,
+        target_content_size: size,
         target_buffer: BufferSource::CpuBuffer { handle: 82 },
         damage: Region::single(cpu_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -412,6 +415,7 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         surface: dma_surface,
         namespace: None,
         target_geometry: cpu_geometry,
+        target_content_size: size,
         target_buffer: BufferSource::DmaBuf {
             handle: dma_handle.raw(),
         },
@@ -538,6 +542,7 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
                 surface,
                 namespace: None,
                 target_geometry: geometry,
+                target_content_size: size,
                 target_buffer: BufferSource::DmaBuf {
                     handle: handle.raw(),
                 },

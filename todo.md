@@ -47,9 +47,13 @@ Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. The first immutable successor exposed a
 missing core depth-1 pixmap format during its focused startup gate. The
-corrected successor is installed and passes both that startup regression and
-its automated ten-cycle lifecycle gate. Run the remaining focused gates, then
-pass the visible color proof, two-hour interactive soak, and one full workday.
+corrected installed candidate passes both that startup regression and its
+automated ten-cycle lifecycle gate. A source successor now separates inset
+Present content from logical outer geometry and restores a visible first
+layout cycle; because both executable and packaged policy changed, install and
+ten-cycle evidence are open again for that successor. Run its focused gates,
+then pass the visible color proof, two-hour interactive soak, and one full
+workday.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -105,7 +109,9 @@ the correct authority.
   intended xmonad and xmobar policy and restores the conventional auxiliary
   pixmap depths rejected by its predecessor. Its corrected xterm startup,
   switch-away/resume, and normal-logout slice passes; the remaining focused
-  application and layout gates are still open.
+  application and layout gates are still open. Its xterm and ten-cycle results
+  remain historical evidence, but it cannot be promoted after the inset
+  Present and first-layout-cycle source correction.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -149,10 +155,10 @@ the correct authority.
 
 ## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
-The previous ten-cycle gate remains valid historical evidence for commit
-`958fb5e6`. The installed `56dad4de` successor now independently passes the
-same gate with the closed xmonad/xmobar configuration, TrueColor semantics,
-and auxiliary pixmap correction. All remaining gates and soaks must use this
+The previous ten-cycle gates remain valid historical evidence for commits
+`958fb5e6` and `56dad4de`. The source successor changes both Sophia's
+surface-transaction contract and the packaged xmonad layout order, so all
+promotion gates and soaks must use a newly installed immutable build of that
 successor.
 
 ### 12.1 Close The Intended Desktop Configuration
@@ -214,17 +220,18 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.3 Rebuild And Re-Prove The Candidate
 
-- [x] Build and install one repository-independent candidate containing the
-  pinned Sophia, configured xmonad, and xmobar artifacts. Verify the greetd
-  entry uses those exact paths and digests without a source checkout.
-- [x] Re-run the installed xterm startup that exposed the auxiliary-pixmap
+- [ ] Build and install the source successor as one repository-independent
+  candidate containing the pinned Sophia, configured xmonad, and xmobar
+  artifacts. Verify the greetd entry uses those exact paths and digests without
+  a source checkout.
+- [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
   protocol errors, exact TTY restoration, and no host process residue.
 - [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
   Firefox, floating-dialog, VT switch, normal-logout, and emergency-recovery
   gates on that exact candidate.
-- [x] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
+- [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary
   cycle.

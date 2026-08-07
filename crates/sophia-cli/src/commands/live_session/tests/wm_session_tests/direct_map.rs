@@ -146,6 +146,10 @@ fn direct_map_batch(
         surface,
         namespace: None,
         target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         target_buffer: BufferSource::CpuBuffer { handle: cpu_buffer },
         damage: Region::single(Rect {
             x: 0,

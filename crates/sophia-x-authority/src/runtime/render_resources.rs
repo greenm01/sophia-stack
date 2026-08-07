@@ -465,6 +465,10 @@ impl XAuthorityRuntime {
              namespace,
              target_window,
              buffer,
+             Size {
+                 width: record.geometry.width,
+                 height: record.geometry.height,
+             },
              damage,
              target_generation,
              250,
