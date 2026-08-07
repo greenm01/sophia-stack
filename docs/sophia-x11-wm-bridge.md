@@ -276,7 +276,10 @@ The bridge intercepts legacy WM requests against synthetic windows.
   change.
 
 Focus requests become `FocusSurface` only if the synthetic XID maps to a
-focusable current `SurfaceId`.
+focusable `SurfaceId` in the current synthetic view. Unmapping or destroying
+the focused synthetic window reverts private core focus to the root. A legacy
+`SetInputFocus` request for an unmapped target receives `BadMatch` and cannot
+cross the blind-WM boundary as a hidden Engine focus proposal.
 
 Workspace requests are conservative. If a legacy WM expresses workspace changes
 through EWMH desktop atoms, the bridge may map known numeric desktops to Sophia

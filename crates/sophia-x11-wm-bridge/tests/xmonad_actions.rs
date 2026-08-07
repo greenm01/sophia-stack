@@ -519,6 +519,7 @@ fn run_fixture(behavior: FixtureBehavior) {
                 let window = read_u32(&event, 8);
                 let remapped = !known_windows.insert(window);
                 windows.push(window);
+                write_map_window(&mut stream, window);
                 if behavior != FixtureBehavior::SilentFocusNoop || !remapped {
                     write_layout(&mut stream, &windows, mirror);
                 }
@@ -600,6 +601,35 @@ fn assert_unmapped_child_is_retained(
             .any(|child| read_u32(child, 0) == window),
         "unmapped child disappeared from QueryTree"
     );
+
+    let mut invalid_focus = vec![42, 0, 3, 0];
+    invalid_focus.extend_from_slice(&window.to_le_bytes());
+    invalid_focus.extend_from_slice(&0_u32.to_le_bytes());
+    stream.write_all(&invalid_focus).unwrap();
+    stream.flush().unwrap();
+    let error = read_error_ignoring_events(stream, pending_events);
+    assert_eq!(error[1], 8, "hidden SetInputFocus did not return BadMatch");
+    assert_eq!(error[10], 42, "error did not identify SetInputFocus");
+
+    stream.write_all(&[43, 0, 1, 0]).unwrap();
+    stream.flush().unwrap();
+    let (header, body) = read_reply_with_body(stream, pending_events);
+    assert!(body.is_empty());
+    assert_eq!(read_u32(&header, 8), ROOT, "unmap did not revert focus");
+}
+
+fn read_error_ignoring_events(
+    stream: &mut UnixStream,
+    pending_events: &mut VecDeque<[u8; 32]>,
+) -> [u8; 32] {
+    loop {
+        let mut packet = [0_u8; 32];
+        stream.read_exact(&mut packet).unwrap();
+        if packet[0] == 0 {
+            return packet;
+        }
+        pending_events.push_back(packet);
+    }
 }
 
 fn read_reply_with_body(
@@ -717,6 +747,13 @@ fn write_set_input_focus(stream: &mut UnixStream, window: u32) {
     let mut request = vec![42, 0, 3, 0];
     request.extend_from_slice(&window.to_le_bytes());
     request.extend_from_slice(&0_u32.to_le_bytes());
+    stream.write_all(&request).unwrap();
+    stream.flush().unwrap();
+}
+
+fn write_map_window(stream: &mut UnixStream, window: u32) {
+    let mut request = vec![8, 0, 2, 0];
+    request.extend_from_slice(&window.to_le_bytes());
     stream.write_all(&request).unwrap();
     stream.flush().unwrap();
 }

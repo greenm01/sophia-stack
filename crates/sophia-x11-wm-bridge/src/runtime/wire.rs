@@ -12,6 +12,22 @@ pub(super) fn write_packet(
     })
 }
 
+pub(super) fn write_x11_error(
+    stream: &mut UnixStream,
+    sequence: u16,
+    code: u8,
+    value: u32,
+    major_opcode: u8,
+) -> Result<(), BridgeRuntimeError> {
+    let mut packet = vec![0, code];
+    push_u16(&mut packet, sequence);
+    push_u32(&mut packet, value);
+    push_u16(&mut packet, 0);
+    packet.push(major_opcode);
+    packet.resize(32, 0);
+    write_packet(stream, &packet)
+}
+
 pub(super) fn read_u16(bytes: &[u8], offset: usize) -> u16 {
     bytes
         .get(offset..offset + 2)

@@ -22,6 +22,15 @@ remaps it without a configure response, and requires the opaque `FocusSurface`
 result. New-window admission and every non-deterministic layout fence remain
 fail closed.
 
+The first rerun passed all eight Firefox stages and the repaired refocus cycle,
+then exposed the adjacent teardown invariant. Destroying focused Firefox left
+the private core-focus record stale, and xmonad's next focus-stack update named
+an unmapped workspace child. Engine correctly rejected that proposal as
+`HiddenFocus`. The facade now reverts focus on unmap or destroy, returns X11
+`BadMatch` for a later hidden `SetInputFocus`, and translates focus only for a
+mapped synthetic target. Regressions retain the unmapped child while proving
+focus reversion, local rejection, and suppression at the blind-WM boundary.
+
 ## 2026-08-06: The soak gate uses generic session evidence
 
 The installed soak verifier required a Firefox M8 proof-completion record even

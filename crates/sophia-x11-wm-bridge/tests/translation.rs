@@ -280,6 +280,25 @@ fn workspace_activation_unmaps_hidden_windows_and_remaps_only_the_target_workspa
             .count(),
         2
     );
+    let hidden_window = bridge
+        .synthetic_window(SurfaceId::new(20, 1))
+        .expect("managed surface has a synthetic window");
+    let hidden_focus = bridge
+        .translate_legacy_requests(
+            TransactionId::from_raw(74),
+            &[LegacyWmRequest::FocusWindow {
+                window: hidden_window,
+            }],
+            300,
+        )
+        .unwrap();
+    assert!(
+        hidden_focus
+            .commands
+            .iter()
+            .all(|command| !matches!(command, WmCommand::FocusSurface(_))),
+        "hidden legacy focus crossed the blind-WM boundary"
+    );
 
     let restored = bridge.activate_workspace(TransactionId::from_raw(75), WorkspaceId::from_raw(1));
     assert_eq!(

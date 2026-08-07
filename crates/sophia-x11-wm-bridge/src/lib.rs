@@ -487,7 +487,10 @@ impl X11WmBridgeState {
                         .window_to_node
                         .get(&window)
                         .ok_or(X11WmBridgeError::UnknownSyntheticWindow)?;
-                    if node.capabilities.focusable {
+                    // A legacy WM may retain focus-stack entries for hidden
+                    // workspaces. Only the current synthetic view can become
+                    // an Engine focus proposal.
+                    if node.capabilities.focusable && self.mapped_windows.contains(&window) {
                         commands.push(WmCommand::FocusSurface(node.surface));
                     }
                 }

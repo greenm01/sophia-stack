@@ -45,7 +45,7 @@ fn serve_legacy_wm(
             Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
                 if last_socket_activity.elapsed() >= QUIET_PERIOD {
                     for reply in pending_focus_queries.drain(..) {
-                        let _ = reply.send(synthetic_id(&state, state.input_focus));
+                        let _ = reply.send(mapped_synthetic_id(&state, state.input_focus));
                     }
                 }
                 continue;
@@ -149,9 +149,15 @@ fn apply_server_command(
             // X11 unmapping changes viewability; it does not destroy the
             // child or remove it from QueryTree stacking order.
             entry.mapped = false;
+            if state.input_focus == window.raw() {
+                state.input_focus = SYNTHETIC_ROOT_XID;
+            }
             write_window_event(stream, state.sequence, 18, window.raw())?;
         }
         ServerCommand::Destroy(window) => {
+            if state.input_focus == window.raw() {
+                state.input_focus = SYNTHETIC_ROOT_XID;
+            }
             state.windows.remove(&window.raw());
             state.stacking.retain(|candidate| *candidate != window.raw());
             write_window_event(stream, state.sequence, 17, window.raw())?;
@@ -352,11 +358,17 @@ fn dispatch_request(
         41 => apply_warp_pointer(state, body),
         42 => {
             let window = read_u32(body, 0);
-            state.input_focus = window;
-            if let Some(window) = synthetic_id(state, window) {
+            if matches!(window, 0 | 1 | SYNTHETIC_ROOT_XID) {
+                state.input_focus = window;
+            } else if let Some(window) = mapped_synthetic_id(state, window) {
+                state.input_focus = window.raw();
                 legacy
                     .send(LegacyWmRequest::FocusWindow { window })
                     .map_err(|_| BridgeRuntimeError::new("legacy request channel disconnected"))?;
+            } else {
+                // SetInputFocus requires a viewable target. Report BadMatch
+                // without changing focus, as a real X server does.
+                write_x11_error(stream, state.sequence, 8, window, 42)?;
             }
         }
         43 => reply_u32(stream, state.sequence, 0, state.input_focus)?,

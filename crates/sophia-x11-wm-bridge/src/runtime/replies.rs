@@ -5,6 +5,14 @@ fn synthetic_id(state: &XServerState, raw: u32) -> Option<SyntheticXWindowId> {
         .then_some(SyntheticXWindowId(raw))
 }
 
+fn mapped_synthetic_id(state: &XServerState, raw: u32) -> Option<SyntheticXWindowId> {
+    state
+        .windows
+        .get(&raw)
+        .is_some_and(|window| window.mapped)
+        .then_some(SyntheticXWindowId(raw))
+}
+
 fn reply_window_attributes(
     stream: &mut UnixStream,
     state: &XServerState,
