@@ -18,7 +18,9 @@ record. That record is emitted only after the new surface is observed, policy
 and visual admission settle, and focus is stable. Generic layout or focus
 records cannot satisfy it. The same barrier covers terminal, Firefox, and
 launcher churn, allowing future layout/reseed optimizations without reopening
-this race.
+this race. Its regression executes the same basic-grep numeric pattern as the
+harness, preventing a regex-dialect mismatch from turning a valid admission
+into a false timeout.
 
 ## 2026-08-06: Retained X11 remaps do not owe redundant geometry
 

@@ -7,8 +7,15 @@ grep -Fq 'require_command dbus-run-session' "$ROOT_DIR/tools/build_qemu_session_
 grep -Fq '/usr/bin/dbus-run-session -- /usr/bin/sophia "$@"' "$ROOT_DIR/tools/qemu_guest_init.sh"
 grep -Fq 'export GTK_A11Y=none' "$ROOT_DIR/tools/qemu_guest_init.sh"
 grep -Fq 'export RUST_LOG=warn' "$ROOT_DIR/tools/qemu_guest_init.sh"
-grep -Fq "status=admitted source=action transaction=[0-9]+ surface=[0-9]+" \
+admission_pattern='^sophia_session_app schema=2 status=admitted source=action transaction=[0-9][0-9]* surface=[0-9][0-9]*$'
+grep -Fq "$admission_pattern" \
     "$ROOT_DIR/tools/qemu_session_harness.sh"
+if ! printf '%s\n' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=18 surface=6291470' |
+    grep -q "$admission_pattern"; then
+    echo "M8 admission barrier does not match real evidence with basic grep" >&2
+    exit 1
+fi
 if grep -Fq 'reason=action_layout_timeout' "$ROOT_DIR/tools/qemu_session_harness.sh"; then
     echo "M8 harness still treats unrelated layout as launch admission" >&2
     exit 1

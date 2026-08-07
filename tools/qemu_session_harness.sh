@@ -330,7 +330,7 @@ send_launch_and_wait() {
     # The launch action itself publishes layout and focus records before the
     # new surface exists. Only the session's stable admission record proves
     # that a following close or input action can target the launched client.
-    if ! wait_for_new_evidence '^sophia_session_app schema=2 status=admitted source=action transaction=[0-9]+ surface=[0-9]+$' "$admission_baseline" 800; then
+    if ! wait_for_new_evidence '^sophia_session_app schema=2 status=admitted source=action transaction=[0-9][0-9]* surface=[0-9][0-9]*$' "$admission_baseline" 800; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=action_admission_timeout action=$label chord=$chord" | tee -a "$EVIDENCE_FILE"
         return 1
     fi
