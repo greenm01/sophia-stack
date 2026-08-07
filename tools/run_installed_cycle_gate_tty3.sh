@@ -209,7 +209,8 @@ for timeout in "$STARTUP_TIMEOUT_SECONDS" "$SESSION_TIMEOUT_SECONDS"; do
 done
 [[ -t 0 && "$(tty)" =~ ^/dev/tty[0-9]+$ ]] ||
     fail "run this interactively from a logged-in local text VT"
-exec {SESSION_INPUT_FD}<>/dev/tty || fail "the local VT could not be retained"
+# Duplicate greetd's descriptor; reopening /dev/tty erases the concrete VT name.
+exec {SESSION_INPUT_FD}<&0 || fail "the local VT could not be retained"
 [[ -n "$RUNTIME_ROOT" && "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" ]] ||
     fail "XDG_RUNTIME_DIR must be an existing absolute directory"
 [[ "$(stat -c %u "$RUNTIME_ROOT")" == "$UID" ]] ||

@@ -37,6 +37,13 @@ self-test launches a child through the production helper and requires a value
 read from the preserved descriptor. Failed runner work directories now move to
 a durable, private diagnostic archive instead of disappearing during cleanup.
 
+The first descriptor-preserving rerun exposed a narrower identity error. The
+runner reopened its controlling terminal through `/dev/tty`, so the child saw
+that generic alias instead of `/dev/tty7`; installed preflight correctly
+requires a concrete local VT. The runner now duplicates its original stdin
+descriptor. This preserves both the controlling terminal and its kernel device
+identity across the asynchronous launch.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

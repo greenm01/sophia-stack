@@ -270,6 +270,12 @@ bash -n tools/resolve_sophia_xmonad.sh tools/xmonad_live_session_smoke.sh
 bash -n tools/package_live_session.sh tools/install_live_session.sh \
     tools/install_current_live_session.sh tools/run_installed_cycle_gate_tty3.sh
 tools/run_installed_cycle_gate_tty3.sh --self-test
+grep -Fq 'exec {SESSION_INPUT_FD}<&0' tools/run_installed_cycle_gate_tty3.sh
+if grep -Fq 'exec {SESSION_INPUT_FD}<>/dev/tty' \
+    tools/run_installed_cycle_gate_tty3.sh; then
+    echo "Installed cycle runner must preserve the concrete greetd VT descriptor." >&2
+    exit 1
+fi
 bash -n tools/rollback_live_session.sh tools/status_live_session.sh
 bash -n tools/check_live_session_install.sh
 tools/check_live_session_install.sh
