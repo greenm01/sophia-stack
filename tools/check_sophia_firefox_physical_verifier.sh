@@ -32,6 +32,20 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted no asynchronous retirement" >&2
     exit 1
 fi
+grep -Fv 'sophia_live_renderer_handoff schema=1 status=captured images=1' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted missing VT renderer capture" >&2
+    exit 1
+fi
+sed 's/status=restored images=1 source=seat_resume/status=restored images=2 source=seat_resume/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted incomplete VT renderer restore" >&2
+    exit 1
+fi
 awk '
     { print }
     /status=surface_observed source=action transaction=15 surface=4$/ {

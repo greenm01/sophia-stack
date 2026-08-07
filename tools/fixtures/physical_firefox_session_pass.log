@@ -45,12 +45,15 @@ sophia_live_wm schema=1 status=workspace_focus_restore_queued transaction=14 sur
 sophia_live_wm schema=1 status=physical_action_committed action=769
 sophia_live_session_vt schema=4 status=queued target=3 modifier_releases=2
 sophia_live_session_vt schema=4 status=preparing target=3
+sophia_live_renderer_handoff schema=1 status=captured images=1
 sophia_live_session_vt schema=6 status=quiesced target=3 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_vt schema=4 status=requested target=3
 sophia_live_seat schema=1 status=release_pending
 sophia_live_seat schema=1 status=suspended
 sophia_live_seat schema=1 status=acquire_pending
+sophia_live_renderer_handoff schema=1 status=restored images=1 source=seat_resume
 sophia_live_seat schema=1 status=active source=resume
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=52
 TRACE sophia_live_native_page_flip schema=1 status=retired output=1 submission=51
 sophia_session_app schema=2 status=started id=firefox source=action transaction=15
 sophia_session_app schema=1 status=started id=firefox source=action

@@ -99,6 +99,84 @@ mapfile -t startup_outputs < <(
 grep -Eq 'sophia_live_native_page_flip schema=1 status=retired output=[0-9]+ ' \
     "$SESSION_LOG" || fail "no asynchronous page flip retired"
 
+queued_vt_line="$(
+    require_line_number \
+        '^sophia_live_session_vt schema=4 status=queued target=[0-9]+ modifier_releases=[2-4]$' \
+        'VT switch was not queued after modifier release'
+)"
+preparing_vt_line="$(
+    require_line_number \
+        '^sophia_live_session_vt schema=4 status=preparing target=[0-9]+$' \
+        'VT switch was not prepared'
+)"
+renderer_capture_line="$(
+    require_line_number \
+        '^sophia_live_renderer_handoff schema=1 status=captured images=[1-9][0-9]*$' \
+        'VT release did not retain renderer-owned images'
+)"
+quiesced_vt_line="$(
+    require_line_number \
+        '^sophia_live_session_vt schema=6 status=quiesced target=[0-9]+ outcome=drained drained=true abandoned_scanouts=0 skipped_present=none$' \
+        'VT release did not drain native scanout'
+)"
+requested_vt_line="$(
+    require_line_number \
+        '^sophia_live_session_vt schema=4 status=requested target=[0-9]+$' \
+        'VT switch was not requested'
+)"
+release_vt_line="$(
+    require_line_number \
+        '^sophia_live_seat schema=1 status=release_pending$' \
+        'seat release did not become pending'
+)"
+suspended_vt_line="$(
+    require_line_number \
+        '^sophia_live_seat schema=1 status=suspended$' \
+        'seat did not suspend'
+)"
+acquire_vt_line="$(
+    require_line_number \
+        '^sophia_live_seat schema=1 status=acquire_pending$' \
+        'seat reacquisition did not become pending'
+)"
+renderer_restore_line="$(
+    require_line_number \
+        '^sophia_live_renderer_handoff schema=1 status=restored images=[1-9][0-9]* source=seat_resume$' \
+        'VT resume did not restore renderer-owned images'
+)"
+resumed_vt_line="$(
+    require_line_number \
+        '^sophia_live_seat schema=1 status=active source=resume$' \
+        'seat did not resume'
+)"
+post_resume_flip_line="$(
+    line_number_after \
+        'sophia_live_native_page_flip schema=1 status=retired output=1 ' \
+        "$resumed_vt_line"
+)"
+[[ -n "$post_resume_flip_line" ]] || fail "no primary page flip retired after VT resume"
+renderer_capture="$(sed -n "${renderer_capture_line}p" "$SESSION_LOG")"
+renderer_restore="$(sed -n "${renderer_restore_line}p" "$SESSION_LOG")"
+captured_images="$(field "$renderer_capture" images)" || fail "renderer capture omitted its count"
+restored_images="$(field "$renderer_restore" images)" || fail "renderer restore omitted its count"
+[[ "$captured_images" == "$restored_images" ]] ||
+    fail "renderer-image handoff restored $restored_images of $captured_images images"
+(( queued_vt_line < preparing_vt_line
+    && preparing_vt_line < renderer_capture_line
+    && renderer_capture_line < quiesced_vt_line
+    && quiesced_vt_line < requested_vt_line
+    && requested_vt_line < release_vt_line
+    && release_vt_line < suspended_vt_line
+    && suspended_vt_line < acquire_vt_line
+    && acquire_vt_line < renderer_restore_line
+    && renderer_restore_line < resumed_vt_line
+    && resumed_vt_line < post_resume_flip_line )) ||
+    fail "VT handoff, seat lifecycle, and resumed retirement are out of order"
+if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight during teardown' \
+    "$SESSION_LOG"; then
+    fail "Firefox proof used the forced VT-detach fallback"
+fi
+
 [[ "$(count '^sophia_session_app schema=1 status=started id=terminal source=(startup|action)$')" == 2 ]] ||
     fail "the run must contain exactly two Kitty processes"
 [[ "$(count '^sophia_session_app schema=1 status=started id=firefox source=action$')" == 2 ]] ||

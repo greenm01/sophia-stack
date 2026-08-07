@@ -46,15 +46,14 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. Installed release
-`0.1.0-7a6be56c6b29` contains the committed-layout, core `GetImage`, bounded
-Firefox-profile, and dedicated Firefox-ledger corrections. Its first Firefox
-attempt was classified correctly but failed before browser launch during the
-physical VT handoff: the renderer tried to export retained images while a
-detached Present still occupied its worker-result slot and returned
-`WorkerPending`. The source successor settles that bounded worker result before
-handoff export without weakening renderer failure handling. Build it, repeat
-the focused Firefox gate once, then pass the remaining lifecycle, visible
-color, two-hour interactive soak, and full-workday gates.
+`0.1.0-4c3121421f12` contains the committed-layout, core `GetImage`, bounded
+Firefox-profile, dedicated Firefox-ledger, and VT renderer-handoff corrections.
+Its immutable Firefox attempt `0002` passes exact VT capture/restore, two-Kitty
+retention, two Firefox lifecycles, all six browser stages, floating dialog,
+xmonad layout recovery, normal logout, zero unexpected protocol errors, clean
+ownership, and bounded profile cleanup. Complete the remaining focused xterm,
+work-area, visible-color, emergency, and lifecycle gates before the two-hour
+interactive soak and full-workday gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -106,12 +105,11 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-7a6be56c6b29` remains installed. Its first automatic Firefox
-  attempt proves the dedicated ledger route and retained profile cleanup but
-  exits during VT preparation with `WorkerPending`, before Firefox launch. The
-  source successor settles detached renderer work before retained-image
-  export. Run `0042` remains clean protocol and resource evidence; neither run
-  is a passing Firefox promotion gate.
+- Release `0.1.0-4c3121421f12` remains installed. Automatic Firefox attempt
+  `0002` passes the dedicated immutable gate, including exact renderer-image VT
+  capture/restore, the browser and floating-dialog workflow, clean normal
+  logout, zero unexpected protocol errors, and no retained profile. The
+  remaining promotion work is outside this focused browser boundary.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -164,8 +162,9 @@ Installed `fb1c3804` fixes both and reaches zero unexpected protocol errors but
 retains unbounded ephemeral Firefox profiles. Installed `ce494942` fixes that
 resource lifecycle and run `0042` proves the cleanup. Installed `7a6be56c`
 routes Firefox attempts correctly but exposes a renderer-worker settlement gap
-during VT handoff. All remaining promotion gates and soaks must use a new
-immutable build containing that handoff correction.
+during VT handoff. Installed `4c312142` closes that gap and passes automatic
+Firefox run `0002`. All remaining promotion gates and soaks must use this exact
+immutable build or a verified source-identical successor.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -236,19 +235,20 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   rollback, focus-only stability, terminal Engine/X convergence, and a
   committed-layout reassertion when stale pixels remain at another size.
   Cover the boundary in Rust, verifier, and TLA+ gates.
-- [ ] Build and install the new source successor as one repository-independent
+- [x] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. Installed `7a6be56c` proves the dedicated automatic
-  Firefox-attempt route but predates the renderer-worker handoff correction and
-  does not satisfy this item.
+  a source checkout. Installed `4c312142` and Firefox run `0002` prove the
+  immutable artifact, runtime identity, automatic recorder, and handoff fix.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
   protocol errors, exact TTY restoration, and no host process residue.
-- [ ] Run the focused xmonad-layout, xmobar/work-area, TrueColor, Kitty,
-  Firefox, floating-dialog, VT switch, normal-logout, and emergency-recovery
-  gates on that exact candidate.
+- [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
+  and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
+  passes the immutable aggregate verifier.
+- [ ] Run the focused xmobar/work-area, physical TrueColor, and independent
+  emergency-recovery gates on that exact candidate.
 - [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary
