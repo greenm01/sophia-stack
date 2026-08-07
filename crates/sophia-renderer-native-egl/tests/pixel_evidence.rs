@@ -1,7 +1,8 @@
 #[cfg(feature = "gbm-platform")]
 use sophia_renderer_native_egl::{NativeCpuTextureUpload, native_cpu_texture_upload};
 use sophia_renderer_native_egl::{
-    native_composition_pixel_metrics, native_composition_pixel_metrics_from_rows,
+    native_composition_gl_read_y, native_composition_pixel_metrics,
+    native_composition_pixel_metrics_from_rows,
 };
 
 #[cfg(feature = "gbm-platform")]
@@ -24,10 +25,35 @@ fn pixel_metrics_distinguish_rgb_and_alpha_populations() {
 
     assert_eq!(metrics.pixels, 4);
     assert_eq!(metrics.nonzero_rgb_pixels, 2);
+    assert_eq!(metrics.other_pixels, 4);
     assert_eq!(metrics.alpha_zero_pixels, 1);
     assert_eq!(metrics.alpha_partial_pixels, 1);
     assert_eq!(metrics.alpha_opaque_pixels, 2);
     assert_ne!(metrics.checksum, 0);
+}
+
+#[test]
+fn pixel_metrics_distinguish_asymmetric_color_channels() {
+    let metrics = native_composition_pixel_metrics(&[
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 0, 255, 255, 255, 255, 0,
+        255, 255, 128, 128, 128, 255,
+    ]);
+
+    assert_eq!(metrics.red_pixels, 1);
+    assert_eq!(metrics.green_pixels, 1);
+    assert_eq!(metrics.blue_pixels, 1);
+    assert_eq!(metrics.yellow_pixels, 1);
+    assert_eq!(metrics.cyan_pixels, 1);
+    assert_eq!(metrics.magenta_pixels, 1);
+    assert_eq!(metrics.gray_pixels, 1);
+    assert_eq!(metrics.other_pixels, 0);
+}
+
+#[test]
+fn composition_region_readback_converts_from_top_left_coordinates() {
+    assert_eq!(native_composition_gl_read_y(1440, 64, 240), Some(1136));
+    assert_eq!(native_composition_gl_read_y(1440, 1400, 41), None);
+    assert_eq!(native_composition_gl_read_y(u32::MAX, u32::MAX, 1), None);
 }
 
 #[test]

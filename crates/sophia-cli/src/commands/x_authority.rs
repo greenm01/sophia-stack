@@ -19,6 +19,14 @@ use std::time::Instant;
 pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
     if args
         .iter()
+        .any(|arg| arg == "x-authority-truecolor-palette-client")
+    {
+        truecolor_client::run()?;
+        return Ok(true);
+    }
+
+    if args
+        .iter()
         .any(|arg| arg == "x-authority-kitty-input-smoke")
     {
         let report = run_x_authority_kitty_input_smoke()?;
@@ -253,6 +261,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 
 include!("x_authority/reports.rs");
 include!("x_authority/basic_smokes.rs");
+mod truecolor_client;
 include!("x_authority/kitty_input_smoke.rs");
 include!("x_authority/vkcube_admission_smoke.rs");
 include!("x_authority/terminal_probe.rs");

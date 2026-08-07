@@ -59,6 +59,8 @@ install -m 755 tools/installed/sophia-firefox-proof \
     "$artifact/bin/sophia-firefox-proof"
 install -m 755 tools/installed/sophia-xterm-proof \
     "$artifact/bin/sophia-xterm-proof"
+install -m 755 tools/installed/sophia-truecolor-proof \
+    "$artifact/bin/sophia-truecolor-proof"
 install -m 755 tools/installed/sophia-recovery-proof \
     "$artifact/bin/sophia-recovery-proof"
 install -m 755 tools/installed/sophia-native-chrome-proof \
@@ -78,6 +80,8 @@ install -m 755 tools/record_installed_firefox_attempt.sh \
     "$artifact/bin/sophia-record-firefox-attempt"
 install -m 755 tools/record_installed_xterm_run.sh \
     "$artifact/bin/sophia-record-xterm-run"
+install -m 755 tools/record_installed_truecolor_run.sh \
+    "$artifact/bin/sophia-record-truecolor-run"
 install -m 755 tools/record_installed_fallback_run.sh \
     "$artifact/bin/sophia-record-fallback-run"
 install -m 755 tools/record_installed_emergency_run.sh \
@@ -100,6 +104,14 @@ install -m 755 tools/verify_installed_xterm_session.sh \
     "$artifact/bin/sophia-verify-xterm-run"
 install -m 755 tools/verify_installed_xterm_runs.sh \
     "$artifact/bin/sophia-verify-xterm-runs"
+install -m 755 tools/verify_installed_truecolor_session.sh \
+    "$artifact/bin/sophia-verify-truecolor-run"
+install -m 755 tools/verify_installed_truecolor_runs.sh \
+    "$artifact/bin/sophia-verify-truecolor-runs"
+install -m 755 tools/verify_sophia_xmobar_work_area_session.sh \
+    "$artifact/bin/sophia-verify-xmobar-work-area-session"
+install -m 755 tools/verify_installed_xmobar_work_area_archive.sh \
+    "$artifact/bin/sophia-verify-xmobar-work-area"
 install -m 755 tools/verify_installed_fallback_session.sh \
     "$artifact/bin/sophia-verify-fallback-session"
 install -m 755 tools/verify_installed_fallback_run.sh \
@@ -157,6 +169,8 @@ install -m 755 tools/fixtures/firefox_m10_kitty_probe.sh \
     "$artifact/tools/fixtures/firefox_m10_kitty_probe.sh"
 install -m 755 tools/fixtures/firefox_m10_selection_kitty_probe.sh \
     "$artifact/tools/fixtures/firefox_m10_selection_kitty_probe.sh"
+install -m 755 tools/fixtures/truecolor_kitty_probe.sh \
+    "$artifact/tools/fixtures/truecolor_kitty_probe.sh"
 install -m 644 tools/fixtures/xmobar_sophia.config \
     "$artifact/tools/fixtures/xmobar_sophia.config"
 install -m 644 tools/config/sophia-xmonad/Main.hs \

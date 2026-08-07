@@ -1190,6 +1190,23 @@ retirement, normal logout, clean X11 and process ownership, and exact TTY
 restoration. Verify the newest archive with
 `sophia-verify-xterm-runs 1`.
 
+The retained xterm archive also carries the focused status-bar boundary.
+`sophia-verify-xmobar-work-area` requires its immutable checksums, exact
+14-pixel reservations on both outputs, at least three exact 2560-by-14 primary
+repaints, matching native retirement, packaged xmobar identity, normal logout,
+and clean recovery. It does not require another operator sequence.
+
+The installed physical color gate also stays out of the greetd menu. Run
+`sophia-truecolor-proof` from a local text VT, wait for the Kitty ANSI sample
+and asymmetric X11 palette, then use `Super+Shift+Q`. Its automatic
+`record_kind=truecolor` archive requires an exact core X11 color and image
+round trip, exact per-channel populations from the final output-2 palette
+rectangle, a chromatic final Kitty DMA-BUF rectangle on output 1, matching KMS
+retirements, clean protocol and process ownership, and exact TTY restoration.
+Reverify it with `sophia-verify-truecolor-runs 1`. Repeated final-region
+readback is scoped to this explicit proof environment and is not enabled for
+ordinary sessions.
+
 ## Installed Daily-Driver Candidate
 
 The packaged [installed operations runbook](operations.md) is the canonical

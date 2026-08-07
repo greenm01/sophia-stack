@@ -64,6 +64,7 @@ commands=(
     sophia-kitty-session
     sophia-firefox-proof
     sophia-xterm-proof
+    sophia-truecolor-proof
     sophia-recovery-proof
     sophia-native-chrome-proof
     sophia-status
@@ -85,6 +86,8 @@ commands=(
     sophia-verify-native-chrome
     sophia-verify-firefox-runs
     sophia-verify-xterm-runs
+    sophia-verify-truecolor-runs
+    sophia-verify-xmobar-work-area
     sophia-verify-soak
 )
 for command in "${commands[@]}"; do

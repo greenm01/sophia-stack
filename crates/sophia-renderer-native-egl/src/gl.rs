@@ -8,7 +8,7 @@ use crate::NativeEglDrawSmokeStatus;
 #[cfg(feature = "gbm-platform")]
 use crate::{
     NativeCompositionPixelMetrics, NativeGbmScanoutBufferExportDetail,
-    native_composition_pixel_metrics,
+    native_composition_gl_read_y, native_composition_pixel_metrics,
 };
 #[cfg(feature = "gbm-platform")]
 use std::cell::Cell;
@@ -522,10 +522,40 @@ impl PersistentXrgb8888GlPipeline {
     pub(crate) fn read_composition_pixels(
         &self,
     ) -> Result<NativeCompositionPixelMetrics, NativeEglDrawSmokeStatus> {
-        let byte_len = usize::try_from(self.width)
+        self.read_composition_region_pixels(GlCompositionRect {
+            x: 0,
+            y: 0,
+            width: self.width as i32,
+            height: self.height as i32,
+        })
+    }
+
+    pub(crate) fn read_composition_region_pixels(
+        &self,
+        region: GlCompositionRect,
+    ) -> Result<NativeCompositionPixelMetrics, NativeEglDrawSmokeStatus> {
+        let width = u32::try_from(region.width)
+            .ok()
+            .filter(|width| *width > 0)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let height = u32::try_from(region.height)
+            .ok()
+            .filter(|height| *height > 0)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        u32::try_from(region.x)
+            .ok()
+            .and_then(|x| x.checked_add(width))
+            .filter(|right| *right <= self.width)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let top = u32::try_from(region.y)
+            .ok()
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let read_y = native_composition_gl_read_y(self.height, top, height)
+            .ok_or(NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let byte_len = usize::try_from(width)
             .ok()
             .and_then(|width| {
-                usize::try_from(self.height)
+                usize::try_from(height)
                     .ok()
                     .and_then(|height| width.checked_mul(height))
             })
@@ -534,10 +564,10 @@ impl PersistentXrgb8888GlPipeline {
         let mut rgba = vec![0; byte_len];
         unsafe {
             self.gl.read_pixels(
-                0,
-                0,
-                self.width as i32,
-                self.height as i32,
+                region.x,
+                read_y as i32,
+                width as i32,
+                height as i32,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
                 glow::PixelPackData::Slice(Some(&mut rgba)),

@@ -72,9 +72,9 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal, Firefox, xterm, fallback, emergency,
-watchdog, and native-chrome attempts. An `OK` line for every packaged file is
-expected.
+runtime identity, and the newest normal, Firefox, xterm, TrueColor, fallback,
+emergency, watchdog, and native-chrome attempts. An `OK` line for every
+packaged file is expected.
 Investigate any checksum failure before launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
@@ -91,6 +91,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic native-chrome attempts | `sophia/promotion/native-chrome-runs/` |
 | automatic Firefox proof attempts | `sophia/promotion/firefox-runs/` |
 | automatic xterm proof attempts | `sophia/promotion/xterm-runs/` |
+| automatic TrueColor proof attempts | `sophia/promotion/truecolor-runs/` |
 
 Every active launch, runtime-identity, session, input-guard, recovery, and
 lifecycle log keeps at most one `.previous` generation. Promotion attempts are
@@ -194,6 +195,36 @@ newest archive with:
 ```sh
 sophia-verify-xterm-runs 1
 ```
+
+The same immutable xterm archive closes the focused xmobar/work-area boundary
+without another physical sequence. It verifies exact reservations and bar
+repaints in addition to the xterm gate:
+
+```sh
+sophia-verify-xmobar-work-area
+```
+
+Run the physical color gate from a local text VT with one command:
+
+```sh
+sophia-truecolor-proof
+```
+
+Arm the recovery guard when prompted. The session opens a real Kitty 24-bit
+ANSI sample and a fixed 640-by-240 X11 palette. Wait until both are visible,
+then use `Super+Shift+Q` once. The wrapper archives and verifies the attempt
+automatically. It requires exact `AllocColor`, `AllocNamedColor`, `QueryColors`,
+`PutImage`, and `GetImage` behavior; asymmetric RGB/CMY/gray populations after
+Engine composition; a later retired output-2 KMS frame; a final chromatic Kitty
+DMA-BUF frame retired on output 1; clean logout; and exact VT restoration.
+Verify the newest immutable attempt from a text VT:
+
+```sh
+sophia-verify-truecolor-runs 1
+```
+
+Repeated final-region readback is enabled only by this explicit proof profile.
+Ordinary installed sessions retain the lower-cost aggregate evidence.
 
 Every `Sophia Kitty (Baseline)` launch follows the same fail-closed pattern in
 a separate fallback ledger. A passing attempt requires the reduced one-Kitty,

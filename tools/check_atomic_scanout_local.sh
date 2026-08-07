@@ -194,6 +194,12 @@ bash -n tools/verify_installed_login_cycle.sh \
     tools/verify_installed_xterm_session.sh \
     tools/verify_installed_xterm_runs.sh \
     tools/check_installed_xterm_verifier.sh \
+    tools/verify_installed_truecolor_session.sh \
+    tools/verify_installed_truecolor_runs.sh \
+    tools/check_truecolor_verifier.sh \
+    tools/verify_sophia_xmobar_work_area_session.sh \
+    tools/verify_installed_xmobar_work_area_archive.sh \
+    tools/check_xmobar_work_area_verifier.sh \
     tools/verify_installed_fallback_session.sh \
     tools/check_installed_fallback_verifier.sh \
     tools/verify_installed_native_chrome_session.sh \
@@ -203,6 +209,8 @@ bash -n tools/verify_installed_login_cycle.sh \
     tools/check_installed_session_auto_record.sh
 tools/check_installed_login_cycle_verifier.sh
 tools/check_installed_xterm_verifier.sh
+tools/check_truecolor_verifier.sh
+tools/check_xmobar_work_area_verifier.sh
 tools/check_installed_fallback_verifier.sh
 tools/check_installed_native_chrome_verifier.sh
 tools/check_installed_cycle_ledger.sh

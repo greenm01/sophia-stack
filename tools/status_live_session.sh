@@ -64,6 +64,8 @@ print_latest_attempt installed_firefox \
     "$STATE_HOME/sophia/promotion/firefox-runs"
 print_latest_attempt installed_xterm \
     "$STATE_HOME/sophia/promotion/xterm-runs"
+print_latest_attempt installed_truecolor \
+    "$STATE_HOME/sophia/promotion/truecolor-runs"
 print_latest_attempt installed_fallback \
     "$STATE_HOME/sophia/promotion/fallback-runs"
 print_latest_attempt installed_emergency \

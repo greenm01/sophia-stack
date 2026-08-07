@@ -1,0 +1,14 @@
+sophia_session_app schema=1 status=started id=statusbar source=startup
+sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1426_0_14
+sophia_live_work_area schema=1 status=applied output=2 full=1920x1080_2560_0 work=1920x1066_2560_14
+sophia_live_work_area schema=1 status=reduced outputs=2 changed=2 rejected=0 active_reservations=1
+sophia_live_output_repaint schema=1 status=presented output=1 mode=partial rects=1 pixels=35840
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=4 frame=5
+sophia_live_output_repaint schema=1 status=presented output=1 mode=partial rects=1 pixels=35840
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=5 frame=6
+sophia_live_output_repaint schema=1 status=presented output=1 mode=partial rects=1 pixels=35840
+sophia_live_native_page_flip schema=1 status=retired output=1 submission=6 frame=7
+sophia_live_session schema=16 status=bounded_complete display=:77
+sophia_live_output schema=1 status=complete output=1 checksum=123 submissions=5 retirements=4 callbacks=4 nonzero_exports=5
+xmobar: Caught signal 15; exiting...
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed

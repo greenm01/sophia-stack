@@ -46,14 +46,13 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. Installed release
-`0.1.0-4c3121421f12` contains the committed-layout, core `GetImage`, bounded
-Firefox-profile, dedicated Firefox-ledger, and VT renderer-handoff corrections.
-Its immutable Firefox attempt `0002` passes exact VT capture/restore, two-Kitty
-retention, two Firefox lifecycles, all six browser stages, floating dialog,
-xmonad layout recovery, normal logout, zero unexpected protocol errors, clean
-ownership, and bounded profile cleanup. Complete the remaining focused xterm,
-work-area, visible-color, emergency, and lifecycle gates before the two-hour
-interactive soak and full-workday gate.
+`0.1.0-7e18ea3a01e6` and immutable xterm attempt `0003` close the corrected
+CPU-scene VT-recovery boundary. The same archive now also closes the focused
+xmobar/work-area gate through exact two-output reservations, repeated exact
+bar repaints, primary retirement, clean logout, and packaged xmobar identity.
+The source successor adds the automatic physical TrueColor proof; rebuild and
+run that gate before independent emergency recovery, the repeated lifecycle
+gate, the two-hour interactive soak, and the full-workday gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -132,7 +131,9 @@ the correct authority.
 - The X setup catalog, passive colormap ownership, RGB16 allocation,
   named-color lookup, color query, and error paths now agree on fixed 24-bit
   XRGB and 32-bit ARGB TrueColor semantics. The remaining color gate is a
-  physical captured-pixel proof on the successor installed candidate.
+  physical captured-pixel proof on the successor installed candidate. The
+  proof command and fail-closed archive verifier are implemented but do not
+  count as physical evidence until a new installed run passes.
 - The daily-driver session still uses the `classic-shared` X namespace. The
   confined-group architecture and most portal executors are not yet promoted
   into the normal Firefox session.
@@ -215,8 +216,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   fail-closed.
 - [x] Add a deterministic non-gray XRGB upload fixture with distinct red,
   green, blue, mixed, and grayscale pixels and exact byte preservation.
-- [ ] Run the real-client physical proof. Require the same palette to survive
-  client rendering, Engine composition, native presentation, and capture
+- [ ] Run the real-client physical proof with `sophia-truecolor-proof` and
+  verify it with `sophia-verify-truecolor-runs 1`. Require the same palette to
+  survive client rendering, Engine composition, native presentation, and capture
   without channel swaps or black/white collapse. Include a Kitty 24-bit
   ANSI-color sample, while treating its client-side rendering as an end-to-end
   pixel proof rather than a colormap-wire proof.
@@ -256,8 +258,13 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
   and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
   passes the immutable aggregate verifier.
-- [ ] Run the focused xmobar/work-area, physical TrueColor, and independent
-  emergency-recovery gates on that exact candidate.
+- [x] Close the focused xmobar/work-area gate from the checksummed installed
+  xterm attempt `0003`. `sophia-verify-xmobar-work-area` now requires exactly
+  one 14-pixel reservation on both outputs, repeated exact 2560-by-14 primary
+  repaints, native retirement, packaged xmobar identity, normal logout, clean
+  lifecycle, and unmodified archive checksums.
+- [ ] Run the automatic physical TrueColor gate on the source successor.
+- [ ] Run the independent emergency-recovery gate on that same candidate.
 - [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary

@@ -54,6 +54,10 @@ case "$attempt_mode" in
         attempt_record="$RELEASE_DIR/bin/sophia-record-xterm-run"
         attempt_result_record=sophia_installed_xterm
         ;;
+    truecolor)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-truecolor-run"
+        attempt_result_record=sophia_installed_truecolor
+        ;;
     kitty)
         attempt_record="$RELEASE_DIR/bin/sophia-record-fallback-run"
         attempt_result_record=sophia_installed_fallback

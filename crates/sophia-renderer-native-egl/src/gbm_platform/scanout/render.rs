@@ -439,11 +439,14 @@ fn render_native_target_composition(
     trace_native_lifecycle("composition_started");
     static PIXEL_TRACE_CLAIMED: AtomicBool = AtomicBool::new(false);
     let pixel_trace = std::env::var("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").ok();
-    let trace_pixels = pixel_trace.as_deref() == Some("continuous")
+    let final_regions_only = pixel_trace.as_deref() == Some("final-regions");
+    let continuous_trace = pixel_trace.as_deref() == Some("continuous") || final_regions_only;
+    let trace_pixels = continuous_trace
         || (pixel_trace.is_some()
             && PIXEL_TRACE_CLAIMED
                 .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok());
+    let trace_layer_pixels = trace_pixels && !final_regions_only;
     if trace_pixels {
         tracing::info!(
             "sophia_native_composition_pixels schema=1 status=enabled width={} height={} layers={}",
@@ -477,7 +480,7 @@ fn render_native_target_composition(
                     .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed);
                 if result.is_ok() {
                     trace_native_lifecycle("composition_cpu_layer_finished");
-                    if trace_pixels {
+                    if trace_layer_pixels {
                         trace_composition_pixels(
                             &target.pipeline,
                             "cpu",
@@ -509,7 +512,7 @@ fn render_native_target_composition(
                     });
                 if result.is_ok() {
                     trace_native_lifecycle("composition_dmabuf_layer_finished");
-                    if trace_pixels {
+                    if trace_layer_pixels {
                         trace_composition_pixels(
                             &target.pipeline,
                             "dmabuf",
@@ -579,7 +582,7 @@ fn render_native_target_composition(
                     .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionFinishFailed);
                 if result.is_ok() {
                     trace_native_lifecycle("composition_solid_layer_finished");
-                    if trace_pixels {
+                    if trace_layer_pixels {
                         trace_composition_pixels(
                             &target.pipeline,
                             "solid",
@@ -605,6 +608,24 @@ fn render_native_target_composition(
         })
         .and_then(|()| {
             trace_native_lifecycle("composition_finished");
+            if trace_pixels {
+                for (layer_index, layer) in frame.layers.iter().enumerate() {
+                    let (source_stage, layer_target) = match layer {
+                        NativeCompositionLayer::Cpu(layer) => ("cpu", layer.target),
+                        NativeCompositionLayer::DmaBuf(layer) => ("dmabuf", layer.target),
+                        NativeCompositionLayer::RendererImage(layer) => {
+                            ("renderer_image", layer.target)
+                        }
+                        NativeCompositionLayer::Solid(layer) => ("solid", layer.target),
+                    };
+                    trace_final_composition_region(
+                        &target.pipeline,
+                        source_stage,
+                        layer_index,
+                        layer_target,
+                    );
+                }
+            }
             if capture_pixels {
                 match target.pipeline.read_composition_pixels() {
                     Ok(metrics) => {
@@ -658,9 +679,10 @@ fn trace_composition_pixels(
     modifier: u64,
     stride: u32,
 ) {
-    match pipeline.read_composition_pixels() {
-        Ok(metrics) => tracing::info!(
-            "sophia_native_composition_pixels schema=1 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} checksum={}",
+    let region_metrics = pipeline.read_composition_region_pixels(target.into());
+    match (pipeline.read_composition_pixels(), region_metrics) {
+        (Ok(metrics), Ok(region)) => tracing::info!(
+            "sophia_native_composition_pixels schema=2 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} checksum={} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_checksum={}",
             target.width,
             target.height,
             target.x,
@@ -671,9 +693,55 @@ fn trace_composition_pixels(
             metrics.alpha_partial_pixels,
             metrics.alpha_opaque_pixels,
             metrics.checksum,
+            region.pixels,
+            region.nonzero_rgb_pixels,
+            region.red_pixels,
+            region.green_pixels,
+            region.blue_pixels,
+            region.yellow_pixels,
+            region.cyan_pixels,
+            region.magenta_pixels,
+            region.gray_pixels,
+            region.other_pixels,
+            region.checksum,
+        ),
+        _ => tracing::warn!(
+            "sophia_native_composition_pixels schema=2 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
+            target.width,
+            target.height,
+            target.x,
+            target.y,
+        ),
+    }
+}
+
+fn trace_final_composition_region(
+    pipeline: &PersistentXrgb8888GlPipeline,
+    source_stage: &str,
+    layer: usize,
+    target: NativeCompositionRect,
+) {
+    match pipeline.read_composition_region_pixels(target.into()) {
+        Ok(region) => tracing::info!(
+            "sophia_native_composition_region schema=1 status=read composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_checksum={}",
+            target.width,
+            target.height,
+            target.x,
+            target.y,
+            region.pixels,
+            region.nonzero_rgb_pixels,
+            region.red_pixels,
+            region.green_pixels,
+            region.blue_pixels,
+            region.yellow_pixels,
+            region.cyan_pixels,
+            region.magenta_pixels,
+            region.gray_pixels,
+            region.other_pixels,
+            region.checksum,
         ),
         Err(_) => tracing::warn!(
-            "sophia_native_composition_pixels schema=1 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
+            "sophia_native_composition_region schema=1 status=unavailable composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{}",
             target.width,
             target.height,
             target.x,

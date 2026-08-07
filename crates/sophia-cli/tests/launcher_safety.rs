@@ -2,6 +2,7 @@ const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_se
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
 const INSTALLED_RECOVERY: &str = include_str!("../../../tools/installed/sophia-recovery-proof");
+const INSTALLED_TRUECOLOR: &str = include_str!("../../../tools/installed/sophia-truecolor-proof");
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
 const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
 
@@ -52,6 +53,15 @@ fn kitty_gate_always_retains_one_shot_composition_pixel_evidence() {
     assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1"));
     assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
     assert!(SESSION_LAUNCHER.contains("SOPHIA_SESSION_VERBOSE_TRACE:-false"));
+}
+
+#[test]
+fn truecolor_wrapper_alone_enables_repeated_final_region_readback() {
+    assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_INSTALLED_ATTEMPT_MODE=truecolor"));
+    assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_TRUECOLOR_PROOF=true"));
+    assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions"));
+    assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions"));
+    assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
 }
 
 #[test]

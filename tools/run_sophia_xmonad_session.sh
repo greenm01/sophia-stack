@@ -21,6 +21,7 @@ DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 SESSION_HANDOFF="${SOPHIA_SESSION_HANDOFF:-display_manager}"
+TRUECOLOR_PROOF="${SOPHIA_TRUECOLOR_PROOF:-false}"
 FIREFOX_M10_PROOF=false
 FIREFOX_M10_RENDERING_PROOF=false
 FIREFOX_M10_DIALOG_PROOF=false
@@ -60,6 +61,14 @@ if [[ -n "$SESSION_WATCHDOG_SECONDS"
 fi
 if [[ "$SESSION_HANDOFF" != display_manager && "$SESSION_HANDOFF" != cycle_runner ]]; then
     echo "SOPHIA_SESSION_HANDOFF must be display_manager or cycle_runner." >&2
+    exit 1
+fi
+if [[ "$TRUECOLOR_PROOF" != true && "$TRUECOLOR_PROOF" != false ]]; then
+    echo "SOPHIA_TRUECOLOR_PROOF must be true or false." >&2
+    exit 1
+fi
+if [[ "$TRUECOLOR_PROOF" == true && "$SESSION_PROFILE" != xmonad ]]; then
+    echo "The TrueColor proof requires the xmonad session profile." >&2
     exit 1
 fi
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
@@ -486,6 +495,10 @@ else
         echo "The Firefox proof profiles require the Kitty terminal adapter." >&2
         exit 1
     fi
+    if [[ "$TRUECOLOR_PROOF" == true && "$terminal_kind" != kitty ]]; then
+        echo "The TrueColor proof requires the Kitty terminal adapter." >&2
+        exit 1
+    fi
 fi
 session_args=(
     sophia-live-session
@@ -552,7 +565,11 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
 else
     sophia_append_session_terminal_base_args \
         session_args "$terminal_kind" "$terminal_bin"
-    if [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
+    if [[ "$TRUECOLOR_PROOF" == true ]]; then
+        session_args+=(
+            "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/truecolor_kitty_probe.sh"
+        )
+    elif [[ "$FIREFOX_M10_PRIMARY_PROOF" == true ]]; then
         session_args+=(
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/firefox_m10_primary_kitty_probe.sh"
         )
@@ -589,6 +606,13 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             --session-start=statusbar
         )
         echo "Xmobar status bar enabled: $xmobar_bin"
+    fi
+    if [[ "$TRUECOLOR_PROOF" == true ]]; then
+        session_args+=(
+            "--session-app=palette=$SOPHIA_BIN"
+            --session-app-arg=palette=x-authority-truecolor-palette-client
+            --session-start=palette
+        )
     fi
     firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
     if [[ -n "$firefox_bin" && -x "$firefox_bin" ]]; then

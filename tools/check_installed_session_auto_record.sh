@@ -27,6 +27,9 @@ install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-xterm-proof" \
     "$RELEASE/bin/sophia-xterm-proof"
 install -m 755 \
+    "$ROOT_DIR/tools/installed/sophia-truecolor-proof" \
+    "$RELEASE/bin/sophia-truecolor-proof"
+install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-recovery-proof" \
     "$RELEASE/bin/sophia-recovery-proof"
 install -m 755 \
@@ -38,6 +41,9 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_xterm_run.sh" \
     "$RELEASE/bin/sophia-record-xterm-run"
+install -m 755 \
+    "$ROOT_DIR/tools/record_installed_truecolor_run.sh" \
+    "$RELEASE/bin/sophia-record-truecolor-run"
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-record-fallback-run"
@@ -65,6 +71,12 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_xterm_runs.sh" \
     "$RELEASE/bin/sophia-verify-xterm-runs"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_truecolor_session.sh" \
+    "$RELEASE/bin/sophia-verify-truecolor-run"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_installed_truecolor_runs.sh" \
+    "$RELEASE/bin/sophia-verify-truecolor-runs"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_fallback_session.sh" \
     "$RELEASE/bin/sophia-verify-fallback-session"
@@ -135,6 +147,11 @@ printf '%s\n' \
     '    session_fixture=installed_xterm_session_pass.log' \
     '    guard_fixture=physical_firefox_guard_pass.log' \
     '    recovery_fixture=physical_firefox_recovery_pass.log' \
+    'fi' \
+    'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == truecolor ]]; then' \
+    '    session_fixture=installed_truecolor_session_pass.log' \
+    '    guard_fixture=installed_truecolor_input_guard_pass.log' \
+    '    recovery_fixture=installed_truecolor_recovery_pass.log' \
     'fi' \
     'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == watchdog ]]; then' \
     '    session_fixture=installed_watchdog_session_pass.log' \
@@ -228,6 +245,27 @@ sed -i '/kind=application name=xterm /d' "$xterm_run/runtime-identity.log"
 if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-xterm-runs" 1 \
     >/dev/null 2>&1; then
     echo "xterm verifier accepted a checksummed archive without xterm identity" >&2
+    exit 1
+fi
+
+env "${session_env[@]}" "$RELEASE/bin/sophia-truecolor-proof"
+truecolor_run="$STATE_HOME/sophia/promotion/truecolor-runs/0001"
+grep -Fxq \
+    'sophia_installed_truecolor schema=1 status=passed exit_status=0' \
+    "$truecolor_run/result.kdl"
+grep -Fxq 'record_schema=4' "$truecolor_run/manifest"
+grep -Fxq 'record_kind=truecolor' "$truecolor_run/manifest"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-truecolor-runs" 1
+sed -i 's/region_red_pixels=9600/region_red_pixels=19200/' \
+    "$truecolor_run/session.log"
+(
+    cd "$truecolor_run"
+    sha256sum manifest result.kdl identity.log runtime-identity.log \
+        session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+)
+if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-truecolor-runs" 1 \
+    >/dev/null 2>&1; then
+    echo "TrueColor verifier accepted a checksummed channel swap" >&2
     exit 1
 fi
 
