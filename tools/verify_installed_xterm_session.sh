@@ -108,19 +108,34 @@ admission="$({
 } | head -n 1)"
 [[ -n "$admission" ]] || fail "xterm was not admitted"
 surface="$(field "$admission" surface)" || fail "xterm admission omitted its surface"
-require_line \
-    "^sophia_live_visual_admission schema=1 status=presented transaction=[0-9]+ surface=${surface}$" \
-    "$SESSION_LOG" "xterm admission did not retire visible pixels"
-present="$({
-    grep -E "^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=${surface} " \
+committed="$({
+    grep -E "^sophia_live_visual_admission schema=1 status=committed transaction=[0-9]+ surface=${surface} source=cpu_backing_snapshot$" \
         "$SESSION_LOG" || true
 } | head -n 1)"
-[[ -n "$present" ]] || fail "xterm produced no retired presentation"
-source="$(field "$present" source)" || fail "xterm presentation omitted source geometry"
-target="$(field "$present" target)" || fail "xterm presentation omitted target geometry"
+[[ -n "$committed" ]] || fail "xterm did not commit its CPU backing snapshot"
+transaction="$(field "$committed" transaction)" || fail "xterm commit omitted its transaction"
+candidate="$({
+    grep -E "^sophia_live_visual_candidate schema=1 status=selected transaction=${transaction} surface=${surface} width=[0-9]+ height=[0-9]+ evidence=BackingSnapshot$" \
+        "$SESSION_LOG" || true
+} | head -n 1)"
+[[ -n "$candidate" ]] || fail "xterm was not selected from backing-snapshot evidence"
+require_line \
+    "^sophia_live_visual_candidate_identity schema=1 status=selected transaction=${transaction} surface=${surface} source=cpu_buffer buffer=[1-9][0-9]*$" \
+    "$SESSION_LOG" "xterm backing evidence omitted its CPU-buffer identity"
+geometry="$({
+    grep -E "^sophia_live_visual_admission_geometry schema=1 status=committed transaction=${transaction} surface=${surface} " \
+        "$SESSION_LOG" || true
+} | head -n 1)"
+[[ -n "$geometry" ]] || fail "xterm commit omitted atomic pixel geometry"
+source="$(field "$geometry" source)" || fail "xterm commit omitted source geometry"
+target="$(field "$geometry" target)" || fail "xterm commit omitted target geometry"
 [[ "$source" =~ ^([0-9]+)x([0-9]+)$ ]] || fail "malformed xterm source geometry: $source"
 source_width="${BASH_REMATCH[1]}"
 source_height="${BASH_REMATCH[2]}"
+candidate_width="$(field "$candidate" width)" || fail "xterm candidate omitted its width"
+candidate_height="$(field "$candidate" height)" || fail "xterm candidate omitted its height"
+(( candidate_width == source_width && candidate_height == source_height )) ||
+    fail "xterm candidate and committed source extents differ"
 parse_geometry "$target" target
 (( source_width == target_width && source_height == target_height )) ||
     fail "xterm pixels do not match the target extent"
@@ -136,6 +151,23 @@ bottom_inset=$((primary_work_y + primary_work_height - target_y - target_height)
     && top_inset == bottom_inset )) ||
     fail "xterm target is not symmetrically inset inside the primary work area"
 
+geometry_line="$(line_number "visual_admission_geometry schema=1 status=committed transaction=${transaction} surface=${surface} " "$SESSION_LOG")"
+native_submission="$({
+    awk -v minimum="$geometry_line" '
+        NR > minimum &&
+        /sophia_live_native_page_flip schema=1 status=submitted output=1 / &&
+        /content=Some\((Cpu|RetainedMixed)/ { print; exit }
+    ' "$SESSION_LOG"
+} || true)"
+[[ -n "$native_submission" ]] || fail "xterm commit did not reach primary native scanout"
+submission="$(field "$native_submission" submission)" || fail "native submission omitted its ID"
+frame="$(field "$native_submission" frame)" || fail "native submission omitted its frame"
+submit_line="$(line_number_after "status=submitted output=1 submission=${submission} .* frame=${frame}$" "$geometry_line")"
+retire_line="$(line_number_after "status=retired output=1 submission=${submission} frame=${frame}$" "$submit_line")"
+startup_line="$(line_number_after 'sophia_live_session_startup schema=2 status=ready .*presented=true ' "$retire_line")"
+[[ -n "$retire_line" && -n "$startup_line" ]] ||
+    fail "xterm CPU commit did not retire before startup readiness"
+
 for record in \
     'sophia_live_session_vt schema=4 status=queued target=[0-9]+ modifier_releases=[2-4]' \
     'sophia_live_session_vt schema=4 status=preparing target=[0-9]+' \
@@ -148,16 +180,15 @@ for record in \
     require_line "^${record}$" "$SESSION_LOG" "VT lifecycle record is missing: $record"
 done
 capture="$({
-    grep -E '^sophia_live_renderer_handoff schema=1 status=captured images=[1-9][0-9]*$' \
+    grep -E '^sophia_live_renderer_handoff schema=1 status=captured images=0$' \
         "$SESSION_LOG" || true
 } | head -n 1)"
 restore="$({
-    grep -E '^sophia_live_renderer_handoff schema=1 status=restored images=[1-9][0-9]* source=seat_resume$' \
+    grep -E '^sophia_live_renderer_handoff schema=1 status=restored images=0 source=seat_resume$' \
         "$SESSION_LOG" || true
 } | head -n 1)"
-[[ -n "$capture" && -n "$restore" ]] || fail "VT handoff did not capture and restore renderer images"
-[[ "$(field "$capture" images)" == "$(field "$restore" images)" ]] ||
-    fail "VT handoff restored a different renderer-image count"
+[[ -n "$capture" && -n "$restore" ]] ||
+    fail "CPU-only xterm handoff unexpectedly required imported renderer images"
 
 queued_line="$(line_number 'schema=4 status=queued target=' "$SESSION_LOG")"
 preparing_line="$(line_number 'schema=4 status=preparing target=' "$SESSION_LOG")"
@@ -167,16 +198,12 @@ requested_line="$(line_number 'schema=4 status=requested target=' "$SESSION_LOG"
 release_line="$(line_number 'sophia_live_seat schema=1 status=release_pending$' "$SESSION_LOG")"
 suspended_line="$(line_number 'sophia_live_seat schema=1 status=suspended$' "$SESSION_LOG")"
 acquire_line="$(line_number 'sophia_live_seat schema=1 status=acquire_pending$' "$SESSION_LOG")"
+scene_line="$(line_number_after '^sophia_live_scene_handoff schema=1 status=rehydrated outputs=2 nonzero_outputs=[12] primary_nonzero_pixel_bytes=[1-9][0-9]* source=seat_resume$' "$acquire_line")"
 restore_line="$(line_number 'status=restored images=.* source=seat_resume$' "$SESSION_LOG")"
 resume_line="$(line_number 'sophia_live_seat schema=1 status=active source=resume$' "$SESSION_LOG")"
 flip_line="$(line_number_after 'sophia_live_native_page_flip schema=1 status=retired output=1 ' "$resume_line")"
-post_resume_present="$(
-    line_number_after \
-        "^sophia_live_session_present schema=2 status=retired transaction=[0-9]+ surface=${surface} " \
-        "$resume_line"
-)"
-[[ -n "$flip_line" && -n "$post_resume_present" ]] ||
-    fail "xterm pixels did not retire after VT resume"
+[[ -n "$scene_line" && -n "$flip_line" ]] ||
+    fail "the retained CPU scene did not rehydrate and retire after VT resume"
 (( queued_line < preparing_line
     && preparing_line < capture_line
     && capture_line < quiesced_line
@@ -184,11 +211,11 @@ post_resume_present="$(
     && requested_line < release_line
     && release_line < suspended_line
     && suspended_line < acquire_line
-    && acquire_line < restore_line
+    && acquire_line < scene_line
+    && scene_line < restore_line
     && restore_line < resume_line
-    && resume_line < flip_line
-    && resume_line < post_resume_present )) ||
-    fail "VT handoff and post-resume presentation records are out of order"
+    && resume_line < flip_line )) ||
+    fail "VT handoff and retained-scene recovery records are out of order"
 if grep -Eq 'status=forced_detach|outcome=forced_detach_|remained in flight during teardown' \
     "$SESSION_LOG"; then
     fail "operator-requested VT switch used the revoked-seat fallback"

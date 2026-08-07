@@ -1184,9 +1184,10 @@ The installed xterm/work-area gate stays out of the greetd menu. Run
 visible, and log out with `Super+Shift+Q`. The wrapper records a schema-4
 `record_kind=xterm` archive under `sophia/promotion/xterm-runs/`. Its verifier
 binds xterm's executable identity to the run and requires two reduced work
-areas, exact source-to-target pixels inside the primary work area, ordered
-renderer-image handoff, post-resume presentation, normal logout, clean X11 and
-process ownership, and exact TTY restoration. Verify the newest archive with
+areas, an atomic CPU-snapshot geometry commit inside the primary work area,
+ordered zero-image handoff, retained-scene rehydration, post-resume native
+retirement, normal logout, clean X11 and process ownership, and exact TTY
+restoration. Verify the newest archive with
 `sophia-verify-xterm-runs 1`.
 
 ## Installed Daily-Driver Candidate

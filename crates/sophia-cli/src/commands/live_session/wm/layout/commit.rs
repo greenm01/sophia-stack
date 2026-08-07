@@ -51,6 +51,34 @@ impl PersistentLiveLayout {
                                 transaction.transaction.raw(),
                                 surface.index(),
                             );
+                            if let (Some(source), Some(target)) = (
+                                live_transaction_pixel_size(
+                                    transaction.target_buffer,
+                                    &self.dma_buf_sizes,
+                                    &self.cpu_buffer_sizes,
+                                ),
+                                pending
+                                    .layers
+                                    .iter()
+                                    .find(|layer| layer.surface == *surface)
+                                    .map(|layer| layer.geometry),
+                            ) {
+                                // Backing snapshots bypass Present retirement, so
+                                // record the atomic pixel-and-geometry commit here.
+                                println!(
+                                    "sophia_live_visual_admission_geometry schema=1 status=committed transaction={} surface={} source={}x{} target={}x{}_{}_{} unit_scale={}",
+                                    transaction.transaction.raw(),
+                                    surface.index(),
+                                    source.width,
+                                    source.height,
+                                    target.width,
+                                    target.height,
+                                    target.x,
+                                    target.y,
+                                    source.width == target.width
+                                        && source.height == target.height,
+                                );
+                            }
                         }
                     }
                     BufferSource::XPixmap { .. } | BufferSource::None => {

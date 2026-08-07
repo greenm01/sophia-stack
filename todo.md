@@ -246,8 +246,11 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   protocol errors, exact TTY restoration, and no host process residue. The
   installed `sophia-xterm-proof` command now reserves and verifies this
   profile-specific archive automatically. Attempt `0001` exposed and now
-  regresses the launcher's Kitty-only argument leak; the fresh physical run
-  remains.
+  regresses the launcher's Kitty-only argument leak. Attempt `0002` then proved
+  the corrected launcher and clean CPU-backed VT recovery, while exposing that
+  the first verifier fixture had incorrectly modeled xterm as a Present client
+  with an imported image. The corrected CPU-snapshot contract and a fresh
+  immutable run remain.
 - [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
   and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
   passes the immutable aggregate verifier.

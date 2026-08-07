@@ -186,9 +186,10 @@ local text VT, run `sophia-xterm-proof`. Once xterm is visible, switch to
 another VT and back, then use `Super+Shift+Q` for normal logout. The command
 selects xterm before takeover and automatically records a dedicated attempt.
 It requires two reduced xmobar work areas, pixel-matched xterm presentation
-inside the primary work area, retained-image capture and restore, a new xterm
-retirement after resume, clean protocol and process ownership, and exact TTY
-restoration. Verify the newest archive with:
+inside the primary work area, zero imported-image ownership for the CPU-only
+client, retained Engine-scene rehydration, a primary retirement after resume,
+clean protocol and process ownership, and exact TTY restoration. Verify the
+newest archive with:
 
 ```sh
 sophia-verify-xterm-runs 1

@@ -252,6 +252,14 @@
                     return Err("seat resume changed the physical output topology".into());
                 }
                 let frames = scene.frames_for_outputs(&outputs)?;
+                let scene_outputs = frames.len();
+                let nonzero_scene_outputs = frames
+                    .iter()
+                    .filter(|frame| frame.nonzero_pixel_bytes > 0)
+                    .count();
+                let primary_nonzero_pixel_bytes = frames
+                    .first()
+                    .map_or(0, |frame| frame.nonzero_pixel_bytes);
                 let restored = runtime
                     .as_mut()
                     .ok_or("seat resume lost the visual runtime")?
@@ -262,6 +270,11 @@
                         suspended_renderer_images.take(),
                     )?;
                 *native_scanout = Some(resumed);
+                // CPU snapshots live in the Engine scene, outside the imported
+                // renderer-image table. Record both recovery paths separately.
+                println!(
+                    "sophia_live_scene_handoff schema=1 status=rehydrated outputs={scene_outputs} nonzero_outputs={nonzero_scene_outputs} primary_nonzero_pixel_bytes={primary_nonzero_pixel_bytes} source=seat_resume"
+                );
                 println!(
                     "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=seat_resume"
                 );
