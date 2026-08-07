@@ -39,9 +39,10 @@ Milestones 10 and 11 established the integrated physical Firefox workflow and
 the repository-independent installed release. The current candidate has
 commit-pinned normal, fallback, watchdog, emergency, native-chrome, and
 switch-away/switch-back archives with exact runtime identity and clean
-ownership teardown. Milestone 12 now owns the remaining promotion boundary:
-one automated ten-cycle installed lifecycle gate, a two-hour interactive soak,
-and one full workday on one immutable build.
+ownership teardown. The automated ten-cycle installed lifecycle gate passed on
+the current signed candidate. Milestone 12 now owns the remaining promotion
+boundary: a two-hour interactive soak and one full workday on that immutable
+build.
 
 ## Daily-Driver Promotion Contract
 
@@ -1323,13 +1324,17 @@ Compatibility follow-up outside the Firefox exit gate:
   errors, rejected page-flip callbacks, pending work, or cleanup debt. This
   isolates policy and lifecycle repetition; it does not replace the physical
   login, soak, or workday gates below.
-- [ ] Pass the one-shot ten-cycle installed lifecycle gate without emergency
+- [x] Pass the one-shot ten-cycle installed lifecycle gate without emergency
   recovery, stale graphical processes, or manual repair. One authenticated
   greetd entry must repeat exact startup readiness, normal logout through the
   libinput/WM path, KMS and application drain, VT restoration, and immutable
   per-cycle verification. The runner must stop at the first failed cycle and
   return to greetd after one final aggregate verification; repeated PAM input
-  is not part of this stability invariant.
+  is not part of this stability invariant. Signed commit `958fb5e6` passed ten
+  contiguous installed attempts, `0014` through `0023`, with two connected
+  outputs, 291--336 ms startup, status-zero normal logout, exact VT and termios
+  restoration, and no surviving Sophia, bridge, or xmonad process. The final
+  aggregate verifier accepted the immutable sequence through `0023`.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
   launch/close, focus, workspace, resize, clipboard, and multi-output actions.
   The installed verifier now requires each named workload from generic redacted

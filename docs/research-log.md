@@ -82,6 +82,15 @@ runner sampled that receipt once and could reject the cycle during the roughly
 released. The runner also waits independently for the producer receipt, so
 neither guard observation nor producer completion stands in for the other.
 
+Signed commit `958fb5e6` then passed the complete physical gate. Installed
+attempts `0014` through `0023` each reached two-output readiness in 291--336 ms,
+accepted the injected normal logout through the production input and WM path,
+and exited with status zero. Every recovery record preserved KD mode 0 to 0
+and restored termios; no Sophia, bridge, or xmonad process survived. The
+installed aggregate verifier accepted all ten contiguous immutable attempts
+through `0023`, closing the repetition gate without manual repair or emergency
+recovery.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate
