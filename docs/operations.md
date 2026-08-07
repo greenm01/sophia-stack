@@ -228,6 +228,13 @@ Verify the newest immutable attempt from a text VT:
 sophia-verify-truecolor-runs 1
 ```
 
+The immutable capture records the verifier result that existed when the
+session ended. If that result is `reason=session_verification` with exit status
+zero, the current run-set verifier may re-adjudicate it without rewriting the
+archive, but only after every checksummed session, identity, lifecycle, color,
+retirement, logout, and recovery assertion passes. Session-exit failures are
+never eligible.
+
 Repeated final-region readback is enabled only by this explicit proof profile.
 Ordinary installed sessions retain the lower-cost aggregate evidence.
 

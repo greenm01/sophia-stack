@@ -51,9 +51,14 @@ done
 require_line \
     '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
     "$SESSION_LOG" "two-output native ownership was not established"
-require_line \
-    '^sophia_live_session_startup schema=2 status=ready .*outputs_ready=2/2 .*presented=true ' \
-    "$SESSION_LOG" "both outputs did not become presentation-ready"
+startup="$(grep -E '^sophia_live_session_startup schema=2 status=ready ' "$SESSION_LOG" | tail -n 1 || true)"
+[[ -n "$startup" ]] || fail "the final presentation-ready record is missing"
+for assignment in outputs_ready=2/2 presented=true; do
+    key="${assignment%%=*}"
+    expected="${assignment#*=}"
+    [[ "$(field "$startup" "$key" 2>/dev/null || true)" == "$expected" ]] ||
+        fail "startup field $key did not equal $expected"
+done
 require_line \
     '^sophia_truecolor_client schema=2 status=ready width=640 height=240 target=640x240_1600_64 palette=asymmetric_rgb_cmy_gray put_image=exact get_image=exact alloc_color=exact alloc_named_color=exact query_colors=exact$' \
     "$SESSION_LOG" "the X11 palette did not round-trip through core TrueColor requests"

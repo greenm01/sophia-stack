@@ -1210,6 +1210,14 @@ Reverify it with `sophia-verify-truecolor-runs 1`. Repeated final-region
 readback is scoped to this explicit proof environment and is not enabled for
 ordinary sessions.
 
+Run-set verification treats the checksummed evidence as the durable input. An
+exit-zero archive whose original result is exactly
+`reason=session_verification` may pass under a corrected current verifier; the
+archive remains unchanged, and the result reports `reverified=1`. Any nonzero
+session exit, different failure reason, checksum change, or current semantic
+failure remains ineligible. This permits verifier repair without manufacturing
+another physical sequence or weakening the fail-closed evidence contract.
+
 ## Installed Daily-Driver Candidate
 
 The packaged [installed operations runbook](operations.md) is the canonical

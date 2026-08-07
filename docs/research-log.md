@@ -3,7 +3,7 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
-## 2026-08-07: The first color run exposed the active-output boundary
+## 2026-08-07: Immutable color evidence survives verifier correction
 
 Automatic TrueColor attempt `0001` exited normally and proved the real Kitty
 DMA-BUF path and the X Authority's exact core color round trip, but correctly
@@ -23,6 +23,22 @@ the session banner still prints its legacy `terminal=xterm` constant even when
 Kitty is the configured application. The verifier now identifies Kitty through
 its selected PresentedBuffer/DMA-BUF evidence and immutable runtime identity;
 changing that banner belongs to a separate schema correction.
+
+Corrected attempt `0002` from commit `c62eabd6` then recorded the exact palette
+populations, chromatic Kitty DMA-BUF region, causally next output-1 submissions
+and retirements, both-output startup, normal logout, clean ownership drain, and
+exact TTY restoration. Its automatic verifier nevertheless rejected the run
+because one regular expression assumed `outputs_ready` preceded `presented` in
+a structured startup record. Both fields were present with the required values
+in the opposite order.
+
+The verifier now parses those fields by name. The run-set gate may also
+re-adjudicate an immutable exit-zero `reason=session_verification` record under
+the current verifier. It does not rewrite the archive and does not admit a
+session-exit failure, another failure reason, a checksum change, or evidence
+that fails any current semantic check. Attempt `0002` consequently closes the
+physical TrueColor gate without asking the operator to replay an already valid
+physical sequence.
 
 ## 2026-08-07: Color promotion measures a real X11 region before scanout
 

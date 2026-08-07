@@ -45,17 +45,17 @@ The current installed candidate provides:
 
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
-the remaining promotion boundary. Installed release
-`0.1.0-7e18ea3a01e6` and immutable xterm attempt `0003` close the corrected
-CPU-scene VT-recovery boundary. The same archive now also closes the focused
+the remaining promotion boundary. Immutable xterm attempt `0003` closes the
+corrected CPU-scene VT-recovery boundary. The same archive now also closes the focused
 xmobar/work-area gate through exact two-output reservations, repeated exact
 bar repaints, primary retirement, clean logout, and packaged xmobar identity.
-The source successor adds the automatic physical TrueColor proof. Attempt
-`0001` exposed and rejected an invalid cross-output proof placement; rebuild
-the corrected primary-output gate before independent emergency recovery, the
-repeated lifecycle gate, the two-hour interactive soak, and the full-workday
-gate. Active client projection onto output 2 remains a separate compatibility
-boundary and is not claimed by the TrueColor gate.
+TrueColor attempt `0002` from `c62eabd6` closes the physical color boundary
+through exact X11 color requests, final primary-output composition evidence,
+Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
+Independent emergency recovery, the repeated lifecycle gate, the two-hour
+interactive soak, and the full-workday gate remain. Active client projection
+onto output 2 is a separate compatibility boundary and is not claimed by the
+TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -219,7 +219,7 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   fail-closed.
 - [x] Add a deterministic non-gray XRGB upload fixture with distinct red,
   green, blue, mixed, and grayscale pixels and exact byte preservation.
-- [ ] Run the real-client physical proof with `sophia-truecolor-proof` and
+- [x] Run the real-client physical proof with `sophia-truecolor-proof` and
   verify it with `sophia-verify-truecolor-runs 1`. Require the same palette to
   survive client rendering, Engine composition, native presentation, and capture
   without channel swaps or black/white collapse. Include a Kitty 24-bit

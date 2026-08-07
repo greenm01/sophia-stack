@@ -256,6 +256,39 @@ grep -Fxq \
 grep -Fxq 'record_schema=4' "$truecolor_run/manifest"
 grep -Fxq 'record_kind=truecolor' "$truecolor_run/manifest"
 env "${session_env[@]}" "$RELEASE/bin/sophia-verify-truecolor-runs" 1
+printf '%s\n' \
+    'sophia_installed_truecolor schema=1 status=failed exit_status=0 reason=session_verification' \
+    >"$truecolor_run/result.kdl"
+(
+    cd "$truecolor_run"
+    sha256sum manifest result.kdl identity.log runtime-identity.log \
+        session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+)
+readjudication="$(
+    env "${session_env[@]}" "$RELEASE/bin/sophia-verify-truecolor-runs" 1
+)"
+[[ "$readjudication" == *" reverified=1 "* ]] || {
+    echo "TrueColor verifier did not re-adjudicate intact evidence" >&2
+    exit 1
+}
+for rejected_result in \
+    'sophia_installed_truecolor schema=1 status=failed exit_status=1 reason=session_verification' \
+    'sophia_installed_truecolor schema=1 status=failed exit_status=0 reason=session_exit'; do
+    printf '%s\n' "$rejected_result" >"$truecolor_run/result.kdl"
+    (
+        cd "$truecolor_run"
+        sha256sum manifest result.kdl identity.log runtime-identity.log \
+            session.log input-guard.log recovery.log lifecycle.log >SHA256SUMS
+    )
+    if env "${session_env[@]}" "$RELEASE/bin/sophia-verify-truecolor-runs" 1 \
+        >/dev/null 2>&1; then
+        echo "TrueColor verifier re-adjudicated an ineligible failure" >&2
+        exit 1
+    fi
+done
+printf '%s\n' \
+    'sophia_installed_truecolor schema=1 status=failed exit_status=0 reason=session_verification' \
+    >"$truecolor_run/result.kdl"
 sed -i 's/region_red_pixels=9600/region_red_pixels=19200/' \
     "$truecolor_run/session.log"
 (

@@ -27,6 +27,7 @@ mapfile -t runs < <(find "$RUN_ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
 }
 runs=("${runs[@]: -required}")
 expected_commit=""
+reverified=0
 for run in "${runs[@]}"; do
     (cd "$run" && sha256sum -c SHA256SUMS)
     [[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 4 \
@@ -34,11 +35,17 @@ for run in "${runs[@]}"; do
         echo "installed TrueColor run has the wrong automatic record kind: $run" >&2
         exit 1
     }
-    grep -Fxq 'sophia_installed_truecolor schema=1 status=passed exit_status=0' \
-        "$run/result.kdl" || {
-        echo "installed TrueColor attempt did not pass: $run" >&2
-        exit 1
-    }
+    result="$(<"$run/result.kdl")"
+    case "$result" in
+        'sophia_installed_truecolor schema=1 status=passed exit_status=0') ;;
+        'sophia_installed_truecolor schema=1 status=failed exit_status=0 reason=session_verification')
+            reverified=$((reverified + 1))
+            ;;
+        *)
+            echo "installed TrueColor attempt did not complete normally: $run" >&2
+            exit 1
+            ;;
+    esac
     "$VERIFY_TRUECOLOR" "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     recorded_binary="$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")"
     [[ "$recorded_binary" =~ ^[0-9a-f]{64}$ ]] || {
@@ -72,4 +79,4 @@ for run in "${runs[@]}"; do
         exit 1
     fi
 done
-echo "installed TrueColor run-set gate passed: runs=$required commit=$expected_commit"
+echo "installed TrueColor run-set gate passed: runs=$required reverified=$reverified commit=$expected_commit"
