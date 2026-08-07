@@ -134,6 +134,7 @@ mapfile -t firefox_admission_starts < <(
 (( ${#firefox_admission_starts[@]} == 2 )) ||
     fail "expected exactly two correlated Firefox admission starts"
 firefox_exit_lines=("$first_exit" "$second_exit")
+firefox_surfaces=()
 admission_restart_count=0
 for index in 0 1; do
     start_record="${firefox_admission_starts[$index]}"
@@ -146,6 +147,7 @@ for index in 0 1; do
     surface_record="$(sed -n "${surface_observed_line}p" "$SESSION_LOG")"
     firefox_admission_surface="$(field "$surface_record" surface)" ||
         fail "Firefox surface observation lacks its opaque surface"
+    firefox_surfaces[$index]="$firefox_admission_surface"
     admitted_line="$(line_number_after "^sophia_session_app schema=2 status=admitted source=action transaction=${action_transaction} surface=${firefox_admission_surface}$" "$surface_observed_line")"
     [[ -n "$admitted_line" ]] ||
         fail "Firefox action $action_transaction never completed visual admission"
@@ -184,6 +186,7 @@ for index in 0 1; do
             fail "Firefox manage replay did not arm its retained visual candidate"
     fi
 done
+firefox_surface="${firefox_surfaces[0]}"
 
 forced_close="$(line_number_after '^sophia_live_wm schema=1 status=session_action_committed .* action=CloseFocused$' "$second_start")"
 [[ -n "$forced_close" ]] && (( forced_close < second_exit )) ||
@@ -196,7 +199,7 @@ fi
 
 grep -Eq '^sophia_firefox_m8 schema=1 status=page_ready .* content=redacted$' \
     "$SESSION_LOG" || fail "offline Firefox page never became ready"
-for stage in loaded keyboard scroll resize refocus dialog; do
+for stage in loaded keyboard scroll layout refocus dialog; do
     [[ "$(count "^sophia_firefox_m8 schema=1 status=stage_complete stage=$stage ")" == 1 ]] ||
         fail "Firefox stage did not complete exactly once: $stage"
 done
@@ -218,47 +221,75 @@ axis_routes="$(awk -v first="$navigation_ready_line" -v last="$scroll_line" '
 ' "$SESSION_LOG")"
 (( axis_routes >= 1 )) ||
     fail "Firefox's DOM scroll stage has no causally ordered routed wheel packet"
-resize_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=resize ')"
-resize_epoch="$(line_number_after '^sophia_live_resize_epoch schema=1 status=committed .* matched_surfaces=[1-9][0-9]*$' "$scroll_line")"
-resize_layout="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .* outcome=Committed$' "$scroll_line")"
-resize_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=3$' "$scroll_line")"
-resize_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=3 focus=surface$' "$scroll_line")"
-visual_armed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_armed ' "$scroll_line")"
-visual_committed_line="$(line_number_after '^sophia_live_resize_epoch schema=3 status=visual_committed ' "$visual_armed_line")"
-focus_away_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$resize_line")"
-[[ -n "$resize_epoch" && -n "$resize_layout" && -n "$resize_action" ]] \
-    && (( resize_epoch < resize_action && resize_layout < resize_action )) ||
-    fail "the Firefox resize stage lacks a committed layout epoch"
-[[ -n "$visual_armed_line" && -n "$visual_committed_line" ]] \
-    && [[ -n "$focus_away_action" ]] \
-    && (( visual_armed_line < resize_line
-        && resize_line < visual_committed_line
-        && visual_committed_line < focus_away_action )) ||
-    fail "the Firefox resize target was not visually committed by exact Present retirement"
-visual_armed="$(sed -n "${visual_armed_line}p" "$SESSION_LOG")"
-visual_committed="$(sed -n "${visual_committed_line}p" "$SESSION_LOG")"
-for assignment in \
-    "transaction=$(field "$visual_armed" transaction)" \
-    "surface=$(field "$visual_armed" surface)" \
-    "width=$(field "$visual_armed" width)" \
-    "height=$(field "$visual_armed" height)"; do
-    require_eq "$visual_committed" "${assignment%%=*}" "${assignment#*=}"
+layout_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=layout ')"
+layout_commit_line="$(line_number_after '^sophia_live_wm schema=1 status=layout_committed .* surfaces=4 .*moved_surfaces=[1-9][0-9]* .*outcome=Committed$' "$scroll_line")"
+layout_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=3$' "$scroll_line")"
+layout_projection="$(line_number_after '^sophia_live_wm schema=2 status=workspace_projection_committed .* visible_surfaces=3 focus=surface$' "$layout_action")"
+focus_away_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$layout_line")"
+[[ -n "$layout_commit_line" && -n "$layout_action" && -n "$layout_line"
+    && -n "$focus_away_action" ]] || fail "the Firefox layout stage is incomplete"
+layout_commit="$(sed -n "${layout_commit_line}p" "$SESSION_LOG")"
+layout_transaction="$(field "$layout_commit" transaction)" ||
+    fail "the Firefox layout commit has no transaction identity"
+layout_epoch_line="$(line_number_after "^sophia_live_resize_epoch schema=1 status=committed transaction=${layout_transaction} matched_surfaces=[1-9][0-9]*$" "$scroll_line")"
+[[ -n "$layout_epoch_line" ]] || fail "the Firefox layout stage lacks a complete resize epoch"
+layout_epoch="$(sed -n "${layout_epoch_line}p" "$SESSION_LOG")"
+matched_surfaces="$(field "$layout_epoch" matched_surfaces)" ||
+    fail "the Firefox layout epoch has no matched-surface count"
+(( layout_commit_line < layout_action
+    && layout_epoch_line < layout_action
+    && layout_action < layout_line
+    && layout_line < focus_away_action )) ||
+    fail "the Firefox geometry change is not ordered after one committed Super+Space layout"
+layout_action_count="$(awk -v first="$scroll_line" -v last="$layout_line" '
+    NR > first && NR < last && /^sophia_live_wm schema=1 status=physical_action_committed action=3$/ { count++ }
+    END { print count + 0 }
+' "$SESSION_LOG")"
+(( layout_action_count == 1 )) ||
+    fail "the Firefox layout stage must contain exactly one Super+Space action"
+[[ -n "$layout_projection" ]] \
+    && (( layout_action < layout_projection && layout_projection < layout_line )) ||
+    fail "the Firefox layout stage did not retain all three managed surfaces"
+layout_projection_record="$(sed -n "${layout_projection}p" "$SESSION_LOG")"
+require_eq "$layout_projection_record" transaction "$layout_transaction"
+
+mapfile -t visual_armed_records < <(awk -v first="$scroll_line" -v last="$focus_away_action" -v epoch="$layout_transaction" '
+    NR > first && NR < last && /^sophia_live_resize_epoch schema=3 status=visual_armed / &&
+        $0 ~ ("epoch=" epoch " ") { print NR ":" $0 }
+' "$SESSION_LOG")
+(( ${#visual_armed_records[@]} == matched_surfaces )) ||
+    fail "the Firefox layout epoch did not arm every matched surface exactly once"
+for armed_entry in "${visual_armed_records[@]}"; do
+    visual_armed_line="${armed_entry%%:*}"
+    visual_armed="${armed_entry#*:}"
+    transaction="$(field "$visual_armed" transaction)" || fail "visual candidate lacks transaction"
+    surface="$(field "$visual_armed" surface)" || fail "visual candidate lacks surface"
+    width="$(field "$visual_armed" width)" || fail "visual candidate lacks width"
+    height="$(field "$visual_armed" height)" || fail "visual candidate lacks height"
+    (( width > 0 && height > 0 )) || fail "visual candidate has an invalid extent"
+    mapfile -t visual_commits < <(awk -v first="$visual_armed_line" -v last="$focus_away_action" \
+        -v transaction="$transaction" -v surface="$surface" -v width="$width" -v height="$height" '
+        NR > first && NR < last && /^sophia_live_resize_epoch schema=3 status=visual_committed / &&
+            $0 ~ ("transaction=" transaction " ") && $0 ~ ("surface=" surface " ") &&
+            $0 ~ ("width=" width " ") && $0 ~ ("height=" height "($| )") { print NR }
+    ' "$SESSION_LOG")
+    (( ${#visual_commits[@]} == 1 )) ||
+        fail "layout candidate $transaction/$surface lacks one exact native retirement"
 done
-require_at_least "$visual_committed" width 1
-require_at_least "$visual_committed" height 1
-if awk -v first="$visual_armed_line" -v last="$visual_committed_line" \
-    'NR >= first && NR <= last && /outcome=RejectedStaleSurface/ { found=1 } END { exit !found }' \
+if awk -v first="$scroll_line" -v last="$focus_away_action" \
+    'NR > first && NR < last && /outcome=RejectedStaleSurface/ { found=1 } END { exit !found }' \
     "$SESSION_LOG"; then
-    fail "the Firefox resize Present became stale before visual retirement"
+    fail "a Firefox layout Present became stale before visual retirement"
 fi
-[[ -n "$resize_action" ]] && (( resize_action < resize_line )) ||
-    fail "the Firefox resize stage lacks an ordered Super+Space layout action"
-[[ -n "$resize_projection" ]] && (( resize_action < resize_projection && resize_projection < resize_line )) ||
-    fail "the Firefox resize stage did not retain all three managed surfaces"
+firefox_present_line="$(awk -v first="$layout_action" -v last="$focus_away_action" -v surface="$firefox_surface" '
+    NR > first && NR < last && /^sophia_live_session_present schema=(2|4) status=retired / &&
+        $0 ~ ("surface=" surface " ") { print NR; exit }
+' "$SESSION_LOG")"
+[[ -n "$firefox_present_line" ]] ||
+    fail "the correlated Firefox surface did not present after the layout change"
 promotion_completion="$(grep -E '^sophia_firefox_promotion schema=1 status=complete stages=6 selection_gates=focused content=redacted$' "$SESSION_LOG" | tail -n 1 || true)"
 [[ -n "$promotion_completion" ]] || fail "Firefox six-stage promotion proof did not complete"
 refocus_line="$(line_number '^sophia_firefox_m8 schema=1 status=stage_complete stage=refocus ')"
-firefox_surface="$(field "$visual_armed" surface)" || fail "resize evidence has no Firefox surface"
 focus_away_line="$(awk -v first="$focus_away_action" -v last="$refocus_line" -v firefox="$firefox_surface" '
     NR > first && NR < last && /^sophia_live_wm schema=1 status=focus_reconciled / && $0 !~ ("index: " firefox ",") { print NR; exit }
 ' "$SESSION_LOG")"
@@ -267,21 +298,21 @@ focus_away_applied="$(line_number_after '^sophia_live_session_input_pipeline sch
 focus_return_action="$(line_number_after '^sophia_live_wm schema=1 status=physical_action_committed action=1$' "$focus_away_applied")"
 focus_return_line="$(line_number_after "^sophia_live_wm schema=1 status=focus_reconciled .* surface=SurfaceId \\{ index: ${firefox_surface}," "$focus_return_action")"
 focus_return_applied="$(line_number_after '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_return_line")"
-xi_focus_out="$(line_number_after "sophia_x11_focus_delivery schema=1 .* window=${firefox_surface} focused=false .* xi2_selected=true content=redacted$" "$resize_line")"
+xi_focus_out="$(line_number_after "sophia_x11_focus_delivery schema=1 .* window=${firefox_surface} focused=false .* xi2_selected=true content=redacted$" "$layout_line")"
 xi_focus_in="$(line_number_after "sophia_x11_focus_delivery schema=1 .* window=${firefox_surface} focused=true .* xi2_selected=true content=redacted$" "$xi_focus_out")"
 [[ -n "$focus_away_action" && -n "$focus_away_applied" && -n "$focus_return_action"
     && -n "$focus_return_line" && -n "$focus_return_applied" ]] ||
     fail "Firefox refocus action/control ordering evidence is incomplete"
 [[ -n "$xi_focus_out" && -n "$xi_focus_in" ]] ||
     fail "Firefox did not receive selected XI2 FocusOut/FocusIn"
-(( resize_line < focus_away_action
+(( layout_line < focus_away_action
     && focus_away_action < focus_away_line
     && focus_away_line < focus_away_applied
     && focus_away_applied < focus_return_action
     && focus_return_action < focus_return_line
     && focus_return_line < focus_return_applied
     && focus_return_applied < refocus_line
-    && resize_line < xi_focus_out
+    && layout_line < xi_focus_out
     && xi_focus_out < xi_focus_in
     && xi_focus_in < refocus_line )) ||
     fail "Firefox DOM refocus is not ordered after focus-away, XI2 out/in, and focus return"
@@ -311,9 +342,9 @@ health="$(grep -E '^sophia_live_session_health schema=1 status=clean ' "$SESSION
 for assignment in protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false; do
     require_eq "$health" "${assignment%%=*}" "${assignment#*=}"
 done
-layout_health="$(grep -E '^sophia_live_layout_health schema=1 status=clean ' "$SESSION_LOG" | tail -n 1 || true)"
+layout_health="$(grep -E '^sophia_live_layout_health schema=2 status=clean ' "$SESSION_LOG" | tail -n 1 || true)"
 [[ -n "$layout_health" ]] || fail "clean layout health summary is missing"
-for assignment in recovery_extents=0 constraint_relayout_pending=false; do
+for assignment in recovery_extents=0 standing_targets=0 constraint_relayout_pending=false; do
     require_eq "$layout_health" "${assignment%%=*}" "${assignment#*=}"
 done
 keys="$(grep -E '^sophia_live_session_keys schema=2 status=complete ' "$SESSION_LOG" | tail -n 1)"

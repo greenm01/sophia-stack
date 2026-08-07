@@ -265,12 +265,23 @@ impl PersistentLiveLayout {
                     transaction.surface.index(),
                 );
             }
-            self.arm_standing_recovery_candidate(
+            let standing_recovery_candidate = self.arm_standing_recovery_candidate(
                 transaction,
                 observed_size,
                 visual_evidence,
                 candidate_selected,
             );
+            if standing_recovery_candidate {
+                // Retain the successor's pixels under the currently committed
+                // geometry. The queued relayout changes geometry only after
+                // the temporary admission constraint has been removed.
+                if let Some(layer) = self.layers.get_mut(&transaction.surface) {
+                    layer.source = transaction.target_buffer;
+                    layer.damage = transaction.damage.clone();
+                    layer.generation =
+                        transaction.previous_committed_generation.saturating_add(1);
+                }
+            }
             let resize_owned = self.pending.as_ref().is_some_and(|pending| {
                 pending.requested_sizes.contains_key(&transaction.surface)
             }) || self
@@ -542,26 +553,6 @@ impl PersistentLiveLayout {
         true
     }
 
-    fn release_recovery_extent_after_commit(
-        &mut self,
-        surface: SurfaceId,
-        committed_size: Option<Size>,
-        reason: &'static str,
-    ) -> bool {
-        if let Some(target) = self.layout_epochs.pending_target(surface)
-            && committed_size != Some(target)
-        {
-            println!(
-                "sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface={} reason=standing_target_unmet target={}x{} content=redacted",
-                surface.index(),
-                target.width,
-                target.height,
-            );
-            return false;
-        }
-        self.release_recovery_extent(surface, reason)
-    }
-
     fn complete_visual_commit(
         &mut self,
         visual_candidate: sophia_protocol::SurfaceTransactionKey,
@@ -574,11 +565,6 @@ impl PersistentLiveLayout {
             let surface = candidate.candidate.surface;
             self.layout_epochs
                 .record_committed(surface, candidate.layout_size);
-            self.release_recovery_extent_after_commit(
-                surface,
-                Some(candidate.layout_size),
-                "visual_committed",
-            );
             println!(
                 "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={}",
                 candidate.candidate.transaction.raw(),
@@ -589,31 +575,10 @@ impl PersistentLiveLayout {
             return true;
         }
 
-        // A launch-time recovery epoch can admit the exact fallback frame and
-        // commit before the client answers the standing blind-WM target. That
-        // later frame has no pending layout epoch to arm it, but native
-        // retirement is still exact visual proof. Accept only the outstanding
-        // target while its temporary recovery extent is active; unrelated or
-        // old-sized unarmed Presents remain unable to mutate committed state.
-        if self
-            .layout_epochs
-            .recovery_extent(visual_candidate.surface)
-            .is_none()
-            || self.layout_epochs.pending_target(visual_candidate.surface) != Some(size)
-        {
-            return false;
-        }
-        self.layout_epochs
-            .record_committed(visual_candidate.surface, size);
-        self.release_recovery_extent(visual_candidate.surface, "standing_target_presented");
-        println!(
-            "sophia_live_resize_epoch schema=3 status=visual_committed transaction={} surface={} width={} height={} source=standing_target_recovery",
-            visual_candidate.transaction.raw(),
-            visual_candidate.surface.index(),
-            size.width,
-            size.height,
-        );
-        true
+        // Unarmed Presents may update retained content, but they cannot mutate
+        // logical layout state. Every recovery successor is selected above and
+        // must match its exact native-retirement identity.
+        false
     }
 
     fn constraint_relayout_required(&self) -> bool {
@@ -626,6 +591,10 @@ impl PersistentLiveLayout {
 
     fn recovery_extent_count(&self) -> usize {
         self.layout_epochs.recovery_extent_count()
+    }
+
+    fn standing_target_count(&self) -> usize {
+        self.layout_epochs.pending_target_count()
     }
 
     fn client_positioned_mapped(&self, surface: SurfaceId) -> bool {
@@ -672,7 +641,6 @@ impl PersistentLiveLayout {
             .pending_target_surfaces()
             .filter(|(surface, target)| {
                 self.layout_epochs.recovery_extent(*surface).is_none()
-                    && !self.awaiting_visual_commits.surface_awaiting(*surface)
                     && self.layout_epochs.committed_size(*surface) != Some(*target)
             })
             .collect::<Vec<_>>();

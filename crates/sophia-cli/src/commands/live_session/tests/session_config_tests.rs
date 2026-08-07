@@ -33,7 +33,7 @@ fn firefox_promotion_stage_proof_skips_focused_selection_stages() {
         vec![("loaded", 0, 24), ("keyboard", 1, 40)]
     );
     assert!(proof.navigation_ready("_NET_WM_NAME", 73));
-    for (title_bytes, stage, index) in [(88, "scroll", 2), (104, "resize", 3), (120, "refocus", 4)]
+    for (title_bytes, stage, index) in [(88, "scroll", 2), (104, "layout", 3), (120, "refocus", 4)]
     {
         assert_eq!(
             proof.observe("_NET_WM_NAME", title_bytes),

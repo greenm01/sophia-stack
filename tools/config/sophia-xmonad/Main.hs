@@ -22,8 +22,8 @@ sophiaKeys config =
 
 sophiaLayouts =
   ThreeColMid 1 (3 / 100) (1 / 2)
-    ||| Mirror (Tall 1 (3 / 100) (1 / 2))
     ||| Tall 1 (3 / 100) (1 / 2)
+    ||| Mirror (Tall 1 (3 / 100) (1 / 2))
     ||| Full
     ||| spiral (6 / 7)
 

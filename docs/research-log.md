@@ -3,6 +3,58 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-07: Admission recovery now has a deterministic successor phase
+
+The installed `1a7d67c3` session reproduced the short, black Firefox window on
+Super+Space. Its fallback Present retired at `1280x1040`, but admission kept
+that recovery extent because the standing `1276x1422` target was still unmet.
+The same temporary extent then constrained every ordinary xmonad relayout back
+to the fallback. A target Present could not become the bounded successor while
+the fallback candidate was still awaiting retirement, so the only previously
+working route was an unarmed-retirement timing race.
+
+Recovery is now explicitly two phase. Exact fallback retirement makes the
+surface managed, removes the temporary constraint while retaining its pixels,
+preserves the standing target, and queues one normal relayout. The visual
+tracker permits one fallback and one distinct logical-target successor per
+surface, rejects repeated successors, and requires exact native-retirement
+identity before the target changes committed layout state. Session completion
+also fails closed on a remaining standing target, not only a recovery extent.
+The `AdmissionRecovery` TLA+ model explores target observation before and after
+fallback retirement and proves one relayout, constraint release before target
+commit, exact target retirement, and eventual convergence.
+
+The packaged xmonad order is restored to the user's established
+`ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, `Spiral` sequence. The promotion
+page no longer assumes the focused Firefox surface must resize on the first
+cycle: it accepts an outer position or size change, while the full M8 proof
+retains its resize-specific checkpoint. The strict verifier correlates Firefox
+from its launch transaction, requires one moved layout, every affected exact
+retirement, three visible managed surfaces, a post-action Firefox Present, and
+clean recovery. Deterministic Rust, proof-page, canary, verifier, configured
+xmonad, and TLC gates cover the source change. The installed `1a7d67c3`
+evidence is a failure reproduction; a new immutable build and one focused
+physical proof remain required.
+
+The local source audit also exposed the already-generated `sophia_wm_v1` Rust
+wire table above the review threshold. It remains one generator-owned protocol
+table, so the exact path now has a temporary cohesion-ledger entry; splitting
+the schema generator is separate from this runtime recovery correction. The
+new recovery tests were instead split at their actual admission/recovery seam.
+
+## 2026-08-07: The inset-geometry successor is installed
+
+Release `0.1.0-1a7d67c30615` packages signed Sophia commit `1a7d67c3`, the
+configured xmonad policy whose first cycle is `ThreeColMid` to `Mirror Tall`,
+and xmobar commit `f3d7fb5461c1`. `/opt/sophia/current` resolves to that
+repository-independent release. Its manifest, complete `SHA256SUMS`, and
+packaged-policy verifier pass against the installed directory.
+
+This closes only the successor's build/install criterion. The previous
+`56dad4de` xterm and ten-cycle results remain historical evidence; the new
+surface-transaction contract and packaged layout order require fresh focused
+physical, lifecycle, color, and soak gates on `1a7d67c3`.
+
 ## 2026-08-07: Inset Present content is distinct from outer layout geometry
 
 The live Firefox proof received every Super+Space action, but its standing

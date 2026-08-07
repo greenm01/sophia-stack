@@ -18,7 +18,7 @@ impl FirefoxM8StageProof {
         "dialog",
     ];
     const PROMOTION_STAGES: [&'static str; 6] = [
-        "loaded", "keyboard", "scroll", "resize", "refocus", "dialog",
+        "loaded", "keyboard", "scroll", "layout", "refocus", "dialog",
     ];
 
     pub(super) fn promotion() -> Self {

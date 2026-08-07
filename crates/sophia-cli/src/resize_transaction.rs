@@ -56,6 +56,15 @@ impl ResizeVisualCommitTracker {
             .any(|candidate| candidate.candidate.surface == surface)
     }
 
+    /// Returns whether this surface already has a bounded successor for the
+    /// same logical layout target. A recovery frame and its successor may both
+    /// retire, but repeated Presents for one target must not grow the tracker.
+    pub fn surface_layout_awaiting(&self, surface: SurfaceId, layout_size: Size) -> bool {
+        self.awaiting.values().any(|candidate| {
+            candidate.candidate.surface == surface && candidate.layout_size == layout_size
+        })
+    }
+
     pub fn exact_candidate(&self, candidate: SurfaceTransactionKey, size: Size) -> bool {
         self.awaiting
             .get(&(candidate.transaction, candidate.surface))

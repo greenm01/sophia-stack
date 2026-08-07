@@ -213,9 +213,13 @@
         .into());
     }
     let recovery_extent_count = layout.recovery_extent_count();
-    if recovery_extent_count != 0 || layout.constraint_relayout_required() {
+    let standing_target_count = layout.standing_target_count();
+    if recovery_extent_count != 0
+        || standing_target_count != 0
+        || layout.constraint_relayout_required()
+    {
         return Err(format!(
-            "persistent live session ended with temporary layout constraints: recovery_extents={recovery_extent_count} constraint_relayout_pending={}",
+            "persistent live session ended with incomplete layout recovery: recovery_extents={recovery_extent_count} standing_targets={standing_target_count} constraint_relayout_pending={}",
             layout.constraint_relayout_required(),
         )
         .into());
@@ -528,8 +532,9 @@
         wm_session.as_ref().is_some_and(|wm| wm.degraded),
     );
     println!(
-        "sophia_live_layout_health schema=1 status=clean recovery_extents={} constraint_relayout_pending={}",
+        "sophia_live_layout_health schema=2 status=clean recovery_extents={} standing_targets={} constraint_relayout_pending={}",
         recovery_extent_count,
+        standing_target_count,
         layout.constraint_relayout_required(),
     );
     println!(

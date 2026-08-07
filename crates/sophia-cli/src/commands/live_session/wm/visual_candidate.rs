@@ -97,32 +97,28 @@ impl PersistentLiveLayout {
         layout_size: Size,
         evidence: sophia_engine::SurfaceVisualEvidence,
         candidate_selected: bool,
-    ) {
+    ) -> bool {
         if !candidate_selected
             || evidence != sophia_engine::SurfaceVisualEvidence::PresentedBuffer
             || self.pending.is_some()
-            || self
-                .layout_epochs
-                .recovery_extent(transaction.surface)
-                .is_none()
             || self.layout_epochs.pending_target(transaction.surface) != Some(layout_size)
             || self
                 .awaiting_visual_commits
-                .surface_awaiting(transaction.surface)
+                .surface_layout_awaiting(transaction.surface, layout_size)
         {
-            return;
+            return false;
         }
         let Some(source_size) = live_transaction_pixel_size(
             transaction.target_buffer,
             &self.dma_buf_sizes,
             &self.cpu_buffer_sizes,
         ) else {
-            return;
+            return false;
         };
 
-        // A client can answer the standing target while its fallback frame is
-        // still retiring. The projected frame may remain clipped to recovery,
-        // but only this exact content's native retirement can release it.
+        // A client can answer the standing target before or after its fallback
+        // retires. Keep one exact successor beside the fallback; normal layout
+        // still controls geometry, and only native retirement commits pixels.
         self.awaiting_visual_commits
             .arm(ResizeVisualCommit {
                 candidate: transaction.key(),
@@ -138,6 +134,7 @@ impl PersistentLiveLayout {
             layout_size.width,
             layout_size.height,
         );
+        true
     }
 
     fn selected_pre_admission_transaction(

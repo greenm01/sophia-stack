@@ -333,7 +333,7 @@ grep -Eq '^sophia_live_present_cadence schema=1 status=complete .* nonadvancing=
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' \
     "$EVIDENCE_FILE" || fail "final session health is not clean"
 grep -Fxq \
-    'sophia_live_layout_health schema=1 status=clean recovery_extents=0 constraint_relayout_pending=false' \
+    'sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false' \
     "$EVIDENCE_FILE" || fail "layout recovery state did not drain"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$EVIDENCE_FILE" || fail "unexpected X11 protocol errors were observed"

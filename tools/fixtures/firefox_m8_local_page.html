@@ -46,6 +46,7 @@
   let selectionPeerAway = false;
   let primarySourceArmed = false;
   let verticalWheelEvents = 0;
+  let promotionLayoutBaseline = null;
   const status = document.querySelector('#status');
   const next = document.querySelector('#next');
   const source = document.querySelector('#source');
@@ -70,7 +71,7 @@
       case 0: return 'Step 1/6: type sophia.';
       case 1:
       case 3: return 'Step 2/6: click the full-page navigation target, then scroll vertically on the next document.';
-      case 4: return 'Step 3/6: press Super+Space to resize.';
+      case 4: return 'Step 3/6: press Super+Space to change the layout.';
       case 5: return 'Step 4/6: press Super+J away, then Super+J as needed until Firefox returns.';
       case 6: return 'Step 5/6: click the full-page dialog target, then click the modal confirmation.';
       case 7: return 'Step 6/6 complete: press Ctrl+Q for a normal Firefox close.';
@@ -86,6 +87,9 @@
     status.textContent = label;
     next.textContent = nextStep(stage);
     document.body.style.background = `hsl(${stage * 47} 55% 24%)`;
+    if (promotionOnly && stage === 4) {
+      promotionLayoutBaseline = [screenX, screenY, outerWidth, outerHeight];
+    }
     if (selectionPeer && stage === 2) {
       source.value = 'sophia-firefox-primary';
       source.focus();
@@ -195,9 +199,22 @@
     completeScrollIfReady();
   }, { passive: true });
   addEventListener('scroll', completeScrollIfReady, { passive: true });
+  function completePromotionLayoutIfReady() {
+    if (!promotionOnly || stage !== 4 || !promotionLayoutBaseline) return;
+    const geometry = [screenX, screenY, outerWidth, outerHeight];
+    if (geometry.some((value, index) => value !== promotionLayoutBaseline[index])) {
+      advance('layout change complete');
+    }
+  }
   addEventListener('resize', () => {
-    if (stage === 4) advance('resize complete');
+    if (stage !== 4) return;
+    if (promotionOnly) {
+      completePromotionLayoutIfReady();
+    } else {
+      advance('resize complete');
+    }
   });
+  setInterval(completePromotionLayoutIfReady, 50);
   document.querySelector('#dialog').addEventListener('click', event => {
     if (stage === 6 && (!dialogOnly || event.isTrusted)) {
       const dialog = document.querySelector('#proof-dialog');

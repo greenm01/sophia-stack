@@ -91,6 +91,26 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted the wrong resize action" >&2
     exit 1
 fi
+sed 's/transaction=18 surfaces=4 moved_surfaces=3/transaction=18 surfaces=4 moved_surfaces=0/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted a layout with no moved surfaces" >&2
+    exit 1
+fi
+grep -Fv 'status=retired transaction=182 surface=4 ' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted no post-layout Firefox Present" >&2
+    exit 1
+fi
+sed 's/workspace_projection_committed transaction=18/workspace_projection_committed transaction=17/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted an unrelated workspace projection" >&2
+    exit 1
+fi
 sed '/window=4 focused=false core_selected=true xi2_selected=true/d' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
@@ -142,29 +162,35 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     echo "physical Firefox verifier accepted a GDK thaw underflow" >&2
     exit 1
 fi
-sed 's/matched_surfaces=3/matched_surfaces=0/' "$SESSION" >"$TEMP_FILE"
+sed 's/matched_surfaces=2/matched_surfaces=0/' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted an incomplete resize epoch" >&2
+    echo "physical Firefox verifier accepted an incomplete layout epoch" >&2
     exit 1
 fi
 sed '/status=visual_committed /d' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted resize pixels without retirement" >&2
+    echo "physical Firefox verifier accepted layout pixels without retirement" >&2
     exit 1
 fi
 sed '/status=visual_committed /i sophia_live_native_retirement schema=1 status=settled outcome=RejectedStaleSurface' \
     "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
-    echo "physical Firefox verifier accepted a stale resize Present" >&2
+    echo "physical Firefox verifier accepted a stale layout Present" >&2
     exit 1
 fi
 grep -Fv 'sophia_live_layout_health' "$SESSION" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
     "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
     echo "physical Firefox verifier accepted missing layout health" >&2
+    exit 1
+fi
+sed 's/standing_targets=0/standing_targets=1/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY"; then
+    echo "physical Firefox verifier accepted an outstanding recovery target" >&2
     exit 1
 fi
 awk '

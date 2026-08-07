@@ -20,6 +20,8 @@ require "document.querySelector('#clipboard').hidden = true;"
 require "document.querySelector('#primary').hidden = true;"
 require "document.querySelector('#navigate').href = '?navigated=1&promotion_only=1';"
 require "if (selectionPeer || promotionOnly) return;"
+require "promotionLayoutBaseline = [screenX, screenY, outerWidth, outerHeight];"
+require "advance('layout change complete');"
 require "document.body.classList.remove('dialog-proof');"
 require "next.textContent = nextStep(7);"
 

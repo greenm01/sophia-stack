@@ -34,30 +34,35 @@ completion="$(line '^sophia_firefox_rendering schema=1 status=complete page_read
 restart_count="$(awk -v start="$firefox_start" 'NR > start && /^sophia_live_wm schema=1 status=restarted / { count += 1 } END { print count + 0 }' "$SESSION_LOG")"
 (( restart_count <= 1 )) || fail "Firefox admission required $restart_count WM restarts"
 
-retained_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} reason=standing_target_unmet target=1276x1422 content=redacted$"
-retained_count="$(grep -Ec "$retained_pattern" "$SESSION_LOG" || true)"
-surface_retained_count="$(grep -Ec "^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} " "$SESSION_LOG" || true)"
-cleared_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface=${firefox_surface} reason=standing_target_presented$"
-standing_target_pattern="^sophia_live_resize_epoch schema=3 status=visual_committed transaction=[0-9]+ surface=${firefox_surface} width=1276 height=1422 source=standing_target_recovery$"
+if grep -Eq "^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} " "$SESSION_LOG"; then
+    fail 'Firefox retained its temporary fallback constraint after admission'
+fi
+cleared_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface=${firefox_surface} reason=admission_present_retired$"
+standing_target_pattern="^sophia_live_resize_epoch schema=3 status=visual_armed epoch=[0-9]+ transaction=[0-9]+ surface=${firefox_surface} width=1276 height=1422 source=standing_target_recovery$"
 cleared_count="$(grep -Ec "$cleared_pattern" "$SESSION_LOG" || true)"
 standing_target_count="$(grep -Ec "$standing_target_pattern" "$SESSION_LOG" || true)"
-(( surface_retained_count == retained_count )) ||
-    fail 'Firefox retained an unexpected fallback recovery extent'
-(( retained_count <= 1 )) || fail 'Firefox retained its fallback extent more than once'
-if (( retained_count == 1 )); then
-    retained="$(line "$retained_pattern")"
-    (( cleared_count == 1 && standing_target_count == 1 )) ||
-        fail 'fallback recovery did not clear through the standing target'
+(( cleared_count <= 1 && standing_target_count <= 1 )) ||
+    fail 'Firefox repeated a fallback-clear or standing-target successor'
+if (( cleared_count == 1 )); then
+    (( standing_target_count == 1 )) || fail 'fallback recovery did not arm one target successor'
     cleared="$(line "$cleared_pattern")"
     standing_target="$(line "$standing_target_pattern")"
-    (( retained < cleared && cleared <= standing_target && standing_target < full_retirement )) ||
-        fail 'fallback recovery and exact retirement are out of order'
-elif (( cleared_count != 0 || standing_target_count != 0 )); then
-    fail 'standing-target recovery appeared without a retained fallback extent'
+    standing_record="$(sed -n "${standing_target}p" "$SESSION_LOG")"
+    standing_transaction="${standing_record#*transaction=}"
+    standing_transaction="${standing_transaction%% *}"
+    standing_commit="$(line "^sophia_live_resize_epoch schema=3 status=visual_committed transaction=${standing_transaction} surface=${firefox_surface} width=1276 height=1422$")"
+    [[ -n "$standing_commit" ]] || fail 'standing target lacked exact native retirement'
+    (( cleared < standing_commit && standing_target < standing_commit
+        && standing_commit <= full_retirement )) ||
+        fail 'fallback release and exact target retirement are out of order'
+elif (( standing_target_count != 0 )); then
+    fail 'standing-target recovery appeared without a fallback release'
 fi
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pending_actions=0 pending_input=0 .*wm_degraded=false' "$SESSION_LOG" ||
     fail 'session health did not drain cleanly'
+grep -Eq '^sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false$' "$SESSION_LOG" ||
+    fail 'layout recovery did not drain cleanly'
 grep -Eq '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 ' "$SESSION_LOG" ||
     fail 'application/frontend cleanup did not complete'
 echo "Firefox full-height rendering canary verified: $SESSION_LOG"

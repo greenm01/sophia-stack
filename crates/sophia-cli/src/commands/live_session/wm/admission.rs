@@ -480,11 +480,10 @@ impl PersistentLiveLayout {
         self.admission_retries.remove(&surface);
         self.layout_epochs
             .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
-        self.release_recovery_extent_after_commit(
-            surface,
-            self.layout_epochs.committed_size(surface),
-            "present_retired",
-        );
+        // The fallback frame's retirement completes admission, not the
+        // standing layout target. Remove its temporary constraint now and
+        // queue exactly one ordinary relayout while retaining the pixels.
+        self.release_recovery_extent(surface, "admission_present_retired");
         self.release_managed_admission_groups();
         if let Some((expected, wm_transaction)) = self.retirement_focus.remove(&surface)
             && expected == visual_candidate

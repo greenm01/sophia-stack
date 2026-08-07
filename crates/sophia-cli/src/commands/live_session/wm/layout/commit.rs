@@ -41,14 +41,8 @@ impl PersistentLiveLayout {
                     BufferSource::CpuBuffer { .. } => {
                         if self.admissions.mark_managed(*surface) {
                             self.planning_surfaces.remove(surface);
-                            let committed_size = live_transaction_pixel_size(
-                                transaction.target_buffer,
-                                &self.dma_buf_sizes,
-                                &self.cpu_buffer_sizes,
-                            );
-                            self.release_recovery_extent_after_commit(
+                            self.release_recovery_extent(
                                 *surface,
-                                committed_size,
                                 "cpu_admission_committed",
                             );
                             println!(
@@ -61,11 +55,7 @@ impl PersistentLiveLayout {
                     BufferSource::XPixmap { .. } | BufferSource::None => {
                         if self.admissions.mark_managed(*surface) {
                             self.planning_surfaces.remove(surface);
-                            self.release_recovery_extent_after_commit(
-                                *surface,
-                                None,
-                                "admission_committed",
-                            );
+                            self.release_recovery_extent(*surface, "admission_committed");
                         }
                     }
                     BufferSource::DmaBuf { .. } => {}
@@ -85,21 +75,27 @@ impl PersistentLiveLayout {
                         &self.cpu_buffer_sizes,
                     );
                     if self.visual_candidate_requires_retirement(transaction) {
-                        self.awaiting_visual_commits
-                            .arm(ResizeVisualCommit {
-                                candidate: transaction.key(),
-                                size,
-                                layout_size,
-                            })
-                            .expect("a staged layout owns one bounded visual candidate");
-                        println!(
-                            "sophia_live_resize_epoch schema=3 status=visual_armed epoch={} transaction={} surface={} width={} height={}",
-                            pending.transaction.raw(),
-                            transaction.transaction.raw(),
-                            transaction.surface.index(),
-                            layout_size.width,
-                            layout_size.height,
-                        );
+                        let candidate = ResizeVisualCommit {
+                            candidate: transaction.key(),
+                            size,
+                            layout_size,
+                        };
+                        if !self.awaiting_visual_commits.surface_layout_awaiting(
+                            transaction.surface,
+                            layout_size,
+                        ) {
+                            self.awaiting_visual_commits
+                                .arm(candidate)
+                                .expect("a staged layout owns one bounded visual candidate");
+                            println!(
+                                "sophia_live_resize_epoch schema=3 status=visual_armed epoch={} transaction={} surface={} width={} height={}",
+                                pending.transaction.raw(),
+                                transaction.transaction.raw(),
+                                transaction.surface.index(),
+                                layout_size.width,
+                                layout_size.height,
+                            );
+                        }
                     } else {
                         self.layout_epochs
                             .record_committed(transaction.surface, layout_size);

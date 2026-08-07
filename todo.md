@@ -47,13 +47,15 @@ Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. The first immutable successor exposed a
 missing core depth-1 pixmap format during its focused startup gate. The
-corrected installed candidate passes both that startup regression and its
-automated ten-cycle lifecycle gate. A source successor now separates inset
-Present content from logical outer geometry and restores a visible first
-layout cycle; because both executable and packaged policy changed, install and
-ten-cycle evidence are open again for that successor. Run its focused gates,
-then pass the visible color proof, two-hour interactive soak, and one full
-workday.
+corrected predecessor passes both that startup regression and its automated
+ten-cycle lifecycle gate. Installed release `0.1.0-1a7d67c30615` separates
+inset Present content from logical outer geometry, but its live Super+Space
+run exposed a deterministic admission-recovery loop that retained Firefox's
+short fallback extent. The source successor implements a two-phase fallback
+and standing-target lifecycle and restores the established xmonad layout
+order; it is not installed or physically proven yet. Build that successor,
+run its focused gate once, then pass the remaining lifecycle, visible color,
+two-hour interactive soak, and full-workday gates.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -105,13 +107,13 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-56dad4de8b5f` is the installed candidate. It freezes the
-  intended xmonad and xmobar policy and restores the conventional auxiliary
-  pixmap depths rejected by its predecessor. Its corrected xterm startup,
-  switch-away/resume, and normal-logout slice passes; the remaining focused
-  application and layout gates are still open. Its xterm and ten-cycle results
-  remain historical evidence, but it cannot be promoted after the inset
-  Present and first-layout-cycle source correction.
+- Release `0.1.0-1a7d67c30615` remains installed, but its short Firefox
+  fallback after Super+Space is retained failure evidence, not a promotion
+  candidate. The source successor clears admission-only recovery before one
+  ordinary standing-target relayout and restores `ThreeColMid`, `Tall`,
+  `Mirror Tall`, `Full`, `Spiral`. Its predecessor's xterm and ten-cycle
+  results remain historical evidence; the next immutable build must repeat
+  every physical and lifecycle gate affected by executable and policy changes.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -156,10 +158,11 @@ the correct authority.
 ## Milestone 12: Immutable Desktop Candidate And Workday Soak
 
 The previous ten-cycle gates remain valid historical evidence for commits
-`958fb5e6` and `56dad4de`. The source successor changes both Sophia's
-surface-transaction contract and the packaged xmonad layout order, so all
-promotion gates and soaks must use a newly installed immutable build of that
-successor.
+`958fb5e6` and `56dad4de`. Installed `1a7d67c3` is also retained as the
+admission-recovery failure reproduction. The source successor changes Sophia's
+recovery lifecycle, completion health contract, physical verifier, and packaged
+xmonad order, so all promotion gates and soaks must use a newly installed
+immutable build of that successor.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -220,10 +223,15 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 
 ### 12.3 Rebuild And Re-Prove The Candidate
 
-- [ ] Build and install the source successor as one repository-independent
+- [x] Model and implement two-phase admission recovery: retire the fallback,
+  clear only its temporary constraint, retain one bounded standing-target
+  successor, queue one normal relayout, and commit the target only after exact
+  native retirement. Fail session completion on any standing-target debt.
+- [ ] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout.
+  a source checkout. The installed `1a7d67c3` release predates this recovery
+  fix and does not satisfy this item.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero

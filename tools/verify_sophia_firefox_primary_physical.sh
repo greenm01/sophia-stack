@@ -48,7 +48,7 @@ kitty_notify="$(after '^.*sophia_x11_selection_delivery schema=1 stage=socket_fl
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pending_actions=0 pending_input=0 .*wm_degraded=false' "$SESSION_LOG" ||
     fail 'session health did not drain cleanly'
-grep -Eq '^sophia_live_layout_health schema=1 status=clean recovery_extents=0 constraint_relayout_pending=false$' "$SESSION_LOG" ||
+grep -Eq '^sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false$' "$SESSION_LOG" ||
     fail 'temporary layout constraints did not drain'
 grep -Eq '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 ' "$SESSION_LOG" ||
     fail 'application/frontend cleanup did not complete'

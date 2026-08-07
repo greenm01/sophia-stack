@@ -38,7 +38,7 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=10 submissions=268 retirements=267 callbacks=267 nonzero_exports=268'
     echo 'sophia_live_output schema=1 status=complete output=2 checksum=20 submissions=1 retirements=0 callbacks=0 nonzero_exports=1'
     echo 'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false'
-    echo 'sophia_live_layout_health schema=1 status=clean recovery_extents=0 constraint_relayout_pending=false'
+    echo 'sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false'
     echo 'sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0'
     echo 'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=11'
     echo 'sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed'

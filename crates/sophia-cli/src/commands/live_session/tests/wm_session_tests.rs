@@ -1,8 +1,9 @@
 use super::*;
 use crate::commands::live_session::{
     LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
-    LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, committed_relayout_nodes,
-    live_layout_node_from_facts, planning_state_for_response, wm_transport_requires_reseed,
+    LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
+    committed_relayout_nodes, live_layout_node_from_facts, planning_state_for_response,
+    wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
@@ -749,6 +750,8 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         sophia_engine::SurfacePresentationAdmissionState::Managed
     );
     assert_eq!(layout.layout_epochs.pending_target(firefox), Some(tile));
+    assert_eq!(layout.layout_epochs.recovery_extent(firefox), None);
+    assert!(layout.constraint_relayout_required());
 }
 
 #[test]
@@ -913,4 +916,5 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
 include!("wm_session_tests/admission.rs");
 include!("wm_session_tests/direct_map.rs");
 include!("wm_session_tests/pre_admission.rs");
+include!("wm_session_tests/recovery.rs");
 include!("wm_session_tests/response_lifetime.rs");

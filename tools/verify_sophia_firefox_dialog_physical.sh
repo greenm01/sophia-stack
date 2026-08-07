@@ -53,34 +53,38 @@ restart_count="$(awk -v first="$firefox_start" -v last="$page_frame" 'NR > first
 if awk -v first="$page_frame" -v last="$completion" 'NR > first && NR < last && /^sophia_live_wm schema=1 status=restarted / { found=1 } END { exit !found }' "$SESSION_LOG"; then
     fail 'opening or confirming the DOM modal restarted the WM'
 fi
-if awk -v first="$page_frame" -v last="$completion" 'NR > first && NR < last && (/status=layout_timeout/ || /sophia_live_surface_admission .* status=frontend_admitted/ || /status=recovery_extent_retained /) { found=1 } END { exit !found }' "$SESSION_LOG"; then
+if awk -v first="$page_frame" -v last="$completion" 'NR > first && NR < last && (/status=layout_timeout/ || /sophia_live_surface_admission .* status=frontend_admitted/ || /status=recovery_extent_(retained|cleared) /) { found=1 } END { exit !found }' "$SESSION_LOG"; then
     fail 'the DOM modal created a new toplevel or disturbed stable admission'
 fi
 
-retained_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} reason=standing_target_unmet target=1276x1422 content=redacted$"
-cleared_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface=${firefox_surface} reason=standing_target_presented$"
-standing_pattern="^sophia_live_resize_epoch schema=3 status=visual_committed transaction=[0-9]+ surface=${firefox_surface} width=1276 height=1422 source=standing_target_recovery$"
-retained_count="$(grep -Ec "$retained_pattern" "$SESSION_LOG" || true)"
-surface_retained_count="$(grep -Ec "^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} " "$SESSION_LOG" || true)"
+if grep -Eq "^sophia_live_resize_epoch schema=2 status=recovery_extent_retained surface=${firefox_surface} " "$SESSION_LOG"; then
+    fail 'Firefox retained its temporary fallback constraint after admission'
+fi
+cleared_pattern="^sophia_live_resize_epoch schema=2 status=recovery_extent_cleared surface=${firefox_surface} reason=admission_present_retired$"
+standing_pattern="^sophia_live_resize_epoch schema=3 status=visual_armed epoch=[0-9]+ transaction=[0-9]+ surface=${firefox_surface} width=1276 height=1422 source=standing_target_recovery$"
 cleared_count="$(grep -Ec "$cleared_pattern" "$SESSION_LOG" || true)"
 standing_count="$(grep -Ec "$standing_pattern" "$SESSION_LOG" || true)"
-(( surface_retained_count == retained_count && retained_count <= 1 )) ||
-    fail 'Firefox retained an unexpected or repeated fallback extent'
-if (( retained_count == 1 )); then
-    (( cleared_count == 1 && standing_count == 1 )) ||
-        fail 'fallback recovery did not clear through the standing target'
-    retained="$(line "$retained_pattern")"
+(( cleared_count <= 1 && standing_count <= 1 )) ||
+    fail 'Firefox repeated a fallback-clear or standing-target successor'
+if (( cleared_count == 1 )); then
+    (( standing_count == 1 )) || fail 'fallback recovery did not arm one target successor'
     cleared="$(line "$cleared_pattern")"
     standing="$(line "$standing_pattern")"
-    (( retained < cleared && cleared <= standing && standing < page_frame )) ||
-        fail 'fallback recovery and the ready page frame are out of order'
-elif (( cleared_count != 0 || standing_count != 0 )); then
-    fail 'standing-target recovery appeared without a retained fallback extent'
+    standing_record="$(sed -n "${standing}p" "$SESSION_LOG")"
+    standing_transaction="${standing_record#*transaction=}"
+    standing_transaction="${standing_transaction%% *}"
+    standing_commit="$(line "^sophia_live_resize_epoch schema=3 status=visual_committed transaction=${standing_transaction} surface=${firefox_surface} width=1276 height=1422$")"
+    [[ -n "$standing_commit" ]] || fail 'standing target lacked exact native retirement'
+    (( cleared < standing_commit && standing < standing_commit
+        && standing_commit < page_frame )) ||
+        fail 'fallback release and ready page frame are out of order'
+elif (( standing_count != 0 )); then
+    fail 'standing-target recovery appeared without a fallback release'
 fi
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pending_actions=0 pending_input=0 .*wm_degraded=false' "$SESSION_LOG" ||
     fail 'session health did not drain cleanly'
-grep -Eq '^sophia_live_layout_health schema=1 status=clean recovery_extents=0 constraint_relayout_pending=false$' "$SESSION_LOG" ||
+grep -Eq '^sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false$' "$SESSION_LOG" ||
     fail 'temporary layout constraints did not drain'
 grep -Eq '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 ' "$SESSION_LOG" ||
     fail 'application/frontend cleanup did not complete'

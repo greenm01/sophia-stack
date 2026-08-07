@@ -1130,19 +1130,21 @@ it. Kitty A and Kitty B each accept three short,
 content-redacted checkpoints before Firefox, after its normal `Ctrl+Q` exit,
 and after its restarted window is closed through xmonad. The Firefox page
 requires keyboard input, real navigation followed by document scrolling,
-resize, focus-away/focus-return, and a pointer-opened dialog. `CLIPBOARD` and
-`PRIMARY` are excluded because their focused physical gates and bidirectional
-wire regressions are authoritative. The strict verifier rejects replayed
-selection stages, orders the six Kitty checkpoints around the two
+a layout change, focus-away/focus-return, and a pointer-opened dialog.
+`CLIPBOARD` and `PRIMARY` are excluded because their focused physical gates and
+bidirectional wire regressions are authoritative. The strict verifier rejects
+replayed selection stages, orders the six Kitty checkpoints around the two
 status-zero Firefox exits, requires replacement-document readiness followed by
 at least one routed axis packet before DOM scroll completion, and rejects pending
 input/actions, protocol errors, native/frontend/authority cleanup debt, or
-retained temporary layout constraints. Its resize checkpoint requires the
-actual Super+Space action, a committed layout with an exact Firefox resize
-epoch and post-configure pixel retirement, and all three managed surfaces
-remaining visible. The configured first cycle is `ThreeColMid` to `Mirror
-Tall`, so the focused master changes from a vertical to a horizontal extent in
-one action; the real-xmonad smoke locks that order down. Its dialog checkpoint
+retained temporary layout constraints or standing-target debt. Its layout
+checkpoint requires exactly one Super+Space action, a committed layout with
+nonzero movement, exact retirement for every affected surface, a subsequent
+Present from the launch-correlated Firefox surface, and all three managed
+surfaces remaining visible. The configured first cycle is `ThreeColMid` to
+`Tall`, matching the user's established policy; the proof deliberately accepts
+an outer position or size change instead of requiring Firefox itself to resize.
+The real-xmonad smoke locks that order down. Its dialog checkpoint
 requires popup-document readiness, a five-surface layout snapshot,
 confirmation, and a return to the four-surface physical xmobar baseline before
 Firefox exits.

@@ -325,6 +325,10 @@ impl LayoutEpochCoordinator {
             .map(|(surface, size)| (*surface, *size))
     }
 
+    pub fn pending_target_count(&self) -> usize {
+        self.pending_targets.len()
+    }
+
     /// Records a complete authority buffer extent without claiming that its
     /// pixels have entered committed visual state.
     pub fn record_safe_observation(

@@ -119,6 +119,35 @@ fn one_layout_transaction_tracks_multiple_surface_retirements_independently() {
 }
 
 #[test]
+fn recovery_frame_and_one_standing_target_successor_are_bounded_independently() {
+    let surface = SurfaceId::new(95, 1);
+    let fallback = size(1280, 1040);
+    let target = size(1276, 1422);
+    let mut tracker = ResizeVisualCommitTracker::default();
+    tracker
+        .arm(ResizeVisualCommit {
+            candidate: visual_candidate(TransactionId::from_raw(950), surface),
+            size: fallback,
+            layout_size: fallback,
+        })
+        .unwrap();
+    tracker
+        .arm(ResizeVisualCommit {
+            candidate: visual_candidate(TransactionId::from_raw(951), surface),
+            size: target,
+            layout_size: target,
+        })
+        .unwrap();
+
+    assert!(tracker.surface_layout_awaiting(surface, fallback));
+    assert!(tracker.surface_layout_awaiting(surface, target));
+    assert_eq!(tracker.len(), 2);
+    // A repeated Present for the target is recognized before callers arm it;
+    // the per-surface recovery chain therefore stays at two candidates.
+    assert!(tracker.surface_layout_awaiting(surface, target));
+}
+
+#[test]
 fn inset_content_retirement_commits_its_distinct_outer_layout_extent() {
     let surface = SurfaceId::new(94, 1);
     let candidate = visual_candidate(TransactionId::from_raw(940), surface);
