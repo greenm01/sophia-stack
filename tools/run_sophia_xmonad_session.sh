@@ -133,20 +133,6 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 firefox_m10_probe_dir=""
 firefox_m10_profile_dir=""
-if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
-    firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
-    firefox_m10_profile_dir="$firefox_m10_probe_dir/firefox-profile"
-    mkdir -p "$firefox_m10_profile_dir"
-    chmod 700 "$firefox_m10_profile_dir"
-    printf '%s\n' \
-        'user_pref("browser.tabs.remote.autostart", false);' \
-        'user_pref("browser.tabs.remote.autostart.2", false);' \
-        'user_pref("fission.autostart", false);' \
-        'user_pref("middlemouse.paste", true);' \
-        'user_pref("middlemouse.contentLoadURL", false);' \
-        >"$firefox_m10_profile_dir/user.js"
-    chmod 600 "$firefox_m10_profile_dir/user.js"
-fi
 if [[ -s "$PID_FILE" ]]; then
     previous_pid="$(<"$PID_FILE")"
     if [[ "$previous_pid" =~ ^[0-9]+$ ]] && kill -0 "$previous_pid" 2>/dev/null; then
@@ -272,6 +258,11 @@ cleanup() {
     session_pid=""
     [[ -z "$guard_pid" ]] || terminate_bounded "$guard_pid" "Sophia input guard"
     guard_pid=""
+    if [[ -n "$firefox_m10_probe_dir" ]]; then
+        rm -rf -- "$firefox_m10_probe_dir"
+        firefox_m10_probe_dir=""
+        firefox_m10_profile_dir=""
+    fi
     rm -f "$PID_FILE"
     if [[ -n "$kd_mode" ]] && ! python3 "$TTY_MODE_HELPER" "$kd_mode" 2>/dev/null; then
         status=1
@@ -331,6 +322,25 @@ trap cleanup EXIT
 trap 'stop_from_signal 130' INT
 trap 'stop_from_signal 143' TERM
 printf '%s\n' "$$" >"$PID_FILE"
+
+if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
+    # Proof profiles can exceed 100 MiB. They are session resources, not
+    # retained evidence, so reclaim prior profiles before allocating this one.
+    find "$STATE_DIR" -mindepth 1 -maxdepth 1 -type d -name 'firefox-m10.*' \
+        -exec rm -rf -- {} +
+    firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
+    firefox_m10_profile_dir="$firefox_m10_probe_dir/firefox-profile"
+    mkdir -p "$firefox_m10_profile_dir"
+    chmod 700 "$firefox_m10_profile_dir"
+    printf '%s\n' \
+        'user_pref("browser.tabs.remote.autostart", false);' \
+        'user_pref("browser.tabs.remote.autostart.2", false);' \
+        'user_pref("fission.autostart", false);' \
+        'user_pref("middlemouse.paste", true);' \
+        'user_pref("middlemouse.contentLoadURL", false);' \
+        >"$firefox_m10_profile_dir/user.js"
+    chmod 600 "$firefox_m10_profile_dir/user.js"
+fi
 
 tty_state="$(stty -g)"
 kd_mode="$(python3 "$TTY_MODE_HELPER" get)"

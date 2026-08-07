@@ -69,6 +69,28 @@ fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
 }
 
 #[test]
+fn firefox_m10_profiles_are_bounded_by_the_session_lifecycle() {
+    let prior_wrapper_check = offset("if [[ -s \"$PID_FILE\" ]]");
+    let graphical_session_check = offset("if (( ${#active_sessions[@]} > 0 )); then");
+    let child_shutdown = offset(
+        "[[ -z \"$session_pid\" ]] || terminate_bounded \"-$session_pid\" \"$SESSION_LABEL\"",
+    );
+    let current_cleanup = offset("if [[ -n \"$firefox_m10_probe_dir\" ]]; then");
+    let trap = offset("trap cleanup EXIT");
+    let stale_cleanup =
+        offset("find \"$STATE_DIR\" -mindepth 1 -maxdepth 1 -type d -name 'firefox-m10.*'");
+    let profile_create = offset("firefox_m10_probe_dir=\"$(mktemp -d");
+
+    assert!(prior_wrapper_check < graphical_session_check);
+    assert!(graphical_session_check < stale_cleanup);
+    assert!(child_shutdown < current_cleanup);
+    assert!(trap < stale_cleanup);
+    assert!(stale_cleanup < profile_create);
+    assert!(SESSION_LAUNCHER.contains("rm -rf -- \"$firefox_m10_probe_dir\""));
+    assert!(SESSION_LAUNCHER.contains("firefox_m10_probe_dir=\"\""));
+}
+
+#[test]
 fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
     let restore_manager = TTY3_LAUNCHER
         .find("sudo sv up \"$display_manager\"")

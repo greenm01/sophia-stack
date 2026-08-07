@@ -46,18 +46,17 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. Installed release
-`0.1.0-53a213655a41` fixes committed-layout reseeding: physical run `0040`
-reasserted the stale Kitty geometry, admitted Firefox, completed the automated
-workflow through normal logout, and retained correct presentation. Its strict
-verifier rejected the run only because Firefox received eight core
-`GetImage` errors (`BadValue`, major opcode 73). The decoder had treated a
-reply-size estimate as request data and imposed the 256 KiB `PutImage` request
-ceiling on an ordinary multi-megabyte readback. The source successor validates
-the fixed request independently, bounds replies by X Authority's 64 MiB CPU
-buffer limit, and shares one checked readback/packing path between core X11 and
-MIT-SHM. Build that successor, repeat the focused Firefox gate, then pass the
-remaining lifecycle, visible color, two-hour interactive soak, and full-workday
-gates.
+`0.1.0-fb1c38046d37` fixes both committed-layout reseeding and core X11 image
+readback. Physical run `0041` completed with zero unexpected protocol errors,
+clean layout and renderer health, normal logout, and clean teardown. Its
+installed verifier failed because 44 isolated Firefox proof profiles from
+prior runs had filled `/run/user/1000` with 6.2 GiB of non-evidence cache and
+database state. Firefox reported `NS_ERROR_FILE_NO_DEVICE_SPACE`; the startup
+Kitty, selection, and repeat stages consequently did not complete. The source
+successor makes each proof profile a bounded session-lifecycle resource and
+reclaims the stale backlog automatically. Build that successor, repeat the
+focused Firefox gate once, then pass the remaining lifecycle, visible color,
+two-hour interactive soak, and full-workday gates.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -109,14 +108,12 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-53a213655a41` remains installed. It corrects the prior
-  geometry-reseed failure, but physical run `0040` exposed eight Firefox
-  `GetImage` `BadValue` replies caused by a false 256 KiB reply ceiling. The
-  source successor removes that request/reply category error, retains a 64 MiB
-  authority-owned allocation bound, and covers ZPixmap, XYPixmap, byte order,
-  drawable errors, a 320,000-byte socket reply, and a compiled Xlib pixel
-  round trip. It is not promoted until a newly installed physical Firefox run
-  completes with zero protocol errors.
+- Release `0.1.0-fb1c38046d37` remains installed. Run `0041` proves its
+  corrected `GetImage` path with zero unexpected protocol errors, but also
+  exposes an independent launcher leak: isolated Firefox proof profiles were
+  never retired. The source successor prunes only stale profiles after the
+  no-live-session checks and removes the current profile during bounded
+  teardown. Run `0041` is protocol evidence, not a passing promotion gate.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -164,9 +161,10 @@ The previous ten-cycle gates remain valid historical evidence for commits
 `958fb5e6` and `56dad4de`. Installed `1a7d67c3` retains the admission-recovery
 failure, installed `7bd3e7db` retains the move-feedback failure, and installed
 `a50dfb67` retains the committed-layout reseed failure. Installed `53a21365`
-fixes that failure and reached normal logout in run `0040`, but retains the
-false core `GetImage` reply ceiling. All promotion gates and soaks must use a
-new immutable build containing both corrections.
+fixes that failure but retains the false core `GetImage` reply ceiling.
+Installed `fb1c3804` fixes both and reaches zero unexpected protocol errors,
+but retains unbounded ephemeral Firefox profiles. All promotion gates and
+soaks must use a new immutable build containing the profile-lifecycle fix.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -240,8 +238,8 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [ ] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. Installed `53a21365` proves the recovery-reseed
-  reassertion but predates the corrected `GetImage` readback path and does not
+  a source checkout. Installed `fb1c3804` proves the geometry and `GetImage`
+  corrections but predates bounded Firefox-profile cleanup and does not
   satisfy this item.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
