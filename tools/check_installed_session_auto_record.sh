@@ -21,11 +21,17 @@ install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-kitty-session" \
     "$RELEASE/bin/sophia-kitty-session"
 install -m 755 \
+    "$ROOT_DIR/tools/installed/sophia-firefox-proof" \
+    "$RELEASE/bin/sophia-firefox-proof"
+install -m 755 \
     "$ROOT_DIR/tools/installed/sophia-recovery-proof" \
     "$RELEASE/bin/sophia-recovery-proof"
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_session_run.sh" \
     "$RELEASE/bin/sophia-record-run"
+install -m 755 \
+    "$ROOT_DIR/tools/record_installed_firefox_attempt.sh" \
+    "$RELEASE/bin/sophia-record-firefox-attempt"
 install -m 755 \
     "$ROOT_DIR/tools/record_installed_fallback_run.sh" \
     "$RELEASE/bin/sophia-record-fallback-run"
@@ -41,6 +47,12 @@ install -m 755 \
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_login_cycle.sh" \
     "$RELEASE/bin/sophia-verify-login-cycle"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_sophia_firefox_physical.sh" \
+    "$RELEASE/bin/sophia-verify-firefox-run"
+install -m 755 \
+    "$ROOT_DIR/tools/verify_sophia_firefox_physical_runs.sh" \
+    "$RELEASE/bin/sophia-verify-firefox-runs"
 install -m 755 \
     "$ROOT_DIR/tools/verify_installed_fallback_session.sh" \
     "$RELEASE/bin/sophia-verify-fallback-session"
@@ -102,6 +114,11 @@ printf '%s\n' \
     '    guard_fixture=installed_fallback_guard_pass.log' \
     '    recovery_fixture=installed_fallback_recovery_pass.log' \
     'fi' \
+    'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == firefox ]]; then' \
+    '    session_fixture=physical_firefox_session_pass.log' \
+    '    guard_fixture=physical_firefox_guard_pass.log' \
+    '    recovery_fixture=physical_firefox_recovery_pass.log' \
+    'fi' \
     'if [[ "${SOPHIA_INSTALLED_ATTEMPT_MODE:-}" == watchdog ]]; then' \
     '    session_fixture=installed_watchdog_session_pass.log' \
     '    guard_fixture=installed_watchdog_guard_pass.log' \
@@ -152,6 +169,28 @@ grep -Fxq 'sophia_installed_cycle schema=1 status=passed exit_status=0' \
     "$STATE_HOME/sophia/promotion/runs/0001/result.kdl"
 [[ -f "$STATE_HOME/sophia/installed-session/launch.log" ]]
 [[ -f "$STATE_HOME/sophia/installed-session/runtime-identity.log" ]]
+
+# The Firefox fixture intentionally fails the generic desktop verifier. A
+# passing archive therefore proves that the greetd entry selected its bounded
+# Firefox recorder and verifier rather than the ordinary XMonad ledger.
+if "$RELEASE/bin/sophia-verify-login-cycle" \
+    "$ROOT_DIR/tools/fixtures/physical_firefox_session_pass.log" \
+    "$ROOT_DIR/tools/fixtures/physical_firefox_guard_pass.log" \
+    "$ROOT_DIR/tools/fixtures/physical_firefox_recovery_pass.log" \
+    >/dev/null 2>&1; then
+    echo "generic login verifier unexpectedly accepted the Firefox fixture" >&2
+    exit 1
+fi
+env "${session_env[@]}" "$RELEASE/bin/sophia-firefox-proof"
+firefox_run="$STATE_HOME/sophia/promotion/firefox-runs/0001"
+grep -Fxq \
+    'sophia_installed_firefox schema=1 status=passed exit_status=0' \
+    "$firefox_run/result.kdl"
+grep -Fxq 'record_schema=4' "$firefox_run/manifest"
+grep -Fxq 'record_kind=firefox' "$firefox_run/manifest"
+env "${session_env[@]}" "$RELEASE/bin/sophia-verify-firefox-runs" 1
+[[ "$(find "$STATE_HOME/sophia/promotion/runs" -mindepth 1 -maxdepth 1 \
+    -type d | wc -l)" == 1 ]]
 
 if env "${session_env[@]}" SOPHIA_TEST_SESSION_STATUS=1 \
     "$RELEASE/bin/sophia-session" >/dev/null 2>&1; then

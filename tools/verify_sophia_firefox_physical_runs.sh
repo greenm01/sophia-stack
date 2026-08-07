@@ -32,6 +32,20 @@ runs=("${runs[@]: -required}")
 expected_commit=""
 for run in "${runs[@]}"; do
     (cd "$run" && sha256sum -c SHA256SUMS)
+    record_schema="$(sed -n 's/^record_schema=//p' "$run/manifest")"
+    if [[ -n "$record_schema" ]]; then
+        [[ "$record_schema" == 4 \
+            && "$(sed -n 's/^record_kind=//p' "$run/manifest")" == firefox ]] || {
+            echo "physical Firefox run has the wrong automatic record kind: $run" >&2
+            exit 1
+        }
+        grep -Fxq \
+            'sophia_installed_firefox schema=1 status=passed exit_status=0' \
+            "$run/result.kdl" || {
+            echo "physical Firefox automatic attempt did not pass: $run" >&2
+            exit 1
+        }
+    fi
     "$VERIFY_FIREFOX" \
         "$run/session.log" "$run/input-guard.log" "$run/recovery.log"
     [[ ! -f "$run/runtime-identity.log" ]] ||

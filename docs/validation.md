@@ -1170,8 +1170,12 @@ tools/verify_sophia_firefox_physical_runs.sh 1
 ```
 
 The installed artifact exposes the same workflow as the `Sophia Firefox Proof`
-greetd entry. After the integrated run use `sophia-record-firefox-run`, then
-`sophia-verify-firefox-runs 1`. Those commands verify immutable
+greetd entry. That entry reserves an immutable Firefox attempt before graphics
+takeover, archives it under `sophia/promotion/firefox-runs/`, and applies the
+dedicated Firefox and lifecycle verifiers on exit. Use
+`sophia-verify-firefox-runs 1` to verify the newest archive. The compatibility
+command `sophia-record-firefox-run` remains available for a source-tree run
+that was not launched through the installed entry. Both paths verify immutable
 release digests and privacy-safe runtime identities in addition to the browser,
 WM, input, renderer, and teardown evidence.
 

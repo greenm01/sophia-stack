@@ -46,17 +46,18 @@ The current installed candidate provides:
 Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
 the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
 the remaining promotion boundary. Installed release
-`0.1.0-fb1c38046d37` fixes both committed-layout reseeding and core X11 image
-readback. Physical run `0041` completed with zero unexpected protocol errors,
-clean layout and renderer health, normal logout, and clean teardown. Its
-installed verifier failed because 44 isolated Firefox proof profiles from
-prior runs had filled `/run/user/1000` with 6.2 GiB of non-evidence cache and
-database state. Firefox reported `NS_ERROR_FILE_NO_DEVICE_SPACE`; the startup
-Kitty, selection, and repeat stages consequently did not complete. The source
-successor makes each proof profile a bounded session-lifecycle resource and
-reclaims the stale backlog automatically. Build that successor, repeat the
-focused Firefox gate once, then pass the remaining lifecycle, visible color,
-two-hour interactive soak, and full-workday gates.
+`0.1.0-ce494942fb32` fixes committed-layout reseeding, core X11 image readback,
+and bounded Firefox-profile cleanup. Physical run `0042` completed with zero
+unexpected protocol errors, clean layout and renderer health, normal logout,
+clean teardown, one-percent runtime-tmpfs use, and no retained proof profiles.
+It did not pass the exact Firefox gate: Firefox was action-launched six times
+instead of twice and the required Kitty retention sequence was incomplete.
+The run also exposed that the installed Firefox entry selected the generic
+XMonad attempt recorder. The source successor gives that entry its own
+automatic ledger and dedicated verifier without weakening the exact workflow.
+Build that successor, repeat the focused Firefox gate once, then pass the
+remaining lifecycle, visible color, two-hour interactive soak, and full-workday
+gates.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -108,12 +109,13 @@ the correct authority.
 
 ### Current Limitations
 
-- Release `0.1.0-fb1c38046d37` remains installed. Run `0041` proves its
-  corrected `GetImage` path with zero unexpected protocol errors, but also
-  exposes an independent launcher leak: isolated Firefox proof profiles were
-  never retired. The source successor prunes only stale profiles after the
-  no-live-session checks and removes the current profile during bounded
-  teardown. Run `0041` is protocol evidence, not a passing promotion gate.
+- Release `0.1.0-ce494942fb32` remains installed. Run `0042` proves corrected
+  `GetImage`, bounded proof-profile cleanup, zero unexpected protocol errors,
+  and clean teardown. Its six Firefox launches violate the exact two-launch
+  workflow, and its archive was misclassified by the generic XMonad recorder.
+  The source successor routes the installed proof through the dedicated
+  Firefox ledger and verifier. Run `0042` is clean protocol and resource
+  evidence, not a passing Firefox promotion gate.
 - The xmonad bridge has one flattened `active_workspace` policy view even
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
@@ -162,9 +164,11 @@ The previous ten-cycle gates remain valid historical evidence for commits
 failure, installed `7bd3e7db` retains the move-feedback failure, and installed
 `a50dfb67` retains the committed-layout reseed failure. Installed `53a21365`
 fixes that failure but retains the false core `GetImage` reply ceiling.
-Installed `fb1c3804` fixes both and reaches zero unexpected protocol errors,
-but retains unbounded ephemeral Firefox profiles. All promotion gates and
-soaks must use a new immutable build containing the profile-lifecycle fix.
+Installed `fb1c3804` fixes both and reaches zero unexpected protocol errors but
+retains unbounded ephemeral Firefox profiles. Installed `ce494942` fixes that
+resource lifecycle and run `0042` proves the cleanup. All remaining promotion
+gates and soaks must use a new immutable build that also routes the Firefox
+entry through its dedicated automatic recorder.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -238,9 +242,9 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [ ] Build and install the new source successor as one repository-independent
   candidate containing the pinned Sophia, configured xmonad, and xmobar
   artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. Installed `fb1c3804` proves the geometry and `GetImage`
-  corrections but predates bounded Firefox-profile cleanup and does not
-  satisfy this item.
+  a source checkout. Installed `ce494942` proves the geometry, `GetImage`, and
+  bounded Firefox-profile corrections but predates the dedicated automatic
+  Firefox-attempt route and does not satisfy this item.
 - [ ] Re-run the installed xterm startup that exposed the auxiliary-pixmap
   defect. Require exact two-output and work-area readiness, a presented
   correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero

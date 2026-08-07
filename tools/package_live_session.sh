@@ -72,6 +72,8 @@ install -m 755 tools/installed/sophia-stop "$artifact/bin/sophia-stop"
 install -m 755 tools/rollback_live_session.sh "$artifact/bin/sophia-rollback"
 install -m 755 tools/record_installed_session_run.sh \
     "$artifact/bin/sophia-record-run"
+install -m 755 tools/record_installed_firefox_attempt.sh \
+    "$artifact/bin/sophia-record-firefox-attempt"
 install -m 755 tools/record_installed_fallback_run.sh \
     "$artifact/bin/sophia-record-fallback-run"
 install -m 755 tools/record_installed_emergency_run.sh \

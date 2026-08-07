@@ -71,8 +71,9 @@ sophia-status
 
 Status verifies the current release checksums and prints the current and
 previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest normal, fallback, emergency, watchdog, and
-native-chrome attempts. An `OK` line for every packaged file is expected.
+runtime identity, and the newest normal, Firefox, fallback, emergency,
+watchdog, and native-chrome attempts. An `OK` line for every packaged file is
+expected.
 Investigate any checksum failure before launching or rolling back.
 
 The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
@@ -87,7 +88,7 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic emergency archives | `sophia/promotion/emergency-runs/` |
 | automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
 | automatic native-chrome attempts | `sophia/promotion/native-chrome-runs/` |
-| Firefox proof archives | `sophia/promotion/firefox-runs/` |
+| automatic Firefox proof attempts | `sophia/promotion/firefox-runs/` |
 
 Every active launch, runtime-identity, session, input-guard, recovery, and
 lifecycle log keeps at most one `.previous` generation. Promotion attempts are

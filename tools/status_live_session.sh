@@ -60,6 +60,8 @@ print_latest_attempt() {
 }
 
 print_latest_attempt installed_cycle "$STATE_HOME/sophia/promotion/runs"
+print_latest_attempt installed_firefox \
+    "$STATE_HOME/sophia/promotion/firefox-runs"
 print_latest_attempt installed_fallback \
     "$STATE_HOME/sophia/promotion/fallback-runs"
 print_latest_attempt installed_emergency \
