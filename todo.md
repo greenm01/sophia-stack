@@ -52,9 +52,9 @@ bar repaints, primary retirement, clean logout, and packaged xmobar identity.
 TrueColor attempt `0003` from `883666a2` closes the physical color boundary
 through exact X11 color requests, final primary-output composition evidence,
 Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
-Independent emergency attempt `0004` also passes on `883666a2`. The repeated
-lifecycle gate, the two-hour interactive soak, and the full-workday gate
-remain. Active client projection onto output 2 is a separate compatibility
+Independent emergency attempt `0004` and ten-cycle range `0044` through `0053`
+also pass on `883666a2`. The two-hour interactive soak and the full-workday
+gate remain. Active client projection onto output 2 is a separate compatibility
 boundary and is not claimed by the TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
@@ -271,10 +271,11 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [x] Run the independent emergency-recovery gate on that same candidate.
   Installed attempt `0004` passes on `883666a2` with both observers, drained
   keys and native presentation, status-130 handoff, and exact TTY restoration.
-- [ ] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
+- [x] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
   the first failure and return to greetd after aggregate verification, with no
   manual repair, stale graphical process, or emergency recovery in an ordinary
-  cycle.
+  cycle. Installed runs `0044` through `0053` pass on `883666a2`; startup
+  readiness remained between 288 and 324 milliseconds across both outputs.
 
 ### 12.4 Interactive Soak And Promotion
 
