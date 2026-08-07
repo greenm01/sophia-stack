@@ -28,6 +28,15 @@ uses physical DRM, KMS, libseat, and VT ownership. Uinput removes repetitive
 human key presses without adding an Engine test mode or replacing the retained
 physical keyboard evidence.
 
+The first installed cycle entry failed before graphics takeover. The runner
+itself owned TTY7, but Bash redirected the stdin of its asynchronous child to
+`/dev/null`; the installed lifecycle therefore reported `vt=other` and
+correctly rejected preflight. The runner now opens its controlling VT once and
+passes that exact descriptor to every asynchronous installed session. Its
+self-test launches a child through the production helper and requires a value
+read from the preserved descriptor. Failed runner work directories now move to
+a durable, private diagnostic archive instead of disappearing during cleanup.
+
 ## 2026-08-06: The daily-driver churn gate waits for settled admissions
 
 Signed commit `5fbfc849` passed the strict unattended `xmonad-m8-soak` gate

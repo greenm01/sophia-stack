@@ -13,9 +13,12 @@ SESSION_TIMEOUT_SECONDS="${SOPHIA_CYCLE_SESSION_TIMEOUT_SECONDS:-30}"
 INJECTOR="$RELEASE_DIR/tools/probes/uinput_text_injector.py"
 SESSION="$RELEASE_DIR/bin/sophia-session"
 VERIFY="$RELEASE_DIR/bin/sophia-verify-cycles"
+FAILURE_ROOT="$STATE_HOME/sophia/promotion/cycle-runner-failures"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 WORK_DIR=
 INJECTOR_PID=
 SESSION_PID=
+SESSION_INPUT_FD=0
 
 fail() {
     echo "Sophia installed-cycle gate failed: $*" >&2
@@ -71,16 +74,37 @@ process_is_running() {
     [[ -n "$state" && "$state" != Z* ]]
 }
 
+launch_installed_session() {
+    local input_device="$1" wrapper_log="$2"
+    env \
+        SOPHIA_OPERATOR_INPUT_DEVICES="$input_device" \
+        SOPHIA_SESSION_HANDOFF=cycle_runner \
+        SOPHIA_ATTEMPT_LIFECYCLE_MODE=cycle \
+        "$SESSION" \
+        <&"$SESSION_INPUT_FD" >"$wrapper_log" 2>&1 &
+    SESSION_PID=$!
+}
+
 cleanup() {
-    local status=$?
+    local status=$? failure_dir
     stop_process "$SESSION_PID"
     stop_process "$INJECTOR_PID"
-    [[ -z "$WORK_DIR" || ! -d "$WORK_DIR" ]] || rm -rf -- "$WORK_DIR"
+    if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+        if ((status == 0)); then
+            rm -rf -- "$WORK_DIR"
+        else
+            install -d -m 700 "$FAILURE_ROOT"
+            failure_dir="$FAILURE_ROOT/$RUN_ID"
+            mv "$WORK_DIR" "$failure_dir"
+            WORK_DIR=
+            echo "Cycle-runner diagnostics retained in $failure_dir" >&2
+        fi
+    fi
     return "$status"
 }
 
 self_test() {
-    local fixture previous_identity test_pid
+    local fixture previous_identity test_fd test_pid
     fixture="$(mktemp -d)"
     SESSION_LOG="$fixture/session.log"
     RUN_ROOT="$fixture/runs"
@@ -134,6 +158,27 @@ self_test() {
         return 1
     fi
 
+    printf 'preserved-stdin\n' >"$fixture/input"
+    printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'read -r value' \
+        'printf "%s\n" "$value"' \
+        >"$fixture/fake-session"
+    chmod 700 "$fixture/fake-session"
+    exec {test_fd}<"$fixture/input"
+    SESSION_INPUT_FD="$test_fd"
+    SESSION="$fixture/fake-session"
+    launch_installed_session /dev/input/event-test "$fixture/wrapper.log"
+    wait "$SESSION_PID"
+    SESSION_PID=
+    exec {test_fd}<&-
+    grep -Fxq preserved-stdin "$fixture/wrapper.log" || {
+        echo "cycle runner did not preserve stdin for an asynchronous session" >&2
+        rm -rf -- "$fixture"
+        return 1
+    }
+
     rm -rf -- "$fixture"
     "$INJECTOR" --chord=logout --self-test
     echo "installed cycle runner checks passed"
@@ -164,6 +209,7 @@ for timeout in "$STARTUP_TIMEOUT_SECONDS" "$SESSION_TIMEOUT_SECONDS"; do
 done
 [[ -t 0 && "$(tty)" =~ ^/dev/tty[0-9]+$ ]] ||
     fail "run this interactively from a logged-in local text VT"
+exec {SESSION_INPUT_FD}<>/dev/tty || fail "the local VT could not be retained"
 [[ -n "$RUNTIME_ROOT" && "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" ]] ||
     fail "XDG_RUNTIME_DIR must be an existing absolute directory"
 [[ "$(stat -c %u "$RUNTIME_ROOT")" == "$UID" ]] ||
@@ -214,13 +260,7 @@ for ((cycle = 1; cycle <= COUNT; cycle++)); do
     [[ "$input_device" == /dev/input/event* && -e "$input_device" ]] ||
         fail "uinput keyboard published an invalid event device"
 
-    env \
-        SOPHIA_OPERATOR_INPUT_DEVICES="$input_device" \
-        SOPHIA_SESSION_HANDOFF=cycle_runner \
-        SOPHIA_ATTEMPT_LIFECYCLE_MODE=cycle \
-        "$SESSION" \
-        >"$cycle_dir/wrapper.log" 2>&1 &
-    SESSION_PID=$!
+    launch_installed_session "$input_device" "$cycle_dir/wrapper.log"
     session_deadline=$((SECONDS + SESSION_TIMEOUT_SECONDS))
 
     startup_deadline=$((SECONDS + STARTUP_TIMEOUT_SECONDS))
