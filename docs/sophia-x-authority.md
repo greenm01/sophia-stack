@@ -342,6 +342,10 @@ Resource rules:
 
 - XIDs are local to the authority and wrapped as `AuthorityLocalId` before
   becoming Sophia data.
+- A successfully recreated client XID receives the next nonzero Sophia
+  `SurfaceId` generation. Rejected creates do not consume the candidate, and a
+  successful removal retires the exact frontend surface route before that XID
+  can name a replacement.
 - Cross-namespace resource lookup fails closed unless a specific portal flow
   grants a narrow transfer; same-namespace classic-X behavior remains intact.
 - Event subscriptions are namespace-scoped in confined profiles.

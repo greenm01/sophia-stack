@@ -12,6 +12,41 @@ struct X11ClientAdmissionContext<'a> {
     worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
 }
 
+/// Retains the last successfully admitted Sophia surface generation for each
+/// client-local XID. X11 continues to address the current resource by its raw
+/// XID; deferred Engine routes use this non-recyclable identity instead.
+#[cfg(unix)]
+#[derive(Default)]
+struct X11SurfaceGenerationLedger {
+    admitted: BTreeMap<u32, u32>,
+}
+
+#[cfg(unix)]
+impl X11SurfaceGenerationLedger {
+    fn candidate(&self, index: u32) -> Result<SurfaceId, X11SetupSocketError> {
+        let generation = self
+            .admitted
+            .get(&index)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| {
+                X11SetupSocketError::client_failure("X11 surface generation exhausted")
+            })?;
+        Ok(SurfaceId::new(index, generation))
+    }
+
+    fn admit(&mut self, surface: SurfaceId) -> Result<(), X11SetupSocketError> {
+        if self.candidate(surface.index())? != surface {
+            return Err(X11SetupSocketError::new(
+                "X11 surface generation admission was not the current candidate",
+            ));
+        }
+        self.admitted.insert(surface.index(), surface.generation());
+        Ok(())
+    }
+}
+
 #[cfg(unix)]
 fn serve_x11_core_socket_client_with_trace_observer_and_input(
     stream: &mut UnixStream,
@@ -92,6 +127,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         );
     }
     let resource_id_range = client_lease.resource_id_range;
+    let mut surface_generations = X11SurfaceGenerationLedger::default();
     let mut sequence = 0u16;
     let event_sequence = Arc::new(AtomicU16::new(0));
     let focused_surface_window = Arc::new(AtomicU64::new(u64::from(X_SETUP_DEFAULT_ROOT)));
@@ -259,7 +295,25 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 },
                 &request,
             ) {
-                Ok(request) => {
+                Ok(mut request) => {
+                    let create_surface_route = if let crate::XWireRequest::CreateWindow {
+                        packet:
+                            crate::XAuthorityRequestPacket {
+                                kind:
+                                    crate::XAuthorityRequestKind::CreateWindow {
+                                        window, surface, ..
+                                    },
+                                ..
+                            },
+                        ..
+                    } = &mut request
+                    {
+                        let candidate = surface_generations.candidate(surface.index())?;
+                        *surface = candidate;
+                        Some((*window, candidate))
+                    } else {
+                        None
+                    };
                     let required_fd_count = request.required_fd_count();
                     pending_request_fds.extend(ancillary_fds);
                     const MAX_PENDING_REQUEST_FDS: usize = sophia_protocol::DMA_BUF_MAX_PLANES * 16;
@@ -454,34 +508,6 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         } else {
                             None
                         };
-                    if let crate::XWireRequest::CreateWindow {
-                        packet:
-                            crate::XAuthorityRequestPacket {
-                                kind:
-                                    crate::XAuthorityRequestKind::CreateWindow {
-                                        window, surface, ..
-                                    },
-                                ..
-                            },
-                        ..
-                    } = &request
-                    {
-                        surface_windows
-                            .lock()
-                            .map_err(|_| {
-                                X11SetupSocketError::new("X11 surface/window map lock poisoned")
-                            })?
-                            .insert(*surface, *window);
-                        if let Some(routing) = protocol_routing.as_ref() {
-                            routing
-                                .register_surface(client, namespace, *surface, *window)
-                                .map_err(|error| {
-                                    X11SetupSocketError::new(format!(
-                                        "failed to register X11 surface route: {error}"
-                                    ))
-                                })?;
-                        }
-                    }
                     request_stage = x11_observed_request_stage(&request);
                     let queued_present = if let Some((window, pixmap, serial, idle_fence)) =
                         pending_present
@@ -725,6 +751,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         .outputs
                         .iter()
                         .any(|output| matches!(output, crate::XClientOutput::Error(_)));
+                    let removed_surface_routes = dispatch_succeeded
+                        .then(|| {
+                            output
+                                .response
+                                .as_ref()
+                                .map(|response| response.removed_surfaces.clone())
+                                .unwrap_or_default()
+                        })
+                        .unwrap_or_default();
                     let present_configure = dispatch_succeeded
                         .then_some(hierarchy_geometry)
                         .flatten()
@@ -750,6 +785,47 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         },
                     );
                     if dispatch_succeeded {
+                        if !removed_surface_routes.is_empty() {
+                            {
+                                let mut windows = surface_windows.lock().map_err(|_| {
+                                    X11SetupSocketError::new("X11 surface/window map lock poisoned")
+                                })?;
+                                for surface in &removed_surface_routes {
+                                    windows.remove(surface);
+                                }
+                            }
+                            if let Some(routing) = protocol_routing.as_ref() {
+                                for surface in &removed_surface_routes {
+                                    routing.remove_surface(client, *surface).map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to retire X11 surface route: {error}"
+                                        ))
+                                    })?;
+                                }
+                            }
+                        }
+                        if let Some((window, surface)) = create_surface_route
+                            && output.response.as_ref().is_some_and(|response| {
+                                response.outcome == crate::XAuthorityResponseOutcome::Accepted
+                            })
+                        {
+                            surface_generations.admit(surface)?;
+                            surface_windows
+                                .lock()
+                                .map_err(|_| {
+                                    X11SetupSocketError::new("X11 surface/window map lock poisoned")
+                                })?
+                                .insert(surface, window);
+                            if let Some(routing) = protocol_routing.as_ref() {
+                                routing
+                                    .register_surface(client, namespace, surface, window)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to register X11 surface route: {error}"
+                                        ))
+                                    })?;
+                            }
+                        }
                         if let Some(focus) = requested_input_focus {
                             focused_surface_window.store(focus.local.raw(), Ordering::Release);
                         }
@@ -1242,4 +1318,46 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     writer_result?;
     cleanup_observer_result?;
     admission_result
+}
+
+#[cfg(all(test, unix))]
+mod surface_generation_tests {
+    use super::*;
+
+    #[test]
+    fn rejected_candidate_is_reusable_but_admitted_xid_recreation_advances() {
+        let mut ledger = X11SurfaceGenerationLedger::default();
+
+        let first = ledger.candidate(0x220001).unwrap();
+        assert_eq!(first, SurfaceId::new(0x220001, 1));
+        assert_eq!(ledger.candidate(0x220001).unwrap(), first);
+
+        ledger.admit(first).unwrap();
+        let replacement = ledger.candidate(0x220001).unwrap();
+        assert_eq!(replacement, SurfaceId::new(0x220001, 2));
+        assert_ne!(replacement, first);
+        ledger.admit(replacement).unwrap();
+        assert_eq!(
+            ledger.candidate(0x220001).unwrap(),
+            SurfaceId::new(0x220001, 3)
+        );
+    }
+
+    #[test]
+    fn ledger_rejects_stale_or_skipped_admission() {
+        let mut ledger = X11SurfaceGenerationLedger::default();
+
+        assert!(ledger.admit(SurfaceId::new(7, 2)).is_err());
+        ledger.admit(SurfaceId::new(7, 1)).unwrap();
+        assert!(ledger.admit(SurfaceId::new(7, 1)).is_err());
+        assert!(ledger.admit(SurfaceId::new(7, 3)).is_err());
+    }
+
+    #[test]
+    fn generation_exhaustion_fails_closed() {
+        let mut ledger = X11SurfaceGenerationLedger::default();
+        ledger.admitted.insert(9, u32::MAX);
+
+        assert!(ledger.candidate(9).is_err());
+    }
 }

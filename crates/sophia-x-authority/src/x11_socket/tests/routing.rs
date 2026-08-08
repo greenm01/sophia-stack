@@ -80,6 +80,95 @@ fn route_broker_retires_control_after_client_disconnect() {
 }
 
 #[test]
+fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
+    let namespace = NamespaceId::from_raw(14);
+    let client = XServerFrontendClientId(20);
+    let old_surface = SurfaceId::new(0x200101, 1);
+    let replacement = SurfaceId::new(0x200101, 2);
+    let window = XResourceId::new(0x200101, 1);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, old_surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 0,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+            },
+        )
+        .unwrap();
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 1,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 1,
+                target_surface: old_surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerMotion,
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert!(channels.input.try_recv().is_err());
+
+    assert_eq!(
+        broker.registry.remove_surface(client, old_surface).unwrap(),
+        true
+    );
+    broker
+        .registry
+        .register_surface(client, namespace, replacement, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .ungrab_pointer(namespace, client.raw());
+
+    assert_eq!(broker.route_pending(), Ok(0));
+    assert!(channels.input.try_recv().is_err());
+
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 2,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 2,
+                target_surface: replacement,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerMotion,
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(channels.input.recv().unwrap().target_window, Some(window));
+}
+
+#[test]
 fn control_router_bypasses_broker_ingress() {
     let client = XServerFrontendClientId(14);
     let surface = SurfaceId::new(15, 1);

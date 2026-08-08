@@ -262,6 +262,25 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
+    fn remove_surface(
+        &self,
+        client: XServerFrontendClientId,
+        surface: SurfaceId,
+    ) -> Result<bool, XServerFrontendRouteError> {
+        let mut surfaces = self
+            .surfaces
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        match surfaces.get(&surface) {
+            Some(route) if route.client == client => {
+                surfaces.remove(&surface);
+                Ok(true)
+            }
+            Some(_) => Err(XServerFrontendRouteError::UnknownSurface { surface }),
+            None => Ok(false),
+        }
+    }
+
     fn register_window_parent(
         &self,
         client: XServerFrontendClientId,

@@ -639,12 +639,14 @@ named soak failure promotes one.
   - [ ] Introduce output-local pointer coordinate domains and per-output
     presented interaction epochs rather than merging independently retired
     heads into one global projection.
+  - [x] Advance Sophia `SurfaceId` generations when a client reuses an XID and
+    retire the exact frontend route on successful surface removal. Frozen or
+    deferred generation-N input cannot resolve to generation N+1.
   - [ ] Turn frontend grabs into Engine-visible profile-scoped leases with
     ordered release acknowledgement; isolate a non-reading client's queue
-    failure; advance X `SurfaceId` generations on XID reuse; and revalidate
-    deferred focus-handoff routes against current membership and authority
-    epoch. Lock, session, and other security transitions must revoke locally
-    without waiting for frontend cleanup.
+    failure; and revalidate deferred focus-handoff routes against current
+    membership and authority epoch. Lock, session, and other security
+    transitions must revoke locally without waiting for frontend cleanup.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.

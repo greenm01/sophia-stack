@@ -62,6 +62,99 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
 
 #[cfg(unix)]
 #[test]
+fn x11_core_socket_recreated_xid_receives_a_fresh_surface_generation() {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-surface-generation-test-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let server_path = socket_path.clone();
+    let server = thread::spawn(move || {
+        let mut created = Vec::new();
+        let mut removed = Vec::new();
+        run_x11_core_socket_server_once_observed(
+            &server_path,
+            NamespaceId::from_raw(53),
+            |result| {
+                if let Some(response) = &result.response {
+                    created.extend(response.surfaces.iter().map(|surface| surface.surface));
+                    removed.extend(response.removed_surfaces.iter().copied());
+                }
+            },
+        )
+        .unwrap();
+        (created, removed)
+    });
+
+    wait_for_socket(&socket_path);
+    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    stream
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut stream, XByteOrder::LittleEndian);
+    let xid = 0x220711;
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            xid,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    // A rejected duplicate probes generation two but must not consume it.
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            xid,
+            9,
+            9,
+            1,
+            1,
+        ))
+        .unwrap();
+    let duplicate_error = read_x_record(&mut stream);
+    assert_eq!(duplicate_error[0], 0);
+    assert_eq!(duplicate_error[1], 14, "duplicate XID must be BadIdChoice");
+    stream
+        .write_all(&resource_request(XByteOrder::LittleEndian, 4, xid))
+        .unwrap();
+    stream
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            xid,
+            3,
+            4,
+            320,
+            240,
+        ))
+        .unwrap();
+
+    drop(stream);
+    let _ = std::fs::remove_file(&socket_path);
+    let (created, removed) = server.join().unwrap();
+    assert_eq!(
+        created,
+        vec![SurfaceId::new(xid, 1), SurfaceId::new(xid, 2)]
+    );
+    assert_eq!(
+        removed,
+        vec![SurfaceId::new(xid, 1), SurfaceId::new(xid, 2)],
+        "DestroyWindow retires generation 1; disconnect cleanup retires the live replacement"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
     use std::io::Write;
     use std::os::unix::net::UnixStream;
