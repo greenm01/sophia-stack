@@ -2,7 +2,7 @@
 EXTENDS Naturals
 
 (***************************************************************************
- * Status: proposed boundary, not an implemented one. This model belongs to *
+ * Status: ratified boundary implemented by the canonical Engine reducer.   *
  * docs/sophia-indicator-descriptor.md and checks a design before           *
  * ratification. No shipped code implements it.                             *
  *                                                                          *

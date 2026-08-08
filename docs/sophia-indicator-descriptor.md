@@ -1,8 +1,9 @@
 # Sophia Indicator Descriptor
 
 **Role:** target contract for policy-authored desktop status.
-**Status:** wire contract landed in `sophia_wm_v1` revision 1; Engine reducer
-path and chrome renderer are unwritten. The records, capability bit, and count
+**Status:** wire contract and canonical Engine reducer path landed in
+`sophia_wm_v1` revision 1; the production chrome renderer is unwritten. The
+records, capability bit, and count
 fields exist in `protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs
 and golden vectors. Nothing assembles or renders indicators yet.
 `docs/architecture.md` and `docs/sophia-policy-ipc.md` remain authoritative
@@ -84,7 +85,7 @@ elsewhere. Unknown bits fail closed.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `output` | `u64` | owning output |
-| `focus_bits` | `u16` | reduced focus state |
+| `focus_bits` | `u16` | bit 0: output has a focused surface |
 | `layout_len` | `u16` | bytes used in `layout` |
 | `reserved` | `u32` | zero |
 | `layout` | bounded UTF-8, max 32 | policy-approved layout name |
@@ -170,6 +171,12 @@ policy also sanitizes policy's output.
 Engine validates shape, bounds, and UTF-8. It does not inspect meaning, because
 there is no meaning it could recognise.
 
+Labels and layout names must be nonempty UTF-8 without control characters.
+Indicator identities are nonzero and unique per output; slots are unique per
+output but need not be contiguous. Records name only affected outputs. A
+proposal completely replaces the descriptor for every affected output, while
+unaffected outputs retain their last committed descriptor.
+
 ## Capability Negotiation
 
 `capability "indicators" bit=8`. A policy that does not advertise it sends no
@@ -201,5 +208,5 @@ the critical path, since that constraint binds Tier 1 alone.
 - Not a metadata channel. Titles, icons, and badges belong to the broker.
 - Not a placement or focus authority. A shell submits an opaque token; policy
   and Engine decide what happens.
-- Not a display list. Tier 0 chrome draws from the descriptor using existing
-  primitives; no new primitive is admitted by this contract.
+- Not a display list. Tier 0 may add a private semantic strip command, but it
+  lowers through existing renderer layers and admits no protocol primitive.

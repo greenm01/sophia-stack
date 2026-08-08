@@ -1,7 +1,8 @@
 use sophia_engine::{PolicyProjectionReducer, WmWorkspaceState, adapt_v7_policy_plan};
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputProjection, PolicyOutputSnapshot,
-    PolicyPresentationState, PolicyProjectionOutcome, PolicyProjectionProposal, PolicyRequestCause,
+    PolicyPresentationState, PolicyProjectionIndicator, PolicyProjectionOutcome,
+    PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicyRequestCause,
     PolicySceneSnapshot, PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot,
     PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId, Transform, WmActionId,
     WmCommand, WmResponsePacket, WorkspaceId,
@@ -187,6 +188,70 @@ fn disconnect_preserves_layout_and_scene_removal_prunes_only_dead_surface() {
     assert_eq!(first.placements.len(), 1);
     assert_eq!(first.placements[0].surface, surface_id(1));
     assert_eq!(first.focus, None);
+}
+
+#[test]
+fn descriptors_commit_atomically_and_clear_at_the_connection_boundary() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(5).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut candidate = proposal(&request, 44, vec![projected(output(1), Vec::new(), None)]);
+    candidate.indicators.push(PolicyProjectionIndicator {
+        output: output(1),
+        slot: 0,
+        indicator: 9,
+        action: Some(WmActionId::from_raw(11)),
+        state_bits: 1,
+        label: "1".into(),
+    });
+    candidate
+        .output_statuses
+        .push(PolicyProjectionOutputStatus {
+            output: output(1),
+            focus_bits: 0,
+            layout: "Scroller".into(),
+        });
+
+    assert_eq!(
+        reducer.apply_proposal(&candidate),
+        PolicyProjectionOutcome::Committed
+    );
+    let committed = reducer.indicator_publication();
+    assert_eq!(committed.connection_epoch, Some(5));
+    assert_eq!(committed.projection_commit_serial, 1);
+    assert_eq!(committed.indicators[0].label, "1");
+
+    assert_eq!(reducer.disconnect(5), PolicyProjectionOutcome::Disconnected);
+    let cleared = reducer.indicator_publication();
+    assert_eq!(cleared.connection_epoch, None);
+    assert!(cleared.indicators.is_empty());
+    assert!(cleared.output_statuses.is_empty());
+    assert!(cleared.generation > committed.generation);
+    assert_eq!(reducer.commit_serial(), 1);
+}
+
+#[test]
+fn invalid_descriptor_preserves_the_last_good_projection_and_publication() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut invalid = proposal(&request, 45, vec![projected(output(1), Vec::new(), None)]);
+    invalid.indicators.push(PolicyProjectionIndicator {
+        output: output(1),
+        slot: 0,
+        indicator: 0,
+        action: None,
+        state_bits: 0,
+        label: "bad".into(),
+    });
+    let before = reducer.indicator_publication();
+
+    assert_eq!(
+        reducer.apply_proposal(&invalid),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+    assert_eq!(reducer.indicator_publication(), before);
+    assert_eq!(reducer.commit_serial(), 0);
 }
 
 #[test]
@@ -409,6 +474,8 @@ fn proposal(
         request_id: request.request_id,
         base_generation: request.scene_generation,
         outputs,
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
     }
 }
 

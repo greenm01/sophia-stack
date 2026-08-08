@@ -2,7 +2,7 @@
 EXTENDS Naturals, FiniteSets
 
 (***************************************************************************
- * Status: proposed boundary, not an implemented one. Companion to          *
+ * Status: ratified wire boundary with Engine implementation in progress.   *
  * ShellObservation; both belong to docs/sophia-indicator-descriptor.md.    *
  *                                                                          *
  * Indicator records travel in the existing projection transfer, so they    *

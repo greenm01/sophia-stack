@@ -400,7 +400,7 @@ future compatibility target, not a prerequisite.
   permanent: 256 indicators, 16 status records, 32-byte UTF-8 labels and layout
   names. The 32-per-output limit is Engine validation, not a wire constant.
   See `docs/sophia-indicator-descriptor.md`.
-- [ ] Model the descriptor before changing the schema. Revise
+- [x] Model the descriptor before changing the schema. Revise
   `validation/tla/ShellObservation.tla` so the descriptor rides the proposal and
   its invariants hold with no explicit publish or invalidate step, and add
   `validation/tla/IndicatorTransfer.tla` for declared-count, ordinal, and
@@ -415,7 +415,7 @@ future compatibility target, not a prerequisite.
   dependency. Hagia decodes both records, rejects an over-long label length and
   non-zero padding, and declares zero indicators until it advertises the
   capability. `SOPHIA_STACK_ROOT=… nimble test` passes.
-- [ ] Defer the tier-1 texture question rather than blocking on it. Whether the
+- [x] Defer the tier-1 texture question rather than blocking on it. Whether the
   shared transport can carry shell texture traffic under the 64-KiB frame limit,
   single in-flight transfer, and bytes-only wire binds `sophia_shell_v1` only.
   Tier-0 Engine chrome renders the descriptor with no client interface, which

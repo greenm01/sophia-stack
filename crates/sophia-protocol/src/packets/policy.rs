@@ -6,6 +6,16 @@ use crate::{
 pub const POLICY_MAX_OUTPUTS: usize = 16;
 pub const POLICY_MAX_SURFACES: usize = 1024;
 pub const POLICY_MAX_BINDINGS: usize = 256;
+pub const POLICY_MAX_INDICATORS: usize = 256;
+pub const POLICY_MAX_OUTPUT_STATUSES: usize = 16;
+pub const POLICY_MAX_INDICATORS_PER_OUTPUT: usize = 32;
+pub const POLICY_INDICATOR_STATE_ACTIVE: u16 = 1 << 0;
+pub const POLICY_INDICATOR_STATE_URGENT: u16 = 1 << 1;
+pub const POLICY_INDICATOR_STATE_OCCUPIED: u16 = 1 << 2;
+pub const POLICY_INDICATOR_STATE_VISIBLE_ELSEWHERE: u16 = 1 << 3;
+pub const POLICY_INDICATOR_STATE_MASK: u16 = (1 << 4) - 1;
+pub const POLICY_OUTPUT_STATUS_HAS_FOCUSED_SURFACE: u16 = 1;
+pub const POLICY_OUTPUT_STATUS_FOCUS_MASK: u16 = POLICY_OUTPUT_STATUS_HAS_FOCUSED_SURFACE;
 
 /// A complete, metadata-free output record issued to spatial policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,6 +182,25 @@ pub struct PolicyOutputProjection {
     pub focus: Option<SurfaceId>,
 }
 
+/// Policy-authored presentation state committed with an output projection.
+/// Engine validates the record's shape but never assigns workspace semantics.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProjectionIndicator {
+    pub output: OutputId,
+    pub slot: u32,
+    pub indicator: u64,
+    pub action: Option<WmActionId>,
+    pub state_bits: u16,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProjectionOutputStatus {
+    pub output: OutputId,
+    pub focus_bits: u16,
+    pub layout: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyProjectionProposal {
     pub transaction: TransactionId,
@@ -179,6 +208,8 @@ pub struct PolicyProjectionProposal {
     pub request_id: u64,
     pub base_generation: u64,
     pub outputs: Vec<PolicyOutputProjection>,
+    pub indicators: Vec<PolicyProjectionIndicator>,
+    pub output_statuses: Vec<PolicyProjectionOutputStatus>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

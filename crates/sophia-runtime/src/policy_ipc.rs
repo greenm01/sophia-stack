@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
 use sophia_protocol::{
-    PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND, SNAPSHOT_BINDING_RECORD_KIND,
-    SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
-    SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_CHROME, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
+    PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
+    SNAPSHOT_BINDING_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
+    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_CHROME,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS,
     SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
     SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
     SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS,
@@ -23,7 +25,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_CHROME
     | SOPHIA_WM_CAPABILITY_POLICY_DIRTY
     | SOPHIA_WM_CAPABILITY_CONFIGURATION
-    | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS;
+    | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
+    | SOPHIA_WM_CAPABILITY_INDICATORS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -63,6 +66,8 @@ pub struct AssembledPolicyProjection {
     pub base_generation: u64,
     pub output_count: u16,
     pub placement_count: u32,
+    pub indicator_count: u16,
+    pub status_count: u16,
     pub chunks: Vec<WmV1ProjectionChunk>,
 }
 
@@ -90,11 +95,8 @@ impl AssembledPolicyProjection {
                 chunk_count,
                 output_count: self.output_count,
                 placement_count: self.placement_count,
-                // Indicator assembly is later work; a builder that carries no
-                // indicators still declares the counts so the begin record
-                // stays exhaustive.
-                indicator_count: 0,
-                status_count: 0,
+                indicator_count: self.indicator_count,
+                status_count: self.status_count,
             },
             chunks: self.chunks,
             end: WmV1ProjectionEnd {
@@ -145,6 +147,8 @@ struct ProjectionTransfer {
     bytes: usize,
     output_records: usize,
     placement_records: usize,
+    indicator_records: usize,
+    status_records: usize,
 }
 
 /// Session-side connection reducer for the exclusive WM role.
@@ -258,8 +262,15 @@ impl PolicyConnectionState {
         if usize::from(begin.chunk_count) > POLICY_MAX_TRANSFER_CHUNKS
             || usize::from(begin.output_count) > SOPHIA_WM_MAX_OUTPUTS
             || begin.placement_count as usize > SOPHIA_WM_MAX_SURFACES
+            || usize::from(begin.indicator_count) > sophia_protocol::POLICY_MAX_INDICATORS
+            || usize::from(begin.status_count) > sophia_protocol::POLICY_MAX_OUTPUT_STATUSES
         {
             return Err(PolicyTransferError::ExcessiveCount);
+        }
+        if self.selected_capabilities & SOPHIA_WM_CAPABILITY_INDICATORS == 0
+            && (begin.indicator_count != 0 || begin.status_count != 0)
+        {
+            return Err(PolicyTransferError::UnsupportedCapability);
         }
         self.used_transactions.insert(transaction);
         self.transfer = Some(ProjectionTransfer {
@@ -269,6 +280,8 @@ impl PolicyConnectionState {
             bytes: 0,
             output_records: 0,
             placement_records: 0,
+            indicator_records: 0,
+            status_records: 0,
         });
         Ok(())
     }
@@ -315,6 +328,22 @@ impl PolicyConnectionState {
                     .ok_or(PolicyTransferError::RecordCountMismatch)?;
                 transfer.placement_records = next;
             }
+            PROJECTION_INDICATOR_RECORD_KIND => {
+                let next = transfer
+                    .indicator_records
+                    .checked_add(count)
+                    .filter(|total| *total <= usize::from(transfer.begin.indicator_count))
+                    .ok_or(PolicyTransferError::RecordCountMismatch)?;
+                transfer.indicator_records = next;
+            }
+            PROJECTION_OUTPUT_STATUS_RECORD_KIND => {
+                let next = transfer
+                    .status_records
+                    .checked_add(count)
+                    .filter(|total| *total <= usize::from(transfer.begin.status_count))
+                    .ok_or(PolicyTransferError::RecordCountMismatch)?;
+                transfer.status_records = next;
+            }
             _ => return Err(PolicyTransferError::UnknownRecordKind),
         }
         transfer.bytes = next_bytes;
@@ -343,6 +372,8 @@ impl PolicyConnectionState {
         if transfer.chunks.len() != usize::from(transfer.begin.chunk_count)
             || transfer.output_records != usize::from(transfer.begin.output_count)
             || transfer.placement_records != transfer.begin.placement_count as usize
+            || transfer.indicator_records != usize::from(transfer.begin.indicator_count)
+            || transfer.status_records != usize::from(transfer.begin.status_count)
         {
             return Err(PolicyTransferError::RecordCountMismatch);
         }
@@ -354,6 +385,8 @@ impl PolicyConnectionState {
             base_generation: transfer.begin.base_generation,
             output_count: transfer.begin.output_count,
             placement_count: transfer.begin.placement_count,
+            indicator_count: transfer.begin.indicator_count,
+            status_count: transfer.begin.status_count,
             chunks: transfer.chunks,
         });
         Ok(())

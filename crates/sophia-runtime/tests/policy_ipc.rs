@@ -1,7 +1,8 @@
 use sophia_protocol::{
     SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_CONFIGURATION, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
-    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS, TransactionId,
+    WmV1ClientHello, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
+    WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
 };
 use sophia_runtime::{
     PolicyConnectionState, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
@@ -134,6 +135,49 @@ fn control_messages_are_capability_gated_and_cannot_reuse_transactions() {
         ),
         Err(PolicyTransferError::UnsupportedCapability)
     );
+}
+
+#[test]
+fn indicator_records_require_negotiation_and_exact_declared_counts() {
+    let mut unsupported = negotiated_connection(9);
+    let mut begin = projection_begin(9);
+    begin.chunk_count = 3;
+    begin.indicator_count = 1;
+    assert_eq!(
+        unsupported.begin_projection(TransactionId::from_raw(50), begin),
+        Err(PolicyTransferError::UnsupportedCapability)
+    );
+
+    let mut supported = PolicyConnectionState::default();
+    supported.connect(10).unwrap();
+    supported
+        .negotiate(&WmV1ClientHello {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            capabilities: SOPHIA_WM_CAPABILITY_INDICATORS,
+        })
+        .unwrap();
+    let transaction = TransactionId::from_raw(51);
+    let mut begin = projection_begin(10);
+    begin.chunk_count = 3;
+    begin.indicator_count = 1;
+    supported.begin_projection(transaction, begin).unwrap();
+    supported
+        .append_projection_chunk(transaction, projection_chunk(10, 0, 1, 1))
+        .unwrap();
+    supported
+        .append_projection_chunk(transaction, projection_chunk(10, 1, 2, 2))
+        .unwrap();
+    supported
+        .append_projection_chunk(transaction, projection_chunk(10, 2, 3, 1))
+        .unwrap();
+    let mut end = projection_end(10);
+    end.chunk_count = 3;
+    supported.finish_projection(transaction, end).unwrap();
+    let Some(QueuedPolicyProjection::Admitted(projection)) = supported.settle_queued() else {
+        panic!("indicator projection was not admitted");
+    };
+    assert_eq!(projection.indicator_count, 1);
 }
 
 #[test]

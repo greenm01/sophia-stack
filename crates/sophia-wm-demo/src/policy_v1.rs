@@ -288,6 +288,8 @@ pub fn tile_policy_scene(
         request_id: request.request_id,
         base_generation: request.scene_generation,
         outputs,
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
     })
 }
 

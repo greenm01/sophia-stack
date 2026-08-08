@@ -80,11 +80,24 @@ fn complete_output_projection_roundtrips_in_stacking_order() {
             }],
             focus: Some(SurfaceId::new(3, 1)),
         }],
+        indicators: vec![PolicyProjectionIndicator {
+            output: OutputId::from_raw(1),
+            slot: 0,
+            indicator: 1,
+            action: Some(WmActionId::from_raw(11)),
+            state_bits: POLICY_INDICATOR_STATE_ACTIVE,
+            label: "1".into(),
+        }],
+        output_statuses: vec![PolicyProjectionOutputStatus {
+            output: OutputId::from_raw(1),
+            focus_bits: POLICY_OUTPUT_STATUS_HAS_FOCUSED_SURFACE,
+            layout: "Scroller".into(),
+        }],
     };
     let transfer = encode_wm_v1_policy_projection(&proposal).unwrap();
 
     assert_eq!(decode_wm_v1_policy_projection(&transfer), Ok(proposal));
-    assert_eq!(transfer.chunks.len(), 2);
+    assert_eq!(transfer.chunks.len(), 4);
 }
 
 #[test]
@@ -99,6 +112,8 @@ fn projection_record_count_mismatch_fails_closed() {
             placements: Vec::new(),
             focus: None,
         }],
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
     };
     let mut transfer = encode_wm_v1_policy_projection(&proposal).unwrap();
     transfer.begin.placement_count = 1;

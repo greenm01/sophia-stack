@@ -313,6 +313,8 @@ static int send_projection(
     begin.chunk_count = placement_count == 0 ? 1u : 2u;
     begin.output_count = request->affected_output_count;
     begin.placement_count = (uint32_t)placement_count;
+    begin.indicator_count = 0;
+    begin.status_count = 0;
     if (sophia_wm_v1_encode_projection_begin(
             transaction, &begin, frame, FRAME_CAPACITY, &frame_len
         ) != SOPHIA_WM_V1_OK || !write_exact(socket_fd, frame, frame_len))

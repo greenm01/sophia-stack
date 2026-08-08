@@ -3,7 +3,8 @@ use core::mem::size_of;
 use crate::{
     LayoutNodeCapabilities, OutputId, PolicyConfiguration, PolicyDirtyRequest,
     PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection, PolicyOutputSnapshot,
-    PolicyPresentationState, PolicyProjectionOutcome, PolicyProjectionProposal, PolicyRequestCause,
+    PolicyPresentationState, PolicyProjectionIndicator, PolicyProjectionOutcome,
+    PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicyRequestCause,
     PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
     PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
     PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
@@ -12,23 +13,26 @@ use crate::{
 };
 
 use super::{
-    IpcCodecError, PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
+    IpcCodecError, PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
+    PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
     SNAPSHOT_BINDING_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
     SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
     SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
     SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
     SOPHIA_WM_OUTCOME_TIMED_OUT, WmV1PolicyConfiguration, WmV1PolicyDirty, WmV1ProjectionBegin,
-    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionOutcome, WmV1ProjectionOutputRecord,
-    WmV1ProjectionPlacementRecord, WmV1ProjectionRequest, WmV1SessionOperationOutcome,
-    WmV1SessionOperationRequest, WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk,
-    WmV1SnapshotEnd, WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord,
-    WmV1SnapshotSurfaceRecord, decode_wm_v1_projection_output_records,
-    decode_wm_v1_projection_placement_records, decode_wm_v1_snapshot_binding_records,
-    decode_wm_v1_snapshot_output_records, decode_wm_v1_snapshot_session_operation_records,
-    decode_wm_v1_snapshot_surface_records, encode_wm_v1_projection_output_records,
-    encode_wm_v1_projection_placement_records, encode_wm_v1_snapshot_binding_records,
-    encode_wm_v1_snapshot_output_records, encode_wm_v1_snapshot_session_operation_records,
-    encode_wm_v1_snapshot_surface_records,
+    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionIndicatorRecord, WmV1ProjectionOutcome,
+    WmV1ProjectionOutputRecord, WmV1ProjectionOutputStatusRecord, WmV1ProjectionPlacementRecord,
+    WmV1ProjectionRequest, WmV1SessionOperationOutcome, WmV1SessionOperationRequest,
+    WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk, WmV1SnapshotEnd,
+    WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord, WmV1SnapshotSurfaceRecord,
+    decode_wm_v1_projection_indicator_records, decode_wm_v1_projection_output_records,
+    decode_wm_v1_projection_output_status_records, decode_wm_v1_projection_placement_records,
+    decode_wm_v1_snapshot_binding_records, decode_wm_v1_snapshot_output_records,
+    decode_wm_v1_snapshot_session_operation_records, decode_wm_v1_snapshot_surface_records,
+    encode_wm_v1_projection_indicator_records, encode_wm_v1_projection_output_records,
+    encode_wm_v1_projection_output_status_records, encode_wm_v1_projection_placement_records,
+    encode_wm_v1_snapshot_binding_records, encode_wm_v1_snapshot_output_records,
+    encode_wm_v1_snapshot_session_operation_records, encode_wm_v1_snapshot_surface_records,
 };
 
 const OUTPUT_ID_WIRE_SIZE: usize = size_of::<u64>();
@@ -811,6 +815,35 @@ pub fn encode_wm_v1_policy_projection(
         .flat_map(|output| output.placements.iter())
         .map(encode_placement_record)
         .collect::<Vec<_>>();
+    let indicators = proposal
+        .indicators
+        .iter()
+        .map(|indicator| {
+            let (label_len, label) = encode_indicator_text(&indicator.label, "indicator_label")?;
+            Ok(WmV1ProjectionIndicatorRecord {
+                output: indicator.output.raw(),
+                slot: indicator.slot,
+                indicator: indicator.indicator,
+                action: indicator.action.map_or(0, WmActionId::raw),
+                state_bits: indicator.state_bits,
+                label_len,
+                label,
+            })
+        })
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
+    let statuses = proposal
+        .output_statuses
+        .iter()
+        .map(|status| {
+            let (layout_len, layout) = encode_indicator_text(&status.layout, "status_layout")?;
+            Ok(WmV1ProjectionOutputStatusRecord {
+                output: status.output.raw(),
+                focus_bits: status.focus_bits,
+                layout_len,
+                layout,
+            })
+        })
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
     let mut chunks = Vec::new();
     push_projection_chunk(
         &mut chunks,
@@ -826,6 +859,20 @@ pub fn encode_wm_v1_policy_projection(
         placements.len(),
         encode_wm_v1_projection_placement_records(&placements)?,
     )?;
+    push_projection_chunk(
+        &mut chunks,
+        proposal.connection_epoch,
+        PROJECTION_INDICATOR_RECORD_KIND,
+        indicators.len(),
+        encode_wm_v1_projection_indicator_records(&indicators)?,
+    )?;
+    push_projection_chunk(
+        &mut chunks,
+        proposal.connection_epoch,
+        PROJECTION_OUTPUT_STATUS_RECORD_KIND,
+        statuses.len(),
+        encode_wm_v1_projection_output_status_records(&statuses)?,
+    )?;
     let chunk_count = chunks.len() as u16;
     let begin = WmV1ProjectionBegin {
         connection_epoch: proposal.connection_epoch,
@@ -834,11 +881,8 @@ pub fn encode_wm_v1_policy_projection(
         chunk_count,
         output_count: outputs.len() as u16,
         placement_count: placements.len() as u32,
-        // A policy that does not advertise the `indicators` capability
-        // declares none. Assembling them is later work; the counts are
-        // declared here so the begin record stays exhaustive.
-        indicator_count: 0,
-        status_count: 0,
+        indicator_count: indicators.len() as u16,
+        status_count: statuses.len() as u16,
     };
     let end = WmV1ProjectionEnd {
         connection_epoch: proposal.connection_epoch,
@@ -870,6 +914,8 @@ pub fn decode_wm_v1_policy_projection(
     }
     let mut outputs = Vec::new();
     let mut placements = Vec::new();
+    let mut indicators = Vec::new();
+    let mut statuses = Vec::new();
     for (ordinal, chunk) in transfer.chunks.iter().enumerate() {
         if chunk.connection_epoch != transfer.begin.connection_epoch
             || usize::from(chunk.ordinal) != ordinal
@@ -883,11 +929,19 @@ pub fn decode_wm_v1_policy_projection(
             PROJECTION_PLACEMENT_RECORD_KIND => placements.extend(
                 decode_wm_v1_projection_placement_records(&chunk.data, chunk.item_count)?,
             ),
+            PROJECTION_INDICATOR_RECORD_KIND => indicators.extend(
+                decode_wm_v1_projection_indicator_records(&chunk.data, chunk.item_count)?,
+            ),
+            PROJECTION_OUTPUT_STATUS_RECORD_KIND => statuses.extend(
+                decode_wm_v1_projection_output_status_records(&chunk.data, chunk.item_count)?,
+            ),
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
     }
     require_count(outputs.len(), transfer.begin.output_count as usize)?;
     require_count(placements.len(), transfer.begin.placement_count as usize)?;
+    require_count(indicators.len(), transfer.begin.indicator_count as usize)?;
+    require_count(statuses.len(), transfer.begin.status_count as usize)?;
     let mut placement_cursor = placements.into_iter();
     let mut projected_outputs = Vec::with_capacity(outputs.len());
     for output in outputs {
@@ -914,7 +968,66 @@ pub fn decode_wm_v1_policy_projection(
         request_id: transfer.begin.request_id,
         base_generation: transfer.begin.base_generation,
         outputs: projected_outputs,
+        indicators: indicators
+            .into_iter()
+            .map(|record| {
+                Ok(PolicyProjectionIndicator {
+                    output: OutputId::from_raw(record.output),
+                    slot: record.slot,
+                    indicator: record.indicator,
+                    action: (record.action != 0).then(|| WmActionId::from_raw(record.action)),
+                    state_bits: record.state_bits,
+                    label: decode_indicator_text(
+                        record.label_len,
+                        &record.label,
+                        "indicator_label",
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
+        output_statuses: statuses
+            .into_iter()
+            .map(|record| {
+                Ok(PolicyProjectionOutputStatus {
+                    output: OutputId::from_raw(record.output),
+                    focus_bits: record.focus_bits,
+                    layout: decode_indicator_text(
+                        record.layout_len,
+                        &record.layout,
+                        "status_layout",
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
     })
+}
+
+fn encode_indicator_text(
+    text: &str,
+    field: &'static str,
+) -> Result<(u16, [u8; 32]), IpcCodecError> {
+    if text.is_empty() || text.len() > 32 || text.chars().any(char::is_control) {
+        return Err(invalid(field, text.len() as u32));
+    }
+    let mut bytes = [0; 32];
+    bytes[..text.len()].copy_from_slice(text.as_bytes());
+    Ok((text.len() as u16, bytes))
+}
+
+fn decode_indicator_text(
+    length: u16,
+    bytes: &[u8; 32],
+    field: &'static str,
+) -> Result<String, IpcCodecError> {
+    let length = usize::from(length);
+    if length == 0 || length > bytes.len() || bytes[length..].iter().any(|byte| *byte != 0) {
+        return Err(invalid(field, length as u32));
+    }
+    let text = core::str::from_utf8(&bytes[..length]).map_err(|_| invalid(field, length as u32))?;
+    if text.chars().any(char::is_control) {
+        return Err(invalid(field, length as u32));
+    }
+    Ok(text.to_owned())
 }
 
 fn push_snapshot_chunk(

@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
-    OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyOutputProjection,
-    PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest, PolicyRequestCause,
-    PolicySceneSnapshot, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
-    Size, SurfaceId, Transform,
+    OutputId, POLICY_INDICATOR_STATE_MASK, POLICY_MAX_INDICATORS, POLICY_MAX_INDICATORS_PER_OUTPUT,
+    POLICY_MAX_OUTPUT_STATUSES, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES,
+    POLICY_OUTPUT_STATUS_FOCUS_MASK, PolicyOutputProjection, PolicyProjectionIndicator,
+    PolicyProjectionOutcome, PolicyProjectionOutputStatus, PolicyProjectionProposal,
+    PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot, PolicySurfacePlacement,
+    PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceId, Transform,
 };
 
 use crate::WmPolicyPlan;
@@ -32,6 +34,12 @@ pub enum PolicyProjectionError {
     InvalidRequestCause,
     RequestIdExhausted,
     V7AdapterState,
+    InvalidIndicator,
+    DuplicateIndicator,
+    DuplicateIndicatorSlot,
+    ExcessiveIndicators,
+    InvalidOutputStatus,
+    DuplicateOutputStatus,
 }
 
 impl core::fmt::Display for PolicyProjectionError {
@@ -56,6 +64,18 @@ pub struct PolicyProjectionReducer {
     next_request_id: u64,
     outstanding: Option<PolicyProjectionRequest>,
     commit_serial: u64,
+    indicators: BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
+    output_statuses: BTreeMap<OutputId, PolicyProjectionOutputStatus>,
+    indicator_publication_generation: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyIndicatorPublication {
+    pub generation: u64,
+    pub connection_epoch: Option<u64>,
+    pub projection_commit_serial: u64,
+    pub indicators: Vec<PolicyProjectionIndicator>,
+    pub output_statuses: Vec<PolicyProjectionOutputStatus>,
 }
 
 /// A fully validated reducer successor held outside authoritative state until
@@ -81,6 +101,9 @@ impl PolicyProjectionReducer {
             next_request_id: 1,
             outstanding: None,
             commit_serial: 0,
+            indicators: BTreeMap::new(),
+            output_statuses: BTreeMap::new(),
+            indicator_publication_generation: 0,
         })
     }
 
@@ -93,6 +116,7 @@ impl PolicyProjectionReducer {
         }
         self.active_epoch = Some(connection_epoch);
         self.greatest_epoch = connection_epoch;
+        self.clear_indicator_publication();
         Ok(())
     }
 
@@ -102,6 +126,7 @@ impl PolicyProjectionReducer {
         }
         self.active_epoch = None;
         self.outstanding = None;
+        self.clear_indicator_publication();
         PolicyProjectionOutcome::Disconnected
     }
 
@@ -186,9 +211,17 @@ impl PolicyProjectionReducer {
         let Ok(candidate) = self.validated_candidate(&request, proposal) else {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
+        let Ok((indicators, output_statuses)) = self.validated_descriptors(&request, proposal)
+        else {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        };
         self.committed = candidate;
+        self.indicators = indicators;
+        self.output_statuses = output_statuses;
         sync_scene_projection(&mut self.scene, &self.committed);
         self.commit_serial = self.commit_serial.saturating_add(1);
+        self.indicator_publication_generation =
+            self.indicator_publication_generation.saturating_add(1);
         PolicyProjectionOutcome::Committed
     }
 
@@ -318,6 +351,15 @@ impl PolicyProjectionReducer {
         );
         self.scene = scene;
         self.committed = committed;
+        let before = (self.indicators.len(), self.output_statuses.len());
+        self.indicators
+            .retain(|output, _| output_ids.contains(output));
+        self.output_statuses
+            .retain(|output, _| output_ids.contains(output));
+        if before != (self.indicators.len(), self.output_statuses.len()) {
+            self.indicator_publication_generation =
+                self.indicator_publication_generation.saturating_add(1);
+        }
         sync_scene_projection(&mut self.scene, &self.committed);
         Ok(())
     }
@@ -336,6 +378,23 @@ impl PolicyProjectionReducer {
 
     pub const fn commit_serial(&self) -> u64 {
         self.commit_serial
+    }
+
+    pub fn indicator_publication(&self) -> PolicyIndicatorPublication {
+        PolicyIndicatorPublication {
+            generation: self.indicator_publication_generation,
+            connection_epoch: self.active_epoch,
+            projection_commit_serial: self.commit_serial,
+            indicators: self.indicators.values().flatten().cloned().collect(),
+            output_statuses: self.output_statuses.values().cloned().collect(),
+        }
+    }
+
+    fn clear_indicator_publication(&mut self) {
+        self.indicators.clear();
+        self.output_statuses.clear();
+        self.indicator_publication_generation =
+            self.indicator_publication_generation.saturating_add(1);
     }
 
     fn validated_candidate(
@@ -393,6 +452,79 @@ impl PolicyProjectionReducer {
             }
         }
         Ok(candidate)
+    }
+
+    fn validated_descriptors(
+        &self,
+        request: &PolicyProjectionRequest,
+        proposal: &PolicyProjectionProposal,
+    ) -> Result<
+        (
+            BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
+            BTreeMap<OutputId, PolicyProjectionOutputStatus>,
+        ),
+        PolicyProjectionError,
+    > {
+        if proposal.indicators.len() > POLICY_MAX_INDICATORS
+            || proposal.output_statuses.len() > POLICY_MAX_OUTPUT_STATUSES
+        {
+            return Err(PolicyProjectionError::ExcessiveIndicators);
+        }
+        let affected = request
+            .affected_outputs
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let mut indicators = self.indicators.clone();
+        let mut statuses = self.output_statuses.clone();
+        for output in &affected {
+            indicators.remove(output);
+            statuses.remove(output);
+        }
+
+        let mut identities = BTreeSet::new();
+        let mut slots = BTreeSet::new();
+        for indicator in &proposal.indicators {
+            if !affected.contains(&indicator.output)
+                || indicator.indicator == 0
+                || indicator.state_bits & !POLICY_INDICATOR_STATE_MASK != 0
+                || indicator.label.is_empty()
+                || indicator.label.len() > 32
+                || indicator.label.chars().any(char::is_control)
+                || indicator.action.is_some_and(|action| !action.is_valid())
+            {
+                return Err(PolicyProjectionError::InvalidIndicator);
+            }
+            if !identities.insert((indicator.output, indicator.indicator)) {
+                return Err(PolicyProjectionError::DuplicateIndicator);
+            }
+            if !slots.insert((indicator.output, indicator.slot)) {
+                return Err(PolicyProjectionError::DuplicateIndicatorSlot);
+            }
+            let output_indicators = indicators.entry(indicator.output).or_default();
+            if output_indicators.len() == POLICY_MAX_INDICATORS_PER_OUTPUT {
+                return Err(PolicyProjectionError::ExcessiveIndicators);
+            }
+            output_indicators.push(indicator.clone());
+        }
+        for output_indicators in indicators.values_mut() {
+            output_indicators.sort_by_key(|indicator| indicator.slot);
+        }
+
+        for status in &proposal.output_statuses {
+            if !affected.contains(&status.output)
+                || status.focus_bits & !POLICY_OUTPUT_STATUS_FOCUS_MASK != 0
+                || status.layout.is_empty()
+                || status.layout.len() > 32
+                || status.layout.chars().any(char::is_control)
+            {
+                return Err(PolicyProjectionError::InvalidOutputStatus);
+            }
+            if statuses.insert(status.output, status.clone()).is_some() {
+                return Err(PolicyProjectionError::DuplicateOutputStatus);
+            }
+        }
+        Ok((indicators, statuses))
     }
 }
 
@@ -468,6 +600,8 @@ pub fn adapt_v7_policy_plan(
         request_id: request.request_id,
         base_generation: request.scene_generation,
         outputs,
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
     })
 }
 
