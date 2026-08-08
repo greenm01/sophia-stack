@@ -645,9 +645,11 @@ named soak failure promotes one.
   - [x] Isolate a non-reading X client's private input queue. Saturation now
     removes that endpoint's sender set, rejects tracked delivery, and leaves
     the shared frontend broker available to healthy clients.
+  - [x] Revalidate deferred pointer-focus handoffs before release. Every exact
+    generational target must remain in the last-presented input projection and
+    frontend route table; otherwise the complete buffered sequence is dropped.
   - [ ] Turn frontend grabs into Engine-visible profile-scoped leases with
-    ordered release acknowledgement, and revalidate deferred focus-handoff
-    routes against current membership and authority epoch. Lock, session, and
+    ordered release acknowledgement and an authority epoch. Lock, session, and
     other security transitions must revoke locally without waiting for
     frontend cleanup.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.

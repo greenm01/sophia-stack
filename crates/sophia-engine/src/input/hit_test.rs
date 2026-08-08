@@ -14,6 +14,14 @@ pub fn hit_test_scene_surface_for_input(
     hit_test_layers(event, layers)
 }
 
+/// Reports whether an exact generational surface identity participates in the
+/// current interaction projection.
+pub fn scene_contains_input_surface(layers: &[LayerSnapshot], target: SurfaceId) -> bool {
+    layers
+        .iter()
+        .any(|layer| layer.surface == target && should_render(layer))
+}
+
 /// Routes an event to an already-selected surface, including positions outside
 /// its geometry. This preserves pointer-grab ordering after a button press.
 pub fn route_scene_surface_for_input(

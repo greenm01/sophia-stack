@@ -89,6 +89,12 @@ macro_rules! drain_physical_input {
                     "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=timeout"
                 );
             }
+            if report.pointer_focus_handoff_stale_drops != 0 {
+                eprintln!(
+                    "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=stale_target count={}",
+                    report.pointer_focus_handoff_stale_drops,
+                );
+            }
             if report.pointer_focus_handoff_capacity_drops != 0 {
                 eprintln!(
                     "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=capacity count={}",

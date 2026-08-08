@@ -700,8 +700,9 @@ dependency graph, protocol surface, or session loop.
 ## Input
 
 Sophia Engine is the single physical-input authority. For the implemented
-application path it applies reserved shortcuts, walks transformed committed
-renderable input layers, and selects a `SurfaceId`. It constructs a
+application path it applies reserved shortcuts, walks transformed renderable
+layers from the last presented output-frame snapshot, and selects a
+generational `SurfaceId`. It constructs a
 `RoutedInputRequest` containing global and surface-local coordinates and sends
 that passive route to the owning authority. Keyboard selection follows Engine
 focus rather than a pointer hit test.
@@ -715,8 +716,11 @@ delivery rules after the same Engine route.
 When an unmodified primary press selects an unfocused visible surface, Engine
 first sends the opaque target through the blind spatial-policy interface. It
 retains the ordered press, drag motion, and release in a bounded handoff until
-the frontend acknowledges protocol focus on that same surface. Raw pointer
-events and protocol-local identity never enter the WM.
+the frontend acknowledges protocol focus on that same surface. Before release,
+every buffered target must still have its exact generational identity in both
+the presented interaction projection and the frontend client-route table. Any
+missing or replaced identity discards the entire handoff. Raw pointer events
+and protocol-local identity never enter the WM.
 
 The authority returns a reduced delivery acknowledgement. Engine never writes
 arbitrary client events or receives a client connection handle. Route failure

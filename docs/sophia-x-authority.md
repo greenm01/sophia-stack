@@ -111,7 +111,10 @@ effects. A routed physical surface change resolves the old and new client once,
 then emits each mask-selected core Focus event followed by its selected XI2
 Focus event from the same passive transition packet. Repeated focus does not
 emit, cross-client queues retain per-client order, and no later key event is
-required to complete a focus handoff.
+required to complete a focus handoff. A frontend focus acknowledgement alone
+cannot release buffered pointer input: each exact generational target must also
+remain in the last-presented Engine projection and current frontend route
+table. Stale membership discards the whole buffered sequence.
 X11 map/configure lifecycle
 updates no longer overwrite a surface's committed-pixel generation. Live setup
 and populated RandR CRTC/output/mode resources use Engine-derived topology

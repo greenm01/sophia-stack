@@ -188,8 +188,11 @@ inside the recipient epoch; reconnect does not replay an ambiguous request.
 
 An unmodified primary press on an unfocused visible surface may produce a
 reduced focus request. Engine retains the ordered input handoff until Engine
-focus and frontend protocol focus settle on the same surface. Timeout or
-surface loss drops the handoff instead of routing it to stale focus.
+focus and frontend protocol focus settle on the same exact generational
+surface. Before release, every buffered target is revalidated against both the
+last-presented interaction projection and current frontend route membership.
+Timeout, removal, replacement, or route loss drops the complete handoff instead
+of routing a prefix to stale focus.
 
 Move, resize, drag, and scrolling interactions remain Engine-owned grabs.
 Policy receives only the target, operation kind, and bounded geometry update

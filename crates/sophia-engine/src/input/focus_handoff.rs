@@ -70,6 +70,27 @@ impl PointerFocusHandoffState {
         }
     }
 
+    /// Cancels an active handoff when its focus target or any buffered route
+    /// no longer names an exact current surface identity.
+    ///
+    /// The caller supplies the authoritative membership check because the
+    /// Engine state is intentionally protocol-neutral. Cancellation discards
+    /// the whole sequence so no prefix can escape after target replacement.
+    pub fn cancel_if_target_stale(
+        &mut self,
+        mut target_is_current: impl FnMut(SurfaceId) -> bool,
+    ) -> bool {
+        let stale = self.target.is_some_and(|target| !target_is_current(target))
+            || self
+                .pending
+                .iter()
+                .any(|request| !target_is_current(request.target_surface));
+        if stale {
+            self.clear();
+        }
+        stale
+    }
+
     pub fn take_ready(
         &mut self,
         applied_focus: Option<SurfaceId>,

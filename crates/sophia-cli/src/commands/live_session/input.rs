@@ -30,6 +30,7 @@ struct PhysicalInputRouteReport {
     virtual_terminal: Option<u8>,
     virtual_terminal_modifier_releases: usize,
     pointer_focus_handoff_expired: bool,
+    pointer_focus_handoff_stale_drops: usize,
     pointer_focus_handoff_capacity_drops: usize,
     pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
     pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
@@ -267,6 +268,7 @@ fn route_input_events_with_pointer_focus(
         virtual_terminal: None,
         virtual_terminal_modifier_releases: 0,
         pointer_focus_handoff_expired: false,
+        pointer_focus_handoff_stale_drops: 0,
         pointer_focus_handoff_capacity_drops: 0,
         pointer_focus_handoff_released: None,
         pointer_boundary_entries: Vec::new(),
@@ -274,7 +276,14 @@ fn route_input_events_with_pointer_focus(
         pointer_output_transitions: Vec::new(),
     };
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
-        report.pointer_focus_handoff_expired = handoff.expire(now_msec);
+        if handoff.cancel_if_target_stale(|target| {
+            sophia_engine::scene_contains_input_surface(input_layers, target)
+                && client_routes.client_for_surface(target).is_some()
+        }) {
+            report.pointer_focus_handoff_stale_drops = 1;
+        } else {
+            report.pointer_focus_handoff_expired = handoff.expire(now_msec);
+        }
         if let Some(mut ready) = handoff.take_ready(applied_client_focus) {
             let released_target = applied_client_focus;
             let released_count = ready.len();

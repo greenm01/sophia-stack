@@ -1,7 +1,7 @@
 mod support;
 use sophia_engine::{
     OutputUnionPointerState, POINTER_FOCUS_HANDOFF_CAPACITY, PointerBoundaryContact,
-    PointerBoundarySide, confine_pointer_to_outputs,
+    PointerBoundarySide, confine_pointer_to_outputs, scene_contains_input_surface,
 };
 use support::*;
 
@@ -446,6 +446,23 @@ fn surface_hit_test_routes_without_exposing_authority_window_identity() {
 }
 
 #[test]
+fn presented_input_membership_requires_the_exact_renderable_surface_generation() {
+    let current = test_layer(8, 0, 0, Region::empty());
+    let current_surface = current.surface;
+    let replacement = SurfaceId::new(current_surface.index(), 2);
+    let mut hidden = current.clone();
+    hidden.opacity = 0.0;
+
+    assert!(scene_contains_input_surface(&[current], current_surface));
+    assert!(!scene_contains_input_surface(&[hidden], current_surface));
+    assert!(!scene_contains_input_surface(&[], current_surface));
+    assert!(!scene_contains_input_surface(
+        &[test_layer(8, 0, 0, Region::empty())],
+        replacement,
+    ));
+}
+
+#[test]
 fn transformed_scene_hit_test_feeds_routed_input_request_generation() {
     let mut layer = test_layer(0, 0, 0, Region::empty());
     layer.authority_local_id = Some(AuthorityLocalId::new(0x30, 1));
@@ -607,6 +624,35 @@ fn pointer_focus_handoff_expires_without_frontend_acknowledgment() {
     assert!(handoff.expire(4_100));
     assert_eq!(handoff.target(), None);
     assert!(handoff.take_ready(Some(target)).is_none());
+}
+
+#[test]
+fn pointer_focus_handoff_discards_everything_when_a_target_identity_is_stale() {
+    let target = SurfaceId::new(8, 1);
+    let replacement = SurfaceId::new(8, 2);
+    let mut handoff = PointerFocusHandoffState::default();
+    handoff
+        .begin(
+            target,
+            100,
+            handoff_request(
+                1,
+                target,
+                InputEventKind::PointerButton {
+                    button: 0x110,
+                    pressed: true,
+                },
+            ),
+        )
+        .unwrap();
+    handoff
+        .defer(handoff_request(2, target, InputEventKind::PointerMotion))
+        .unwrap();
+
+    assert!(handoff.cancel_if_target_stale(|surface| surface == replacement));
+    assert_eq!(handoff.target(), None);
+    assert!(handoff.take_ready(Some(target)).is_none());
+    assert!(!handoff.cancel_if_target_stale(|_| false));
 }
 
 #[test]

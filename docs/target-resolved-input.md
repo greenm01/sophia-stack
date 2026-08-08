@@ -35,14 +35,15 @@ application authority over shell, trust, lock, or another profile's pixels.
 The native X Server Frontend—not the legacy-WM bridge's private synthetic X
 server—delivers input to applications. No non-X application frontend exists.
 
-The current application path rebuilds input layers from committed renderable
-surfaces, before matching pixels are known to have been presented. It also
-re-hit-tests ordinary pointer events before the frontend applies its
-namespace-local grab state. Those are implementation facts, not guarantees to
+The current native application path publishes input layers from the immutable
+output-frame snapshot only after accepted presentation retirement. A deferred
+focus handoff also revalidates every exact buffered target against that
+presented projection and the current frontend route table before release. The
+path still re-hit-tests ordinary pointer events before the frontend applies its
+namespace-local grab state. That is an implementation fact, not a guarantee to
 copy into the shell contract. Before application and shell routes can coexist,
-application selection must use the applicable last-presented scene and active
-grabs must become Engine-visible route leases. The runtime correction remains
-deferred and is an explicit release blocker.
+active grabs must become Engine-visible route leases with security-epoch
+revocation. Output-local pointer domains are also still required.
 
 | Dimension | Application surface routing | Target-resolved shell input |
 | --- | --- | --- |
@@ -133,10 +134,11 @@ frontend protocol rules with this boundary.
 ```
 
 This is not a diagram of the current runtime. The native-X application path
-still selects from committed renderable input layers and applies frontend-local
-grab state after ordinary Engine re-hit-testing. Last-presented application
-selection, Engine-visible route leases, and target-resolved shell delivery must
-be implemented before this coexistence flow can ship.
+now selects from the last retired native output-frame snapshot, but still
+applies frontend-local grab state after ordinary Engine re-hit-testing.
+Engine-visible route leases, per-output pointer domains, security-epoch
+revocation, and target-resolved shell delivery must be implemented before this
+coexistence flow can ship.
 
 An X frontend grab is reduced to an Engine-visible lease naming its admitted
 profile, namespace authority, surface generation, and presentation/control

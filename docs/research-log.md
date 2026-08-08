@@ -9791,3 +9791,20 @@ acknowledgement ordering.
   to a separate healthy client. Shared registry corruption and shared
   acknowledgement pressure remain service-level failures rather than being
   mislabeled as endpoint backpressure.
+
+## 2026-08-08: focus acknowledgement cannot revive stale pointer routes
+
+- The bounded pointer-focus handoff previously released its complete buffered
+  sequence when frontend-applied focus equaled the originally requested
+  surface. It did not independently confirm that the surface and every queued
+  target still belonged to the current interaction projection and frontend
+  route table.
+- Release now requires each exact generational `SurfaceId` to remain both
+  renderable in the last-presented input snapshot and owned by a current X
+  client route. Removal, generation replacement, or route loss cancels the
+  handoff atomically before any delivery token is minted.
+- The protocol-neutral handoff reducer accepts an authority-supplied membership
+  predicate and has a regression proving generation-one buffered input cannot
+  release after only generation two remains. The live owner reports stale
+  cancellation separately from timeout and capacity cancellation. A security
+  authority epoch remains part of the larger Engine-visible grab-lease slice.
