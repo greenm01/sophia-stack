@@ -73,6 +73,9 @@ override the ownership and trust rules in the normative architecture.
   retained evidence.
 - [Project Hagia](project-hagia.md) is the design note for a standalone
   Sophia-native spatial-policy project.
+- [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) is the design
+  note recording how `sophia_shell_v1` should be specified, the external shell
+  evidence that method draws on, and its ordering behind `sophia_wm_v1`.
 
 ## Historical Material
 

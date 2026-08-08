@@ -415,6 +415,12 @@ only after the immutable Milestone 12 candidate passes promotion.
   closed, and emits a bounded diagnostic.
 - [ ] Regenerate and re-run the Rust/C golden and malformed corpora, then update
   Hagia's independent Nim codec without adding a Sophia build dependency.
+- [ ] Before freezing, analyze whether the shared transport can carry a later
+  shell role's texture traffic under the 64-KiB frame limit, single in-flight
+  transfer, and bytes-only wire. Record whether content-addressed cached
+  textures suffice or a shell-role descriptor channel is required. This is an
+  analysis pass on shared `sophia-runtime` coupling, not shell specification
+  work; see `docs/sophia-shell-v1-direction.md`.
 
 ### 13.3 Replace Workspaces With Output Projections
 
@@ -568,6 +574,12 @@ named soak failure promotes one.
 - [ ] Add classical WMs incrementally from retained user workflows. Likely
   candidates include i3, dwm, and qtile, but ordering follows user demand and
   evidence rather than nominal X11 compatibility.
+- [ ] Consider a conventional GTK3 desktop profile such as Xfce as the driver
+  for X11 compatibility completeness: EWMH coverage, `_NET_WM_STRUT_PARTIAL`
+  work-area reservation, and tray/XEmbed admission. Such a profile draws its
+  own pixels and can never exercise a display-list interface, so it is
+  compatibility evidence only and must not be cited as `sophia_shell_v1`
+  evidence; see `docs/sophia-shell-v1-direction.md`.
 - [ ] Reject profiles that require real client metadata, global X server
   ownership, drawing through the fake server, raw input, arbitrary command
   execution, or protocol-specific authority below Engine. Supply missing
@@ -580,7 +592,15 @@ named soak failure promotes one.
   animation; Hagia receives only opaque targets and reduced geometry updates.
 - [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
   client, and permanent-compatibility process. Keep its endpoint and
-  capabilities separate from `sophia_wm_v1`.
+  capabilities separate from `sophia_wm_v1`. Start only after 13.4 freezes
+  `sophia_wm_v1`; the two interfaces are sequential, not parallel. Derive the
+  vocabulary from a driving client with a retained scene graph rather than from
+  first principles; see `docs/sophia-shell-v1-direction.md`.
+- [ ] Settle the display-list vocabulary delta before modeling. Admit hit
+  targets and a desktop-background surface class, evaluate analytic
+  screen-corner and indeterminate-progress primitives, and refuse per-widget
+  visual novelty in favor of client-rasterized textures. Record the damage,
+  bandwidth, and power cost of that texture path before relying on it.
 - [ ] Build `hagia-shell` as one ordinary separately authorized shell client
   for tabs, overview, switchers, previews, and other visible furniture. Shell
   metadata must never leak into Hagia's blind spatial-policy projection.
