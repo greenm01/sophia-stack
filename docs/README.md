@@ -49,6 +49,9 @@ unimplemented target behavior explicitly.
 - [Architectural Alignment And Evidence Policy](architectural-alignment.md)
   assigns temporal, relational, arithmetic, and executable claims to their
   active validation gates and records what those gates do not prove.
+- [Sophia and Wayland](sophia-vs-wayland.md) compares protocol boundaries,
+  failure domains, input disclosure, and evolution policy without treating a
+  typical implementation as universal or target Sophia behavior as shipped.
 - [State and Transition Discipline](state-and-transition-discipline.md)
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
