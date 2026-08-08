@@ -42,8 +42,12 @@ capabilities, constraints, state, and geometry; they do not carry a tiling
 tree, workspace array, tag mask, scrolling column, or global stacking model.
 
 Shell, metadata, portal, and session powers remain separate. A combined
-desktop may implement several clients, but it must connect to and be authorized
-for each interface independently.
+desktop may implement several clients, but independently authorized endpoints
+are insufficient when those clients can collude through one process. The blind
+spatial-policy role must occupy a different supervised protection domain from
+metadata-bearing shell, broker, portal, and application-frontend roles. One
+source tree or executable may launch those processes; they may not retain
+ambient IPC that recombines their authority.
 
 ## Current Experimental API v7
 
@@ -175,6 +179,12 @@ falls through to application input.
 Session actions are advertised opaque tokens. A WM may request an advertised
 token with an optional opaque target. It cannot supply an executable, argument,
 environment, signal, or protocol handle.
+
+The token is meaningful only under its session issuer, issuer/revocation
+epochs, WM recipient epoch, operation class, and optional target generation.
+It is not interchangeable with a broker, shell, or policy action carrying the
+same integer representation. Activation identities are ordered and deduplicated
+inside the recipient epoch; reconnect does not replay an ambiguous request.
 
 An unmodified primary press on an unfocused visible surface may produce a
 reduced focus request. Engine retains the ordered input handoff until Engine

@@ -783,6 +783,16 @@ Sophia-native compositor/Engine protocol would still meet these same authority
 boundaries. The examples differ in form, not in who is allowed to own input,
 protocol state, rendering, or scanout.
 
+Role-specific sockets are necessary but do not by themselves preserve this
+split. A protection domain includes every process that can exchange authority
+through ambient IPC, shared writable memory, inherited descriptors, or
+debugging. Blind WM policy may not share one with a metadata-bearing shell,
+metadata/portal broker, or application frontend. A desktop family may share
+source and executables only by launching separately supervised, sandboxed
+processes without such ambient channels. Exact UID/PID endpoint admission is
+authentication, not proof of that isolation; the current draft transport tests
+claim only the former.
+
 Engine mints transaction IDs, validates every proposal, and keeps the last
 committed layout when the WM is absent, malformed, timed out, or restarting. A
 valid but rejected layout is a policy failure, not a transport failure.
@@ -795,6 +805,17 @@ activates reservations only while the surface is mapped with the
 `ClientPositioned` presentation role, clips partial spans against each output,
 and reduces same-edge reservations by maximum depth. Opposing edges combine.
 An invalid aggregate preserves the last valid work area.
+
+Future native shell reservations are coordinated more strictly than these
+current client-surface reservations because shell visuals and managed
+application placement belong in one coherent presented scene. Engine binds an
+exact shell candidate/reservation generation to the derived work-area
+generation, the WM snapshot and connection epoch, and the answering projection.
+Only a ready, exact bundle may replace the prior presented bundle. Normal
+shell/WM failure preserves the entire prior bundle; security surfaces use a
+separate preemptive path. Tier-0 indicator geometry is instead fixed by
+session/Engine chrome configuration before the WM snapshot, so changing or
+clearing descriptor content cannot create a reservation cycle.
 
 The full output rectangle remains the composition and hit-test space for the
 client-positioned surface. The reduced work rectangle is policy input for
@@ -811,6 +832,13 @@ Titles, icons, attention, trust badges, and close actions belong to the metadata
 broker and compositor shell. Chrome output is sanitized and generation-checked.
 Polite close is routed to the owning authority as `WM_DELETE_WINDOW` or
 `xdg_toplevel.close`; process termination remains later session policy.
+
+Opaque actions are issuer-scoped capabilities rather than global integer
+commands. The authority role, issuer and revocation epochs, recipient role and
+epoch, operation class, optional target generation, and activation identity
+must all match at dispatch. Thus broker, WM/policy, and session operations
+cannot be confused through numeric collision, forwarding, stale reconnect, or
+target reuse.
 
 "Shell" names three distinct things in this architecture, and they are not
 alternatives. `docs/sophia-policy-ipc.md` describes an external separately

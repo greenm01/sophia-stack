@@ -615,6 +615,22 @@ named soak failure promotes one.
   temporal ownership in TLA+ and keep Spin, dependency policy, and fuzzing
   deferred until they have concrete retained artifacts; see
   `docs/architectural-alignment.md`.
+- [x] Ratify the WM/shell hardening prerequisites. Blind WM policy cannot share
+  a protection domain with metadata-bearing shell, broker/portal, or frontend
+  roles; opaque actions bind issuer/recipient epochs, operation class, and
+  target generation; and a tier-1 shell reservation, derived work area, and WM
+  projection promote as one exact presented bundle. Alloy and
+  `ShellWorkAreaCoordination` retain focused negative controls. This is target
+  architecture, not a shipped shell or sandbox.
+- [ ] Enforce protection domains in session supervision before admitting a
+  metadata-bearing shell: close ambient descriptors, prohibit conflicting role
+  composition and unsupervised cross-domain IPC/shared writable state, and add
+  executable isolation tests. Exact UID/PID socket admission alone is not this
+  gate.
+- [ ] Implement issuer-scoped action-capability validation and the atomic
+  shell-reservation/work-area/WM coordinator with the eventual shell schema.
+  Preserve the prior complete presented bundle on ordinary failure and keep
+  lock/session security takeover independent of shell or WM acknowledgement.
 - [ ] Repair native application input before shell coexistence: derive input
   selection from last-presented rather than merely committed surfaces; turn
   frontend grabs into Engine-visible profile-scoped leases with ordered release

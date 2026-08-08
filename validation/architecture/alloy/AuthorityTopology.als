@@ -10,7 +10,9 @@ abstract sig ResourceClass {}
 one sig ApplicationMetadata, NamespaceLocal, TargetRegion extends ResourceClass {}
 
 sig Namespace {}
+sig ProtectionDomain {}
 sig Principal {
+  domain: one ProtectionDomain,
   admitted: set Endpoint
 }
 sig Endpoint {
@@ -58,6 +60,21 @@ pred SecureTopology {
     a.capability = LocalCoordinates implies AuthorizedPortalAccess[a]
     a.endpoint.role = WmRole implies a.resource.class != ApplicationMetadata
   }
+  no d: ProtectionDomain |
+    DomainAdmitsRole[d, WmRole] and
+    DomainAdmitsRole[d, ShellRole + PortalRole + AppFrontendRole]
+  no d: ProtectionDomain |
+    DomainAdmitsRole[d, WmRole] and DomainObserves[d, ApplicationMetadata]
+}
+
+pred DomainAdmitsRole[d: ProtectionDomain, roles: set Role] {
+  some p: Principal, e: p.admitted |
+    p.domain = d and e.role in roles
+}
+
+pred DomainObserves[d: ProtectionDomain, resourceClass: ResourceClass] {
+  some a: Topology.delivered |
+    a.actor.domain = d and a.resource.class = resourceClass
 }
 
 assert NoAmbientOrInferredRoleAuthority {
@@ -83,6 +100,19 @@ assert WmCannotObserveApplicationMetadata {
       a.endpoint.role = WmRole and a.resource.class = ApplicationMetadata
 }
 
+assert WmProtectionDomainCannotComposeMetadataRoles {
+  SecureTopology implies
+    no d: ProtectionDomain |
+      DomainAdmitsRole[d, WmRole] and
+      DomainAdmitsRole[d, ShellRole + PortalRole + AppFrontendRole]
+}
+
+assert WmProtectionDomainCannotObserveApplicationMetadata {
+  SecureTopology implies
+    no d: ProtectionDomain |
+      DomainAdmitsRole[d, WmRole] and DomainObserves[d, ApplicationMetadata]
+}
+
 pred AmbientRoleAttack {
   some a: Topology.delivered |
     a.endpoint not in a.actor.admitted and no a.grant
@@ -106,11 +136,25 @@ pred WmMetadataAttack {
     a.endpoint.role = WmRole and a.resource.class = ApplicationMetadata
 }
 
+pred CombinedWmShellDomainAttack {
+  some d: ProtectionDomain |
+    DomainAdmitsRole[d, WmRole] and DomainAdmitsRole[d, ShellRole]
+}
+
+pred WmDomainMetadataCollusionAttack {
+  some d: ProtectionDomain |
+    DomainAdmitsRole[d, WmRole] and DomainObserves[d, ApplicationMetadata]
+}
+
 check NoAmbientOrInferredRoleAuthority for 6
 check CrossNamespaceAccessRequiresPortalGrant for 6
 check CoordinateAuthorityIsIndependentlyIssued for 6
 check WmCannotObserveApplicationMetadata for 6
+check WmProtectionDomainCannotComposeMetadataRoles for 6
+check WmProtectionDomainCannotObserveApplicationMetadata for 6
 run AmbientRoleAttack for 6
 run CrossNamespaceWithoutPortalAttack for 6
 run SelfIssuedCoordinateAttack for 6
 run WmMetadataAttack for 6
+run CombinedWmShellDomainAttack for 6
+run WmDomainMetadataCollusionAttack for 6

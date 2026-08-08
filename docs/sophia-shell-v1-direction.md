@@ -320,16 +320,56 @@ them:
 - Shell authority cannot set application placement or focus. Dock and taskbar
   activation is an opaque action submitted for adjudication, not a focus call.
 - WM authority cannot acquire shell metadata. Hagia's blind spatial-policy
-  projection stays blind; `hagia-shell` is a separately authorized process.
-- Engine retains rendering, hit-testing, physical input, grabs, cursor state,
-  and animation. The shell describes visual intent and receives resolved hit
-  events.
-- The shell endpoint is distinct from `sophia_wm_v1`. Sharing an executable,
-  repository, or language never combines capabilities.
+  projection stays blind; `hagia-shell` is a separately authorized process in
+  a different protection domain, with no ambient IPC or shared writable state
+  that recombines the roles.
+- Engine retains rendering, hit-testing, physical input, grabs, and cursor
+  state. Precommitted hover/pressed alternatives may switch locally without
+  changing meaning or geometry; continuous visuals remain shell-owned display
+  list commits. General animation ownership remains evidence-driven.
+- The shell endpoint is distinct from `sophia_wm_v1`. Endpoint credentials do
+  not prevent same-process collusion. Sharing an executable, repository, or
+  language is permitted only through separately supervised protection domains.
 
 A shell that cannot be built within these constraints is evidence about the
 constraints, and that evidence belongs in the research log before any boundary
 moves.
+
+## Reservation And Action Coordination
+
+Tier-1 exclusive zones are one logical presentation transaction, not a shell
+commit followed by an unrelated WM reaction. The ordered identity chain is:
+
+```text
+shell candidate + reservation generation
+    -> Engine work-area generation
+    -> WM snapshot generation and connection epoch
+    -> exact WM projection
+    -> one coherent logical presentation bundle
+```
+
+Engine may prepare the shell candidate and request WM policy concurrently, but
+promotion requires the candidate to be ready and every reservation,
+generation, and shell/WM epoch to match. Supersession, disconnect, timeout, or
+malformed policy rejects the incomplete bundle and preserves the prior
+presented shell, work area, and application projection together. Normal
+desktop components may therefore stop progress but cannot expose a half-new
+desktop. Lock, session takeover, and other security surfaces follow their
+separate preemptive authority path and never depend on shell or WM
+acknowledgement.
+
+Tier 0 avoids this cycle. Engine/session configuration reserves its bounded
+indicator strip before producing the WM work rectangle; policy descriptors
+change strip contents, not its geometry. Policy loss clears the descriptor but
+does not silently grow the work area while no WM is available to reproject the
+applications.
+
+Opaque actions are capabilities, not globally meaningful integers. Each is
+bound to an issuer role/authority and revocation epoch, recipient role/epoch,
+operation class, and optional target slot/generation. The receiving authority
+deduplicates activation identity within its epoch. A broker-issued taskbar
+action cannot be interpreted as a policy or session action even if their wire
+integers collide. Concrete records and limits remain schema work.
 
 ## Open Questions
 
@@ -356,8 +396,9 @@ moves.
      expansion and the toolkit outcome the architecture refuses.
 3. What is the damage, bandwidth, and power cost of the client-rasterized
    texture valve under a continuously animating widget?
-4. Can exclusive zones, layer ordering, and keyboard-interactivity modes be
-   expressed without giving the shell placement authority over applications?
+4. *Partly answered.* Exclusive zones use the exact generation chain above and
+   never grant the shell direct application placement. Layer ordering and
+   keyboard-interactivity modes still need a driving-client-derived vocabulary.
 5. *Partly answered.* Workspace and layout structure is settled by
    `docs/sophia-indicator-descriptor.md`: policy-authored slots, blind-safe by
    construction, carried on the commit. What remains open is the dock and

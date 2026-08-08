@@ -15,8 +15,8 @@ authorized component reveals no information.
 
 | Evidence layer | Active tool | Owned question | Explicit limit |
 | --- | --- | --- | --- |
-| Temporal transition safety | TLA+ Tools 1.7.4 | Presented versus committed state, epochs, capture/arbitration, pacing, retirement, bounded queues, and stated fairness | Hand-maintained project models, not refinement proofs |
-| Bounded relational topology | Alloy 6.2.0 with SAT4J | Role admission, namespace/portal reachability, visible target ownership, trust precedence, target identity, and independent coordinate authority | Finite scopes; no event ordering or implementation linkage |
+| Temporal transition safety | TLA+ Tools 1.7.4 | Presented versus committed state, epochs, capture/arbitration, shell/work-area/WM coordination, pacing, retirement, bounded queues, and stated fairness | Hand-maintained project models, not refinement proofs |
+| Bounded relational topology | Alloy 6.2.0 with SAT4J | Role admission, protection-domain composition, namespace/portal reachability, action-capability identity, visible target ownership, trust precedence, target identity, and independent coordinate authority | Finite scopes; no event ordering or implementation linkage |
 | Arithmetic and wire bounds | Z3 4.16.0 over SMT-LIB2 | Region containment/clipping, quantization and budgets, payload prefixes, field representability, and record-size multiplication | Formula-specific results; symbolic shell limits are not ratified schema values |
 | Executable behavior | Offline Rust and C99 tests, QEMU, focused physical proofs | Codec agreement, reducer behavior, real clients, backend integration, and hardware-specific claims | Only the exercised workloads and named environments |
 
@@ -54,9 +54,12 @@ outcomes, a reproducible unattended runner, and a documented interpretation.
 
 ## Active relational and arithmetic tranche
 
-The first Alloy model checks role-specific admission, namespace ownership,
-portal-mediated cross-namespace access, WM metadata blindness, and independent
-coordinate grants. The second checks the future presented target snapshot:
+The authority Alloy model checks role-specific admission, namespace ownership,
+portal-mediated cross-namespace access, WM metadata blindness, forbidden
+protection-domain role composition, and independent coordinate grants. The
+action-capability model checks issuer families, issuer/recipient and revocation
+epochs, operation class, target generation, and activation replay. The
+presented-target model checks the future interaction snapshot:
 targets stay within authority-owned visible pixels, higher-trust targets and a
 deterministic equal-trust order win, modal membership is exact, identities are
 unique across authority/session/slot/generation, and a coordinate recipient

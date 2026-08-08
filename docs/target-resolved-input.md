@@ -146,6 +146,13 @@ once within one authority epoch. Ambiguous delivery is not replayed after
 reconnect; the new epoch makes loss explicit rather than risking duplicate
 activation.
 
+The action reference is issuer-scoped rather than globally typed by its wire
+integer. It binds issuer role and authority epochs, recipient authority epoch,
+operation class, and target generation. Therefore a metadata-broker action
+cannot become a WM or session action through token collision, forwarding, or
+reconnect. Expiry, revocation, wrong recipient or generation, and repeated
+activation identity are rejected before dispatch.
+
 Continuous targets use a target-local normalized domain, including valid zero
 and endpoint values. One active stream exists per seat and has one replaceable
 pending value. An explicit pacing tick may flush at most one intermediate value

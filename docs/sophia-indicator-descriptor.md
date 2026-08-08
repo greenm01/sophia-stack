@@ -194,13 +194,21 @@ answers coexist:
 - **Tier 0 — Engine chrome.** Engine draws an indicator strip from the committed
   descriptor. No client, no new interface. This covers a status bar's entire job
   and reuses the chrome path that already draws focus rings and frames under
-  `capability "chrome"`.
+  `capability "chrome"`. The strip's bounded geometry is session/Engine chrome
+  configuration established before WM work rectangles are produced; descriptor
+  commits change contents, not the reservation. Policy loss therefore clears
+  slots while retaining the already-projected work area.
 - **Tier 1 — `sophia_shell_v1`.** A separately authorized display-list client
   for rich shells. Deferred; see `docs/sophia-shell-v1-direction.md`.
 - **Tier 2 — X11 compatibility.** Ordinary X clients under the frontend.
 
 Tier 0 ships first. It also removes the unresolved 64 KiB texture question from
 the critical path, since that constraint binds Tier 1 alone.
+
+The existing `reserve_indicator_strip` and layout reducer are pure helpers;
+nothing in the production session currently assembles or renders this tier.
+The reservation rule above is a required production wiring invariant, not a
+claim that the strip is already active.
 
 ## Non-Goals
 

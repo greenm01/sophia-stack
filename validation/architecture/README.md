@@ -8,8 +8,9 @@ These models give different questions to different solvers:
 - TLA+ under `validation/tla` owns temporal ordering, epochs, presentation,
   capture cancellation, pacing, and progress assumptions.
 - Alloy owns bounded relational topology: role admission, namespace and portal
-  authority, visible target ownership, trust precedence, identity uniqueness,
-  and independently issued coordinate grants.
+  authority, protection-domain role composition, issuer-scoped actions,
+  visible target ownership, trust precedence, identity uniqueness, and
+  independently issued coordinate grants.
 - Z3 owns arithmetic obligations: region containment and clipping,
   quantization and rate/count budgets, and current `sophia_wm_v1` byte/count
   bounds.
@@ -25,7 +26,8 @@ unmodeled concurrency is safe.
 
 | Model | Question | Current or target boundary |
 | --- | --- | --- |
-| `AuthorityTopology.als` | Can an access cross a role or namespace without exact admission or an independently issued portal grant? Can WM policy observe application metadata? | `NamespaceRegistry`, role-specific supervised endpoints, X resource ownership, and portal grant admission. Coordinate capability issuance is a target pre-schema boundary. |
+| `AuthorityTopology.als` | Can an access cross a role or namespace without exact admission or an independently issued portal grant? Can a WM protection domain compose with metadata-bearing roles or observe application metadata through a colluding principal? | `NamespaceRegistry`, role-specific supervised endpoints, X resource ownership, portal grant admission, and the target session protection-domain policy. Exact PID/UID admission alone does not implement process isolation. |
+| `ActionCapabilityTopology.als` | Can an action cross issuer families, recipient or authority epochs, revocation/expiry, target generations, or activation identities? | Future policy, broker, shell, and session action-capability admission. The model fixes identity relations but no wire fields or limits. |
 | `PresentedTargetTopology.als` | Can a target outside owned visible pixels, below a higher-trust target, outside modal scope, or with a reused identity receive a hit? Can a shell issue its own coordinate grant? | The future last-presented interaction snapshot and authority/session/slot/generation target identity described in `docs/target-resolved-input.md`. No production shell schema exists yet. |
 | `TargetGeometryAndDisclosure.smt2` | Do containment, intersection clipping, quantization, capability-epoch rate limits, and target/outcome quotas imply their bounded disclosure obligations? | Future target-schema validation and the target-resolved disclosure reducer. Limits remain symbolic until measurement and schema evidence choose values. |
 | `WmV1WireBounds.smt2` | Do current schema maxima fit the envelope, field widths, and checked record arithmetic? | `protocol/sophia-wm-v1.kdl`, the generated Rust/C99 codecs, and bounded begin/chunk/end transfer assemblers. |
@@ -43,7 +45,11 @@ witness. Z3 secure queries must be `unsat`, while deliberately weakened
 queries must be `sat`. The retained negative controls cover:
 
 - ambient role inference, cross-namespace access without a portal, shell
-  self-issued coordinates, and WM metadata observation;
+  self-issued coordinates, WM metadata observation, combined WM/shell domains,
+  and protection-domain metadata collusion;
+- cross-issuer action type confusion, wrong recipient roles, stale/revoked
+  capabilities, recipient or target-generation substitution, and repeated
+  activation identity;
 - targets outside allocations, occluded and lower-trust interception,
   ambiguous equal-trust overlap, identity reuse, and self-issued grants;
 - unclipped and unquantized coordinates, frame-local rate-limit reset, and

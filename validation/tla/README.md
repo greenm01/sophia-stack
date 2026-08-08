@@ -82,6 +82,15 @@ be collapsed into one focus, movement, view, or layout operation. The bounded
 configuration explores 348,608 generated states and 65,467 distinct states to
 depth 26.
 
+`ShellWorkAreaCoordination.tla` is a target pre-schema model for future native
+shell reservations. It binds a ready shell candidate and reservation to the
+exact derived work-area request, WM connection epoch, and answering projection
+before one logical presentation. Stale, torn, or unready attempts are rejected,
+and normal shell or WM loss preserves the previous complete bundle. The model
+does not promise progress while either optional desktop component is absent and
+does not correspond to a production shell runtime. Its bounded configuration
+explores 189,816 generated states and 12,278 distinct states to depth 23.
+
 `LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
 workspace assignment, workspace activation, and delayed private Configure or
 Focus requests. It requires cached membership to remain unique, mapping to
@@ -120,6 +129,12 @@ Hagia `ViewId` values, rendering, and physical output retirement. Golden-vector
 tests own byte layouts. Hagia owns tags and views. The existing visual models
 own preparation, submission, and page-flip retirement after a logical
 projection is accepted.
+
+Temporary negative controls removed candidate readiness, reservation-basis
+equality, and WM-epoch equality separately. TLC then violated
+`PresentedBundlesWereReady`, `PresentedBundlesAreCoherent`, and
+`PresentedBundlesMatchExactGenerationAndEpoch`, respectively. The clean model
+restores all three checks; no unsafe-mode switch remains in the retained spec.
 
 ## Rust Boundary Map
 

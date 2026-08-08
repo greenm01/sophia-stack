@@ -47,6 +47,10 @@ exact cached workspace assignment, quiet/fail-stop response collection,
 pixel-silent first-admission retry,
 public policy negotiation and transfer assembly, and atomic multi-output
 projection.
+`ShellWorkAreaCoordination` checks that a future ready shell reservation,
+derived work area, and exact WM projection promote as one coherent generation;
+normal shell or WM failure preserves the prior presented bundle. It is a target
+pre-schema model and is not evidence of a production shell runtime.
 The frame-ownership model permits an unrelated frame to submit and retire first
 and proves that only the exact bound frame can emit feedback.
 `GeometryFeedback` separates full rectangles from pixel readiness and proves
@@ -72,8 +76,9 @@ live under `validation/specula`.
 ### Complementary Architecture Models
 
 The bounded Alloy and SMT-LIB2 gate complements TLA+ without translating or
-duplicating the temporal models. Alloy checks finite authority and target
-topologies. Z3 checks target geometry/disclosure arithmetic and consumes
+duplicating the temporal models. Alloy checks finite authority,
+protection-domain composition, action-capability, and target topologies. Z3
+checks target geometry/disclosure arithmetic and consumes
 schema-generated `sophia_wm_v1` widths and maxima for wire-bound proofs.
 Every protected query is paired with a retained negative control that must
 produce a counterexample or satisfiable witness.

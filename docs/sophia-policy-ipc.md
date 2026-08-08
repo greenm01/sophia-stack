@@ -17,9 +17,19 @@ and bounded transport I/O. Engine owns physical input, authoritative scene
 state, proposal validation, atomic commit, rendering, and scanout. A policy
 client owns only its private model and may submit bounded proposals.
 
-Interfaces are role-specific. A process may connect to more than one interface
-only when the session grants each role separately. Sharing an executable,
-repository, or language never combines capabilities.
+Interfaces are role-specific, but endpoint separation alone is not an
+isolation boundary. A **protection domain** is the set of processes that can
+exchange authority through ambient IPC, shared writable memory, inherited
+descriptors, debugging, or equivalent unsupervised channels. The session may
+grant several compatible roles to one domain only when their composition does
+not violate a blindness invariant.
+
+The spatial-policy role may not share a protection domain with a
+metadata-bearing shell, metadata/portal broker, or application frontend. A
+desktop may reuse one executable, repository, or language by launching
+separate supervised, sandboxed processes with no ambient cross-domain IPC;
+those facts never combine capabilities. An Engine-rendered tier-0 indicator is
+not a shell endpoint and does not create this conflict.
 
 The spatial-policy interface never exposes XIDs, protocol objects, namespaces,
 titles, classes, PIDs, paths, client pixels, raw input, renderer handles, portal
@@ -95,6 +105,13 @@ The connection epoch distinguishes process incarnations. The transport worker
 tags every decoded item with that epoch, and every client proposal repeats it.
 Closing or replacing a connection invalidates all partially assembled and
 queued work from the earlier epoch.
+
+Matching an expected UID and PID authenticates an endpoint; it does not prove
+protection-domain separation. Before any metadata-bearing shell role is
+installed, session supervision must also enforce the forbidden role
+compositions above, close unneeded inherited descriptors, and apply the
+project's chosen process-isolation mechanism. The current draft socket tests
+cover exact peer admission only and make no sandbox claim.
 
 ## Versioning
 
@@ -177,6 +194,16 @@ Engine matches physical input and sends only the action token plus reduced
 policy context. A client cannot provide executable paths, arguments, signals,
 protocol handles, or raw input.
 
+An opaque action token is not a global `u64` authority. Acceptance is scoped by
+issuer role and authority, issuer connection and revocation epochs, recipient
+role and authority epoch, operation class, and—when the operation names
+something—its opaque slot and generation. Each physical activation also has a
+recipient-epoch-local identity for duplicate rejection. A broker-issued
+toplevel action cannot be reinterpreted as a policy or session action; stale,
+expired, revoked, wrong-recipient, wrong-generation, and duplicate activations
+fail closed. Concrete fields and bounds remain future schema work, and current
+API-v7 tokens do not claim this target encoding.
+
 ## Shell Interfaces
 
 The protocol family reserves a distinct shell role and endpoint, not placeholder
@@ -189,6 +216,13 @@ brokers retain metadata sanitization; the shell receives only authorized
 presentation facts and emits bounded shell proposals or opaque actions. Shell
 authority cannot set application placement or focus, and WM authority cannot
 acquire shell metadata.
+
+Shell reservations also cannot race policy projection as independent commits.
+The target transaction chain is shell candidate and reservation, exact Engine
+work-area generation, exact WM snapshot and projection, then one coherent
+logical presentation. A stale or unready member rejects the candidate while
+the prior presented bundle remains intact. Security surfaces use their own
+preemptive authority path and do not wait for an optional desktop shell or WM.
 
 ## Evidence Before Stability
 
