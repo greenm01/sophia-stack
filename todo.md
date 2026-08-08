@@ -391,12 +391,27 @@ future compatibility target, not a prerequisite.
   closed, and emits a bounded diagnostic.
 - [x] Regenerate and re-run the Rust/C golden and malformed corpora, then update
   Hagia's independent Nim codec without adding a Sophia build dependency.
-- [ ] Before freezing, analyze whether the shared transport can carry a later
-  shell role's texture traffic under the 64-KiB frame limit, single in-flight
-  transfer, and bytes-only wire. Record whether content-addressed cached
-  textures suffice or a shell-role descriptor channel is required. This is an
-  analysis pass on shared `sophia-runtime` coupling, not shell specification
-  work; see `docs/sophia-shell-v1-direction.md`.
+- [ ] Add the indicator descriptor to revision 1 before the 13.4 freeze. Add
+  `capability "indicators" bit=8`, `max-indicators=256`, record kinds
+  `ProjectionIndicator` and `ProjectionOutputStatus`, and an `indicator_count`
+  field in `ProjectionBegin`. Adding a record kind is additive; adding a field to
+  an existing message layout is not, so deferring this past 13.4 forces a new
+  interface family. Bounds are permanent: 256 indicators, 32 per output, 32-byte
+  UTF-8 labels and layout names. See `docs/sophia-indicator-descriptor.md`.
+- [ ] Model the descriptor before changing the schema. Revise
+  `validation/tla/ShellObservation.tla` so the descriptor rides the proposal and
+  its invariants hold with no explicit publish or invalidate step, and add
+  `validation/tla/IndicatorTransfer.tla` for declared-count, ordinal, and
+  bounds integrity across begin/chunk/end.
+- [ ] Regenerate the Rust and C99 codecs, wire tables, and golden corpora for the
+  new records, then update Hagia's independent Nim codec in the same change so
+  the cross-repository conformance gate stays green.
+- [ ] Defer the tier-1 texture question rather than blocking on it. Whether the
+  shared transport can carry shell texture traffic under the 64-KiB frame limit,
+  single in-flight transfer, and bytes-only wire binds `sophia_shell_v1` only.
+  Tier-0 Engine chrome renders the descriptor with no client interface, which
+  removes that question from the freeze path; see
+  `docs/sophia-shell-v1-direction.md` open question 2.
 
 ### 13.3 Replace Workspaces With Output Projections
 
@@ -602,7 +617,19 @@ named soak failure promotes one.
 
 - [ ] Define a bounded redacted status feed for workspace number, approved
   layout name, focus state, output health, and supervised-component health.
-  Feed xmobar through a trusted shell broker without exposing client metadata.
+  Workspace number, layout name, and focus state are settled by the indicator
+  descriptor and arrive on the layout commit, not through a broker: policy owns
+  them and no broker has an upstream source. Output and supervised-component
+  health remain session-owned and still need a path. See
+  `docs/sophia-indicator-descriptor.md`.
+- [ ] Render tier-0 indicator chrome in Engine from the committed descriptor,
+  reusing the existing `capability "chrome"` path and the renderer-neutral
+  display list. Admit no new primitive. Add a verifier in the shape of
+  `tools/verify_sophia_native_chrome.sh` plus one physical TTY3 proof. This
+  replaces xmobar's role without any client interface.
+- [ ] Emit indicators from Hagia's private tags, keeping tags private and
+  crossing only labels, state bits, and action tokens. Extend the
+  cross-repository conformance gate to cover them.
 - [ ] Register a new bounded opaque launcher action and decide whether the
   compatibility UI is dmenu or native Engine/shell chrome. Do not reuse the
   established xmonad layout-action IDs.

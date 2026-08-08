@@ -473,6 +473,18 @@ No component may acquire another row's authority merely because it currently
 runs in the same process. Crate and process boundaries may evolve; ownership
 does not.
 
+**No policy process may own a client-facing endpoint.** A spatial-policy process
+connects to the session runtime; it does not listen. When policy has something a
+shell must display, it travels through Engine's commit as an indicator descriptor
+or through a broker, never through a socket the policy itself serves.
+
+The rule is structural rather than stylistic. Wayland compositors each grew a
+private shell socket, so every shell grew a backend for every compositor;
+Noctalia carries nine. Sophia's policy processes are external and already speak
+one protocol, which makes a single path enforceable. Removing this rule
+reintroduces the fragmentation it prevents. See
+`docs/sophia-indicator-descriptor.md`.
+
 ## Protocol Frontends
 
 A protocol frontend parses one client protocol, owns its object/resource
@@ -759,6 +771,22 @@ Titles, icons, attention, trust badges, and close actions belong to the metadata
 broker and compositor shell. Chrome output is sanitized and generation-checked.
 Polite close is routed to the owning authority as `WM_DELETE_WINDOW` or
 `xdg_toplevel.close`; process termination remains later session policy.
+
+"Shell" names three distinct things in this architecture, and they are not
+alternatives. `docs/sophia-policy-ipc.md` describes an external separately
+authorized client; the row above describes compositor-owned chrome. Both are
+correct at different tiers:
+
+| Tier | Renderer | Data source | Status |
+| --- | --- | --- | --- |
+| 0 | Engine chrome | committed indicator descriptor | reuses the existing chrome path |
+| 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | deferred |
+| 2 | ordinary X11 clients | X11 protocol surface | frontend compatibility |
+
+Tier 0 covers a status bar without any client interface. Tier 1 exists for shells
+that need more than chrome can express, and is justified by a demanding client
+rather than by symmetry. See `docs/sophia-indicator-descriptor.md` and
+`docs/sophia-shell-v1-direction.md`.
 
 The optional [X11 WM Bridge](sophia-x11-wm-bridge.md) may present a synthetic
 X11 facade to a legacy WM such as xmonad while speaking the normal blind Sophia

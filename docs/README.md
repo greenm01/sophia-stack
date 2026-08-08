@@ -36,6 +36,9 @@ unimplemented target behavior explicitly.
 - [Sophia Policy IPC](sophia-policy-ipc.md) defines the target language-neutral
   framing, endpoint, versioning, transfer, and stability rules shared by public
   WM and later shell interfaces.
+- [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
+  policy-authored desktop status carried on the layout commit, the bounds that
+  cannot change later, and the rendering tiers that consume it.
 
 ## Architecture Rationale
 

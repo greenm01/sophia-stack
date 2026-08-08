@@ -216,13 +216,25 @@ authority.
 
 | Noctalia dependency | Shell need | Owner |
 | --- | --- | --- |
-| `ext-workspace-v1` | workspace list, occupancy, focus | metadata broker |
+| `ext-workspace-v1` | workspace list, occupancy, focus | **indicator descriptor** |
 | `ext-foreign-toplevel-list-v1` | taskbar and dock entries | metadata broker |
 | `wlr-foreign-toplevel-management-unstable-v1` | activate, close, minimize | broker plus opaque actions |
 
 This group is redaction-critical and is where the interface most easily goes
 wrong. It corresponds to the existing roadmap item for a bounded redacted
 status feed.
+
+**Superseded in part.** The first row is now answered by
+`docs/sophia-indicator-descriptor.md`, and not by a broker. Workspace state
+originates in the policy process, not in Engine and not in any metadata the
+broker can see, so a broker has no upstream source for it. Policy attaches
+indicators to its layout proposal and Engine republishes them after commit.
+
+The correction matters beyond one row. This table originally assigned all
+presentation data to one owner. There are two, with different trust properties:
+policy-authored structure is blind-safe by construction, while broker-supplied
+identity needs real sanitization. Keeping them separate means a status bar never
+requests identity at all.
 
 ### Session services
 
@@ -317,9 +329,12 @@ moves.
    texture valve under a continuously animating widget?
 4. Can exclusive zones, layer ordering, and keyboard-interactivity modes be
    expressed without giving the shell placement authority over applications?
-5. What is the smallest presentation feed that supports a dock and a taskbar
-   while remaining genuinely redacted? Icons in particular are hard: an
-   application icon is close to an identity disclosure.
+5. *Partly answered.* Workspace and layout structure is settled by
+   `docs/sophia-indicator-descriptor.md`: policy-authored slots, blind-safe by
+   construction, carried on the commit. What remains open is the dock and
+   taskbar half, which needs per-window identity from the broker. Icons are the
+   hard case: an application icon is close to an identity disclosure, and no
+   structural property makes it safe the way policy blindness makes labels safe.
 6. Does the shell need its own animation clock, or does Engine own animation
    and the shell only declare transitions?
 7. Where does the launcher live? It needs a text input, a result list, and
