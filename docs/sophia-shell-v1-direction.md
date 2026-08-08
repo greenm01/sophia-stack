@@ -174,9 +174,20 @@ exists in the vocabulary: **client-rasterized image textures.**
 
 A shell that wants an audio visualizer rasterizes it and uploads a texture.
 Engine composites the texture without learning what it depicts. Novelty stays
-client-side, the primitive set stays small, and the boundary holds. This should
-be an explicit stated rule of the specification process, not an outcome
+client-side, the primitive set stays small, and the boundary holds. This is
+formally codified as **The Compositing Operator Rule** (see `docs/compositor-graphics.md`):
+the Engine only admits a primitive if it represents a mathematical 2D compositing
+operation that the client cannot execute itself due to security (pixel blindness). This
+should be an explicit stated rule of the specification process, not an outcome
 negotiated per primitive.
+
+### DMA-BUF Handoffs Are A Candidate
+
+A shell-owned DMA-BUF transferred by Unix-domain FD passing is one candidate
+for high-frequency client-rasterized content; it is not a settled shell
+contract. Admission requires evidence for allocation ownership, fencing,
+damage, resource bounds, fallback, renderer failure, and measured bandwidth and
+power. The existing client DMA-BUF path does not prove this distinct boundary.
 
 The open cost is that texture upload has different damage, bandwidth, and
 power characteristics than an analytic primitive, and an animated visualizer
@@ -256,7 +267,7 @@ Sophia's portal model differs structurally from data-control. A clipboard
 manager under a portal grant is not a drop-in translation and needs its own
 design pass.
 
-### Input
+### Target-resolved input
 
 | Noctalia dependency | Shell need | Owner |
 | --- | --- | --- |
@@ -266,6 +277,15 @@ design pass.
 
 Virtual keyboard is synthetic input injection and needs an explicit capability
 grant. It should not be reachable from an ordinary shell authorization.
+
+The ratified pre-schema contract is
+`docs/target-resolved-input.md`. Engine resolves physical input against the
+last presented interaction snapshot. Discrete actions are coordinate-free by
+default; continuous targets produce paced normalized values; and exceptional
+coordinates require a committed region-local grant. Stable generational target
+handles, per-seat bounded capture, modal scope, and precommitted hover/pressed
+variants define the boundary without adding widgets, styling tokens, or a
+reactive property system to Engine.
 
 ### Display control and compatibility
 

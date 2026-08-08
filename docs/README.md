@@ -39,6 +39,9 @@ unimplemented target behavior explicitly.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.
+- [Target-Resolved Input](target-resolved-input.md) defines presented-state
+  target resolution, bounded capture, paced continuous values, and exceptional
+  region-local coordinate disclosure for future shell interaction.
 
 ## Architecture Rationale
 

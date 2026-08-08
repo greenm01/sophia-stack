@@ -721,6 +721,15 @@ Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
+Future shell interaction follows `docs/target-resolved-input.md`. Engine
+resolves shell targets against the last presented interaction snapshot, not a
+newer committed or submitted scene. Stable generational handles permit
+visual-only commits to preserve per-seat capture; removal, regeneration,
+authority loss, seat loss, or modal-scope change cancels capture. Discrete
+shell actions are coordinate-free by default, continuous values are normalized
+and paced, and exceptional coordinates require a committed region-local grant.
+This target contract does not change ordinary application input delivery.
+
 ## Spatial Policy And Chrome
 
 The WM consumes immutable snapshots keyed by opaque `SurfaceId` values and

@@ -600,6 +600,12 @@ named soak failure promotes one.
 
 ### Native Sophia Follow-Ups
 
+- [x] Ratify target-resolved input as a pre-schema prerequisite. The contract
+  resolves against presented snapshots, gives stable generational targets
+  bounded per-seat capture, paces normalized continuous values, and permits
+  coordinates only through explicit region-local grants. The two focused TLA+
+  models precede any `sophia_shell_v1` schema or runtime work; see
+  `docs/target-resolved-input.md`.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.
@@ -609,8 +615,8 @@ named soak failure promotes one.
   `sophia_wm_v1`; the two interfaces are sequential, not parallel. Derive the
   vocabulary from a driving client with a retained scene graph rather than from
   first principles; see `docs/sophia-shell-v1-direction.md`.
-- [ ] Settle the display-list vocabulary delta before modeling. Admit hit
-  targets and a desktop-background surface class, evaluate analytic
+- [ ] Settle the remaining display-list vocabulary before schema work. Admit
+  generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget
   visual novelty in favor of client-rasterized textures. Record the damage,
   bandwidth, and power cost of that texture path before relying on it.

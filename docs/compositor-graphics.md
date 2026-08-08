@@ -59,6 +59,28 @@ other shell-owned UI without turning Engine into a general-purpose UI toolkit.
 New primitives require demonstrated compositor use. One-off visual novelty is
 not sufficient reason to expand the stable Engine boundary.
 
+New additions to this display list are governed by two principles:
+
+1. **The Compositing Operator Rule:** The Engine only admits a
+   primitive if it represents a mathematical 2D compositing operation that the
+   client physically cannot execute itself due to security (pixel blindness). For
+   example, a `BackdropBlurNode` must be an Engine primitive because the shell is
+   forbidden from reading the underlying window pixels to perform the blur. Conversely,
+   custom visual novelties (like audio visualizers or widgets) must be rasterized
+   entirely by the client.
+2. **Bandwidth Preservation and Resolution Independence:** Primitives
+   such as analytic rounded rectangles, borders, and shadows are admitted because computing
+   them in a fragment shader saves massive memory and bus bandwidth compared to uploading
+   large, flat client-rasterized textures on every frame.
+
+### Degradation Contract
+
+Only a visual effect declared optional may be skipped or degraded, and its
+committed fallback must remain legible. Mandatory content—including text,
+controls, and trust indications—cannot disappear silently. Performance targets
+must name a workload, hardware class, and measurement method; this architecture
+does not promise one refresh rate across all hardware.
+
 “Shell-owned” is an ownership rule, not a product description. It covers a
 small status bar and a full set of panels and decorations alike. The display
 list describes the resulting visual intent without learning which kind of
