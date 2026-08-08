@@ -326,6 +326,11 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   two independently advancing animated surfaces, zero layout timeout, resize
   abort, hidden-surface configure/render command, or WM restart, and clean
   normal-session teardown.
+- [x] Re-run the retained practical xmonad acceptance in isolated QEMU after
+  the physical launch incident. It completed focus, layout, workspace,
+  pointer, launch, bridge restart/reseed, and clean logout; the prelude's
+  one-versus-two visible-surface predicate was corrected and locked by the
+  verifier regression. QEMU does not satisfy the physical short gate below.
 - [ ] Install the practical-profile successor and pass one short gate on that
   exact candidate: every new action must commit, both pointer modes must
   commit, Kitty/Firefox/xmobar and Engine chrome must render correctly,

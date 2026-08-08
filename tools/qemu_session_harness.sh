@@ -1726,10 +1726,15 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
         empty_workspace_chord=meta_l+3
     fi
 
+    expected_workspace_surfaces=2
+    if [[ "$SCENARIO" == "xmonad-m8-mix" || "$SCENARIO" == "xmonad-m8-soak" ]]; then
+        expected_workspace_surfaces=1
+    fi
+    focused_projection_pattern="^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=${expected_workspace_surfaces} focus=surface$"
     focus_baseline="$(evidence_count '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$')"
-    focused_projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$')"
+    focused_projection_baseline="$(evidence_count "$focused_projection_pattern")"
     send_chord_and_wait meta_l+k '^sophia_live_wm schema=1 status=physical_action_committed action=' prelude-focus
-    if ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$' "$focused_projection_baseline" \
+    if ! wait_for_new_evidence "$focused_projection_pattern" "$focused_projection_baseline" \
         || ! wait_for_new_evidence '^sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control$' "$focus_baseline"; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=prelude_focus_timeout" |
             tee -a "$EVIDENCE_FILE"
@@ -1737,10 +1742,10 @@ if [[ "$SCENARIO" == xmonad-* ]]; then
     fi
 
     layout_baseline="$(evidence_count '^sophia_live_wm schema=1 status=layout_committed ')"
-    resized_projection_baseline="$(evidence_count '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$')"
+    resized_projection_baseline="$(evidence_count "$focused_projection_pattern")"
     send_chord_and_wait meta_l+spc '^sophia_live_wm schema=1 status=physical_action_committed action=' prelude-layout
     if ! wait_for_new_evidence '^sophia_live_wm schema=1 status=layout_committed ' "$layout_baseline" \
-        || ! wait_for_new_evidence '^sophia_live_wm schema=2 status=workspace_projection_committed .* workspace=1 visible_surfaces=1 focus=surface$' "$resized_projection_baseline"; then
+        || ! wait_for_new_evidence "$focused_projection_pattern" "$resized_projection_baseline"; then
         echo "sophia_qemu_xmonad schema=1 status=failed reason=prelude_layout_timeout" |
             tee -a "$EVIDENCE_FILE"
         exit 1
