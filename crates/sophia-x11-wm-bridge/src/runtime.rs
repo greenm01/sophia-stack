@@ -196,6 +196,7 @@ pub struct LegacyX11WmBridgeRuntime {
     config_dir: PathBuf,
     profile: LegacyWmProfile,
     session: Option<WmSessionDescriptor>,
+    request_failed: bool,
 }
 
 impl LegacyX11WmBridgeRuntime {
@@ -312,6 +313,7 @@ impl LegacyX11WmBridgeRuntime {
             display_lease: private_display.lease,
             profile,
             session: None,
+            request_failed: false,
             config_dir,
         })
     }
@@ -320,9 +322,27 @@ impl LegacyX11WmBridgeRuntime {
         &mut self,
         request: &WmRequestPacket,
     ) -> Result<WmResponsePacket, BridgeRuntimeError> {
-        // Direct workspace commands return without consulting the legacy WM.
-        // Drain replies from their preceding synthetic X events before any
-        // later command can fill the bounded legacy-response channel.
+        if self.request_failed {
+            return Err(BridgeRuntimeError::new(
+                "legacy WM bridge must be restarted after a request failure",
+            ));
+        }
+        let result = self.handle_request_once(request);
+        if result.is_err() {
+            // Legacy X requests carry no Sophia transaction identity. Once a
+            // request fails, only process replacement can prove that no old
+            // reply will be attributed to later Engine work.
+            self.request_failed = true;
+        }
+        result
+    }
+
+    fn handle_request_once(
+        &mut self,
+        request: &WmRequestPacket,
+    ) -> Result<WmResponsePacket, BridgeRuntimeError> {
+        // The preceding successful request already reached quiet. This drain
+        // is defensive channel cleanup, not the attribution boundary.
         while self.legacy.try_recv().is_ok() {}
 
         if self.profile == LegacyWmProfile::Xmonad {
@@ -331,22 +351,46 @@ impl LegacyX11WmBridgeRuntime {
                 .as_ref()
                 .ok_or_else(|| BridgeRuntimeError::new("WM session was not negotiated"))?;
             if let Some(response) = translate_xmonad_profile_action(request, session)? {
-                if let Some(workspace) =
-                    response.commands.iter().find_map(|command| match command {
-                        WmCommand::ActivateWorkspace { workspace, .. } => Some(*workspace),
+                let mut update = BridgeEngineUpdate {
+                    transaction: request.transaction,
+                    events: Vec::new(),
+                };
+                for command in &response.commands {
+                    let direct = match *command {
+                        WmCommand::ActivateWorkspace { workspace, .. } => Some(
+                            self.bridge
+                                .activate_workspace(request.transaction, workspace),
+                        ),
+                        WmCommand::AssignWorkspace { surface, workspace } => {
+                            // A move packet carries the complete source view.
+                            // Reconcile it before applying the speculative
+                            // assignment returned to Engine.
+                            let projection = self.bridge.apply_engine_request(request)?;
+                            update.events.extend(projection.events);
+                            Some(self.bridge.assign_workspace(
+                                request.transaction,
+                                surface,
+                                workspace,
+                            )?)
+                        }
                         _ => None,
-                    })
-                {
-                    let update = self
-                        .bridge
-                        .activate_workspace(request.transaction, workspace);
-                    let _ = send_engine_update(
-                        &self.bridge,
-                        &update,
-                        self.commands
-                            .as_ref()
-                            .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
-                    )?;
+                    };
+                    if let Some(direct) = direct {
+                        update.events.extend(direct.events);
+                    }
+                }
+                send_engine_update(
+                    &self.bridge,
+                    &update,
+                    self.commands
+                        .as_ref()
+                        .ok_or_else(|| BridgeRuntimeError::new("legacy WM server stopped"))?,
+                )?;
+                if !update.events.is_empty() {
+                    // Direct commands do not consume the WM's proposed layout,
+                    // but their synthetic events must still settle before a
+                    // successor request can own any legacy reply.
+                    self.collect_legacy_responses(&BTreeSet::new(), false)?;
                 }
                 return Ok(response);
             }
@@ -641,6 +685,7 @@ impl LegacyX11WmBridgeRuntime {
         let started = Instant::now();
         let mut last_activity = started;
         let mut observed_activity = false;
+        let mut quiet_boundary = false;
         let mut batch = LegacyResponseBatch::default();
         loop {
             let elapsed = started.elapsed();
@@ -669,6 +714,7 @@ impl LegacyX11WmBridgeRuntime {
                         && (!require_activity || observed_activity)
                         && last_activity.elapsed() >= QUIET_PERIOD
                     {
+                        quiet_boundary = true;
                         break;
                     }
                 }
@@ -701,6 +747,12 @@ impl LegacyX11WmBridgeRuntime {
         if require_activity && !observed_activity {
             return Err(BridgeRuntimeError::new(format!(
                 "legacy WM produced no post-action response within {} ms",
+                BRIDGE_TIMEOUT.as_millis()
+            )));
+        }
+        if !quiet_boundary {
+            return Err(BridgeRuntimeError::new(format!(
+                "legacy WM response did not reach a quiet boundary within {} ms",
                 BRIDGE_TIMEOUT.as_millis()
             )));
         }

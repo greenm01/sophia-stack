@@ -1,4 +1,124 @@
 #[test]
+fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
+    let surface = SurfaceId::new(4, 1);
+    let transaction = TransactionId::from_raw(4);
+    let target = Rect {
+        x: 0,
+        y: 0,
+        width: 900,
+        height: 700,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.unmanaged_surfaces.insert(surface);
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![test_layer(surface, target)],
+        requested_sizes: BTreeMap::from([(
+            surface,
+            Size {
+                width: target.width,
+                height: target.height,
+            },
+        )]),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::from([surface]),
+        source: Some(LiveWmProposalSource::Manage(surface)),
+        effects: None,
+    });
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    let result = layout.expire_pending(&mut controls).unwrap().unwrap();
+
+    assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+    assert_eq!(result.source, Some(LiveWmProposalSource::Manage(surface)));
+    assert_eq!(layout.admission_retries.get(&surface), Some(&1));
+    assert_eq!(
+        layout.layout_epochs.pending_target(surface),
+        Some(Size {
+            width: target.width,
+            height: target.height,
+        })
+    );
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+    assert_eq!(controls.pending_len(), 0);
+    assert!(layout.unmanaged_surfaces.contains(&surface));
+    assert!(wm_transport_requires_reseed(&result));
+
+    let mut routed =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(5));
+    routed.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    routed
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry: target,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    layout.client_routes.observe(&routed);
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction: TransactionId::from_raw(5),
+        layers: vec![test_layer(surface, target)],
+        requested_sizes: BTreeMap::from([(
+            surface,
+            Size {
+                width: target.width,
+                height: target.height,
+            },
+        )]),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: TransactionId::from_raw(5),
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::from([surface]),
+        source: Some(LiveWmProposalSource::Manage(surface)),
+        effects: None,
+    });
+
+    let withdrawal = layout.expire_pending(&mut controls).unwrap().unwrap();
+
+    assert_eq!(
+        withdrawal.update.commit.outcome,
+        TransactionOutcome::TimedOut
+    );
+    assert_eq!(controls.pending_len(), 1);
+    assert!(!layout.unmanaged_surfaces.contains(&surface));
+    assert!(!layout.admission_retries.contains_key(&surface));
+    assert_eq!(layout.layout_epochs.pending_target(surface), None);
+    assert!(wm_transport_requires_reseed(&withdrawal));
+}
+
+#[test]
 fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     let surface = SurfaceId::new(6, 1);
     let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);

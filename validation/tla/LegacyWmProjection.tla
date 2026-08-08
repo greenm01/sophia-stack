@@ -1,4 +1,5 @@
 ------------------------ MODULE LegacyWmProjection ------------------------
+EXTENDS FiniteSets, Naturals
 
 (***************************************************************************
  * A legacy WM may retain a synthetic X11 window after Sophia changes the  *
@@ -16,18 +17,19 @@ ASSUME /\ SurfaceOne # SurfaceTwo
 Surfaces == {SurfaceOne, SurfaceTwo}
 Workspaces == {WorkspaceOne, WorkspaceTwo}
 
-SurfaceWorkspace ==
-    [surface \in Surfaces |->
-        IF surface = SurfaceOne THEN WorkspaceOne ELSE WorkspaceTwo]
-
-VARIABLES activeWorkspace, mapped, pendingConfigure, pendingFocus,
+VARIABLES activeWorkspace, workspaceMembers, mapped,
+          pendingConfigure, pendingFocus,
           configureIssued, focusIssued, lastConfigured, lastFocused
 
-vars == <<activeWorkspace, mapped, pendingConfigure, pendingFocus,
+vars == <<activeWorkspace, workspaceMembers, mapped,
+          pendingConfigure, pendingFocus,
           configureIssued, focusIssued, lastConfigured, lastFocused>>
 
 Init ==
     /\ activeWorkspace = WorkspaceOne
+    /\ workspaceMembers =
+        [workspace \in Workspaces |->
+            IF workspace = WorkspaceOne THEN {SurfaceOne} ELSE {SurfaceTwo}]
     /\ mapped = {SurfaceOne}
     /\ pendingConfigure = {}
     /\ pendingFocus = {}
@@ -40,11 +42,39 @@ SwitchWorkspace(workspace) ==
     /\ workspace \in Workspaces
     /\ workspace # activeWorkspace
     /\ activeWorkspace' = workspace
-    /\ mapped' = {surface \in Surfaces :
-                      SurfaceWorkspace[surface] = workspace}
+    /\ mapped' = workspaceMembers[workspace]
+    /\ lastConfigured' = NoSurface
+    /\ lastFocused' = NoSurface
+    /\ UNCHANGED <<workspaceMembers, pendingConfigure, pendingFocus,
+                    configureIssued, focusIssued>>
+
+ReplaceProjection(workspace, members) ==
+    /\ workspace \in Workspaces
+    /\ members \subseteq Surfaces
+    /\ workspaceMembers' =
+        [candidate \in Workspaces |->
+            IF candidate = workspace
+                THEN members
+                ELSE workspaceMembers[candidate] \ members]
+    /\ activeWorkspace' = workspace
+    /\ mapped' = members
     /\ lastConfigured' = NoSurface
     /\ lastFocused' = NoSurface
     /\ UNCHANGED <<pendingConfigure, pendingFocus,
+                    configureIssued, focusIssued>>
+
+AssignWorkspace(surface, workspace) ==
+    /\ surface \in Surfaces
+    /\ workspace \in Workspaces
+    /\ LET nextMembers ==
+              [candidate \in Workspaces |->
+                  (workspaceMembers[candidate] \ {surface})
+                    \cup IF candidate = workspace THEN {surface} ELSE {}]
+       IN /\ workspaceMembers' = nextMembers
+          /\ mapped' = nextMembers[activeWorkspace]
+    /\ lastConfigured' = NoSurface
+    /\ lastFocused' = NoSurface
+    /\ UNCHANGED <<activeWorkspace, pendingConfigure, pendingFocus,
                     configureIssued, focusIssued>>
 
 IssueConfigure(surface) ==
@@ -53,7 +83,8 @@ IssueConfigure(surface) ==
     /\ pendingConfigure' = pendingConfigure \cup {surface}
     /\ lastConfigured' = NoSurface
     /\ lastFocused' = NoSurface
-    /\ UNCHANGED <<activeWorkspace, mapped, pendingFocus, focusIssued>>
+    /\ UNCHANGED <<activeWorkspace, workspaceMembers, mapped,
+                    pendingFocus, focusIssued>>
 
 IssueFocus(surface) ==
     /\ surface \in Surfaces \ focusIssued
@@ -61,7 +92,7 @@ IssueFocus(surface) ==
     /\ pendingFocus' = pendingFocus \cup {surface}
     /\ lastConfigured' = NoSurface
     /\ lastFocused' = NoSurface
-    /\ UNCHANGED <<activeWorkspace, mapped, pendingConfigure,
+    /\ UNCHANGED <<activeWorkspace, workspaceMembers, mapped, pendingConfigure,
                     configureIssued>>
 
 TranslateConfigure(surface) ==
@@ -69,7 +100,7 @@ TranslateConfigure(surface) ==
     /\ pendingConfigure' = pendingConfigure \ {surface}
     /\ lastConfigured' = IF surface \in mapped THEN surface ELSE NoSurface
     /\ lastFocused' = NoSurface
-    /\ UNCHANGED <<activeWorkspace, mapped, pendingFocus,
+    /\ UNCHANGED <<activeWorkspace, workspaceMembers, mapped, pendingFocus,
                     configureIssued, focusIssued>>
 
 TranslateFocus(surface) ==
@@ -77,7 +108,7 @@ TranslateFocus(surface) ==
     /\ pendingFocus' = pendingFocus \ {surface}
     /\ lastConfigured' = NoSurface
     /\ lastFocused' = IF surface \in mapped THEN surface ELSE NoSurface
-    /\ UNCHANGED <<activeWorkspace, mapped, pendingConfigure,
+    /\ UNCHANGED <<activeWorkspace, workspaceMembers, mapped, pendingConfigure,
                     configureIssued, focusIssued>>
 
 Progress ==
@@ -86,6 +117,10 @@ Progress ==
 
 Next ==
     \/ \E workspace \in Workspaces : SwitchWorkspace(workspace)
+    \/ \E workspace \in Workspaces, members \in SUBSET Surfaces :
+           ReplaceProjection(workspace, members)
+    \/ \E surface \in Surfaces, workspace \in Workspaces :
+           AssignWorkspace(surface, workspace)
     \/ \E surface \in Surfaces : IssueConfigure(surface)
     \/ \E surface \in Surfaces : IssueFocus(surface)
     \/ Progress
@@ -95,6 +130,7 @@ FairSpec == Spec /\ WF_vars(Progress)
 
 TypeOK ==
     /\ activeWorkspace \in Workspaces
+    /\ workspaceMembers \in [Workspaces -> SUBSET Surfaces]
     /\ mapped \subseteq Surfaces
     /\ pendingConfigure \subseteq Surfaces
     /\ pendingFocus \subseteq Surfaces
@@ -104,8 +140,12 @@ TypeOK ==
     /\ lastFocused \in Surfaces \cup {NoSurface}
 
 MappedMatchesActiveWorkspace ==
-    mapped = {surface \in Surfaces :
-                  SurfaceWorkspace[surface] = activeWorkspace}
+    mapped = workspaceMembers[activeWorkspace]
+
+WorkspaceMembershipIsUnique ==
+    \A surface \in Surfaces :
+        Cardinality({workspace \in Workspaces :
+                         surface \in workspaceMembers[workspace]}) <= 1
 
 TranslatedConfigureIsMapped ==
     lastConfigured = NoSurface \/ lastConfigured \in mapped

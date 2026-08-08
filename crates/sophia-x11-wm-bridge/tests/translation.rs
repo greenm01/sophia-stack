@@ -387,6 +387,127 @@ fn hidden_legacy_geometry_cannot_cross_the_workspace_projection() {
 }
 
 #[test]
+fn complete_workspace_projection_unmaps_an_omitted_surface() {
+    let workspace = WorkspaceId::from_raw(1);
+    let first = node(23);
+    let second = node(24);
+    let mut bridge = X11WmBridgeState::new();
+    bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(78),
+            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                output: OutputId::from_raw(1),
+                workspace,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+                nodes: vec![first.clone(), second.clone()],
+            }),
+        })
+        .unwrap();
+    let omitted_window = bridge.synthetic_window(first.surface).unwrap();
+
+    let update = bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(79),
+            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                output: OutputId::from_raw(1),
+                workspace,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+                nodes: vec![second],
+            }),
+        })
+        .unwrap();
+
+    assert!(update.events.contains(&SyntheticXEvent::UnmapNotify {
+        window: omitted_window,
+    }));
+    assert_eq!(bridge.synthetic_window(first.surface), Some(omitted_window));
+    let response = bridge
+        .translate_legacy_requests(
+            TransactionId::from_raw(80),
+            &[
+                LegacyWmRequest::ConfigureWindow {
+                    window: omitted_window,
+                    geometry: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 600,
+                        height: 800,
+                    },
+                    z_index: 0,
+                },
+                LegacyWmRequest::FocusWindow {
+                    window: omitted_window,
+                },
+            ],
+            300,
+        )
+        .unwrap();
+    assert!(response.commands.is_empty());
+}
+
+#[test]
+fn direct_workspace_assignment_reconciles_cached_membership() {
+    let workspace_one = WorkspaceId::from_raw(1);
+    let workspace_two = WorkspaceId::from_raw(2);
+    let surface = SurfaceId::new(25, 1);
+    let mut bridge = X11WmBridgeState::new();
+    bridge
+        .apply_engine_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(81),
+            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
+                output: OutputId::from_raw(1),
+                workspace: workspace_one,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1200,
+                    height: 800,
+                },
+                nodes: vec![node(25)],
+            }),
+        })
+        .unwrap();
+    let window = bridge.synthetic_window(surface).unwrap();
+
+    let assigned = bridge
+        .assign_workspace(TransactionId::from_raw(82), surface, workspace_two)
+        .unwrap();
+    assert!(
+        assigned
+            .events
+            .contains(&SyntheticXEvent::UnmapNotify { window })
+    );
+    assert!(
+        bridge
+            .translate_legacy_requests(
+                TransactionId::from_raw(83),
+                &[LegacyWmRequest::FocusWindow { window }],
+                300,
+            )
+            .unwrap()
+            .commands
+            .is_empty()
+    );
+
+    let activated = bridge.activate_workspace(TransactionId::from_raw(84), workspace_two);
+    assert!(
+        activated
+            .events
+            .contains(&SyntheticXEvent::MapRequest { window })
+    );
+}
+
+#[test]
 fn client_size_constraints_bound_both_configure_and_render_geometry() {
     let transaction = TransactionId::from_raw(72);
     let mut constrained = node(12);

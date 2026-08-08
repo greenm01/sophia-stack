@@ -70,13 +70,28 @@ and last-projection preservation while policy is absent.
 The bounded configuration explores 1,342,325 generated states and 524,396
 distinct states to depth 18.
 
-`LegacyWmProjection.tla` models the compatibility bridge boundary after a
-workspace switch. A legacy WM may retain a synthetic window and emit delayed
-configure or focus requests for it. The model permits those stale private
-requests but requires translation to expose only requests for surfaces in the
-current complete workspace projection. Weak fairness also requires the finite
-request backlog to settle. The bounded configuration explores 919 generated
-states and 270 distinct states to depth 10.
+`LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
+workspace assignment, workspace activation, and delayed private Configure or
+Focus requests. It requires cached membership to remain unique, mapping to
+equal the authoritative active-workspace projection, and translation to expose
+only currently mapped surfaces. Weak fairness also requires the finite request
+backlog to settle. The bounded configuration explores 32,563 generated states
+and 2,106 distinct states to depth 11.
+
+`LegacyWmResponseBoundary.tla` models the compatibility limit imposed by an
+unmodified legacy WM: its X requests carry no Sophia transaction identity.
+Successful collection therefore requires a final quiet boundary. A hard
+deadline fails and quarantines the process; restart clears every private reply
+stage before later work begins. The model requires every emitted reply to
+belong to its collecting request. Its bounded configuration explores 17,683
+generated states and 6,417 distinct states to depth 39.
+
+`PixelSilentAdmission.tla` distinguishes presentation intent from complete
+pixels. A first timeout without a safe extent preserves the standing target,
+owner loop, and one bounded retry. Later pixels may complete admission;
+persistent silence withdraws it without killing the owner. The bounded
+configuration explores 14 generated states and 11 distinct states to depth 5,
+including both liveness properties.
 
 The first connection run found that `(client, connection epoch)` was not a
 unique transfer identity when one connection reused it for later work. The
@@ -117,8 +132,16 @@ the current owning Rust boundaries as follows:
 | `Timeout` | layout recovery queuing the complete last-committed rectangle behind any late target control |
 | `PrimeAdmission` | `PersistentLiveLayout::prime_admission_extent` selecting complete safe pixels before the first blind-WM target |
 | `IssueConfigure`, `IssueFocus` | delayed synthetic requests emitted by the legacy WM process |
-| `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` replacing the complete mapped-window projection |
+| `ReplaceProjection` | `X11WmBridgeState::replace_active_workspace_projection` replacing cached membership and the complete mapped-window projection |
+| `AssignWorkspace` | `X11WmBridgeState::assign_workspace` updating cached membership before mapping reconciliation |
+| `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` selecting the exact cached workspace membership |
 | `TranslateConfigure`, `TranslateFocus` | `X11WmBridgeState::translate_legacy_requests_for_output` filtering requests through the current mapped-window set |
+| `BeginRequest`, `ObserveQuietBoundary`, `CompleteRequest` | `LegacyX11WmBridgeRuntime::handle_request_once` and `collect_legacy_responses` |
+| `ReachHardDeadline` | response collection returning an error before any normal response is encoded |
+| `Restart` | live-session supervision replacing the failed bridge process and reseeding committed state |
+| `BeginLayout`, `FirstSilentTimeout` | admission staging and `LiveWmLayoutManager::expire_pending` retaining a pixel-silent retry |
+| `RestartAndReseed`, `WithdrawSilentAdmission` | live-session WM recovery and bounded admission retry accounting |
+| `ObservePixels`, `CommitPixels` | Engine safe-pixel observation and ordinary exact-candidate layout settlement |
 
 The public policy model is intentionally ahead of production implementation.
 Its actions map to the following target boundaries:
@@ -183,6 +206,10 @@ is:
 TLC's deadlock error is disabled because a fully settled session with no newer
 generation is valid quiescence. Safety invariants and the explicit liveness
 property remain enabled.
+
+The optional commit-pinned Specula development audit is documented under
+`validation/specula`. It generates review evidence outside this repository and
+adds no runtime or build dependency.
 
 `AdmissionRecovery.tla` covers exact PresentedBuffer selection, a later
 backing observation, proactive safe-extent admission, timeout only when no

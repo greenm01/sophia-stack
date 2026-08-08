@@ -838,13 +838,18 @@ impl PersistentLiveLayout {
             .copied()
             .filter(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) >= 1)
             .collect::<BTreeSet<_>>();
-        // A first-launch admission surface is fenced through a fixed recovery
-        // extent (the `fixed_surfaces` argument below), not rolled back. Rolling
-        // it back would issue a ConfigureSurface at its own initial buffer size
-        // and mark the blind-WM target as rejected, welding the client to the
-        // size it happened to map at (e.g. Firefox's 1280x1040 default) instead
-        // of converging on the WM tile. Only already-managed surfaces roll back
-        // to known-good geometry.
+        let recoverable_admissions = admission_surfaces
+            .iter()
+            .copied()
+            .filter(|surface| {
+                !terminal_admissions.contains(surface)
+                    && self.layout_epochs.safe_size(*surface).is_some()
+            })
+            .collect::<Vec<_>>();
+        // A first-launch admission with retained pixels is fenced through a
+        // fixed recovery extent, not rolled back. Pixel-silent admission is an
+        // expected state: it keeps the standing target and bounded retry but
+        // cannot claim a recovery extent that does not exist.
         let rollback = self.layout_epochs.begin_recovery(
             pending
                 .requested_sizes
@@ -854,10 +859,7 @@ impl PersistentLiveLayout {
                         && !admission_surfaces.contains(surface)
                 })
                 .map(|(surface, size)| (*surface, *size)),
-            admission_surfaces
-                .iter()
-                .copied()
-                .filter(|surface| !terminal_admissions.contains(surface)),
+            recoverable_admissions,
         )?;
         // Retain each fenced admission surface's blind-WM target as a standing
         // obligation. Once its temporary recovery extent clears it is driven to
@@ -874,6 +876,7 @@ impl PersistentLiveLayout {
             .first()
             .map(|request| request.transaction)
             .unwrap_or(pending.transaction);
+        let rollback_configures = rollback.len();
         for request in rollback {
             let surface = request.surface;
             let size = request.size;
@@ -949,7 +952,7 @@ impl PersistentLiveLayout {
             "sophia_live_wm schema=1 status=layout_timeout transaction={} preserved_layout=true rollback_transaction={} rollback_configures={} resize_state={}",
             pending.transaction.raw(),
             rollback_transaction.raw(),
-            pending.requested_sizes.len(),
+            rollback_configures,
             resize_state,
         );
         for surface in admission_surfaces

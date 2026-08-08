@@ -82,6 +82,13 @@ fn stale_hidden_configure_fixture_process() {
 }
 
 #[test]
+fn continuous_layout_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::ContinuousLayout);
+    }
+}
+
+#[test]
 fn next_layout_ignores_pre_action_reconciliation_and_waits_for_delayed_wm_output() {
     let mut runtime = fixture_runtime("delayed_next_layout_fixture_process");
     configure_session(&mut runtime);
@@ -94,6 +101,36 @@ fn next_layout_ignores_pre_action_reconciliation_and_waits_for_delayed_wm_output
 
     assert_eq!(response.transaction, TransactionId::from_raw(4));
     assert_eq!(response_placements(&response), mirror_layout());
+}
+
+#[test]
+fn hard_deadline_cannot_replace_the_quiet_response_boundary() {
+    let mut runtime = fixture_runtime("continuous_layout_fixture_process");
+    configure_session(&mut runtime);
+
+    let error = runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(5),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: BOUNDS,
+                node: node(10, BOUNDS),
+            }),
+        })
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("quiet boundary"),
+        "unexpected error: {error}"
+    );
+    let retry = runtime
+        .handle_request(&relayout_request(TransactionId::from_raw(6)))
+        .unwrap_err();
+    assert!(
+        retry.to_string().contains("must be restarted"),
+        "deadline-failed runtime accepted later work: {retry}"
+    );
 }
 
 #[test]
@@ -111,6 +148,13 @@ fn next_layout_fails_closed_when_the_wm_did_not_grab_its_profile_chord() {
             .to_string()
             .contains("profile key chord was not registered by the legacy WM"),
         "unexpected error: {error}"
+    );
+    let retry = runtime
+        .handle_request(&relayout_request(TransactionId::from_raw(5)))
+        .unwrap_err();
+    assert!(
+        retry.to_string().contains("must be restarted"),
+        "failed runtime accepted later work: {retry}"
     );
 }
 
@@ -190,23 +234,44 @@ fn workspace_remap_without_configure_focuses_the_sole_committed_action_node() {
             }),
         })
         .unwrap();
-    for (transaction, action) in [
-        (11, XMONAD_ACTION_MOVE_WORKSPACE_BASE + 2),
-        (12, XMONAD_ACTION_VIEW_WORKSPACE_BASE + 2),
-    ] {
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(11),
+            kind: WmRequestKind::ActionActivated(WmActionActivation {
+                action: WmActionId::from_raw(XMONAD_ACTION_MOVE_WORKSPACE_BASE + 2),
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                focused_surface: Some(surface),
+                nodes: vec![node(10, BOUNDS)],
+            }),
+        })
+        .unwrap();
+    let window = runtime.bridge().synthetic_window(surface).unwrap();
+    assert!(
         runtime
-            .handle_request(&WmRequestPacket {
-                transaction: TransactionId::from_raw(transaction),
-                kind: WmRequestKind::ActionActivated(WmActionActivation {
-                    action: WmActionId::from_raw(action),
-                    output: OutputId::from_raw(1),
-                    workspace: WorkspaceId::from_raw(1),
-                    focused_surface: Some(surface),
-                    nodes: vec![node(10, BOUNDS)],
-                }),
-            })
-            .unwrap();
-    }
+            .bridge()
+            .translate_legacy_requests(
+                TransactionId::from_raw(12),
+                &[sophia_x11_wm_bridge::LegacyWmRequest::FocusWindow { window }],
+                300,
+            )
+            .unwrap()
+            .commands
+            .is_empty(),
+        "direct assignment left the moved surface mapped on its source workspace"
+    );
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(12),
+            kind: WmRequestKind::ActionActivated(WmActionActivation {
+                action: WmActionId::from_raw(XMONAD_ACTION_VIEW_WORKSPACE_BASE + 2),
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                focused_surface: Some(surface),
+                nodes: vec![node(10, BOUNDS)],
+            }),
+        })
+        .unwrap();
     let mut moved = node(10, BOUNDS);
     moved.workspace = WorkspaceId::from_raw(2);
 
@@ -548,6 +613,7 @@ fn is_private_bridge_child() -> bool {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureBehavior {
+    ContinuousLayout,
     DelayedLayout,
     MissingLayoutGrab,
     PartialFocusReconciliation,
@@ -563,6 +629,7 @@ fn run_fixture(behavior: FixtureBehavior) {
         query_keycode(&mut stream, u32::from(NEXT_LAYOUT_KEYCODE));
     assert_eq!(next_layout_keycode, NEXT_LAYOUT_KEYCODE);
     match behavior {
+        FixtureBehavior::ContinuousLayout => {}
         FixtureBehavior::DelayedLayout => write_grab_key(&mut stream, next_layout_keycode),
         FixtureBehavior::MissingLayoutGrab => {}
         FixtureBehavior::PartialFocusReconciliation => {
@@ -591,7 +658,13 @@ fn run_fixture(behavior: FixtureBehavior) {
                 let remapped = !known_windows.insert(window);
                 windows.push(window);
                 write_map_window(&mut stream, window);
-                if behavior != FixtureBehavior::SilentFocusNoop || !remapped {
+                if behavior == FixtureBehavior::ContinuousLayout {
+                    for _ in 0..80 {
+                        write_layout(&mut stream, &windows, mirror);
+                        stream.flush().unwrap();
+                        thread::sleep(Duration::from_millis(40));
+                    }
+                } else if behavior != FixtureBehavior::SilentFocusNoop || !remapped {
                     write_layout(&mut stream, &windows, mirror);
                 }
             }

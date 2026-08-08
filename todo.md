@@ -287,9 +287,14 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   recorded four layout timeouts and WM restarts. Hidden synthetic-window
   geometry now stops at the compatibility bridge, and first admission uses
   the selected safe pixel extent before driving the WM's standing target.
-- [x] Add bounded formal regressions for delayed configure/focus after a
-  complete workspace projection replacement and for proactive safe-pixel
-  admission before the timeout-only recovery path.
+- [x] Audit workspace/admission recovery with the optional commit-pinned
+  Specula development tool, then retain only project-sized formal models and
+  deterministic regressions. Exact snapshot replacement and direct assignment
+  now keep unique cached membership; hard-deadline or other bridge failure
+  requires process replacement; and a pixel-silent first admission preserves
+  its owner, standing target, and one bounded retry. The pinned TLA+ suite
+  covers projection, response-boundary, and pixel-silent behavior without
+  adding a runtime or build dependency.
 - [ ] Install the successor and pass one short workspace/admission proof with
   Kitty, Firefox, glxgears, and vkcube before repeating a long soak. Require no
   hidden-surface configure/render command, layout timeout, resize abort, or WM

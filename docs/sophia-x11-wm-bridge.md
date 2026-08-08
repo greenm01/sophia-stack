@@ -231,10 +231,13 @@ For `ManageSurface`:
 For `RelayoutWorkspace`:
 
 1. Update the fake root/output bounds.
-2. Ensure every node has a synthetic X window.
-3. Emit configure/map/unmap/focus/property events needed to make the WM
+2. Replace that workspace's cached membership with the complete Engine
+   snapshot, removing each named surface from every other workspace.
+3. Preserve synthetic XIDs for omitted nodes, but derive the mapped set exactly
+   from the new active membership.
+4. Emit configure/map/unmap/focus/property events needed to make the WM
    recompute layout.
-4. Wait for resulting legacy WM requests and translate them back to Sophia
+5. Wait for resulting legacy WM requests and translate them back to Sophia
    commands.
 
 Existing-node geometry updates are applied in order and coalesced into one root
@@ -285,6 +288,9 @@ Workspace requests are conservative. If a legacy WM expresses workspace changes
 through EWMH desktop atoms, the bridge may map known numeric desktops to Sophia
 `WorkspaceId` values. Unknown, string-based, or metadata-derived workspace rules
 must be ignored or reduced to the current workspace.
+An accepted direct assignment updates the bridge's unique cached membership
+before its Engine command is returned. Activating a workspace then maps exactly
+that membership; a later complete snapshot remains authoritative.
 
 Unknown X requests are acknowledged only when doing so is necessary to keep the
 WM alive. They must not escape the bridge or mutate Sophia state.
@@ -320,6 +326,12 @@ The bridge is untrusted policy glue. Failure must be contained.
   locally.
 - If the legacy WM proposes geometry for an unknown or stale synthetic XID, the
   bridge drops that proposal.
+- A successful request requires expected activity followed by the bounded quiet
+  period. Reaching the hard deadline is failure even when expected geometry has
+  arrived, because related X requests may still be in flight.
+- Any request error makes that private bridge process unusable. Its X requests
+  carry no Sophia transaction epoch, so the live-session supervisor must replace
+  the process and reseed committed state before sending later work.
 - If the bridge cannot produce a valid `WmResponsePacket`, Sophia Engine treats
   it like any other WM IPC failure and preserves visual state.
 

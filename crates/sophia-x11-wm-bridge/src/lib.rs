@@ -290,6 +290,7 @@ pub struct X11WmBridgeState {
     next_xid: u32,
     surface_to_window: BTreeMap<SurfaceId, SyntheticXWindowId>,
     window_to_node: BTreeMap<SyntheticXWindowId, LayoutNodeSnapshot>,
+    workspace_surfaces: BTreeMap<WorkspaceId, BTreeSet<SurfaceId>>,
     mapped_windows: BTreeSet<SyntheticXWindowId>,
     active_workspace: Option<WorkspaceId>,
     output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
@@ -302,6 +303,7 @@ impl Default for X11WmBridgeState {
             next_xid: FIRST_SYNTHETIC_WINDOW_XID,
             surface_to_window: BTreeMap::new(),
             window_to_node: BTreeMap::new(),
+            workspace_surfaces: BTreeMap::new(),
             mapped_windows: BTreeSet::new(),
             active_workspace: None,
             output_bounds: BTreeMap::new(),
@@ -366,15 +368,18 @@ impl X11WmBridgeState {
                 self.update_output(manage.output, manage.bounds, &mut events);
                 self.active_workspace.get_or_insert(manage.workspace);
                 self.upsert_visible_node(manage.node.clone(), &mut events)?;
+                self.assign_surface_workspace(manage.node.surface, manage.workspace);
             }
             WmRequestKind::RelayoutWorkspace(relayout) => {
                 self.update_output(relayout.output, relayout.bounds, &mut events);
-                self.activate_workspace_into(relayout.workspace, &mut events);
-                for node in &relayout.nodes {
-                    self.upsert_visible_node(node.clone(), &mut events)?;
-                }
+                self.replace_active_workspace_projection(
+                    relayout.workspace,
+                    &relayout.nodes,
+                    &mut events,
+                )?;
             }
             WmRequestKind::SurfaceRemoved { surface, .. } => {
+                self.remove_surface_workspace(*surface);
                 if let Some(window) = self.surface_to_window.remove(surface) {
                     self.window_to_node.remove(&window);
                     self.mapped_windows.remove(&window);
@@ -382,10 +387,11 @@ impl X11WmBridgeState {
                 }
             }
             WmRequestKind::ActionActivated(activation) => {
-                self.activate_workspace_into(activation.workspace, &mut events);
-                for node in &activation.nodes {
-                    self.upsert_visible_node(node.clone(), &mut events)?;
-                }
+                self.replace_active_workspace_projection(
+                    activation.workspace,
+                    &activation.nodes,
+                    &mut events,
+                )?;
             }
             WmRequestKind::FocusRequested(_) | WmRequestKind::PointerGestureCompleted(_) => {}
         }
@@ -406,6 +412,29 @@ impl X11WmBridgeState {
             transaction,
             events,
         }
+    }
+
+    pub fn assign_workspace(
+        &mut self,
+        transaction: TransactionId,
+        surface: SurfaceId,
+        workspace: WorkspaceId,
+    ) -> Result<BridgeEngineUpdate, X11WmBridgeError> {
+        let window = self
+            .surface_to_window
+            .get(&surface)
+            .copied()
+            .ok_or(X11WmBridgeError::UnknownSyntheticWindow)?;
+        self.assign_surface_workspace(surface, workspace);
+        if let Some(node) = self.window_to_node.get_mut(&window) {
+            node.workspace = workspace;
+        }
+        let mut events = Vec::new();
+        self.reconcile_mapped_windows(&mut events);
+        Ok(BridgeEngineUpdate {
+            transaction,
+            events,
+        })
     }
 
     pub fn translate_legacy_requests(
@@ -599,16 +628,99 @@ impl X11WmBridgeState {
         Ok(())
     }
 
-    fn activate_workspace_into(
+    fn replace_active_workspace_projection(
         &mut self,
         workspace: WorkspaceId,
+        nodes: &[LayoutNodeSnapshot],
         events: &mut Vec<SyntheticXEvent>,
-    ) {
+    ) -> Result<(), X11WmBridgeError> {
+        let previously_mapped = self.mapped_windows.clone();
+        let mut changed_profiles = BTreeSet::new();
+        let mut desired_surfaces = BTreeSet::new();
+        let mut desired_windows = BTreeSet::new();
+
+        for node in nodes {
+            desired_surfaces.insert(node.surface);
+            let profile_changed = self
+                .surface_to_window
+                .get(&node.surface)
+                .copied()
+                .is_some_and(|window| {
+                    self.synthetic_manage_profile(window)
+                        != Some(SyntheticManageProfile::from_node(
+                            node,
+                            node.transient_owner
+                                .and_then(|owner| self.surface_to_window.get(&owner).copied())
+                                .map(SyntheticXWindowId::raw)
+                                .or_else(|| node.state.floating.then_some(SYNTHETIC_ROOT_XID)),
+                        ))
+                });
+            let (window, _) = self.upsert_node(node.clone())?;
+            desired_windows.insert(window);
+            if profile_changed {
+                changed_profiles.insert(window);
+            }
+        }
+
+        // A relayout packet is a complete projection, not a cache delta. Keep
+        // stable synthetic windows, but replace active membership exactly.
+        for surface in &desired_surfaces {
+            self.remove_surface_workspace(*surface);
+        }
+        self.workspace_surfaces.insert(workspace, desired_surfaces);
         self.active_workspace = Some(workspace);
+
+        for window in previously_mapped
+            .difference(&desired_windows)
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            events.push(SyntheticXEvent::UnmapNotify { window });
+        }
+        for window in desired_windows {
+            if !previously_mapped.contains(&window) {
+                events.push(SyntheticXEvent::MapRequest { window });
+                continue;
+            }
+            if changed_profiles.contains(&window) {
+                events.push(SyntheticXEvent::PropertyNotify { window });
+            }
+            let geometry = self
+                .synthetic_geometry(window)
+                .expect("projected synthetic window has geometry");
+            events.push(SyntheticXEvent::ConfigureNotify { window, geometry });
+        }
+        self.mapped_windows = self
+            .workspace_surfaces
+            .get(&workspace)
+            .into_iter()
+            .flatten()
+            .filter_map(|surface| self.surface_to_window.get(surface).copied())
+            .collect();
+        Ok(())
+    }
+
+    fn assign_surface_workspace(&mut self, surface: SurfaceId, workspace: WorkspaceId) {
+        self.remove_surface_workspace(surface);
+        self.workspace_surfaces
+            .entry(workspace)
+            .or_default()
+            .insert(surface);
+    }
+
+    fn remove_surface_workspace(&mut self, surface: SurfaceId) {
+        self.workspace_surfaces.values_mut().for_each(|surfaces| {
+            surfaces.remove(&surface);
+        });
+    }
+
+    fn reconcile_mapped_windows(&mut self, events: &mut Vec<SyntheticXEvent>) {
         let desired = self
-            .window_to_node
-            .iter()
-            .filter_map(|(window, node)| (node.workspace == workspace).then_some(*window))
+            .active_workspace
+            .and_then(|workspace| self.workspace_surfaces.get(&workspace))
+            .into_iter()
+            .flatten()
+            .filter_map(|surface| self.surface_to_window.get(surface).copied())
             .collect::<BTreeSet<_>>();
         for window in self
             .mapped_windows
@@ -627,6 +739,15 @@ impl X11WmBridgeState {
             self.mapped_windows.insert(window);
             events.push(SyntheticXEvent::MapRequest { window });
         }
+    }
+
+    fn activate_workspace_into(
+        &mut self,
+        workspace: WorkspaceId,
+        events: &mut Vec<SyntheticXEvent>,
+    ) {
+        self.active_workspace = Some(workspace);
+        self.reconcile_mapped_windows(events);
     }
 }
 

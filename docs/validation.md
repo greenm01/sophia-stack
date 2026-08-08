@@ -43,6 +43,8 @@ The bounded configurations explore retirement and supersession ordering,
 exact PresentedBuffer selection through proactive or timeout recovery,
 ownership of a software Present by one native frame, move/resize geometry
 feedback, stale legacy-WM configure and focus after workspace replacement,
+exact cached workspace assignment, quiet/fail-stop response collection,
+pixel-silent first-admission retry,
 public policy negotiation and transfer assembly, and atomic multi-output
 projection.
 The frame-ownership model permits an unrelated frame to submit and retire first
@@ -53,12 +55,19 @@ no-op silence plus convergence after late-target/FIFO rollback.
 identity for admitted work.
 `PolicyProjection` requires proposals to answer an outstanding server-issued
 request for the current scene generation. `LegacyWmProjection` permits delayed
-private WM requests but proves that only the current complete workspace
-projection crosses the compatibility bridge. They remain suitable for routine
-validation. A TLC counterexample that changes implementation behavior must
+private WM requests but proves that only exact active-workspace membership
+crosses the compatibility bridge. `LegacyWmResponseBoundary` requires quiet
+before success and process replacement after an error because legacy X
+requests have no Sophia transaction identity. `PixelSilentAdmission` preserves
+the owner and one bounded retry before withdrawal. They remain suitable for
+routine validation. A TLC counterexample that changes implementation behavior must
 become a deterministic Rust regression before the model or implementation is
 corrected. The models are not refinement proofs and must not be weakened to
 accept a known Rust shortcut.
+
+Specula is an optional development audit, not part of the build or installed
+session. Its commit pin, narrow runner, retained findings, and artifact policy
+live under `validation/specula`.
 
 ### Public Policy Wire
 
