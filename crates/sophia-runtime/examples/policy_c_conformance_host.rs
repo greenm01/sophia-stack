@@ -11,7 +11,7 @@ use sophia_protocol::{
     Size, SurfaceConstraints, SurfaceId, TransactionId, decode_wm_v1_policy_projection,
     encode_wm_v1_policy_snapshot,
 };
-use sophia_runtime::{PolicyPeerIdentity, PolicyWmSessionTransport, QueuedPolicyProjection};
+use sophia_runtime::{PolicyWmSessionTransport, QueuedPolicyProjection};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args_os().skip(1);
@@ -20,15 +20,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if arguments.next().is_some() {
         return Err("unexpected argument".into());
     }
-    let socket_path = directory.join("wm.sock");
-    // The client waits for the socket, allowing the session to learn its exact
-    // PID before creating the credential-checked endpoint.
+    // Bind before launch so the session owns the endpoint for its entire
+    // lifetime, then narrow admission to the exact child it supervised.
+    let mut transport = PolicyWmSessionTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+    )?;
+    let socket_path = transport.socket_path().to_path_buf();
     let mut child = Command::new(client).arg(&socket_path).spawn()?;
-    let peer = PolicyPeerIdentity {
-        uid: rustix::process::geteuid().as_raw(),
-        pid: child.id(),
-    };
-    let result = run_host(directory, peer);
+    transport.authorize_supervised_pid(child.id())?;
+    let result = run_host(&mut transport);
     if result.is_err() {
         let _ = child.kill();
     }
@@ -40,15 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_host(
-    directory: PathBuf,
-    peer: PolicyPeerIdentity,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_host(transport: &mut PolicyWmSessionTransport) -> Result<(), Box<dyn std::error::Error>> {
     let scene = scene();
     let mut reducer = PolicyProjectionReducer::new(scene.clone())?;
     reducer.connect(1)?;
     let request = reducer.issue_request(vec![OutputId::from_raw(1)])?;
-    let mut transport = PolicyWmSessionTransport::bind(directory, peer)?;
     transport.accept_and_negotiate(1, Duration::from_secs(2))?;
     let snapshot = encode_wm_v1_policy_snapshot(TransactionId::from_raw(29), 1, &scene, &[])
         .map_err(|error| format!("snapshot encode failed: {error:?}"))?;

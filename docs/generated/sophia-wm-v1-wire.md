@@ -10,7 +10,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | `SnapshotBegin` | 34 | session-to-policy | must be nonzero | 28 |
 | `SnapshotChunk` | 35 | session-to-policy | must be nonzero | ..65536 |
 | `SnapshotEnd` | 36 | session-to-policy | must be nonzero | 20 |
-| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..200 |
+| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..204 |
 | `ProjectionBegin` | 38 | policy-to-session | must be nonzero | 32 |
 | `ProjectionChunk` | 39 | policy-to-session | must be nonzero | ..65536 |
 | `ProjectionEnd` | 40 | policy-to-session | must be nonzero | 28 |
@@ -82,17 +82,19 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 16 | `scene_generation` | `u64` | little-endian |
 | 24 | `cause_kind` | `u16` | little-endian |
 | 26 | `interaction_phase` | `u16` | little-endian |
-| 28 | `activation_serial` | `u64` | little-endian |
-| 36 | `action` | `u64` | little-endian |
-| 44 | `target_index` | `u32` | little-endian |
-| 48 | `target_generation` | `u32` | little-endian |
-| 52 | `interaction_x` | `i32` | little-endian |
-| 56 | `interaction_y` | `i32` | little-endian |
-| 60 | `interaction_width` | `i32` | little-endian |
-| 64 | `interaction_height` | `i32` | little-endian |
-| 68 | `affected_output_count` | `u16` | little-endian |
-| 70 | `reserved` | `u16` | must be zero |
-| 72 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+| 28 | `interaction_kind` | `u16` | little-endian |
+| 30 | `reserved_cause` | `u16` | must be zero |
+| 32 | `activation_serial` | `u64` | little-endian |
+| 40 | `action` | `u64` | little-endian |
+| 48 | `target_index` | `u32` | little-endian |
+| 52 | `target_generation` | `u32` | little-endian |
+| 56 | `interaction_x` | `i32` | little-endian |
+| 60 | `interaction_y` | `i32` | little-endian |
+| 64 | `interaction_width` | `i32` | little-endian |
+| 68 | `interaction_height` | `i32` | little-endian |
+| 72 | `affected_output_count` | `u16` | little-endian |
+| 74 | `reserved` | `u16` | must be zero |
+| 76 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
 
 ## `ProjectionBegin`
 
@@ -253,8 +255,8 @@ Transfer: `snapshot`; record kind: 4; maximum records: 256; fixed size: 12 bytes
 | Offset | Field | Type | Rule |
 | ---: | --- | --- | --- |
 | 0 | `operation` | `u64` | little-endian |
-| 8 | `target_bits` | `u16` | little-endian |
-| 10 | `reserved` | `u16` | must be zero |
+| 8 | `slot` | `u16` | little-endian |
+| 10 | `target_bits` | `u16` | little-endian |
 
 ## `ProjectionOutput` record
 

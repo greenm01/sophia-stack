@@ -1,7 +1,7 @@
 use sophia_protocol::{
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS, TransactionId, WmV1ClientHello,
-    WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1SnapshotBegin,
-    WmV1SnapshotChunk, WmV1SnapshotEnd,
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
+    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
 };
 use sophia_runtime::{
     PolicyConnectionState, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
@@ -104,6 +104,36 @@ fn malformed_chunk_does_not_advance_the_transfer() {
         Err(PolicyTransferError::DuplicateOrReorderedChunk)
     );
     assert_eq!(connection, before);
+}
+
+#[test]
+fn control_messages_are_capability_gated_and_cannot_reuse_transactions() {
+    let mut connection = PolicyConnectionState::default();
+    connection.connect(6).unwrap();
+    connection
+        .negotiate(&WmV1ClientHello {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            capabilities: SOPHIA_WM_CAPABILITY_CONFIGURATION,
+        })
+        .unwrap();
+    let transaction = TransactionId::from_raw(31);
+
+    connection
+        .admit_control_message(transaction, 6, SOPHIA_WM_CAPABILITY_CONFIGURATION)
+        .unwrap();
+    assert_eq!(
+        connection.admit_control_message(transaction, 6, SOPHIA_WM_CAPABILITY_CONFIGURATION,),
+        Err(PolicyTransferError::ReusedTransaction)
+    );
+    assert_eq!(
+        connection.admit_control_message(
+            TransactionId::from_raw(32),
+            6,
+            SOPHIA_WM_CAPABILITY_ACTIONS,
+        ),
+        Err(PolicyTransferError::UnsupportedCapability)
+    );
 }
 
 #[test]

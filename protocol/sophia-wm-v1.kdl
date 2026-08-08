@@ -57,8 +57,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
     }
     record "SnapshotSessionOperation" transfer="snapshot" kind=4 max=256 {
         field "operation" type="u64" sample=11
+        field "slot" type="u16" sample=1
         field "target_bits" type="u16" sample=1
-        field "reserved" type="u16" reserved=#true sample=0
     }
     record "ProjectionOutput" transfer="projection" kind=1 max=16 {
         field "output" type="u64" sample=1
@@ -128,6 +128,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "scene_generation" type="u64" sample=41
         field "cause_kind" type="u16" sample=1
         field "interaction_phase" type="u16" sample=0
+        field "interaction_kind" type="u16" sample=0
+        field "reserved_cause" type="u16" reserved=#true sample=0
         field "activation_serial" type="u64" sample=23
         field "action" type="u64" sample=5
         field "target_index" type="u32" sample=3

@@ -4,13 +4,20 @@ use std::path::Path;
 use std::time::Duration;
 
 use sophia_protocol::{
-    IpcCodecError, IpcMessageKind, PolicyProjectionOutcome, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_IPC_MAX_PAYLOAD_LEN, TransactionId, WmV1SnapshotBegin, WmV1SnapshotChunk,
-    WmV1SnapshotEnd, decode_frame, decode_wm_v1_client_hello_frame,
+    IpcCodecError, IpcMessageKind, PolicyConfiguration, PolicyDirtyRequest,
+    PolicyProjectionOutcome, PolicySessionOperationOutcome, PolicySessionOperationRequest,
+    SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, TransactionId,
+    WmV1PolicyConfigurationOutcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
+    decode_frame, decode_wm_v1_client_hello_frame, decode_wm_v1_policy_configuration,
+    decode_wm_v1_policy_configuration_frame, decode_wm_v1_policy_dirty,
+    decode_wm_v1_policy_dirty_frame, decode_wm_v1_policy_session_operation_request,
     decode_wm_v1_projection_begin_frame, decode_wm_v1_projection_chunk_frame,
-    decode_wm_v1_projection_end_frame, encode_wm_v1_policy_projection_outcome,
-    encode_wm_v1_policy_projection_request, encode_wm_v1_projection_outcome_frame,
-    encode_wm_v1_projection_request_frame, encode_wm_v1_server_welcome_frame,
+    decode_wm_v1_projection_end_frame, decode_wm_v1_session_operation_request_frame,
+    encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_policy_projection_outcome,
+    encode_wm_v1_policy_projection_request, encode_wm_v1_policy_session_operation_outcome,
+    encode_wm_v1_projection_outcome_frame, encode_wm_v1_projection_request_frame,
+    encode_wm_v1_server_welcome_frame, encode_wm_v1_session_operation_outcome_frame,
     encode_wm_v1_snapshot_begin_frame, encode_wm_v1_snapshot_chunk_frame,
     encode_wm_v1_snapshot_end_frame,
 };
@@ -28,6 +35,24 @@ pub enum PolicyTransportError {
     Io(String),
     UnexpectedMessage(IpcMessageKind),
     NotConnected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PolicyClientEvent {
+    ProjectionPending,
+    Projection(QueuedPolicyProjection),
+    Configuration {
+        transaction: TransactionId,
+        configuration: PolicyConfiguration,
+    },
+    Dirty {
+        transaction: TransactionId,
+        request: PolicyDirtyRequest,
+    },
+    SessionOperation {
+        transaction: TransactionId,
+        request: PolicySessionOperationRequest,
+    },
 }
 
 impl core::fmt::Display for PolicyTransportError {
@@ -76,6 +101,23 @@ impl PolicyWmSessionTransport {
             stream: None,
             peer: None,
         })
+    }
+
+    pub fn bind_for_supervised_uid(
+        directory: impl AsRef<Path>,
+        expected_uid: u32,
+    ) -> Result<Self, PolicyTransportError> {
+        Ok(Self {
+            endpoint: PolicyRoleEndpoint::bind_for_supervised_uid(directory, expected_uid)?,
+            connection: PolicyConnectionState::default(),
+            stream: None,
+            peer: None,
+        })
+    }
+
+    pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), PolicyTransportError> {
+        self.endpoint.authorize_supervised_pid(pid)?;
+        Ok(())
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -129,6 +171,24 @@ impl PolicyWmSessionTransport {
     pub fn receive_projection_part(
         &mut self,
     ) -> Result<Option<QueuedPolicyProjection>, PolicyTransportError> {
+        match self.receive_client_event()? {
+            PolicyClientEvent::ProjectionPending => Ok(None),
+            PolicyClientEvent::Projection(projection) => Ok(Some(projection)),
+            PolicyClientEvent::Configuration { .. } => Err(
+                PolicyTransportError::UnexpectedMessage(IpcMessageKind::WmV1PolicyConfiguration),
+            ),
+            PolicyClientEvent::Dirty { .. } => Err(PolicyTransportError::UnexpectedMessage(
+                IpcMessageKind::WmV1PolicyDirty,
+            )),
+            PolicyClientEvent::SessionOperation { .. } => {
+                Err(PolicyTransportError::UnexpectedMessage(
+                    IpcMessageKind::WmV1SessionOperationRequest,
+                ))
+            }
+        }
+    }
+
+    pub fn receive_client_event(&mut self) -> Result<PolicyClientEvent, PolicyTransportError> {
         let stream = self
             .stream
             .as_mut()
@@ -139,18 +199,61 @@ impl PolicyWmSessionTransport {
             IpcMessageKind::WmV1ProjectionBegin => {
                 let (transaction, begin) = decode_wm_v1_projection_begin_frame(&frame)?;
                 self.connection.begin_projection(transaction, begin)?;
-                Ok(None)
+                Ok(PolicyClientEvent::ProjectionPending)
             }
             IpcMessageKind::WmV1ProjectionChunk => {
                 let (transaction, chunk) = decode_wm_v1_projection_chunk_frame(&frame)?;
                 self.connection
                     .append_projection_chunk(transaction, chunk)?;
-                Ok(None)
+                Ok(PolicyClientEvent::ProjectionPending)
             }
             IpcMessageKind::WmV1ProjectionEnd => {
                 let (transaction, end) = decode_wm_v1_projection_end_frame(&frame)?;
                 self.connection.finish_projection(transaction, end)?;
-                Ok(self.connection.settle_queued())
+                Ok(PolicyClientEvent::Projection(
+                    self.connection
+                        .settle_queued()
+                        .expect("a finished projection queues one transfer"),
+                ))
+            }
+            IpcMessageKind::WmV1PolicyConfiguration => {
+                let (transaction, wire) = decode_wm_v1_policy_configuration_frame(&frame)?;
+                let configuration = decode_wm_v1_policy_configuration(&wire)?;
+                self.connection.admit_control_message(
+                    transaction,
+                    configuration.connection_epoch,
+                    SOPHIA_WM_CAPABILITY_CONFIGURATION,
+                )?;
+                Ok(PolicyClientEvent::Configuration {
+                    transaction,
+                    configuration,
+                })
+            }
+            IpcMessageKind::WmV1PolicyDirty => {
+                let (transaction, wire) = decode_wm_v1_policy_dirty_frame(&frame)?;
+                let request = decode_wm_v1_policy_dirty(&wire)?;
+                self.connection.admit_control_message(
+                    transaction,
+                    request.connection_epoch,
+                    SOPHIA_WM_CAPABILITY_POLICY_DIRTY,
+                )?;
+                Ok(PolicyClientEvent::Dirty {
+                    transaction,
+                    request,
+                })
+            }
+            IpcMessageKind::WmV1SessionOperationRequest => {
+                let (transaction, wire) = decode_wm_v1_session_operation_request_frame(&frame)?;
+                let request = decode_wm_v1_policy_session_operation_request(&wire)?;
+                self.connection.admit_control_message(
+                    transaction,
+                    request.connection_epoch,
+                    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+                )?;
+                Ok(PolicyClientEvent::SessionOperation {
+                    transaction,
+                    request,
+                })
             }
             other => Err(PolicyTransportError::UnexpectedMessage(other)),
         }
@@ -225,6 +328,66 @@ impl PolicyWmSessionTransport {
             outcome,
         )?;
         let frame = encode_wm_v1_projection_outcome_frame(transaction, &outcome)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_configuration_outcome(
+        &mut self,
+        transaction: TransactionId,
+        generation: u64,
+        outcome: PolicyProjectionOutcome,
+    ) -> Result<(), PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let outcome = match outcome {
+            PolicyProjectionOutcome::Committed => sophia_protocol::SOPHIA_WM_OUTCOME_COMMITTED,
+            PolicyProjectionOutcome::RejectedStale => {
+                sophia_protocol::SOPHIA_WM_OUTCOME_REJECTED_STALE
+            }
+            PolicyProjectionOutcome::RejectedInvalid => {
+                sophia_protocol::SOPHIA_WM_OUTCOME_REJECTED_INVALID
+            }
+            PolicyProjectionOutcome::TimedOut => sophia_protocol::SOPHIA_WM_OUTCOME_TIMED_OUT,
+            PolicyProjectionOutcome::Disconnected => {
+                sophia_protocol::SOPHIA_WM_OUTCOME_DISCONNECTED
+            }
+        };
+        let frame = encode_wm_v1_policy_configuration_outcome_frame(
+            transaction,
+            &WmV1PolicyConfigurationOutcome {
+                connection_epoch: self.connection.connection_epoch(),
+                configuration_generation: generation,
+                outcome,
+            },
+        )?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_session_operation_outcome(
+        &mut self,
+        transaction: TransactionId,
+        request_id: u64,
+        outcome: PolicyProjectionOutcome,
+    ) -> Result<(), PolicyTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        let outcome =
+            encode_wm_v1_policy_session_operation_outcome(PolicySessionOperationOutcome {
+                connection_epoch: self.connection.connection_epoch(),
+                request_id,
+                outcome,
+            })?;
+        let frame = encode_wm_v1_session_operation_outcome_frame(transaction, &outcome)?;
         stream
             .write_all(&frame)
             .and_then(|()| stream.flush())

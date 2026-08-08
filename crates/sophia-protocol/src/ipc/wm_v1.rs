@@ -324,6 +324,7 @@ pub const SNAPSHOT_SESSION_OPERATION_RECORD_MAX: usize = 256;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1SnapshotSessionOperationRecord {
     pub operation: u64,
+    pub slot: u16,
     pub target_bits: u16,
 }
 
@@ -339,8 +340,8 @@ pub fn encode_wm_v1_snapshot_session_operation_records(
     let mut data = Vec::with_capacity(records.len() * 12);
     for record in records {
         push_u64(&mut data, record.operation);
+        push_u16(&mut data, record.slot);
         push_u16(&mut data, record.target_bits);
-        push_u16(&mut data, 0);
     }
     Ok(data)
 }
@@ -366,13 +367,11 @@ pub fn decode_wm_v1_snapshot_session_operation_records(
     let mut records = Vec::with_capacity(count);
     for _ in 0..count {
         let operation = cursor.u64()?;
+        let slot = cursor.u16()?;
         let target_bits = cursor.u16()?;
-        let reserved = cursor.u16()?;
-        if reserved != 0 {
-            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
-        }
         records.push(WmV1SnapshotSessionOperationRecord {
             operation,
+            slot,
             target_bits,
         });
     }
@@ -864,6 +863,7 @@ pub struct WmV1ProjectionRequest {
     pub scene_generation: u64,
     pub cause_kind: u16,
     pub interaction_phase: u16,
+    pub interaction_kind: u16,
     pub activation_serial: u64,
     pub action: u64,
     pub target_index: u32,
@@ -896,6 +896,8 @@ pub fn encode_wm_v1_projection_request_frame(
     push_u64(&mut payload, message.scene_generation);
     push_u16(&mut payload, message.cause_kind);
     push_u16(&mut payload, message.interaction_phase);
+    push_u16(&mut payload, message.interaction_kind);
+    push_u16(&mut payload, 0);
     push_u64(&mut payload, message.activation_serial);
     push_u64(&mut payload, message.action);
     push_u32(&mut payload, message.target_index);
@@ -929,6 +931,11 @@ pub fn decode_wm_v1_projection_request_frame(
     let scene_generation = cursor.u64()?;
     let cause_kind = cursor.u16()?;
     let interaction_phase = cursor.u16()?;
+    let interaction_kind = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
     let activation_serial = cursor.u64()?;
     let action = cursor.u64()?;
     let target_index = cursor.u32()?;
@@ -942,7 +949,7 @@ pub fn decode_wm_v1_projection_request_frame(
     if reserved != 0 {
         return Err(IpcCodecError::ReservedNonZero(reserved as u32));
     }
-    let len = payload.len().saturating_sub(72);
+    let len = payload.len().saturating_sub(76);
     if len > 128 {
         return Err(IpcCodecError::FieldTooLarge {
             field: "affected_outputs",
@@ -958,6 +965,7 @@ pub fn decode_wm_v1_projection_request_frame(
         scene_generation,
         cause_kind,
         interaction_phase,
+        interaction_kind,
         activation_serial,
         action,
         target_index,

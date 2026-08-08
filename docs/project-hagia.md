@@ -1,6 +1,6 @@
 # Project Hagia
 
-**Status:** design note for future work
+**Status:** active first native policy implementation
 
 ## The Name
 
@@ -17,7 +17,7 @@ protocol surfaces, output management, and session behavior have shaped the
 program. Keeping Triad on that foundation protects a useful project and avoids
 turning every Sophia experiment into a compatibility burden for River users.
 
-Hagia begins as a clean standalone repository. It carries no Triad history,
+Hagia is a clean standalone repository. It carries no Triad history,
 River or Wayland dependency, inherited binary, configuration surface, or build
 scaffolding. A later Hagia milestone may deliberately port Triad's useful
 data-oriented models, layout mathematics, tag semantics, Janet support, and
@@ -226,10 +226,13 @@ restart. Add an ordinary tiling layout, a scrolling layout, or a bounded Janet
 layout only when a Sophia protocol milestone needs the independent proof.
 
 The standalone repository's independent Nim envelope and record decoder passes
-Sophia's retained valid and malformed corpus. Its proof client also passes one
-authenticated complete snapshot/request/projection/outcome cycle through the
-canonical Engine reducer. This remains a dormant boundary proof; private
-tag/view policy is not yet part of a live session.
+Sophia's retained valid and malformed corpus. Its proof client also passes
+authenticated multi-cycle snapshot/request/projection/outcome exchanges
+through the canonical Engine reducer. Hagia now has private nine-view policy,
+ordered actions, scrolling columns, configuration, and a long-running client.
+Sophia's session-hosted frontend-settled public path is the remaining live
+integration boundary; the old xmonad session is regression evidence, not a
+prerequisite for this promotion.
 
 Do not make metadata rules, pointer operations, shell overlays, or full Triad
 IPC prerequisites for this proof.

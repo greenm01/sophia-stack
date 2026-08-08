@@ -73,12 +73,14 @@ distinct states to depth 18.
 `PolicyLifecycle.tla` models the causes around that projection boundary. It
 keeps distinct activation identities in FIFO order, prioritizes them over
 replaceable policy-dirty and pointer updates, applies configuration only at an
-idle boundary, retries against a fresh scene when frontend facts change, and
-preserves the last-good serial until a settled proposal commits. Repeated
+idle boundary, consumes a saturated shortcut as an explicit bounded rejection,
+settles opaque session operations exactly once, cancels pending interactions,
+retries against a fresh scene when frontend facts change, and preserves the
+last-good serial until a settled proposal commits. Repeated
 opaque action tokens use distinct activation identities and therefore cannot
 be collapsed into one focus, movement, view, or layout operation. The bounded
-configuration explores 53,354 generated states and 10,153 distinct states to
-depth 22.
+configuration explores 348,608 generated states and 65,467 distinct states to
+depth 26.
 
 `LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
 workspace assignment, workspace activation, and delayed private Configure or

@@ -5,6 +5,7 @@ use std::time::Instant;
 pub struct ProcessLaunchSpec {
     pub program: OsString,
     pub args: Vec<OsString>,
+    pub environment: Vec<(OsString, OsString)>,
     pub process_group: bool,
 }
 
@@ -13,6 +14,7 @@ impl ProcessLaunchSpec {
         Self {
             program: program.into(),
             args: Vec::new(),
+            environment: Vec::new(),
             process_group: false,
         }
     }
@@ -24,6 +26,11 @@ impl ProcessLaunchSpec {
 
     pub fn process_group(mut self) -> Self {
         self.process_group = true;
+        self
+    }
+
+    pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
+        self.environment.push((key.into(), value.into()));
         self
     }
 }
@@ -202,6 +209,7 @@ impl ProcessSupervisor {
 
         let mut command = Command::new(&self.spec.program);
         command.args(&self.spec.args);
+        command.envs(self.spec.environment.iter().cloned());
         #[cfg(unix)]
         if self.spec.process_group {
             std::os::unix::process::CommandExt::process_group(&mut command, 0);

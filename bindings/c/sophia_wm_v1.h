@@ -103,6 +103,7 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_binding_record(const uint8
 #define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_MAX 256u
 struct sophia_wm_v1_snapshot_session_operation_record {
     uint64_t operation;
+    uint16_t slot;
     uint16_t target_bits;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_session_operation_record(const struct sophia_wm_v1_snapshot_session_operation_record *record, uint8_t *out, size_t capacity);
@@ -200,6 +201,7 @@ struct sophia_wm_v1_projection_request {
     uint64_t scene_generation;
     uint16_t cause_kind;
     uint16_t interaction_phase;
+    uint16_t interaction_kind;
     uint64_t activation_serial;
     uint64_t action;
     uint32_t target_index;

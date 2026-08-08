@@ -78,6 +78,58 @@ fn one_proposal_replaces_both_outputs_atomically() {
 }
 
 #[test]
+fn staged_projection_preserves_last_good_until_frontend_commit() {
+    let scene = scene(1, &[surface(1)]);
+    let mut reducer = PolicyProjectionReducer::new(scene).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let proposal = proposal(
+        &request,
+        8,
+        vec![projected(
+            output(1),
+            vec![placed(surface_id(1), 1, rect(0, 0))],
+            Some(surface_id(1)),
+        )],
+    );
+
+    let staged = reducer.stage_proposal(&proposal).unwrap();
+    assert_eq!(reducer.commit_serial(), 0);
+    assert!(reducer.committed()[0].placements.is_empty());
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::Committed
+    );
+    assert_eq!(reducer.commit_serial(), 1);
+    assert_eq!(reducer.committed()[0].placements.len(), 1);
+}
+
+#[test]
+fn frontend_fact_change_invalidates_a_staged_projection() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let proposal = proposal(
+        &request,
+        8,
+        vec![projected(
+            output(1),
+            vec![placed(surface_id(1), 1, rect(0, 0))],
+            Some(surface_id(1)),
+        )],
+    );
+    let staged = reducer.stage_proposal(&proposal).unwrap();
+    reducer.observe_scene(scene(2, &[surface(1)])).unwrap();
+
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    assert_eq!(reducer.commit_serial(), 0);
+    assert!(reducer.committed()[0].placements.is_empty());
+}
+
+#[test]
 fn guessed_future_generation_cannot_become_current() {
     let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
     reducer.connect(1).unwrap();

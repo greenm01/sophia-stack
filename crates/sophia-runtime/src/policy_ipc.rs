@@ -4,10 +4,13 @@ use sophia_protocol::{
     PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND, SNAPSHOT_BINDING_RECORD_KIND,
     SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
     SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
-    SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello,
-    WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer,
-    WmV1ServerWelcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
+    SOPHIA_WM_CAPABILITY_CHROME, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
+    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS,
+    SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
+    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer, WmV1ServerWelcome,
+    WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
 };
 
 pub const POLICY_MAX_TRANSFER_CHUNKS: usize = 1024;
@@ -15,7 +18,12 @@ pub const POLICY_MAX_TRANSFER_BYTES: usize = 512 * 1024;
 
 const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_ACTIONS
-    | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT;
+    | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
+    | SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS
+    | SOPHIA_WM_CAPABILITY_CHROME
+    | SOPHIA_WM_CAPABILITY_POLICY_DIRTY
+    | SOPHIA_WM_CAPABILITY_CONFIGURATION
+    | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -36,6 +44,7 @@ pub enum PolicyTransferError {
     DuplicateOrReorderedChunk,
     UnknownRecordKind,
     RecordCountMismatch,
+    UnsupportedCapability,
 }
 
 impl core::fmt::Display for PolicyTransferError {
@@ -372,6 +381,35 @@ impl PolicyConnectionState {
 
     pub const fn negotiated(&self) -> bool {
         self.negotiated
+    }
+
+    pub const fn selected_capabilities(&self) -> u64 {
+        self.selected_capabilities
+    }
+
+    pub fn admit_control_message(
+        &mut self,
+        transaction: TransactionId,
+        connection_epoch: u64,
+        required_capability: u64,
+    ) -> Result<(), PolicyTransferError> {
+        self.require_negotiated()?;
+        if !transaction.is_valid() {
+            return Err(PolicyTransferError::InvalidTransaction);
+        }
+        if connection_epoch != self.connection_epoch {
+            return Err(PolicyTransferError::WrongTransferIdentity);
+        }
+        if self.selected_capabilities & required_capability == 0 {
+            return Err(PolicyTransferError::UnsupportedCapability);
+        }
+        if self.transfer.is_some() {
+            return Err(PolicyTransferError::TransferInProgress);
+        }
+        if !self.used_transactions.insert(transaction) {
+            return Err(PolicyTransferError::ReusedTransaction);
+        }
+        Ok(())
     }
 
     fn require_negotiated(&self) -> Result<(), PolicyTransferError> {

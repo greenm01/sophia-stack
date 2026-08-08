@@ -1,12 +1,14 @@
 use core::mem::size_of;
 
 use crate::{
-    LayoutNodeCapabilities, OutputId, PolicyInteractionPhase, PolicyOutputProjection,
-    PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionOutcome,
-    PolicyProjectionProposal, PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation,
-    PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect, Size,
-    SurfaceConstraints, SurfaceId, TransactionId, WmActionId, WmBindingRegistration,
-    WmModifierMask,
+    LayoutNodeCapabilities, OutputId, PolicyConfiguration, PolicyDirtyRequest,
+    PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection, PolicyOutputSnapshot,
+    PolicyPresentationState, PolicyProjectionOutcome, PolicyProjectionProposal, PolicyRequestCause,
+    PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
+    PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
+    PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
+    TransactionId, WmActionId, WmBindingRegistration, WmChromePolicy, WmFocusRingStyle,
+    WmFrameStyle, WmModifierMask, WmRgb8,
 };
 
 use super::{
@@ -15,9 +17,10 @@ use super::{
     SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
     SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
     SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
-    SOPHIA_WM_OUTCOME_TIMED_OUT, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
-    WmV1ProjectionOutcome, WmV1ProjectionOutputRecord, WmV1ProjectionPlacementRecord,
-    WmV1ProjectionRequest, WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk,
+    SOPHIA_WM_OUTCOME_TIMED_OUT, WmV1PolicyConfiguration, WmV1PolicyDirty, WmV1ProjectionBegin,
+    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionOutcome, WmV1ProjectionOutputRecord,
+    WmV1ProjectionPlacementRecord, WmV1ProjectionRequest, WmV1SessionOperationOutcome,
+    WmV1SessionOperationRequest, WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk,
     WmV1SnapshotEnd, WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord,
     WmV1SnapshotSurfaceRecord, decode_wm_v1_projection_output_records,
     decode_wm_v1_projection_placement_records, decode_wm_v1_snapshot_binding_records,
@@ -95,13 +98,14 @@ pub fn encode_wm_v1_policy_projection_request(
     let (
         cause_kind,
         interaction_phase,
+        interaction_kind,
         activation_serial,
         action,
         target_index,
         target_generation,
         interaction,
     ) = match request.cause {
-        PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, Rect::default()),
+        PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, 0, Rect::default()),
         PolicyRequestCause::Action {
             activation_serial,
             action,
@@ -109,7 +113,16 @@ pub fn encode_wm_v1_policy_projection_request(
             if activation_serial == 0 || !action.is_valid() {
                 return Err(invalid("action_cause", 0));
             }
-            (1, 0, activation_serial, action.raw(), 0, 0, Rect::default())
+            (
+                1,
+                0,
+                0,
+                activation_serial,
+                action.raw(),
+                0,
+                0,
+                Rect::default(),
+            )
         }
         PolicyRequestCause::Focus { target } => {
             if !target.is_valid() {
@@ -120,6 +133,7 @@ pub fn encode_wm_v1_policy_projection_request(
                 0,
                 0,
                 0,
+                0,
                 target.index(),
                 target.generation(),
                 Rect::default(),
@@ -127,6 +141,7 @@ pub fn encode_wm_v1_policy_projection_request(
         }
         PolicyRequestCause::Interaction {
             phase,
+            kind,
             target,
             geometry,
         } => {
@@ -136,6 +151,7 @@ pub fn encode_wm_v1_policy_projection_request(
             (
                 3,
                 phase as u16,
+                kind as u16,
                 0,
                 0,
                 target.index(),
@@ -150,6 +166,7 @@ pub fn encode_wm_v1_policy_projection_request(
         scene_generation: request.scene_generation,
         cause_kind,
         interaction_phase,
+        interaction_kind,
         activation_serial,
         action,
         target_index,
@@ -203,6 +220,7 @@ pub fn decode_wm_v1_policy_projection_request(
     };
     let cause = match request.cause_kind {
         0 if request.interaction_phase == 0
+            && request.interaction_kind == 0
             && request.activation_serial == 0
             && request.action == 0
             && request.target_index == 0
@@ -215,6 +233,7 @@ pub fn decode_wm_v1_policy_projection_request(
             PolicyRequestCause::SceneChanged
         }
         1 if request.interaction_phase == 0
+            && request.interaction_kind == 0
             && request.activation_serial != 0
             && request.action != 0
             && request.target_index == 0
@@ -230,6 +249,7 @@ pub fn decode_wm_v1_policy_projection_request(
             }
         }
         2 if request.interaction_phase == 0
+            && request.interaction_kind == 0
             && request.activation_serial == 0
             && request.action == 0
             && request.interaction_x == 0
@@ -249,7 +269,13 @@ pub fn decode_wm_v1_policy_projection_request(
                     1 => PolicyInteractionPhase::Begin,
                     2 => PolicyInteractionPhase::Update,
                     3 => PolicyInteractionPhase::End,
+                    4 => PolicyInteractionPhase::Cancel,
                     other => return Err(invalid("interaction_phase", u32::from(other))),
+                },
+                kind: match request.interaction_kind {
+                    1 => PolicyInteractionKind::Move,
+                    2 => PolicyInteractionKind::Resize,
+                    other => return Err(invalid("interaction_kind", u32::from(other))),
                 },
                 target: target()?,
                 geometry: Rect {
@@ -310,6 +336,220 @@ pub fn decode_wm_v1_policy_projection_outcome(
     }
 }
 
+pub fn encode_wm_v1_policy_configuration(
+    configuration: &PolicyConfiguration,
+) -> Result<WmV1PolicyConfiguration, IpcCodecError> {
+    if configuration.connection_epoch == 0 || configuration.generation == 0 {
+        return Err(invalid("policy_configuration_identity", 0));
+    }
+    if configuration.bindings.len() > crate::POLICY_MAX_BINDINGS {
+        return Err(IpcCodecError::CountTooLarge {
+            count: configuration.bindings.len(),
+            max: crate::POLICY_MAX_BINDINGS,
+        });
+    }
+    validate_policy_configuration(configuration)?;
+    let records = configuration
+        .bindings
+        .iter()
+        .map(|binding| WmV1SnapshotBindingRecord {
+            action: binding.action.raw(),
+            keycode: binding.keycode,
+            modifier_bits: binding.modifiers.bits,
+        })
+        .collect::<Vec<_>>();
+    let chrome = configuration.chrome;
+    Ok(WmV1PolicyConfiguration {
+        connection_epoch: configuration.connection_epoch,
+        configuration_generation: configuration.generation,
+        binding_count: records.len() as u16,
+        style_bits: u16::from(chrome.focus_ring.enabled) | u16::from(chrome.frame.enabled) << 1,
+        focus_ring_width: chrome.focus_ring.width,
+        focus_ring_color: encode_rgb(chrome.focus_ring.color),
+        frame_width: chrome.frame.width,
+        frame_focused_color: encode_rgb(chrome.frame.focused_color),
+        frame_unfocused_color: encode_rgb(chrome.frame.unfocused_color),
+        bindings: encode_wm_v1_snapshot_binding_records(&records)?,
+    })
+}
+
+pub fn decode_wm_v1_policy_configuration(
+    configuration: &WmV1PolicyConfiguration,
+) -> Result<PolicyConfiguration, IpcCodecError> {
+    let count = usize::from(configuration.binding_count);
+    if configuration.connection_epoch == 0
+        || configuration.configuration_generation == 0
+        || count > crate::POLICY_MAX_BINDINGS
+        || configuration.style_bits & !0b11 != 0
+    {
+        return Err(invalid("policy_configuration", 0));
+    }
+    let records = decode_wm_v1_snapshot_binding_records(&configuration.bindings, count as u32)?;
+    require_count(records.len(), count)?;
+    let configuration = PolicyConfiguration {
+        connection_epoch: configuration.connection_epoch,
+        generation: configuration.configuration_generation,
+        bindings: records
+            .into_iter()
+            .map(|record| WmBindingRegistration {
+                action: WmActionId::from_raw(record.action),
+                keycode: record.keycode,
+                modifiers: WmModifierMask {
+                    bits: record.modifier_bits,
+                },
+            })
+            .collect(),
+        chrome: WmChromePolicy {
+            focus_ring: WmFocusRingStyle {
+                enabled: configuration.style_bits & 1 != 0,
+                width: configuration.focus_ring_width,
+                color: decode_rgb(configuration.focus_ring_color, "focus_ring_color")?,
+            },
+            frame: WmFrameStyle {
+                enabled: configuration.style_bits & 2 != 0,
+                width: configuration.frame_width,
+                focused_color: decode_rgb(
+                    configuration.frame_focused_color,
+                    "frame_focused_color",
+                )?,
+                unfocused_color: decode_rgb(
+                    configuration.frame_unfocused_color,
+                    "frame_unfocused_color",
+                )?,
+            },
+        },
+    };
+    validate_policy_configuration(&configuration)?;
+    Ok(configuration)
+}
+
+fn validate_policy_configuration(configuration: &PolicyConfiguration) -> Result<(), IpcCodecError> {
+    let valid_style = |enabled: bool, width: u32| {
+        width <= 64 && ((enabled && width > 0) || (!enabled && width == 0))
+    };
+    if !valid_style(
+        configuration.chrome.focus_ring.enabled,
+        configuration.chrome.focus_ring.width,
+    ) || !valid_style(
+        configuration.chrome.frame.enabled,
+        configuration.chrome.frame.width,
+    ) {
+        return Err(invalid("policy_configuration_chrome", 0));
+    }
+
+    let mut actions = std::collections::BTreeSet::new();
+    let mut chords = std::collections::BTreeSet::new();
+    for binding in &configuration.bindings {
+        if !binding.action.is_valid()
+            || binding.keycode == 0
+            || binding.keycode > 0x2ff
+            || binding.modifiers.bits & !WmModifierMask::SUPPORTED != 0
+            || (binding.keycode == 14
+                && binding.modifiers.bits & (WmModifierMask::CONTROL | WmModifierMask::ALT)
+                    == WmModifierMask::CONTROL | WmModifierMask::ALT)
+            || !actions.insert(binding.action)
+            || !chords.insert((binding.keycode, binding.modifiers.bits))
+        {
+            return Err(invalid("policy_configuration_binding", 0));
+        }
+    }
+    Ok(())
+}
+
+pub fn encode_wm_v1_policy_dirty(
+    request: &PolicyDirtyRequest,
+) -> Result<WmV1PolicyDirty, IpcCodecError> {
+    if request.connection_epoch == 0 || request.policy_generation == 0 {
+        return Err(invalid("policy_dirty_identity", 0));
+    }
+    let affected_outputs = encode_output_ids(&request.affected_outputs)?;
+    Ok(WmV1PolicyDirty {
+        connection_epoch: request.connection_epoch,
+        policy_generation: request.policy_generation,
+        affected_output_count: request.affected_outputs.len() as u16,
+        affected_outputs,
+    })
+}
+
+pub fn decode_wm_v1_policy_dirty(
+    request: &WmV1PolicyDirty,
+) -> Result<PolicyDirtyRequest, IpcCodecError> {
+    if request.connection_epoch == 0 || request.policy_generation == 0 {
+        return Err(invalid("policy_dirty_identity", 0));
+    }
+    Ok(PolicyDirtyRequest {
+        connection_epoch: request.connection_epoch,
+        policy_generation: request.policy_generation,
+        affected_outputs: decode_output_ids(
+            request.affected_output_count,
+            &request.affected_outputs,
+        )?,
+    })
+}
+
+pub fn encode_wm_v1_policy_session_operation_request(
+    request: PolicySessionOperationRequest,
+) -> Result<WmV1SessionOperationRequest, IpcCodecError> {
+    if request.connection_epoch == 0 || request.request_id == 0 || request.operation == 0 {
+        return Err(invalid("session_operation_identity", 0));
+    }
+    let (target_index, target_generation) = request
+        .target
+        .map(|target| (target.index(), target.generation()))
+        .unwrap_or((0, 0));
+    Ok(WmV1SessionOperationRequest {
+        connection_epoch: request.connection_epoch,
+        request_id: request.request_id,
+        operation: request.operation,
+        target_index,
+        target_generation,
+    })
+}
+
+pub fn decode_wm_v1_policy_session_operation_request(
+    request: &WmV1SessionOperationRequest,
+) -> Result<PolicySessionOperationRequest, IpcCodecError> {
+    if request.connection_epoch == 0 || request.request_id == 0 || request.operation == 0 {
+        return Err(invalid("session_operation_identity", 0));
+    }
+    Ok(PolicySessionOperationRequest {
+        connection_epoch: request.connection_epoch,
+        request_id: request.request_id,
+        operation: request.operation,
+        target: decode_optional_surface(
+            request.target_index,
+            request.target_generation,
+            "session_operation_target",
+        )?,
+    })
+}
+
+pub fn encode_wm_v1_policy_session_operation_outcome(
+    outcome: PolicySessionOperationOutcome,
+) -> Result<WmV1SessionOperationOutcome, IpcCodecError> {
+    if outcome.connection_epoch == 0 || outcome.request_id == 0 {
+        return Err(invalid("session_operation_outcome_identity", 0));
+    }
+    Ok(WmV1SessionOperationOutcome {
+        connection_epoch: outcome.connection_epoch,
+        request_id: outcome.request_id,
+        outcome: encode_outcome(outcome.outcome),
+    })
+}
+
+pub fn decode_wm_v1_policy_session_operation_outcome(
+    outcome: &WmV1SessionOperationOutcome,
+) -> Result<PolicySessionOperationOutcome, IpcCodecError> {
+    if outcome.connection_epoch == 0 || outcome.request_id == 0 {
+        return Err(invalid("session_operation_outcome_identity", 0));
+    }
+    Ok(PolicySessionOperationOutcome {
+        connection_epoch: outcome.connection_epoch,
+        request_id: outcome.request_id,
+        outcome: decode_outcome(outcome.outcome)?,
+    })
+}
+
 pub fn encode_wm_v1_policy_snapshot(
     transaction: TransactionId,
     connection_epoch: u64,
@@ -361,6 +601,7 @@ pub fn encode_wm_v1_policy_snapshot(
         .iter()
         .map(|operation| WmV1SnapshotSessionOperationRecord {
             operation: operation.token,
+            slot: operation.slot,
             target_bits: u16::from(operation.permits_surface_target)
                 * POLICY_SESSION_OPERATION_SURFACE_TARGET,
         })
@@ -509,12 +750,14 @@ pub fn decode_wm_v1_policy_snapshot(
                 .into_iter()
                 .map(|record| {
                     if record.operation == 0
+                        || record.slot == 0
                         || record.target_bits & !POLICY_SESSION_OPERATION_SURFACE_TARGET != 0
                     {
                         return Err(invalid("session_operation", record.target_bits.into()));
                     }
                     Ok(PolicySessionOperation {
                         token: record.operation,
+                        slot: record.slot,
                         permits_surface_target: record.target_bits
                             & POLICY_SESSION_OPERATION_SURFACE_TARGET
                             != 0,
@@ -873,6 +1116,81 @@ fn encode_presentation(state: PolicyPresentationState) -> u16 {
     u16::from(state.fullscreen) * POLICY_PRESENTATION_FULLSCREEN
         | u16::from(state.maximized) * POLICY_PRESENTATION_MAXIMIZED
         | u16::from(state.minimized) * POLICY_PRESENTATION_MINIMIZED
+}
+
+fn encode_rgb(color: WmRgb8) -> u32 {
+    0xff00_0000 | u32::from(color.red) << 16 | u32::from(color.green) << 8 | u32::from(color.blue)
+}
+
+fn decode_rgb(value: u32, field: &'static str) -> Result<WmRgb8, IpcCodecError> {
+    if value >> 24 != 0xff {
+        return Err(invalid(field, value));
+    }
+    Ok(WmRgb8 {
+        red: (value >> 16) as u8,
+        green: (value >> 8) as u8,
+        blue: value as u8,
+    })
+}
+
+fn encode_outcome(outcome: PolicyProjectionOutcome) -> u16 {
+    match outcome {
+        PolicyProjectionOutcome::Committed => SOPHIA_WM_OUTCOME_COMMITTED,
+        PolicyProjectionOutcome::RejectedStale => SOPHIA_WM_OUTCOME_REJECTED_STALE,
+        PolicyProjectionOutcome::RejectedInvalid => SOPHIA_WM_OUTCOME_REJECTED_INVALID,
+        PolicyProjectionOutcome::TimedOut => SOPHIA_WM_OUTCOME_TIMED_OUT,
+        PolicyProjectionOutcome::Disconnected => SOPHIA_WM_OUTCOME_DISCONNECTED,
+    }
+}
+
+fn decode_outcome(outcome: u16) -> Result<PolicyProjectionOutcome, IpcCodecError> {
+    match outcome {
+        SOPHIA_WM_OUTCOME_COMMITTED => Ok(PolicyProjectionOutcome::Committed),
+        SOPHIA_WM_OUTCOME_REJECTED_STALE => Ok(PolicyProjectionOutcome::RejectedStale),
+        SOPHIA_WM_OUTCOME_REJECTED_INVALID => Ok(PolicyProjectionOutcome::RejectedInvalid),
+        SOPHIA_WM_OUTCOME_TIMED_OUT => Ok(PolicyProjectionOutcome::TimedOut),
+        SOPHIA_WM_OUTCOME_DISCONNECTED => Ok(PolicyProjectionOutcome::Disconnected),
+        other => Err(invalid("policy_outcome", u32::from(other))),
+    }
+}
+
+fn encode_output_ids(outputs: &[OutputId]) -> Result<Vec<u8>, IpcCodecError> {
+    if outputs.is_empty() || outputs.len() > crate::POLICY_MAX_OUTPUTS {
+        return Err(IpcCodecError::CountTooLarge {
+            count: outputs.len(),
+            max: crate::POLICY_MAX_OUTPUTS,
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut encoded = Vec::with_capacity(outputs.len() * OUTPUT_ID_WIRE_SIZE);
+    for output in outputs {
+        if !output.is_valid() || !seen.insert(*output) {
+            return Err(invalid("affected_output", output.raw() as u32));
+        }
+        encoded.extend_from_slice(&output.raw().to_le_bytes());
+    }
+    Ok(encoded)
+}
+
+fn decode_output_ids(count: u16, bytes: &[u8]) -> Result<Vec<OutputId>, IpcCodecError> {
+    let count = usize::from(count);
+    if count == 0 || count > crate::POLICY_MAX_OUTPUTS || bytes.len() != count * OUTPUT_ID_WIRE_SIZE
+    {
+        return Err(invalid("affected_output_bytes", bytes.len() as u32));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    bytes
+        .chunks_exact(OUTPUT_ID_WIRE_SIZE)
+        .map(|bytes| {
+            let output = OutputId::from_raw(u64::from_le_bytes(
+                bytes.try_into().expect("fixed output-id chunk"),
+            ));
+            if !output.is_valid() || !seen.insert(output) {
+                return Err(invalid("affected_output", output.raw() as u32));
+            }
+            Ok(output)
+        })
+        .collect()
 }
 
 fn decode_presentation(

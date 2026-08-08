@@ -24,6 +24,7 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
         surfaces: vec![surface()],
         session_operations: vec![PolicySessionOperation {
             token: 11,
+            slot: 1,
             permits_surface_target: true,
         }],
     };
@@ -167,6 +168,101 @@ fn projection_outcome_has_one_strict_semantic_mapping() {
             Ok(outcome)
         );
     }
+}
+
+#[test]
+fn configuration_dirty_and_session_operations_have_typed_mappings() {
+    let configuration = PolicyConfiguration {
+        connection_epoch: 2,
+        generation: 3,
+        bindings: vec![WmBindingRegistration {
+            action: WmActionId::from_raw(7),
+            keycode: 38,
+            modifiers: WmModifierMask {
+                bits: WmModifierMask::SUPER,
+            },
+        }],
+        chrome: WmChromePolicy::default(),
+    };
+    let encoded = encode_wm_v1_policy_configuration(&configuration).unwrap();
+    assert_eq!(
+        decode_wm_v1_policy_configuration(&encoded),
+        Ok(configuration)
+    );
+
+    let dirty = PolicyDirtyRequest {
+        connection_epoch: 2,
+        policy_generation: 4,
+        affected_outputs: vec![OutputId::from_raw(1), OutputId::from_raw(2)],
+    };
+    let encoded = encode_wm_v1_policy_dirty(&dirty).unwrap();
+    assert_eq!(decode_wm_v1_policy_dirty(&encoded), Ok(dirty));
+
+    let operation = PolicySessionOperationRequest {
+        connection_epoch: 2,
+        request_id: 9,
+        operation: 11,
+        target: Some(SurfaceId::new(3, 1)),
+    };
+    let encoded = encode_wm_v1_policy_session_operation_request(operation).unwrap();
+    assert_eq!(
+        decode_wm_v1_policy_session_operation_request(&encoded),
+        Ok(operation)
+    );
+}
+
+#[test]
+fn policy_configuration_rejects_ambiguous_or_reserved_bindings() {
+    let binding = WmBindingRegistration {
+        action: WmActionId::from_raw(7),
+        keycode: 38,
+        modifiers: WmModifierMask {
+            bits: WmModifierMask::SUPER,
+        },
+    };
+    let mut configuration = PolicyConfiguration {
+        connection_epoch: 2,
+        generation: 3,
+        bindings: vec![binding, binding],
+        chrome: WmChromePolicy::default(),
+    };
+    assert!(encode_wm_v1_policy_configuration(&configuration).is_err());
+
+    configuration.bindings = vec![WmBindingRegistration {
+        action: WmActionId::from_raw(8),
+        keycode: 14,
+        modifiers: WmModifierMask {
+            bits: WmModifierMask::CONTROL | WmModifierMask::ALT,
+        },
+    }];
+    assert!(encode_wm_v1_policy_configuration(&configuration).is_err());
+}
+
+#[test]
+fn reduced_interaction_preserves_kind_phase_and_geometry() {
+    let request = PolicyProjectionRequest {
+        connection_epoch: 2,
+        request_id: 6,
+        scene_generation: 7,
+        affected_outputs: vec![OutputId::from_raw(1)],
+        cause: PolicyRequestCause::Interaction {
+            phase: PolicyInteractionPhase::Cancel,
+            kind: PolicyInteractionKind::Resize,
+            target: SurfaceId::new(3, 1),
+            geometry: Rect {
+                x: 20,
+                y: 30,
+                width: 800,
+                height: 600,
+            },
+        },
+    };
+
+    let encoded = encode_wm_v1_policy_projection_request(&request).unwrap();
+    assert_eq!(
+        decode_wm_v1_policy_projection_request(&encoded),
+        Ok(request)
+    );
 }
 
 fn surface() -> PolicySurfaceSnapshot {

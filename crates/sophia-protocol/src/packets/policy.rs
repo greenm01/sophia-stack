@@ -1,6 +1,6 @@
 use crate::{
     LayoutNodeCapabilities, OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    WmActionId,
+    WmActionId, WmBindingRegistration, WmChromePolicy,
 };
 
 pub const POLICY_MAX_OUTPUTS: usize = 16;
@@ -38,6 +38,9 @@ pub struct PolicyPresentationState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicySessionOperation {
     pub token: u64,
+    /// A profile-local identifier shared by the session and policy client.
+    /// Engine never assigns semantics to this value.
+    pub slot: u16,
     pub permits_surface_target: bool,
 }
 
@@ -66,6 +69,36 @@ pub struct PolicySceneSnapshot {
     pub session_operations: Vec<PolicySessionOperation>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyConfiguration {
+    pub connection_epoch: u64,
+    pub generation: u64,
+    pub bindings: Vec<WmBindingRegistration>,
+    pub chrome: WmChromePolicy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyDirtyRequest {
+    pub connection_epoch: u64,
+    pub policy_generation: u64,
+    pub affected_outputs: Vec<OutputId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicySessionOperationRequest {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub operation: u64,
+    pub target: Option<SurfaceId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicySessionOperationOutcome {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub outcome: PolicyProjectionOutcome,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(u16)]
 pub enum PolicyInteractionPhase {
@@ -73,6 +106,15 @@ pub enum PolicyInteractionPhase {
     Begin = 1,
     Update = 2,
     End = 3,
+    Cancel = 4,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicyInteractionKind {
+    #[default]
+    Move = 1,
+    Resize = 2,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -88,6 +130,7 @@ pub enum PolicyRequestCause {
     },
     Interaction {
         phase: PolicyInteractionPhase,
+        kind: PolicyInteractionKind,
         target: SurfaceId,
         geometry: Rect,
     },

@@ -58,6 +58,17 @@ pub struct PolicyProjectionReducer {
     commit_serial: u64,
 }
 
+/// A fully validated reducer successor held outside authoritative state until
+/// frontend configuration and renderable content have settled.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StagedPolicyProjection {
+    candidate: PolicyProjectionReducer,
+    connection_epoch: u64,
+    request_id: u64,
+    scene_generation: u64,
+    commit_serial: u64,
+}
+
 impl PolicyProjectionReducer {
     pub fn new(scene: PolicySceneSnapshot) -> Result<Self, PolicyProjectionError> {
         validate_scene(&scene)?;
@@ -178,6 +189,45 @@ impl PolicyProjectionReducer {
         self.committed = candidate;
         sync_scene_projection(&mut self.scene, &self.committed);
         self.commit_serial = self.commit_serial.saturating_add(1);
+        PolicyProjectionOutcome::Committed
+    }
+
+    /// Validates a proposal against a clone, preserving the authoritative
+    /// reducer and its outstanding request until frontend settlement.
+    pub fn stage_proposal(
+        &self,
+        proposal: &PolicyProjectionProposal,
+    ) -> Result<StagedPolicyProjection, PolicyProjectionOutcome> {
+        let mut candidate = self.clone();
+        let outcome = candidate.apply_proposal(proposal);
+        if outcome != PolicyProjectionOutcome::Committed {
+            return Err(outcome);
+        }
+        Ok(StagedPolicyProjection {
+            candidate,
+            connection_epoch: proposal.connection_epoch,
+            request_id: proposal.request_id,
+            scene_generation: proposal.base_generation,
+            commit_serial: self.commit_serial,
+        })
+    }
+
+    /// Promotes a staged successor only if no connection, scene, request, or
+    /// earlier frontend settlement has superseded its validation base.
+    pub fn commit_staged(&mut self, staged: StagedPolicyProjection) -> PolicyProjectionOutcome {
+        if self.active_epoch != Some(staged.connection_epoch) {
+            return PolicyProjectionOutcome::Disconnected;
+        }
+        if self.scene.generation != staged.scene_generation
+            || self.commit_serial != staged.commit_serial
+            || !self
+                .outstanding
+                .as_ref()
+                .is_some_and(|request| request.request_id == staged.request_id)
+        {
+            return PolicyProjectionOutcome::RejectedStale;
+        }
+        *self = staged.candidate;
         PolicyProjectionOutcome::Committed
     }
 

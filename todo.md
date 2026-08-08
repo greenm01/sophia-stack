@@ -172,7 +172,7 @@ the correct authority.
 
 ---
 
-## Milestone 12: Immutable Desktop Candidate And Workday Soak
+## Milestone 12: Frozen Classical-WM Compatibility Baseline
 
 The previous ten-cycle gates remain valid historical evidence for commits
 `958fb5e6` and `56dad4de`. Installed `1a7d67c3` retains the admission-recovery
@@ -189,9 +189,9 @@ immutable build or a verified source-identical successor.
 
 ### 12.1 Close The Intended Desktop Configuration
 
-This section prepares the current xmonad-based promotion candidate. Its
-profile-specific work must remain behind the generic compatibility boundary;
-it must not make xmonad concepts part of Engine or the universal WM API.
+This section records the xmonad compatibility baseline. Its profile-specific
+work remains behind the generic compatibility boundary; it must not make
+xmonad concepts part of Engine or the universal WM API.
 
 - [x] Modernize the personal xmonad configuration for the packaged xmonad
   0.18 series without loading mutable `~/.config/xmonad` state at session
@@ -331,41 +331,17 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   pointer, launch, bridge restart/reseed, and clean logout; the prelude's
   one-versus-two visible-surface predicate was corrected and locked by the
   verifier regression. QEMU does not satisfy the physical short gate below.
-- [ ] Install the practical-profile successor and pass one short gate on that
-  exact candidate: every new action must commit, both pointer modes must
-  commit, Kitty/Firefox/xmobar and Engine chrome must render correctly,
-  TrueColor must remain intact, and layout timeout, resize abort, hidden
-  surface commands, transport debt, or WM restart must remain zero. This new
-  packaged policy intentionally makes run `0055` historical evidence rather
-  than evidence for the next long soak.
-- [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
-  launch/close, focus, workspace, layout, floating, resize, clipboard,
-  TrueColor, and multi-output actions. Every named workload must appear in
-  reduced session evidence without recording typed content or metadata.
-- [ ] Pass one full workday using the same committed build, packaged policy,
-  application digests, and installed session entry.
-- [ ] Require zero unexpected protocol errors, allocator diagnostics, rejected
-  page-flip callbacks, stuck keys/buttons, presentation starvation, in-flight
-  ownership, cleanup debt, or failed TTY restoration.
-- [ ] Record bounded latency and health summaries without logging typed
-  content, clipboard payloads, window titles, classes, PIDs, or application
-  metadata.
-- [ ] Rotate retained logs and preserve the exact Sophia commit and executable
-  digest, configured xmonad and xmobar digests, kernel, Mesa, Kitty, Firefox,
-  output, and input-seat identities.
-
-Milestone 12 exits only when the installed path—not a repository launcher—passes
-the complete Daily-Driver Promotion Contract on one immutable candidate.
-Failures create the next smallest evidence-driven compatibility or lifecycle
-slice; they do not justify broad X11 conformance work.
+The remaining practical short gate and long xmonad soaks are deferred to the
+Classical X11 WM Compatibility roadmap. Resume them after native Hagia is
+solid; xmonad is regression evidence, not the promotion vehicle.
 
 ---
 
 ## Milestone 13: Public Policy Protocol And Hagia
 
-Architecture and formal-model work may land before Milestone 12 closes because
-it does not change the installed runtime. Production protocol changes begin
-only after the immutable Milestone 12 candidate passes promotion.
+This is the active promotion milestone. Production follows the public native
+policy path directly; the frozen xmonad baseline remains a regression and
+future compatibility target, not a prerequisite.
 
 ### 13.1 Ratify And Model The Boundary
 
@@ -384,7 +360,7 @@ only after the immutable Milestone 12 candidate passes promotion.
 - [x] Audit retained Triad capabilities against Sophia, Hagia, River, and Niri.
   Keep spatial policy in Hagia; keep input, client settlement, rendering, and
   scanout in Engine; reserve separate session, shell, broker, and portal roles.
-- [ ] Extend the policy models for ordered action causes, policy-initiated
+- [x] Extend the policy models for ordered action causes, policy-initiated
   reprojection, configuration generations, frontend settlement, reduced
   pointer interactions, and opaque session-operation outcomes before adding
   those transitions to the draft wire.
@@ -404,7 +380,7 @@ only after the immutable Milestone 12 candidate passes promotion.
 - [x] Compile an independent C client and run it against the same golden and
   malformed-frame corpus as the Rust codec. Reject unknown, excessive,
   partial, duplicate, reordered, stale, and trailing data without mutation.
-- [ ] Complete draft revision 1 before stability: add output work rectangles;
+- [x] Complete draft revision 1 before stability: add output work rectangles;
   reduced surface kind, presentation request/current state, and exact-size
   constraints; projection presentation decisions; request causes; policy
   configuration; Engine chrome; session-operation tokens; reduced
@@ -413,7 +389,7 @@ only after the immutable Milestone 12 candidate passes promotion.
   sixteen-request owner queue. Coalesce only replaceable scene refreshes and
   continuous interaction geometry; saturation consumes the shortcut, fails
   closed, and emits a bounded diagnostic.
-- [ ] Regenerate and re-run the Rust/C golden and malformed corpora, then update
+- [x] Regenerate and re-run the Rust/C golden and malformed corpora, then update
   Hagia's independent Nim codec without adding a Sophia build dependency.
 - [ ] Before freezing, analyze whether the shared transport can carry a later
   shell role's texture traffic under the 64-KiB frame limit, single in-flight
@@ -433,17 +409,23 @@ only after the immutable Milestone 12 candidate passes promotion.
   no transport optimization may expose partial policy state.
 - [x] Add the API v7-to-projection adapter and prove the dormant Rust reference
   WM and generic X11 WM bridge against the canonical reducer.
-- [ ] After Milestone 12 promotion, route the installed xmonad profile through
-  that adapter, migrate production to the public transport, then remove v7 and
-  Engine-owned workspace state before declaring the interface stable.
+- [ ] Route the installed native profile through the public transport and
+  canonical reducer, then remove v7 and Engine-owned workspace state after the
+  Hagia recovery gate. Migrate xmonad later through the compatibility adapter.
 - [ ] Preserve registered physical actions and session operations as opaque,
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
   policy IPC.
-- [ ] Stage accepted projections through frontend configure and renderable
-  content settlement. Preserve the last coherent scene and emit `committed`
-  only when authoritative state matches; otherwise request a fresh snapshot
-  without silently changing policy geometry.
+- [x] Add a two-stage canonical reducer: validate a complete proposal against a
+  cloned successor, preserve last-good authority, and reject promotion if its
+  connection, request, scene generation, or earlier commit was superseded.
+- [ ] Wire staged projections through production frontend configure and
+  renderable-content settlement. Emit `committed` only when authoritative
+  state matches; otherwise request a fresh snapshot without silently changing
+  policy geometry.
+- [x] Bind the owner-only endpoint before a supervised peer starts, authorize
+  its exact UID/PID afterward, and prove that ownership order through the
+  independent C and Hagia conformance host.
 - [ ] Host the production endpoint in the Sophia session, supervise exactly one
   admitted peer, preserve the committed scene across replacement, and keep
   policy checkpoints private to that peer.
@@ -477,21 +459,20 @@ only after the immutable Milestone 12 candidate passes promotion.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 
-- [ ] After Milestone 12 promotion, run the installed xmonad profile through
-  the session-hosted public transport and canonical projection reducer without
-  changing its retained behavior.
-- [ ] Install a bounded Hagia profile using only the retained column and
+- [ ] Install a bounded Hagia profile through the session-hosted public
+  transport and canonical reducer, using only the retained column and
   scrolling layouts. Prove Kitty, Firefox, floating dialogs, work areas,
   ordered repeated actions, pointer move/resize, multi-output views,
   `glxgears`, `vkcube`, policy restart, and clean logout.
-- [ ] Remove API v7 and Engine-owned workspace policy only after both installed
-  clients pass the same restart and last-layout gates.
+- [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
+  restart and last-layout gates. Keep the adapter and its deterministic xmonad
+  regressions until classical-WM migration resumes.
 - [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
   the Rust reference, Hagia, X11 bridge, and C client pass the complete
   black-box corpus.
 
 Milestone 13 exits only when the public wire is independently implementable,
-the formal and deterministic gates pass, Hagia and xmonad use the same Engine
+the formal and deterministic gates pass, installed Hagia uses the Engine
 projection path, and a policy crash or replacement preserves the last coherent
 desktop.
 
@@ -563,6 +544,14 @@ named soak failure promotes one.
 
 ### Classical X11 WM Compatibility
 
+- [ ] After native promotion, reinstall the practical xmonad profile and pass
+  its physical short gate, two-hour soak, and workday soak on one immutable
+  candidate. Require exact action and pointer commits, correct Kitty, Firefox,
+  xmobar, chrome, and TrueColor behavior, zero lifecycle debt, redacted health
+  summaries, and checksummed artifacts.
+- [ ] Migrate that profile through the public projection transport without
+  changing retained behavior; it must use the same Engine reducer as Hagia but
+  may keep its profile translation behind the compatibility adapter.
 - [ ] Separate profile-independent synthetic-X lifecycle, layout translation,
   validation, supervision, and recovery from xmonad-specific bindings and
   request patterns. Keep one shared conformance suite for every compatibility

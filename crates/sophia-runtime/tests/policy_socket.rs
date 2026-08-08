@@ -60,6 +60,41 @@ fn credential_mismatch_fails_without_claiming_the_role() {
 }
 
 #[test]
+fn supervised_endpoint_requires_authorization_before_accepting_the_exact_child() {
+    let directory = unique_directory("supervised");
+    let peer = current_peer();
+    let mut endpoint = PolicyRoleEndpoint::bind_for_supervised_uid(&directory, peer.uid).unwrap();
+    let client = UnixStream::connect(endpoint.socket_path()).unwrap();
+
+    assert_eq!(
+        endpoint.accept_expected().unwrap_err(),
+        PolicyRoleEndpointError::PeerNotAuthorized
+    );
+    endpoint.authorize_supervised_pid(peer.pid).unwrap();
+    let accepted = endpoint.accept_expected().unwrap();
+    assert_eq!(endpoint.active_peer(), Some(peer));
+    drop((client, accepted));
+}
+
+#[test]
+fn supervised_endpoint_rejects_a_process_other_than_the_authorized_child() {
+    let directory = unique_directory("wrong-supervised-peer");
+    let peer = current_peer();
+    let mut endpoint = PolicyRoleEndpoint::bind_for_supervised_uid(&directory, peer.uid).unwrap();
+    endpoint
+        .authorize_supervised_pid(peer.pid.saturating_add(1))
+        .unwrap();
+    let _client = UnixStream::connect(endpoint.socket_path()).unwrap();
+
+    assert!(matches!(
+        endpoint.accept_expected(),
+        Err(PolicyRoleEndpointError::UnauthorizedPeer { expected, actual })
+            if expected.pid == peer.pid.saturating_add(1) && actual == peer
+    ));
+    assert_eq!(endpoint.active_peer(), None);
+}
+
+#[test]
 fn endpoint_never_reuses_an_existing_directory() {
     let directory = unique_directory("existing");
     fs::create_dir(&directory).unwrap();

@@ -22,6 +22,7 @@ pub enum PolicyRoleEndpointError {
     },
     PeerAlreadyActive,
     WrongReleasedPeer,
+    PeerNotAuthorized,
 }
 
 impl core::fmt::Display for PolicyRoleEndpointError {
@@ -37,7 +38,8 @@ pub struct PolicyRoleEndpoint {
     directory: PathBuf,
     socket_path: PathBuf,
     listener: UnixListener,
-    expected_peer: PolicyPeerIdentity,
+    expected_uid: u32,
+    expected_pid: Option<u32>,
     active_peer: Option<PolicyPeerIdentity>,
 }
 
@@ -75,15 +77,44 @@ impl PolicyRoleEndpoint {
             directory,
             socket_path,
             listener,
-            expected_peer,
+            expected_uid: expected_peer.uid,
+            expected_pid: Some(expected_peer.pid),
             active_peer: None,
         })
+    }
+
+    pub fn bind_for_supervised_uid(
+        directory: impl AsRef<Path>,
+        expected_uid: u32,
+    ) -> Result<Self, PolicyRoleEndpointError> {
+        let placeholder = PolicyPeerIdentity {
+            uid: expected_uid,
+            pid: u32::MAX,
+        };
+        let mut endpoint = Self::bind(directory, placeholder)?;
+        endpoint.expected_pid = None;
+        Ok(endpoint)
+    }
+
+    pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), PolicyRoleEndpointError> {
+        if pid == 0 || self.active_peer.is_some() {
+            return Err(PolicyRoleEndpointError::PeerNotAuthorized);
+        }
+        self.expected_pid = Some(pid);
+        Ok(())
     }
 
     pub fn accept_expected(&mut self) -> Result<UnixStream, PolicyRoleEndpointError> {
         if self.active_peer.is_some() {
             return Err(PolicyRoleEndpointError::PeerAlreadyActive);
         }
+        let expected_pid = self
+            .expected_pid
+            .ok_or(PolicyRoleEndpointError::PeerNotAuthorized)?;
+        let expected = PolicyPeerIdentity {
+            uid: self.expected_uid,
+            pid: expected_pid,
+        };
         let (stream, _) = self
             .listener
             .accept()
@@ -94,11 +125,8 @@ impl PolicyRoleEndpoint {
             uid: credentials.uid.as_raw(),
             pid: credentials.pid.as_raw_pid() as u32,
         };
-        if actual != self.expected_peer {
-            return Err(PolicyRoleEndpointError::UnauthorizedPeer {
-                expected: self.expected_peer,
-                actual,
-            });
+        if actual != expected {
+            return Err(PolicyRoleEndpointError::UnauthorizedPeer { expected, actual });
         }
         self.active_peer = Some(actual);
         Ok(stream)
