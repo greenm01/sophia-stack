@@ -295,10 +295,12 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   its owner, standing target, and one bounded retry. The pinned TLA+ suite
   covers projection, response-boundary, and pixel-silent behavior without
   adding a runtime or build dependency.
-- [ ] Install the successor and pass one short workspace/admission proof with
-  Kitty, Firefox, glxgears, and vkcube before repeating a long soak. Require no
-  hidden-surface configure/render command, layout timeout, resize abort, or WM
-  restart.
+- [x] Install the successor and pass one short workspace/admission proof with
+  Kitty, Firefox, glxgears, and vkcube before repeating a long soak. Installed
+  run `0055` on `a2fdf4f6` retained clean admission and workspace projection,
+  two independently advancing animated surfaces, zero layout timeout, resize
+  abort, hidden-surface configure/render command, or WM restart, and clean
+  normal-session teardown.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
   launch/close, focus, workspace, layout, floating, resize, clipboard,
   TrueColor, and multi-output actions. Every named workload must appear in

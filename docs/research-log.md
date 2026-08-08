@@ -3,6 +3,27 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-08: The workspace/admission successor passes physically
+
+Installed normal-session run `0055` binds its checksummed archive to release
+`0.1.0-a2fdf4f69dfb` and commit `a2fdf4f6`. The automatic login, runtime-
+identity, and lifecycle verifiers all pass: Sophia reached both outputs in 305
+milliseconds, returned through normal logout after 350,850 milliseconds, and
+left no application group, frontend worker, namespace, Xauthority file,
+in-flight presentation, or pending WM/input work.
+
+The operator confirmed that both `glxgears` and `vkcube` animated correctly.
+Their two animated workload surfaces independently retired 5,367 and 5,384
+frames, while the bounded cadence summary observed 8,192 advancing intervals
+and no nonadvancing interval before its sample counter filled. Kitty and
+Firefox action launches reached PresentedBuffer admission, and the session
+retained seven workspace-away projections followed by visible workspace
+returns. Forty-two WM projections committed with zero transport rejection,
+stale response, or pending request. The reduced log contains no hidden-surface
+configure/render command, layout timeout, resize abort, or WM restart; final
+session and layout health are clean. This closes the short successor gate and
+makes the two-hour interactive soak the next promotion gate.
+
 ## 2026-08-07: Ten automatic installed lifecycles pass consecutively
 
 The one-shot installed runner completed and independently reverified runs
