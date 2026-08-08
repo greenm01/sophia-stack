@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports)]
 
 pub use sophia_engine::{
+    ApplicationRouteLeaseCandidate, ApplicationRouteLeaseError, ApplicationRouteLeasePhase,
+    ApplicationRouteLeaseState, ApplicationRouteLeaseTimeout, ApplicationRouteScope,
     AuthorityTransactionInbox, AuthorityTransactionIntake, BufferImportPath, ChromeActionDecision,
     ChromeActionRejectReason, ChromeBroker, CompositorBackendTickInput, DeterministicFrameClock,
     DrmKmsMode, DrmKmsOutputDescriptor, DrmKmsOutputRegistry, DrmKmsOutputRegistryUpdate,
@@ -41,17 +43,19 @@ pub use sophia_engine::{
 };
 pub use sophia_portal::{NotificationRequest, NotificationUrgency, PortalCommand};
 pub use sophia_protocol::{
-    AttentionState, AuthorityKind, AuthorityLocalId, BrokerHealthPacket, BrokerHealthState,
-    BrokerKind, BufferSource, ChromeActionKind, ChromeActionRequest, ChromeDescriptor,
+    ApplicationRouteLeaseId, ApplicationRouteLeaseIdentity, AttentionState, AuthorityKind,
+    AuthorityLocalId, BrokerHealthPacket, BrokerHealthState, BrokerKind, BufferSource,
+    ChromeActionKind, ChromeActionRequest, ChromeDescriptor, ClientAdmissionId,
     CommittedSurfaceState, DamageFrame, DeviceId, DisplayLabel, IconTokenId, InputEventKind,
     InputEventPacket, InputRoute, InputRouteOutcome, IpcCodecError, LayerSnapshot,
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, LayoutTransaction,
-    NamespaceId, OutputId, Point, PortalTransferId, Rect, Region, ResizeSyncCapability,
-    RoutedInputRequest, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAGIC, SOPHIA_IPC_MAX_PAYLOAD_LEN,
-    SOPHIA_IPC_VERSION, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
-    SurfaceTransaction, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
-    TransactionOutcome, Transform, TrustLevel, WmCommand, WmRequestKind, WmRequestPacket,
-    WmResponsePacket, WorkspaceId, XWindowId, decode_wm_request_frame, encode_wm_response_frame,
+    NamespaceId, NamespaceProfile, OutputId, Point, PortalTransferId, Rect, Region,
+    ResizeSyncCapability, RoutedInputRequest, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAGIC,
+    SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_IPC_VERSION, SeatId, Size, SurfaceConstraints, SurfaceId,
+    SurfacePlacement, SurfaceTransaction, SurfaceTransactionReadiness, TransactionCommit,
+    TransactionId, TransactionOutcome, Transform, TrustLevel, WmCommand, WmRequestKind,
+    WmRequestPacket, WmResponsePacket, WorkspaceId, XWindowId, decode_wm_request_frame,
+    encode_wm_response_frame,
 };
 pub use sophia_runtime::{
     RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeObservation,

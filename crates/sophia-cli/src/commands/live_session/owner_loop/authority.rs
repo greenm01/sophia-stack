@@ -281,6 +281,28 @@
                         .saturating_add(batch.software_present_submissions.len());
                 }
                 let removed_surfaces = batch.removed_surfaces.clone();
+                for surface in &removed_surfaces {
+                    let seats = application_route_leases
+                        .leases()
+                        .filter(|lease| {
+                            lease.target_surface == *surface
+                                && !matches!(
+                                    lease.phase,
+                                    sophia_engine::ApplicationRouteLeasePhase::Releasing { .. }
+                                )
+                        })
+                        .map(|lease| lease.identity.seat)
+                        .collect::<Vec<_>>();
+                    for lease_seat in seats {
+                        request_application_route_lease_release(
+                            &mut application_route_leases,
+                            &layout.client_routes,
+                            route_lease_release_sender,
+                            lease_seat,
+                            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                        )?;
+                    }
+                }
                 if let Some(wm_session) = wm_session.as_mut() {
                     for surface in &removed_surfaces {
                         require_wm_request_admission(

@@ -1,6 +1,9 @@
 use std::sync::mpsc::SyncSender;
 
-use sophia_protocol::{ClientAdmissionId, Rect, RoutedInputRequest, SurfaceId, TransactionId};
+use sophia_protocol::{
+    ApplicationRouteLeaseIdentity, ClientAdmissionContext, ClientAdmissionId, Rect,
+    RoutedInputRequest, SurfaceId, TransactionId,
+};
 
 use crate::{XAuthorityOutputUpdateOutcome, XResourceId, XServerFrontendClientId};
 
@@ -77,8 +80,32 @@ pub struct XAuthorityClientInputEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub struct XAuthorityRoutedInput {
     pub request: RoutedInputRequest,
+    pub route_lease: Option<ApplicationRouteLeaseIdentity>,
     pub delivery: Option<XAuthorityInputDeliveryId>,
     pub mode: XAuthorityRoutedInputMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityRouteLeaseUpdateKind {
+    Confirmed,
+    Rejected,
+    Released,
+}
+
+/// Sanitized frontend observation for one Engine-issued application lease.
+/// X resource IDs and frontend connection IDs never cross this boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthorityRouteLeaseUpdate {
+    pub identity: ApplicationRouteLeaseIdentity,
+    pub target_surface: SurfaceId,
+    pub admission: ClientAdmissionContext,
+    pub kind: XAuthorityRouteLeaseUpdateKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthorityRouteLeaseRelease {
+    pub identity: ApplicationRouteLeaseIdentity,
+    pub admission: ClientAdmissionContext,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

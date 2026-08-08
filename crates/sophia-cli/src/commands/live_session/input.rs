@@ -40,6 +40,76 @@ struct PhysicalInputRouteReport {
 
 type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
 
+trait RoutedInputIngress {
+    fn try_send(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>>;
+}
+
+impl RoutedInputIngress for XAuthorityRoutedInputSender {
+    fn try_send(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
+        XAuthorityRoutedInputSender::try_send(self, route)
+    }
+}
+
+#[cfg(test)]
+impl RoutedInputIngress for SyncSender<XAuthorityRoutedInput> {
+    fn try_send(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
+        SyncSender::try_send(self, route)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ApplicationRouteLeaseUpdateReport {
+    confirmed: usize,
+    rejected: usize,
+    released: usize,
+    stale: usize,
+}
+
+fn drain_application_route_lease_updates(
+    receiver: &Receiver<XAuthorityRouteLeaseUpdate>,
+    state: &mut ApplicationRouteLeaseState,
+) -> ApplicationRouteLeaseUpdateReport {
+    let mut report = ApplicationRouteLeaseUpdateReport::default();
+    while let Ok(update) = receiver.try_recv() {
+        let admission = update.admission.client_id;
+        let authority_session_epoch = update.admission.auth_provenance.session_generation;
+        let result = match update.kind {
+            XAuthorityRouteLeaseUpdateKind::Confirmed => state.confirm(
+                update.identity,
+                update.target_surface,
+                admission,
+                authority_session_epoch,
+            ),
+            XAuthorityRouteLeaseUpdateKind::Rejected => state.reject(update.identity),
+            XAuthorityRouteLeaseUpdateKind::Released => {
+                state.frontend_release(update.identity, admission)
+            }
+        };
+        match (update.kind, result) {
+            (XAuthorityRouteLeaseUpdateKind::Confirmed, Ok(_)) => {
+                report.confirmed = report.confirmed.saturating_add(1)
+            }
+            (XAuthorityRouteLeaseUpdateKind::Rejected, Ok(_)) => {
+                report.rejected = report.rejected.saturating_add(1)
+            }
+            (XAuthorityRouteLeaseUpdateKind::Released, Ok(_)) => {
+                report.released = report.released.saturating_add(1)
+            }
+            (_, Err(_)) => report.stale = report.stale.saturating_add(1),
+        }
+    }
+    report
+}
+
 fn place_pointer_event_for_routing(
     event: &mut sophia_protocol::InputEventPacket,
     focused_surface: Option<SurfaceId>,
@@ -66,14 +136,159 @@ fn place_pointer_event_for_routing(
     )
 }
 
+fn input_projection_for_pointer<'a>(
+    projections: Option<&'a [sophia_backend_live::LivePresentedInputProjection]>,
+    pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
+    output_index: Option<usize>,
+    fallback_layers: &'a [LayerSnapshot],
+    fallback_output: Option<sophia_protocol::OutputId>,
+    fallback_epoch: u64,
+) -> (
+    &'a [LayerSnapshot],
+    Option<sophia_protocol::OutputId>,
+    u64,
+) {
+    output_index
+        .and_then(|index| pointer_outputs.and_then(|outputs| outputs.get(index)))
+        .and_then(|output| {
+            projections.and_then(|projections| {
+                projections
+                    .iter()
+                    .find(|projection| projection.output == output.id)
+            })
+        })
+        .map_or(
+            (fallback_layers, fallback_output, fallback_epoch),
+            |projection| {
+                (
+                    projection.layers.as_slice(),
+                    Some(projection.output),
+                    projection.epoch,
+                )
+            },
+        )
+}
+
+fn application_route_lease_for_request(
+    request: &sophia_protocol::RoutedInputRequest,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+    state: &mut ApplicationRouteLeaseState,
+    input_output: Option<sophia_protocol::OutputId>,
+    input_presentation_epoch: u64,
+) -> Result<Option<sophia_protocol::ApplicationRouteLeaseIdentity>, Box<dyn std::error::Error>> {
+    if let Some(lease) = state.lease(request.seat) {
+        let is_initiating_boundary = matches!(
+            request.kind,
+            sophia_protocol::InputEventKind::PointerButton { button, .. }
+                if lease.initiating_button == Some(button)
+                    && lease.initiating_device == Some(request.device)
+        );
+        return Ok(is_initiating_boundary.then_some(lease.identity));
+    }
+    let sophia_protocol::InputEventKind::PointerButton {
+        button,
+        pressed: true,
+    } = request.kind
+    else {
+        return Ok(None);
+    };
+    let Some(admission) = client_routes.admission_for_surface(request.target_surface) else {
+        return Ok(None);
+    };
+    let Some(output) = input_output else {
+        return Ok(None);
+    };
+    if input_presentation_epoch == 0 {
+        return Ok(None);
+    }
+    let lease = state
+        .begin_provisional(ApplicationRouteLeaseCandidate {
+            seat: request.seat,
+            target_surface: request.target_surface,
+            admission: admission.client_id,
+            scope: ApplicationRouteScope {
+                profile: admission.namespace.profile,
+                authority: admission.namespace.id,
+            },
+            authority_session_epoch: admission.auth_provenance.session_generation,
+            output,
+            presentation_epoch: input_presentation_epoch,
+            initiating_device: Some(request.device),
+            initiating_button: Some(button),
+        })
+        .map_err(|error| format!("failed to begin application route lease: {error:?}"))?;
+    Ok(Some(lease.identity))
+}
+
+fn request_application_route_lease_release(
+    state: &mut ApplicationRouteLeaseState,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+    sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+    seat: sophia_protocol::SeatId,
+    now_msec: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let lease = state
+        .request_release(seat, now_msec)
+        .map_err(|error| format!("failed to request application lease release: {error:?}"))?;
+    let admission = client_routes
+        .admission_for_surface(lease.target_surface)
+        .filter(|admission| {
+            admission.client_id == lease.admission
+                && admission.auth_provenance.session_generation
+                    == lease.authority_session_epoch
+        })
+        .ok_or("application lease admission became stale before release")?;
+    sender.try_send(XAuthorityRouteLeaseRelease {
+        identity: lease.identity,
+        admission,
+    })?;
+    Ok(())
+}
+
+fn advance_application_input_security_epoch(
+    state: &mut ApplicationRouteLeaseState,
+    input_sender: &XAuthorityRoutedInputSender,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+    release_sender: &SyncSender<XAuthorityRouteLeaseRelease>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let revoked = state
+        .security_transition()
+        .map_err(|error| format!("failed to advance application input epoch: {error:?}"))?;
+    if !input_sender.advance_control_epoch(state.control_epoch()) {
+        return Err("X frontend rejected application input epoch advance".into());
+    }
+    for lease in &revoked {
+        let Some(admission) = client_routes
+            .admission_for_surface(lease.target_surface)
+            .filter(|admission| {
+                admission.client_id == lease.admission
+                    && admission.auth_provenance.session_generation
+                        == lease.authority_session_epoch
+            })
+        else {
+            continue;
+        };
+        // Epoch application in the broker clears all active grabs and frozen
+        // input. This exact release is a best-effort lifecycle acknowledgement,
+        // not the security barrier itself.
+        let _ = release_sender.try_send(XAuthorityRouteLeaseRelease {
+            identity: lease.identity,
+            admission,
+        });
+    }
+    Ok(revoked.len())
+}
+
 struct PhysicalInputRoutingContext<'a> {
     focus: &'a InputFocusState,
     committed_surfaces: &'a [CommittedSurfaceState],
     input_layers: &'a [LayerSnapshot],
+    input_projections: &'a [sophia_backend_live::LivePresentedInputProjection],
+    pointer_outputs: &'a [sophia_engine::HeadlessOutput],
     surface_roles: &'a BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     client_routes: &'a XAuthorityClientSurfaceRoutes,
     shortcuts: Option<&'a mut WmShortcutRouter>,
-    input_sender: &'a SyncSender<XAuthorityRoutedInput>,
+    input_sender: &'a XAuthorityRoutedInputSender,
     modifiers: &'a mut XCoreKeyboardMapper,
     key_repeat: &'a mut KeyRepeatState,
     key_repeat_map: &'a XkbKeymapSnapshot,
@@ -92,6 +307,10 @@ struct PhysicalInputRoutingContext<'a> {
     pointer_focus_handoff: &'a mut PointerFocusHandoffState,
     applied_client_focus: Option<SurfaceId>,
     floating_gesture: &'a mut FloatingPointerGestureState,
+    application_route_leases: &'a mut ApplicationRouteLeaseState,
+    route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
+    input_output: Option<sophia_protocol::OutputId>,
+    input_presentation_epoch: u64,
 }
 
 fn route_physical_input<P: NonBlockingInputPoller>(
@@ -103,6 +322,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         focus,
         committed_surfaces,
         input_layers,
+        input_projections,
+        pointer_outputs,
         surface_roles,
         client_routes,
         shortcuts,
@@ -125,6 +346,10 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         pointer_focus_handoff,
         applied_client_focus,
         floating_gesture,
+        application_route_leases,
+        route_lease_release_sender,
+        input_output,
+        input_presentation_epoch,
     } = context;
     route_input_events_with_pointer_focus(
         events,
@@ -153,6 +378,12 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(pointer_focus_handoff),
         applied_client_focus,
         Some(floating_gesture),
+        Some(application_route_leases),
+        Some(route_lease_release_sender),
+        input_output,
+        input_presentation_epoch,
+        Some(input_projections),
+        Some(pointer_outputs),
     )
 }
 
@@ -163,7 +394,7 @@ fn route_input_events(
     committed_surfaces: &[CommittedSurfaceState],
     input_layers: &[LayerSnapshot],
     client_routes: &XAuthorityClientSurfaceRoutes,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     modifiers: &mut XCoreKeyboardMapper,
     key_repeat: &mut KeyRepeatState,
     key_repeat_map: &XkbKeymapSnapshot,
@@ -209,6 +440,12 @@ fn route_input_events(
         None,
         None,
         None,
+        None,
+        None,
+        None,
+        0,
+        None,
+        None,
     )
 }
 
@@ -220,7 +457,7 @@ fn route_input_events_with_pointer_focus(
     input_layers: &[LayerSnapshot],
     surface_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
     client_routes: &XAuthorityClientSurfaceRoutes,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     modifiers: &mut XCoreKeyboardMapper,
     key_repeat: &mut KeyRepeatState,
     key_repeat_map: &XkbKeymapSnapshot,
@@ -240,6 +477,12 @@ fn route_input_events_with_pointer_focus(
     mut pointer_focus_handoff: Option<&mut PointerFocusHandoffState>,
     applied_client_focus: Option<SurfaceId>,
     mut floating_gesture: Option<&mut FloatingPointerGestureState>,
+    mut application_route_leases: Option<&mut ApplicationRouteLeaseState>,
+    route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
+    input_output: Option<sophia_protocol::OutputId>,
+    input_presentation_epoch: u64,
+    input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,
+    pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         events: events.len(),
@@ -277,7 +520,13 @@ fn route_input_events_with_pointer_focus(
     };
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
         if handoff.cancel_if_target_stale(|target| {
-            sophia_engine::scene_contains_input_surface(input_layers, target)
+            let present = sophia_engine::scene_contains_input_surface(input_layers, target)
+                || input_projections.is_some_and(|projections| {
+                    projections.iter().any(|projection| {
+                        sophia_engine::scene_contains_input_surface(&projection.layers, target)
+                    })
+                });
+            present
                 && client_routes.client_for_surface(target).is_some()
         }) {
             report.pointer_focus_handoff_stale_drops = 1;
@@ -301,8 +550,19 @@ fn route_input_events_with_pointer_focus(
                 *next_input_delivery = next_input_delivery
                     .checked_add(1)
                     .ok_or("live-session input delivery ID exhausted")?;
+                let route_lease = match application_route_leases.as_deref_mut() {
+                    Some(state) => application_route_lease_for_request(
+                        &request,
+                        client_routes,
+                        state,
+                        input_output,
+                        input_presentation_epoch,
+                    )?,
+                    None => None,
+                };
                 input_sender.try_send(XAuthorityRoutedInput {
                     request,
+                    route_lease,
                     delivery: Some(delivery),
                     mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
@@ -380,6 +640,7 @@ fn route_input_events_with_pointer_focus(
                                     local_position: Point::default(),
                                     kind: release.kind,
                                 },
+                                route_lease: None,
                                 delivery: Some(delivery),
                                 mode: XAuthorityRoutedInputMode::Deliver,
                             })?;
@@ -495,6 +756,7 @@ fn route_input_events_with_pointer_focus(
                         local_position: Point::default(),
                         kind: event.kind,
                     },
+                    route_lease: None,
                     delivery: Some(delivery),
                     mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
@@ -589,6 +851,18 @@ fn route_input_events_with_pointer_focus(
                 if !route_event {
                     continue;
                 }
+                let output_index = placement
+                    .and_then(|placement| placement.output_index)
+                    .or_else(|| pointer.output_index());
+                let (input_layers, input_output, input_presentation_epoch) =
+                    input_projection_for_pointer(
+                        input_projections,
+                        pointer_outputs,
+                        output_index,
+                        input_layers,
+                        input_output,
+                        input_presentation_epoch,
+                    );
                 if let Some(gesture) = floating_gesture.as_deref_mut() {
                     let position = event.global_position.map(|global| {
                         sophia_protocol::WmPointerPosition {
@@ -646,16 +920,70 @@ fn route_input_events_with_pointer_focus(
                 let pending_target = pointer_focus_handoff
                     .as_deref()
                     .and_then(PointerFocusHandoffState::target);
-                let route = pending_target.map_or_else(
-                    || sophia_engine::hit_test_scene_surface_for_input(&event, input_layers),
-                    |target| {
-                        sophia_engine::route_scene_surface_for_input(
-                            &event,
-                            input_layers,
-                            target,
-                        )
-                    },
-                );
+                let fresh_route =
+                    sophia_engine::hit_test_scene_surface_for_input(&event, input_layers);
+                let held_lease = application_route_leases
+                    .as_deref()
+                    .and_then(|state| state.lease(event.seat));
+                let route = if let Some(target) = pending_target {
+                    sophia_engine::route_scene_surface_for_input(&event, input_layers, target)
+                } else if let Some(lease) = held_lease {
+                    if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. }) {
+                        continue;
+                    }
+                    let current_admission = fresh_route
+                        .target_surface
+                        .and_then(|surface| client_routes.admission_for_surface(surface));
+                    let owner_admission =
+                        client_routes.admission_for_surface(lease.target_surface);
+                    let authorized = match (
+                        application_route_leases.as_deref(),
+                        current_admission,
+                        owner_admission,
+                        input_output,
+                    ) {
+                        (Some(state), Some(current), Some(owner), Some(output))
+                            if owner.client_id == lease.admission =>
+                        {
+                            state
+                                .authorize(
+                                    event.seat,
+                                    ApplicationRouteScope {
+                                        profile: current.namespace.profile,
+                                        authority: current.namespace.id,
+                                    },
+                                    event.device,
+                                    output,
+                                    input_presentation_epoch,
+                                    owner.auth_provenance.session_generation,
+                                )
+                                .is_ok()
+                        }
+                        _ => false,
+                    };
+                    if !authorized {
+                        if let (Some(state), Some(sender)) = (
+                            application_route_leases.as_deref_mut(),
+                            route_lease_release_sender,
+                        ) {
+                            request_application_route_lease_release(
+                                state,
+                                client_routes,
+                                sender,
+                                event.seat,
+                                now_msec,
+                            )?;
+                        }
+                        continue;
+                    }
+                    sophia_engine::route_scene_surface_for_input(
+                        &event,
+                        input_layers,
+                        lease.target_surface,
+                    )
+                } else {
+                    fresh_route
+                };
                 if is_button && route.target_surface.is_none() {
                     report.pointer_buttons_suppressed_no_target = report
                         .pointer_buttons_suppressed_no_target
@@ -713,8 +1041,19 @@ fn route_input_events_with_pointer_focus(
                 *next_input_delivery = next_input_delivery
                     .checked_add(1)
                     .ok_or("live-session input delivery ID exhausted")?;
+                let route_lease = match application_route_leases.as_deref_mut() {
+                    Some(state) => application_route_lease_for_request(
+                        &request,
+                        client_routes,
+                        state,
+                        input_output,
+                        input_presentation_epoch,
+                    )?,
+                    None => None,
+                };
                 input_sender.try_send(XAuthorityRoutedInput {
                     request,
+                    route_lease,
                     delivery: Some(delivery),
                     mode: XAuthorityRoutedInputMode::Deliver,
                 })?;
@@ -829,7 +1168,7 @@ fn route_due_key_repeat(
     focus: &InputFocusState,
     committed_surfaces: &[CommittedSurfaceState],
     client_keys: &SessionClientKeyState,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     next_input_delivery: &mut u64,
 ) -> Result<KeyRepeatRouteReport, Box<dyn std::error::Error>> {
     let mut report = KeyRepeatRouteReport::default();
@@ -875,6 +1214,7 @@ fn route_due_key_repeat(
                 pressed: true,
             },
         },
+        route_lease: None,
         delivery: Some(delivery),
         mode: XAuthorityRoutedInputMode::Repeat,
     })?;
@@ -888,7 +1228,7 @@ fn flush_client_pressed_keys(
     client_keys: &mut SessionClientKeyState,
     scratch: &mut Vec<SessionClientPressedKey>,
     deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     modifiers: &mut XCoreKeyboardMapper,
     next_input_delivery: &mut u64,
     time_msec: u64,
@@ -910,7 +1250,7 @@ fn flush_all_client_pressed_keys(
     client_keys: &mut SessionClientKeyState,
     scratch: &mut Vec<SessionClientPressedKey>,
     deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     modifiers: &mut XCoreKeyboardMapper,
     next_input_delivery: &mut u64,
     time_msec: u64,
@@ -932,7 +1272,7 @@ fn flush_copied_client_pressed_keys(
     client_keys: &mut SessionClientKeyState,
     scratch: &[SessionClientPressedKey],
     deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     modifiers: &mut XCoreKeyboardMapper,
     next_input_delivery: &mut u64,
     time_msec: u64,
@@ -960,6 +1300,7 @@ fn flush_copied_client_pressed_keys(
                     pressed: false,
                 },
             },
+            route_lease: None,
             delivery: Some(delivery),
             mode: XAuthorityRoutedInputMode::Deliver,
         })?;
@@ -974,7 +1315,7 @@ fn clear_client_pressed_keys_state_only(
     client_keys: &mut SessionClientKeyState,
     scratch: &mut Vec<SessionClientPressedKey>,
     modifiers: &mut XCoreKeyboardMapper,
-    input_sender: &SyncSender<XAuthorityRoutedInput>,
+    input_sender: &impl RoutedInputIngress,
     next_input_delivery: &mut u64,
     time_msec: u64,
 ) -> Result<usize, Box<dyn std::error::Error>> {
@@ -999,6 +1340,7 @@ fn clear_client_pressed_keys_state_only(
                     pressed: false,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::StateOnly,
         })?;

@@ -69,6 +69,11 @@ impl OutputUnionPointerState {
         self.position
     }
 
+    pub fn output_index(&self) -> Option<usize> {
+        self.position
+            .and_then(|position| output_index_for_position(position, &self.output_bounds))
+    }
+
     pub const fn boundary_metrics(&self) -> PointerBoundaryMetrics {
         self.boundary_metrics
     }

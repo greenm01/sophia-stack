@@ -38,6 +38,16 @@
                     "sophia_live_session_vt schema=4 status=preparing target={terminal}"
                 );
                 std::io::stdout().flush()?;
+                let revoked_input_leases = advance_application_input_security_epoch(
+                    &mut application_route_leases,
+                    input_sender,
+                    &layout.client_routes,
+                    route_lease_release_sender,
+                )?;
+                println!(
+                    "sophia_live_input_epoch schema=1 reason=virtual_terminal epoch={} revoked_leases={revoked_input_leases}",
+                    application_route_leases.control_epoch(),
+                );
                 physical_input.take();
                 let quiesced = if let (Some(runtime), Some(native)) =
                     (runtime.as_mut(), native_scanout.as_mut())
@@ -211,6 +221,18 @@
             }
             if seat_state == sophia_backend_live::LiveSeatState::ReleasePending {
                 println!("sophia_live_seat schema=1 status=release_pending");
+                if !seat_release_prepared {
+                    let revoked_input_leases = advance_application_input_security_epoch(
+                        &mut application_route_leases,
+                        input_sender,
+                        &layout.client_routes,
+                        route_lease_release_sender,
+                    )?;
+                    println!(
+                        "sophia_live_input_epoch schema=1 reason=seat_release epoch={} revoked_leases={revoked_input_leases}",
+                        application_route_leases.control_epoch(),
+                    );
+                }
                 if let Some(surface) = applied_client_focus {
                     flush_client_keys!(surface, "seat_release");
                 }

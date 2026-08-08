@@ -115,6 +115,22 @@ persistent silence withdraws it without killing the owner. The bounded
 configuration explores 14 generated states and 11 distinct states to depth 5,
 including both liveness properties.
 
+`TargetResolvedInput.tla` models output-local presented interaction snapshots,
+non-reusable target identities, deterministic ownership and occlusion,
+per-seat/device/contact capture, modal membership, independently issued local
+coordinate grants, and lifecycle cancellation. `TargetInputPacing.tla` isolates
+the replaceable continuous slot from ordered begin, discrete, completion,
+cancellation, endpoint-revocation, and security barriers.
+
+`InputAuthorityArbitration.tla` models the coexistence prerequisite between
+application routing and future shell targets. It separates committed,
+submitted, and presented choices; creates an exact provisional frontend lease;
+requires matching confirmation or rejection; preserves it only inside its
+profile/output/session/control epochs; and waits for exact normal-release
+acknowledgement. Security transition instead revokes immediately and fences
+stale queued input. The bounded configuration explores 352,311 generated
+states and 99,680 distinct states to depth 20.
+
 The first connection run found that `(client, connection epoch)` was not a
 unique transfer identity when one connection reused it for later work. The
 model now includes the transaction in that identity and rejects transaction
@@ -165,6 +181,9 @@ the current owning Rust boundaries as follows:
 | `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` selecting the exact cached workspace membership |
 | `TranslateConfigure`, `TranslateFocus` | `X11WmBridgeState::translate_legacy_requests_for_output` filtering requests through the current mapped-window set |
 | `BeginRequest`, `ValidateGrab`, `ObserveQuietBoundary`, `CompleteRequest` | registered private xmonad action validation, `LegacyX11WmBridgeRuntime::handle_request_once`, and `collect_legacy_responses` |
+| `BeginFrontendGrab`, `ConfirmFrontendGrab`, `RejectFrontendGrab` | provisional `ApplicationRouteLeaseState`, `XAuthorityRoutedInput::route_lease`, and sanitized `XAuthorityRouteLeaseUpdate` feedback |
+| `RequestLeaseRelease`, `AcknowledgeLeaseRelease` | exact Engine release state plus `XAuthorityRouteLeaseRelease` and frontend grab teardown acknowledgement |
+| `SecurityTransition`, stale queued route rejection | shared input control epoch, `advance_security_epoch`, and epoch-stamped bounded frontend ingress |
 | `ReachHardDeadline` | response collection returning an error before any normal response is encoded |
 | `Restart` | live-session supervision replacing the failed bridge process and reseeding committed state |
 | `BeginLayout`, `FirstSilentTimeout` | admission staging and `LiveWmLayoutManager::expire_pending` retaining a pixel-silent retry |

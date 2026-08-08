@@ -54,6 +54,7 @@ pub enum X11ObservedDispatchFailure {
 #[derive(Debug)]
 pub struct X11DispatchObservation {
     pub client: XServerFrontendClientId,
+    pub admission: Option<sophia_protocol::ClientAdmissionContext>,
     pub resource_id_range: XWireClientResourceRange,
     pub sequence: u16,
     pub major_opcode: u8,

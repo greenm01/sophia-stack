@@ -543,6 +543,22 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn input_layers(&self) -> &[LayerSnapshot] {
-        &self.input_layers
+        self.input_projections
+            .first()
+            .map_or(&[], |projection| projection.layers.as_slice())
+    }
+
+    pub fn input_presentation_epoch(&self) -> u64 {
+        self.input_projections
+            .first()
+            .map_or(0, |projection| projection.epoch)
+    }
+
+    pub fn input_output(&self) -> Option<OutputId> {
+        self.outputs.primary_output()
+    }
+
+    pub fn input_projections(&self) -> &[LivePresentedInputProjection] {
+        &self.input_projections
     }
 }

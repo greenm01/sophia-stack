@@ -9,7 +9,7 @@ EXTENDS Naturals, Sequences, FiniteSets
  *************************************************************************)
 
 CONSTANTS Seats, Authorities, Profiles, Ids, Kinds, MaxScene, MaxEpoch,
-          MaxEvents
+          MaxEvents, MaxLeases
 
 ASSUME /\ Seats # {} /\ IsFiniteSet(Seats)
        /\ Authorities # {} /\ IsFiniteSet(Authorities)
@@ -17,6 +17,7 @@ ASSUME /\ Seats # {} /\ IsFiniteSet(Seats)
        /\ Ids # {} /\ IsFiniteSet(Ids)
        /\ Kinds = {"none", "app", "shell"}
        /\ MaxScene >= 2 /\ MaxEpoch >= 2 /\ MaxEvents >= 1
+       /\ MaxLeases >= 1
 
 DefaultAuthority == CHOOSE authority \in Authorities : TRUE
 DefaultProfile == CHOOSE profile \in Profiles : TRUE
@@ -25,9 +26,10 @@ DefaultId == CHOOSE id \in Ids : TRUE
 NoChoice == [kind |-> "none", authority |-> DefaultAuthority,
     profile |-> DefaultProfile, id |-> DefaultId, generation |-> 0]
 
-NoLease == [state |-> "none", authority |-> DefaultAuthority,
+NoLease == [state |-> "none", leaseId |-> 0,
+    authority |-> DefaultAuthority, authoritySession |-> 0,
     profile |-> DefaultProfile, id |-> DefaultId, generation |-> 0,
-    presented |-> 0]
+    presented |-> 0, controlEpoch |-> 0, frontendSequence |-> 0]
 
 NoShellCapture == [live |-> FALSE, authority |-> DefaultAuthority,
     id |-> DefaultId, generation |-> 0, presented |-> 0]
@@ -35,12 +37,14 @@ NoShellCapture == [live |-> FALSE, authority |-> DefaultAuthority,
 VARIABLES scenes, committedScene, submittedScene, presentedScene,
           authorityLive, authoritySession, secureActive, controlEpoch,
           lease, shellCapture, reservedShortcut, routed, queue, delivered,
-          nextSerial, releaseRequests, releaseAcks, securityTransitions
+          nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+          releaseAcks, rejectedGrabs, securityTransitions
 
 vars == <<scenes, committedScene, submittedScene, presentedScene,
           authorityLive, authoritySession, secureActive, controlEpoch,
           lease, shellCapture, reservedShortcut, routed, queue, delivered,
-          nextSerial, releaseRequests, releaseAcks, securityTransitions>>
+          nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+          releaseAcks, rejectedGrabs, securityTransitions>>
 
 Init ==
     /\ scenes = [scene \in 0..MaxScene |-> NoChoice]
@@ -52,7 +56,9 @@ Init ==
     /\ shellCapture = [seat \in Seats |-> NoShellCapture]
     /\ reservedShortcut = [seat \in Seats |-> FALSE]
     /\ routed = <<>> /\ queue = <<>> /\ delivered = <<>>
-    /\ nextSerial = 1 /\ releaseRequests = 0 /\ releaseAcks = 0
+    /\ nextSerial = 1 /\ nextLeaseId = 1
+    /\ frontendSequence = [seat \in Seats |-> 0]
+    /\ releaseRequests = 0 /\ releaseAcks = 0 /\ rejectedGrabs = 0
     /\ securityTransitions = 0
 
 ChoiceTemplate(template, generation) ==
@@ -73,7 +79,8 @@ CommitChoice(template) ==
     /\ UNCHANGED <<submittedScene, presentedScene, authorityLive,
          authoritySession, secureActive, controlEpoch, lease, shellCapture,
          reservedShortcut, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 Submit ==
     /\ committedScene > submittedScene
@@ -81,7 +88,8 @@ Submit ==
     /\ UNCHANGED <<scenes, committedScene, presentedScene, authorityLive,
          authoritySession, secureActive, controlEpoch, lease, shellCapture,
          reservedShortcut, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 Present ==
     /\ submittedScene > presentedScene
@@ -97,7 +105,8 @@ Present ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, authorityLive,
          authoritySession, secureActive, controlEpoch, lease,
          reservedShortcut, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 RouteRecord(source, seat, choice, routeAuthority, routeProfile) ==
     [serial |-> nextSerial, epoch |-> controlEpoch, source |-> source,
@@ -124,34 +133,44 @@ RouteExistingLease(seat) ==
     LET held == lease[seat] IN
     LET current == scenes[presentedScene] IN
     /\ ~secureActive /\ ~reservedShortcut[seat]
-    /\ held.state = "active" /\ LeaseCovers(current, held)
+    /\ held.state \in {"provisional", "active"}
+    /\ held.controlEpoch = controlEpoch
+    /\ held.authoritySession = authoritySession[held.authority]
+    /\ LeaseCovers(current, held)
     /\ authorityLive[held.authority]
     /\ Emit("lease", seat, current, held.authority, held.profile)
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          shellCapture, reservedShortcut, delivered, releaseRequests,
-         releaseAcks, securityTransitions>>
+         releaseAcks, rejectedGrabs, securityTransitions,
+         nextLeaseId, frontendSequence>>
 
 RequestLeaseRelease(seat) ==
     LET held == lease[seat] IN
     LET current == scenes[presentedScene] IN
-    /\ ~secureActive /\ held.state = "active"
+    /\ ~secureActive /\ held.state \in {"provisional", "active"}
     /\ ~LeaseCovers(current, held)
     /\ lease' = [lease EXCEPT ![seat].state = "releasing"]
     /\ releaseRequests' = releaseRequests + 1
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch,
          shellCapture, reservedShortcut, routed, queue, delivered,
-         nextSerial, releaseAcks, securityTransitions>>
+         nextSerial, nextLeaseId, frontendSequence, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 FrontendReleaseAck(seat) ==
-    /\ lease[seat].state = "releasing"
+    LET held == lease[seat] IN
+    /\ held.state = "releasing"
+    /\ held.controlEpoch = controlEpoch
+    /\ held.authoritySession = authoritySession[held.authority]
+    /\ held.frontendSequence = frontendSequence[seat]
     /\ lease' = [lease EXCEPT ![seat] = NoLease]
     /\ releaseAcks' = releaseAcks + 1
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch,
          shellCapture, reservedShortcut, routed, queue, delivered,
-         nextSerial, releaseRequests, securityTransitions>>
+         nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+         rejectedGrabs, securityTransitions>>
 
 ResolveFresh(seat) ==
     LET choice == scenes[presentedScene] IN
@@ -169,7 +188,7 @@ ResolveFresh(seat) ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          reservedShortcut, delivered, releaseRequests, releaseAcks,
-         securityTransitions>>
+         rejectedGrabs, securityTransitions, nextLeaseId, frontendSequence>>
 
 RouteShellCapture(seat) ==
     LET capture == shellCapture[seat] IN
@@ -183,7 +202,8 @@ RouteShellCapture(seat) ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          shellCapture, reservedShortcut, delivered, releaseRequests,
-         releaseAcks, securityTransitions>>
+         releaseAcks, rejectedGrabs, securityTransitions,
+         nextLeaseId, frontendSequence>>
 
 EndShellCapture(seat) ==
     /\ shellCapture[seat].live
@@ -191,30 +211,58 @@ EndShellCapture(seat) ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          reservedShortcut, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
-RequestFrontendGrab(seat) ==
+BeginFrontendGrab(seat) ==
     LET choice == scenes[presentedScene] IN
     /\ ~secureActive /\ lease[seat].state = "none"
+    /\ nextLeaseId <= MaxLeases
     /\ ~shellCapture[seat].live /\ choice.kind = "app"
     /\ authorityLive[choice.authority]
     /\ lease' = [lease EXCEPT ![seat] =
-         [state |-> "requested", authority |-> choice.authority,
+         [state |-> "provisional", leaseId |-> nextLeaseId,
+          authority |-> choice.authority,
+          authoritySession |-> authoritySession[choice.authority],
           profile |-> choice.profile, id |-> choice.id,
-          generation |-> choice.generation, presented |-> presentedScene]]
+          generation |-> choice.generation, presented |-> presentedScene,
+          controlEpoch |-> controlEpoch,
+          frontendSequence |-> frontendSequence[seat] + 1]]
+    /\ nextLeaseId' = nextLeaseId + 1
+    /\ frontendSequence' = [frontendSequence EXCEPT ![seat] = @ + 1]
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch,
          shellCapture, reservedShortcut, routed, queue, delivered,
-         nextSerial, releaseRequests, releaseAcks, securityTransitions>>
+         nextSerial, releaseRequests, releaseAcks, rejectedGrabs,
+         securityTransitions>>
 
-AcknowledgeFrontendGrab(seat) ==
-    /\ lease[seat].state = "requested"
-    /\ authorityLive[lease[seat].authority]
+ConfirmFrontendGrab(seat) ==
+    LET held == lease[seat] IN
+    /\ held.state = "provisional"
+    /\ held.controlEpoch = controlEpoch
+    /\ held.authoritySession = authoritySession[held.authority]
+    /\ held.frontendSequence = frontendSequence[seat]
+    /\ authorityLive[held.authority]
     /\ lease' = [lease EXCEPT ![seat].state = "active"]
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch,
          shellCapture, reservedShortcut, routed, queue, delivered,
-         nextSerial, releaseRequests, releaseAcks, securityTransitions>>
+         nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+         releaseAcks, rejectedGrabs, securityTransitions>>
+
+RejectFrontendGrab(seat) ==
+    LET held == lease[seat] IN
+    /\ held.state = "provisional"
+    /\ held.controlEpoch = controlEpoch
+    /\ held.authoritySession = authoritySession[held.authority]
+    /\ held.frontendSequence = frontendSequence[seat]
+    /\ lease' = [lease EXCEPT ![seat] = NoLease]
+    /\ rejectedGrabs' = rejectedGrabs + 1
+    /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
+         authorityLive, authoritySession, secureActive, controlEpoch,
+         shellCapture, reservedShortcut, routed, queue, delivered,
+         nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+         releaseAcks, securityTransitions>>
 
 ArmShortcut(seat) ==
     /\ ~reservedShortcut[seat]
@@ -222,7 +270,8 @@ ArmShortcut(seat) ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          shellCapture, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 ConsumeShortcut(seat) ==
     /\ reservedShortcut[seat]
@@ -230,7 +279,8 @@ ConsumeShortcut(seat) ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          shellCapture, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 SecurityTransition ==
     /\ ~secureActive /\ controlEpoch < MaxEpoch
@@ -241,14 +291,16 @@ SecurityTransition ==
     /\ securityTransitions' = securityTransitions + 1
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, reservedShortcut, routed, delivered,
-         nextSerial, releaseRequests, releaseAcks>>
+         nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+         releaseAcks, rejectedGrabs>>
 
 EndSecurityTransition ==
     /\ secureActive /\ secureActive' = FALSE
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, controlEpoch, lease, shellCapture,
          reservedShortcut, routed, queue, delivered, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 RevokeAuthority(authority) ==
     /\ authorityLive[authority] /\ authoritySession[authority] < MaxEpoch
@@ -262,7 +314,8 @@ RevokeAuthority(authority) ==
     /\ queue' = SelectSeq(queue, LAMBDA event : event.authority # authority)
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          secureActive, controlEpoch, reservedShortcut, routed, delivered,
-         nextSerial, releaseRequests, releaseAcks, securityTransitions>>
+         nextSerial, nextLeaseId, frontendSequence, releaseRequests,
+         releaseAcks, rejectedGrabs, securityTransitions>>
 
 Drain ==
     /\ Len(queue) > 0 /\ queue[1].epoch = controlEpoch
@@ -271,7 +324,8 @@ Drain ==
     /\ UNCHANGED <<scenes, committedScene, submittedScene, presentedScene,
          authorityLive, authoritySession, secureActive, controlEpoch, lease,
          shellCapture, reservedShortcut, routed, nextSerial,
-         releaseRequests, releaseAcks, securityTransitions>>
+         nextLeaseId, frontendSequence, releaseRequests, releaseAcks,
+         rejectedGrabs, securityTransitions>>
 
 Next ==
     \/ \E template \in 1..5 : CommitChoice(template)
@@ -280,7 +334,8 @@ Next ==
           RouteExistingLease(seat) \/ RequestLeaseRelease(seat)
           \/ FrontendReleaseAck(seat) \/ ResolveFresh(seat)
           \/ RouteShellCapture(seat) \/ EndShellCapture(seat)
-          \/ RequestFrontendGrab(seat) \/ AcknowledgeFrontendGrab(seat)
+          \/ BeginFrontendGrab(seat) \/ ConfirmFrontendGrab(seat)
+          \/ RejectFrontendGrab(seat)
           \/ ArmShortcut(seat) \/ ConsumeShortcut(seat)
     \/ SecurityTransition \/ EndSecurityTransition
     \/ \E authority \in Authorities : RevokeAuthority(authority)
@@ -294,7 +349,7 @@ EventType(event) ==
     /\ event.seat \in Seats /\ event.kind \in Kinds
     /\ event.authority \in Authorities /\ event.profile \in Profiles
     /\ event.routeAuthority \in Authorities /\ event.routeProfile \in Profiles
-    /\ event.leaseState \in {"none", "requested", "active", "releasing"}
+    /\ event.leaseState \in {"none", "provisional", "active", "releasing"}
     /\ event.shortcut \in BOOLEAN
     /\ event.id \in Ids /\ event.generation \in 0..MaxScene
     /\ event.presented \in 0..MaxScene /\ event.secure \in BOOLEAN
@@ -309,9 +364,11 @@ TypeOK ==
     /\ authoritySession \in [Authorities -> 1..MaxEpoch]
     /\ secureActive \in BOOLEAN /\ controlEpoch \in 1..MaxEpoch
     /\ lease \in [Seats ->
-         [state : {"none", "requested", "active", "releasing"},
-          authority : Authorities, profile : Profiles, id : Ids,
-          generation : 0..MaxScene, presented : 0..MaxScene]]
+         [state : {"none", "provisional", "active", "releasing"},
+          leaseId : Nat, authority : Authorities,
+          authoritySession : 0..MaxEpoch, profile : Profiles, id : Ids,
+          generation : 0..MaxScene, presented : 0..MaxScene,
+          controlEpoch : 0..MaxEpoch, frontendSequence : Nat]]
     /\ shellCapture \in [Seats ->
          [live : BOOLEAN, authority : Authorities, id : Ids,
           generation : 0..MaxScene, presented : 0..MaxScene]]
@@ -322,7 +379,10 @@ TypeOK ==
     /\ \A index \in 1..Len(queue) : EventType(queue[index])
     /\ \A index \in 1..Len(delivered) : EventType(delivered[index])
     /\ nextSerial \in 1..(MaxEvents + 1)
+    /\ nextLeaseId \in 1..(MaxLeases + 1)
+    /\ frontendSequence \in [Seats -> 0..MaxLeases]
     /\ releaseRequests \in Nat /\ releaseAcks \in Nat
+    /\ rejectedGrabs \in 0..MaxLeases
     /\ securityTransitions \in Nat
 
 SceneLedgerOrdered ==
@@ -339,7 +399,7 @@ RoutesUsePresentedChoice ==
 ApplicationLeasesAreProfileScoped ==
     \A index \in 1..Len(routed) : routed[index].source = "lease" =>
         /\ routed[index].kind = "app"
-        /\ routed[index].leaseState = "active"
+        /\ routed[index].leaseState \in {"provisional", "active"}
         /\ routed[index].profile = routed[index].routeProfile
         /\ (routed[index].routeProfile = "classic-shared"
             \/ routed[index].authority = routed[index].routeAuthority)
@@ -364,5 +424,15 @@ QueuedInputUsesCurrentControlEpoch ==
     \A index \in 1..Len(queue) : queue[index].epoch = controlEpoch
 
 ShellWaitsForFrontendRelease == releaseAcks <= releaseRequests
+
+LiveLeasesUseCurrentEpochs ==
+    \A seat \in Seats : lease[seat].state # "none" =>
+        /\ lease[seat].controlEpoch = controlEpoch
+        /\ lease[seat].authoritySession =
+             authoritySession[lease[seat].authority]
+
+FrontendConfirmationIsExact ==
+    \A seat \in Seats : lease[seat].state = "active" =>
+        lease[seat].frontendSequence = frontendSequence[seat]
 
 =============================================================================

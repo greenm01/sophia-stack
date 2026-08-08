@@ -1,8 +1,83 @@
 impl XServerFrontendRouteRegistry {
+    fn advance_input_control_epoch(&self) -> Result<usize, XServerFrontendRouteError> {
+        self.input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .advance_security_epoch();
+        let drained = {
+            let mut frozen = self
+                .frozen_input
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+            std::mem::take(&mut *frozen)
+        };
+        let count = drained.len();
+        for deferred in drained {
+            self.send_input_delivery(
+                deferred.client,
+                deferred.route.delivery,
+                XAuthorityInputDeliveryOutcome::RouteRejected,
+            )?;
+        }
+        Ok(count)
+    }
+
+    fn release_route_lease(
+        &self,
+        release: XAuthorityRouteLeaseRelease,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let client = self
+            .clients
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .find_map(|(client, route)| {
+                (route.admission == Some(release.admission)).then_some(*client)
+            });
+        if let Some(client) = client {
+            self.input_authority
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                .ungrab_pointer(release.admission.namespace.id, client.raw());
+        }
+        let Some(sender) = self.route_lease_update_sender.as_ref() else {
+            return Ok(());
+        };
+        let _ = sender.send(XAuthorityRouteLeaseUpdate {
+            identity: release.identity,
+            target_surface: self
+                .surfaces
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                .iter()
+                .find_map(|(surface, route)| {
+                    (route.admission == Some(release.admission)).then_some(*surface)
+                })
+                .unwrap_or(SurfaceId::INVALID),
+            admission: release.admission,
+            kind: XAuthorityRouteLeaseUpdateKind::Released,
+        });
+        Ok(())
+    }
+
     fn route_engine_input(
         &self,
         route: XAuthorityRoutedInput,
+        route_control_epoch: u64,
+        current_control_epoch: u64,
     ) -> Result<(), XServerFrontendRouteError> {
+        if route_control_epoch != current_control_epoch {
+            if let Ok(surfaces) = self.surfaces.lock()
+                && let Some(surface_route) = surfaces.get(&route.request.target_surface)
+            {
+                self.send_input_delivery(
+                    surface_route.client,
+                    route.delivery,
+                    XAuthorityInputDeliveryOutcome::RouteRejected,
+                )?;
+            }
+            return Ok(());
+        }
         if route.mode == XAuthorityRoutedInputMode::StateOnly {
             if let InputEventKind::Key { keycode, pressed } = route.request.kind {
                 let _ = self.xkb_worker.request(XkbWorkerCommand::Key {
@@ -40,6 +115,7 @@ impl XServerFrontendRouteRegistry {
             }
             frozen.push_back(XDeferredRoutedInput {
                 client: surface_route.client,
+                control_epoch: route_control_epoch,
                 route,
             });
             return Ok(());
@@ -158,7 +234,7 @@ impl XServerFrontendRouteRegistry {
                     self.input_authority
                         .lock()
                         .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                        .release_button(surface_route.namespace, button);
+                        .release_button(surface_route.namespace, button, pointer.state() == 0);
                 }
                 XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                     kind: XAuthorityPointerEventKind::Button { button, pressed },
@@ -257,14 +333,47 @@ impl XServerFrontendRouteRegistry {
             }
         };
         drop(pointers);
-        self.route_resolved_input(
+        let lease_update = route.route_lease.and_then(|identity| {
+            let kind = match route.request.kind {
+                InputEventKind::PointerButton { pressed: true, .. } => {
+                    XAuthorityRouteLeaseUpdateKind::Confirmed
+                }
+                InputEventKind::PointerButton { pressed: false, .. } => {
+                    XAuthorityRouteLeaseUpdateKind::Released
+                }
+                _ => return None,
+            };
+            let admission = self.client_senders(client).ok()?.admission?;
+            Some((identity, kind, admission))
+        });
+        let result = self.route_resolved_input(
             surface_route.namespace,
             client,
             surface_route.window,
             target_window,
             event,
             route.delivery,
-        )
+        );
+        if let Some((identity, kind, admission)) = lease_update {
+            let reported_kind = if result.is_ok() {
+                kind
+            } else {
+                if kind == XAuthorityRouteLeaseUpdateKind::Confirmed {
+                    self.input_authority
+                        .lock()
+                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                        .ungrab_pointer(surface_route.namespace, client.raw());
+                }
+                XAuthorityRouteLeaseUpdateKind::Rejected
+            };
+            self.send_route_lease_update(
+                identity,
+                route.request.target_surface,
+                admission,
+                reported_kind,
+            )?;
+        }
+        result
     }
 
     fn route_control(
@@ -387,6 +496,25 @@ impl XServerFrontendRouteRegistry {
         }) {
             Ok(()) | Err(_) => Ok(()),
         }
+    }
+
+    fn send_route_lease_update(
+        &self,
+        identity: sophia_protocol::ApplicationRouteLeaseIdentity,
+        target_surface: SurfaceId,
+        admission: ClientAdmissionContext,
+        kind: XAuthorityRouteLeaseUpdateKind,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let Some(sender) = self.route_lease_update_sender.as_ref() else {
+            return Ok(());
+        };
+        let _ = sender.send(XAuthorityRouteLeaseUpdate {
+            identity,
+            target_surface,
+            admission,
+            kind,
+        });
+        Ok(())
     }
 }
 

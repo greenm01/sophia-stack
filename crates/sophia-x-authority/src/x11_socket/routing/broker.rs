@@ -15,12 +15,75 @@ pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
     input_sender: SyncSender<XAuthorityClientInputEvent>,
     input_receiver: Receiver<XAuthorityClientInputEvent>,
-    routed_input_sender: SyncSender<XAuthorityRoutedInput>,
-    routed_input_receiver: Receiver<XAuthorityRoutedInput>,
+    routed_input_sender: SyncSender<XAuthorityEpochRoutedInput>,
+    routed_input_receiver: Receiver<XAuthorityEpochRoutedInput>,
+    input_control_epoch: Arc<AtomicU64>,
+    applied_input_control_epoch: u64,
+    route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
+    route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
     control_receiver: Receiver<XAuthorityClientControlCommand>,
     acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
     source_payload_receiver: Receiver<crate::ClipboardSourcePayload>,
+}
+
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct XAuthorityRoutedInputSender {
+    sender: SyncSender<XAuthorityEpochRoutedInput>,
+    control_epoch: Arc<AtomicU64>,
+}
+
+#[cfg(unix)]
+impl XAuthorityRoutedInputSender {
+    pub fn send(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), std::sync::mpsc::SendError<XAuthorityRoutedInput>> {
+        let envelope = XAuthorityEpochRoutedInput {
+            control_epoch: self.control_epoch.load(Ordering::Acquire),
+            route,
+        };
+        self.sender
+            .send(envelope)
+            .map_err(|error| std::sync::mpsc::SendError(error.0.route))
+    }
+
+    pub fn try_send(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
+        let envelope = XAuthorityEpochRoutedInput {
+            control_epoch: self.control_epoch.load(Ordering::Acquire),
+            route,
+        };
+        self.sender.try_send(envelope).map_err(|error| match error {
+            TrySendError::Full(envelope) => TrySendError::Full(envelope.route),
+            TrySendError::Disconnected(envelope) => TrySendError::Disconnected(envelope.route),
+        })
+    }
+
+    pub fn control_epoch(&self) -> u64 {
+        self.control_epoch.load(Ordering::Acquire)
+    }
+
+    pub fn advance_control_epoch(&self, next: u64) -> bool {
+        let mut current = self.control_epoch.load(Ordering::Acquire);
+        loop {
+            if next <= current {
+                return next == current;
+            }
+            match self.control_epoch.compare_exchange(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => current = observed,
+            }
+        }
+    }
 }
 
 /// Cloneable protocol-feedback handle for Engine/backend presentation code.
@@ -129,6 +192,7 @@ impl XServerFrontendRouteBroker {
             acknowledgement_sender,
             Some(acknowledgement_receiver),
             None,
+            None,
         )
     }
 
@@ -141,6 +205,7 @@ impl XServerFrontendRouteBroker {
         Self::with_transports(
             XServerFrontendRouteCapacities::uniform(queue_capacity),
             acknowledgement_sender,
+            None,
             None,
             None,
         )
@@ -158,6 +223,7 @@ impl XServerFrontendRouteBroker {
             acknowledgement_sender,
             None,
             Some(input_delivery_sender),
+            None,
         )
     }
 
@@ -173,6 +239,7 @@ impl XServerFrontendRouteBroker {
             acknowledgement_sender,
             None,
             Some(input_delivery_sender),
+            None,
         );
         broker.registry.xkb_config = xkb_config.clone();
         broker.registry.xkb_worker = XkbKeyboardWorker::spawn(xkb_config);
@@ -191,6 +258,27 @@ impl XServerFrontendRouteBroker {
             acknowledgement_sender,
             None,
             Some(input_delivery_sender),
+            None,
+        );
+        broker.registry.xkb_config = xkb_config.clone();
+        broker.registry.xkb_worker = XkbKeyboardWorker::spawn(xkb_config);
+        Ok(broker)
+    }
+
+    pub fn with_route_capacities_xkb_and_lease_updates(
+        capacities: XServerFrontendRouteCapacities,
+        acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
+        input_delivery_sender: Sender<XAuthorityClientInputDelivery>,
+        route_lease_update_sender: SyncSender<XAuthorityRouteLeaseUpdate>,
+        xkb_config: crate::XkbRmlvoConfig,
+    ) -> Result<Self, crate::XkbKeyboardError> {
+        crate::XkbKeyboardState::new(&xkb_config)?;
+        let mut broker = Self::with_transports(
+            capacities,
+            acknowledgement_sender,
+            None,
+            Some(input_delivery_sender),
+            Some(route_lease_update_sender),
         );
         broker.registry.xkb_config = xkb_config.clone();
         broker.registry.xkb_worker = XkbKeyboardWorker::spawn(xkb_config);
@@ -202,9 +290,13 @@ impl XServerFrontendRouteBroker {
         acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
         acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
         input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
+        route_lease_update_sender: Option<SyncSender<XAuthorityRouteLeaseUpdate>>,
     ) -> Self {
         let (input_sender, input_receiver) = sync_channel(capacities.input.get());
         let (routed_input_sender, routed_input_receiver) = sync_channel(capacities.input.get());
+        let input_control_epoch = Arc::new(AtomicU64::new(1));
+        let (route_lease_release_sender, route_lease_release_receiver) =
+            sync_channel(capacities.control.get());
         let (control_sender, control_receiver) = sync_channel(capacities.control.get());
         let (source_payload_sender, source_payload_receiver) =
             sync_channel(capacities.input.get());
@@ -225,6 +317,7 @@ impl XServerFrontendRouteBroker {
                 xkb_worker: XkbKeyboardWorker::spawn(crate::XkbRmlvoConfig::default()),
                 acknowledgement_sender,
                 input_delivery_sender,
+                route_lease_update_sender,
                 per_client_input_capacity: capacities.input,
                 per_client_control_capacity: capacities.control,
                 per_client_protocol_capacity: capacities.protocol,
@@ -235,6 +328,10 @@ impl XServerFrontendRouteBroker {
             input_receiver,
             routed_input_sender,
             routed_input_receiver,
+            input_control_epoch,
+            applied_input_control_epoch: 1,
+            route_lease_release_sender,
+            route_lease_release_receiver,
             control_sender,
             control_receiver,
             acknowledgement_receiver,
@@ -246,8 +343,15 @@ impl XServerFrontendRouteBroker {
         self.input_sender.clone()
     }
 
-    pub fn routed_input_sender(&self) -> SyncSender<XAuthorityRoutedInput> {
-        self.routed_input_sender.clone()
+    pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
+        XAuthorityRoutedInputSender {
+            sender: self.routed_input_sender.clone(),
+            control_epoch: self.input_control_epoch.clone(),
+        }
+    }
+
+    pub fn route_lease_release_sender(&self) -> SyncSender<XAuthorityRouteLeaseRelease> {
+        self.route_lease_release_sender.clone()
     }
 
     pub fn control_sender(&self) -> SyncSender<XAuthorityClientControlCommand> {
@@ -279,12 +383,28 @@ impl XServerFrontendRouteBroker {
 
     /// Routes every value currently available at the bounded ingress.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
+        let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
+        if input_control_epoch != self.applied_input_control_epoch {
+            self.registry.advance_input_control_epoch()?;
+            self.applied_input_control_epoch = input_control_epoch;
+        }
         let mut routed = 0usize;
         loop {
             let mut progressed = false;
+            match self.route_lease_release_receiver.try_recv() {
+                Ok(release) => {
+                    self.registry.release_route_lease(release)?;
+                    routed = routed.saturating_add(1);
+                    progressed = true;
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
+            }
             match self.routed_input_receiver.try_recv() {
                 Ok(route) => {
-                    match self.registry.route_engine_input(route) {
+                    match self
+                        .registry
+                        .route_engine_input(route.route, route.control_epoch, self.input_control_epoch.load(Ordering::Acquire))
+                    {
                         Ok(()) => routed = routed.saturating_add(1),
                         Err(
                             XServerFrontendRouteError::UnknownSurface { .. }
@@ -336,7 +456,10 @@ impl XServerFrontendRouteBroker {
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
             }
-            let thawed = match self.registry.drain_thawed_input() {
+            let thawed = match self
+                .registry
+                .drain_thawed_input(self.input_control_epoch.load(Ordering::Acquire))
+            {
                 Ok(thawed) => thawed,
                 Err(
                     XServerFrontendRouteError::UnknownSurface { .. }

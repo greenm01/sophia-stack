@@ -307,6 +307,7 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
     });
     let batch = XAuthorityObservedTransactionBatch {
         client: None,
+        admission: None,
         transaction: transaction.transaction,
         transactions: vec![transaction.clone()],
         surface_presentations: Vec::new(),
@@ -370,6 +371,7 @@ fn wrong_size_present_conflicts_but_matching_pixels_can_enter_resize_quarantine(
     let mut buffers = BTreeMap::from([(handle, size(1280, 1440))]);
     let mut batch = XAuthorityObservedTransactionBatch {
         client: None,
+        admission: None,
         transaction: TransactionId::from_raw(119),
         transactions: Vec::new(),
         surface_presentations: Vec::new(),

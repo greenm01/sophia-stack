@@ -26,52 +26,81 @@ impl LiveProductionVisualRuntime {
     /// Publishes the committed scene for runtimes whose output tick is also
     /// their presentation boundary (currently the non-native/headless path).
     pub(super) fn publish_committed_input_layers(&mut self) {
-        self.input_layers = input_layer_snapshots(
+        let input_layers = input_layer_snapshots(
             self.production.committed_surfaces(),
             &self.presentation_order,
             &self.surface_metadata,
         );
+        for index in 0..self.input_projections.len() {
+            self.replace_presented_input_layers(index, input_layers.clone());
+        }
         tracing::trace!(
             committed_scene_surfaces = self.production.committed_surfaces().len(),
-            input_layers = self.input_layers.len(),
+            input_layers = input_layers.len(),
             "rebuilt input projection from committed scene"
         );
     }
 
     /// Publishes only pixels whose native frame has crossed an accepted page
-    /// flip. Sophia's current pointer coordinate domain follows the primary
-    /// output; output-local pointer domains must be introduced before these
-    /// snapshots may be merged across independently retiring heads.
+    /// flip. Each output keeps its own snapshot and semantic epoch so one
+    /// head's retirement cannot publish or invalidate another head's input.
     pub(super) fn publish_presented_input_layers(
         &mut self,
         native_scanout: &LiveProductionNativeScanout,
     ) {
-        let Some(primary) = self.outputs.primary_output() else {
-            self.input_layers.clear();
+        for index in 0..self.outputs.output_count() {
+            let Some(output) = self.outputs.output_id(index) else {
+                continue;
+            };
+            let (input_layers, presented_scene_surfaces) =
+                native_scanout.presented_output_frame(index).map_or_else(
+                    || (Vec::new(), 0),
+                    |presented| {
+                        (
+                            presented_input_layer_snapshots(presented, &self.surface_metadata),
+                            presented.surfaces.len(),
+                        )
+                    },
+                );
+            self.replace_presented_input_layers(index, input_layers);
+            tracing::trace!(
+                output = output.raw(),
+                presented_scene_surfaces,
+                input_layers = self.input_projections[index].layers.len(),
+                "published output-local input projection from retired native frame"
+            );
+        }
+    }
+
+    fn replace_presented_input_layers(&mut self, index: usize, input_layers: Vec<LayerSnapshot>) {
+        let Some(projection) = self.input_projections.get_mut(index) else {
             return;
         };
-        let Some(index) = self.outputs.output_index(primary) else {
-            self.input_layers.clear();
-            return;
-        };
-        let Some(presented) = native_scanout.presented_output_frame(index) else {
-            // Initial native setup may not yet have an interaction-bearing
-            // frame. Never substitute newer committed state.
-            self.input_layers.clear();
-            return;
-        };
-        self.input_layers = presented_input_layer_snapshots(presented, &self.surface_metadata);
-        tracing::trace!(
-            output = primary.raw(),
-            presented_scene_surfaces = presented.surfaces.len(),
-            input_layers = self.input_layers.len(),
-            "published input projection from retired native frame"
-        );
+        if !same_interaction_projection(&projection.layers, &input_layers) {
+            projection.epoch = projection
+                .epoch
+                .checked_add(1)
+                .expect("presented input epoch exhausted");
+        }
+        projection.layers = input_layers;
     }
 
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {
         committed_layer_snapshots(self.production.committed_surfaces(), &self.surface_metadata)
     }
+}
+
+fn same_interaction_projection(previous: &[LayerSnapshot], next: &[LayerSnapshot]) -> bool {
+    previous.len() == next.len()
+        && previous.iter().zip(next).all(|(previous, next)| {
+            previous.surface == next.surface
+                && previous.namespace == next.namespace
+                && previous.stack_rank == next.stack_rank
+                && previous.geometry == next.geometry
+                && previous.transform == next.transform
+                && (previous.opacity > 0.0) == (next.opacity > 0.0)
+                && (previous.source != BufferSource::None) == (next.source != BufferSource::None)
+        })
 }
 
 pub(super) fn committed_layer_snapshots(
@@ -241,6 +270,59 @@ mod tests {
 
         assert_eq!(layers[0].stack_rank, 0);
         assert_eq!(layers[1].stack_rank, 1);
+    }
+
+    #[test]
+    fn output_local_interaction_epochs_retire_independently() {
+        let primary = HeadlessOutput::deterministic();
+        let secondary = HeadlessOutput {
+            id: OutputId::from_raw(2),
+            ..primary
+        };
+        let mut runtime =
+            LiveProductionVisualRuntime::new(&[secondary, primary], None, None).unwrap();
+        assert_eq!(runtime.input_projections()[0].output, primary.id);
+        assert_eq!(runtime.input_projections()[1].output, secondary.id);
+        let layer_for = |surface, handle| LayerSnapshot {
+            surface,
+            authority_local_id: None,
+            namespace: Some(NamespaceId::from_raw(3)),
+            stack_rank: 0,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            source: BufferSource::CpuBuffer { handle },
+            damage: Region::default(),
+            opacity: 1.0,
+            crop: None,
+            transform: Transform::IDENTITY,
+            generation: 1,
+            resize_sync: ResizeSyncCapability::ImplicitOnly,
+        };
+
+        runtime.replace_presented_input_layers(0, vec![layer_for(surface(40, 1), 1)]);
+        assert_eq!(runtime.input_projections()[0].epoch, 1);
+        assert_eq!(runtime.input_projections()[1].epoch, 0);
+
+        runtime.replace_presented_input_layers(1, vec![layer_for(surface(41, 1), 2)]);
+        assert_eq!(runtime.input_projections()[0].epoch, 1);
+        assert_eq!(runtime.input_projections()[1].epoch, 1);
+
+        // A buffer-only presentation is visual, not a lease-identity change.
+        runtime.replace_presented_input_layers(0, vec![layer_for(surface(40, 1), 99)]);
+        assert_eq!(runtime.input_projections()[0].epoch, 1);
+        assert_eq!(runtime.input_projections()[1].epoch, 1);
+
+        runtime.replace_presented_input_layers(0, Vec::new());
+        assert_eq!(runtime.input_projections()[0].epoch, 2);
+        assert_eq!(runtime.input_projections()[1].epoch, 1);
+        assert_eq!(
+            runtime.input_projections()[1].layers[0].surface,
+            surface(41, 1)
+        );
     }
 
     #[test]

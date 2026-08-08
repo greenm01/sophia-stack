@@ -27,10 +27,11 @@ use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
 use sophia_engine::{
-    FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig, KeyRepeatState,
-    KeyRepeatTarget, LayoutEpochCoordinator, NonBlockingInputPoller, OutputFrameServiceRequest,
-    OutputNativeFramePhase, PointerFocusHandoffState, WmPolicyApplyOutcome, WmShortcutRegistry,
-    WmShortcutRouter, WmWorkspaceState,
+    ApplicationRouteLeaseCandidate, ApplicationRouteLeasePhase, ApplicationRouteLeaseState,
+    ApplicationRouteScope, FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig,
+    KeyRepeatState, KeyRepeatTarget, LayoutEpochCoordinator, NonBlockingInputPoller,
+    OutputFrameServiceRequest, OutputNativeFramePhase, PointerFocusHandoffState,
+    WmPolicyApplyOutcome, WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
@@ -41,12 +42,14 @@ use sophia_runtime::NamespaceRegistry;
 use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientSurfaceRoutes, XAuthorityControlCommand, XAuthorityControlKind,
-    XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRoutedInput,
-    XAuthorityRoutedInputMode, XCoreKeyboardMapper, XPresentCompletionMode,
-    XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
-    XServerFrontendConfig, XServerFrontendControlRouter, XServerFrontendProtocolRouter,
-    XServerFrontendRenderDeviceError, XServerFrontendRenderDeviceProvider,
-    XServerFrontendRouteBroker, XServerFrontendRouteCapacities, XServerFrontendServiceCommand,
+    XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome, XAuthorityRouteLeaseRelease,
+    XAuthorityRouteLeaseUpdate, XAuthorityRouteLeaseUpdateKind, XAuthorityRoutedInput,
+    XAuthorityRoutedInputMode, XAuthorityRoutedInputSender, XCoreKeyboardMapper,
+    XPresentCompletionMode, XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy,
+    XServerFrontendAdmissionRequest, XServerFrontendConfig, XServerFrontendControlRouter,
+    XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
+    XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker,
+    XServerFrontendRouteCapacities, XServerFrontendServiceCommand,
     XServerFrontendSetupAuthorization, XkbKeymapSnapshot,
     run_x_server_frontend_routed_until_stopped,
 };
@@ -290,7 +293,9 @@ pub(crate) fn run_persistent_xterm_session(
     // another client filled a shared acknowledgement queue while the owner was
     // committing a WM transaction. Routed input itself remains bounded.
     let (input_delivery_sender, input_delivery_receiver) = channel();
-    let broker = XServerFrontendRouteBroker::with_route_capacities_and_xkb_config(
+    let (route_lease_update_sender, route_lease_update_receiver) =
+        sync_channel(SESSION_CONTROL_CAPACITY);
+    let broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
         XServerFrontendRouteCapacities::new(
             NonZeroUsize::new(SESSION_KEY_CAPACITY)
                 .expect("session input route capacity is nonzero"),
@@ -303,6 +308,7 @@ pub(crate) fn run_persistent_xterm_session(
         ),
         control_ack_sender,
         input_delivery_sender,
+        route_lease_update_sender,
         config.xkb_config.clone(),
     )?;
     println!(
@@ -313,6 +319,7 @@ pub(crate) fn run_persistent_xterm_session(
         SESSION_KEY_CAPACITY,
     );
     let input_sender = broker.routed_input_sender();
+    let route_lease_release_sender = broker.route_lease_release_sender();
     let control_sender = broker.control_router();
     let protocol_router = broker.protocol_router();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
@@ -602,6 +609,9 @@ pub(crate) fn run_persistent_xterm_session(
             control: &control_sender,
             control_acknowledgements: &control_ack_receiver,
             input_deliveries: &input_delivery_receiver,
+            route_lease_updates: &route_lease_update_receiver,
+            route_lease_releases: &route_lease_release_sender,
+            frontend_service: &service_command_sender,
         },
         SessionLoopResources {
             child: primary_child,

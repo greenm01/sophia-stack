@@ -20,6 +20,7 @@ fn wm_update_coordinator_batch(
 ) -> XAuthorityObservedTransactionBatch {
     XAuthorityObservedTransactionBatch {
         client: None,
+        admission: None,
         transaction,
         transactions: Vec::new(),
         surface_presentations: Vec::new(),

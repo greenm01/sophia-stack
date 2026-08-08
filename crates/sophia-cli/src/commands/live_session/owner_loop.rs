@@ -1,9 +1,12 @@
 struct SessionLoopChannels<'a> {
     authority: &'a Receiver<XAuthorityObservedTransactionBatch>,
-    input: &'a SyncSender<XAuthorityRoutedInput>,
+    input: &'a XAuthorityRoutedInputSender,
     control: &'a XServerFrontendControlRouter,
     control_acknowledgements: &'a Receiver<XAuthorityClientControlAck>,
     input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
+    route_lease_updates: &'a Receiver<XAuthorityRouteLeaseUpdate>,
+    route_lease_releases: &'a SyncSender<XAuthorityRouteLeaseRelease>,
+    frontend_service: &'a SyncSender<XServerFrontendServiceCommand>,
 }
 
 struct SessionLoopResources<'a> {
@@ -111,6 +114,9 @@ fn run_session_loop(
         control: control_sender,
         control_acknowledgements: control_ack_receiver,
         input_deliveries: input_delivery_receiver,
+        route_lease_updates: route_lease_update_receiver,
+        route_lease_releases: route_lease_release_sender,
+        frontend_service: frontend_service_sender,
     } = channels;
     let SessionLoopResources {
         mut child,
@@ -237,6 +243,7 @@ fn run_session_loop(
     let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
+    let mut application_route_leases = ApplicationRouteLeaseState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
             wm_output_bounds(&outputs)

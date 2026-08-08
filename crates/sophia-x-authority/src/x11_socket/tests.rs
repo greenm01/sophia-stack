@@ -772,6 +772,7 @@ fn present_protocol_capacity_covers_both_lifecycle_phases() {
         acknowledgements,
         None,
         None,
+        None,
     );
     let (_registration, channels) = broker.registry.register_client(client).unwrap();
     broker

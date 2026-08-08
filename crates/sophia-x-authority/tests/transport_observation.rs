@@ -13,6 +13,7 @@ use sophia_x_authority::{
 fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
     X11DispatchObservation {
         client: XServerFrontendClientId::from_raw(1),
+        admission: None,
         resource_id_range: XWireClientResourceRange {
             base: 0x0020_0000,
             mask: 0x000f_ffff,

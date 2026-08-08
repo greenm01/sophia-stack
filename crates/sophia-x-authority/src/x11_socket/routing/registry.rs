@@ -19,6 +19,7 @@ struct XServerFrontendRouteRegistry {
     xkb_worker: XkbKeyboardWorker,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
+    route_lease_update_sender: Option<SyncSender<XAuthorityRouteLeaseUpdate>>,
     per_client_input_capacity: NonZeroUsize,
     per_client_control_capacity: NonZeroUsize,
     per_client_protocol_capacity: NonZeroUsize,
@@ -31,6 +32,7 @@ struct XServerFrontendRouteRegistry {
 struct XServerFrontendSurfaceRoute {
     client: XServerFrontendClientId,
     namespace: NamespaceId,
+    admission: Option<ClientAdmissionContext>,
     window: XResourceId,
 }
 
@@ -64,6 +66,14 @@ struct XPendingPresentRegistry {
 #[derive(Clone, Debug)]
 struct XDeferredRoutedInput {
     client: XServerFrontendClientId,
+    control_epoch: u64,
+    route: XAuthorityRoutedInput,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Debug)]
+struct XAuthorityEpochRoutedInput {
+    control_epoch: u64,
     route: XAuthorityRoutedInput,
 }
 
@@ -73,6 +83,7 @@ struct XServerFrontendClientRouteSenders {
     input: SyncSender<XAuthorityClientInputEvent>,
     control: SyncSender<X11RoutedControl>,
     protocol: SyncSender<XClientEvent>,
+    admission: Option<ClientAdmissionContext>,
 }
 
 #[cfg(unix)]
@@ -183,9 +194,24 @@ impl XkbKeyboardWorker {
 
 #[cfg(unix)]
 impl XServerFrontendRouteRegistry {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn register_client(
         &self,
         client: XServerFrontendClientId,
+    ) -> Result<
+        (
+            XServerFrontendClientRouteRegistration,
+            XServerFrontendClientRouteChannels,
+        ),
+        XServerFrontendRouteError,
+    > {
+        self.register_client_with_admission(client, None)
+    }
+
+    fn register_client_with_admission(
+        &self,
+        client: XServerFrontendClientId,
+        admission: Option<ClientAdmissionContext>,
     ) -> Result<
         (
             XServerFrontendClientRouteRegistration,
@@ -210,6 +236,7 @@ impl XServerFrontendRouteRegistry {
                 input: input_sender,
                 control: control_sender,
                 protocol: protocol_sender,
+                admission,
             },
         );
         Ok((
@@ -261,6 +288,7 @@ impl XServerFrontendRouteRegistry {
         surface: SurfaceId,
         window: XResourceId,
     ) -> Result<(), XServerFrontendRouteError> {
+        let admission = self.client_senders(client)?.admission;
         self.surfaces
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
@@ -269,6 +297,7 @@ impl XServerFrontendRouteRegistry {
                 XServerFrontendSurfaceRoute {
                     client,
                     namespace,
+                    admission,
                     window,
                 },
             );

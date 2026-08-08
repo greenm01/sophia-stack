@@ -86,19 +86,21 @@ input into an implemented shell interface. `sophia_shell_v1`, concrete target
 quotas and wire discriminants, accessibility projection, and runtime tracing
 remain pre-schema work.
 
-They also do not repair the whole application path. The installed primary
-pointer domain now publishes hit-test layers from the immutable output-frame
-snapshot only after native page-flip retirement, rather than from newer
-committed state. Output-local pointer domains remain unmodeled; ordinary
-routing can still re-hit-test into another namespace before frontend-local grab
-lookup. A saturated private X input queue now quarantines only its owning client
-and rejects tracked delivery without terminating the shared frontend service.
+They also do not repair the whole application path. The installed pointer path
+now publishes an independently retired interaction projection and semantic
+epoch per output, rather than selecting from newer committed state or merging
+heads. Ordinary and passive-grab presses establish exact Engine-visible leases
+with frontend confirmation, profile-scoped retention, ordered release, and
+VT/seat epoch quarantine. Client-initiated explicit X grabs are not yet reduced
+into that handshake. A saturated private X input queue now quarantines its
+owning client and rejects tracked delivery without terminating the shared
+frontend service.
 Recreated XIDs now receive fresh Sophia surface generations and removal retires
 the exact frontend route, so frozen input cannot bind across that ABA boundary.
 The remaining runtime debts are recorded in `docs/target-resolved-input.md`,
 `docs/research-log.md`, and `todo.md`. No shell security transition may ship
-while cross-authority route-lease revocation and per-output application
-selection remain incomplete.
+while explicit-grab reduction, lock-authority epoch integration, and shell
+capture remain incomplete.
 
 ## Reproducible checks
 

@@ -724,12 +724,14 @@ and protocol-local identity never enter the WM.
 
 The authority returns a reduced delivery acknowledgement. Engine never writes
 arbitrary client events or receives a client connection handle. Route failure
-does not fall back to synthetic input. Native application selection now derives
-from the primary pointer domain's output-frame snapshot only after its accepted
-page flip; committed and submitted geometry cannot enter that hit test. Ordinary
-motion and release are still re-hit-tested before frontend-local grab lookup,
-and output-local pointer domains are not yet represented. Those admitted gaps
-still prevent coexistence with privileged shell input.
+does not fall back to synthetic input. Native application selection derives
+from the pointer's output-local interaction projection only after that
+output's accepted page flip; committed and submitted geometry cannot enter
+that hit test, and independently retiring heads cannot publish one another's
+input. Ordinary and passive-grab pointer presses use an exact Engine-visible
+route lease with frontend confirmation and ordered release. Client-initiated
+explicit X grabs are not yet reduced into that lease handshake. That gap still
+prevents coexistence with privileged shell input.
 
 Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,

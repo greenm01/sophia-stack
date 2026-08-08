@@ -45,6 +45,16 @@ pub struct LiveFloatingOutline {
     pub geometry: Rect,
 }
 
+/// Immutable interaction projection paired with one independently presented
+/// output. Its epoch advances only when hit-test meaning changes; buffer-only
+/// presentation may replace pixels without invalidating an application lease.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LivePresentedInputProjection {
+    pub output: OutputId,
+    pub epoch: u64,
+    pub layers: Vec<LayerSnapshot>,
+}
+
 fn replace_displayed_surface(
     displayed_surfaces: &mut BTreeMap<SurfaceId, LiveDisplayedSurface>,
     surface: SurfaceId,
@@ -57,7 +67,7 @@ pub struct LiveProductionVisualRuntime {
     production: sophia_engine::ProductionSessionCoordinator,
     outputs: LiveProductionOutputRuntimeSet,
     surface_metadata: BTreeMap<SurfaceId, projection::LiveSurfaceProjectionMetadata>,
-    input_layers: Vec<LayerSnapshot>,
+    input_projections: Vec<LivePresentedInputProjection>,
     presentation_feedback: crate::LiveProductionPresentFeedbackCoordinator,
     present_scheduler: LiveProductionPresentScheduler,
     surface_content_stream: SurfaceContentStream<LiveProductionAuthorityGroup>,
@@ -133,11 +143,19 @@ impl LiveProductionVisualRuntime {
             native_scanout,
             initial_native_frames,
         )?;
+        let input_projections = (0..output_runtimes.output_count())
+            .filter_map(|index| output_runtimes.output_id(index))
+            .map(|output| LivePresentedInputProjection {
+                output,
+                epoch: 0,
+                layers: Vec::new(),
+            })
+            .collect();
         Ok(Self {
             production,
             outputs: output_runtimes,
             surface_metadata: BTreeMap::new(),
-            input_layers: Vec::new(),
+            input_projections,
             presentation_feedback: Default::default(),
             present_scheduler: LiveProductionPresentScheduler::default(),
             surface_content_stream: SurfaceContentStream::default(),

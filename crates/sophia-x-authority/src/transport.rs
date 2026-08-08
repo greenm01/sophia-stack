@@ -121,6 +121,9 @@ pub struct XAuthorityObservedTransactionBatch {
     /// X11 socket dispatch. Direct authority dispatches have no connection and
     /// therefore retain `None`.
     pub client: Option<XServerFrontendClientId>,
+    /// Session-issued admission facts for the causing frontend connection.
+    /// Engine may compare these opaque identities but receives no X resource ID.
+    pub admission: Option<sophia_protocol::ClientAdmissionContext>,
     pub transaction: TransactionId,
     pub transactions: Vec<SurfaceTransaction>,
     /// Protocol-neutral presentation facts reduced from authority-private
@@ -164,6 +167,7 @@ impl XAuthorityObservedTransactionBatch {
 
         Some(Self {
             client: None,
+            admission: None,
             transaction: response.transaction,
             transactions: response.transactions.clone(),
             surface_presentations: response
@@ -340,6 +344,7 @@ impl XAuthorityObservedTransactionBatch {
         }
         Some(Self {
             client: Some(trace.client),
+            admission: trace.admission,
             transaction: response.map_or(
                 TransactionId::from_raw(u64::from(trace.sequence)),
                 |response| response.transaction,
@@ -374,7 +379,13 @@ impl XAuthorityObservedTransactionBatch {
 /// establish a route. Surface removals always clear a prior route.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct XAuthorityClientSurfaceRoutes {
-    clients: BTreeMap<SurfaceId, XServerFrontendClientId>,
+    clients: BTreeMap<
+        SurfaceId,
+        (
+            XServerFrontendClientId,
+            Option<sophia_protocol::ClientAdmissionContext>,
+        ),
+    >,
 }
 
 impl XAuthorityClientSurfaceRoutes {
@@ -386,15 +397,26 @@ impl XAuthorityClientSurfaceRoutes {
             return;
         };
         for transaction in &batch.transactions {
-            self.clients.insert(transaction.surface, client);
+            self.clients
+                .insert(transaction.surface, (client, batch.admission));
         }
         for intent in &batch.presentation_intents {
-            self.clients.insert(intent.surface, client);
+            self.clients
+                .insert(intent.surface, (client, batch.admission));
         }
     }
 
     pub fn client_for_surface(&self, surface: SurfaceId) -> Option<XServerFrontendClientId> {
-        self.clients.get(&surface).copied()
+        self.clients.get(&surface).map(|(client, _)| *client)
+    }
+
+    pub fn admission_for_surface(
+        &self,
+        surface: SurfaceId,
+    ) -> Option<sophia_protocol::ClientAdmissionContext> {
+        self.clients
+            .get(&surface)
+            .and_then(|(_, admission)| *admission)
     }
 
     pub fn len(&self) -> usize {

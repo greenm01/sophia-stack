@@ -2,21 +2,63 @@
 macro_rules! drain_physical_input {
     ($routing_mode:expr) => {{
         let emergency_exit = false;
+        let lease_updates = drain_application_route_lease_updates(
+            route_lease_update_receiver,
+            &mut application_route_leases,
+        );
+        if lease_updates.confirmed != 0
+            || lease_updates.rejected != 0
+            || lease_updates.released != 0
+            || lease_updates.stale != 0
+        {
+            println!(
+                "sophia_live_input_lease schema=1 confirmed={} rejected={} released={} stale={}",
+                lease_updates.confirmed,
+                lease_updates.rejected,
+                lease_updates.released,
+                lease_updates.stale,
+            );
+        }
+        if let sophia_engine::ApplicationRouteLeaseTimeout::Quarantine(lease) =
+            application_route_leases.observe_timeout(
+                seat,
+                u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            )
+        {
+            frontend_service_sender.try_send(XServerFrontendServiceCommand::RevokeAdmission {
+                admission: lease.admission,
+            })?;
+            eprintln!(
+                "sophia_live_input_lease schema=1 status=quarantined reason=release_timeout admission={}",
+                lease.admission.raw(),
+            );
+        }
         if let Some(poller) = physical_input.as_mut() {
             let empty_committed = [];
             let committed_surfaces = runtime
                 .as_ref()
                 .map_or(&empty_committed[..], |runtime| runtime.committed_surfaces());
             let empty_layers = [];
+            let input_output = runtime.as_ref().and_then(|runtime| runtime.input_output());
+            let input_presentation_epoch = runtime
+                .as_ref()
+                .map_or(0, |runtime| runtime.input_presentation_epoch());
             let input_layers = runtime
                 .as_ref()
                 .map_or(&empty_layers[..], |runtime| runtime.input_layers());
+            let empty_projections = [];
+            let input_projections = runtime.as_ref().map_or(
+                &empty_projections[..],
+                |runtime| runtime.input_projections(),
+            );
             let report = route_physical_input(
                 poller,
                 PhysicalInputRoutingContext {
                     focus: &focus,
                     committed_surfaces,
                     input_layers,
+                    input_projections,
+                    pointer_outputs: &outputs,
                     surface_roles: &layout.presentation_roles,
                     client_routes: &layout.client_routes,
                     shortcuts: wm_session
@@ -46,6 +88,10 @@ macro_rules! drain_physical_input {
                     pointer_focus_handoff: &mut pointer_focus_handoff,
                     applied_client_focus,
                     floating_gesture: &mut floating_pointer_gesture,
+                    application_route_leases: &mut application_route_leases,
+                    route_lease_release_sender,
+                    input_output,
+                    input_presentation_epoch,
                 },
             )?;
             let event_timings = poller.drain_event_timings();

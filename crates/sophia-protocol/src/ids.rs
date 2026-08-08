@@ -36,6 +36,7 @@ simple_id!(BufferHandle);
 simple_id!(FenceHandle);
 simple_id!(WmActionId);
 simple_id!(SessionApplicationId);
+simple_id!(ApplicationRouteLeaseId);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SurfaceId {

@@ -35,23 +35,31 @@ application authority over shell, trust, lock, or another profile's pixels.
 The native X Server Frontend—not the legacy-WM bridge's private synthetic X
 server—delivers input to applications. No non-X application frontend exists.
 
-The current native application path publishes input layers from the immutable
-output-frame snapshot only after accepted presentation retirement. A deferred
-focus handoff also revalidates every exact buffered target against that
-presented projection and the current frontend route table before release. The
-path still re-hit-tests ordinary pointer events before the frontend applies its
-namespace-local grab state. That is an implementation fact, not a guarantee to
-copy into the shell contract. Before application and shell routes can coexist,
-active grabs must become Engine-visible route leases with security-epoch
-revocation. Output-local pointer domains are also still required.
+The current native application path publishes a separate input projection and
+semantic epoch for every output from immutable output-frame snapshots after
+accepted presentation retirement. Pointer routing selects the projection for
+the pointer's output. A deferred focus handoff revalidates every exact buffered
+target against presented state and the current frontend route table before
+release.
+
+An ordinary or passive-grab pointer press now creates a provisional, exact
+Engine lease. The frontend confirms that lease after applying its X11 grab,
+and motion or release retains the original target only while the pointer
+remains inside the admitted profile scope and the output, presentation,
+authority-session, surface, and control epochs remain exact. Normal scope exit
+uses an ordered release request and acknowledgement. VT and seat-security
+transitions advance a shared epoch, clear active frontend grabs, and reject
+queued or frozen old-epoch input without waiting. Client-initiated explicit
+`GrabPointer`/XI grab requests are not yet reduced into this handshake; shell
+coexistence remains blocked on that path and on the shell runtime itself.
 
 | Dimension | Application surface routing | Target-resolved shell input |
 | --- | --- | --- |
-| Status | implemented native-X path with admitted hardening debt | ratified pre-schema contract |
+| Status | implemented native-X path; explicit client-initiated grab reduction remains open | ratified pre-schema contract |
 | Public identity | generational `SurfaceId` | opaque authority/session/slot/generation target identity |
 | Disclosure | global and surface-local coordinates required by X11 | coordinate-free actions by default; normalized values; capability-bounded local coordinates |
 | Protocol semantics | X frontend owns X11 focus, event masks, XKB/XI state, and client delivery | Engine owns target selection and bounded capture; no toolkit semantics |
-| Selection state | retired native frame in the current primary-output pointer domain; output-local domains remain future work | interaction snapshot paired with the applicable last-presented frame |
+| Selection state | output-local interaction projection from the applicable retired native frame | interaction snapshot paired with the applicable last-presented frame |
 | Isolation | profile and namespace admission; `classic-shared` remains shared inside its application profile | authority, session, presentation, target, seat/device/contact, modal, and disclosure bounds |
 
 ## Per-Seat Arbitration
@@ -133,12 +141,12 @@ frontend protocol rules with this boundary.
                                                 Deliver nothing.
 ```
 
-This is not a diagram of the current runtime. The native-X application path
-now selects from the last retired native output-frame snapshot, but still
-applies frontend-local grab state after ordinary Engine re-hit-testing.
-Engine-visible route leases, per-output pointer domains, security-epoch
-revocation, and target-resolved shell delivery must be implemented before this
-coexistence flow can ship.
+This diagram is partly implemented. The native-X application path now provides
+per-output retired snapshots, ordinary/passive pointer route leases, ordered
+release, and VT/seat control-epoch quarantine. Explicit client-initiated X
+grabs, shell capture, lock-authority integration, and target-resolved shell
+delivery must still be implemented before the complete coexistence flow can
+ship.
 
 An X frontend grab is reduced to an Engine-visible lease naming its admitted
 profile, namespace authority, surface generation, and presentation/control

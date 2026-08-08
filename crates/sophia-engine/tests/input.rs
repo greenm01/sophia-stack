@@ -762,3 +762,214 @@ fn handoff_request(
         kind,
     }
 }
+
+fn route_lease_candidate(
+    profile: NamespaceProfile,
+    authority: u64,
+) -> ApplicationRouteLeaseCandidate {
+    ApplicationRouteLeaseCandidate {
+        seat: SeatId::from_raw(1),
+        target_surface: SurfaceId::new(40, 3),
+        admission: ClientAdmissionId::from_raw(7),
+        scope: ApplicationRouteScope {
+            profile,
+            authority: NamespaceId::from_raw(authority),
+        },
+        authority_session_epoch: 9,
+        output: OutputId::from_raw(2),
+        presentation_epoch: 11,
+        initiating_device: Some(DeviceId::from_raw(5)),
+        initiating_button: Some(0x110),
+    }
+}
+
+#[test]
+fn application_route_lease_is_provisional_before_frontend_confirmation() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let lease = state
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+
+    assert_eq!(lease.phase, ApplicationRouteLeasePhase::Provisional);
+    assert_eq!(lease.identity.control_epoch, 1);
+    assert_eq!(
+        state.begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4)),
+        Err(ApplicationRouteLeaseError::SeatAlreadyOwned)
+    );
+    assert_eq!(
+        state
+            .confirm(lease.identity, lease.target_surface, lease.admission, 9)
+            .unwrap()
+            .phase,
+        ApplicationRouteLeasePhase::Active
+    );
+}
+
+#[test]
+fn application_route_lease_rejects_stale_confirmation_after_security_transition() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let lease = state
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+    assert_eq!(state.security_transition().unwrap(), [lease]);
+    assert_eq!(state.control_epoch(), 2);
+    assert_eq!(
+        state.confirm(lease.identity, lease.target_surface, lease.admission, 9),
+        Err(ApplicationRouteLeaseError::StaleControlEpoch)
+    );
+    assert_eq!(state.lease(SeatId::from_raw(1)), None);
+}
+
+#[test]
+fn confined_and_classic_application_route_scopes_do_not_cross_security_domains() {
+    let mut confined = ApplicationRouteLeaseState::default();
+    let confined_lease = confined
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+    confined
+        .confirm(
+            confined_lease.identity,
+            confined_lease.target_surface,
+            confined_lease.admission,
+            9,
+        )
+        .unwrap();
+    assert!(
+        confined
+            .authorize(
+                SeatId::from_raw(1),
+                ApplicationRouteScope {
+                    profile: NamespaceProfile::Confined,
+                    authority: NamespaceId::from_raw(4),
+                },
+                DeviceId::from_raw(5),
+                OutputId::from_raw(2),
+                11,
+                9,
+            )
+            .is_ok()
+    );
+    assert_eq!(
+        confined.authorize(
+            SeatId::from_raw(1),
+            ApplicationRouteScope {
+                profile: NamespaceProfile::Confined,
+                authority: NamespaceId::from_raw(5),
+            },
+            DeviceId::from_raw(5),
+            OutputId::from_raw(2),
+            11,
+            9,
+        ),
+        Err(ApplicationRouteLeaseError::OutsideScope)
+    );
+    assert_eq!(
+        confined.authorize(
+            SeatId::from_raw(1),
+            ApplicationRouteScope {
+                profile: NamespaceProfile::Confined,
+                authority: NamespaceId::from_raw(4),
+            },
+            DeviceId::from_raw(6),
+            OutputId::from_raw(2),
+            11,
+            9,
+        ),
+        Err(ApplicationRouteLeaseError::WrongDevice)
+    );
+
+    let mut classic = ApplicationRouteLeaseState::default();
+    let classic_lease = classic
+        .begin_provisional(route_lease_candidate(NamespaceProfile::ClassicShared, 4))
+        .unwrap();
+    classic
+        .confirm(
+            classic_lease.identity,
+            classic_lease.target_surface,
+            classic_lease.admission,
+            9,
+        )
+        .unwrap();
+    assert!(
+        classic
+            .authorize(
+                SeatId::from_raw(1),
+                ApplicationRouteScope {
+                    profile: NamespaceProfile::ClassicShared,
+                    authority: NamespaceId::from_raw(99),
+                },
+                DeviceId::from_raw(5),
+                OutputId::from_raw(2),
+                11,
+                9,
+            )
+            .is_ok()
+    );
+    assert_eq!(
+        classic.authorize(
+            SeatId::from_raw(1),
+            ApplicationRouteScope {
+                profile: NamespaceProfile::Confined,
+                authority: NamespaceId::from_raw(4),
+            },
+            DeviceId::from_raw(5),
+            OutputId::from_raw(2),
+            11,
+            9,
+        ),
+        Err(ApplicationRouteLeaseError::OutsideScope)
+    );
+}
+
+#[test]
+fn application_route_release_requires_exact_ack_and_times_out_fail_closed() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let lease = state
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+    state
+        .confirm(lease.identity, lease.target_surface, lease.admission, 9)
+        .unwrap();
+    let releasing = state.request_release(lease.identity.seat, 1_000).unwrap();
+    assert!(matches!(
+        releasing.phase,
+        ApplicationRouteLeasePhase::Releasing {
+            deadline_msec: 1_500
+        }
+    ));
+    let stale = ApplicationRouteLeaseIdentity {
+        frontend_sequence: releasing.identity.frontend_sequence + 1,
+        ..releasing.identity
+    };
+    assert_eq!(
+        state.acknowledge_release(stale, releasing.admission),
+        Err(ApplicationRouteLeaseError::IdentityMismatch)
+    );
+    assert_eq!(
+        state.observe_timeout(lease.identity.seat, 1_499),
+        ApplicationRouteLeaseTimeout::Pending
+    );
+    assert_eq!(
+        state.observe_timeout(lease.identity.seat, 1_500),
+        ApplicationRouteLeaseTimeout::Quarantine(releasing)
+    );
+    assert_eq!(state.lease(lease.identity.seat), None);
+}
+
+#[test]
+fn presentation_or_admission_invalidation_cancels_exact_route_leases() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let first = state
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+    assert_eq!(state.invalidate_output(OutputId::from_raw(2), 12), [first]);
+
+    let second = state
+        .begin_provisional(route_lease_candidate(NamespaceProfile::Confined, 4))
+        .unwrap();
+    assert_eq!(
+        state.revoke_admission(ClientAdmissionId::from_raw(7)),
+        [second]
+    );
+    assert_eq!(state.lease(SeatId::from_raw(1)), None);
+}

@@ -249,6 +249,19 @@ impl XInputAuthorityState {
             .is_some_and(|state| state.keyboard_frozen)
     }
 
+    /// Clears protocol-local active ownership at an Engine security epoch.
+    /// Passive registrations remain namespace-local policy, but no active grab
+    /// or frozen delivery is allowed to cross the transition.
+    pub fn advance_security_epoch(&mut self) {
+        for state in self.namespaces.values_mut() {
+            state.pointer = None;
+            state.keyboard = None;
+            state.pointer_frozen = false;
+            state.keyboard_frozen = false;
+            state.server_owner = None;
+        }
+    }
+
     pub fn server_owner(&self, namespace: NamespaceId) -> Option<u64> {
         self.namespaces
             .get(&namespace)
@@ -346,9 +359,15 @@ impl XInputAuthorityState {
         active
     }
 
-    pub fn release_button(&mut self, namespace: NamespaceId, button: u8) {
+    pub fn release_button(
+        &mut self,
+        namespace: NamespaceId,
+        button: u8,
+        all_core_buttons_released: bool,
+    ) {
         if let Some(state) = self.namespaces.get_mut(&namespace)
-            && (state.pointer_implicit || state.pointer_passive_detail == Some(button))
+            && ((state.pointer_implicit && all_core_buttons_released)
+                || state.pointer_passive_detail == Some(button))
         {
             state.pointer = None;
             state.pointer_implicit = false;

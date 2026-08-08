@@ -1,4 +1,203 @@
 #[test]
+fn routed_pointer_grab_reports_sanitized_lease_confirmation_and_release() {
+    let namespace = NamespaceId::from_raw(21);
+    let client = XServerFrontendClientId(17);
+    let surface = SurfaceId::new(31, 2);
+    let admission = sophia_protocol::ClientAdmissionContext::new(
+        sophia_protocol::ClientAdmissionId::from_raw(8),
+        sophia_protocol::NamespaceContext::new(
+            namespace,
+            sophia_protocol::NamespaceProfile::Confined,
+            sophia_protocol::NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        sophia_protocol::ClientAuthProvenance::new(
+            sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+            5,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let identity = sophia_protocol::ApplicationRouteLeaseIdentity {
+        id: sophia_protocol::ApplicationRouteLeaseId::from_raw(3),
+        seat: SeatId::from_raw(1),
+        frontend_sequence: 4,
+        control_epoch: 2,
+    };
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (lease_sender, lease_receiver) = sync_channel(4);
+    let mut broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
+        XServerFrontendRouteCapacities::uniform(NonZeroUsize::new(4).unwrap()),
+        control_ack_sender,
+        delivery_sender,
+        lease_sender,
+        crate::XkbRmlvoConfig::default(),
+    )
+    .unwrap();
+    let (_registration, channels) = broker
+        .registry
+        .register_client_with_admission(client, Some(admission))
+        .unwrap();
+    broker
+        .registry
+        .register_surface(
+            client,
+            namespace,
+            surface,
+            XResourceId::new(0x200001, 1),
+        )
+        .unwrap();
+
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 1,
+                seat: identity.seat,
+                device: DeviceId::from_raw(2),
+                time_msec: 1,
+                target_surface: surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerButton {
+                    button: 0x110,
+                    pressed: true,
+                },
+            },
+            route_lease: Some(identity),
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        lease_receiver.recv().unwrap(),
+        XAuthorityRouteLeaseUpdate {
+            identity,
+            target_surface: surface,
+            admission,
+            kind: XAuthorityRouteLeaseUpdateKind::Confirmed,
+        }
+    );
+    let _ = channels.input.recv().unwrap();
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some()
+    );
+
+    broker
+        .route_lease_release_sender()
+        .send(XAuthorityRouteLeaseRelease {
+            identity,
+            admission,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        lease_receiver.recv().unwrap(),
+        XAuthorityRouteLeaseUpdate {
+            identity,
+            target_surface: surface,
+            admission,
+            kind: XAuthorityRouteLeaseUpdateKind::Released,
+        }
+    );
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_none()
+    );
+}
+
+#[test]
+fn security_epoch_rejects_queued_input_and_clears_active_grabs() {
+    let namespace = NamespaceId::from_raw(22);
+    let client = XServerFrontendClientId(18);
+    let surface = SurfaceId::new(32, 1);
+    let window = XResourceId::new(0x200020, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+            },
+        )
+        .unwrap();
+
+    let sender = broker.routed_input_sender();
+    let delivery = XAuthorityInputDeliveryId::from_raw(44);
+    sender
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 1,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(2),
+                time_msec: 1,
+                target_surface: surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerMotion,
+            },
+            route_lease: None,
+            delivery: Some(delivery),
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert!(sender.advance_control_epoch(2));
+
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(channels.input.try_recv(), Err(TryRecvError::Empty));
+    assert_eq!(
+        delivery_receiver.recv().unwrap(),
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+        }
+    );
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_none()
+    );
+}
+
+#[test]
 fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
     let client = XServerFrontendClientId(12);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(1);
@@ -100,6 +299,7 @@ fn routed_input_queue_saturation_quarantines_only_the_stalled_client() {
                         }
                     },
                 },
+                route_lease: None,
                 delivery,
                 mode: XAuthorityRoutedInputMode::Deliver,
             })
@@ -130,6 +330,7 @@ fn routed_input_queue_saturation_quarantines_only_the_stalled_client() {
                 local_position: Point::default(),
                 kind: InputEventKind::PointerMotion,
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -232,6 +433,7 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
                 local_position: Point::default(),
                 kind: InputEventKind::PointerMotion,
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -270,6 +472,7 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
                 local_position: Point::default(),
                 kind: InputEventKind::PointerMotion,
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -358,6 +561,7 @@ fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
                     pressed: true,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -417,6 +621,7 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
                     vertical_v120: 120,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -502,6 +707,7 @@ fn routed_axis_resolves_smooth_and_emulated_button_selections_independently() {
                     vertical_v120: -120,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })
@@ -562,6 +768,7 @@ fn synchronous_keyboard_grab_queues_until_allow_events() {
                     pressed: true,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
         })

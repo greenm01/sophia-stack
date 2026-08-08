@@ -1,5 +1,13 @@
 use crate::geometry::{Point, Transform};
-use crate::ids::{DeviceId, SeatId, SurfaceId};
+use crate::ids::{ApplicationRouteLeaseId, DeviceId, SeatId, SurfaceId};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApplicationRouteLeaseIdentity {
+    pub id: ApplicationRouteLeaseId,
+    pub seat: SeatId,
+    pub frontend_sequence: u64,
+    pub control_epoch: u64,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputEventPacket {

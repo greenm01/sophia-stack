@@ -636,7 +636,7 @@ named soak failure promotes one.
     from the immutable output-frame snapshot only after accepted page-flip
     retirement. Committed/submitted moves, removals, and stacking changes no
     longer become selectable before their pixels.
-  - [ ] Introduce output-local pointer coordinate domains and per-output
+  - [x] Introduce output-local pointer coordinate domains and per-output
     presented interaction epochs rather than merging independently retired
     heads into one global projection.
   - [x] Advance Sophia `SurfaceId` generations when a client reuses an XID and
@@ -648,10 +648,13 @@ named soak failure promotes one.
   - [x] Revalidate deferred pointer-focus handoffs before release. Every exact
     generational target must remain in the last-presented input projection and
     frontend route table; otherwise the complete buffered sequence is dropped.
-  - [ ] Turn frontend grabs into Engine-visible profile-scoped leases with
-    ordered release acknowledgement and an authority epoch. Lock, session, and
-    other security transitions must revoke locally without waiting for
-    frontend cleanup.
+  - [x] Turn ordinary and passive-grab pointer sequences into exact
+    Engine-visible profile-scoped leases with ordered release acknowledgement.
+    VT and seat transitions advance a shared epoch, clear frontend active
+    ownership, and reject queued or frozen old-epoch input without waiting.
+  - [ ] Reduce client-initiated explicit `GrabPointer` and admitted XI grab
+    requests into the same Engine lease handshake, then bind lock and future
+    security-authority takeover to the established epoch barrier.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.

@@ -269,6 +269,7 @@ fn x11_dispatch_accepts_destroy_window_for_known_namespace_window() {
         XAuthorityObservedTransactionBatch::from_dispatch_result(&destroy),
         Some(XAuthorityObservedTransactionBatch {
             client: None,
+            admission: None,
             transaction: TransactionId::from_raw(2),
             transactions: Vec::new(),
             surface_presentations: Vec::new(),

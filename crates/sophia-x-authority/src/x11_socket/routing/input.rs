@@ -513,7 +513,10 @@ impl XServerFrontendRouteRegistry {
         })
     }
 
-    fn drain_thawed_input(&self) -> Result<usize, XServerFrontendRouteError> {
+    fn drain_thawed_input(
+        &self,
+        current_control_epoch: u64,
+    ) -> Result<usize, XServerFrontendRouteError> {
         let queued = self
             .frozen_input
             .lock()
@@ -548,10 +551,15 @@ impl XServerFrontendRouteRegistry {
                     .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
                     .push_back(XDeferredRoutedInput {
                         client: deferred.client,
+                        control_epoch: deferred.control_epoch,
                         route,
                     });
             } else {
-                self.route_engine_input(route)?;
+                self.route_engine_input(
+                    route,
+                    deferred.control_epoch,
+                    current_control_epoch,
+                )?;
                 routed = routed.saturating_add(1);
             }
         }

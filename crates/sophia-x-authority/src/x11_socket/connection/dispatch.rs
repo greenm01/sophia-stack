@@ -142,7 +142,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let protocol_routing = client_routing.clone();
     let (route_registration, input_receiver, control_channels, protocol_receiver) =
         if let Some(routing) = client_routing {
-            let (registration, channels) = match routing.register_client(client) {
+            let admission = admission_lease.as_ref().map(|lease| lease.context());
+            let (registration, channels) = match routing
+                .register_client_with_admission(client, admission)
+            {
                 Ok(registration) => registration,
                 Err(error) => {
                     let _ = state.release_client(client);
@@ -1160,6 +1163,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 })?;
             observer(X11DispatchObservation {
                 client,
+                admission: admission_lease.as_ref().map(|lease| lease.context()),
                 resource_id_range,
                 sequence,
                 major_opcode,
@@ -1289,6 +1293,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         };
         observer(X11DispatchObservation {
             client,
+            admission: admission_lease.as_ref().map(|lease| lease.context()),
             resource_id_range,
             sequence,
             major_opcode: 0,

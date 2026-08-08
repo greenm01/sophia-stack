@@ -162,6 +162,14 @@ impl LiveProductionVisualRuntime {
                     self.native_suspend_present_rejections.saturating_add(1);
             }
         }
+        let invalidation_epoch = self
+            .input_projections
+            .iter()
+            .map(|projection| projection.epoch)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .expect("presented input epoch exhausted");
         self.outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
             self.production.committed_surfaces(),
@@ -170,7 +178,14 @@ impl LiveProductionVisualRuntime {
         )?;
         // A suspended/revoked output no longer has a visible native
         // interaction snapshot. Do not retain routes into retired pixels.
-        self.input_layers.clear();
+        self.input_projections = (0..self.outputs.output_count())
+            .filter_map(|index| self.outputs.output_id(index))
+            .map(|output| LivePresentedInputProjection {
+                output,
+                epoch: invalidation_epoch,
+                layers: Vec::new(),
+            })
+            .collect();
         Ok(LiveProductionNativeSuspendReport {
             outcome,
             abandoned_scanouts,

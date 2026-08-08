@@ -133,17 +133,18 @@ an output-global coordinate stream.
 
 Sophia's current application route is different because it serves X11 clients:
 `RoutedInputRequest` carries global and local coordinates to the X Server
-Frontend, which applies X11/XI2 rules. Frontend-local grabs are not yet fully
-visible to Engine. Ordinary motion and release can therefore be re-hit-tested
-before the frontend finds the old namespace's grab.
+Frontend, which applies X11/XI2 rules. Ordinary and passive-grab pointer
+presses now establish an exact provisional Engine lease, receive a sanitized
+frontend confirmation, and retain the original surface within their admitted
+scope until physical release or ordered frontend release acknowledgement.
+Client-initiated explicit X grabs are not yet reduced into this path.
 
-The target architecture replaces that split ownership with Engine-visible,
-profile-scoped route leases and ordered frontend release acknowledgement.
-Security/session epoch transitions preempt locally and quarantine old queued
+The target architecture completes that reduction for every admitted grab.
+Security/session epoch transitions already preempt ordinary/passive leases
+locally, clear frontend active ownership, and quarantine old queued or frozen
 input; normal scope exit does not silently transfer ownership to a shell
-target. This hierarchy is documented and modeled, but the application lease
-control path is not implemented. It is a release blocker for shell coexistence,
-not a current advantage over Wayland.
+target. Explicit-grab reduction and shell capture remain release blockers, so
+this is still not a general advantage over Wayland.
 
 ## 6. Protocol evolution and portability
 
@@ -174,8 +175,8 @@ CPU buffers or other future transports cannot be ruled out by this comparison.
 | Application input disclosure | surface-selected, surface-local core pointer coordinates; optional protocols add capabilities | current X path intentionally carries global and local coordinates inside an isolated profile |
 | Spatial policy | compositor implementation choice; no core split mandated | separately supervised, metadata-blind WM contract |
 | Shell metadata | privileged interfaces chosen and admitted by compositor | future separately authorized shell/broker roles; schema incomplete |
-| Presentation-coupled selection | not prescribed by core protocol | primary native application domain implemented; future shell contract requires applicable presented snapshot |
-| Grab ownership | compositor implements core and extension semantics | frontend-local today; Engine-visible route leases are modeled target architecture |
+| Presentation-coupled selection | not prescribed by core protocol | per-output native application projections implemented; future shell contract requires the same applicable presented snapshot |
+| Grab ownership | compositor implements core and extension semantics | ordinary/passive X pointer leases implemented; explicit X-grab reduction and shell capture remain open |
 | Extension evolution | core plus stable/staging/unstable and private protocols | project-owned versioned schemas with compatibility gates; shell schema not yet ratified |
 | Failure behavior | compositor loss usually disconnects clients; session policy varies | WM policy loss is isolated; Engine/graphics failure and future shell recovery have separate limits |
 

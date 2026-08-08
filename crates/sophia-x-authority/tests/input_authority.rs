@@ -44,6 +44,19 @@ fn active_grabs_conflict_only_inside_one_namespace() {
 }
 
 #[test]
+fn implicit_pointer_grab_survives_until_the_last_core_button_release() {
+    let namespace = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.activate_button(namespace, 1, 0, active(1));
+
+    state.release_button(namespace, 3, false);
+    assert_eq!(state.pointer_grab(namespace), Some(active(1)));
+
+    state.release_button(namespace, 1, true);
+    assert_eq!(state.pointer_grab(namespace), None);
+}
+
+#[test]
 fn any_detail_and_any_modifier_passive_grabs_detect_conflicts() {
     let namespace = NamespaceId::from_raw(1);
     let mut state = XInputAuthorityState::default();

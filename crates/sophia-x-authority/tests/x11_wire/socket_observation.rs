@@ -551,6 +551,7 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
     );
     routes.observe(&XAuthorityObservedTransactionBatch {
         client: None,
+        admission: None,
         transaction: TransactionId::from_raw(3),
         transactions: Vec::new(),
         surface_presentations: Vec::new(),
@@ -779,6 +780,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
                         pressed: true,
                     },
                 },
+                route_lease: None,
                 delivery: None,
                 mode: XAuthorityRoutedInputMode::Deliver,
             })
@@ -806,6 +808,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
                     pressed: true,
                 },
             },
+            route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Repeat,
         })
