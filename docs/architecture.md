@@ -699,13 +699,18 @@ dependency graph, protocol surface, or session loop.
 
 ## Input
 
-Sophia Engine reads physical devices, applies global shortcuts and chrome
-hit-testing, walks the actual transformed scene, and selects a `SurfaceId` plus
-target-local coordinates. It sends that route to the owning authority.
+Sophia Engine is the single physical-input authority. For the implemented
+application path it applies reserved shortcuts, walks transformed committed
+renderable input layers, and selects a `SurfaceId`. It constructs a
+`RoutedInputRequest` containing global and surface-local coordinates and sends
+that passive route to the owning authority. Keyboard selection follows Engine
+focus rather than a pointer hit test.
 
-The X frontend then applies X11 focus, grabs, event masks, XKB/XI state, and
-namespace checks. A future frontend would remain responsible for its own
-protocol-local delivery rules after the same Engine route.
+The native X Server Frontend then applies X11 focus, grabs, event masks, XKB/XI
+state, and namespace checks. Confined profiles reject cross-namespace
+authority; `classic-shared` intentionally retains traditional shared-X
+behavior. A future frontend would remain responsible for its own protocol-local
+delivery rules after the same Engine route.
 
 When an unmodified primary press selects an unfocused visible surface, Engine
 first sends the opaque target through the blind spatial-policy interface. It
@@ -715,20 +720,46 @@ events and protocol-local identity never enter the WM.
 
 The authority returns a reduced delivery acknowledgement. Engine never writes
 arbitrary client events or receives a client connection handle. Route failure
-does not fall back to synthetic input.
+does not fall back to synthetic input. Today, ordinary motion and release are
+re-hit-tested before frontend-local grab lookup, and input layers advance from
+committed rather than last-presented surfaces. Those are admitted implementation
+gaps: they cannot define coexistence with privileged shell input.
 
 Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
-Future shell interaction follows `docs/target-resolved-input.md`. Engine
-resolves shell targets against the last presented interaction snapshot, not a
-newer committed or submitted scene. Stable generational handles permit
-visual-only commits to preserve per-seat capture; removal, regeneration,
-authority loss, seat loss, or modal-scope change cancels capture. Discrete
-shell actions are coordinate-free by default, continuous values are normalized
-and paced, and exceptional coordinates require a committed region-local grant.
-This target contract does not change ordinary application input delivery.
+Future shell interaction and its application coexistence prerequisite follow
+`docs/target-resolved-input.md`. Before that coexistence ships, application and
+shell selection both use the applicable output's last-presented interaction
+snapshot. Engine retains per-output presentation epochs; an output or session
+lifecycle change invalidates dependent input state.
+
+Per seat, a security/session transition first revokes old control epochs; a
+reserved Engine shortcut follows; then one existing application route lease or
+shell capture retains ownership; only an unowned event performs a fresh
+presented-state hit test. Shell capture and application leases are mutually
+exclusive. Pointer boundary crossing alone transfers neither.
+
+The X frontend continues to own X11 event masks, XKB/XI state, and client
+delivery, but reduces an admitted grab to an Engine-visible lease. Confined
+leases cover application regions owned by that namespace; `classic-shared`
+leases may cover application surfaces within that shared profile. Neither
+covers shell, foreign-profile, trust, lock, or secure-session pixels. Ordinary
+scope exit waits for a frontend release acknowledgement before shell capture;
+security revocation stops delivery immediately and quarantines old-epoch
+queues without waiting.
+
+Shell targets use authority/session/slot/generation identity, presented
+ownership and occlusion, deterministic overlap order, bounded per-seat capture
+tied to the initiating device/contact, and explicit modal membership. Discrete
+actions are coordinate-free by default and continuous values occupy one paced
+replaceable slot. Exceptional local coordinates require a capability issued by
+independent session or portal policy; the shell cannot authorize itself.
+Normal visual revocation becomes effective on presentation, while security,
+authority, device, output, or capability revocation is an immediate epoch
+barrier. Bounded-queue exhaustion fails the recipient epoch closed rather than
+coalescing an ordered boundary or failing every frontend client.
 
 ## Spatial Policy And Chrome
 

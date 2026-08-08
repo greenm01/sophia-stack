@@ -601,11 +601,21 @@ named soak failure promotes one.
 ### Native Sophia Follow-Ups
 
 - [x] Ratify target-resolved input as a pre-schema prerequisite. The contract
-  resolves against presented snapshots, gives stable generational targets
-  bounded per-seat capture, paces normalized continuous values, and permits
-  coordinates only through explicit region-local grants. The two focused TLA+
-  models precede any `sophia_shell_v1` schema or runtime work; see
-  `docs/target-resolved-input.md`.
+  resolves against per-output presented snapshots, admits targets only inside
+  their owner's visible allocation, gives non-recyclable authority/session
+  identity and device/contact-bound per-seat capture, and paces normalized
+  continuous values. Exceptional coordinates require an independently issued,
+  revocable region/precision/rate capability. The target, pacing, and
+  cross-authority arbitration TLA+ models precede any `sophia_shell_v1` schema
+  or runtime work; see `docs/target-resolved-input.md`.
+- [ ] Repair native application input before shell coexistence: derive input
+  selection from last-presented rather than merely committed surfaces; turn
+  frontend grabs into Engine-visible profile-scoped leases with ordered release
+  acknowledgement; isolate a non-reading client's queue failure; advance X
+  `SurfaceId` generations on XID reuse; and revalidate deferred focus-handoff
+  routes against current membership and authority epoch. Lock, session, and
+  other security transitions must revoke locally without waiting for frontend
+  cleanup.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.

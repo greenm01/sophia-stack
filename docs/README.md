@@ -40,8 +40,9 @@ unimplemented target behavior explicitly.
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.
 - [Target-Resolved Input](target-resolved-input.md) defines presented-state
-  target resolution, bounded capture, paced continuous values, and exceptional
-  region-local coordinate disclosure for future shell interaction.
+  target resolution, profile-scoped application arbitration, bounded capture,
+  paced continuous values, independently authorized region-local coordinate
+  disclosure, and revocation epochs for future shell interaction.
 
 ## Architecture Rationale
 

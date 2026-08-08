@@ -280,12 +280,21 @@ grant. It should not be reachable from an ordinary shell authorization.
 
 The ratified pre-schema contract is
 `docs/target-resolved-input.md`. Engine resolves physical input against the
-last presented interaction snapshot. Discrete actions are coordinate-free by
-default; continuous targets produce paced normalized values; and exceptional
-coordinates require a committed region-local grant. Stable generational target
-handles, per-seat bounded capture, modal scope, and precommitted hover/pressed
-variants define the boundary without adding widgets, styling tokens, or a
-reactive property system to Engine.
+applicable output's last-presented interaction snapshot. Discrete actions are
+coordinate-free by default, continuous targets use one paced replaceable value
+slot, and exceptional coordinates require an independently issued capability
+bound to one local region, precision, rate, target generation, and authority
+epoch. Stable non-recyclable target identity, presented ownership and
+occlusion, device/contact-bound per-seat capture, modal scope, and
+precommitted hover/pressed alternatives define the boundary without adding
+widgets, styling tokens, or a reactive property system to Engine.
+
+Application coexistence is also a prerequisite, not an ambient pointer-boundary
+rule. Frontend grabs become Engine-visible profile-scoped route leases;
+ordinary scope exit waits for release acknowledgement, while lock and other
+security transitions revoke input immediately and discard queued old-epoch
+events. The current committed-scene application hit test and frontend-local
+cross-boundary grab behavior must be repaired before this shell path ships.
 
 ### Display control and compatibility
 
