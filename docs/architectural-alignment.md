@@ -91,13 +91,14 @@ pointer domain now publishes hit-test layers from the immutable output-frame
 snapshot only after native page-flip retirement, rather than from newer
 committed state. Output-local pointer domains remain unmodeled; ordinary
 routing can still re-hit-test into another namespace before frontend-local grab
-lookup, and a saturated client queue can widen the frontend failure domain.
+lookup. A saturated private X input queue now quarantines only its owning client
+and rejects tracked delivery without terminating the shared frontend service.
 Recreated XIDs now receive fresh Sophia surface generations and removal retires
 the exact frontend route, so frozen input cannot bind across that ABA boundary.
 The remaining runtime debts are recorded in `docs/target-resolved-input.md`,
 `docs/research-log.md`, and `todo.md`. No shell security transition may ship
-while cross-authority route-lease revocation, queue quarantine, and per-output
-application selection remain incomplete.
+while cross-authority route-lease revocation and per-output application
+selection remain incomplete.
 
 ## Reproducible checks
 

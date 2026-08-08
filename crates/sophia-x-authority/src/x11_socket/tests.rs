@@ -611,10 +611,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             delivery: None,
         })
         .unwrap();
-    assert_eq!(
-        broker.route_pending(),
-        Err(XServerFrontendRouteError::UnknownClient { client })
-    );
+    assert_eq!(broker.route_pending(), Ok(0));
 }
 
 #[test]
@@ -837,15 +834,19 @@ fn present_configure_selection_uses_only_masked_matching_windows() {
 }
 
 #[test]
-fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
-    let client = XServerFrontendClientId(10);
+fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
+    let stalled = XServerFrontendClientId(10);
+    let healthy = XServerFrontendClientId(11);
     let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(1).unwrap());
-    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    let (_stalled_registration, _stalled_channels) =
+        broker.registry.register_client(stalled).unwrap();
+    let (_healthy_registration, healthy_channels) =
+        broker.registry.register_client(healthy).unwrap();
     for time_msec in [4, 5] {
         broker
             .input_sender()
             .send(XAuthorityClientInputEvent {
-                client,
+                client: stalled,
                 event: XAuthorityKeyEvent {
                     keycode: 39,
                     pressed: true,
@@ -868,9 +869,40 @@ fn route_broker_fails_closed_when_a_client_queue_is_backpressured() {
         }
     }
 
+    assert_eq!(broker.route_pending(), Ok(0));
+    assert_eq!(broker.registered_client_count(), 1);
+    broker
+        .input_sender()
+        .send(XAuthorityClientInputEvent {
+            client: healthy,
+            event: XAuthorityKeyEvent {
+                keycode: 40,
+                pressed: true,
+                state: 0,
+                modifiers_after: 0,
+                time_msec: 6,
+            }
+            .into(),
+            target_window: None,
+            xi_event_type: None,
+            xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
+            xi_pointer_crossing_mask: 0,
+            delivery: None,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
     assert_eq!(
-        broker.route_pending(),
-        Err(XServerFrontendRouteError::ClientQueueFull { client })
+        healthy_channels.input.recv().unwrap().event,
+        XAuthorityKeyEvent {
+            keycode: 40,
+            pressed: true,
+            state: 0,
+            modifiers_after: 0,
+            time_msec: 6,
+        }
+        .into()
     );
 }
 

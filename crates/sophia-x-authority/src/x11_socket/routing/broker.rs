@@ -7,8 +7,9 @@
 /// [`Self::control_router`] to reach the selected client's bounded queue
 /// directly. The broker never broadcasts a route. Routes whose client
 /// disappeared after Engine selection are retired with a negative
-/// acknowledgement; queue backpressure and registry corruption remain
-/// service-fatal.
+/// acknowledgement. A client that saturates its private input queue is
+/// quarantined without terminating the shared frontend; corruption of shared
+/// registry state remains service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
@@ -288,7 +289,8 @@ impl XServerFrontendRouteBroker {
                         Err(
                             XServerFrontendRouteError::UnknownSurface { .. }
                             | XServerFrontendRouteError::ClientQueueDisconnected { .. }
-                            | XServerFrontendRouteError::UnknownClient { .. },
+                            | XServerFrontendRouteError::UnknownClient { .. }
+                            | XServerFrontendRouteError::ClientQueueFull { .. },
                         ) => {}
                         Err(error) => return Err(error),
                     }
@@ -304,9 +306,15 @@ impl XServerFrontendRouteBroker {
                             route.delivery,
                             XAuthorityInputDeliveryOutcome::RouteRejected,
                         )?;
-                        return Err(error);
+                        match error {
+                            XServerFrontendRouteError::UnknownClient { .. }
+                            | XServerFrontendRouteError::ClientQueueDisconnected { .. }
+                            | XServerFrontendRouteError::ClientQueueFull { .. } => {}
+                            error => return Err(error),
+                        }
+                    } else {
+                        routed = routed.saturating_add(1);
                     }
-                    routed = routed.saturating_add(1);
                     progressed = true;
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
@@ -328,7 +336,19 @@ impl XServerFrontendRouteBroker {
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
             }
-            let thawed = self.registry.drain_thawed_input()?;
+            let thawed = match self.registry.drain_thawed_input() {
+                Ok(thawed) => thawed,
+                Err(
+                    XServerFrontendRouteError::UnknownSurface { .. }
+                    | XServerFrontendRouteError::ClientQueueDisconnected { .. }
+                    | XServerFrontendRouteError::UnknownClient { .. }
+                    | XServerFrontendRouteError::ClientQueueFull { .. },
+                ) => {
+                    progressed = true;
+                    0
+                }
+                Err(error) => return Err(error),
+            };
             if thawed != 0 {
                 routed = routed.saturating_add(thawed);
                 progressed = true;

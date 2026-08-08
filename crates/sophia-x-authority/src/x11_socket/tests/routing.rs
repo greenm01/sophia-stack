@@ -31,10 +31,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
         })
         .unwrap();
 
-    assert_eq!(
-        broker.route_pending(),
-        Err(XServerFrontendRouteError::UnknownClient { client })
-    );
+    assert_eq!(broker.route_pending(), Ok(0));
     assert_eq!(
         delivery_receiver.recv().unwrap(),
         XAuthorityClientInputDelivery {
@@ -42,6 +39,119 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             delivery,
             outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
         }
+    );
+}
+
+#[test]
+fn routed_input_queue_saturation_quarantines_only_the_stalled_client() {
+    let stalled = XServerFrontendClientId(30);
+    let healthy = XServerFrontendClientId(31);
+    let stalled_surface = SurfaceId::new(0x200101, 1);
+    let healthy_surface = SurfaceId::new(0x400101, 1);
+    let namespace = NamespaceId::from_raw(17);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(1);
+    let (delivery_sender, delivery_receiver) = channel();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(1).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_stalled_registration, stalled_channels) =
+        broker.registry.register_client(stalled).unwrap();
+    let (_healthy_registration, healthy_channels) =
+        broker.registry.register_client(healthy).unwrap();
+    broker
+        .registry
+        .register_surface(
+            stalled,
+            namespace,
+            stalled_surface,
+            XResourceId::new(0x200101, 1),
+        )
+        .unwrap();
+    broker
+        .registry
+        .register_surface(
+            healthy,
+            namespace,
+            healthy_surface,
+            XResourceId::new(0x400101, 1),
+        )
+        .unwrap();
+
+    for (serial, delivery) in [(1, None), (2, Some(XAuthorityInputDeliveryId::from_raw(9)))] {
+        broker
+            .routed_input_sender()
+            .send(XAuthorityRoutedInput {
+                request: RoutedInputRequest {
+                    serial,
+                    seat: SeatId::from_raw(1),
+                    device: DeviceId::from_raw(1),
+                    time_msec: serial,
+                    target_surface: stalled_surface,
+                    global_position: Point::default(),
+                    local_position: Point::default(),
+                    kind: if serial == 1 {
+                        InputEventKind::PointerMotion
+                    } else {
+                        InputEventKind::PointerAxis {
+                            horizontal_v120: 0,
+                            vertical_v120: 120,
+                        }
+                    },
+                },
+                delivery,
+                mode: XAuthorityRoutedInputMode::Deliver,
+            })
+            .unwrap();
+        assert_eq!(broker.route_pending(), Ok(usize::from(serial == 1)));
+    }
+
+    assert_eq!(broker.registered_client_count(), 1);
+    assert_eq!(
+        delivery_receiver.recv().unwrap(),
+        XAuthorityClientInputDelivery {
+            client: stalled,
+            delivery: XAuthorityInputDeliveryId::from_raw(9),
+            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+        }
+    );
+
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 3,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 3,
+                target_surface: healthy_surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::PointerMotion,
+            },
+            delivery: None,
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .unwrap();
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        healthy_channels.input.recv().unwrap().event,
+        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+            kind: XAuthorityPointerEventKind::Motion,
+            surface: healthy_surface,
+            root_x: 0,
+            root_y: 0,
+            event_x: 0,
+            event_y: 0,
+            state: 0,
+            time_msec: 3,
+        })
+    );
+    assert!(stalled_channels.input.recv().is_ok());
+    assert_eq!(
+        stalled_channels.input.try_recv(),
+        Err(TryRecvError::Disconnected)
     );
 }
 

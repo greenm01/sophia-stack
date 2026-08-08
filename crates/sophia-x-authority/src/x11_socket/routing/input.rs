@@ -472,7 +472,7 @@ impl XServerFrontendRouteRegistry {
                 mask
             }
         });
-        self.route_input(XAuthorityClientInputEvent {
+        let route = XAuthorityClientInputEvent {
             client,
             event,
             target_window,
@@ -482,7 +482,18 @@ impl XServerFrontendRouteRegistry {
             xi_emulated_button_window,
             xi_pointer_crossing_mask,
             delivery,
-        })
+        };
+        match self.route_input(route) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.send_input_delivery(
+                    client,
+                    delivery,
+                    XAuthorityInputDeliveryOutcome::RouteRejected,
+                )?;
+                Err(error)
+            }
+        }
     }
 
     fn route_is_frozen(

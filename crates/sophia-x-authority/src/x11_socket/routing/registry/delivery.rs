@@ -231,14 +231,21 @@ impl XServerFrontendRouteRegistry {
                     })
                 };
                 drop(pointers);
-                self.route_resolved_input(
+                if let Err(error) = self.route_resolved_input(
                     surface_route.namespace,
                     client,
                     surface_route.window,
                     target_window,
                     pointer_event(true),
                     None,
-                )?;
+                ) {
+                    self.send_input_delivery(
+                        client,
+                        route.delivery,
+                        XAuthorityInputDeliveryOutcome::RouteRejected,
+                    )?;
+                    return Err(error);
+                }
                 return self.route_resolved_input(
                     surface_route.namespace,
                     client,

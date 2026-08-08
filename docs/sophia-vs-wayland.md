@@ -114,7 +114,7 @@ Sophia separates two desktop consumers:
 
 | Consumer | Public data contract | Current status |
 | --- | --- | --- |
-| Application-facing X frontend | `RoutedInputRequest` with global and surface-local coordinates; namespace/profile isolation and X11-local delivery rules | implemented, with admitted grab and queue hardening debt |
+| Application-facing X frontend | `RoutedInputRequest` with global and surface-local coordinates; namespace/profile isolation and X11-local delivery rules | implemented; stalled private input queues are client-local failures, while Engine-visible grab leases remain debt |
 | WM spatial policy | opaque surface identity and reduced geometry/focus operations; no application title/class metadata | implemented `sophia_wm_v1` direction and production transport slices |
 | Native shell | coordinate-free discrete actions by default, paced normalized continuous values, independently authorized region-local coordinates | ratified pre-schema contract; unimplemented |
 

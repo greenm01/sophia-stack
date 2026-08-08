@@ -642,11 +642,14 @@ named soak failure promotes one.
   - [x] Advance Sophia `SurfaceId` generations when a client reuses an XID and
     retire the exact frontend route on successful surface removal. Frozen or
     deferred generation-N input cannot resolve to generation N+1.
+  - [x] Isolate a non-reading X client's private input queue. Saturation now
+    removes that endpoint's sender set, rejects tracked delivery, and leaves
+    the shared frontend broker available to healthy clients.
   - [ ] Turn frontend grabs into Engine-visible profile-scoped leases with
-    ordered release acknowledgement; isolate a non-reading client's queue
-    failure; and revalidate deferred focus-handoff routes against current
-    membership and authority epoch. Lock, session, and other security
-    transitions must revoke locally without waiting for frontend cleanup.
+    ordered release acknowledgement, and revalidate deferred focus-handoff
+    routes against current membership and authority epoch. Lock, session, and
+    other security transitions must revoke locally without waiting for
+    frontend cleanup.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.

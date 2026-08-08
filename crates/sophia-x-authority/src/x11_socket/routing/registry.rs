@@ -238,7 +238,20 @@ impl XServerFrontendRouteRegistry {
         route: XAuthorityClientInputEvent,
     ) -> Result<(), XServerFrontendRouteError> {
         let sender = self.client_senders(route.client)?.input;
-        self.route_to_client(route.client, sender, route)
+        match self.route_to_client(route.client, sender, route) {
+            Err(error @ XServerFrontendRouteError::ClientQueueFull { client }) => {
+                // A client that stops draining its private input queue has
+                // failed as an endpoint. Remove every sender for that client
+                // so later routes cannot repeatedly pressure the shared
+                // broker and its worker observes channel disconnection.
+                self.clients
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                    .remove(&client);
+                Err(error)
+            }
+            result => result,
+        }
     }
 
     fn register_surface(

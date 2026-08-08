@@ -82,10 +82,13 @@ client live while a second maps its window, then proves cleanup returns the
 lease count to zero. `XServerFrontendRouteBroker` is now the explicit bounded
 Engine-facing ingress for simultaneous workers: callers enqueue client-addressed
 input or control, call `route_pending`, and each connected routed worker owns
-only its private queues. Unknown, disconnected, and backpressured client routes
-fail closed; worker teardown unregisters the client route before its cleanup
-batch is observed. The persistent live session now uses the bounded brokered
-service loop: it admits and reaps routed workers up to the configured cap, and
+only its private queues. Unknown and disconnected input routes are rejected.
+Saturating a private input queue quarantines only that endpoint: the broker
+removes all of its route senders, reports `RouteRejected` for a tracked event,
+and continues serving other clients. Worker teardown unregisters the remaining
+client state before its cleanup batch is observed. The persistent live session
+now uses the bounded brokered service loop: it admits and reaps routed workers
+up to the configured cap, and
 on shutdown it stops admission before draining connected workers. A two-client
 socket regression proves each worker receives only its own routed key and
 configure request, returns a client-labeled acknowledgement, and tears down
@@ -717,14 +720,17 @@ table for live routed workers. `serve_next_concurrently_routed[_traced]`
 registers a connection only after successful X11 setup, gives it one private
 input queue and one private control queue, and unregisters those queues before
 the release cleanup is reported. The Engine-side loop calls `route_pending`;
-it never broadcasts an event and it receives an explicit error for an unknown,
-disconnected, or full client queue. Control acknowledgements return through the
-same broker labeled with the worker client identity. This is an in-process
-contract that now carries the persistent live service. The service polls the
-owner-only listener without blocking the Engine path, admits at most the
-configured worker count, and receives `StopAccepting` from session supervision.
-That command never kills a client: it closes only new admission and drains
-workers whose client streams have ended.
+it never broadcasts an event. Unknown or disconnected input is retired, while
+a full private input queue removes that client's sender set and rejects the
+tracked event without returning a service-fatal error. The disconnected worker
+then exits through its ordinary teardown path. Shared registry corruption and
+shared acknowledgement-channel pressure remain errors. Control
+acknowledgements return through the same broker labeled with the worker client
+identity. This is an in-process contract that now carries the persistent live
+service. The service polls the owner-only listener without blocking the Engine
+path, admits at most the configured worker count, and receives `StopAccepting`
+from session supervision. That command never kills a client: it closes only new
+admission and drains workers whose client streams have ended.
 
 The callback observer helpers remain for focused tests and smoke probes. They
 are not the production transport shape.
