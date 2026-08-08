@@ -168,6 +168,9 @@ impl LiveProductionVisualRuntime {
             None,
             None,
         )?;
+        // A suspended/revoked output no longer has a visible native
+        // interaction snapshot. Do not retain routes into retired pixels.
+        self.input_layers.clear();
         Ok(LiveProductionNativeSuspendReport {
             outcome,
             abandoned_scanouts,
@@ -216,6 +219,7 @@ impl LiveProductionVisualRuntime {
         // Publish the replacement output runtime only after its retained IDs
         // belong to the new renderer generation.
         self.outputs = resumed_outputs;
+        self.publish_presented_input_layers(native_scanout);
         if let Some(frame) = self.retained_mixed_frame(&[])? {
             let primary = self
                 .outputs
@@ -382,6 +386,7 @@ impl LiveProductionVisualRuntime {
             .assembly_mut()
             .replace_committed_surfaces(committed);
         native_scanout.retire_ready_and_retry_cleanup(index, &mut output.runtime)?;
+        self.publish_presented_input_layers(native_scanout);
         if self.outputs.primary_output() == Some(selected_output)
             && let Some(retirement) = native_scanout.take_presentation_feedback(selected_output)
         {
@@ -471,7 +476,6 @@ impl LiveProductionVisualRuntime {
             );
             return Ok(None);
         }
-        self.rebuild_input_layers();
         let source_size = submitted.displayed_layer.size;
         let target = submitted.displayed_layer.placement.target;
         let clip = submitted.displayed_layer.placement.clip;

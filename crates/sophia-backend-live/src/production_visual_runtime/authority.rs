@@ -434,7 +434,6 @@ impl LiveProductionVisualRuntime {
         let authority_commits = self
             .production
             .commit_authority_batches(std::slice::from_ref(&intake));
-        self.rebuild_input_layers();
         Ok(LiveProductionPreparedAuthorityBatch {
             authority_commits,
             layer_templates: self.compositor_layer_templates(),
@@ -455,7 +454,6 @@ impl LiveProductionVisualRuntime {
             );
         }
         let authority_commits = self.production.commit_authority_batches(&intakes);
-        self.rebuild_input_layers();
         Ok(LiveProductionPreparedAuthorityBatch {
             authority_commits,
             layer_templates: self.compositor_layer_templates(),
@@ -470,6 +468,7 @@ impl LiveProductionVisualRuntime {
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        let native_enabled = native_scanout.is_some();
         let output_count = self.outputs.output_count();
         let production = &self.production;
         let outputs = &mut self.outputs;
@@ -506,11 +505,16 @@ impl LiveProductionVisualRuntime {
                 })
             },
         );
-        production
+        let report = production
             .run_outputs(&mut adapter)?
             .into_iter()
             .next()
-            .ok_or_else(|| "persistent backend runtime has no outputs".into())
+            .ok_or("persistent backend runtime has no outputs")?;
+        drop(adapter);
+        if !native_enabled {
+            self.publish_committed_input_layers();
+        }
+        Ok(report)
     }
 
     pub fn run_authority_transactions(

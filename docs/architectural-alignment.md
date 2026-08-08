@@ -86,15 +86,16 @@ input into an implemented shell interface. `sophia_shell_v1`, concrete target
 quotas and wire discriminants, accessibility projection, and runtime tracing
 remain pre-schema work.
 
-They also do not repair the current application path. The production input
-projection is still built from committed rather than last-presented surfaces;
-ordinary routing can re-hit-test into another namespace before frontend-local
-grab lookup; a saturated client queue can widen the frontend failure domain;
-and XID reuse still recreates generation one. These are admitted runtime debts
-recorded in `docs/target-resolved-input.md`, `docs/research-log.md`, and
-`todo.md`. No shell security transition may ship while cross-authority route
-lease revocation, queue quarantine, and last-presented application selection
-remain unspecified or unimplemented.
+They also do not repair the whole application path. The installed primary
+pointer domain now publishes hit-test layers from the immutable output-frame
+snapshot only after native page-flip retirement, rather than from newer
+committed state. Output-local pointer domains remain unmodeled; ordinary
+routing can still re-hit-test into another namespace before frontend-local grab
+lookup; a saturated client queue can widen the frontend failure domain; and XID
+reuse still recreates generation one. These are admitted runtime debts recorded
+in `docs/target-resolved-input.md`, `docs/research-log.md`, and `todo.md`. No
+shell security transition may ship while cross-authority route-lease revocation,
+queue quarantine, and per-output application selection remain incomplete.
 
 ## Reproducible checks
 

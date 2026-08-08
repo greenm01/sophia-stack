@@ -860,6 +860,16 @@ mod persistent_native_scanout {
             self.heads[index].submitted_content
         }
 
+        /// Returns the immutable scene snapshot retired by the latest accepted
+        /// page flip for this output. Pending, rendering, and submitted work is
+        /// intentionally invisible here.
+        pub fn presented_output_frame(
+            &self,
+            index: usize,
+        ) -> Option<&sophia_engine::OutputFrameDamageSnapshot> {
+            self.heads[index].output_frames.presented()
+        }
+
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
             let Some(index) = self.output_index(output) else {
                 return false;

@@ -720,10 +720,12 @@ events and protocol-local identity never enter the WM.
 
 The authority returns a reduced delivery acknowledgement. Engine never writes
 arbitrary client events or receives a client connection handle. Route failure
-does not fall back to synthetic input. Today, ordinary motion and release are
-re-hit-tested before frontend-local grab lookup, and input layers advance from
-committed rather than last-presented surfaces. Those are admitted implementation
-gaps: they cannot define coexistence with privileged shell input.
+does not fall back to synthetic input. Native application selection now derives
+from the primary pointer domain's output-frame snapshot only after its accepted
+page flip; committed and submitted geometry cannot enter that hit test. Ordinary
+motion and release are still re-hit-tested before frontend-local grab lookup,
+and output-local pointer domains are not yet represented. Those admitted gaps
+still prevent coexistence with privileged shell input.
 
 Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,

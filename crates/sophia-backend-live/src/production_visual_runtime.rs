@@ -176,7 +176,11 @@ impl LiveProductionVisualRuntime {
         frames: &[LiveProductionComposedFrame],
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.outputs
-            .initialize_native_scanout(native_scanout, frames)
+            .initialize_native_scanout(native_scanout, frames)?;
+        // Initial modesets are synchronously established as presented by the
+        // native owner and do not generate a later retirement callback.
+        self.publish_presented_input_layers(native_scanout);
+        Ok(())
     }
 
     pub fn stable_present(
@@ -439,7 +443,11 @@ impl LiveProductionVisualRuntime {
         if report.submission.composed {
             self.record_focus_ring_observation(&report.committed_surfaces, false)?;
         }
-        self.rebuild_input_layers();
+        // Native input advances only when retire_native_scanout_output
+        // observes the corresponding accepted page flip.
+        if !native_enabled {
+            self.publish_committed_input_layers();
+        }
         Ok((report.submission, report.committed_surfaces))
     }
 

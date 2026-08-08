@@ -50,7 +50,7 @@ deferred and is an explicit release blocker.
 | Public identity | generational `SurfaceId` | opaque authority/session/slot/generation target identity |
 | Disclosure | global and surface-local coordinates required by X11 | coordinate-free actions by default; normalized values; capability-bounded local coordinates |
 | Protocol semantics | X frontend owns X11 focus, event masks, XKB/XI state, and client delivery | Engine owns target selection and bounded capture; no toolkit semantics |
-| Selection state | currently committed/renderable; presentation coupling required before coexistence | interaction snapshot paired with the applicable last-presented frame |
+| Selection state | retired native frame in the current primary-output pointer domain; output-local domains remain future work | interaction snapshot paired with the applicable last-presented frame |
 | Isolation | profile and namespace admission; `classic-shared` remains shared inside its application profile | authority, session, presentation, target, seat/device/contact, modal, and disclosure bounds |
 
 ## Per-Seat Arbitration

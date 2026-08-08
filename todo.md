@@ -631,14 +631,20 @@ named soak failure promotes one.
   shell-reservation/work-area/WM coordinator with the eventual shell schema.
   Preserve the prior complete presented bundle on ordinary failure and keep
   lock/session security takeover independent of shell or WM acknowledgement.
-- [ ] Repair native application input before shell coexistence: derive input
-  selection from last-presented rather than merely committed surfaces; turn
-  frontend grabs into Engine-visible profile-scoped leases with ordered release
-  acknowledgement; isolate a non-reading client's queue failure; advance X
-  `SurfaceId` generations on XID reuse; and revalidate deferred focus-handoff
-  routes against current membership and authority epoch. Lock, session, and
-  other security transitions must revoke locally without waiting for frontend
-  cleanup.
+- [ ] Repair native application input before shell coexistence.
+  - [x] In the installed primary-output pointer domain, derive hit-test layers
+    from the immutable output-frame snapshot only after accepted page-flip
+    retirement. Committed/submitted moves, removals, and stacking changes no
+    longer become selectable before their pixels.
+  - [ ] Introduce output-local pointer coordinate domains and per-output
+    presented interaction epochs rather than merging independently retired
+    heads into one global projection.
+  - [ ] Turn frontend grabs into Engine-visible profile-scoped leases with
+    ordered release acknowledgement; isolate a non-reading client's queue
+    failure; advance X `SurfaceId` generations on XID reuse; and revalidate
+    deferred focus-handoff routes against current membership and authority
+    epoch. Lock, session, and other security transitions must revoke locally
+    without waiting for frontend cleanup.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.
