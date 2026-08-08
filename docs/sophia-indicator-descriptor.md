@@ -130,6 +130,19 @@ committed layout survives but its indicators do not. No live policy can vouch
 for what the on-screen projection means. The feed reports no indicators until
 the replacement commits. This is the fail-closed reading and it is deliberate.
 
+**An epoch transition is a publication point, not private bookkeeping.** Engine
+must expose the cleared descriptor under the new epoch at the moment the epoch
+advances. TLC refuted a version that advanced the epoch silently: a tier-1
+observer could then read a state Engine had never announced, which is exactly
+the torn read the design is supposed to make impossible.
+
+A tier-1 observer holding its own copy may lag, and no rule prevents that. What
+the design does guarantee is that every triple it holds — serial, indicators,
+epoch — is one Engine actually exposed, so the observer can always tell whether
+it is current. Being behind is recoverable. Being silently wrong is not. Tier 0
+avoids the question entirely, because Engine chrome renders the committed
+descriptor with no second copy to go stale.
+
 ## Redaction
 
 The descriptor is policy declassifying its own private model, which is the

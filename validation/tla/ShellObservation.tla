@@ -3,20 +3,22 @@ EXTENDS Naturals
 
 (***************************************************************************
  * Status: proposed boundary, not an implemented one. This model belongs to *
- * the shell interface direction in docs/sophia-shell-v1-direction.md and   *
- * checks a design before ratification. No shipped code implements it.      *
+ * docs/sophia-indicator-descriptor.md and checks a design before           *
+ * ratification. No shipped code implements it.                             *
  *                                                                          *
- * Shell observation of policy-private desktop state. Engine owns committed *
- * layout and holds no tag, view, or workspace concept. A spatial-policy    *
- * process owns tags privately and releases a redacted status projection a  *
- * shell renders. Engine therefore cannot be the publisher, and the feed    *
- * crosses an authority the WM interface never crosses.                     *
+ * Policy-private desktop status carried on the layout commit. Engine holds *
+ * no tag, view, or workspace concept, so it cannot author this state; a    *
+ * spatial-policy process owns it privately. The descriptor rides the       *
+ * layout proposal, and Engine commits and retains it with the geometry.    *
  *                                                                          *
- * The model fixes two rules and checks they are sufficient. A status       *
- * projection is released only with a committed layout, so a rejected or    *
- * timed-out proposal never reaches a bar. Policy loss clears the feed and  *
- * the shell's held state in the same step, so a replacement policy cannot  *
- * inherit its predecessor's published tag through the shell.               *
+ * There is deliberately no publish action. Engine's committed descriptor   *
+ * is the published value, so a rejected or timed-out proposal cannot reach *
+ * an observer and no ordering rule is needed to prevent it.                *
+ *                                                                          *
+ * Tier 0 needs no observer at all: Engine chrome renders `engineTag`       *
+ * directly, so the rendered state is the committed state by construction.  *
+ * The observer variables model a later tier-1 client holding its own copy, *
+ * which is where the remaining guarantee has to be stated.                 *
  *************************************************************************)
 
 CONSTANTS Tags, MaxEpoch, MaxCommits, NoTag
@@ -32,36 +34,44 @@ VARIABLES
     policyAlive,      \* spatial-policy peer is admitted
     policyEpoch,      \* session-assigned connection epoch
     policyTag,        \* policy-private active tag
-    proposedTag,      \* tag whose layout proposal is staged with Engine
-    committedTag,     \* tag matching Engine's last committed projection
+    proposedTag,      \* descriptor riding the staged layout proposal
+    engineTag,        \* Engine's committed descriptor; also the published value
+    engineEpoch,      \* epoch that committed it
+    engineSerial,     \* Engine commit counter
     committedTags,    \* tags committed during the current epoch
-    committedSerial,  \* Engine commit counter
-    publishedTag,     \* status projection released to the shell
-    publishedEpoch,   \* epoch the released projection belongs to
-    shellTag,         \* tag the shell currently displays
-    shellEpoch        \* epoch of the shell's held state
+    published,        \* every (serial, tag, epoch) triple Engine ever exposed
+    observerTag,      \* tier-1 observer's held copy
+    observerEpoch,
+    observerSerial
 
-vars == <<policyAlive, policyEpoch, policyTag, proposedTag, committedTag,
-          committedTags, committedSerial, publishedTag, publishedEpoch,
-          shellTag, shellEpoch>>
+vars == <<policyAlive, policyEpoch, policyTag, proposedTag, engineTag,
+          engineEpoch, engineSerial, committedTags, published, observerTag,
+          observerEpoch, observerSerial>>
 
 Init ==
     /\ policyAlive = FALSE
     /\ policyEpoch = 0
     /\ policyTag = NoTag
     /\ proposedTag = NoTag
-    /\ committedTag = NoTag
+    /\ engineTag = NoTag
+    /\ engineEpoch = 0
+    /\ engineSerial = 0
     /\ committedTags = {}
-    /\ committedSerial = 0
-    /\ publishedTag = NoTag
-    /\ publishedEpoch = 0
-    /\ shellTag = NoTag
-    /\ shellEpoch = 0
+    /\ published = {}
+    /\ observerTag = NoTag
+    /\ observerEpoch = 0
+    /\ observerSerial = 0
 
 (***************************************************************************
- * The session runtime admits one policy peer under a fresh epoch. Engine's *
- * last committed layout survives, but its tag label does not: no live      *
- * policy can vouch for what the on-screen projection means.                *
+ * A fresh policy epoch clears Engine's descriptor. The committed layout    *
+ * survives, but no live policy can say what it means until the replacement *
+ * commits, so the status is empty rather than inherited.                   *
+ *                                                                          *
+ * The epoch transition is itself a publication point. TLC refuted an       *
+ * earlier version that advanced the epoch without recording the cleared    *
+ * triple: an observer could then read a state Engine had never exposed.    *
+ * Implementations must treat epoch change as an announced transition, not  *
+ * as private bookkeeping.                                                  *
  *************************************************************************)
 PolicyConnect ==
     /\ ~policyAlive
@@ -70,30 +80,28 @@ PolicyConnect ==
     /\ policyEpoch' = policyEpoch + 1
     /\ policyTag' = NoTag
     /\ proposedTag' = NoTag
-    /\ committedTag' = NoTag
+    /\ engineTag' = NoTag
+    /\ engineEpoch' = policyEpoch + 1
     /\ committedTags' = {}
-    /\ UNCHANGED <<committedSerial, publishedTag, publishedEpoch,
-                   shellTag, shellEpoch>>
+    /\ published' = published \cup
+           {<<engineSerial, NoTag, policyEpoch + 1>>}
+    /\ UNCHANGED <<engineSerial, observerTag, observerEpoch, observerSerial>>
 
 (***************************************************************************
- * Policy loss is the interesting case. Clearing the feed and the shell's   *
- * held state in the same step is a requirement on the session runtime, not *
- * an observation about it. If the shell had to notice loss on its own,     *
- * ShellStateBelongsToLivePolicy would admit a window in which a bar shows  *
- * a dead policy's tag as current.                                          *
+ * Engine clears its own state on peer loss. Nothing reaches into the       *
+ * observer, and nothing needs to: the observer cannot be silently wrong,   *
+ * only behind, and it converges by reading again.                          *
  *************************************************************************)
 PolicyDisconnect ==
     /\ policyAlive
     /\ policyAlive' = FALSE
     /\ policyTag' = NoTag
     /\ proposedTag' = NoTag
-    /\ committedTag' = NoTag
+    /\ engineTag' = NoTag
     /\ committedTags' = {}
-    /\ publishedTag' = NoTag
-    /\ publishedEpoch' = 0
-    /\ shellTag' = NoTag
-    /\ shellEpoch' = 0
-    /\ UNCHANGED <<policyEpoch, committedSerial>>
+    /\ published' = published \cup {<<engineSerial, NoTag, engineEpoch>>}
+    /\ UNCHANGED <<policyEpoch, engineEpoch, engineSerial, observerTag,
+                   observerEpoch, observerSerial>>
 
 SelectTag(tag) ==
     /\ policyAlive
@@ -101,49 +109,48 @@ SelectTag(tag) ==
     /\ tag # policyTag
     /\ policyTag' = tag
     /\ proposedTag' = tag
-    /\ UNCHANGED <<policyAlive, policyEpoch, committedTag, committedTags,
-                   committedSerial, publishedTag, publishedEpoch,
-                   shellTag, shellEpoch>>
+    /\ UNCHANGED <<policyAlive, policyEpoch, engineTag, engineEpoch,
+                   engineSerial, committedTags, published, observerTag,
+                   observerEpoch, observerSerial>>
 
 (***************************************************************************
- * Release is bound to the commit. The status projection and the committed  *
- * layout advance in one step, so no observer can read a tag the screen     *
- * does not show.                                                           *
+ * Geometry and descriptor commit in one step. This is the whole mechanism. *
  *************************************************************************)
 CommitLayout ==
     /\ policyAlive
     /\ proposedTag # NoTag
-    /\ committedSerial < MaxCommits
-    /\ committedTag' = proposedTag
+    /\ engineSerial < MaxCommits
+    /\ engineTag' = proposedTag
+    /\ engineEpoch' = policyEpoch
+    /\ engineSerial' = engineSerial + 1
     /\ committedTags' = committedTags \cup {proposedTag}
-    /\ committedSerial' = committedSerial + 1
-    /\ publishedTag' = proposedTag
-    /\ publishedEpoch' = policyEpoch
+    /\ published' = published \cup
+           {<<engineSerial + 1, proposedTag, policyEpoch>>}
     /\ proposedTag' = NoTag
-    /\ UNCHANGED <<policyAlive, policyEpoch, policyTag, shellTag, shellEpoch>>
+    /\ UNCHANGED <<policyAlive, policyEpoch, policyTag, observerTag,
+                   observerEpoch, observerSerial>>
 
 (***************************************************************************
- * A rejected or timed-out proposal leaves both the committed layout and    *
- * the released projection untouched. The policy-private tag stays ahead of *
- * both; that divergence is private and must not be observable.             *
+ * A rejected proposal discards its descriptor with its geometry. No        *
+ * separate suppression step exists because no separate publish step does.  *
  *************************************************************************)
 RejectLayout ==
     /\ policyAlive
     /\ proposedTag # NoTag
     /\ proposedTag' = NoTag
-    /\ UNCHANGED <<policyAlive, policyEpoch, policyTag, committedTag,
-                   committedTags, committedSerial, publishedTag,
-                   publishedEpoch, shellTag, shellEpoch>>
+    /\ UNCHANGED <<policyAlive, policyEpoch, policyTag, engineTag,
+                   engineEpoch, engineSerial, committedTags, published,
+                   observerTag, observerEpoch, observerSerial>>
 
-ShellObserve ==
-    /\ policyAlive
-    /\ publishedTag # NoTag
-    /\ shellTag # publishedTag
-    /\ shellTag' = publishedTag
-    /\ shellEpoch' = publishedEpoch
+ObserverRead ==
+    /\ <<observerSerial, observerTag, observerEpoch>>
+           # <<engineSerial, engineTag, engineEpoch>>
+    /\ observerTag' = engineTag
+    /\ observerEpoch' = engineEpoch
+    /\ observerSerial' = engineSerial
     /\ UNCHANGED <<policyAlive, policyEpoch, policyTag, proposedTag,
-                   committedTag, committedTags, committedSerial,
-                   publishedTag, publishedEpoch>>
+                   engineTag, engineEpoch, engineSerial, committedTags,
+                   published>>
 
 Next ==
     \/ PolicyConnect
@@ -151,62 +158,58 @@ Next ==
     \/ \E tag \in Tags : SelectTag(tag)
     \/ CommitLayout
     \/ RejectLayout
-    \/ ShellObserve
+    \/ ObserverRead
 
 Spec == Init /\ [][Next]_vars
 
-FairSpec == Spec /\ WF_vars(ShellObserve)
+FairSpec == Spec /\ WF_vars(ObserverRead)
 
 TypeOK ==
     /\ policyAlive \in BOOLEAN
     /\ policyEpoch \in 0..MaxEpoch
     /\ policyTag \in Tags \cup {NoTag}
     /\ proposedTag \in Tags \cup {NoTag}
-    /\ committedTag \in Tags \cup {NoTag}
+    /\ engineTag \in Tags \cup {NoTag}
+    /\ engineEpoch \in 0..MaxEpoch
+    /\ engineSerial \in 0..MaxCommits
     /\ committedTags \subseteq Tags
-    /\ committedSerial \in 0..MaxCommits
-    /\ publishedTag \in Tags \cup {NoTag}
-    /\ publishedEpoch \in 0..MaxEpoch
-    /\ shellTag \in Tags \cup {NoTag}
-    /\ shellEpoch \in 0..MaxEpoch
+    /\ published \subseteq ((0..MaxCommits) \X (Tags \cup {NoTag})
+                              \X (0..MaxEpoch))
+    /\ observerTag \in Tags \cup {NoTag}
+    /\ observerEpoch \in 0..MaxEpoch
+    /\ observerSerial \in 0..MaxCommits
 
 (***************************************************************************
- * The released projection is exactly the committed one. This is the rule   *
- * that fails if a policy publishes when it decides rather than when Engine *
- * commits.                                                                 *
+ * Engine never holds a descriptor that was not committed in the current    *
+ * epoch. With no publish action, this is what makes a rejected proposal    *
+ * unobservable.                                                            *
  *************************************************************************)
-PublishedStateIsCommitted ==
-    publishedTag # NoTag => publishedTag = committedTag
+EnginePublishesOnlyCommitted ==
+    engineTag # NoTag => engineTag \in committedTags
 
 (***************************************************************************
- * A shell may lag the commit, but it may never display a tag that was      *
- * never committed in the current epoch. Lag is acceptable; phantoms are    *
- * not.                                                                     *
+ * Engine's descriptor always belongs to the live policy. A replacement     *
+ * cannot inherit its predecessor's status, because Engine clears its own   *
+ * state rather than relying on anyone else to do it.                       *
  *************************************************************************)
-ShellNeverShowsUncommittedState ==
-    shellTag # NoTag => shellTag \in committedTags
+EngineStateBelongsToLivePolicy ==
+    engineTag # NoTag => /\ policyAlive
+                         /\ engineEpoch = policyEpoch
 
 (***************************************************************************
- * Shell-held policy state always belongs to the live policy. This is the   *
- * guarantee `sophia_wm_v1` gives the WM path extended to the shell path:   *
- * a replacement policy never inherits its predecessor's private state, by  *
- * any route.                                                               *
+ * The tier-1 guarantee. An observer may lag, but every triple it holds is  *
+ * one Engine actually exposed. It is never torn and never invents a        *
+ * combination, so it can always tell whether it is current by comparing    *
+ * the serial. Being behind is recoverable; being silently wrong is not.    *
  *************************************************************************)
-ShellStateBelongsToLivePolicy ==
-    shellTag # NoTag => /\ policyAlive
-                        /\ shellEpoch = policyEpoch
-                        /\ publishedEpoch = policyEpoch
+ObserverHoldsAPublishedTriple ==
+    observerSerial # 0 =>
+        <<observerSerial, observerTag, observerEpoch>> \in published
 
-(***************************************************************************
- * The policy-private model may run ahead of the screen. That lead is not   *
- * separately stated: it is unobservable because the released projection is *
- * always the committed one and the shell only ever holds a released value. *
- * An invariant demanding shellTag = committedTag would instead forbid the  *
- * observation lag any asynchronous feed has, and TLC refutes it in eight   *
- * steps.                                                                   *
- *************************************************************************)
-ShellEventuallyMatchesCommitted ==
-    (publishedTag # NoTag /\ shellTag # publishedTag)
-        ~> (shellTag = publishedTag \/ publishedTag = NoTag)
+ObserverConverges ==
+    <<observerSerial, observerTag, observerEpoch>>
+        # <<engineSerial, engineTag, engineEpoch>>
+    ~> <<observerSerial, observerTag, observerEpoch>>
+        = <<engineSerial, engineTag, engineEpoch>>
 
 =============================================================================
