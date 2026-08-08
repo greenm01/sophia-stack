@@ -2,8 +2,8 @@ use super::*;
 use crate::commands::live_session::{
     LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
     LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
-    committed_relayout_nodes, live_layout_node_from_facts, planning_state_for_response,
-    wm_transport_requires_reseed,
+    committed_relayout_nodes, live_layout_node_from_facts, ordered_wm_action_request,
+    planning_state_for_response, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
@@ -498,6 +498,63 @@ fn queued_manage_response_rebases_on_the_latest_committed_state() {
     let rebased = planning_state_for_response(&current, &request).unwrap();
     assert_eq!(rebased.surface_workspace(first), Some(workspace));
     assert_eq!(rebased.surface_workspace(queued), Some(workspace));
+}
+
+#[test]
+fn ordered_action_request_rebases_on_the_latest_committed_state() {
+    let output = sophia_engine::HeadlessOutput::deterministic();
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: output.size.width,
+        height: output.size.height,
+    };
+    let workspace = WorkspaceId::from_raw(1);
+    let surface = SurfaceId::new(9, 1);
+    let action = WmActionId::from_raw(5);
+    let transaction = TransactionId::from_raw(6);
+    let mut layout = PersistentLiveLayout::default();
+    layout.layers.insert(surface, test_layer(surface, bounds));
+    let initial = WmWorkspaceState::new([(output.id, bounds)], 1).unwrap();
+    let mut current = initial.clone();
+    current.register_surface(surface, workspace).unwrap();
+
+    let (initial_packet, _) = ordered_wm_action_request(
+        transaction,
+        action,
+        &layout,
+        &initial,
+        output,
+        sophia_engine::SurfaceChromeStyle::default(),
+    )
+    .unwrap();
+    let (rebased_packet, _) = ordered_wm_action_request(
+        transaction,
+        action,
+        &layout,
+        &current,
+        output,
+        sophia_engine::SurfaceChromeStyle::default(),
+    )
+    .unwrap();
+
+    let sophia_protocol::WmRequestKind::ActionActivated(initial_action) = initial_packet.kind
+    else {
+        panic!("expected an action request");
+    };
+    let sophia_protocol::WmRequestKind::ActionActivated(rebased_action) = rebased_packet.kind
+    else {
+        panic!("expected an action request");
+    };
+    assert!(initial_action.nodes.is_empty());
+    assert_eq!(
+        rebased_action
+            .nodes
+            .iter()
+            .map(|node| node.surface)
+            .collect::<Vec<_>>(),
+        vec![surface]
+    );
 }
 
 #[test]

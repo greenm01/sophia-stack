@@ -257,23 +257,15 @@ macro_rules! drain_physical_input {
                 let wm = wm_session
                     .as_mut()
                     .ok_or("WM shortcut activated without a live WM session")?;
-                match LivePhysicalWmActionDisposition::from(wm.enqueue_action(
-                    action,
-                    &layout,
-                    output,
-                )?) {
-                    LivePhysicalWmActionDisposition::Admitted => {}
-                    LivePhysicalWmActionDisposition::RejectedCapacity => {
-                        eprintln!(
-                            "sophia_live_wm schema=2 status=request_rejected source=action reason=capacity action={}",
-                            action.raw(),
-                        );
-                    }
-                    LivePhysicalWmActionDisposition::Coalesced => {
-                        println!(
-                            "sophia_live_wm schema=3 status=request_coalesced source=action reason=in_flight action={}",
-                            action.raw(),
-                        );
+                match wm.enqueue_action(action, &layout, output)? {
+                    LiveOrderedWmActionAdmission::Admitted => {}
+                    LiveOrderedWmActionAdmission::RejectedCapacity { report } => {
+                        if report {
+                            eprintln!(
+                                "sophia_live_wm schema=2 status=request_rejected source=action reason=capacity action={}",
+                                action.raw(),
+                            );
+                        }
                     }
                 }
             }

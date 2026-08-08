@@ -385,7 +385,7 @@ future compatibility target, not a prerequisite.
   constraints; projection presentation decisions; request causes; policy
   configuration; Engine chrome; session-operation tokens; reduced
   interactions; and a bounded policy-dirty request.
-- [ ] Preserve non-idempotent activation order with the existing bounded
+- [x] Preserve non-idempotent activation order with the existing bounded
   sixteen-request owner queue. Coalesce only replaceable scene refreshes and
   continuous interaction geometry; saturation consumes the shortcut, fails
   closed, and emits a bounded diagnostic.

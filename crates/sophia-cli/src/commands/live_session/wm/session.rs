@@ -1,9 +1,13 @@
 use sophia_cli::wm_recovery::{
-    WmAdmissionSelection, WmReseedAdmissionCandidate, select_wm_admission,
-    select_wm_reseed_plan,
+    WmAdmissionSelection, WmReseedAdmissionCandidate, select_wm_admission, select_wm_reseed_plan,
 };
 
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
+const WM_OWNER_REJECTION_DIAGNOSTIC_LIMIT: usize = 16;
+
+const fn report_wm_rejection_diagnostic(rejections: usize) -> bool {
+    rejections <= WM_OWNER_REJECTION_DIAGNOSTIC_LIMIT
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveWmProposalSource {
@@ -43,7 +47,51 @@ enum LiveWmQueuedKind {
 struct LiveWmQueuedRequest {
     packet: WmRequestPacket,
     kind: LiveWmQueuedKind,
+    ordered_action: Option<WmActionId>,
     queued_at: Instant,
+}
+
+struct LiveWmOwnerQueue<T> {
+    pending: VecDeque<T>,
+    capacity: usize,
+}
+
+impl<T> LiveWmOwnerQueue<T> {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            pending: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn try_push_back(&mut self, value: T, in_flight: bool) -> Result<(), T> {
+        if self.pending.len().saturating_add(usize::from(in_flight)) >= self.capacity {
+            return Err(value);
+        }
+        self.pending.push_back(value);
+        Ok(())
+    }
+
+    fn push_front(&mut self, value: T) {
+        debug_assert!(self.pending.len() < self.capacity);
+        self.pending.push_front(value);
+    }
+
+    fn pop_front(&mut self) -> Option<T> {
+        self.pending.pop_front()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        self.pending.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn clear(&mut self) {
+        self.pending.clear();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +106,12 @@ enum LivePhysicalWmActionDisposition {
     Admitted,
     Coalesced,
     RejectedCapacity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveOrderedWmActionAdmission {
+    Admitted,
+    RejectedCapacity { report: bool },
 }
 
 impl From<LiveWmRequestAdmission> for LivePhysicalWmActionDisposition {
@@ -104,13 +158,13 @@ struct LiveWmSession {
     restart_policy: RestartPolicy,
     socket_path: std::path::PathBuf,
     transport: Option<WmTransportWorker>,
-    queued_requests: VecDeque<LiveWmQueuedRequest>,
+    queued_requests: LiveWmOwnerQueue<LiveWmQueuedRequest>,
     in_flight_request: Option<LiveWmQueuedRequest>,
     next_transaction: u64,
     requests: usize,
     request_peak_depth: usize,
     request_rejections: usize,
-    action_requests_coalesced: usize,
+    action_requests_ordered: usize,
     stale_responses: usize,
     work_area_relayout_required: bool,
     shortcuts: Option<WmShortcutRouter>,
@@ -237,13 +291,13 @@ impl LiveWmSession {
             session_actions,
             socket_path: config.wm_socket_path.clone(),
             transport: None,
-            queued_requests: VecDeque::with_capacity(WM_OWNER_REQUEST_CAPACITY),
+            queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
             in_flight_request: None,
             next_transaction: 1,
             requests: 0,
             request_peak_depth: 0,
             request_rejections: 0,
-            action_requests_coalesced: 0,
+            action_requests_ordered: 0,
             stale_responses: 0,
             work_area_relayout_required: false,
             committed: 0,
@@ -281,9 +335,7 @@ impl LiveWmSession {
                 // The legacy bridge may spend up to three seconds collecting
                 // a bounded WM response. Keep the transport deadline outside
                 // that contract but inside the owner transaction deadline.
-                response_timeout: Duration::from_millis(
-                    SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-                ),
+                response_timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
             },
         );
         let descriptor = self
@@ -352,10 +404,8 @@ impl LiveWmSession {
             self.restarts
         );
         let has_committed_layout = !self.workspace_state.visible_surfaces(output.id)?.is_empty();
-        let reseed = select_wm_reseed_plan(
-            layout.next_reseed_unmanaged_surface(),
-            has_committed_layout,
-        );
+        let reseed =
+            select_wm_reseed_plan(layout.next_reseed_unmanaged_surface(), has_committed_layout);
         if reseed.seed_committed_layout {
             require_wm_request_admission(
                 self.enqueue_relayout(layout, output)?,
@@ -430,6 +480,7 @@ impl LiveWmSession {
                 fingerprint,
                 source: LiveWmProposalSource::Manage(surface),
             },
+            ordered_action: None,
             queued_at: Instant::now(),
         })?)
     }
@@ -468,6 +519,7 @@ impl LiveWmSession {
                 fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
                 source: LiveWmProposalSource::Relayout,
             },
+            ordered_action: None,
             queued_at: Instant::now(),
         })
     }
@@ -489,6 +541,7 @@ impl LiveWmSession {
         self.enqueue_request(LiveWmQueuedRequest {
             packet: request,
             kind: LiveWmQueuedKind::SurfaceRemoved { surface },
+            ordered_action: None,
             queued_at: Instant::now(),
         })
     }
@@ -498,58 +551,35 @@ impl LiveWmSession {
         action: WmActionId,
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
-    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        let source = LiveWmProposalSource::Action(action);
-        if self.has_request_source(source) {
-            self.action_requests_coalesced = self.action_requests_coalesced.saturating_add(1);
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let output_state = self
-            .workspace_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?;
-        let nodes = layout
-            .layers
-            .values()
-            .filter_map(|layer| {
-                if !layout.is_policy_managed(layer.surface) {
-                    return None;
-                }
-                let workspace = self.workspace_state.surface_workspace(layer.surface)?;
-                (workspace == output_state.workspace).then_some((layer, workspace))
-            })
-            .map(|(layer, workspace)| {
-                persisted_layout_node(
-                    layout,
-                    &self.workspace_state,
-                    layer.surface,
-                    workspace,
-                    self.candidate_chrome_style(),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let request = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::ActionActivated(WmActionActivation {
-                action,
-                output: output.id,
-                workspace: output_state.workspace,
-                // Presented admission may defer the Engine focus handoff.
-                // Actions still belong to this committed WM snapshot, so do
-                // not mix in the temporarily older physical-focus state.
-                focused_surface: output_state.focus,
-                nodes,
-            }),
-        };
-        self.enqueue_request(LiveWmQueuedRequest {
-            packet: request,
-            kind: LiveWmQueuedKind::Proposal {
-                base_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
-                source,
-            },
+    ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
+        let transaction = self.mint_transaction()?;
+        let (packet, kind) = ordered_wm_action_request(
+            transaction,
+            action,
+            layout,
+            &self.workspace_state,
+            output,
+            self.candidate_chrome_style(),
+        )?;
+        match self.enqueue_request(LiveWmQueuedRequest {
+            packet,
+            kind,
+            ordered_action: Some(action),
             queued_at: Instant::now(),
-        })
+        })? {
+            LiveWmRequestAdmission::Admitted => {
+                self.action_requests_ordered = self.action_requests_ordered.saturating_add(1);
+                Ok(LiveOrderedWmActionAdmission::Admitted)
+            }
+            LiveWmRequestAdmission::RejectedCapacity => {
+                Ok(LiveOrderedWmActionAdmission::RejectedCapacity {
+                    report: report_wm_rejection_diagnostic(self.request_rejections),
+                })
+            }
+            LiveWmRequestAdmission::Duplicate => {
+                unreachable!("ordered WM actions are never duplicate-elided")
+            }
+        }
     }
 
     fn enqueue_pointer_gesture(
@@ -596,6 +626,7 @@ impl LiveWmSession {
                 fingerprint,
                 source,
             },
+            ordered_action: None,
             queued_at: Instant::now(),
         })?)
     }
@@ -639,6 +670,7 @@ impl LiveWmSession {
                 fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
                 source,
             },
+            ordered_action: None,
             queued_at: Instant::now(),
         })
     }
@@ -647,21 +679,19 @@ impl LiveWmSession {
         &mut self,
         request: LiveWmQueuedRequest,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        let depth = self
+        if self
             .queued_requests
-            .len()
-            .saturating_add(usize::from(self.in_flight_request.is_some()));
-        if depth >= WM_OWNER_REQUEST_CAPACITY {
+            .try_push_back(request, self.in_flight_request.is_some())
+            .is_err()
+        {
             self.request_rejections = self.request_rejections.saturating_add(1);
             return Ok(LiveWmRequestAdmission::RejectedCapacity);
         }
-        self.queued_requests.push_back(request);
-        self.request_peak_depth = self
-            .request_peak_depth
-            .max(self.queued_requests.len().saturating_add(usize::from(
-                self.in_flight_request.is_some(),
-            )));
-        self.pump_transport()?;
+        self.request_peak_depth = self.request_peak_depth.max(
+            self.queued_requests
+                .len()
+                .saturating_add(usize::from(self.in_flight_request.is_some())),
+        );
         Ok(LiveWmRequestAdmission::Admitted)
     }
 
@@ -678,7 +708,7 @@ impl LiveWmSession {
                 }
             }
         }
-        self.pump_transport()?;
+        self.pump_transport(layout, output)?;
         let completion = match self
             .transport
             .as_ref()
@@ -726,8 +756,7 @@ impl LiveWmSession {
             LiveWmQueuedKind::SurfaceRemoved { surface } => {
                 self.workspace_state.remove_surface(surface);
                 match self.enqueue_relayout(layout, output)? {
-                    LiveWmRequestAdmission::Admitted
-                    | LiveWmRequestAdmission::Duplicate => {}
+                    LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {}
                     LiveWmRequestAdmission::RejectedCapacity => {
                         return Err(
                             "WM removal relayout exceeded the owner request capacity".into()
@@ -740,9 +769,7 @@ impl LiveWmSession {
                 fingerprint,
                 source,
                 ..
-            } => match fingerprint
-                .reconcile_response_lifetime(layout, &mut self.workspace_state)
-            {
+            } => match fingerprint.reconcile_response_lifetime(layout, &mut self.workspace_state) {
                 LiveWmResponseLifetime::RestartAndReseed {
                     removed_registered_surfaces,
                 } => {
@@ -772,7 +799,7 @@ impl LiveWmSession {
             },
         };
         if proposal.is_none() && !self.force_transport_restart {
-            self.pump_transport()?;
+            self.pump_transport(layout, output)?;
         }
         Ok(proposal)
     }
@@ -849,10 +876,9 @@ impl LiveWmSession {
             })
             .count();
         let timeout = Duration::from_millis(u64::from(
-            transaction.timeout_msec.clamp(
-                100,
-                SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
-            ),
+            transaction
+                .timeout_msec
+                .clamp(100, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC),
         ));
         Ok(LiveWmProposal {
             transaction: transaction.transaction,
@@ -875,13 +901,29 @@ impl LiveWmSession {
         })
     }
 
-    fn pump_transport(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn pump_transport(
+        &mut self,
+        layout: &PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.in_flight_request.is_some() {
             return Ok(());
         }
-        let Some(request) = self.queued_requests.pop_front() else {
+        let Some(mut request) = self.queued_requests.pop_front() else {
             return Ok(());
         };
+        if let Some(action) = request.ordered_action {
+            let (packet, kind) = ordered_wm_action_request(
+                request.packet.transaction,
+                action,
+                layout,
+                &self.workspace_state,
+                output,
+                self.candidate_chrome_style(),
+            )?;
+            request.packet = packet;
+            request.kind = kind;
+        }
         let queue_dwell = request.queued_at.elapsed();
         self.max_queue_dwell = self.max_queue_dwell.max(queue_dwell);
         if queue_dwell >= Duration::from_millis(500) {
@@ -957,6 +999,52 @@ impl LiveWmSession {
     }
 }
 
+fn ordered_wm_action_request(
+    transaction: TransactionId,
+    action: WmActionId,
+    layout: &PersistentLiveLayout,
+    workspace_state: &WmWorkspaceState,
+    output: sophia_engine::HeadlessOutput,
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<(WmRequestPacket, LiveWmQueuedKind), Box<dyn std::error::Error>> {
+    let output_state = workspace_state
+        .output(output.id)
+        .ok_or("WM output is not configured")?;
+    let nodes = layout
+        .layers
+        .values()
+        .filter_map(|layer| {
+            if !layout.is_policy_managed(layer.surface) {
+                return None;
+            }
+            let workspace = workspace_state.surface_workspace(layer.surface)?;
+            (workspace == output_state.workspace).then_some((layer, workspace))
+        })
+        .map(|(layer, workspace)| {
+            persisted_layout_node(layout, workspace_state, layer.surface, workspace, chrome)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let packet = WmRequestPacket {
+        transaction,
+        kind: WmRequestKind::ActionActivated(WmActionActivation {
+            action,
+            output: output.id,
+            workspace: output_state.workspace,
+            // Presented admission may defer the Engine focus handoff. Actions
+            // still belong to the latest committed WM snapshot, so do not mix
+            // in the temporarily older physical-focus state.
+            focused_surface: output_state.focus,
+            nodes,
+        }),
+    };
+    let kind = LiveWmQueuedKind::Proposal {
+        base_state: workspace_state.clone(),
+        fingerprint: LiveWmLayoutFingerprint::capture(layout, workspace_state),
+        source: LiveWmProposalSource::Action(action),
+    };
+    Ok((packet, kind))
+}
+
 fn committed_relayout_nodes(
     layout: &PersistentLiveLayout,
     workspace_state: &WmWorkspaceState,
@@ -971,13 +1059,7 @@ fn committed_relayout_nodes(
                 && workspace_state.surface_workspace(layer.surface) == Some(workspace)
         })
         .map(|layer| {
-            persisted_layout_node(
-                layout,
-                workspace_state,
-                layer.surface,
-                workspace,
-                chrome,
-            )
+            persisted_layout_node(layout, workspace_state, layer.surface, workspace, chrome)
         })
         .collect()
 }

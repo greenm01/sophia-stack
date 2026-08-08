@@ -32,7 +32,7 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
     echo 'sophia_qemu_stale_response schema=1 status=logout_begin chord=meta_l+shift+q'
     echo 'sophia_live_wm schema=1 status=session_action_committed transaction=23 action=Logout'
     echo 'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none'
-    echo 'sophia_live_wm_transport schema=2 status=complete peak_depth=2 pending=0 rejected=0 action_coalesced=0 stale_responses=1 max_queue_dwell_msec=4 max_round_trip_msec=90'
+    echo 'sophia_live_wm_transport schema=2 status=complete peak_depth=2 pending=0 rejected=0 action_ordered=1 action_coalesced=0 stale_responses=1 max_queue_dwell_msec=4 max_round_trip_msec=90'
     echo 'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false'
     echo 'sophia_live_session schema=16 status=bounded_complete authority_batches_dropped=0 native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_in_flight=false native_cleanup_pending=false wm_policy=external wm_restarts=1 wm_degraded=false'
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=3 retirements=2 callbacks=2 nonzero_exports=2'

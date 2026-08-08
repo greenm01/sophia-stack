@@ -480,11 +480,11 @@
     );
     if let Some(wm) = wm_session.as_ref() {
         println!(
-            "sophia_live_wm_transport schema=2 status=complete peak_depth={} pending={} rejected={} action_coalesced={} stale_responses={} max_queue_dwell_msec={} max_round_trip_msec={}",
+            "sophia_live_wm_transport schema=2 status=complete peak_depth={} pending={} rejected={} action_ordered={} action_coalesced=0 stale_responses={} max_queue_dwell_msec={} max_round_trip_msec={}",
             wm.request_peak_depth,
             wm.pending_request_count(),
             wm.request_rejections,
-            wm.action_requests_coalesced,
+            wm.action_requests_ordered,
             wm.stale_responses,
             wm.max_queue_dwell.as_millis(),
             wm.max_request().as_millis(),

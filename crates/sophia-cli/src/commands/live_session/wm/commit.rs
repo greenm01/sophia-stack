@@ -49,8 +49,7 @@ impl LiveWmSession {
         let mut clear_focus = None;
         if committed && let Some(effects) = result.effects.take() {
             let mut candidate = effects.workspace_state;
-            let retained_newer_bounds =
-                candidate.copy_output_bounds_from(&self.workspace_state)?;
+            let retained_newer_bounds = candidate.copy_output_bounds_from(&self.workspace_state)?;
             let transaction = effects.transaction;
             let output_state = candidate
                 .output(output)
@@ -93,8 +92,6 @@ impl LiveWmSession {
             // otherwise later responses can name speculative surfaces which
             // do not exist in the Engine's workspace state.
             self.request_transport_restart("uncommitted_proposal", None);
-        } else {
-            self.pump_transport()?;
         }
         Ok(owner_commit)
     }

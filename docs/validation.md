@@ -887,9 +887,13 @@ It also requires one
 `sophia_live_wm_transport schema=2 status=complete` record. The bounded
 transport must drain with zero pending or capacity-rejected requests, peak at
 no more than sixteen owner entries, reject no more than sixteen stale
-responses, report the count of nonfatal repeated physical actions coalesced
-behind an identical in-flight request, and keep queue dwell and socket round
-trip within the external policy timeout of 500 ms. The socket round trip is
+responses, report at least one ordered physical action, report zero coalesced
+physical actions, and keep queue dwell and socket round trip within the
+external policy timeout of 500 ms. Repeated opaque action tokens remain
+distinct FIFO activations and are rebuilt against the latest committed state
+when they reach the transport head. Capacity saturation consumes the shortcut,
+fails closed, and emits at most sixteen per-event diagnostics; the completion
+record retains the saturating rejection count. The socket round trip is
 intentionally not charged to the owner-thread 100 ms budget: the typed worker
 waits while the owner continues input, rendering, and page-flip service.
 

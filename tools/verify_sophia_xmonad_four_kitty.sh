@@ -456,7 +456,7 @@ for assignment in pending=0 rejected=0; do
     [[ " $wm_transport " == *" $assignment "* ]] ||
         fail "WM transport ledger was not clean: $assignment"
 done
-for key in peak_depth action_coalesced stale_responses max_queue_dwell_msec max_round_trip_msec; do
+for key in peak_depth action_ordered action_coalesced stale_responses max_queue_dwell_msec max_round_trip_msec; do
     value="$(field "$wm_transport" "$key")" ||
         fail "WM transport record is missing $key"
     [[ "$value" =~ ^[0-9]+$ ]] ||
@@ -470,7 +470,13 @@ for key in peak_depth action_coalesced stale_responses max_queue_dwell_msec max_
             (( value <= 16 )) ||
                 fail "WM transport rejected too many stale responses: $value"
             ;;
+        action_ordered)
+            (( value >= 1 )) ||
+                fail "WM transport did not retain an ordered physical action"
+            ;;
         action_coalesced)
+            (( value == 0 )) ||
+                fail "WM transport coalesced a non-idempotent physical action: $value"
             ;;
         *)
             (( value <= 500 )) ||

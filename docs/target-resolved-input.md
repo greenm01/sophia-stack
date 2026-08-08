@@ -71,6 +71,73 @@ Engine applies this precedence for each physical event:
 5. With no eligible presented application surface or shell target, Engine
    delivers nothing.
 
+The following decision flow is normative semantic precedence for the future
+coexistence boundary, not a required implementation control-flow shape. It
+covers pointer or touch events that require spatial selection. Application
+keyboard delivery follows Engine focus rather than spatial hit-testing, but it
+still shares control epochs, reserved shortcuts, authority lifecycle, and
+frontend protocol rules with this boundary.
+
+```text
+[ Physical pointer/touch event: seat + device/contact ]
+                         |
+                         v
+           [ Sophia Engine per-seat arbitration ]
+                         |
+                         +-- security/control epoch transition
+                         |     Revoke leases and captures, quarantine
+                         |     old-epoch input, and deliver no old input.
+                         |
+                         +-- reserved Engine shortcut
+                         |     Consume locally; route nothing.
+                         |
+                         `-- otherwise: inspect retained seat owner
+                               |
+                               +-- application route lease
+                               |     |
+                               |     +-- valid and inside admitted app scope
+                               |     |     Emit RoutedInputRequest to the X
+                               |     |     frontend with global and local data.
+                               |     |
+                               |     `-- scope exited
+                               |           Request frontend release and route
+                               |           neither contract until its ack.
+                               |           Discard this event; never replay it.
+                               |
+                               +-- shell target capture
+                               |     |
+                               |     +-- valid
+                               |     |     Emit target-resolved action, paced
+                               |     |     value, or granted region-local data.
+                               |     |
+                               |     `-- invalidated
+                               |           Cancel once; emit no stale delivery
+                               |           and do not reinterpret the same
+                               |           boundary as a fresh selection.
+                               |
+                               `-- no retained owner
+                                     Resolve the applicable output's
+                                     last-presented interaction snapshot.
+                                          |
+                                          +-- application surface
+                                          |     Emit a passive RoutedInputRequest.
+                                          |     This alone creates no route lease;
+                                          |     a frontend grab requires a separate
+                                          |     Engine-visible request and ack.
+                                          +-- shell target
+                                          |     Emit the applicable target-resolved
+                                          |     event. Selection alone creates no
+                                          |     capture; a qualifying press may.
+                                          `-- no eligible choice
+                                                Deliver nothing.
+```
+
+This is not a diagram of the current runtime. The native-X application path
+still selects from committed renderable input layers and applies frontend-local
+grab state after ordinary Engine re-hit-testing. Last-presented application
+selection, Engine-visible route leases, and target-resolved shell delivery must
+be implemented before this coexistence flow can ship.
+
 An X frontend grab is reduced to an Engine-visible lease naming its admitted
 profile, namespace authority, surface generation, and presentation/control
 epochs. A confined lease may continue only across application regions owned by

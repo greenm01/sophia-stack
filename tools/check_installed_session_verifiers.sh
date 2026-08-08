@@ -126,7 +126,7 @@ if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; 
     exit 1
 fi
 cp "$PASS" "$TEMP_FILE"
-printf 'sophia_live_wm_transport schema=2 status=complete peak_depth=2 pending=0 rejected=0 action_coalesced=0 stale_responses=0 max_queue_dwell_msec=12 max_round_trip_msec=180\n' >>"$TEMP_FILE"
+printf 'sophia_live_wm_transport schema=2 status=complete peak_depth=2 pending=0 rejected=0 action_ordered=3 action_coalesced=0 stale_responses=0 max_queue_dwell_msec=12 max_round_trip_msec=180\n' >>"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
     echo "installed soak verifier accepted duplicate WM transport summaries" >&2
     exit 1
