@@ -410,9 +410,11 @@ future compatibility target, not a prerequisite.
   it also repaired a pre-existing gap: the C conformance harness had never been
   taught `snapshot_session_operation` or the five policy/session messages, so
   its valid-frame and record gates had been failing before this work began.
-- [ ] Update Hagia's independent Nim codec for the new records so the
+- [x] Update Hagia's independent Nim codec for the new records so the
   cross-repository conformance gate stays green, without adding a Sophia build
-  dependency.
+  dependency. Hagia decodes both records, rejects an over-long label length and
+  non-zero padding, and declares zero indicators until it advertises the
+  capability. `SOPHIA_STACK_ROOT=… nimble test` passes.
 - [ ] Defer the tier-1 texture question rather than blocking on it. Whether the
   shared transport can carry shell texture traffic under the 64-KiB frame limit,
   single in-flight transfer, and bytes-only wire binds `sophia_shell_v1` only.
