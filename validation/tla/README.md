@@ -229,6 +229,14 @@ The optional commit-pinned Specula development audit is documented under
 `validation/specula`. It generates review evidence outside this repository and
 adds no runtime or build dependency.
 
+Complementary bounded relational and arithmetic models live under
+`validation/architecture`. Alloy owns static role/namespace/portal and
+presented-target topology; Z3 owns region and wire-bound arithmetic. They do
+not replace or translate the TLA+ models: presentation epochs, route-lease
+revocation, capture cancellation, pacing, and fairness remain temporal here.
+The cross-model relationship is a documented correspondence, not a refinement
+chain.
+
 `AdmissionRecovery.tla` covers exact PresentedBuffer selection, a later
 backing observation, proactive safe-extent admission, timeout only when no
 complete pixels have been observed, fallback admission, temporary-constraint

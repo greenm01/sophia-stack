@@ -69,6 +69,31 @@ Specula is an optional development audit, not part of the build or installed
 session. Its commit pin, narrow runner, retained findings, and artifact policy
 live under `validation/specula`.
 
+### Complementary Architecture Models
+
+The bounded Alloy and SMT-LIB2 gate complements TLA+ without translating or
+duplicating the temporal models. Alloy checks finite authority and target
+topologies. Z3 checks target geometry/disclosure arithmetic and consumes
+schema-generated `sophia_wm_v1` widths and maxima for wire-bound proofs.
+Every protected query is paired with a retained negative control that must
+produce a counterexample or satisfiable witness.
+
+The model inventory, scopes, correspondence, proof limits, official Alloy
+archive hash, and optional Z3 5.x differential are documented under
+`validation/architecture`. The stable unattended gate requires Alloy 6.2.0 and
+Z3 4.16.0 and performs no network access:
+
+```sh
+SOPHIA_ALLOY_ARCHIVE=/absolute/path/to/alloy-6.2.0-linux-amd64.tar.gz \
+  tools/check_architecture_models.sh
+```
+
+These models are bounded decision evidence, not Rust refinement proofs. The
+target models remain pre-schema; their symbolic count, precision, and rate
+budgets are not wire constants. Spin/Promela, dependency-policy automation,
+and fuzzing remain candidates until they have retained models or corpora,
+expected outcomes, and reproducible gates.
+
 ### Public Policy Wire
 
 The draft `sophia_wm_v1` wire has one checked-in KDL schema and retained Rust,

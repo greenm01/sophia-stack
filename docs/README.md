@@ -46,6 +46,9 @@ unimplemented target behavior explicitly.
 
 ## Architecture Rationale
 
+- [Architectural Alignment And Evidence Policy](architectural-alignment.md)
+  assigns temporal, relational, arithmetic, and executable claims to their
+  active validation gates and records what those gates do not prove.
 - [State and Transition Discipline](state-and-transition-discipline.md)
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
@@ -73,7 +76,8 @@ override the ownership and trust rules in the normative architecture.
 - [X11 Compatibility Matrix](x11-compatibility-matrix.md) is the admission
   record for native X11 client behavior.
 - [Validation](validation.md) lists reproducible validation commands and gates,
-  including the bounded formal transition model under `validation/tla`.
+  including the bounded temporal models under `validation/tla` and the
+  complementary relational/arithmetic models under `validation/architecture`.
 - [Active Roadmap](../todo.md) contains current milestone progress, incomplete
   work, and measurable exits.
 - [Active Research Log](research-log.md) contains current investigations and

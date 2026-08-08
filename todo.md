@@ -608,6 +608,13 @@ named soak failure promotes one.
   revocable region/precision/rate capability. The target, pacing, and
   cross-authority arbitration TLA+ models precede any `sophia_shell_v1` schema
   or runtime work; see `docs/target-resolved-input.md`.
+- [x] Admit the first complementary architecture-model gate. Alloy checks
+  bounded role/namespace/portal and presented-target topology; Z3 checks target
+  geometry/disclosure arithmetic and schema-generated `sophia_wm_v1` wire
+  bounds. Every promoted rule retains a satisfiable negative control. Keep
+  temporal ownership in TLA+ and keep Spin, dependency policy, and fuzzing
+  deferred until they have concrete retained artifacts; see
+  `docs/architectural-alignment.md`.
 - [ ] Repair native application input before shell coexistence: derive input
   selection from last-presented rather than merely committed surfaces; turn
   frontend grabs into Engine-visible profile-scoped leases with ordered release

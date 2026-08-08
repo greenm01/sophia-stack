@@ -251,6 +251,13 @@ presented route choices; profile-scoped frontend leases; release
 acknowledgement; mutually exclusive shell capture; reserved shortcuts; secure
 preemption; and stale control-epoch quarantine.
 
+`validation/architecture/alloy/PresentedTargetTopology.als` separately searches
+bounded static ownership, occlusion, trust-order, modal, identity, and grant
+relations. `validation/architecture/smt/TargetGeometryAndDisclosure.smt2`
+checks the arithmetic form of containment, clipping, quantization, rate
+budgets, and distinguishable-outcome quotas. These complementary models do not
+prove the temporal TLA+ properties or select concrete schema limits.
+
 These are small, hand-maintained project models informed by scenario-driven
 Specula analysis. Generated scaffolding, trace validation, and runtime
 instrumentation remain deferred until a shell runtime exists.
