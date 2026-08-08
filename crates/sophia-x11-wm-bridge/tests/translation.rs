@@ -8,7 +8,10 @@ use sophia_protocol::{
 use sophia_x11_wm_bridge::{
     LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID, SyntheticXEvent, X11WmBridgeError,
     X11WmBridgeState, XMONAD_ACTION_APPLICATION_1, XMONAD_ACTION_APPLICATION_2,
-    XMONAD_ACTION_APPLICATION_3, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
+    XMONAD_ACTION_APPLICATION_3, XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND,
+    XMONAD_ACTION_FOCUS_MASTER, XMONAD_ACTION_INCREASE_MASTER_COUNT, XMONAD_ACTION_RESET_LAYOUT,
+    XMONAD_ACTION_SHRINK, XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER,
+    XMONAD_ACTION_SWAP_UP, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
 };
 
 #[test]
@@ -60,7 +63,9 @@ fn xmonad_launches_the_terminal_with_super_enter() {
 }
 
 #[test]
-fn xmonad_registers_super_shift_space_as_the_floating_toggle() {
+fn xmonad_separates_layout_reset_from_the_floating_toggle() {
+    let hello = LegacyWmProfile::Xmonad.hello();
+    assert_eq!(hello.policy_generation, 2);
     let binding = LegacyWmProfile::Xmonad
         .hello()
         .bindings
@@ -71,8 +76,65 @@ fn xmonad_registers_super_shift_space_as_the_floating_toggle() {
     assert_eq!(binding.keycode, 57);
     assert_eq!(
         binding.modifiers.bits,
+        WmModifierMask::SUPER | WmModifierMask::CONTROL
+    );
+    let reset = hello
+        .bindings
+        .iter()
+        .find(|binding| binding.action.raw() == XMONAD_ACTION_RESET_LAYOUT)
+        .expect("xmonad layout reset binding");
+    assert_eq!(reset.keycode, 57);
+    assert_eq!(
+        reset.modifiers.bits,
         WmModifierMask::SUPER | WmModifierMask::SHIFT
     );
+}
+
+#[test]
+fn xmonad_practical_actions_have_distinct_super_bindings() {
+    let hello = LegacyWmProfile::Xmonad.hello();
+    let expected = [
+        (XMONAD_ACTION_FOCUS_MASTER, 50, WmModifierMask::SUPER),
+        (
+            XMONAD_ACTION_SWAP_MASTER,
+            50,
+            WmModifierMask::SUPER | WmModifierMask::SHIFT,
+        ),
+        (
+            XMONAD_ACTION_SWAP_DOWN,
+            36,
+            WmModifierMask::SUPER | WmModifierMask::SHIFT,
+        ),
+        (
+            XMONAD_ACTION_SWAP_UP,
+            37,
+            WmModifierMask::SUPER | WmModifierMask::SHIFT,
+        ),
+        (XMONAD_ACTION_SHRINK, 35, WmModifierMask::SUPER),
+        (XMONAD_ACTION_EXPAND, 38, WmModifierMask::SUPER),
+        (
+            XMONAD_ACTION_INCREASE_MASTER_COUNT,
+            51,
+            WmModifierMask::SUPER,
+        ),
+        (
+            XMONAD_ACTION_DECREASE_MASTER_COUNT,
+            52,
+            WmModifierMask::SUPER,
+        ),
+        (XMONAD_ACTION_SINK, 20, WmModifierMask::SUPER),
+    ];
+    for (action, keycode, modifiers) in expected {
+        let binding = hello
+            .bindings
+            .iter()
+            .find(|binding| binding.action.raw() == action)
+            .expect("practical xmonad binding");
+        assert_eq!(
+            (binding.keycode, binding.modifiers.bits),
+            (keycode, modifiers)
+        );
+    }
 }
 
 #[test]

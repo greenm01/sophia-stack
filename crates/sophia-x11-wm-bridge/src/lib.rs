@@ -28,6 +28,16 @@ pub const XMONAD_ACTION_FOCUS_NEXT: u64 = 1;
 pub const XMONAD_ACTION_FOCUS_PREVIOUS: u64 = 2;
 pub const XMONAD_ACTION_NEXT_LAYOUT: u64 = 3;
 pub const XMONAD_ACTION_TOGGLE_FLOATING: u64 = 4;
+pub const XMONAD_ACTION_RESET_LAYOUT: u64 = 5;
+pub const XMONAD_ACTION_FOCUS_MASTER: u64 = 6;
+pub const XMONAD_ACTION_SWAP_MASTER: u64 = 7;
+pub const XMONAD_ACTION_SWAP_DOWN: u64 = 8;
+pub const XMONAD_ACTION_SWAP_UP: u64 = 9;
+pub const XMONAD_ACTION_SHRINK: u64 = 10;
+pub const XMONAD_ACTION_EXPAND: u64 = 11;
+pub const XMONAD_ACTION_SINK: u64 = 12;
+pub const XMONAD_ACTION_INCREASE_MASTER_COUNT: u64 = 13;
+pub const XMONAD_ACTION_DECREASE_MASTER_COUNT: u64 = 14;
 pub const XMONAD_ACTION_VIEW_WORKSPACE_BASE: u64 = 0x100;
 pub const XMONAD_ACTION_MOVE_WORKSPACE_BASE: u64 = 0x200;
 pub const XMONAD_ACTION_APPLICATION_1: u64 = 0x300;
@@ -56,7 +66,7 @@ impl LegacyWmProfile {
                     | WmCapabilities::WORKSPACES
                     | WmCapabilities::SESSION_ACTIONS,
             },
-            policy_generation: 1,
+            policy_generation: 2,
             bindings,
             chrome: sophia_protocol::WmChromePolicy::default(),
         }
@@ -70,14 +80,26 @@ fn xmonad_bindings() -> Vec<WmBindingRegistration> {
     let super_shift = WmModifierMask {
         bits: WmModifierMask::SUPER | WmModifierMask::SHIFT,
     };
+    let super_control = WmModifierMask {
+        bits: WmModifierMask::SUPER | WmModifierMask::CONTROL,
+    };
     let mut bindings = vec![
         binding(XMONAD_ACTION_FOCUS_NEXT, 36, super_only),
         binding(XMONAD_ACTION_FOCUS_PREVIOUS, 37, super_only),
+        binding(XMONAD_ACTION_FOCUS_MASTER, 50, super_only),
+        binding(XMONAD_ACTION_SWAP_MASTER, 50, super_shift),
+        binding(XMONAD_ACTION_SWAP_DOWN, 36, super_shift),
+        binding(XMONAD_ACTION_SWAP_UP, 37, super_shift),
+        binding(XMONAD_ACTION_SHRINK, 35, super_only),
+        binding(XMONAD_ACTION_EXPAND, 38, super_only),
+        binding(XMONAD_ACTION_INCREASE_MASTER_COUNT, 51, super_only),
+        binding(XMONAD_ACTION_DECREASE_MASTER_COUNT, 52, super_only),
         binding(XMONAD_ACTION_NEXT_LAYOUT, 57, super_only),
-        binding(XMONAD_ACTION_TOGGLE_FLOATING, 57, super_shift),
+        binding(XMONAD_ACTION_RESET_LAYOUT, 57, super_shift),
+        binding(XMONAD_ACTION_TOGGLE_FLOATING, 57, super_control),
+        binding(XMONAD_ACTION_SINK, 20, super_only),
         binding(XMONAD_ACTION_APPLICATION_1, 28, super_only),
         binding(XMONAD_ACTION_CLOSE, 46, super_shift),
-        binding(XMONAD_ACTION_APPLICATION_2, 25, super_only),
         binding(XMONAD_ACTION_APPLICATION_3, 33, super_only),
         binding(XMONAD_ACTION_LOGOUT, 16, super_shift),
     ];
@@ -263,7 +285,17 @@ pub fn translate_xmonad_profile_action(
             XMONAD_ACTION_FOCUS_NEXT
             | XMONAD_ACTION_FOCUS_PREVIOUS
             | XMONAD_ACTION_NEXT_LAYOUT
-            | XMONAD_ACTION_TOGGLE_FLOATING => {
+            | XMONAD_ACTION_TOGGLE_FLOATING
+            | XMONAD_ACTION_RESET_LAYOUT
+            | XMONAD_ACTION_FOCUS_MASTER
+            | XMONAD_ACTION_SWAP_MASTER
+            | XMONAD_ACTION_SWAP_DOWN
+            | XMONAD_ACTION_SWAP_UP
+            | XMONAD_ACTION_SHRINK
+            | XMONAD_ACTION_EXPAND
+            | XMONAD_ACTION_SINK
+            | XMONAD_ACTION_INCREASE_MASTER_COUNT
+            | XMONAD_ACTION_DECREASE_MASTER_COUNT => {
                 return Ok(None);
             }
             _ => return Err(X11WmBridgeError::UnsupportedAction),

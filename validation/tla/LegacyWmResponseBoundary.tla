@@ -25,10 +25,12 @@ Phases == {"ready", "collecting", "failed"}
 Outcomes == {"none", "success", "failed"}
 
 VARIABLES processEpoch, request, phase, scheduled, delivered, collected,
-          quietBoundary, outcome, emitted
+          quietBoundary, grabValidated, outcome, emitted
 
 vars == <<processEpoch, request, phase, scheduled, delivered, collected,
-          quietBoundary, outcome, emitted>>
+          quietBoundary, grabValidated, outcome, emitted>>
+
+NeedsGrab(candidate) == candidate = RequestOne
 
 Init ==
     /\ processEpoch = 0
@@ -38,6 +40,7 @@ Init ==
     /\ delivered = {}
     /\ collected = NoReply
     /\ quietBoundary = FALSE
+    /\ grabValidated = FALSE
     /\ outcome = "none"
     /\ emitted = {}
 
@@ -48,8 +51,17 @@ BeginRequest(nextRequest) ==
     /\ phase' = "collecting"
     /\ collected' = NoReply
     /\ quietBoundary' = FALSE
+    /\ grabValidated' = ~NeedsGrab(nextRequest)
     /\ outcome' = "none"
     /\ UNCHANGED <<processEpoch, scheduled, delivered, emitted>>
+
+ValidateGrab ==
+    /\ phase = "collecting"
+    /\ NeedsGrab(request)
+    /\ ~grabValidated
+    /\ grabValidated' = TRUE
+    /\ UNCHANGED <<processEpoch, request, phase, scheduled, delivered,
+                    collected, quietBoundary, outcome, emitted>>
 
 ScheduleReply(value) ==
     /\ phase = "collecting"
@@ -58,7 +70,7 @@ ScheduleReply(value) ==
     /\ scheduled' = scheduled \cup
         {[value |-> value, origin |-> request]}
     /\ UNCHANGED <<processEpoch, request, phase, delivered, collected,
-                    quietBoundary, outcome, emitted>>
+                    quietBoundary, grabValidated, outcome, emitted>>
 
 DeliverReply(reply) ==
     /\ phase = "collecting"
@@ -66,7 +78,7 @@ DeliverReply(reply) ==
     /\ scheduled' = scheduled \ {reply}
     /\ delivered' = delivered \cup {reply}
     /\ UNCHANGED <<processEpoch, request, phase, collected,
-                    quietBoundary, outcome, emitted>>
+                    quietBoundary, grabValidated, outcome, emitted>>
 
 CollectReply(reply) ==
     /\ phase = "collecting"
@@ -74,15 +86,16 @@ CollectReply(reply) ==
     /\ delivered' = delivered \ {reply}
     /\ collected' = reply
     /\ UNCHANGED <<processEpoch, request, phase, scheduled,
-                    quietBoundary, outcome, emitted>>
+                    quietBoundary, grabValidated, outcome, emitted>>
 
 ObserveQuietBoundary ==
     /\ phase = "collecting"
     /\ scheduled = {}
     /\ delivered = {}
+    /\ grabValidated
     /\ quietBoundary' = TRUE
     /\ UNCHANGED <<processEpoch, request, phase, scheduled, delivered,
-                    collected, outcome, emitted>>
+                    collected, grabValidated, outcome, emitted>>
 
 CompleteRequest ==
     /\ phase = "collecting"
@@ -98,7 +111,7 @@ CompleteRequest ==
                   origin |-> collected.origin,
                   response |-> request]}
     /\ UNCHANGED <<processEpoch, scheduled, delivered, collected,
-                    quietBoundary>>
+                    quietBoundary, grabValidated>>
 
 ReachHardDeadline ==
     /\ phase = "collecting"
@@ -107,7 +120,7 @@ ReachHardDeadline ==
     /\ request' = NoRequest
     /\ outcome' = "failed"
     /\ UNCHANGED <<processEpoch, scheduled, delivered, collected,
-                    quietBoundary, emitted>>
+                    quietBoundary, grabValidated, emitted>>
 
 Restart ==
     /\ phase = "failed"
@@ -119,11 +132,13 @@ Restart ==
     /\ delivered' = {}
     /\ collected' = NoReply
     /\ quietBoundary' = FALSE
+    /\ grabValidated' = FALSE
     /\ outcome' = "none"
     /\ UNCHANGED emitted
 
 Next ==
     \/ \E nextRequest \in Requests : BeginRequest(nextRequest)
+    \/ ValidateGrab
     \/ \E value \in Replies : ScheduleReply(value)
     \/ \E reply \in scheduled : DeliverReply(reply)
     \/ \E reply \in delivered : CollectReply(reply)
@@ -142,6 +157,7 @@ TypeOK ==
     /\ delivered \subseteq ReplyRecords
     /\ collected \in ReplyRecords \cup {NoReply}
     /\ quietBoundary \in BOOLEAN
+    /\ grabValidated \in BOOLEAN
     /\ outcome \in Outcomes
     /\ emitted \subseteq EmittedRecords
 
@@ -150,6 +166,13 @@ EmittedReplyMatchesRequest ==
 
 DeadlineCannotSucceed ==
     outcome = "success" => quietBoundary
+
+GrabbedQuietNoOpIsAuthorized ==
+    (outcome = "success" /\ collected = NoReply) => grabValidated
+
+ReadyHasNoLateReply ==
+    phase = "ready" => /\ scheduled = {}
+                        /\ delivered = {}
 
 FailedRuntimeIsQuarantined ==
     phase = "failed" => /\ request = NoRequest

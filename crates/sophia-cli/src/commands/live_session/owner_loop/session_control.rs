@@ -331,6 +331,15 @@ macro_rules! apply_wm_commit_result {
                 action.raw(),
             );
         }
+        if let Some(mode) = owner_commit.pointer_gesture {
+            println!(
+                "sophia_live_wm schema=4 status=pointer_gesture_committed mode={}",
+                match mode {
+                    sophia_protocol::WmPointerGestureMode::Move => "move",
+                    sophia_protocol::WmPointerGestureMode::Resize => "resize",
+                },
+            );
+        }
         if let Some(action) = owner_commit.session_action {
             committed_session_actions.push_back(action);
         }

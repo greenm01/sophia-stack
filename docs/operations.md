@@ -331,6 +331,41 @@ projections, visually committed resizes, bidirectional selection activity, two
 distinct clean outputs, a complete kernel page-flip clock, drained input and
 held-key state, clean cursor health, and zero allocator or ownership failure.
 
+The practical profile uses these physical shortcuts:
+
+| Action | Shortcut |
+| --- | --- |
+| Focus next / previous / master | `Super+J` / `Super+K` / `Super+M` |
+| Swap down / up / master | `Super+Shift+J` / `Super+Shift+K` / `Super+Shift+M` |
+| Shrink / expand master | `Super+H` / `Super+L` |
+| Increase / decrease master count | `Super+,` / `Super+.` |
+| Next / reset layout | `Super+Space` / `Super+Shift+Space` |
+| Toggle floating / sink | `Super+Ctrl+Space` / `Super+T` |
+| View / move to workspace | `Super+1..9` / `Super+Shift+1..9` |
+| Open Kitty / Firefox | `Super+Enter` / `Super+F` |
+| Close / normal logout | `Super+Shift+C` / `Super+Shift+Q` |
+| Float and move / resize | `Super+left drag` / `Super+right drag` |
+
+The candidate packages the theme with Engine, not xmonad: a one-pixel
+IR_Black-derived frame uses `#ffb6b0` when focused and `#7c7c7c` otherwise.
+Xmobar remains static and redacted; it receives no titles or client metadata.
+
+During the soak, run this once in the startup Kitty and open another Kitty for
+ordinary work:
+
+```sh
+sophia-soak-progress --watch
+```
+
+The display reports elapsed time, the 10-Kitty/5-Firefox/15-close workload,
+every still-missing practical action, workspace view/move, and pointer
+move/resize. There is no prescribed sequence and no need to repeat an action
+once it disappears from the remaining list. Exercise small-text `CLIPBOARD`
+and `PRIMARY`, visible TrueColor, both outputs, and normal work as convenient;
+then use `Super+Shift+Q` once after two hours. `sophia-verify-soak` recomputes
+the redacted summary from the checksummed raw log and fails on a false or stale
+progress record.
+
 ## Known Limitations
 
 - Sophia is a native X11 research candidate, not a full Xorg replacement.

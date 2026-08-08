@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+if [[ -f "$SCRIPT_DIR/lib/installed_soak_evidence.sh" ]]; then
+    source "$SCRIPT_DIR/lib/installed_soak_evidence.sh"
+else
+    source "$SCRIPT_DIR/../tools/lib/installed_soak_evidence.sh"
+fi
+
 session_log="${1:-}"
 minimum_msec="${2:-7200000}"
 minimum_terminal_actions="${3:-10}"
@@ -51,12 +59,12 @@ elapsed="$(field elapsed_msec)"
     exit 1
 }
 terminal_actions="$(
-    grep -Ec '^sophia_session_app schema=1 status=started id=terminal source=action$' \
-        "$session_log" || true
+    sophia_soak_count "$session_log" \
+        '^sophia_session_app schema=(1|2) status=started id=terminal source=action( |$)'
 )"
 firefox_actions="$(
-    grep -Ec '^sophia_session_app schema=1 status=started id=firefox source=action$' \
-        "$session_log" || true
+    sophia_soak_count "$session_log" \
+        '^sophia_session_app schema=(1|2) status=started id=firefox source=action( |$)'
 )"
 layout_commits="$(
     grep -Ec '^sophia_live_wm schema=1 status=layout_committed .* outcome=Committed$' \
@@ -125,6 +133,48 @@ visual_resizes="$(
 minimum_close_actions=$((minimum_terminal_actions + minimum_firefox_actions))
 (( close_actions >= minimum_close_actions )) || {
     echo "soak has $close_actions close actions; $minimum_close_actions required" >&2
+    exit 1
+}
+for action in "${SOPHIA_SOAK_PRACTICAL_ACTION_IDS[@]}"; do
+    action_count="$(sophia_soak_action_count "$session_log" "$action")"
+    (( action_count >= 1 )) || {
+        echo "soak is missing practical action $(sophia_soak_action_name "$action") ($action)" >&2
+        exit 1
+    }
+done
+workspace_views="$(sophia_soak_workspace_view_count "$session_log")"
+workspace_moves="$(sophia_soak_workspace_move_count "$session_log")"
+pointer_moves="$(sophia_soak_count "$session_log" '^sophia_live_wm schema=4 status=pointer_gesture_committed mode=move$')"
+pointer_resizes="$(sophia_soak_count "$session_log" '^sophia_live_wm schema=4 status=pointer_gesture_committed mode=resize$')"
+(( workspace_views >= 1 && workspace_moves >= 1 )) || {
+    echo "soak requires one physical workspace view and move: view=$workspace_views move=$workspace_moves" >&2
+    exit 1
+}
+(( pointer_moves >= 1 && pointer_resizes >= 1 )) || {
+    echo "soak requires one committed pointer move and resize: move=$pointer_moves resize=$pointer_resizes" >&2
+    exit 1
+}
+if grep -Eq '^sophia_live_wm schema=1 status=layout_timeout |^sophia_live_resize_epoch schema=[0-9]+ status=(aborted|queue_aborted) ' \
+    "$session_log"; then
+    echo "soak contains a layout timeout or aborted resize epoch" >&2
+    exit 1
+fi
+mapfile -t layout_authority_summaries < <(
+    grep -E '^sophia_live_layout_authority schema=1 status=' "$session_log" || true
+)
+[[ "${#layout_authority_summaries[@]}" == 1 \
+    && "${layout_authority_summaries[0]}" == \
+        'sophia_live_layout_authority schema=1 status=clean hidden_surface_commands=0' ]] || {
+    echo "soak lacks the zero hidden-surface-command invariant" >&2
+    exit 1
+}
+mapfile -t wm_transport_summaries < <(
+    grep -E '^sophia_live_wm_transport schema=2 status=complete ' "$session_log" || true
+)
+[[ "${#wm_transport_summaries[@]}" == 1 \
+    && " ${wm_transport_summaries[0]} " == *' pending=0 rejected=0 '* \
+    && " ${wm_transport_summaries[0]} " == *' stale_responses=0 '* ]] || {
+    echo "soak WM transport has pending, rejected, or stale work" >&2
     exit 1
 }
 mapfile -t selections < <(
@@ -267,4 +317,4 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pend
     exit 1
 }
 
-echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits focus_commits=$focus_commits workspace_away=$workspace_away workspace_return=$workspace_return visual_resizes=$visual_resizes close_actions=$close_actions selection_owner_changes=$selection_owner_changes selection_conversions=$selection_conversions outputs=$outputs"
+echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits focus_commits=$focus_commits workspace_away=$workspace_away workspace_return=$workspace_return workspace_views=$workspace_views workspace_moves=$workspace_moves pointer_moves=$pointer_moves pointer_resizes=$pointer_resizes practical_actions=${#SOPHIA_SOAK_PRACTICAL_ACTION_IDS[@]} visual_resizes=$visual_resizes close_actions=$close_actions selection_owner_changes=$selection_owner_changes selection_conversions=$selection_conversions outputs=$outputs"

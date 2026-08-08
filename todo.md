@@ -32,7 +32,7 @@ the first mature bridge profile and current promotion vehicle; it is not
 Sophia's architectural WM. XLibre and Wayland prototypes remain under
 `research/` as architectural evidence.
 
-The current installed candidate provides:
+The currently retained installed candidate provides:
 
 - guarded two-output startup and exact TTY restoration;
 - automatic Kitty, supervised xmonad, and optional unmodified xmobar;
@@ -55,10 +55,12 @@ Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
 Independent emergency attempt `0004` and ten-cycle range `0044` through `0053`
 also pass on `883666a2`. Preliminary soak attempt `0054` then retained a
 workspace-isolation and first-admission failure in that candidate. The bridge
-and admission fixes require one short successor proof before restarting the
-two-hour soak; the full-workday gate remains after it. Active client projection
-onto output 2 is a separate compatibility boundary and is not claimed by the
-TrueColor gate.
+and admission fixes passed short successor run `0055`. The next source
+successor adds the practical opaque-action profile, immutable Engine-owned
+IR_Black chrome, and self-reporting soak evidence. It requires one short
+installed proof before restarting the two-hour soak; the full-workday gate
+remains after it. Active client projection onto output 2 is a separate
+compatibility boundary and is not claimed by the TrueColor gate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -119,9 +121,11 @@ the correct authority.
   though the session descriptor can express output/workspace mappings. True
   independent per-output workspaces require output-scoped active-workspace
   state throughout the bridge and Engine transaction path.
-- The opaque WM API lacks focus-master, swap-master/up/down, shrink/expand,
-  master-count, reset-layout, focus-output, move-to-output, and supervised
-  WM-restart actions.
+- The xmonad compatibility profile now exposes opaque focus-master,
+  swap-master/up/down, shrink/expand, master-count, reset-layout,
+  toggle-floating, and sink actions without expanding the WM wire format.
+  Focus-output, move-to-output, output-scoped layout state, and supervised WM
+  restart remain compatibility work.
 - `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` have exact
   configured-bridge geometry coverage. Xmonad's `Tabbed` layout depends on
   title-aware, WM-drawn decorations and therefore does not fit the blind-WM
@@ -146,6 +150,16 @@ the correct authority.
 - Tray/XEmbed, lock, screenshots, wallpaper, audio control, and general prompt
   UI are shell or portal work. `xcompmgr` must never run under Sophia because
   Sophia is the compositor.
+- Full classical-desktop parity remains explicitly deferred and ownership
+  split. A trusted shell/session broker must own arbitrary launch, lock,
+  screenshots, wallpaper, audio/media/eject, and launch-placement provenance.
+  Engine chrome must own metadata-free tabs, decorations, and fullscreen
+  presentation. A redacted shell feed must own workspace/layout/focus labels.
+  The X compatibility layer still needs tray/XEmbed, output focus/move,
+  optional input aliases such as Super+Tab and button-2 swap-master, and
+  evidence-backed per-WM profiles. None of these may introduce titles,
+  classes, XIDs, PIDs, namespace identity, or executable commands into the
+  blind WM boundary.
 - The compatibility bridge currently has a complete xmonad profile, not broad
   classical-WM compatibility. Other WMs such as i3, dwm, and qtile require
   separate evidence-backed profiles against the same synthetic-X and Sophia
@@ -197,6 +211,17 @@ it must not make xmonad concepts part of Engine or the universal WM API.
 - [x] Keep xmobar's present static/redacted content for this milestone unless
   the soak demonstrates that a dynamic status feed is required. Dynamic
   workspace/layout/focus status belongs to the post-promotion broker slice.
+- [x] Adapt the safe practical core of the retained personal xmonad profile to
+  opaque Sophia actions: focus/swap master, swap up/down, shrink/expand,
+  master-count, layout reset, floating toggle, and sink. Keep physical chords
+  Super-based and private compatibility chords inside the bridge.
+- [x] Package the IR_Black-derived one-pixel focused/unfocused frame as an
+  Engine core configuration. Keep xmonad borders disabled and xmobar static,
+  redacted, and title-free.
+- [x] Add one shared soak-evidence reducer, an installed
+  `sophia-soak-progress --watch` command, and a checksummed redacted summary.
+  Require every practical action once while retaining workload thresholds and
+  exact zero-debt health gates.
 
 ### 12.2 Complete TrueColor Semantics
 
@@ -301,6 +326,13 @@ it must not make xmonad concepts part of Engine or the universal WM API.
   two independently advancing animated surfaces, zero layout timeout, resize
   abort, hidden-surface configure/render command, or WM restart, and clean
   normal-session teardown.
+- [ ] Install the practical-profile successor and pass one short gate on that
+  exact candidate: every new action must commit, both pointer modes must
+  commit, Kitty/Firefox/xmobar and Engine chrome must render correctly,
+  TrueColor must remain intact, and layout timeout, resize abort, hidden
+  surface commands, transport debt, or WM restart must remain zero. This new
+  packaged policy intentionally makes run `0055` historical evidence rather
+  than evidence for the next long soak.
 - [ ] Pass a two-hour interactive soak with repeated Kitty and Firefox
   launch/close, focus, workspace, layout, floating, resize, clipboard,
   TrueColor, and multi-output actions. Every named workload must appear in
@@ -509,8 +541,9 @@ named soak failure promotes one.
 - [ ] Define a bounded redacted status feed for workspace number, approved
   layout name, focus state, output health, and supervised-component health.
   Feed xmobar through a trusted shell broker without exposing client metadata.
-- [ ] Register a bounded launcher as physical action 3 and decide whether the
-  compatibility UI is dmenu or native Engine/shell chrome.
+- [ ] Register a new bounded opaque launcher action and decide whether the
+  compatibility UI is dmenu or native Engine/shell chrome. Do not reuse the
+  established xmonad layout-action IDs.
 - [ ] Implement lock, screenshot, wallpaper, and audio actions through their
   owning shell or portal boundaries.
 - [ ] Admit tray/XEmbed only from a retained application workflow and keep it

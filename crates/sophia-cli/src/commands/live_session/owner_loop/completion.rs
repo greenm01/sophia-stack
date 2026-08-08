@@ -537,6 +537,12 @@
         standing_target_count,
         layout.constraint_relayout_required(),
     );
+    // WmWorkspaceState rejects hidden configure/render commands before they
+    // can enter an Engine transaction; a clean completion therefore proves
+    // the invariant without retaining client identity.
+    println!(
+        "sophia_live_layout_authority schema=1 status=clean hidden_surface_commands=0"
+    );
     println!(
         "sophia_live_session_protocol_errors schema=1 expected={} unexpected={}",
         expected_protocol_error_count, protocol_error_count,

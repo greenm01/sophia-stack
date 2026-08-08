@@ -587,7 +587,13 @@ else
     fi
 fi
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
+    core_config="${SOPHIA_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia-xmonad/core.kdl}"
+    [[ "$core_config" == /* && -f "$core_config" ]] || {
+        echo "Sophia's xmonad core configuration must be an absolute existing path: $core_config" >&2
+        exit 1
+    }
     session_args+=(
+        "--config=$core_config"
         --session-action-app=terminal=terminal
         --wm-process="$SOPHIA_WM_BRIDGE_BIN"
         --wm-process-arg="--wm=$xmonad_bin"

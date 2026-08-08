@@ -69,6 +69,7 @@ commands=(
     sophia-native-chrome-proof
     sophia-status
     sophia-stop
+    sophia-soak-progress
     sophia-rollback
     sophia-run-cycles
     sophia-setup-uinput

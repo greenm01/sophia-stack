@@ -34,8 +34,15 @@ impl LiveWmSession {
                 LiveWmProposalSource::Action(action) => Some(action),
                 LiveWmProposalSource::Focus(_)
                 | LiveWmProposalSource::Manage(_)
-                | LiveWmProposalSource::PointerGesture(_)
+                | LiveWmProposalSource::PointerGesture { .. }
                 | LiveWmProposalSource::Relayout => None,
+            });
+        let pointer_gesture = committed
+            .then_some(result.source)
+            .flatten()
+            .and_then(|source| match source {
+                LiveWmProposalSource::PointerGesture { mode, .. } => Some(mode),
+                _ => None,
             });
         let mut session_action = None;
         let mut workspace_projection = None;
@@ -74,6 +81,7 @@ impl LiveWmSession {
         let owner_commit = LiveWmOwnerCommit {
             update: result.update,
             physical_action,
+            pointer_gesture,
             session_action,
             workspace_projection,
             clear_focus,

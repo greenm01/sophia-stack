@@ -1,0 +1,19 @@
+/- kdl-version 2
+schema 2
+
+input {
+    seat "seat0"
+    keyboard rules="evdev" model="pc105" layout="us" variant="" options=""
+    repeat delay-ms=660 interval-ms=25
+}
+
+compositor {
+    chrome-fallback {
+        focus-ring enabled=#false width=0 color="#ffb6b0"
+        frame enabled=#true width=1 focused-color="#ffb6b0" unfocused-color="#7c7c7c"
+    }
+    chrome-limits max-width=64
+}
+
+namespace profile="classic-shared"
+diagnostics verbose=#false

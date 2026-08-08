@@ -16,9 +16,12 @@ use sophia_protocol::{
     WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_FOCUS_NEXT,
-    XMONAD_ACTION_MOVE_WORKSPACE_BASE, XMONAD_ACTION_NEXT_LAYOUT,
-    XMONAD_ACTION_VIEW_WORKSPACE_BASE,
+    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime,
+    XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND, XMONAD_ACTION_FOCUS_MASTER,
+    XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS, XMONAD_ACTION_INCREASE_MASTER_COUNT,
+    XMONAD_ACTION_MOVE_WORKSPACE_BASE, XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT,
+    XMONAD_ACTION_SHRINK, XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER,
+    XMONAD_ACTION_SWAP_UP, XMONAD_ACTION_VIEW_WORKSPACE_BASE,
 };
 
 const ROOT: u32 = 0x20;
@@ -89,6 +92,13 @@ fn continuous_layout_fixture_process() {
 }
 
 #[test]
+fn practical_quiet_fixture_process() {
+    if is_private_bridge_child() {
+        run_fixture(FixtureBehavior::PracticalQuiet);
+    }
+}
+
+#[test]
 fn next_layout_ignores_pre_action_reconciliation_and_waits_for_delayed_wm_output() {
     let mut runtime = fixture_runtime("delayed_next_layout_fixture_process");
     configure_session(&mut runtime);
@@ -101,6 +111,54 @@ fn next_layout_ignores_pre_action_reconciliation_and_waits_for_delayed_wm_output
 
     assert_eq!(response.transaction, TransactionId::from_raw(4));
     assert_eq!(response_placements(&response), mirror_layout());
+}
+
+#[test]
+fn registered_practical_actions_accept_a_quiet_state_dependent_noop() {
+    let mut runtime = fixture_runtime("practical_quiet_fixture_process");
+    configure_session(&mut runtime);
+    let surface = SurfaceId::new(10, 1);
+    runtime
+        .handle_request(&WmRequestPacket {
+            transaction: TransactionId::from_raw(10),
+            kind: WmRequestKind::ManageSurface(WmManageSurface {
+                output: OutputId::from_raw(1),
+                workspace: WorkspaceId::from_raw(1),
+                bounds: BOUNDS,
+                node: node(10, BOUNDS),
+            }),
+        })
+        .unwrap();
+    let actions = [
+        XMONAD_ACTION_FOCUS_NEXT,
+        XMONAD_ACTION_FOCUS_PREVIOUS,
+        XMONAD_ACTION_NEXT_LAYOUT,
+        XMONAD_ACTION_RESET_LAYOUT,
+        XMONAD_ACTION_FOCUS_MASTER,
+        XMONAD_ACTION_SWAP_MASTER,
+        XMONAD_ACTION_SWAP_DOWN,
+        XMONAD_ACTION_SWAP_UP,
+        XMONAD_ACTION_SHRINK,
+        XMONAD_ACTION_EXPAND,
+        XMONAD_ACTION_SINK,
+        XMONAD_ACTION_INCREASE_MASTER_COUNT,
+        XMONAD_ACTION_DECREASE_MASTER_COUNT,
+    ];
+    for (offset, action) in actions.into_iter().enumerate() {
+        let response = runtime
+            .handle_request(&WmRequestPacket {
+                transaction: TransactionId::from_raw(20 + offset as u64),
+                kind: WmRequestKind::ActionActivated(WmActionActivation {
+                    action: WmActionId::from_raw(action),
+                    output: OutputId::from_raw(1),
+                    workspace: WorkspaceId::from_raw(1),
+                    focused_surface: Some(surface),
+                    nodes: vec![node(10, BOUNDS)],
+                }),
+            })
+            .unwrap_or_else(|error| panic!("action {action} failed: {error}"));
+        assert_eq!(response.transaction.raw(), 20 + offset as u64);
+    }
 }
 
 #[test]
@@ -621,6 +679,7 @@ enum FixtureBehavior {
     PointerGesture,
     SilentFocusNoop,
     StaleHiddenConfigure,
+    PracticalQuiet,
 }
 
 fn run_fixture(behavior: FixtureBehavior) {
@@ -639,6 +698,25 @@ fn run_fixture(behavior: FixtureBehavior) {
         FixtureBehavior::StaleHiddenConfigure => {}
         FixtureBehavior::ManageFocus => {}
         FixtureBehavior::PointerGesture => {}
+        FixtureBehavior::PracticalQuiet => {
+            for (keycode, modifiers) in [
+                (b'j', MOD1_MASK),
+                (b'k', MOD1_MASK),
+                (b'm', MOD1_MASK),
+                (b'm', MOD1_MASK | 1),
+                (b'j', MOD1_MASK | 1),
+                (b'k', MOD1_MASK | 1),
+                (b'h', MOD1_MASK),
+                (b'l', MOD1_MASK),
+                (b' ', MOD1_MASK),
+                (b' ', MOD1_MASK | 1),
+                (b't', MOD1_MASK),
+                (b',', MOD1_MASK),
+                (b'.', MOD1_MASK),
+            ] {
+                write_grab_key_with_modifiers(&mut stream, keycode, modifiers);
+            }
+        }
     }
 
     let mut windows = Vec::new();
@@ -880,9 +958,13 @@ fn query_keycode(stream: &mut UnixStream, keysym: u32) -> (u8, VecDeque<[u8; 32]
 }
 
 fn write_grab_key(stream: &mut UnixStream, keycode: u8) {
+    write_grab_key_with_modifiers(stream, keycode, MOD1_MASK);
+}
+
+fn write_grab_key_with_modifiers(stream: &mut UnixStream, keycode: u8, modifiers: u16) {
     let mut request = vec![33, 1, 4, 0];
     request.extend_from_slice(&ROOT.to_le_bytes());
-    request.extend_from_slice(&MOD1_MASK.to_le_bytes());
+    request.extend_from_slice(&modifiers.to_le_bytes());
     request.push(keycode);
     request.extend_from_slice(&[1, 1, 0, 0, 0]);
     stream.write_all(&request).unwrap();

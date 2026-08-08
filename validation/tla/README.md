@@ -80,11 +80,12 @@ and 2,106 distinct states to depth 11.
 
 `LegacyWmResponseBoundary.tla` models the compatibility limit imposed by an
 unmodified legacy WM: its X requests carry no Sophia transaction identity.
-Successful collection therefore requires a final quiet boundary. A hard
-deadline fails and quarantines the process; restart clears every private reply
-stage before later work begins. The model requires every emitted reply to
-belong to its collecting request. Its bounded configuration explores 17,683
-generated states and 6,417 distinct states to depth 39.
+Successful collection therefore requires a validated registered grab and a
+final quiet boundary. A hard deadline fails and quarantines the process;
+restart clears every private reply stage before later work begins. The model
+requires every emitted reply to belong to its collecting request. Its bounded
+configuration explores 27,667 generated states and 9,489 distinct states to
+depth 42.
 
 `PixelSilentAdmission.tla` distinguishes presentation intent from complete
 pixels. A first timeout without a safe extent preserves the standing target,
@@ -136,7 +137,7 @@ the current owning Rust boundaries as follows:
 | `AssignWorkspace` | `X11WmBridgeState::assign_workspace` updating cached membership before mapping reconciliation |
 | `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` selecting the exact cached workspace membership |
 | `TranslateConfigure`, `TranslateFocus` | `X11WmBridgeState::translate_legacy_requests_for_output` filtering requests through the current mapped-window set |
-| `BeginRequest`, `ObserveQuietBoundary`, `CompleteRequest` | `LegacyX11WmBridgeRuntime::handle_request_once` and `collect_legacy_responses` |
+| `BeginRequest`, `ValidateGrab`, `ObserveQuietBoundary`, `CompleteRequest` | registered private xmonad action validation, `LegacyX11WmBridgeRuntime::handle_request_once`, and `collect_legacy_responses` |
 | `ReachHardDeadline` | response collection returning an error before any normal response is encoded |
 | `Restart` | live-session supervision replacing the failed bridge process and reseeding committed state |
 | `BeginLayout`, `FirstSilentTimeout` | admission staging and `LiveWmLayoutManager::expire_pending` retaining a pixel-silent retry |

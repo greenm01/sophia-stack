@@ -22,6 +22,14 @@ grep -Fxq \
     "$TEMP_DIR/captured.log"
 
 "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200000 2 2
+progress="$({
+    SOPHIA_SOAK_SESSION_LOG="$PASS" \
+        SOPHIA_SOAK_IDENTITY_LOG="$TEMP_DIR/missing-identity.log" \
+        "$ROOT_DIR/tools/installed/sophia-soak-progress"
+} 2>&1)"
+grep -Fq 'Apps: Kitty 2/10  Firefox 2/5  close 4/15' <<<"$progress"
+grep -Fq 'Policy: 14/14  remaining: none' <<<"$progress"
+grep -Fq 'Workspace: view 1  move 1    Pointer: move 1  resize 1' <<<"$progress"
 sed 's/^sophia_live_session schema=14 status=bounded_complete /sophia_live_session schema=16 status=bounded_complete /' \
     "$PASS" >"$TEMP_FILE"
 "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2
@@ -76,6 +84,51 @@ sed '0,/action=CloseFocused$/{/action=CloseFocused$/d;}' \
     "$PASS" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
     echo "installed soak verifier accepted too few close actions" >&2
+    exit 1
+fi
+sed '/status=physical_action_committed action=7$/d' "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a missing practical action" >&2
+    exit 1
+fi
+sed '/status=physical_action_committed action=514$/d' "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted no workspace move" >&2
+    exit 1
+fi
+sed '/status=pointer_gesture_committed mode=resize$/d' "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted no pointer resize" >&2
+    exit 1
+fi
+cp "$PASS" "$TEMP_FILE"
+printf 'sophia_live_wm schema=1 status=layout_timeout transaction=99 preserved_layout=true rollback_transaction=99 rollback_configures=1 resize_state=redacted\n' >>"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a layout timeout" >&2
+    exit 1
+fi
+cp "$PASS" "$TEMP_FILE"
+printf 'sophia_live_resize_epoch schema=3 status=queue_aborted epoch=99 rejected_presents=1 recovery_extents=1\n' >>"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted an aborted resize queue" >&2
+    exit 1
+fi
+sed 's/hidden_surface_commands=0/hidden_surface_commands=1/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted a hidden surface command" >&2
+    exit 1
+fi
+sed 's/pending=0 rejected=0/pending=0 rejected=1/' \
+    "$PASS" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted rejected WM transport work" >&2
+    exit 1
+fi
+cp "$PASS" "$TEMP_FILE"
+printf 'sophia_live_wm_transport schema=2 status=complete peak_depth=2 pending=0 rejected=0 action_coalesced=0 stale_responses=0 max_queue_dwell_msec=12 max_round_trip_msec=180\n' >>"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2; then
+    echo "installed soak verifier accepted duplicate WM transport summaries" >&2
     exit 1
 fi
 sed 's/owner_changes=2 conversions=2/owner_changes=1 conversions=1/' \

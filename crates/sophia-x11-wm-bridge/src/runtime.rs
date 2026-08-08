@@ -26,13 +26,20 @@ use sophia_x_authority::{XByteOrder, serve_x11_setup_socket_client_with_root_siz
 use crate::{
     BridgeEngineUpdate, LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID,
     SyntheticManageProfile, SyntheticXEvent, SyntheticXWindowId, X11WmBridgeError,
-    X11WmBridgeState, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
-    XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
+    X11WmBridgeState, XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND,
+    XMONAD_ACTION_FOCUS_MASTER, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
+    XMONAD_ACTION_INCREASE_MASTER_COUNT, XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT,
+    XMONAD_ACTION_SHRINK, XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER,
+    XMONAD_ACTION_SWAP_UP, XMONAD_ACTION_TOGGLE_FLOATING, translate_xmonad_profile_action,
 };
 
 const FIRST_DYNAMIC_ATOM: u32 = 256;
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(3);
 const QUIET_PERIOD: Duration = Duration::from_millis(80);
+// A grabbed key may be a legitimate state-dependent no-op. Give xmonad a
+// bounded post-grab settling interval before declaring that quiet result; any
+// observed reply restarts the same interval.
+const PROFILE_ACTION_QUIET_PERIOD: Duration = Duration::from_millis(250);
 const IO_POLL: Duration = Duration::from_millis(20);
 const XMONAD_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
 const XMONAD_ADMISSION_RESIZE_TIMEOUT_MSEC: u32 = 2_000;
@@ -40,6 +47,8 @@ const FIRST_PRIVATE_X_DISPLAY: u16 = 90;
 const LAST_PRIVATE_X_DISPLAY: u16 = 4_095;
 const X11_ANY_KEY: u8 = 0;
 const X11_ANY_MODIFIER: u16 = 1 << 15;
+const X11_SHIFT_MASK: u16 = 1;
+const X11_CONTROL_MASK: u16 = 1 << 2;
 const X11_MOD1_MASK: u16 = 1 << 3;
 
 #[derive(Debug)]
@@ -129,16 +138,24 @@ struct LegacyResponseExpectation {
 }
 
 fn xmonad_profile_chord(action: u64) -> Option<SyntheticKeyChord> {
-    let keycode = match action {
-        XMONAD_ACTION_FOCUS_NEXT => 106,
-        XMONAD_ACTION_FOCUS_PREVIOUS => 107,
-        XMONAD_ACTION_NEXT_LAYOUT => 32,
+    let (keycode, modifiers) = match action {
+        XMONAD_ACTION_FOCUS_NEXT => (b'j', X11_MOD1_MASK),
+        XMONAD_ACTION_FOCUS_PREVIOUS => (b'k', X11_MOD1_MASK),
+        XMONAD_ACTION_FOCUS_MASTER => (b'm', X11_MOD1_MASK),
+        XMONAD_ACTION_SWAP_MASTER => (b'm', X11_MOD1_MASK | X11_SHIFT_MASK),
+        XMONAD_ACTION_SWAP_DOWN => (b'j', X11_MOD1_MASK | X11_SHIFT_MASK),
+        XMONAD_ACTION_SWAP_UP => (b'k', X11_MOD1_MASK | X11_SHIFT_MASK),
+        XMONAD_ACTION_SHRINK => (b'h', X11_MOD1_MASK),
+        XMONAD_ACTION_EXPAND => (b'l', X11_MOD1_MASK),
+        XMONAD_ACTION_NEXT_LAYOUT => (b' ', X11_MOD1_MASK),
+        XMONAD_ACTION_RESET_LAYOUT => (b' ', X11_MOD1_MASK | X11_SHIFT_MASK),
+        XMONAD_ACTION_TOGGLE_FLOATING => (b' ', X11_MOD1_MASK | X11_CONTROL_MASK),
+        XMONAD_ACTION_SINK => (b't', X11_MOD1_MASK),
+        XMONAD_ACTION_INCREASE_MASTER_COUNT => (b',', X11_MOD1_MASK),
+        XMONAD_ACTION_DECREASE_MASTER_COUNT => (b'.', X11_MOD1_MASK),
         _ => return None,
     };
-    Some(SyntheticKeyChord {
-        keycode,
-        modifiers: X11_MOD1_MASK,
-    })
+    Some(SyntheticKeyChord { keycode, modifiers })
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -390,7 +407,7 @@ impl LegacyX11WmBridgeRuntime {
                     // Direct commands do not consume the WM's proposed layout,
                     // but their synthetic events must still settle before a
                     // successor request can own any legacy reply.
-                    self.collect_legacy_responses(&BTreeSet::new(), false)?;
+                    self.collect_legacy_responses(&BTreeSet::new(), false, QUIET_PERIOD)?;
                 }
                 return Ok(response);
             }
@@ -501,7 +518,7 @@ impl LegacyX11WmBridgeRuntime {
             // A sole retained node already has committed Engine geometry.
             // X11 permits its remap to produce no redundant configure, while
             // every action that still needs layout policy keeps this fence.
-            self.collect_legacy_responses(&expected.map_admissions, true)?;
+            self.collect_legacy_responses(&expected.map_admissions, false, QUIET_PERIOD)?;
         }
         if let Some(chord) = profiled_chord {
             let commands = self
@@ -611,17 +628,15 @@ impl LegacyX11WmBridgeRuntime {
                     .map_err(|_| BridgeRuntimeError::new("legacy WM server stopped"))?;
             }
         }
-        let response_batch = if profiled_chord.is_some() || pointer_gesture.is_some() {
-            // Focus cycling has a deterministic target. With one mapped
-            // window xmonad may correctly emit no event, so that no-op must
-            // not consume the bridge's three-second failure bound.
-            let require_activity = pointer_gesture.is_some()
-                || (profiled_chord.is_some()
-                    && profiled_focus.is_none()
-                    && !self.bridge.mapped_windows.is_empty());
-            self.collect_legacy_responses(&BTreeSet::new(), require_activity)?
+        let response_batch = if pointer_gesture.is_some() {
+            self.collect_legacy_responses(&BTreeSet::new(), true, QUIET_PERIOD)?
+        } else if profiled_chord.is_some() {
+            // A registered grab proves that xmonad accepted the action. Some
+            // valid actions are state-dependent no-ops, so quiet—not geometry
+            // churn—is the response boundary.
+            self.collect_legacy_responses(&BTreeSet::new(), false, PROFILE_ACTION_QUIET_PERIOD)?
         } else {
-            self.collect_legacy_responses(&expected.configured, false)?
+            self.collect_legacy_responses(&expected.configured, false, QUIET_PERIOD)?
         };
         let mut requests = if matches!(request.kind, WmRequestKind::FocusRequested(_)) {
             Vec::new()
@@ -668,6 +683,15 @@ impl LegacyX11WmBridgeRuntime {
                 floating: !toggle.was_floating,
             });
         }
+        if let WmRequestKind::ActionActivated(activation) = &request.kind
+            && activation.action.raw() == XMONAD_ACTION_SINK
+            && let Some(surface) = activation.focused_surface
+        {
+            response.commands.push(WmCommand::SetFloating {
+                surface,
+                floating: false,
+            });
+        }
         if let Some(gesture) = pointer_gesture {
             response.commands.push(WmCommand::SetFloating {
                 surface: gesture.surface,
@@ -681,6 +705,7 @@ impl LegacyX11WmBridgeRuntime {
         &mut self,
         expected: &BTreeSet<SyntheticXWindowId>,
         require_activity: bool,
+        quiet_period: Duration,
     ) -> Result<LegacyResponseBatch, BridgeRuntimeError> {
         let started = Instant::now();
         let mut last_activity = started;
@@ -712,7 +737,7 @@ impl LegacyX11WmBridgeRuntime {
                         .all(|window| batch.configured.contains_key(window));
                     if expected_complete
                         && (!require_activity || observed_activity)
-                        && last_activity.elapsed() >= QUIET_PERIOD
+                        && last_activity.elapsed() >= quiet_period
                     {
                         quiet_boundary = true;
                         break;

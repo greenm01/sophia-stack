@@ -22,6 +22,7 @@ OPERATOR_COMMANDS=(
     sophia-native-chrome-proof
     sophia-status
     sophia-stop
+    sophia-soak-progress
     sophia-rollback
     sophia-run-cycles
     sophia-setup-uinput
@@ -88,6 +89,8 @@ make_artifact() {
     printf 'name: sophia-xmonad\n' \
         >"$artifact/share/sophia-policy/xmonad/sophia-xmonad.cabal"
     printf 'offline: True\n' >"$artifact/share/sophia-policy/xmonad/cabal.project"
+    printf '/- kdl-version 2\nschema 2\n' \
+        >"$artifact/share/sophia-policy/xmonad/core.kdl"
     printf 'Config {}\n' >"$artifact/tools/fixtures/xmobar_sophia.config"
     printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-session\n' \
         >"$artifact/share/wayland-sessions/sophia.desktop"
@@ -106,10 +109,11 @@ make_artifact() {
     xmonad_config_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/Main.hs" | awk '{print $1}')"
     xmonad_cabal_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/sophia-xmonad.cabal" | awk '{print $1}')"
     xmonad_project_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/cabal.project" | awk '{print $1}')"
+    xmonad_core_config_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/core.kdl" | awk '{print $1}')"
     xmobar_config_digest="$(sha256sum "$artifact/tools/fixtures/xmobar_sophia.config" | awk '{print $1}')"
-    printf 'schema=2\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\nxmonad_version=xmonad_0.18.1\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=xmobar_0.51.1\nxmobar_source_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
+    printf 'schema=3\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\nxmonad_version=xmonad_0.18.1\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=xmobar_0.51.1\nxmobar_source_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
         "$release_id" "$release_id" "$xmonad_config_digest" "$xmonad_cabal_digest" \
-        "$xmonad_project_digest" "$xmonad_digest" \
+        "$xmonad_project_digest" "$xmonad_core_config_digest" "$xmonad_digest" \
         "$xmobar_config_digest" "$xmobar_digest" >"$artifact/manifest"
     (
         cd "$artifact"

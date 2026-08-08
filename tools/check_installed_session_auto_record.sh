@@ -115,6 +115,8 @@ install -m 755 \
     "$RELEASE/bin/sophia-verify-cycles"
 install -m 644 "$ROOT_DIR/tools/lib/installed_attempt_ledger.sh" \
     "$RELEASE/tools/lib/installed_attempt_ledger.sh"
+install -m 644 "$ROOT_DIR/tools/lib/installed_soak_evidence.sh" \
+    "$RELEASE/tools/lib/installed_soak_evidence.sh"
 install -m 644 "$ROOT_DIR/tools/lib/session_lifecycle.sh" \
     "$RELEASE/tools/lib/session_lifecycle.sh"
 

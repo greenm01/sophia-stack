@@ -24,8 +24,9 @@ require_sha256() {
     }
 }
 
-[[ "$(field schema)" == 2 ]] || {
-    echo "Packaged policy requires release manifest schema 2." >&2
+manifest_schema="$(field schema)"
+[[ "$manifest_schema" =~ ^(2|3)$ ]] || {
+    echo "Packaged policy requires release manifest schema 2 or 3." >&2
     exit 1
 }
 [[ "$(field xmonad_version)" == xmonad_0.18.1 \
@@ -48,6 +49,7 @@ xmobar="$release/target/release/xmobar"
 xmonad_config="$release/share/sophia-policy/xmonad/Main.hs"
 xmonad_cabal="$release/share/sophia-policy/xmonad/sophia-xmonad.cabal"
 xmonad_project="$release/share/sophia-policy/xmonad/cabal.project"
+xmonad_core_config="$release/share/sophia-policy/xmonad/core.kdl"
 xmobar_config="$release/tools/fixtures/xmobar_sophia.config"
 for executable in "$xmonad" "$xmobar"; do
     [[ -x "$executable" ]] || {
@@ -61,6 +63,14 @@ for config in "$xmonad_config" "$xmonad_cabal" "$xmonad_project" "$xmobar_config
         exit 1
     }
 done
+if [[ "$manifest_schema" == 3 ]]; then
+    [[ -f "$xmonad_core_config" ]] || {
+        echo "Packaged Engine theme configuration is missing: $xmonad_core_config" >&2
+        exit 1
+    }
+    require_sha256 xmonad_core_config_sha256 \
+        "$(sha256sum "$xmonad_core_config" | awk '{print $1}')"
+fi
 
 require_sha256 xmonad_binary_sha256 "$(sha256sum "$xmonad" | awk '{print $1}')"
 require_sha256 xmobar_binary_sha256 "$(sha256sum "$xmobar" | awk '{print $1}')"

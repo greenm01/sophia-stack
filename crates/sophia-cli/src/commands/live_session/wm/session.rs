@@ -9,7 +9,10 @@ const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 enum LiveWmProposalSource {
     Action(WmActionId),
     Focus(SurfaceId),
-    PointerGesture(SurfaceId),
+    PointerGesture {
+        surface: SurfaceId,
+        mode: sophia_protocol::WmPointerGestureMode,
+    },
     Manage(SurfaceId),
     Relayout,
 }
@@ -19,7 +22,7 @@ impl LiveWmProposalSource {
         match self {
             Self::Action(_) => "action",
             Self::Focus(_) => "focus",
-            Self::PointerGesture(_) => "pointer_gesture",
+            Self::PointerGesture { .. } => "pointer_gesture",
             Self::Manage(_) => "manage",
             Self::Relayout => "relayout",
         }
@@ -156,6 +159,7 @@ struct LiveWmCommitResult {
 struct LiveWmOwnerCommit {
     update: WmTransactionUpdate,
     physical_action: Option<WmActionId>,
+    pointer_gesture: Option<sophia_protocol::WmPointerGestureMode>,
     session_action: Option<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
     workspace_projection: Option<LiveWmWorkspaceProjection>,
     clear_focus: Option<(TransactionId, SurfaceId)>,
@@ -556,7 +560,10 @@ impl LiveWmSession {
         if !layout.is_policy_managed(gesture.surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        let source = LiveWmProposalSource::PointerGesture(gesture.surface);
+        let source = LiveWmProposalSource::PointerGesture {
+            surface: gesture.surface,
+            mode: gesture.mode,
+        };
         if self.has_request_source(source) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }

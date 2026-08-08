@@ -7,6 +7,7 @@ VERIFY_SOAK="${SOPHIA_VERIFY_SOAK_SESSION_BIN:-$RELEASE_DIR/bin/sophia-verify-so
 VERIFY_LOGIN="${SOPHIA_VERIFY_LOGIN_BIN:-$RELEASE_DIR/bin/sophia-verify-login-cycle}"
 VERIFY_IDENTITY="${SOPHIA_VERIFY_IDENTITY_BIN:-$RELEASE_DIR/bin/sophia-verify-runtime-identity}"
 VERIFY_LIFECYCLE="${SOPHIA_VERIFY_LIFECYCLE_BIN:-$RELEASE_DIR/bin/sophia-verify-lifecycle}"
+source "$RELEASE_DIR/tools/lib/installed_soak_evidence.sh"
 [[ -x "$VERIFY_SOAK" ]] || VERIFY_SOAK="$RELEASE_DIR/tools/verify_installed_session_soak.sh"
 [[ -x "$VERIFY_LOGIN" ]] || VERIFY_LOGIN="$RELEASE_DIR/tools/verify_installed_login_cycle.sh"
 [[ -x "$VERIFY_IDENTITY" ]] || VERIFY_IDENTITY="$RELEASE_DIR/tools/verify_installed_runtime_identity.sh"
@@ -54,6 +55,10 @@ if [[ -z "$run" ]]; then
 fi
 [[ -n "$run" && -d "$run" ]] || {
     echo "installed soak evidence is missing: ${run:-$RUN_ROOT}" >&2
+    exit 1
+}
+[[ -s "$run/soak-summary.kdl" ]] || {
+    echo "installed soak has no redacted summary: $run" >&2
     exit 1
 }
 
@@ -119,4 +124,10 @@ observed_identity_sha256="$(sha256sum "$run/identity.log" | awk '{ print $1 }')"
 
 "$VERIFY_SOAK" \
     "$run/session.log" "$minimum_msec" "$minimum_terminals" "$minimum_firefox"
+expected_summary="$(sophia_soak_emit_summary "$run/session.log")"
+observed_summary="$(cat "$run/soak-summary.kdl")"
+[[ "$observed_summary" == "$expected_summary" ]] || {
+    echo "installed soak summary does not match its raw evidence: $run" >&2
+    exit 1
+}
 echo "installed Sophia soak archive passed: run=$run commit=$commit"

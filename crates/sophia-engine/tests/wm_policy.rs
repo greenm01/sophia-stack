@@ -325,6 +325,41 @@ fn workspace_activation_restores_focus_owned_by_each_workspace() {
 }
 
 #[test]
+fn hidden_surface_configure_and_render_commands_fail_closed() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(8, 1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 9).unwrap();
+    state
+        .register_surface(surface, WorkspaceId::from_raw(2))
+        .unwrap();
+    let response = WmResponsePacket {
+        transaction: TransactionId::from_raw(20),
+        commands: vec![
+            WmCommand::ConfigureSurface(sophia_protocol::SurfaceSizeRequest {
+                surface,
+                size: sophia_protocol::Size {
+                    width: 640,
+                    height: 480,
+                },
+            }),
+            WmCommand::RenderSurface(sophia_protocol::SurfacePlacement {
+                surface,
+                geometry: bounds(0),
+                z_index: 0,
+                crop: None,
+                transform: sophia_protocol::Transform::IDENTITY,
+            }),
+        ],
+        timeout_msec: 300,
+    };
+
+    assert_eq!(
+        state.plan_response(&response, &[]),
+        Err(WmPolicyError::HiddenSurfaceCommand)
+    );
+}
+
+#[test]
 fn workspace_plan_moves_focus_and_validates_named_actions_atomically() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(4, 1);

@@ -36,6 +36,7 @@ pub enum WmPolicyError {
     DuplicateFocusCommand,
     DuplicateSessionAction,
     HiddenFocus,
+    HiddenSurfaceCommand,
     UnadvertisedSessionAction,
     InvalidSessionActionTarget,
 }
@@ -338,6 +339,22 @@ impl WmWorkspaceState {
                     session_action = Some((action, target));
                 }
             }
+        }
+
+        // Configure and render work is meaningful only for the workspaces in
+        // the candidate output projection. Rejecting it here keeps hidden
+        // surfaces out of Engine transactions regardless of WM implementation.
+        if requested_sizes
+            .iter()
+            .map(|request| request.surface)
+            .chain(render_positions.iter().map(|placement| placement.surface))
+            .any(|surface| {
+                candidate
+                    .surface_workspace(surface)
+                    .is_none_or(|workspace| candidate.output_for_workspace(workspace).is_none())
+            })
+        {
+            return Err(WmPolicyError::HiddenSurfaceCommand);
         }
 
         if let Some(surface) = focus {
