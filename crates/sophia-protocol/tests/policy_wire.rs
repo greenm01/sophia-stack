@@ -64,6 +64,10 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 &decode_wm_v1_snapshot_binding_records(&data, 1).unwrap(),
             )
             .unwrap(),
+            "snapshot_session_operation" => encode_wm_v1_snapshot_session_operation_records(
+                &decode_wm_v1_snapshot_session_operation_records(&data, 1).unwrap(),
+            )
+            .unwrap(),
             "projection_output" => encode_wm_v1_projection_output_records(
                 &decode_wm_v1_projection_output_records(&data, 1).unwrap(),
             )
@@ -178,6 +182,31 @@ fn roundtrip(name: &str, transaction: u64, frame: &[u8]) -> Vec<u8> {
             let (actual, message) = decode_wm_v1_projection_outcome_frame(frame).unwrap();
             assert_eq!(actual, expected_transaction);
             encode_wm_v1_projection_outcome_frame(actual, &message).unwrap()
+        }
+        "policy_configuration" => {
+            let (actual, message) = decode_wm_v1_policy_configuration_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_policy_configuration_frame(actual, &message).unwrap()
+        }
+        "policy_configuration_outcome" => {
+            let (actual, message) = decode_wm_v1_policy_configuration_outcome_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_policy_configuration_outcome_frame(actual, &message).unwrap()
+        }
+        "policy_dirty" => {
+            let (actual, message) = decode_wm_v1_policy_dirty_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_policy_dirty_frame(actual, &message).unwrap()
+        }
+        "session_operation_request" => {
+            let (actual, message) = decode_wm_v1_session_operation_request_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_session_operation_request_frame(actual, &message).unwrap()
+        }
+        "session_operation_outcome" => {
+            let (actual, message) = decode_wm_v1_session_operation_outcome_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_session_operation_outcome_frame(actual, &message).unwrap()
         }
         other => panic!("unknown golden message `{other}`"),
     }

@@ -125,6 +125,11 @@ snapshot. Partial, duplicate, reordered, excessive, or timed-out transfers are
 discarded without changing committed state. The first WM interface supports at
 most 16 outputs, 1,024 manageable surfaces, and 256 binding registrations.
 
+Coalescing applies only to replaceable scene refreshes and continuous reduced
+interaction geometry. Non-idempotent action activations use a bounded ordered
+queue and are never merged merely because they carry the same opaque action
+token.
+
 The draft Rust boundary is split deliberately. `sophia-runtime` hosts the
 owner-only socket, authenticates the exact supervised peer, negotiates a
 connection epoch, and assembles transfers. `sophia-protocol` owns generated

@@ -2,12 +2,12 @@ use std::collections::BTreeSet;
 
 use sophia_protocol::{
     PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND, SNAPSHOT_BINDING_RECORD_KIND,
-    SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS,
-    SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_INTERFACE_REVISION,
-    SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, TransactionId,
-    WmV1ClientHello, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
-    WmV1ProjectionTransfer, WmV1ServerWelcome, WmV1SnapshotBegin, WmV1SnapshotChunk,
-    WmV1SnapshotEnd, WmV1SnapshotTransfer,
+    SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
+    SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
+    SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
+    SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello,
+    WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer,
+    WmV1ServerWelcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
 };
 
 pub const POLICY_MAX_TRANSFER_CHUNKS: usize = 1024;
@@ -65,6 +65,7 @@ pub struct AssembledPolicySnapshot {
     pub output_count: u16,
     pub surface_count: u32,
     pub binding_count: u16,
+    pub session_operation_count: u16,
     pub chunks: Vec<WmV1SnapshotChunk>,
 }
 
@@ -104,6 +105,7 @@ impl AssembledPolicySnapshot {
                 output_count: self.output_count,
                 surface_count: self.surface_count,
                 binding_count: self.binding_count,
+                session_operation_count: self.session_operation_count,
             },
             chunks: self.chunks,
             end: WmV1SnapshotEnd {
@@ -392,6 +394,7 @@ struct SnapshotTransfer {
     output_records: usize,
     surface_records: usize,
     binding_records: usize,
+    session_operation_records: usize,
 }
 
 /// Reference client-side assembler for complete server snapshots.
@@ -438,6 +441,7 @@ impl PolicySnapshotAssembler {
             || usize::from(begin.output_count) > SOPHIA_WM_MAX_OUTPUTS
             || begin.surface_count as usize > SOPHIA_WM_MAX_SURFACES
             || usize::from(begin.binding_count) > SOPHIA_WM_MAX_BINDINGS
+            || usize::from(begin.session_operation_count) > SOPHIA_WM_MAX_BINDINGS
         {
             return Err(PolicyTransferError::ExcessiveCount);
         }
@@ -450,6 +454,7 @@ impl PolicySnapshotAssembler {
             output_records: 0,
             surface_records: 0,
             binding_records: 0,
+            session_operation_records: 0,
         });
         Ok(())
     }
@@ -482,12 +487,16 @@ impl PolicySnapshotAssembler {
             SNAPSHOT_OUTPUT_RECORD_KIND => &mut transfer.output_records,
             SNAPSHOT_SURFACE_RECORD_KIND => &mut transfer.surface_records,
             SNAPSHOT_BINDING_RECORD_KIND => &mut transfer.binding_records,
+            SNAPSHOT_SESSION_OPERATION_RECORD_KIND => &mut transfer.session_operation_records,
             _ => return Err(PolicyTransferError::UnknownRecordKind),
         };
         let maximum = match chunk.record_kind {
             SNAPSHOT_OUTPUT_RECORD_KIND => usize::from(transfer.begin.output_count),
             SNAPSHOT_SURFACE_RECORD_KIND => transfer.begin.surface_count as usize,
             SNAPSHOT_BINDING_RECORD_KIND => usize::from(transfer.begin.binding_count),
+            SNAPSHOT_SESSION_OPERATION_RECORD_KIND => {
+                usize::from(transfer.begin.session_operation_count)
+            }
             _ => unreachable!(),
         };
         let next_total = total
@@ -520,6 +529,8 @@ impl PolicySnapshotAssembler {
             || transfer.output_records != usize::from(transfer.begin.output_count)
             || transfer.surface_records != transfer.begin.surface_count as usize
             || transfer.binding_records != usize::from(transfer.begin.binding_count)
+            || transfer.session_operation_records
+                != usize::from(transfer.begin.session_operation_count)
         {
             return Err(PolicyTransferError::RecordCountMismatch);
         }
@@ -531,6 +542,7 @@ impl PolicySnapshotAssembler {
             output_count: transfer.begin.output_count,
             surface_count: transfer.begin.surface_count,
             binding_count: transfer.begin.binding_count,
+            session_operation_count: transfer.begin.session_operation_count,
             chunks: transfer.chunks,
         })
     }

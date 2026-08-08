@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyProjectionOutcome,
-    PolicySceneSnapshot, PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
+    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
+    PolicyProjectionOutcome, PolicySceneSnapshot, PolicySurfaceKind, PolicySurfaceSnapshot, Rect,
+    Size, SurfaceConstraints, SurfaceId, TransactionId, decode_wm_v1_policy_projection,
+    encode_wm_v1_policy_snapshot,
 };
 use sophia_runtime::{PolicyPeerIdentity, PolicyWmSessionTransport, QueuedPolicyProjection};
 
@@ -108,8 +109,15 @@ fn scene() -> PolicySceneSnapshot {
                 width: 1200,
                 height: 800,
             },
+            work_area: Rect {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
         }],
         surfaces: vec![surface(3, output), surface(4, output)],
+        session_operations: Vec::new(),
     }
 }
 
@@ -118,6 +126,7 @@ fn surface(index: u32, output: OutputId) -> PolicySurfaceSnapshot {
         surface: SurfaceId::new(index, 1),
         generation: 1,
         current_output: Some(output),
+        kind: PolicySurfaceKind::Toplevel,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         constraints: SurfaceConstraints {
             min_size: Some(Size {
@@ -126,6 +135,9 @@ fn surface(index: u32, output: OutputId) -> PolicySurfaceSnapshot {
             }),
             max_size: None,
         },
+        exact_size: None,
+        requested_state: PolicyPresentationState::default(),
+        current_state: PolicyPresentationState::default(),
         transient_owner: None,
         geometry: Rect {
             x: 0,

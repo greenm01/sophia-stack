@@ -273,6 +273,7 @@ pub fn tile_policy_scene(
                 requested_size: Some(requested_size),
                 crop: None,
                 transform: PolicyTransform::Identity,
+                presentation: surface.current_state,
             });
         }
         outputs.push(PolicyOutputProjection {

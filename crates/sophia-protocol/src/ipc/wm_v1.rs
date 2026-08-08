@@ -15,6 +15,11 @@ pub const SOPHIA_WM_MAX_BINDINGS: usize = 256;
 pub const SOPHIA_WM_CAPABILITY_BINDINGS: u64 = 1 << 0;
 pub const SOPHIA_WM_CAPABILITY_ACTIONS: u64 = 1 << 1;
 pub const SOPHIA_WM_CAPABILITY_MULTI_OUTPUT: u64 = 1 << 2;
+pub const SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS: u64 = 1 << 3;
+pub const SOPHIA_WM_CAPABILITY_CHROME: u64 = 1 << 4;
+pub const SOPHIA_WM_CAPABILITY_POLICY_DIRTY: u64 = 1 << 5;
+pub const SOPHIA_WM_CAPABILITY_CONFIGURATION: u64 = 1 << 6;
+pub const SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS: u64 = 1 << 7;
 
 pub const SOPHIA_WM_OUTCOME_COMMITTED: u16 = 1;
 pub const SOPHIA_WM_OUTCOME_REJECTED_STALE: u16 = 2;
@@ -23,7 +28,7 @@ pub const SOPHIA_WM_OUTCOME_TIMED_OUT: u16 = 4;
 pub const SOPHIA_WM_OUTCOME_DISCONNECTED: u16 = 5;
 
 pub const SNAPSHOT_OUTPUT_RECORD_KIND: u16 = 1;
-pub const SNAPSHOT_OUTPUT_RECORD_SIZE: usize = 40;
+pub const SNAPSHOT_OUTPUT_RECORD_SIZE: usize = 56;
 pub const SNAPSHOT_OUTPUT_RECORD_MAX: usize = 16;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +41,10 @@ pub struct WmV1SnapshotOutputRecord {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+    pub work_x: i32,
+    pub work_y: i32,
+    pub work_width: i32,
+    pub work_height: i32,
 }
 
 pub fn encode_wm_v1_snapshot_output_records(
@@ -47,7 +56,7 @@ pub fn encode_wm_v1_snapshot_output_records(
             max: 16,
         });
     }
-    let mut data = Vec::with_capacity(records.len() * 40);
+    let mut data = Vec::with_capacity(records.len() * 56);
     for record in records {
         push_u64(&mut data, record.output);
         push_u64(&mut data, record.generation);
@@ -57,6 +66,10 @@ pub fn encode_wm_v1_snapshot_output_records(
         push_i32(&mut data, record.y);
         push_i32(&mut data, record.width);
         push_i32(&mut data, record.height);
+        push_i32(&mut data, record.work_x);
+        push_i32(&mut data, record.work_y);
+        push_i32(&mut data, record.work_width);
+        push_i32(&mut data, record.work_height);
     }
     Ok(data)
 }
@@ -70,7 +83,7 @@ pub fn decode_wm_v1_snapshot_output_records(
         return Err(IpcCodecError::CountTooLarge { count, max: 16 });
     }
     let expected = count
-        .checked_mul(40)
+        .checked_mul(56)
         .ok_or(IpcCodecError::CountTooLarge { count, max: 16 })?;
     if data.len() < expected {
         return Err(IpcCodecError::Truncated);
@@ -89,6 +102,10 @@ pub fn decode_wm_v1_snapshot_output_records(
         let y = cursor.i32()?;
         let width = cursor.i32()?;
         let height = cursor.i32()?;
+        let work_x = cursor.i32()?;
+        let work_y = cursor.i32()?;
+        let work_width = cursor.i32()?;
+        let work_height = cursor.i32()?;
         records.push(WmV1SnapshotOutputRecord {
             output,
             generation,
@@ -98,6 +115,10 @@ pub fn decode_wm_v1_snapshot_output_records(
             y,
             width,
             height,
+            work_x,
+            work_y,
+            work_width,
+            work_height,
         });
     }
     cursor.finish()?;
@@ -105,7 +126,7 @@ pub fn decode_wm_v1_snapshot_output_records(
 }
 
 pub const SNAPSHOT_SURFACE_RECORD_KIND: u16 = 2;
-pub const SNAPSHOT_SURFACE_RECORD_SIZE: usize = 68;
+pub const SNAPSHOT_SURFACE_RECORD_SIZE: usize = 80;
 pub const SNAPSHOT_SURFACE_RECORD_MAX: usize = 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,6 +136,9 @@ pub struct WmV1SnapshotSurfaceRecord {
     pub state_generation: u64,
     pub current_output: u64,
     pub capability_bits: u16,
+    pub kind: u16,
+    pub request_state_bits: u16,
+    pub current_state_bits: u16,
     pub transient_index: u32,
     pub transient_generation: u32,
     pub x: i32,
@@ -125,6 +149,8 @@ pub struct WmV1SnapshotSurfaceRecord {
     pub min_height: i32,
     pub max_width: i32,
     pub max_height: i32,
+    pub exact_width: i32,
+    pub exact_height: i32,
 }
 
 pub fn encode_wm_v1_snapshot_surface_records(
@@ -136,14 +162,16 @@ pub fn encode_wm_v1_snapshot_surface_records(
             max: 1024,
         });
     }
-    let mut data = Vec::with_capacity(records.len() * 68);
+    let mut data = Vec::with_capacity(records.len() * 80);
     for record in records {
         push_u32(&mut data, record.surface_index);
         push_u32(&mut data, record.surface_generation);
         push_u64(&mut data, record.state_generation);
         push_u64(&mut data, record.current_output);
         push_u16(&mut data, record.capability_bits);
-        push_u16(&mut data, 0);
+        push_u16(&mut data, record.kind);
+        push_u16(&mut data, record.request_state_bits);
+        push_u16(&mut data, record.current_state_bits);
         push_u32(&mut data, record.transient_index);
         push_u32(&mut data, record.transient_generation);
         push_i32(&mut data, record.x);
@@ -154,6 +182,8 @@ pub fn encode_wm_v1_snapshot_surface_records(
         push_i32(&mut data, record.min_height);
         push_i32(&mut data, record.max_width);
         push_i32(&mut data, record.max_height);
+        push_i32(&mut data, record.exact_width);
+        push_i32(&mut data, record.exact_height);
     }
     Ok(data)
 }
@@ -167,7 +197,7 @@ pub fn decode_wm_v1_snapshot_surface_records(
         return Err(IpcCodecError::CountTooLarge { count, max: 1024 });
     }
     let expected = count
-        .checked_mul(68)
+        .checked_mul(80)
         .ok_or(IpcCodecError::CountTooLarge { count, max: 1024 })?;
     if data.len() < expected {
         return Err(IpcCodecError::Truncated);
@@ -183,10 +213,9 @@ pub fn decode_wm_v1_snapshot_surface_records(
         let state_generation = cursor.u64()?;
         let current_output = cursor.u64()?;
         let capability_bits = cursor.u16()?;
-        let reserved = cursor.u16()?;
-        if reserved != 0 {
-            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
-        }
+        let kind = cursor.u16()?;
+        let request_state_bits = cursor.u16()?;
+        let current_state_bits = cursor.u16()?;
         let transient_index = cursor.u32()?;
         let transient_generation = cursor.u32()?;
         let x = cursor.i32()?;
@@ -197,12 +226,17 @@ pub fn decode_wm_v1_snapshot_surface_records(
         let min_height = cursor.i32()?;
         let max_width = cursor.i32()?;
         let max_height = cursor.i32()?;
+        let exact_width = cursor.i32()?;
+        let exact_height = cursor.i32()?;
         records.push(WmV1SnapshotSurfaceRecord {
             surface_index,
             surface_generation,
             state_generation,
             current_output,
             capability_bits,
+            kind,
+            request_state_bits,
+            current_state_bits,
             transient_index,
             transient_generation,
             x,
@@ -213,6 +247,8 @@ pub fn decode_wm_v1_snapshot_surface_records(
             min_height,
             max_width,
             max_height,
+            exact_width,
+            exact_height,
         });
     }
     cursor.finish()?;
@@ -275,6 +311,69 @@ pub fn decode_wm_v1_snapshot_binding_records(
             action,
             keycode,
             modifier_bits,
+        });
+    }
+    cursor.finish()?;
+    Ok(records)
+}
+
+pub const SNAPSHOT_SESSION_OPERATION_RECORD_KIND: u16 = 4;
+pub const SNAPSHOT_SESSION_OPERATION_RECORD_SIZE: usize = 12;
+pub const SNAPSHOT_SESSION_OPERATION_RECORD_MAX: usize = 256;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1SnapshotSessionOperationRecord {
+    pub operation: u64,
+    pub target_bits: u16,
+}
+
+pub fn encode_wm_v1_snapshot_session_operation_records(
+    records: &[WmV1SnapshotSessionOperationRecord],
+) -> Result<Vec<u8>, IpcCodecError> {
+    if records.len() > 256 {
+        return Err(IpcCodecError::CountTooLarge {
+            count: records.len(),
+            max: 256,
+        });
+    }
+    let mut data = Vec::with_capacity(records.len() * 12);
+    for record in records {
+        push_u64(&mut data, record.operation);
+        push_u16(&mut data, record.target_bits);
+        push_u16(&mut data, 0);
+    }
+    Ok(data)
+}
+
+pub fn decode_wm_v1_snapshot_session_operation_records(
+    data: &[u8],
+    item_count: u32,
+) -> Result<Vec<WmV1SnapshotSessionOperationRecord>, IpcCodecError> {
+    let count = item_count as usize;
+    if count > 256 {
+        return Err(IpcCodecError::CountTooLarge { count, max: 256 });
+    }
+    let expected = count
+        .checked_mul(12)
+        .ok_or(IpcCodecError::CountTooLarge { count, max: 256 })?;
+    if data.len() < expected {
+        return Err(IpcCodecError::Truncated);
+    }
+    if data.len() > expected {
+        return Err(IpcCodecError::TrailingBytes(data.len() - expected));
+    }
+    let mut cursor = Cursor::new(data);
+    let mut records = Vec::with_capacity(count);
+    for _ in 0..count {
+        let operation = cursor.u64()?;
+        let target_bits = cursor.u16()?;
+        let reserved = cursor.u16()?;
+        if reserved != 0 {
+            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+        }
+        records.push(WmV1SnapshotSessionOperationRecord {
+            operation,
+            target_bits,
         });
     }
     cursor.finish()?;
@@ -372,6 +471,7 @@ pub struct WmV1ProjectionPlacementRecord {
     pub crop_width: i32,
     pub crop_height: i32,
     pub transform: u16,
+    pub presentation_bits: u16,
 }
 
 pub fn encode_wm_v1_projection_placement_records(
@@ -399,7 +499,7 @@ pub fn encode_wm_v1_projection_placement_records(
         push_i32(&mut data, record.crop_width);
         push_i32(&mut data, record.crop_height);
         push_u16(&mut data, record.transform);
-        push_u16(&mut data, 0);
+        push_u16(&mut data, record.presentation_bits);
     }
     Ok(data)
 }
@@ -438,10 +538,7 @@ pub fn decode_wm_v1_projection_placement_records(
         let crop_width = cursor.i32()?;
         let crop_height = cursor.i32()?;
         let transform = cursor.u16()?;
-        let reserved = cursor.u16()?;
-        if reserved != 0 {
-            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
-        }
+        let presentation_bits = cursor.u16()?;
         records.push(WmV1ProjectionPlacementRecord {
             surface_index,
             surface_generation,
@@ -457,6 +554,7 @@ pub fn decode_wm_v1_projection_placement_records(
             crop_width,
             crop_height,
             transform,
+            presentation_bits,
         });
     }
     cursor.finish()?;
@@ -582,6 +680,7 @@ pub struct WmV1SnapshotBegin {
     pub output_count: u16,
     pub surface_count: u32,
     pub binding_count: u16,
+    pub session_operation_count: u16,
 }
 
 pub fn encode_wm_v1_snapshot_begin_frame(
@@ -598,7 +697,7 @@ pub fn encode_wm_v1_snapshot_begin_frame(
     push_u16(&mut payload, message.output_count);
     push_u32(&mut payload, message.surface_count);
     push_u16(&mut payload, message.binding_count);
-    push_u16(&mut payload, 0);
+    push_u16(&mut payload, message.session_operation_count);
     encode_frame(IpcMessageKind::WmV1SnapshotBegin, transaction, &payload)
 }
 
@@ -622,10 +721,7 @@ pub fn decode_wm_v1_snapshot_begin_frame(
     let output_count = cursor.u16()?;
     let surface_count = cursor.u32()?;
     let binding_count = cursor.u16()?;
-    let reserved = cursor.u16()?;
-    if reserved != 0 {
-        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
-    }
+    let session_operation_count = cursor.u16()?;
     cursor.finish()?;
     let message = WmV1SnapshotBegin {
         connection_epoch,
@@ -634,6 +730,7 @@ pub fn decode_wm_v1_snapshot_begin_frame(
         output_count,
         surface_count,
         binding_count,
+        session_operation_count,
     };
     Ok((header.transaction, message))
 }
@@ -765,6 +862,16 @@ pub struct WmV1ProjectionRequest {
     pub connection_epoch: u64,
     pub request_id: u64,
     pub scene_generation: u64,
+    pub cause_kind: u16,
+    pub interaction_phase: u16,
+    pub activation_serial: u64,
+    pub action: u64,
+    pub target_index: u32,
+    pub target_generation: u32,
+    pub interaction_x: i32,
+    pub interaction_y: i32,
+    pub interaction_width: i32,
+    pub interaction_height: i32,
     pub affected_output_count: u16,
     pub affected_outputs: Vec<u8>,
 }
@@ -787,6 +894,16 @@ pub fn encode_wm_v1_projection_request_frame(
     push_u64(&mut payload, message.connection_epoch);
     push_u64(&mut payload, message.request_id);
     push_u64(&mut payload, message.scene_generation);
+    push_u16(&mut payload, message.cause_kind);
+    push_u16(&mut payload, message.interaction_phase);
+    push_u64(&mut payload, message.activation_serial);
+    push_u64(&mut payload, message.action);
+    push_u32(&mut payload, message.target_index);
+    push_u32(&mut payload, message.target_generation);
+    push_i32(&mut payload, message.interaction_x);
+    push_i32(&mut payload, message.interaction_y);
+    push_i32(&mut payload, message.interaction_width);
+    push_i32(&mut payload, message.interaction_height);
     push_u16(&mut payload, message.affected_output_count);
     push_u16(&mut payload, 0);
     payload.extend_from_slice(&message.affected_outputs);
@@ -810,12 +927,22 @@ pub fn decode_wm_v1_projection_request_frame(
     let connection_epoch = cursor.u64()?;
     let request_id = cursor.u64()?;
     let scene_generation = cursor.u64()?;
+    let cause_kind = cursor.u16()?;
+    let interaction_phase = cursor.u16()?;
+    let activation_serial = cursor.u64()?;
+    let action = cursor.u64()?;
+    let target_index = cursor.u32()?;
+    let target_generation = cursor.u32()?;
+    let interaction_x = cursor.i32()?;
+    let interaction_y = cursor.i32()?;
+    let interaction_width = cursor.i32()?;
+    let interaction_height = cursor.i32()?;
     let affected_output_count = cursor.u16()?;
     let reserved = cursor.u16()?;
     if reserved != 0 {
         return Err(IpcCodecError::ReservedNonZero(reserved as u32));
     }
-    let len = payload.len().saturating_sub(28);
+    let len = payload.len().saturating_sub(72);
     if len > 128 {
         return Err(IpcCodecError::FieldTooLarge {
             field: "affected_outputs",
@@ -829,6 +956,16 @@ pub fn decode_wm_v1_projection_request_frame(
         connection_epoch,
         request_id,
         scene_generation,
+        cause_kind,
+        interaction_phase,
+        activation_serial,
+        action,
+        target_index,
+        target_generation,
+        interaction_x,
+        interaction_y,
+        interaction_width,
+        interaction_height,
         affected_output_count,
         affected_outputs,
     };
@@ -1071,6 +1208,342 @@ pub fn decode_wm_v1_projection_outcome_frame(
         connection_epoch,
         request_id,
         scene_generation,
+        outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1PolicyConfiguration {
+    pub connection_epoch: u64,
+    pub configuration_generation: u64,
+    pub binding_count: u16,
+    pub style_bits: u16,
+    pub focus_ring_width: u32,
+    pub focus_ring_color: u32,
+    pub frame_width: u32,
+    pub frame_focused_color: u32,
+    pub frame_unfocused_color: u32,
+    pub bindings: Vec<u8>,
+}
+
+pub fn encode_wm_v1_policy_configuration_frame(
+    transaction: TransactionId,
+    message: &WmV1PolicyConfiguration,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if message.bindings.len() > 4096 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "bindings",
+            len: message.bindings.len(),
+            max: 4096,
+        });
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.configuration_generation);
+    push_u16(&mut payload, message.binding_count);
+    push_u16(&mut payload, message.style_bits);
+    push_u32(&mut payload, message.focus_ring_width);
+    push_u32(&mut payload, message.focus_ring_color);
+    push_u32(&mut payload, message.frame_width);
+    push_u32(&mut payload, message.frame_focused_color);
+    push_u32(&mut payload, message.frame_unfocused_color);
+    payload.extend_from_slice(&message.bindings);
+    encode_frame(
+        IpcMessageKind::WmV1PolicyConfiguration,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_policy_configuration_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1PolicyConfiguration), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1PolicyConfiguration {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let configuration_generation = cursor.u64()?;
+    let binding_count = cursor.u16()?;
+    let style_bits = cursor.u16()?;
+    let focus_ring_width = cursor.u32()?;
+    let focus_ring_color = cursor.u32()?;
+    let frame_width = cursor.u32()?;
+    let frame_focused_color = cursor.u32()?;
+    let frame_unfocused_color = cursor.u32()?;
+    let len = payload.len().saturating_sub(40);
+    if len > 4096 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "bindings",
+            len,
+            max: 4096,
+        });
+    }
+    let bindings = cursor.slice(len)?.to_vec();
+    cursor.finish()?;
+    let message = WmV1PolicyConfiguration {
+        connection_epoch,
+        configuration_generation,
+        binding_count,
+        style_bits,
+        focus_ring_width,
+        focus_ring_color,
+        frame_width,
+        frame_focused_color,
+        frame_unfocused_color,
+        bindings,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1PolicyConfigurationOutcome {
+    pub connection_epoch: u64,
+    pub configuration_generation: u64,
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_policy_configuration_outcome_frame(
+    transaction: TransactionId,
+    message: &WmV1PolicyConfigurationOutcome,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.configuration_generation);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(
+        IpcMessageKind::WmV1PolicyConfigurationOutcome,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_policy_configuration_outcome_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1PolicyConfigurationOutcome), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1PolicyConfigurationOutcome {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let configuration_generation = cursor.u64()?;
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1PolicyConfigurationOutcome {
+        connection_epoch,
+        configuration_generation,
+        outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1PolicyDirty {
+    pub connection_epoch: u64,
+    pub policy_generation: u64,
+    pub affected_output_count: u16,
+    pub affected_outputs: Vec<u8>,
+}
+
+pub fn encode_wm_v1_policy_dirty_frame(
+    transaction: TransactionId,
+    message: &WmV1PolicyDirty,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if message.affected_outputs.len() > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len: message.affected_outputs.len(),
+            max: 128,
+        });
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.policy_generation);
+    push_u16(&mut payload, message.affected_output_count);
+    push_u16(&mut payload, 0);
+    payload.extend_from_slice(&message.affected_outputs);
+    encode_frame(IpcMessageKind::WmV1PolicyDirty, transaction, &payload)
+}
+
+pub fn decode_wm_v1_policy_dirty_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1PolicyDirty), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1PolicyDirty {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let policy_generation = cursor.u64()?;
+    let affected_output_count = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    let len = payload.len().saturating_sub(20);
+    if len > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len,
+            max: 128,
+        });
+    }
+    let affected_outputs = cursor.slice(len)?.to_vec();
+    cursor.finish()?;
+    let message = WmV1PolicyDirty {
+        connection_epoch,
+        policy_generation,
+        affected_output_count,
+        affected_outputs,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1SessionOperationRequest {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub operation: u64,
+    pub target_index: u32,
+    pub target_generation: u32,
+}
+
+pub fn encode_wm_v1_session_operation_request_frame(
+    transaction: TransactionId,
+    message: &WmV1SessionOperationRequest,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.request_id);
+    push_u64(&mut payload, message.operation);
+    push_u32(&mut payload, message.target_index);
+    push_u32(&mut payload, message.target_generation);
+    encode_frame(
+        IpcMessageKind::WmV1SessionOperationRequest,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_session_operation_request_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1SessionOperationRequest), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1SessionOperationRequest {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let request_id = cursor.u64()?;
+    let operation = cursor.u64()?;
+    let target_index = cursor.u32()?;
+    let target_generation = cursor.u32()?;
+    cursor.finish()?;
+    let message = WmV1SessionOperationRequest {
+        connection_epoch,
+        request_id,
+        operation,
+        target_index,
+        target_generation,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1SessionOperationOutcome {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_session_operation_outcome_frame(
+    transaction: TransactionId,
+    message: &WmV1SessionOperationOutcome,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.request_id);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(
+        IpcMessageKind::WmV1SessionOperationOutcome,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_session_operation_outcome_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1SessionOperationOutcome), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1SessionOperationOutcome {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let request_id = cursor.u64()?;
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1SessionOperationOutcome {
+        connection_epoch,
+        request_id,
         outcome,
     };
     Ok((header.transaction, message))

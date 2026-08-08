@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
     OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyOutputProjection,
-    PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest,
+    PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest, PolicyRequestCause,
     PolicySceneSnapshot, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
     Size, SurfaceId, Transform,
 };
@@ -20,6 +20,7 @@ pub enum PolicyProjectionError {
     DuplicateSurface,
     InvalidSurfaceGeometry,
     InvalidSurfaceConstraints,
+    InvalidPresentationState,
     InvalidTransientOwner,
     ExcessiveSurfaces,
     ConnectionAlreadyActive,
@@ -28,6 +29,7 @@ pub enum PolicyProjectionError {
     RequestAlreadyPending,
     NoAffectedOutputs,
     UnknownAffectedOutput,
+    InvalidRequestCause,
     RequestIdExhausted,
     V7AdapterState,
 }
@@ -96,6 +98,16 @@ impl PolicyProjectionReducer {
         &mut self,
         affected_outputs: Vec<OutputId>,
     ) -> Result<PolicyProjectionRequest, PolicyProjectionError> {
+        self.issue_request_with_cause(affected_outputs, PolicyRequestCause::SceneChanged)
+    }
+
+    /// Issues a request without collapsing its initiating event. Equal action
+    /// tokens with distinct activation serials remain separate ordered work.
+    pub fn issue_request_with_cause(
+        &mut self,
+        affected_outputs: Vec<OutputId>,
+        cause: PolicyRequestCause,
+    ) -> Result<PolicyProjectionRequest, PolicyProjectionError> {
         let Some(connection_epoch) = self.active_epoch else {
             return Err(PolicyProjectionError::NoActiveConnection);
         };
@@ -118,6 +130,7 @@ impl PolicyProjectionReducer {
         if !unique.is_subset(&live_outputs) {
             return Err(PolicyProjectionError::UnknownAffectedOutput);
         }
+        validate_request_cause(cause, &self.scene.surfaces)?;
         let request_id = self.next_request_id;
         self.next_request_id = self
             .next_request_id
@@ -128,6 +141,7 @@ impl PolicyProjectionReducer {
             request_id,
             scene_generation: self.scene.generation,
             affected_outputs,
+            cause,
         };
         self.outstanding = Some(request.clone());
         Ok(request)
@@ -383,6 +397,7 @@ pub fn adapt_v7_policy_plan(
                         None | Some(Transform::IDENTITY) => PolicyTransform::Identity,
                         Some(_) => return Err(PolicyProjectionError::V7AdapterState),
                     },
+                    presentation: snapshot.current_state,
                 })
             })
             .collect::<Result<Vec<_>, PolicyProjectionError>>()?;
@@ -424,7 +439,10 @@ fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyProjectionErr
         if !outputs.insert(output.output) {
             return Err(PolicyProjectionError::DuplicateOutput);
         }
-        if output.bounds.is_empty() {
+        if output.bounds.is_empty()
+            || output.work_area.is_empty()
+            || !rect_contains(output.bounds, output.work_area)
+        {
             return Err(PolicyProjectionError::InvalidOutputGeometry);
         }
     }
@@ -511,6 +529,7 @@ fn placement_from_snapshot(surface: &PolicySurfaceSnapshot) -> PolicySurfacePlac
         requested_size: None,
         crop: None,
         transform: PolicyTransform::Identity,
+        presentation: surface.current_state,
     }
 }
 
@@ -525,10 +544,12 @@ fn sync_scene_projection(
     let placements = committed
         .iter()
         .flat_map(|(output, projection)| {
-            projection
-                .placements
-                .iter()
-                .map(|placement| (placement.surface, (*output, placement.geometry)))
+            projection.placements.iter().map(|placement| {
+                (
+                    placement.surface,
+                    (*output, placement.geometry, placement.presentation),
+                )
+            })
         })
         .collect::<BTreeMap<_, _>>();
     for output in &mut scene.outputs {
@@ -536,9 +557,10 @@ fn sync_scene_projection(
     }
     for surface in &mut scene.surfaces {
         let committed = placements.get(&surface.surface).copied();
-        surface.current_output = committed.map(|(output, _)| output);
-        if let Some((_, geometry)) = committed {
+        surface.current_output = committed.map(|(output, _, _)| output);
+        if let Some((_, geometry, presentation)) = committed {
             surface.geometry = geometry;
+            surface.current_state = presentation;
         }
     }
 }
@@ -562,7 +584,54 @@ fn validate_constraints(surface: &PolicySurfaceSnapshot) -> Result<(), PolicyPro
     {
         return Err(PolicyProjectionError::InvalidSurfaceConstraints);
     }
+    if surface.exact_size.is_some_and(|exact| {
+        !valid_size(exact)
+            || surface
+                .constraints
+                .min_size
+                .is_some_and(|minimum| exact.width < minimum.width || exact.height < minimum.height)
+            || surface
+                .constraints
+                .max_size
+                .is_some_and(|maximum| exact.width > maximum.width || exact.height > maximum.height)
+    }) {
+        return Err(PolicyProjectionError::InvalidSurfaceConstraints);
+    }
+    validate_presentation(surface.requested_state, surface)?;
+    validate_presentation(surface.current_state, surface)?;
     Ok(())
+}
+
+fn validate_presentation(
+    state: sophia_protocol::PolicyPresentationState,
+    surface: &PolicySurfaceSnapshot,
+) -> Result<(), PolicyProjectionError> {
+    if (state.fullscreen && state.maximized)
+        || (state.minimized && (state.fullscreen || state.maximized))
+        || (state.fullscreen && !surface.capabilities.fullscreenable)
+    {
+        return Err(PolicyProjectionError::InvalidPresentationState);
+    }
+    Ok(())
+}
+
+fn validate_request_cause(
+    cause: PolicyRequestCause,
+    surfaces: &[PolicySurfaceSnapshot],
+) -> Result<(), PolicyProjectionError> {
+    let live = |target: SurfaceId| surfaces.iter().any(|surface| surface.surface == target);
+    match cause {
+        PolicyRequestCause::SceneChanged => Ok(()),
+        PolicyRequestCause::Action {
+            activation_serial,
+            action,
+        } if activation_serial != 0 && action.is_valid() => Ok(()),
+        PolicyRequestCause::Focus { target } if live(target) => Ok(()),
+        PolicyRequestCause::Interaction {
+            target, geometry, ..
+        } if live(target) && !geometry.is_empty() => Ok(()),
+        _ => Err(PolicyProjectionError::InvalidRequestCause),
+    }
 }
 
 fn validate_output_projection(
@@ -598,6 +667,10 @@ fn validate_output_projection(
         }) {
             return Err(PolicyProjectionError::InvalidSurfaceConstraints);
         }
+        if surface.exact_size.is_some_and(|exact| exact != requested) {
+            return Err(PolicyProjectionError::InvalidSurfaceConstraints);
+        }
+        validate_presentation(placement.presentation, surface)?;
     }
     if projection.focus.is_some_and(|focus| {
         !visible.contains(&focus)

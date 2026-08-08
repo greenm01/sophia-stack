@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use sophia_protocol::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyProjectionOutcome,
-    PolicyProjectionRequest, PolicySceneSnapshot, PolicySurfaceSnapshot, Rect, Size,
-    SurfaceConstraints, SurfaceId, TransactionId, decode_wm_v1_policy_projection,
-    encode_wm_v1_policy_snapshot,
+    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
+    PolicyProjectionOutcome, PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot,
+    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId,
+    TransactionId, decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
 };
 use sophia_runtime::{PolicyPeerIdentity, PolicyWmSessionTransport, QueuedPolicyProjection};
 use sophia_wm_demo::PolicyV1Client;
@@ -62,6 +62,7 @@ fn session_and_reference_client_exchange_one_complete_policy_cycle() {
                 request_id: 1,
                 scene_generation: 1,
                 affected_outputs: vec![OutputId::from_raw(1)],
+                cause: PolicyRequestCause::SceneChanged,
             },
         )
         .unwrap();
@@ -102,11 +103,18 @@ fn scene() -> PolicySceneSnapshot {
                 width: 100,
                 height: 100,
             },
+            work_area: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
         }],
         surfaces: vec![PolicySurfaceSnapshot {
             surface: SurfaceId::new(3, 1),
             generation: 1,
             current_output: Some(output),
+            kind: PolicySurfaceKind::Toplevel,
             capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
             constraints: SurfaceConstraints {
                 min_size: Some(Size {
@@ -115,6 +123,9 @@ fn scene() -> PolicySceneSnapshot {
                 }),
                 max_size: None,
             },
+            exact_size: None,
+            requested_state: PolicyPresentationState::default(),
+            current_state: PolicyPresentationState::default(),
             transient_owner: None,
             geometry: Rect {
                 x: 10,
@@ -123,5 +134,6 @@ fn scene() -> PolicySceneSnapshot {
                 height: 40,
             },
         }],
+        session_operations: Vec::new(),
     }
 }

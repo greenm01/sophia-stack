@@ -1,26 +1,31 @@
 use core::mem::size_of;
 
 use crate::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputProjection, PolicyOutputSnapshot,
-    PolicyProjectionOutcome, PolicyProjectionProposal, PolicySceneSnapshot, PolicySurfacePlacement,
-    PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, WmActionId, WmBindingRegistration, WmModifierMask,
+    LayoutNodeCapabilities, OutputId, PolicyInteractionPhase, PolicyOutputProjection,
+    PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionOutcome,
+    PolicyProjectionProposal, PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation,
+    PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect, Size,
+    SurfaceConstraints, SurfaceId, TransactionId, WmActionId, WmBindingRegistration,
+    WmModifierMask,
 };
 
 use super::{
     IpcCodecError, PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
-    SNAPSHOT_BINDING_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
+    SNAPSHOT_BINDING_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
+    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
     SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
     SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
     SOPHIA_WM_OUTCOME_TIMED_OUT, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
     WmV1ProjectionOutcome, WmV1ProjectionOutputRecord, WmV1ProjectionPlacementRecord,
     WmV1ProjectionRequest, WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk,
-    WmV1SnapshotEnd, WmV1SnapshotOutputRecord, WmV1SnapshotSurfaceRecord,
-    decode_wm_v1_projection_output_records, decode_wm_v1_projection_placement_records,
-    decode_wm_v1_snapshot_binding_records, decode_wm_v1_snapshot_output_records,
+    WmV1SnapshotEnd, WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord,
+    WmV1SnapshotSurfaceRecord, decode_wm_v1_projection_output_records,
+    decode_wm_v1_projection_placement_records, decode_wm_v1_snapshot_binding_records,
+    decode_wm_v1_snapshot_output_records, decode_wm_v1_snapshot_session_operation_records,
     decode_wm_v1_snapshot_surface_records, encode_wm_v1_projection_output_records,
     encode_wm_v1_projection_placement_records, encode_wm_v1_snapshot_binding_records,
-    encode_wm_v1_snapshot_output_records, encode_wm_v1_snapshot_surface_records,
+    encode_wm_v1_snapshot_output_records, encode_wm_v1_snapshot_session_operation_records,
+    encode_wm_v1_snapshot_surface_records,
 };
 
 const OUTPUT_ID_WIRE_SIZE: usize = size_of::<u64>();
@@ -35,6 +40,12 @@ const POLICY_SURFACE_CAPABILITY_SUPPORTED: u16 = POLICY_SURFACE_CAPABILITY_MOVAB
     | POLICY_SURFACE_CAPABILITY_FOCUSABLE
     | POLICY_SURFACE_CAPABILITY_CLOSABLE
     | POLICY_SURFACE_CAPABILITY_FULLSCREENABLE;
+const POLICY_PRESENTATION_FULLSCREEN: u16 = 1 << 0;
+const POLICY_PRESENTATION_MAXIMIZED: u16 = 1 << 1;
+const POLICY_PRESENTATION_MINIMIZED: u16 = 1 << 2;
+const POLICY_PRESENTATION_SUPPORTED: u16 =
+    POLICY_PRESENTATION_FULLSCREEN | POLICY_PRESENTATION_MAXIMIZED | POLICY_PRESENTATION_MINIMIZED;
+const POLICY_SESSION_OPERATION_SURFACE_TARGET: u16 = 1 << 0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1SnapshotTransfer {
@@ -81,10 +92,72 @@ pub fn encode_wm_v1_policy_projection_request(
         }
         affected_outputs.extend_from_slice(&output.raw().to_le_bytes());
     }
+    let (
+        cause_kind,
+        interaction_phase,
+        activation_serial,
+        action,
+        target_index,
+        target_generation,
+        interaction,
+    ) = match request.cause {
+        PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, Rect::default()),
+        PolicyRequestCause::Action {
+            activation_serial,
+            action,
+        } => {
+            if activation_serial == 0 || !action.is_valid() {
+                return Err(invalid("action_cause", 0));
+            }
+            (1, 0, activation_serial, action.raw(), 0, 0, Rect::default())
+        }
+        PolicyRequestCause::Focus { target } => {
+            if !target.is_valid() {
+                return Err(invalid("focus_cause", 0));
+            }
+            (
+                2,
+                0,
+                0,
+                0,
+                target.index(),
+                target.generation(),
+                Rect::default(),
+            )
+        }
+        PolicyRequestCause::Interaction {
+            phase,
+            target,
+            geometry,
+        } => {
+            if !target.is_valid() || geometry.width <= 0 || geometry.height <= 0 {
+                return Err(invalid("interaction_cause", 0));
+            }
+            (
+                3,
+                phase as u16,
+                0,
+                0,
+                target.index(),
+                target.generation(),
+                geometry,
+            )
+        }
+    };
     Ok(WmV1ProjectionRequest {
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         scene_generation: request.scene_generation,
+        cause_kind,
+        interaction_phase,
+        activation_serial,
+        action,
+        target_index,
+        target_generation,
+        interaction_x: interaction.x,
+        interaction_y: interaction.y,
+        interaction_width: interaction.width,
+        interaction_height: interaction.height,
         affected_output_count: request.affected_outputs.len() as u16,
         affected_outputs,
     })
@@ -120,11 +193,81 @@ pub fn decode_wm_v1_policy_projection_request(
         }
         affected_outputs.push(output);
     }
+    let target = || {
+        decode_optional_surface(
+            request.target_index,
+            request.target_generation,
+            "request_target",
+        )?
+        .ok_or_else(|| invalid("request_target", 0))
+    };
+    let cause = match request.cause_kind {
+        0 if request.interaction_phase == 0
+            && request.activation_serial == 0
+            && request.action == 0
+            && request.target_index == 0
+            && request.target_generation == 0
+            && request.interaction_x == 0
+            && request.interaction_y == 0
+            && request.interaction_width == 0
+            && request.interaction_height == 0 =>
+        {
+            PolicyRequestCause::SceneChanged
+        }
+        1 if request.interaction_phase == 0
+            && request.activation_serial != 0
+            && request.action != 0
+            && request.target_index == 0
+            && request.target_generation == 0
+            && request.interaction_x == 0
+            && request.interaction_y == 0
+            && request.interaction_width == 0
+            && request.interaction_height == 0 =>
+        {
+            PolicyRequestCause::Action {
+                activation_serial: request.activation_serial,
+                action: WmActionId::from_raw(request.action),
+            }
+        }
+        2 if request.interaction_phase == 0
+            && request.activation_serial == 0
+            && request.action == 0
+            && request.interaction_x == 0
+            && request.interaction_y == 0
+            && request.interaction_width == 0
+            && request.interaction_height == 0 =>
+        {
+            PolicyRequestCause::Focus { target: target()? }
+        }
+        3 if request.activation_serial == 0
+            && request.action == 0
+            && request.interaction_width > 0
+            && request.interaction_height > 0 =>
+        {
+            PolicyRequestCause::Interaction {
+                phase: match request.interaction_phase {
+                    1 => PolicyInteractionPhase::Begin,
+                    2 => PolicyInteractionPhase::Update,
+                    3 => PolicyInteractionPhase::End,
+                    other => return Err(invalid("interaction_phase", u32::from(other))),
+                },
+                target: target()?,
+                geometry: Rect {
+                    x: request.interaction_x,
+                    y: request.interaction_y,
+                    width: request.interaction_width,
+                    height: request.interaction_height,
+                },
+            }
+        }
+        other => return Err(invalid("projection_request_cause", u32::from(other))),
+    };
     Ok(crate::PolicyProjectionRequest {
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         scene_generation: request.scene_generation,
         affected_outputs,
+        cause,
     })
 }
 
@@ -193,6 +336,10 @@ pub fn encode_wm_v1_policy_snapshot(
                 y: output.bounds.y,
                 width: output.bounds.width,
                 height: output.bounds.height,
+                work_x: output.work_area.x,
+                work_y: output.work_area.y,
+                work_width: output.work_area.width,
+                work_height: output.work_area.height,
             }
         })
         .collect::<Vec<_>>();
@@ -207,6 +354,15 @@ pub fn encode_wm_v1_policy_snapshot(
             action: binding.action.raw(),
             keycode: binding.keycode,
             modifier_bits: binding.modifiers.bits,
+        })
+        .collect::<Vec<_>>();
+    let session_operations = scene
+        .session_operations
+        .iter()
+        .map(|operation| WmV1SnapshotSessionOperationRecord {
+            operation: operation.token,
+            target_bits: u16::from(operation.permits_surface_target)
+                * POLICY_SESSION_OPERATION_SURFACE_TARGET,
         })
         .collect::<Vec<_>>();
     let mut chunks = Vec::new();
@@ -231,6 +387,13 @@ pub fn encode_wm_v1_policy_snapshot(
         bindings.len(),
         encode_wm_v1_snapshot_binding_records(&bindings)?,
     )?;
+    push_snapshot_chunk(
+        &mut chunks,
+        connection_epoch,
+        SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
+        session_operations.len(),
+        encode_wm_v1_snapshot_session_operation_records(&session_operations)?,
+    )?;
     let chunk_count = u16::try_from(chunks.len()).map_err(|_| IpcCodecError::CountTooLarge {
         count: chunks.len(),
         max: u16::MAX as usize,
@@ -245,6 +408,7 @@ pub fn encode_wm_v1_policy_snapshot(
         })?,
         surface_count: surfaces.len() as u32,
         binding_count: bindings.len() as u16,
+        session_operation_count: session_operations.len() as u16,
     };
     let end = WmV1SnapshotEnd {
         connection_epoch,
@@ -275,6 +439,7 @@ pub fn decode_wm_v1_policy_snapshot(
     let mut outputs = Vec::new();
     let mut surfaces = Vec::new();
     let mut bindings = Vec::new();
+    let mut session_operations = Vec::new();
     for (ordinal, chunk) in transfer.chunks.iter().enumerate() {
         if chunk.connection_epoch != transfer.begin.connection_epoch
             || usize::from(chunk.ordinal) != ordinal
@@ -294,12 +459,19 @@ pub fn decode_wm_v1_policy_snapshot(
                 &chunk.data,
                 chunk.item_count,
             )?),
+            SNAPSHOT_SESSION_OPERATION_RECORD_KIND => session_operations.extend(
+                decode_wm_v1_snapshot_session_operation_records(&chunk.data, chunk.item_count)?,
+            ),
             other => return Err(invalid("snapshot_record_kind", u32::from(other))),
         }
     }
     require_count(outputs.len(), transfer.begin.output_count as usize)?;
     require_count(surfaces.len(), transfer.begin.surface_count as usize)?;
     require_count(bindings.len(), transfer.begin.binding_count as usize)?;
+    require_count(
+        session_operations.len(),
+        transfer.begin.session_operation_count as usize,
+    )?;
     Ok(WmV1DecodedSnapshot {
         scene: PolicySceneSnapshot {
             generation: transfer.begin.scene_generation,
@@ -320,6 +492,12 @@ pub fn decode_wm_v1_policy_snapshot(
                             width: record.width,
                             height: record.height,
                         },
+                        work_area: Rect {
+                            x: record.work_x,
+                            y: record.work_y,
+                            width: record.work_width,
+                            height: record.work_height,
+                        },
                     })
                 })
                 .collect::<Result<Vec<_>, IpcCodecError>>()?,
@@ -327,6 +505,22 @@ pub fn decode_wm_v1_policy_snapshot(
                 .into_iter()
                 .map(decode_surface_record)
                 .collect::<Result<Vec<_>, _>>()?,
+            session_operations: session_operations
+                .into_iter()
+                .map(|record| {
+                    if record.operation == 0
+                        || record.target_bits & !POLICY_SESSION_OPERATION_SURFACE_TARGET != 0
+                    {
+                        return Err(invalid("session_operation", record.target_bits.into()));
+                    }
+                    Ok(PolicySessionOperation {
+                        token: record.operation,
+                        permits_surface_target: record.target_bits
+                            & POLICY_SESSION_OPERATION_SURFACE_TARGET
+                            != 0,
+                    })
+                })
+                .collect::<Result<Vec<_>, IpcCodecError>>()?,
         },
         bindings: bindings
             .into_iter()
@@ -544,6 +738,9 @@ fn encode_surface_record(surface: &PolicySurfaceSnapshot) -> WmV1SnapshotSurface
         state_generation: surface.generation,
         current_output: surface.current_output.map_or(0, OutputId::raw),
         capability_bits,
+        kind: surface.kind as u16,
+        request_state_bits: encode_presentation(surface.requested_state),
+        current_state_bits: encode_presentation(surface.current_state),
         transient_index,
         transient_generation,
         x: surface.geometry.x,
@@ -554,6 +751,8 @@ fn encode_surface_record(surface: &PolicySurfaceSnapshot) -> WmV1SnapshotSurface
         min_height,
         max_width,
         max_height,
+        exact_width: surface.exact_size.map_or(0, |size| size.width),
+        exact_height: surface.exact_size.map_or(0, |size| size.height),
     }
 }
 
@@ -571,6 +770,14 @@ fn decode_surface_record(
         generation: record.state_generation,
         current_output: (record.current_output != 0)
             .then(|| OutputId::from_raw(record.current_output)),
+        kind: match record.kind {
+            1 => PolicySurfaceKind::Toplevel,
+            2 => PolicySurfaceKind::Dialog,
+            3 => PolicySurfaceKind::Utility,
+            4 => PolicySurfaceKind::Popup,
+            5 => PolicySurfaceKind::Unknown,
+            other => return Err(invalid("surface_kind", u32::from(other))),
+        },
         capabilities: LayoutNodeCapabilities {
             movable: record.capability_bits & POLICY_SURFACE_CAPABILITY_MOVABLE != 0,
             resizable: record.capability_bits & POLICY_SURFACE_CAPABILITY_RESIZABLE != 0,
@@ -582,6 +789,9 @@ fn decode_surface_record(
             min_size: decode_optional_size(record.min_width, record.min_height, "min_size")?,
             max_size: decode_optional_size(record.max_width, record.max_height, "max_size")?,
         },
+        exact_size: decode_optional_size(record.exact_width, record.exact_height, "exact_size")?,
+        requested_state: decode_presentation(record.request_state_bits, "requested_state")?,
+        current_state: decode_presentation(record.current_state_bits, "current_state")?,
         transient_owner: decode_optional_surface(
             record.transient_index,
             record.transient_generation,
@@ -614,6 +824,7 @@ fn encode_placement_record(placement: &PolicySurfacePlacement) -> WmV1Projection
         crop_width: crop.width,
         crop_height: crop.height,
         transform: placement.transform as u16,
+        presentation_bits: encode_presentation(placement.presentation),
     }
 }
 
@@ -654,6 +865,27 @@ fn decode_placement_record(
             1 => PolicyTransform::Identity,
             other => return Err(invalid("policy_transform", u32::from(other))),
         },
+        presentation: decode_presentation(record.presentation_bits, "presentation")?,
+    })
+}
+
+fn encode_presentation(state: PolicyPresentationState) -> u16 {
+    u16::from(state.fullscreen) * POLICY_PRESENTATION_FULLSCREEN
+        | u16::from(state.maximized) * POLICY_PRESENTATION_MAXIMIZED
+        | u16::from(state.minimized) * POLICY_PRESENTATION_MINIMIZED
+}
+
+fn decode_presentation(
+    bits: u16,
+    field: &'static str,
+) -> Result<PolicyPresentationState, IpcCodecError> {
+    if bits & !POLICY_PRESENTATION_SUPPORTED != 0 {
+        return Err(invalid(field, u32::from(bits)));
+    }
+    Ok(PolicyPresentationState {
+        fullscreen: bits & POLICY_PRESENTATION_FULLSCREEN != 0,
+        maximized: bits & POLICY_PRESENTATION_MAXIMIZED != 0,
+        minimized: bits & POLICY_PRESENTATION_MINIMIZED != 0,
     })
 }
 

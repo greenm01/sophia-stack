@@ -1,9 +1,10 @@
 use sophia_engine::{PolicyProjectionReducer, WmWorkspaceState, adapt_v7_policy_plan};
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputProjection, PolicyOutputSnapshot,
-    PolicyProjectionOutcome, PolicyProjectionProposal, PolicySceneSnapshot, PolicySurfacePlacement,
-    PolicySurfaceSnapshot, PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId,
-    Transform, WmCommand, WmResponsePacket, WorkspaceId,
+    PolicyPresentationState, PolicyProjectionOutcome, PolicyProjectionProposal, PolicyRequestCause,
+    PolicySceneSnapshot, PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot,
+    PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId, Transform, WmActionId,
+    WmCommand, WmResponsePacket, WorkspaceId,
 };
 
 #[test]
@@ -215,6 +216,73 @@ fn snapshot_membership_and_focus_are_the_initial_and_committed_truth() {
     assert_eq!(reducer.scene().outputs[0].focus, None);
 }
 
+#[test]
+fn repeated_action_token_with_distinct_activation_serials_is_not_coalesced() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+
+    for activation_serial in [41, 42] {
+        let request = reducer
+            .issue_request_with_cause(
+                vec![output(1)],
+                PolicyRequestCause::Action {
+                    activation_serial,
+                    action: WmActionId::from_raw(7),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            request.cause,
+            PolicyRequestCause::Action {
+                activation_serial,
+                action: WmActionId::from_raw(7),
+            }
+        );
+        assert_eq!(
+            reducer.apply_proposal(&proposal(
+                &request,
+                activation_serial,
+                vec![projected(output(1), Vec::new(), None)],
+            )),
+            PolicyProjectionOutcome::Committed
+        );
+    }
+
+    assert_eq!(reducer.commit_serial(), 2);
+}
+
+#[test]
+fn work_area_must_be_nonempty_and_inside_output_bounds() {
+    let mut invalid = scene(1, &[surface(1)]);
+    invalid.outputs[0].work_area = Rect {
+        x: 0,
+        y: 0,
+        width: 101,
+        height: 100,
+    };
+
+    assert!(PolicyProjectionReducer::new(invalid).is_err());
+}
+
+#[test]
+fn committed_presentation_state_is_reflected_in_the_next_snapshot() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut placement = placed(surface_id(1), 1, rect(0, 0));
+    placement.presentation.maximized = true;
+
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            44,
+            vec![projected(output(1), vec![placement], Some(surface_id(1)))],
+        )),
+        PolicyProjectionOutcome::Committed
+    );
+    assert!(reducer.scene().surfaces[0].current_state.maximized);
+}
+
 fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnapshot {
     PolicySceneSnapshot {
         generation,
@@ -224,6 +292,12 @@ fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnap
                 generation: 1,
                 focus: None,
                 bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+                work_area: Rect {
                     x: 0,
                     y: 0,
                     width: 100,
@@ -240,9 +314,16 @@ fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnap
                     width: 100,
                     height: 100,
                 },
+                work_area: Rect {
+                    x: 100,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
             },
         ],
         surfaces: surfaces.to_vec(),
+        session_operations: Vec::new(),
     }
 }
 
@@ -251,11 +332,15 @@ fn surface(raw: u32) -> PolicySurfaceSnapshot {
         surface: surface_id(raw),
         generation: 1,
         current_output: None,
+        kind: PolicySurfaceKind::Toplevel,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         constraints: SurfaceConstraints {
             min_size: None,
             max_size: None,
         },
+        exact_size: None,
+        requested_state: PolicyPresentationState::default(),
+        current_state: PolicyPresentationState::default(),
         transient_owner: None,
         geometry: rect(0, 0),
     }
@@ -295,6 +380,7 @@ fn placed(surface: SurfaceId, generation: u64, geometry: Rect) -> PolicySurfaceP
         requested_size: None,
         crop: None,
         transform: PolicyTransform::Identity,
+        presentation: PolicyPresentationState::default(),
     }
 }
 

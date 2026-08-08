@@ -70,6 +70,16 @@ and last-projection preservation while policy is absent.
 The bounded configuration explores 1,342,325 generated states and 524,396
 distinct states to depth 18.
 
+`PolicyLifecycle.tla` models the causes around that projection boundary. It
+keeps distinct activation identities in FIFO order, prioritizes them over
+replaceable policy-dirty and pointer updates, applies configuration only at an
+idle boundary, retries against a fresh scene when frontend facts change, and
+preserves the last-good serial until a settled proposal commits. Repeated
+opaque action tokens use distinct activation identities and therefore cannot
+be collapsed into one focus, movement, view, or layout operation. The bounded
+configuration explores 53,354 generated states and 10,153 distinct states to
+depth 22.
+
 `LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
 workspace assignment, workspace activation, and delayed private Configure or
 Focus requests. It requires cached membership to remain unique, mapping to
@@ -155,6 +165,11 @@ Its actions map to the following target boundaries:
 | `BeginProposal` in the projection model | immutable canonical projection candidate construction |
 | `CommitProposal`, `RejectProposal`, `TimeoutProposal` | Engine-owned projection reducer and explicit transaction outcome |
 | `SceneChange` | Engine surface/output lifecycle reduction and fresh complete snapshot generation |
+| `EnqueueAction`, `IssueAction` | Engine shortcut router and bounded session-owned policy request queue |
+| `RequestDirty`, `IssueDirty` | policy transport requesting a fresh complete Engine cycle without geometry |
+| `UpdateInteraction`, `IssueInteraction` | Engine-owned grab coalescing reduced continuous geometry |
+| `InstallConfig` | policy configuration generation activated at a shortcut-idle boundary |
+| `FrontendSettlesChanged`, `CommitProposal` | frontend settlement retry and final canonical Engine commit |
 
 This map fixes ownership before the Rust names exist. Update the right column
 when implementation establishes the final module names; do not move an action

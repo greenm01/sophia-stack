@@ -14,6 +14,11 @@
 #define SOPHIA_WM_CAPABILITY_BINDINGS (UINT64_C(1) << 0)
 #define SOPHIA_WM_CAPABILITY_ACTIONS (UINT64_C(1) << 1)
 #define SOPHIA_WM_CAPABILITY_MULTI_OUTPUT (UINT64_C(1) << 2)
+#define SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS (UINT64_C(1) << 3)
+#define SOPHIA_WM_CAPABILITY_CHROME (UINT64_C(1) << 4)
+#define SOPHIA_WM_CAPABILITY_POLICY_DIRTY (UINT64_C(1) << 5)
+#define SOPHIA_WM_CAPABILITY_CONFIGURATION (UINT64_C(1) << 6)
+#define SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS (UINT64_C(1) << 7)
 
 #define SOPHIA_WM_OUTCOME_COMMITTED 1u
 #define SOPHIA_WM_OUTCOME_REJECTED_STALE 2u
@@ -35,7 +40,7 @@ enum sophia_wm_v1_status {
 };
 
 #define SOPHIA_WM_V1_SNAPSHOT_OUTPUT_RECORD_KIND 1u
-#define SOPHIA_WM_V1_SNAPSHOT_OUTPUT_RECORD_SIZE 40u
+#define SOPHIA_WM_V1_SNAPSHOT_OUTPUT_RECORD_SIZE 56u
 #define SOPHIA_WM_V1_SNAPSHOT_OUTPUT_RECORD_MAX 16u
 struct sophia_wm_v1_snapshot_output_record {
     uint64_t output;
@@ -46,12 +51,16 @@ struct sophia_wm_v1_snapshot_output_record {
     int32_t y;
     int32_t width;
     int32_t height;
+    int32_t work_x;
+    int32_t work_y;
+    int32_t work_width;
+    int32_t work_height;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_output_record(const struct sophia_wm_v1_snapshot_output_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_output_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_output_record *record);
 
 #define SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_KIND 2u
-#define SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_SIZE 68u
+#define SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_SIZE 80u
 #define SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_MAX 1024u
 struct sophia_wm_v1_snapshot_surface_record {
     uint32_t surface_index;
@@ -59,6 +68,9 @@ struct sophia_wm_v1_snapshot_surface_record {
     uint64_t state_generation;
     uint64_t current_output;
     uint16_t capability_bits;
+    uint16_t kind;
+    uint16_t request_state_bits;
+    uint16_t current_state_bits;
     uint32_t transient_index;
     uint32_t transient_generation;
     int32_t x;
@@ -69,6 +81,8 @@ struct sophia_wm_v1_snapshot_surface_record {
     int32_t min_height;
     int32_t max_width;
     int32_t max_height;
+    int32_t exact_width;
+    int32_t exact_height;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_surface_record(const struct sophia_wm_v1_snapshot_surface_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_surface_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_surface_record *record);
@@ -83,6 +97,16 @@ struct sophia_wm_v1_snapshot_binding_record {
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_binding_record(const struct sophia_wm_v1_snapshot_binding_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_binding_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_binding_record *record);
+
+#define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_KIND 4u
+#define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_SIZE 12u
+#define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_MAX 256u
+struct sophia_wm_v1_snapshot_session_operation_record {
+    uint64_t operation;
+    uint16_t target_bits;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_session_operation_record(const struct sophia_wm_v1_snapshot_session_operation_record *record, uint8_t *out, size_t capacity);
+enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_session_operation_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_session_operation_record *record);
 
 #define SOPHIA_WM_V1_PROJECTION_OUTPUT_RECORD_KIND 1u
 #define SOPHIA_WM_V1_PROJECTION_OUTPUT_RECORD_SIZE 24u
@@ -114,6 +138,7 @@ struct sophia_wm_v1_projection_placement_record {
     int32_t crop_width;
     int32_t crop_height;
     uint16_t transform;
+    uint16_t presentation_bits;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_projection_placement_record(const struct sophia_wm_v1_projection_placement_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_projection_placement_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_projection_placement_record *record);
@@ -145,6 +170,7 @@ struct sophia_wm_v1_snapshot_begin {
     uint16_t output_count;
     uint32_t surface_count;
     uint16_t binding_count;
+    uint16_t session_operation_count;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_begin(uint64_t transaction, const struct sophia_wm_v1_snapshot_begin *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_begin(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_snapshot_begin *message);
@@ -172,6 +198,16 @@ struct sophia_wm_v1_projection_request {
     uint64_t connection_epoch;
     uint64_t request_id;
     uint64_t scene_generation;
+    uint16_t cause_kind;
+    uint16_t interaction_phase;
+    uint64_t activation_serial;
+    uint64_t action;
+    uint32_t target_index;
+    uint32_t target_generation;
+    int32_t interaction_x;
+    int32_t interaction_y;
+    int32_t interaction_width;
+    int32_t interaction_height;
     uint16_t affected_output_count;
     const uint8_t *affected_outputs;
     size_t affected_outputs_len;
@@ -218,5 +254,57 @@ struct sophia_wm_v1_projection_outcome {
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_projection_outcome(uint64_t transaction, const struct sophia_wm_v1_projection_outcome *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_projection_outcome(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_projection_outcome *message);
+
+struct sophia_wm_v1_policy_configuration {
+    uint64_t connection_epoch;
+    uint64_t configuration_generation;
+    uint16_t binding_count;
+    uint16_t style_bits;
+    uint32_t focus_ring_width;
+    uint32_t focus_ring_color;
+    uint32_t frame_width;
+    uint32_t frame_focused_color;
+    uint32_t frame_unfocused_color;
+    const uint8_t *bindings;
+    size_t bindings_len;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_policy_configuration(uint64_t transaction, const struct sophia_wm_v1_policy_configuration *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_policy_configuration(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_policy_configuration *message);
+
+struct sophia_wm_v1_policy_configuration_outcome {
+    uint64_t connection_epoch;
+    uint64_t configuration_generation;
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_policy_configuration_outcome(uint64_t transaction, const struct sophia_wm_v1_policy_configuration_outcome *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_policy_configuration_outcome(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_policy_configuration_outcome *message);
+
+struct sophia_wm_v1_policy_dirty {
+    uint64_t connection_epoch;
+    uint64_t policy_generation;
+    uint16_t affected_output_count;
+    const uint8_t *affected_outputs;
+    size_t affected_outputs_len;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_policy_dirty(uint64_t transaction, const struct sophia_wm_v1_policy_dirty *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_policy_dirty(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_policy_dirty *message);
+
+struct sophia_wm_v1_session_operation_request {
+    uint64_t connection_epoch;
+    uint64_t request_id;
+    uint64_t operation;
+    uint32_t target_index;
+    uint32_t target_generation;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_session_operation_request(uint64_t transaction, const struct sophia_wm_v1_session_operation_request *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_session_operation_request(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_session_operation_request *message);
+
+struct sophia_wm_v1_session_operation_outcome {
+    uint64_t connection_epoch;
+    uint64_t request_id;
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_session_operation_outcome(uint64_t transaction, const struct sophia_wm_v1_session_operation_outcome *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_session_operation_outcome(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_session_operation_outcome *message);
 
 #endif

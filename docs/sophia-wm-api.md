@@ -1,8 +1,9 @@
 # Sophia Window Manager API
 
 **Role:** normative spatial-policy boundary and compatibility contract.
-**Status:** API v7 is the current experimental implementation;
-`sophia_wm_v1` is the unimplemented public target.
+**Status:** API v7 is the current installed experimental implementation;
+the draft `sophia_wm_v1` transport, codecs, reducer, and proof clients exist,
+but its target semantics are incomplete and the interface is not stable.
 
 Sophia has one spatial-policy role. A native WM speaks that role directly. A
 classical X11 WM speaks only to the private synthetic X server inside
@@ -114,6 +115,11 @@ request may also carry an opaque action activation, reduced focus request, or
 bounded interaction request as its cause. The cause does not weaken snapshot
 validation.
 
+Each non-idempotent action activation is ordered and delivered once. A bounded
+queue may reject new activations under pressure, but it must not merge repeated
+focus, movement, view, or layout actions. Replaceable scene refreshes and
+continuous interaction geometry may coalesce to their latest state.
+
 ## Projection Proposal
 
 A response repeats the connection epoch, transaction ID, and base snapshot
@@ -148,6 +154,13 @@ Committed, stale, invalid, and timed-out outcomes are explicit. A rejected
 proposal does not launch a process, change focus, partially change visibility,
 or alter the last committed projection.
 
+An accepted proposal may require frontend configure and content settlement
+before it becomes committable. Engine retains the prior coherent scene during
+that interval and sends `committed` only after authoritative frontend state and
+renderable content match the candidate. If settlement changes a relevant fact,
+Engine requests policy again from a fresh complete snapshot rather than
+silently rewriting the proposal.
+
 Physical outputs retire independently. The logical projection transaction
 feeds the existing visual-preparation and retirement model; it does not claim
 that separate displays flip at one simultaneous physical instant.
@@ -172,6 +185,12 @@ Move, resize, drag, and scrolling interactions remain Engine-owned grabs.
 Policy receives only the target, operation kind, and bounded geometry update
 and returns an ordinary projection proposal. It never receives raw motion,
 button payloads, device identity, or cursor authority.
+
+A policy whose private state or validated configuration changes may request a
+fresh cycle. The request contains no placement and cannot mutate Engine state;
+Engine replies with an ordinary complete snapshot and projection request. One
+pending request may coalesce by unioning its affected outputs, while action
+activations retain their bounded order.
 
 ## Recovery And Replacement
 

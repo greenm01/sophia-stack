@@ -10,11 +10,16 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | `SnapshotBegin` | 34 | session-to-policy | must be nonzero | 28 |
 | `SnapshotChunk` | 35 | session-to-policy | must be nonzero | ..65536 |
 | `SnapshotEnd` | 36 | session-to-policy | must be nonzero | 20 |
-| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..156 |
+| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..200 |
 | `ProjectionBegin` | 38 | policy-to-session | must be nonzero | 32 |
 | `ProjectionChunk` | 39 | policy-to-session | must be nonzero | ..65536 |
 | `ProjectionEnd` | 40 | policy-to-session | must be nonzero | 28 |
 | `ProjectionOutcome` | 41 | session-to-policy | must be nonzero | 28 |
+| `PolicyConfiguration` | 42 | policy-to-session | must be nonzero | ..4136 |
+| `PolicyConfigurationOutcome` | 43 | session-to-policy | must be nonzero | 20 |
+| `PolicyDirty` | 44 | policy-to-session | must be nonzero | ..148 |
+| `SessionOperationRequest` | 45 | policy-to-session | must be nonzero | 32 |
+| `SessionOperationOutcome` | 46 | session-to-policy | must be nonzero | 20 |
 
 ## `ClientHello`
 
@@ -47,7 +52,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 18 | `output_count` | `u16` | little-endian |
 | 20 | `surface_count` | `u32` | little-endian |
 | 24 | `binding_count` | `u16` | little-endian |
-| 26 | `reserved` | `u16` | must be zero |
+| 26 | `session_operation_count` | `u16` | little-endian |
 
 ## `SnapshotChunk`
 
@@ -75,9 +80,19 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 0 | `connection_epoch` | `u64` | little-endian |
 | 8 | `request_id` | `u64` | little-endian |
 | 16 | `scene_generation` | `u64` | little-endian |
-| 24 | `affected_output_count` | `u16` | little-endian |
-| 26 | `reserved` | `u16` | must be zero |
-| 28 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+| 24 | `cause_kind` | `u16` | little-endian |
+| 26 | `interaction_phase` | `u16` | little-endian |
+| 28 | `activation_serial` | `u64` | little-endian |
+| 36 | `action` | `u64` | little-endian |
+| 44 | `target_index` | `u32` | little-endian |
+| 48 | `target_generation` | `u32` | little-endian |
+| 52 | `interaction_x` | `i32` | little-endian |
+| 56 | `interaction_y` | `i32` | little-endian |
+| 60 | `interaction_width` | `i32` | little-endian |
+| 64 | `interaction_height` | `i32` | little-endian |
+| 68 | `affected_output_count` | `u16` | little-endian |
+| 70 | `reserved` | `u16` | must be zero |
+| 72 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
 
 ## `ProjectionBegin`
 
@@ -120,11 +135,64 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 24 | `outcome` | `u16` | little-endian |
 | 26 | `reserved` | `u16` | must be zero |
 
+## `PolicyConfiguration`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `configuration_generation` | `u64` | little-endian |
+| 16 | `binding_count` | `u16` | little-endian |
+| 18 | `style_bits` | `u16` | little-endian |
+| 20 | `focus_ring_width` | `u32` | little-endian |
+| 24 | `focus_ring_color` | `u32` | little-endian |
+| 28 | `frame_width` | `u32` | little-endian |
+| 32 | `frame_focused_color` | `u32` | little-endian |
+| 36 | `frame_unfocused_color` | `u32` | little-endian |
+| 40 | `bindings` | `bytes` | at most 4096 bytes; consumes payload tail |
+
+## `PolicyConfigurationOutcome`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `configuration_generation` | `u64` | little-endian |
+| 16 | `outcome` | `u16` | little-endian |
+| 18 | `reserved` | `u16` | must be zero |
+
+## `PolicyDirty`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `policy_generation` | `u64` | little-endian |
+| 16 | `affected_output_count` | `u16` | little-endian |
+| 18 | `reserved` | `u16` | must be zero |
+| 20 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+
+## `SessionOperationRequest`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `request_id` | `u64` | little-endian |
+| 16 | `operation` | `u64` | little-endian |
+| 24 | `target_index` | `u32` | little-endian |
+| 28 | `target_generation` | `u32` | little-endian |
+
+## `SessionOperationOutcome`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `request_id` | `u64` | little-endian |
+| 16 | `outcome` | `u16` | little-endian |
+| 18 | `reserved` | `u16` | must be zero |
+
 # Transfer Records
 
 ## `SnapshotOutput` record
 
-Transfer: `snapshot`; record kind: 1; maximum records: 16; fixed size: 40 bytes.
+Transfer: `snapshot`; record kind: 1; maximum records: 16; fixed size: 56 bytes.
 
 | Offset | Field | Type | Rule |
 | ---: | --- | --- | --- |
@@ -136,10 +204,14 @@ Transfer: `snapshot`; record kind: 1; maximum records: 16; fixed size: 40 bytes.
 | 28 | `y` | `i32` | little-endian |
 | 32 | `width` | `i32` | little-endian |
 | 36 | `height` | `i32` | little-endian |
+| 40 | `work_x` | `i32` | little-endian |
+| 44 | `work_y` | `i32` | little-endian |
+| 48 | `work_width` | `i32` | little-endian |
+| 52 | `work_height` | `i32` | little-endian |
 
 ## `SnapshotSurface` record
 
-Transfer: `snapshot`; record kind: 2; maximum records: 1024; fixed size: 68 bytes.
+Transfer: `snapshot`; record kind: 2; maximum records: 1024; fixed size: 80 bytes.
 
 | Offset | Field | Type | Rule |
 | ---: | --- | --- | --- |
@@ -148,17 +220,21 @@ Transfer: `snapshot`; record kind: 2; maximum records: 1024; fixed size: 68 byte
 | 8 | `state_generation` | `u64` | little-endian |
 | 16 | `current_output` | `u64` | little-endian |
 | 24 | `capability_bits` | `u16` | little-endian |
-| 26 | `reserved` | `u16` | must be zero |
-| 28 | `transient_index` | `u32` | little-endian |
-| 32 | `transient_generation` | `u32` | little-endian |
-| 36 | `x` | `i32` | little-endian |
-| 40 | `y` | `i32` | little-endian |
-| 44 | `width` | `i32` | little-endian |
-| 48 | `height` | `i32` | little-endian |
-| 52 | `min_width` | `i32` | little-endian |
-| 56 | `min_height` | `i32` | little-endian |
-| 60 | `max_width` | `i32` | little-endian |
-| 64 | `max_height` | `i32` | little-endian |
+| 26 | `kind` | `u16` | little-endian |
+| 28 | `request_state_bits` | `u16` | little-endian |
+| 30 | `current_state_bits` | `u16` | little-endian |
+| 32 | `transient_index` | `u32` | little-endian |
+| 36 | `transient_generation` | `u32` | little-endian |
+| 40 | `x` | `i32` | little-endian |
+| 44 | `y` | `i32` | little-endian |
+| 48 | `width` | `i32` | little-endian |
+| 52 | `height` | `i32` | little-endian |
+| 56 | `min_width` | `i32` | little-endian |
+| 60 | `min_height` | `i32` | little-endian |
+| 64 | `max_width` | `i32` | little-endian |
+| 68 | `max_height` | `i32` | little-endian |
+| 72 | `exact_width` | `i32` | little-endian |
+| 76 | `exact_height` | `i32` | little-endian |
 
 ## `SnapshotBinding` record
 
@@ -169,6 +245,16 @@ Transfer: `snapshot`; record kind: 3; maximum records: 256; fixed size: 16 bytes
 | 0 | `action` | `u64` | little-endian |
 | 8 | `keycode` | `u32` | little-endian |
 | 12 | `modifier_bits` | `u32` | little-endian |
+
+## `SnapshotSessionOperation` record
+
+Transfer: `snapshot`; record kind: 4; maximum records: 256; fixed size: 12 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `operation` | `u64` | little-endian |
+| 8 | `target_bits` | `u16` | little-endian |
+| 10 | `reserved` | `u16` | must be zero |
 
 ## `ProjectionOutput` record
 
@@ -202,4 +288,4 @@ Transfer: `projection`; record kind: 2; maximum records: 1024; fixed size: 60 by
 | 48 | `crop_width` | `i32` | little-endian |
 | 52 | `crop_height` | `i32` | little-endian |
 | 56 | `transform` | `u16` | little-endian |
-| 58 | `reserved` | `u16` | must be zero |
+| 58 | `presentation_bits` | `u16` | little-endian |

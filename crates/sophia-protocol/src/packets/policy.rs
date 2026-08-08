@@ -1,5 +1,6 @@
 use crate::{
     LayoutNodeCapabilities, OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WmActionId,
 };
 
 pub const POLICY_MAX_OUTPUTS: usize = 16;
@@ -13,6 +14,31 @@ pub struct PolicyOutputSnapshot {
     pub generation: u64,
     pub focus: Option<SurfaceId>,
     pub bounds: Rect,
+    pub work_area: Rect,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicySurfaceKind {
+    Toplevel = 1,
+    Dialog = 2,
+    Utility = 3,
+    Popup = 4,
+    #[default]
+    Unknown = 5,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PolicyPresentationState {
+    pub fullscreen: bool,
+    pub maximized: bool,
+    pub minimized: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicySessionOperation {
+    pub token: u64,
+    pub permits_surface_target: bool,
 }
 
 /// A complete, metadata-free manageable-surface record.
@@ -22,8 +48,12 @@ pub struct PolicySurfaceSnapshot {
     pub generation: u64,
     /// The committed output, or `None` while the surface is hidden.
     pub current_output: Option<OutputId>,
+    pub kind: PolicySurfaceKind,
     pub capabilities: LayoutNodeCapabilities,
     pub constraints: SurfaceConstraints,
+    pub exact_size: Option<Size>,
+    pub requested_state: PolicyPresentationState,
+    pub current_state: PolicyPresentationState,
     pub transient_owner: Option<SurfaceId>,
     pub geometry: Rect,
 }
@@ -33,6 +63,34 @@ pub struct PolicySceneSnapshot {
     pub generation: u64,
     pub outputs: Vec<PolicyOutputSnapshot>,
     pub surfaces: Vec<PolicySurfaceSnapshot>,
+    pub session_operations: Vec<PolicySessionOperation>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicyInteractionPhase {
+    #[default]
+    Begin = 1,
+    Update = 2,
+    End = 3,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PolicyRequestCause {
+    #[default]
+    SceneChanged,
+    Action {
+        activation_serial: u64,
+        action: WmActionId,
+    },
+    Focus {
+        target: SurfaceId,
+    },
+    Interaction {
+        phase: PolicyInteractionPhase,
+        target: SurfaceId,
+        geometry: Rect,
+    },
 }
 
 /// Identity of one server-issued projection request.
@@ -42,6 +100,7 @@ pub struct PolicyProjectionRequest {
     pub request_id: u64,
     pub scene_generation: u64,
     pub affected_outputs: Vec<OutputId>,
+    pub cause: PolicyRequestCause,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -52,6 +111,7 @@ pub struct PolicySurfacePlacement {
     pub requested_size: Option<Size>,
     pub crop: Option<Rect>,
     pub transform: PolicyTransform,
+    pub presentation: PolicyPresentationState,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

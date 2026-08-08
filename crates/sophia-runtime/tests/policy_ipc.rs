@@ -120,6 +120,7 @@ fn snapshot_assembler_requires_exact_order_and_declared_totals() {
                 output_count: 1,
                 surface_count: 2,
                 binding_count: 1,
+                session_operation_count: 0,
             },
         )
         .unwrap();

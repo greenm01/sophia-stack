@@ -30,6 +30,11 @@ pub enum IpcMessageKind {
     WmV1ProjectionChunk = 39,
     WmV1ProjectionEnd = 40,
     WmV1ProjectionOutcome = 41,
+    WmV1PolicyConfiguration = 42,
+    WmV1PolicyConfigurationOutcome = 43,
+    WmV1PolicyDirty = 44,
+    WmV1SessionOperationRequest = 45,
+    WmV1SessionOperationOutcome = 46,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

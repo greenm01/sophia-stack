@@ -381,6 +381,13 @@ only after the immutable Milestone 12 candidate passes promotion.
 - [x] Map every model action to its owning Rust boundary. Preserve each
   implementation-relevant TLC counterexample as a deterministic Rust
   regression before correcting the implementation or model.
+- [x] Audit retained Triad capabilities against Sophia, Hagia, River, and Niri.
+  Keep spatial policy in Hagia; keep input, client settlement, rendering, and
+  scanout in Engine; reserve separate session, shell, broker, and portal roles.
+- [ ] Extend the policy models for ordered action causes, policy-initiated
+  reprojection, configuration generations, frontend settlement, reduced
+  pointer interactions, and opaque session-operation outcomes before adding
+  those transitions to the draft wire.
 
 ### 13.2 Publish A Dependency-Free Wire Contract
 
@@ -397,6 +404,17 @@ only after the immutable Milestone 12 candidate passes promotion.
 - [x] Compile an independent C client and run it against the same golden and
   malformed-frame corpus as the Rust codec. Reject unknown, excessive,
   partial, duplicate, reordered, stale, and trailing data without mutation.
+- [ ] Complete draft revision 1 before stability: add output work rectangles;
+  reduced surface kind, presentation request/current state, and exact-size
+  constraints; projection presentation decisions; request causes; policy
+  configuration; Engine chrome; session-operation tokens; reduced
+  interactions; and a bounded policy-dirty request.
+- [ ] Preserve non-idempotent activation order with the existing bounded
+  sixteen-request owner queue. Coalesce only replaceable scene refreshes and
+  continuous interaction geometry; saturation consumes the shortcut, fails
+  closed, and emits a bounded diagnostic.
+- [ ] Regenerate and re-run the Rust/C golden and malformed corpora, then update
+  Hagia's independent Nim codec without adding a Sophia build dependency.
 
 ### 13.3 Replace Workspaces With Output Projections
 
@@ -416,6 +434,13 @@ only after the immutable Milestone 12 candidate passes promotion.
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
   policy IPC.
+- [ ] Stage accepted projections through frontend configure and renderable
+  content settlement. Preserve the last coherent scene and emit `committed`
+  only when authoritative state matches; otherwise request a fresh snapshot
+  without silently changing policy geometry.
+- [ ] Host the production endpoint in the Sophia session, supervise exactly one
+  admitted peer, preserve the committed scene across replacement, and keep
+  policy checkpoints private to that peer.
 
 ### 13.4 Prove Hagia And Freeze `sophia_wm_v1`
 
@@ -425,16 +450,39 @@ only after the immutable Milestone 12 candidate passes promotion.
 - [x] Complete Hagia's first socket proof: strict snapshot assembly, exact
   affected-output request, projection encoding, committed outcome, and
   canonical Engine reduction without generated Sophia or Triad protocol types.
-- [ ] Keep Hagia tags, stable `ViewId` values, ordered per-output views, focus
-  history, reconnect affinity, and session-local checkpoint private. Project
-  them into one-output-per-surface Sophia geometry with no Hagia back door.
-- [ ] Prove one tiling, one scrolling, and one bounded Janet layout plus
-  actions, constraints, focus, hidden surfaces, multi-output moves, output
-  loss/return, crash, restart, and hot-swap.
+- [x] Keep Hagia tags, stable `ViewId` values, ordered per-output views, and
+  reconnect affinity private. Project the implemented equal-column and
+  fixed-point scrolling layouts into one-output-per-surface Sophia geometry
+  with no Hagia back door.
+- [ ] Add deterministic Hagia reducer messages for view/tag changes, focus,
+  movement, grouping, layout adjustment, output focus/moves, presentation
+  state, floating, scratchpads, and opaque session operations.
+- [ ] Add Engine-owned pointer interactions, bounded focus history, private
+  checkpoint/reconciliation, and crash/restart proof while applications and
+  the last committed scene remain alive.
+- [ ] Prove the retained tiling and scrolling layouts plus actions, constraints,
+  focus, hidden surfaces, multi-output moves, output loss/return, crash,
+  restart, and hot-swap. Defer Janet until candidate validation and fallback
+  behavior have their own model and deterministic tests.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. Publish
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
   as a permanent compatibility gate.
+
+### 13.5 Migrate And Promote The Native Policy Path
+
+- [ ] After Milestone 12 promotion, run the installed xmonad profile through
+  the session-hosted public transport and canonical projection reducer without
+  changing its retained behavior.
+- [ ] Install a bounded Hagia profile using only the retained column and
+  scrolling layouts. Prove Kitty, Firefox, floating dialogs, work areas,
+  ordered repeated actions, pointer move/resize, multi-output views,
+  `glxgears`, `vkcube`, policy restart, and clean logout.
+- [ ] Remove API v7 and Engine-owned workspace policy only after both installed
+  clients pass the same restart and last-layout gates.
+- [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
+  the Rust reference, Hagia, X11 bridge, and C client pass the complete
+  black-box corpus.
 
 Milestone 13 exits only when the public wire is independently implementable,
 the formal and deterministic gates pass, Hagia and xmonad use the same Engine

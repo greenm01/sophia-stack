@@ -14,8 +14,18 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
                 width: 1920,
                 height: 1080,
             },
+            work_area: Rect {
+                x: 0,
+                y: 24,
+                width: 1920,
+                height: 1056,
+            },
         }],
         surfaces: vec![surface()],
+        session_operations: vec![PolicySessionOperation {
+            token: 11,
+            permits_surface_target: true,
+        }],
     };
     let bindings = vec![WmBindingRegistration {
         action: WmActionId::from_raw(4),
@@ -30,7 +40,7 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
 
     assert_eq!(decoded.scene, scene);
     assert_eq!(decoded.bindings, bindings);
-    assert_eq!(transfer.chunks.len(), 3);
+    assert_eq!(transfer.chunks.len(), 4);
 }
 
 #[test]
@@ -62,6 +72,10 @@ fn complete_output_projection_roundtrips_in_stacking_order() {
                     height: 598,
                 }),
                 transform: PolicyTransform::Identity,
+                presentation: PolicyPresentationState {
+                    fullscreen: true,
+                    ..PolicyPresentationState::default()
+                },
             }],
             focus: Some(SurfaceId::new(3, 1)),
         }],
@@ -104,6 +118,10 @@ fn projection_request_carries_the_complete_affected_output_set() {
         request_id: 5,
         scene_generation: 7,
         affected_outputs: vec![OutputId::from_raw(1), OutputId::from_raw(2)],
+        cause: PolicyRequestCause::Action {
+            activation_serial: 9,
+            action: WmActionId::from_raw(4),
+        },
     };
     let encoded = encode_wm_v1_policy_projection_request(&request).unwrap();
 
@@ -121,6 +139,7 @@ fn projection_request_rejects_duplicate_or_truncated_output_ids() {
         request_id: 5,
         scene_generation: 7,
         affected_outputs: vec![OutputId::from_raw(1), OutputId::from_raw(1)],
+        cause: PolicyRequestCause::SceneChanged,
     };
     assert!(encode_wm_v1_policy_projection_request(&duplicate).is_err());
 
@@ -155,6 +174,7 @@ fn surface() -> PolicySurfaceSnapshot {
         surface: SurfaceId::new(3, 1),
         generation: 8,
         current_output: Some(OutputId::from_raw(1)),
+        kind: PolicySurfaceKind::Dialog,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         constraints: SurfaceConstraints {
             min_size: Some(Size {
@@ -163,6 +183,12 @@ fn surface() -> PolicySurfaceSnapshot {
             }),
             max_size: None,
         },
+        exact_size: None,
+        requested_state: PolicyPresentationState {
+            fullscreen: true,
+            ..PolicyPresentationState::default()
+        },
+        current_state: PolicyPresentationState::default(),
         transient_owner: None,
         geometry: Rect {
             x: 20,

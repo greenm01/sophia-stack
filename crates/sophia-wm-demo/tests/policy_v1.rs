@@ -1,7 +1,7 @@
 use sophia_protocol::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyProjectionRequest,
-    PolicySceneSnapshot, PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId,
+    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
+    PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot, PolicySurfaceKind,
+    PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
 };
 use sophia_wm_demo::tile_policy_scene;
 
@@ -20,18 +20,26 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
                 width: 101,
                 height: 80,
             },
+            work_area: Rect {
+                x: 10,
+                y: 20,
+                width: 101,
+                height: 80,
+            },
         }],
         surfaces: vec![
             surface(1, Some(output)),
             surface(2, Some(output)),
             surface(3, None),
         ],
+        session_operations: Vec::new(),
     };
     let request = PolicyProjectionRequest {
         connection_epoch: 7,
         request_id: 8,
         scene_generation: 4,
         affected_outputs: vec![output],
+        cause: PolicyRequestCause::SceneChanged,
     };
 
     let proposal = tile_policy_scene(TransactionId::from_raw(9), &scene, &request).unwrap();
@@ -48,6 +56,7 @@ fn surface(index: u32, current_output: Option<OutputId>) -> PolicySurfaceSnapsho
         surface: SurfaceId::new(index, 1),
         generation: 1,
         current_output,
+        kind: PolicySurfaceKind::Toplevel,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
         constraints: SurfaceConstraints {
             min_size: Some(Size {
@@ -56,6 +65,9 @@ fn surface(index: u32, current_output: Option<OutputId>) -> PolicySurfaceSnapsho
             }),
             max_size: None,
         },
+        exact_size: None,
+        requested_state: PolicyPresentationState::default(),
+        current_state: PolicyPresentationState::default(),
         transient_owner: None,
         geometry: Rect {
             x: 0,

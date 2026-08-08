@@ -1,9 +1,9 @@
 use sophia_engine::{PolicyProjectionReducer, WmWorkspaceState, adapt_v7_policy_plan};
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId,
-    PolicyOutputSnapshot, PolicyProjectionOutcome, PolicySceneSnapshot, PolicySurfaceSnapshot,
-    Rect, SurfaceConstraints, SurfaceId, TransactionId, WmRelayoutWorkspace, WmRequestKind,
-    WmRequestPacket, WorkspaceId,
+    PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionOutcome, PolicySceneSnapshot,
+    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SurfaceConstraints, SurfaceId, TransactionId,
+    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{LegacyWmRequest, X11WmBridgeState};
 
@@ -61,6 +61,7 @@ fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
             generation: 1,
             focus: None,
             bounds,
+            work_area: bounds,
         }],
         surfaces: nodes
             .iter()
@@ -68,12 +69,17 @@ fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
                 surface: node.surface,
                 generation: node.generation,
                 current_output: Some(output),
+                kind: PolicySurfaceKind::Toplevel,
                 capabilities: node.capabilities,
                 constraints: node.constraints,
+                exact_size: None,
+                requested_state: PolicyPresentationState::default(),
+                current_state: PolicyPresentationState::default(),
                 transient_owner: node.transient_owner,
                 geometry: node.geometry,
             })
             .collect(),
+        session_operations: Vec::new(),
     };
     let mut reducer = PolicyProjectionReducer::new(scene.clone()).unwrap();
     reducer.connect(1).unwrap();
