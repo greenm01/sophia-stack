@@ -391,21 +391,28 @@ future compatibility target, not a prerequisite.
   closed, and emits a bounded diagnostic.
 - [x] Regenerate and re-run the Rust/C golden and malformed corpora, then update
   Hagia's independent Nim codec without adding a Sophia build dependency.
-- [ ] Add the indicator descriptor to revision 1 before the 13.4 freeze. Add
-  `capability "indicators" bit=8`, `max-indicators=256`, record kinds
-  `ProjectionIndicator` and `ProjectionOutputStatus`, and an `indicator_count`
-  field in `ProjectionBegin`. Adding a record kind is additive; adding a field to
-  an existing message layout is not, so deferring this past 13.4 forces a new
-  interface family. Bounds are permanent: 256 indicators, 32 per output, 32-byte
-  UTF-8 labels and layout names. See `docs/sophia-indicator-descriptor.md`.
+- [x] Add the indicator descriptor to revision 1 before the 13.4 freeze.
+  `capability "indicators" bit=8`, record kinds `ProjectionIndicator` (max 256)
+  and `ProjectionOutputStatus` (max 16), and `indicator_count`/`status_count`
+  fields in `ProjectionBegin` are in the schema with generated Rust and C99
+  codecs and golden vectors. The generator gained a fixed-octet field type so
+  records could carry bounded labels while staying fixed width. Wire bounds are
+  permanent: 256 indicators, 16 status records, 32-byte UTF-8 labels and layout
+  names. The 32-per-output limit is Engine validation, not a wire constant.
+  See `docs/sophia-indicator-descriptor.md`.
 - [ ] Model the descriptor before changing the schema. Revise
   `validation/tla/ShellObservation.tla` so the descriptor rides the proposal and
   its invariants hold with no explicit publish or invalidate step, and add
   `validation/tla/IndicatorTransfer.tla` for declared-count, ordinal, and
   bounds integrity across begin/chunk/end.
-- [ ] Regenerate the Rust and C99 codecs, wire tables, and golden corpora for the
-  new records, then update Hagia's independent Nim codec in the same change so
-  the cross-repository conformance gate stays green.
+- [x] Regenerate the Rust and C99 codecs, wire tables, and golden corpora for
+  the new records. `tools/check_policy_protocol.sh` passes end to end. Closing
+  it also repaired a pre-existing gap: the C conformance harness had never been
+  taught `snapshot_session_operation` or the five policy/session messages, so
+  its valid-frame and record gates had been failing before this work began.
+- [ ] Update Hagia's independent Nim codec for the new records so the
+  cross-repository conformance gate stays green, without adding a Sophia build
+  dependency.
 - [ ] Defer the tier-1 texture question rather than blocking on it. Whether the
   shared transport can carry shell texture traffic under the 64-KiB frame limit,
   single in-flight transfer, and bytes-only wire binds `sophia_shell_v1` only.

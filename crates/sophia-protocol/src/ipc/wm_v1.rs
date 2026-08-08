@@ -20,6 +20,7 @@ pub const SOPHIA_WM_CAPABILITY_CHROME: u64 = 1 << 4;
 pub const SOPHIA_WM_CAPABILITY_POLICY_DIRTY: u64 = 1 << 5;
 pub const SOPHIA_WM_CAPABILITY_CONFIGURATION: u64 = 1 << 6;
 pub const SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS: u64 = 1 << 7;
+pub const SOPHIA_WM_CAPABILITY_INDICATORS: u64 = 1 << 8;
 
 pub const SOPHIA_WM_OUTCOME_COMMITTED: u16 = 1;
 pub const SOPHIA_WM_OUTCOME_REJECTED_STALE: u16 = 2;
@@ -560,6 +561,157 @@ pub fn decode_wm_v1_projection_placement_records(
     Ok(records)
 }
 
+pub const PROJECTION_INDICATOR_RECORD_KIND: u16 = 3;
+pub const PROJECTION_INDICATOR_RECORD_SIZE: usize = 64;
+pub const PROJECTION_INDICATOR_RECORD_MAX: usize = 256;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProjectionIndicatorRecord {
+    pub output: u64,
+    pub slot: u32,
+    pub indicator: u64,
+    pub action: u64,
+    pub state_bits: u16,
+    pub label_len: u16,
+    pub label: [u8; 32],
+}
+
+pub fn encode_wm_v1_projection_indicator_records(
+    records: &[WmV1ProjectionIndicatorRecord],
+) -> Result<Vec<u8>, IpcCodecError> {
+    if records.len() > 256 {
+        return Err(IpcCodecError::CountTooLarge {
+            count: records.len(),
+            max: 256,
+        });
+    }
+    let mut data = Vec::with_capacity(records.len() * 64);
+    for record in records {
+        push_u64(&mut data, record.output);
+        push_u32(&mut data, record.slot);
+        push_u64(&mut data, record.indicator);
+        push_u64(&mut data, record.action);
+        push_u16(&mut data, record.state_bits);
+        push_u16(&mut data, record.label_len);
+        data.extend_from_slice(&record.label);
+    }
+    Ok(data)
+}
+
+pub fn decode_wm_v1_projection_indicator_records(
+    data: &[u8],
+    item_count: u32,
+) -> Result<Vec<WmV1ProjectionIndicatorRecord>, IpcCodecError> {
+    let count = item_count as usize;
+    if count > 256 {
+        return Err(IpcCodecError::CountTooLarge { count, max: 256 });
+    }
+    let expected = count
+        .checked_mul(64)
+        .ok_or(IpcCodecError::CountTooLarge { count, max: 256 })?;
+    if data.len() < expected {
+        return Err(IpcCodecError::Truncated);
+    }
+    if data.len() > expected {
+        return Err(IpcCodecError::TrailingBytes(data.len() - expected));
+    }
+    let mut cursor = Cursor::new(data);
+    let mut records = Vec::with_capacity(count);
+    for _ in 0..count {
+        let output = cursor.u64()?;
+        let slot = cursor.u32()?;
+        let indicator = cursor.u64()?;
+        let action = cursor.u64()?;
+        let state_bits = cursor.u16()?;
+        let label_len = cursor.u16()?;
+        let mut label = [0u8; 32];
+        label.copy_from_slice(cursor.slice(32)?);
+        records.push(WmV1ProjectionIndicatorRecord {
+            output,
+            slot,
+            indicator,
+            action,
+            state_bits,
+            label_len,
+            label,
+        });
+    }
+    cursor.finish()?;
+    Ok(records)
+}
+
+pub const PROJECTION_OUTPUT_STATUS_RECORD_KIND: u16 = 4;
+pub const PROJECTION_OUTPUT_STATUS_RECORD_SIZE: usize = 48;
+pub const PROJECTION_OUTPUT_STATUS_RECORD_MAX: usize = 16;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProjectionOutputStatusRecord {
+    pub output: u64,
+    pub focus_bits: u16,
+    pub layout_len: u16,
+    pub layout: [u8; 32],
+}
+
+pub fn encode_wm_v1_projection_output_status_records(
+    records: &[WmV1ProjectionOutputStatusRecord],
+) -> Result<Vec<u8>, IpcCodecError> {
+    if records.len() > 16 {
+        return Err(IpcCodecError::CountTooLarge {
+            count: records.len(),
+            max: 16,
+        });
+    }
+    let mut data = Vec::with_capacity(records.len() * 48);
+    for record in records {
+        push_u64(&mut data, record.output);
+        push_u16(&mut data, record.focus_bits);
+        push_u16(&mut data, record.layout_len);
+        push_u32(&mut data, 0);
+        data.extend_from_slice(&record.layout);
+    }
+    Ok(data)
+}
+
+pub fn decode_wm_v1_projection_output_status_records(
+    data: &[u8],
+    item_count: u32,
+) -> Result<Vec<WmV1ProjectionOutputStatusRecord>, IpcCodecError> {
+    let count = item_count as usize;
+    if count > 16 {
+        return Err(IpcCodecError::CountTooLarge { count, max: 16 });
+    }
+    let expected = count
+        .checked_mul(48)
+        .ok_or(IpcCodecError::CountTooLarge { count, max: 16 })?;
+    if data.len() < expected {
+        return Err(IpcCodecError::Truncated);
+    }
+    if data.len() > expected {
+        return Err(IpcCodecError::TrailingBytes(data.len() - expected));
+    }
+    let mut cursor = Cursor::new(data);
+    let mut records = Vec::with_capacity(count);
+    for _ in 0..count {
+        let output = cursor.u64()?;
+        let focus_bits = cursor.u16()?;
+        let layout_len = cursor.u16()?;
+        let reserved = cursor.u32()?;
+        if reserved != 0 {
+            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+        }
+        let mut layout = [0u8; 32];
+        layout.copy_from_slice(cursor.slice(32)?);
+        records.push(WmV1ProjectionOutputStatusRecord {
+            output,
+            focus_bits,
+            layout_len,
+            layout,
+        });
+    }
+    cursor.finish()?;
+    Ok(records)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1ClientHello {
     pub minimum_revision: u16,
@@ -988,6 +1140,8 @@ pub struct WmV1ProjectionBegin {
     pub chunk_count: u16,
     pub output_count: u16,
     pub placement_count: u32,
+    pub indicator_count: u16,
+    pub status_count: u16,
 }
 
 pub fn encode_wm_v1_projection_begin_frame(
@@ -1004,6 +1158,8 @@ pub fn encode_wm_v1_projection_begin_frame(
     push_u16(&mut payload, message.chunk_count);
     push_u16(&mut payload, message.output_count);
     push_u32(&mut payload, message.placement_count);
+    push_u16(&mut payload, message.indicator_count);
+    push_u16(&mut payload, message.status_count);
     encode_frame(IpcMessageKind::WmV1ProjectionBegin, transaction, &payload)
 }
 
@@ -1027,6 +1183,8 @@ pub fn decode_wm_v1_projection_begin_frame(
     let chunk_count = cursor.u16()?;
     let output_count = cursor.u16()?;
     let placement_count = cursor.u32()?;
+    let indicator_count = cursor.u16()?;
+    let status_count = cursor.u16()?;
     cursor.finish()?;
     let message = WmV1ProjectionBegin {
         connection_epoch,
@@ -1035,6 +1193,8 @@ pub fn decode_wm_v1_projection_begin_frame(
         chunk_count,
         output_count,
         placement_count,
+        indicator_count,
+        status_count,
     };
     Ok((header.transaction, message))
 }

@@ -90,6 +90,11 @@ impl AssembledPolicyProjection {
                 chunk_count,
                 output_count: self.output_count,
                 placement_count: self.placement_count,
+                // Indicator assembly is later work; a builder that carries no
+                // indicators still declares the counts so the begin record
+                // stays exhaustive.
+                indicator_count: 0,
+                status_count: 0,
             },
             chunks: self.chunks,
             end: WmV1ProjectionEnd {

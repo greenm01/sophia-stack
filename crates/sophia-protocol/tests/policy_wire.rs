@@ -76,6 +76,14 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 &decode_wm_v1_projection_placement_records(&data, 1).unwrap(),
             )
             .unwrap(),
+            "projection_indicator" => encode_wm_v1_projection_indicator_records(
+                &decode_wm_v1_projection_indicator_records(&data, 1).unwrap(),
+            )
+            .unwrap(),
+            "projection_output_status" => encode_wm_v1_projection_output_status_records(
+                &decode_wm_v1_projection_output_status_records(&data, 1).unwrap(),
+            )
+            .unwrap(),
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");

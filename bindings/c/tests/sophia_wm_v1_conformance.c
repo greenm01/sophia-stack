@@ -67,6 +67,11 @@ static int roundtrip(const char *name, uint64_t transaction, const uint8_t *fram
     else if (strcmp(name, "projection_chunk") == 0) ROUNDTRIP_REQUIRED(projection_chunk);
     else if (strcmp(name, "projection_end") == 0) ROUNDTRIP_REQUIRED(projection_end);
     else if (strcmp(name, "projection_outcome") == 0) ROUNDTRIP_REQUIRED(projection_outcome);
+    else if (strcmp(name, "policy_configuration") == 0) ROUNDTRIP_REQUIRED(policy_configuration);
+    else if (strcmp(name, "policy_configuration_outcome") == 0) ROUNDTRIP_REQUIRED(policy_configuration_outcome);
+    else if (strcmp(name, "policy_dirty") == 0) ROUNDTRIP_REQUIRED(policy_dirty);
+    else if (strcmp(name, "session_operation_request") == 0) ROUNDTRIP_REQUIRED(session_operation_request);
+    else if (strcmp(name, "session_operation_outcome") == 0) ROUNDTRIP_REQUIRED(session_operation_outcome);
     else return 0;
 
     return status == SOPHIA_WM_V1_OK && encoded_len == frame_len &&
@@ -131,7 +136,7 @@ static int check_valid(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 10;
+    return checked == 15;
 }
 
 static int check_malformed(const char *path) {
@@ -179,10 +184,16 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         ROUNDTRIP_RECORD(snapshot_surface, SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_SIZE);
     else if (strcmp(name, "snapshot_binding") == 0)
         ROUNDTRIP_RECORD(snapshot_binding, SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE);
+    else if (strcmp(name, "snapshot_session_operation") == 0)
+        ROUNDTRIP_RECORD(snapshot_session_operation, SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_SIZE);
     else if (strcmp(name, "projection_output") == 0)
         ROUNDTRIP_RECORD(projection_output, SOPHIA_WM_V1_PROJECTION_OUTPUT_RECORD_SIZE);
     else if (strcmp(name, "projection_placement") == 0)
         ROUNDTRIP_RECORD(projection_placement, SOPHIA_WM_V1_PROJECTION_PLACEMENT_RECORD_SIZE);
+    else if (strcmp(name, "projection_indicator") == 0)
+        ROUNDTRIP_RECORD(projection_indicator, SOPHIA_WM_V1_PROJECTION_INDICATOR_RECORD_SIZE);
+    else if (strcmp(name, "projection_output_status") == 0)
+        ROUNDTRIP_RECORD(projection_output_status, SOPHIA_WM_V1_PROJECTION_OUTPUT_STATUS_RECORD_SIZE);
     else return 0;
     return status == SOPHIA_WM_V1_OK && encoded_len == data_len &&
         memcmp(encoded, data, data_len) == 0;
@@ -206,7 +217,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 5;
+    return checked == 8;
 }
 
 int main(int argc, char **argv) {

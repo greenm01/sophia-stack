@@ -19,6 +19,7 @@
 #define SOPHIA_WM_CAPABILITY_POLICY_DIRTY (UINT64_C(1) << 5)
 #define SOPHIA_WM_CAPABILITY_CONFIGURATION (UINT64_C(1) << 6)
 #define SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS (UINT64_C(1) << 7)
+#define SOPHIA_WM_CAPABILITY_INDICATORS (UINT64_C(1) << 8)
 
 #define SOPHIA_WM_OUTCOME_COMMITTED 1u
 #define SOPHIA_WM_OUTCOME_REJECTED_STALE 2u
@@ -144,6 +145,33 @@ struct sophia_wm_v1_projection_placement_record {
 enum sophia_wm_v1_status sophia_wm_v1_encode_projection_placement_record(const struct sophia_wm_v1_projection_placement_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_projection_placement_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_projection_placement_record *record);
 
+#define SOPHIA_WM_V1_PROJECTION_INDICATOR_RECORD_KIND 3u
+#define SOPHIA_WM_V1_PROJECTION_INDICATOR_RECORD_SIZE 64u
+#define SOPHIA_WM_V1_PROJECTION_INDICATOR_RECORD_MAX 256u
+struct sophia_wm_v1_projection_indicator_record {
+    uint64_t output;
+    uint32_t slot;
+    uint64_t indicator;
+    uint64_t action;
+    uint16_t state_bits;
+    uint16_t label_len;
+    uint8_t label[32];
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_projection_indicator_record(const struct sophia_wm_v1_projection_indicator_record *record, uint8_t *out, size_t capacity);
+enum sophia_wm_v1_status sophia_wm_v1_decode_projection_indicator_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_projection_indicator_record *record);
+
+#define SOPHIA_WM_V1_PROJECTION_OUTPUT_STATUS_RECORD_KIND 4u
+#define SOPHIA_WM_V1_PROJECTION_OUTPUT_STATUS_RECORD_SIZE 48u
+#define SOPHIA_WM_V1_PROJECTION_OUTPUT_STATUS_RECORD_MAX 16u
+struct sophia_wm_v1_projection_output_status_record {
+    uint64_t output;
+    uint16_t focus_bits;
+    uint16_t layout_len;
+    uint8_t layout[32];
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_projection_output_status_record(const struct sophia_wm_v1_projection_output_status_record *record, uint8_t *out, size_t capacity);
+enum sophia_wm_v1_status sophia_wm_v1_decode_projection_output_status_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_projection_output_status_record *record);
+
 struct sophia_wm_v1_client_hello {
     uint16_t minimum_revision;
     uint16_t maximum_revision;
@@ -224,6 +252,8 @@ struct sophia_wm_v1_projection_begin {
     uint16_t chunk_count;
     uint16_t output_count;
     uint32_t placement_count;
+    uint16_t indicator_count;
+    uint16_t status_count;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_projection_begin(uint64_t transaction, const struct sophia_wm_v1_projection_begin *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_projection_begin(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_projection_begin *message);

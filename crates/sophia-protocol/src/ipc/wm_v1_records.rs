@@ -834,6 +834,11 @@ pub fn encode_wm_v1_policy_projection(
         chunk_count,
         output_count: outputs.len() as u16,
         placement_count: placements.len() as u32,
+        // A policy that does not advertise the `indicators` capability
+        // declares none. Assembling them is later work; the counts are
+        // declared here so the begin record stays exhaustive.
+        indicator_count: 0,
+        status_count: 0,
     };
     let end = WmV1ProjectionEnd {
         connection_epoch: proposal.connection_epoch,

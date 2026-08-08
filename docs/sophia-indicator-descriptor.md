@@ -1,10 +1,12 @@
 # Sophia Indicator Descriptor
 
 **Role:** target contract for policy-authored desktop status.
-**Status:** design accepted, not implemented. The wire records, Engine reducer
-path, and chrome renderer are unwritten. `docs/architecture.md` and
-`docs/sophia-policy-ipc.md` remain authoritative where this document appears to
-disagree.
+**Status:** wire contract landed in `sophia_wm_v1` revision 1; Engine reducer
+path and chrome renderer are unwritten. The records, capability bit, and count
+fields exist in `protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs
+and golden vectors. Nothing assembles or renders indicators yet.
+`docs/architecture.md` and `docs/sophia-policy-ipc.md` remain authoritative
+where this document appears to disagree.
 
 A spatial-policy process owns tags, views, groups, or columns privately. Engine
 owns none of them: `sophia_wm_v1` snapshots carry no workspace, tag, view, or
@@ -60,7 +62,7 @@ every status bar the right to read client identity.
 
 ## Wire Shape
 
-Two records in the existing `projection` transfer, and one count field.
+Two records in the existing `projection` transfer, and two count fields.
 
 `ProjectionIndicator`, record kind 3:
 
@@ -87,8 +89,11 @@ elsewhere. Unknown bits fail closed.
 | `reserved` | `u32` | zero |
 | `layout` | bounded UTF-8, max 32 | policy-approved layout name |
 
-`ProjectionBegin` gains `indicator_count`. The begin record must declare every
-category count, so this field is required rather than optional.
+`ProjectionBegin` gains `indicator_count` and `status_count`. The begin record
+must declare every category count, so both are required rather than optional.
+Each new record kind needs its own count even though `ProjectionOutputStatus`
+is at most one per output: a policy without the capability declares zero and
+pays no per-output cost.
 
 **This is why the change cannot wait.** Adding a record kind is an additive
 revision. Adding a field to an existing message layout is not — after
@@ -100,14 +105,23 @@ descriptor must land in revision 1.
 These cannot be widened later without a new interface family. They are chosen
 once.
 
-| Bound | Value | Rationale |
-| --- | --- | --- |
-| `max-indicators` | 256 | matches `max-bindings`; 16 KiB on the wire, well inside the 64 KiB frame |
-| indicators per output | 32 | a bar showing more is unreadable; both bounds are checked |
-| `label` | 32 bytes UTF-8 | "web", "3", "code" — generous for a slot label |
-| `layout` | 32 bytes UTF-8 | "ThreeColMid", "Mirror Tall" fit with room |
+| Bound | Where | Value | Rationale |
+| --- | --- | --- | --- |
+| indicator records | `ProjectionIndicator max` | 256 | matches `max-bindings`; 16 KiB on the wire, well inside the 64 KiB frame |
+| status records | `ProjectionOutputStatus max` | 16 | one per output at most |
+| `label` | record field | 32 bytes UTF-8 | "web", "3", "code" — generous for a slot label |
+| `layout` | record field | 32 bytes UTF-8 | "ThreeColMid", "Mirror Tall" fit with room |
+| indicators per output | Engine validation | 32 | a bar showing more is unreadable |
+
+The first four are wire bounds and are frozen with the interface. The
+per-output limit is an Engine validation rule rather than a wire constant,
+because the wire carries a flat record array and the owning output is a field;
+it is therefore the one bound that could be revised without a new family.
 
 A proposal exceeding any bound is rejected whole. Truncation is never silent.
+Labels are zero padded to their full width and `label_len` gives the used
+prefix; Engine validates that the prefix is well-formed UTF-8 and that the
+padding is zero.
 
 ## Commit Semantics
 

@@ -7,6 +7,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
     capability "policy_dirty" bit=5
     capability "configuration" bit=6
     capability "session_operations" bit=7
+    capability "indicators" bit=8
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -84,6 +85,22 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "transform" type="u16" sample=1
         field "presentation_bits" type="u16" sample=0
     }
+    record "ProjectionIndicator" transfer="projection" kind=3 max=256 {
+        field "output" type="u64" sample=1
+        field "slot" type="u32" sample=0
+        field "indicator" type="u64" sample=7
+        field "action" type="u64" sample=5
+        field "state_bits" type="u16" sample=1
+        field "label_len" type="u16" sample=3
+        field "label" type="u8" count=32 sample="7765620000000000000000000000000000000000000000000000000000000000"
+    }
+    record "ProjectionOutputStatus" transfer="projection" kind=4 max=16 {
+        field "output" type="u64" sample=1
+        field "focus_bits" type="u16" sample=1
+        field "layout_len" type="u16" sample=4
+        field "reserved" type="u32" reserved=#true sample=0
+        field "layout" type="u8" count=32 sample="54616c6c00000000000000000000000000000000000000000000000000000000"
+    }
 
     message "ClientHello" kind=32 direction="policy-to-session" transaction="zero" {
         field "minimum_revision" type="u16" sample=1
@@ -149,6 +166,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "chunk_count" type="u16" sample=2
         field "output_count" type="u16" sample=2
         field "placement_count" type="u32" sample=3
+        field "indicator_count" type="u16" sample=2
+        field "status_count" type="u16" sample=2
     }
     message "ProjectionChunk" kind=39 direction="policy-to-session" transaction="required" {
         field "connection_epoch" type="u64" sample=9

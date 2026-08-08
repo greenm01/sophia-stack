@@ -206,6 +206,8 @@ fn projection_begin(epoch: u64) -> WmV1ProjectionBegin {
         chunk_count: 2,
         output_count: 1,
         placement_count: 2,
+        indicator_count: 0,
+        status_count: 0,
     }
 }
 

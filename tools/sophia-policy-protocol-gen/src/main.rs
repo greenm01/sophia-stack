@@ -78,6 +78,10 @@ enum FieldKind {
     U64,
     I32,
     Bytes,
+    /// A fixed-length octet run. Records must stay fixed width, so bounded
+    /// text belongs here rather than in `Bytes`, which carries a length and is
+    /// therefore only legal as a message's final field.
+    FixedBytes(u64),
 }
 
 #[derive(Clone, Debug)]
@@ -238,6 +242,16 @@ fn parse_field(node: &KdlNode) -> Result<Field, String> {
         "u64" => FieldKind::U64,
         "i32" => FieldKind::I32,
         "bytes" => FieldKind::Bytes,
+        "u8" => {
+            let count = integer_property(node, "count")?;
+            if count == 0 || count > 256 {
+                return Err(format!(
+                    "field `{}` count must be between 1 and 256",
+                    string_arg(node, 0).unwrap_or_default()
+                ));
+            }
+            FieldKind::FixedBytes(count)
+        }
         other => return Err(format!("unknown field type `{other}`")),
     };
     let reserved = node
@@ -256,7 +270,7 @@ fn parse_field(node: &KdlNode) -> Result<Field, String> {
         )
     })?;
     let sample = match kind {
-        FieldKind::Bytes => Sample::Bytes(decode_hex(
+        FieldKind::Bytes | FieldKind::FixedBytes(_) => Sample::Bytes(decode_hex(
             sample_value
                 .as_string()
                 .ok_or("bytes sample must be a hex string")?,
@@ -331,6 +345,13 @@ fn validate_schema(protocol: &Protocol) -> Result<(), String> {
                         return Err("bytes fields cannot be reserved".into());
                     }
                 }
+                FieldKind::FixedBytes(_) => {
+                    return Err(format!(
+                        "field `{}` in `{}` may not be a fixed octet run; messages carry \
+                         variable payloads as a final `bytes` field",
+                        field.name, message.name
+                    ));
+                }
             }
             fixed_len += field_width(field.kind);
             if field.reserved && !matches!(field.sample, Sample::Integer(0)) {
@@ -378,6 +399,33 @@ fn validate_schema(protocol: &Protocol) -> Result<(), String> {
                 FieldKind::U64 => validate_integer_sample(field, u64::MAX)?,
                 FieldKind::I32 => validate_integer_sample(field, i32::MAX as u64)?,
                 FieldKind::Bytes => unreachable!(),
+                // A fixed run stays fixed width, so it is legal here. The
+                // sample must fill it exactly; a short sample would encode a
+                // different width than the record declares.
+                FieldKind::FixedBytes(count) => {
+                    if field.reserved {
+                        return Err(format!(
+                            "fixed octet field `{}` cannot be reserved",
+                            field.name
+                        ));
+                    }
+                    match &field.sample {
+                        Sample::Bytes(bytes) if bytes.len() as u64 == count => {}
+                        Sample::Bytes(bytes) => {
+                            return Err(format!(
+                                "field `{}` sample is {} bytes but declares {count}",
+                                field.name,
+                                bytes.len()
+                            ));
+                        }
+                        Sample::Integer(_) => {
+                            return Err(format!(
+                                "field `{}` sample must be a hex string",
+                                field.name
+                            ));
+                        }
+                    }
+                }
             }
             if field.reserved && !matches!(field.sample, Sample::Integer(0)) {
                 return Err(format!(
@@ -557,7 +605,14 @@ fn render_rust_record(record: &Record, out: &mut String) {
     .unwrap();
     writeln!(out, "    for record in records {{").unwrap();
     for field in &record.fields {
-        if field.reserved {
+        if let FieldKind::FixedBytes(_) = field.kind {
+            writeln!(
+                out,
+                "        data.extend_from_slice(&record.{});",
+                field.name
+            )
+            .unwrap();
+        } else if field.reserved {
             writeln!(out, "        {}(&mut data, 0);", rust_push(field.kind)).unwrap();
         } else {
             writeln!(
@@ -590,7 +645,15 @@ fn render_rust_record(record: &Record, out: &mut String) {
     writeln!(out, "    let mut records = Vec::with_capacity(count);").unwrap();
     writeln!(out, "    for _ in 0..count {{").unwrap();
     for field in &record.fields {
-        if field.reserved {
+        if let FieldKind::FixedBytes(count) = field.kind {
+            writeln!(out, "        let mut {} = [0u8; {count}];", field.name).unwrap();
+            writeln!(
+                out,
+                "        {}.copy_from_slice(cursor.slice({count})?);",
+                field.name
+            )
+            .unwrap();
+        } else if field.reserved {
             writeln!(
                 out,
                 "        let reserved = cursor.{}()?;",
@@ -903,7 +966,12 @@ fn render_c_record_header(record: &Record, out: &mut String) {
     .unwrap();
     writeln!(out, "struct sophia_wm_v1_{c_name}_record {{").unwrap();
     for field in &record.fields {
-        if !field.reserved {
+        if field.reserved {
+            continue;
+        }
+        if let FieldKind::FixedBytes(count) = field.kind {
+            writeln!(out, "    uint8_t {}[{count}];", field.name).unwrap();
+        } else {
             writeln!(out, "    {} {};", c_type(field.kind), field.name).unwrap();
         }
     }
@@ -953,6 +1021,16 @@ fn render_c_record_source(record: &Record, out: &mut String) {
     .unwrap();
     let mut offset = 0;
     for field in &record.fields {
+        if let FieldKind::FixedBytes(count) = field.kind {
+            writeln!(
+                out,
+                "    put_bytes(out + {offset}, record->{}, {count}u);",
+                field.name
+            )
+            .unwrap();
+            offset += count;
+            continue;
+        }
         let value = if field.reserved {
             "0".to_string()
         } else {
@@ -979,6 +1057,16 @@ fn render_c_record_source(record: &Record, out: &mut String) {
     writeln!(out, "    const uint8_t *cursor = data + index * {width}u;").unwrap();
     let mut offset = 0;
     for field in &record.fields {
+        if let FieldKind::FixedBytes(count) = field.kind {
+            writeln!(
+                out,
+                "    get_bytes(cursor + {offset}, record->{}, {count}u);",
+                field.name
+            )
+            .unwrap();
+            offset += count;
+            continue;
+        }
         if field.reserved {
             writeln!(
                 out,
@@ -1048,6 +1136,9 @@ fn render_c_message(message: &Message, out: &mut String) {
     let mut offset = 0;
     for field in &message.fields {
         match field.kind {
+            // Rejected during validation: messages carry variable payloads as
+            // a final `bytes` field, never as a fixed octet run.
+            FieldKind::FixedBytes(_) => unreachable!(),
             FieldKind::U16 => {
                 let value = if field.reserved {
                     "0".to_string()
@@ -1146,6 +1237,9 @@ fn render_c_message(message: &Message, out: &mut String) {
     let mut offset = 0;
     for field in &message.fields {
         match field.kind {
+            // Rejected during validation: messages carry variable payloads as
+            // a final `bytes` field, never as a fixed octet run.
+            FieldKind::FixedBytes(_) => unreachable!(),
             FieldKind::U16 if field.reserved => writeln!(
                 out,
                 "    if (get_u16(cursor + {offset}) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;"
@@ -1235,6 +1329,14 @@ static uint64_t get_u64(const uint8_t *in) {
 
 static int32_t get_i32(const uint8_t *in) {
     return (int32_t)get_u32(in);
+}
+
+static void put_bytes(uint8_t *out, const uint8_t *value, size_t len) {
+    for (size_t index = 0; index < len; ++index) out[index] = value[index];
+}
+
+static void get_bytes(const uint8_t *in, uint8_t *value, size_t len) {
+    for (size_t index = 0; index < len; ++index) value[index] = in[index];
 }
 
 static enum sophia_wm_v1_status write_header(uint16_t kind, uint64_t transaction, size_t payload_len, uint8_t *out, size_t capacity, size_t *written) {
@@ -1341,6 +1443,8 @@ fn render_docs(protocol: &Protocol) -> String {
         for field in &record.fields {
             let rule = if field.reserved {
                 "must be zero"
+            } else if matches!(field.kind, FieldKind::FixedBytes(_)) {
+                "octet run, zero padded"
             } else {
                 "little-endian"
             };
@@ -1380,6 +1484,16 @@ fn render_record_golden(protocol: &Protocol) -> Result<String, String> {
                 }
                 (FieldKind::I32, Sample::Integer(value)) => {
                     bytes.extend_from_slice(&(*value as i32).to_le_bytes())
+                }
+                (FieldKind::FixedBytes(count), Sample::Bytes(sample)) => {
+                    if sample.len() as u64 != count {
+                        return Err(format!(
+                            "record sample for `{}` is {} bytes but declares {count}",
+                            field.name,
+                            sample.len()
+                        ));
+                    }
+                    bytes.extend_from_slice(sample)
                 }
                 _ => {
                     return Err(format!("record sample type mismatch for `{}`", field.name));
@@ -1624,6 +1738,7 @@ fn field_width(kind: FieldKind) -> u64 {
         FieldKind::U64 => 8,
         FieldKind::I32 => 4,
         FieldKind::Bytes => 0,
+        FieldKind::FixedBytes(count) => count,
     }
 }
 
@@ -1643,13 +1758,14 @@ fn fixed_prefix_len(message: &Message) -> u64 {
         .sum()
 }
 
-fn rust_type(kind: FieldKind) -> &'static str {
+fn rust_type(kind: FieldKind) -> String {
     match kind {
-        FieldKind::U16 => "u16",
-        FieldKind::U32 => "u32",
-        FieldKind::U64 => "u64",
-        FieldKind::I32 => "i32",
-        FieldKind::Bytes => "Vec<u8>",
+        FieldKind::U16 => "u16".to_string(),
+        FieldKind::U32 => "u32".to_string(),
+        FieldKind::U64 => "u64".to_string(),
+        FieldKind::I32 => "i32".to_string(),
+        FieldKind::Bytes => "Vec<u8>".to_string(),
+        FieldKind::FixedBytes(count) => format!("[u8; {count}]"),
     }
 }
 
@@ -1660,6 +1776,9 @@ fn c_type(kind: FieldKind) -> &'static str {
         FieldKind::U64 => "uint64_t",
         FieldKind::I32 => "int32_t",
         FieldKind::Bytes => "const uint8_t *",
+        // A fixed run declares its extent after the member name in C, so the
+        // declarator is assembled at the call site rather than here.
+        FieldKind::FixedBytes(_) => "uint8_t",
     }
 }
 
@@ -1670,6 +1789,7 @@ fn rust_push(kind: FieldKind) -> &'static str {
         FieldKind::U64 => "push_u64",
         FieldKind::I32 => "push_i32",
         FieldKind::Bytes => unreachable!(),
+        FieldKind::FixedBytes(_) => unreachable!(),
     }
 }
 
@@ -1680,16 +1800,18 @@ fn rust_cursor(kind: FieldKind) -> &'static str {
         FieldKind::U64 => "u64",
         FieldKind::I32 => "i32",
         FieldKind::Bytes => unreachable!(),
+        FieldKind::FixedBytes(_) => unreachable!(),
     }
 }
 
-fn field_name(kind: FieldKind) -> &'static str {
+fn field_name(kind: FieldKind) -> String {
     match kind {
-        FieldKind::U16 => "u16",
-        FieldKind::U32 => "u32",
-        FieldKind::U64 => "u64",
-        FieldKind::I32 => "i32",
-        FieldKind::Bytes => "bytes",
+        FieldKind::U16 => "u16".to_string(),
+        FieldKind::U32 => "u32".to_string(),
+        FieldKind::U64 => "u64".to_string(),
+        FieldKind::I32 => "i32".to_string(),
+        FieldKind::Bytes => "bytes".to_string(),
+        FieldKind::FixedBytes(count) => format!("u8[{count}]"),
     }
 }
 
@@ -1700,6 +1822,7 @@ fn c_put(kind: FieldKind) -> &'static str {
         FieldKind::U64 => "put_u64",
         FieldKind::I32 => "put_i32",
         FieldKind::Bytes => unreachable!(),
+        FieldKind::FixedBytes(_) => unreachable!(),
     }
 }
 
@@ -1710,6 +1833,7 @@ fn c_get(kind: FieldKind) -> &'static str {
         FieldKind::U64 => "get_u64",
         FieldKind::I32 => "get_i32",
         FieldKind::Bytes => unreachable!(),
+        FieldKind::FixedBytes(_) => unreachable!(),
     }
 }
 
