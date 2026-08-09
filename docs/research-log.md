@@ -193,6 +193,12 @@ and clean process/namespace/Xauthority teardown. This is the first passing
 installed Hagia physical policy/restart evidence and closes that promotion
 boundary; it is not a universal cadence or latency guarantee.
 
+The foundation-era revalidation at Sophia commit `9b3750e4` and Hagia commit
+`cbb629a` passed the same installed gate as immutable promotion run `0002`.
+That record independently verifies the unified compiled profile path,
+Chronicles checkpoint evidence, epoch-two restoration, all required physical
+actions, exact semantic input, checksums, and clean bounded teardown.
+
 ## 2026-08-09: Revision-1 behavior corpus crosses three independent clients
 
 One authenticated host now drives the Rust reference client, the independent

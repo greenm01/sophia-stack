@@ -243,9 +243,10 @@ candidate: Hagia validates its private indexes and reconciles it against the
 next complete Sophia snapshot before proposing anything. After that candidate
 first commits, Hagia emits one geometry-free `PolicyDirty` request for the
 complete live output set and verifies the resulting fresh cycle at the next
-private generation. Sophia's installed
-physical-workload proof remains the promotion boundary; the old xmonad session
-is regression evidence, not a prerequisite.
+private generation. Sophia's installed physical-workload proof has passed for
+this retained slice; the old xmonad session is regression evidence, not a
+prerequisite. Broader Triad parity, configuration recovery, and the shared
+revision-freeze corpus remain separate gates.
 
 The live Sophia session supplies `HAGIA_POLICY_CHECKPOINT` inside its
 owner-only policy endpoint directory. The file survives supervised Hagia child
