@@ -128,6 +128,22 @@ API v7 adapter. The Rust reference client and generic X11 bridge then prove
 their policy output through the same reducer. They do not switch or qualify
 the installed session path.
 
+`tools/check_policy_protocol.sh` additionally runs the Rust reference and
+independent C clients through one authenticated, four-cycle revision-1
+behavior corpus. The retained connection observes constrained single-output
+layout, two-output partitioning, output loss with surface migration, and the
+same raw output returning at a new generation. Every reply must commit through
+the canonical reducer without losing an assigned surface or changing the
+declared active output. Hagia's check below runs the exact same host sequence
+while retaining its private adapter across all four cycles.
+
+This shared black-box corpus currently covers the three direct
+`sophia_wm_v1` clients: Rust, C, and Hagia. The X11 bridge remains an API-v7
+compatibility adapter tested through the same reducer, not a fourth public-wire
+client. Revision 1 is therefore not frozen until the bridge has an explicit
+corpus adapter or the stability requirement is narrowed by a separately
+ratified decision.
+
 The separate, standalone Hagia checkout verifies its independently written Nim
 decoder against the same retained corpus, then runs its proof client through
 the authenticated Sophia transport and canonical reducer with:
@@ -151,8 +167,9 @@ deterministic opaque-operation activation driver is retained.
 SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
 ```
 
-This is a bounded headless integration proof. It does not freeze the public
-revision or replace the installed physical-session and multi-output gates.
+This is bounded offline integration evidence. It does not freeze the public
+revision or replace dynamic-output ingress, installed physical-session, and
+multi-output gates.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

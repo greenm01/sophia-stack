@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod ids;
 pub mod ipc;
 pub mod packets;
+pub mod policy_behavior;
 pub mod table;
 
 pub use cursor::*;
@@ -15,4 +16,5 @@ pub use geometry::*;
 pub use ids::*;
 pub use ipc::*;
 pub use packets::*;
+pub use policy_behavior::*;
 pub use table::*;

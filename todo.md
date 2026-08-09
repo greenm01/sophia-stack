@@ -513,7 +513,10 @@ future compatibility target, not a prerequisite.
   behavior have their own model and deterministic tests.
   `PolicyOutputSettlement.tla` now proves the topology core for an atomic
   two-output candidate, output loss, and generation-advancing return. Dynamic
-  output ingress and its live multi-output harness remain open.
+  output ingress and its live multi-output harness remain open. The public
+  owner now admits only complete, valid output snapshots atomically, advances
+  generations after disappearance, selects a surviving active output, and
+  recognizes same-ID descriptor changes without partially mutating state.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation
@@ -522,10 +525,14 @@ future compatibility target, not a prerequisite.
   Hagia, the X11 bridge, and the independent C client. Publish
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
   as a permanent compatibility gate.
-  `tools/check_policy_client_matrix.sh` now provides one offline four-client
-  gate over the retained Rust/C wire corpus, authenticated C and Hagia hosts,
-  Rust reference WM, and X11 bridge tests. A shared behavioral scenario corpus
-  broad enough to freeze revision 1 remains open.
+  The authenticated behavior host now runs the Rust reference, independent C,
+  and Hagia clients through the same sequential four-scenario corpus:
+  constrained single output, two-output partition, output loss/migration, and
+  generational return. All proposals pass the canonical reducer and Hagia
+  retains its private adapter across the sequence. The X11 bridge remains an
+  API-v7 reducer adapter rather than a public-wire black-box client; an explicit
+  corpus adapter or a separately ratified narrowing of this freeze requirement
+  remains open, as does the archived revision-1 client.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 

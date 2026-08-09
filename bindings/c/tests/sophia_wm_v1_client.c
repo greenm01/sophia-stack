@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -296,13 +297,13 @@ static int build_projection(
 static int send_projection(
     int socket_fd,
     uint64_t connection_epoch,
+    uint64_t transaction,
     const struct sophia_wm_v1_projection_request *request,
     const uint8_t *output_bytes,
     const uint8_t *placement_bytes,
     size_t placement_count,
     uint8_t *frame
 ) {
-    const uint64_t transaction = 1;
     struct sophia_wm_v1_projection_begin begin;
     struct sophia_wm_v1_projection_chunk chunk;
     struct sophia_wm_v1_projection_end end;
@@ -379,8 +380,16 @@ int main(int argc, char **argv) {
     size_t surface_count = 0;
     size_t placement_count = 0;
     size_t frame_len = 0;
+    size_t cycle;
+    size_t cycles = 1;
     int socket_fd;
-    if (argc != 2) return 2;
+    if (argc != 2 && argc != 3) return 2;
+    if (argc == 3) {
+        char *end = NULL;
+        unsigned long parsed = strtoul(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || parsed == 0 || parsed > 16) return 2;
+        cycles = (size_t)parsed;
+    }
     socket_fd = connect_when_ready(argv[1]);
     if (socket_fd < 0) return 1;
     if (sophia_wm_v1_encode_client_hello(
@@ -391,35 +400,38 @@ int main(int argc, char **argv) {
         sophia_wm_v1_decode_server_welcome(frame, frame_len, &welcome) != SOPHIA_WM_V1_OK ||
         welcome.selected_revision != 1 || welcome.connection_epoch == 0)
         return 1;
-    if (!receive_snapshot(
-            socket_fd, welcome.connection_epoch, frame, outputs, &output_count,
-            surfaces, &surface_count, &scene_generation
-        ))
-        return 1;
-    if (!read_frame(socket_fd, frame, &frame_len) ||
-        sophia_wm_v1_decode_projection_request(
-            frame, frame_len, &request_transaction, &request
-        ) != SOPHIA_WM_V1_OK || request.connection_epoch != welcome.connection_epoch ||
-        request.scene_generation != scene_generation)
-        return 1;
-    if (!build_projection(
-            &request, outputs, output_count, surfaces, surface_count, projected_outputs,
-            output_bytes, placements, placement_bytes, &placement_count
-        ))
-        return 1;
-    if (!send_projection(
-            socket_fd, welcome.connection_epoch, &request, output_bytes,
-            placement_bytes, placement_count, frame
-        ))
-        return 1;
-    if (!read_frame(socket_fd, frame, &frame_len) ||
-        sophia_wm_v1_decode_projection_outcome(
-            frame, frame_len, &outcome_transaction, &outcome
-        ) != SOPHIA_WM_V1_OK || outcome_transaction != 1 ||
-        outcome.connection_epoch != welcome.connection_epoch ||
-        outcome.request_id != request.request_id ||
-        outcome.outcome != SOPHIA_WM_OUTCOME_COMMITTED)
-        return 1;
+    for (cycle = 0; cycle < cycles; ++cycle) {
+        uint64_t projection_transaction = (uint64_t)cycle + 1u;
+        if (!receive_snapshot(
+                socket_fd, welcome.connection_epoch, frame, outputs, &output_count,
+                surfaces, &surface_count, &scene_generation
+            ))
+            return 1;
+        if (!read_frame(socket_fd, frame, &frame_len) ||
+            sophia_wm_v1_decode_projection_request(
+                frame, frame_len, &request_transaction, &request
+            ) != SOPHIA_WM_V1_OK || request.connection_epoch != welcome.connection_epoch ||
+            request.scene_generation != scene_generation)
+            return 1;
+        if (!build_projection(
+                &request, outputs, output_count, surfaces, surface_count, projected_outputs,
+                output_bytes, placements, placement_bytes, &placement_count
+            ))
+            return 1;
+        if (!send_projection(
+                socket_fd, welcome.connection_epoch, projection_transaction, &request,
+                output_bytes, placement_bytes, placement_count, frame
+            ))
+            return 1;
+        if (!read_frame(socket_fd, frame, &frame_len) ||
+            sophia_wm_v1_decode_projection_outcome(
+                frame, frame_len, &outcome_transaction, &outcome
+            ) != SOPHIA_WM_V1_OK || outcome_transaction != projection_transaction ||
+            outcome.connection_epoch != welcome.connection_epoch ||
+            outcome.request_id != request.request_id ||
+            outcome.outcome != SOPHIA_WM_OUTCOME_COMMITTED)
+            return 1;
+    }
     close(socket_fd);
     return 0;
 }

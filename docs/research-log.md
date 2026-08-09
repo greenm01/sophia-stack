@@ -3,6 +3,25 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-09: Revision-1 behavior corpus crosses three independent clients
+
+One authenticated host now drives the Rust reference client, the independent
+C99 client, and Hagia through the same four complete policy cycles on a single
+connection. The sequence covers constrained single-output layout, admission of
+a second output, loss with complete surface migration, and return of the same
+raw output at a new generation. Each proposal must pass the canonical reducer,
+retain every assigned surface exactly once, and preserve the snapshot's active
+output. Hagia keeps its private adapter alive across the sequence, so the
+generation-advancing return exercises its real affinity boundary rather than a
+standalone decoder fixture.
+
+This does not freeze revision 1. The X11 bridge still reaches the canonical
+reducer through API v7 and is not a direct `sophia_wm_v1` peer. Dynamic KMS
+topology ingress is also absent: the live native runtime owns fixed per-head
+sessions, queues, renderer targets, and pointer bounds. A safe hotplug path
+needs an owner-wide quiescence/rebuild barrier before connector polling can
+become authoritative.
+
 ## 2026-08-09: Restored Hagia state now drives a bounded private refresh
 
 Hagia now exercises the retained policy-to-session refresh path instead of

@@ -22,5 +22,11 @@ ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
     bindings/c/sophia_wm_v1.c \
     bindings/c/tests/sophia_wm_v1_client.c \
     -o "$build_dir/sophia-wm-v1-client"
+cargo build --offline -q -p sophia-wm-demo --bin sophia-wm-demo
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
-    "$build_dir/sophia-wm-v1-client" "$build_dir/session"
+    "$build_dir/sophia-wm-v1-client" "$build_dir/c" all
+cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
+    "$root/target/debug/sophia-wm-demo" "$build_dir/rust" all policy-v1-proof
+
+printf '%s\n' \
+    'sophia_policy_behavior_corpus schema=1 status=complete revision=1 clients=rust,c scenarios=4 sequential=true'

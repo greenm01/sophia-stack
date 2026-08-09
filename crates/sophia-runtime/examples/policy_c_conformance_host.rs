@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -8,17 +9,33 @@ use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionOutcome, PolicySceneSnapshot, PolicySurfaceKind, PolicySurfaceSnapshot, Rect,
-    Size, SurfaceConstraints, SurfaceId, TransactionId, decode_wm_v1_policy_projection,
-    encode_wm_v1_policy_snapshot,
+    SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
 };
 use sophia_runtime::{PolicyWmSessionTransport, QueuedPolicyProjection};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args_os().skip(1);
-    let client = PathBuf::from(arguments.next().ok_or("missing C client path")?);
+    let client = PathBuf::from(arguments.next().ok_or("missing policy client path")?);
     let directory = PathBuf::from(arguments.next().ok_or("missing session directory")?);
+    let scenario = arguments
+        .next()
+        .map(|value| value.into_string().map_err(|_| "scenario is not UTF-8"))
+        .transpose()?
+        .unwrap_or_else(|| SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[0].to_owned());
+    let client_argument = arguments
+        .next()
+        .map(|value| {
+            value
+                .into_string()
+                .map_err(|_| "client argument is not UTF-8")
+        })
+        .transpose()?;
     if arguments.next().is_some() {
         return Err("unexpected argument".into());
+    }
+    if scenario != "all" && !SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.contains(&scenario.as_str()) {
+        return Err(format!("unknown policy behavior scenario: {scenario}").into());
     }
     // Bind before launch so the session owns the endpoint for its entire
     // lifetime, then narrow admission to the exact child it supervised.
@@ -27,102 +44,177 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rustix::process::geteuid().as_raw(),
     )?;
     let socket_path = transport.socket_path().to_path_buf();
-    let mut child = Command::new(client).arg(&socket_path).spawn()?;
+    let mut command = Command::new(client);
+    if let Some(argument) = client_argument {
+        command.arg(argument);
+    }
+    command.arg(&socket_path);
+    if scenario == "all" {
+        command.arg(SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.len().to_string());
+    }
+    let mut child = command.spawn()?;
     transport.authorize_supervised_pid(child.id())?;
-    let result = run_host(&mut transport);
+    let result = run_host(&mut transport, &scenario);
     if result.is_err() {
         let _ = child.kill();
     }
     let status = child.wait()?;
     result?;
     if !status.success() {
-        return Err(format!("C client exited with {status}").into());
+        return Err(format!("policy client exited with {status}").into());
     }
     Ok(())
 }
 
-fn run_host(transport: &mut PolicyWmSessionTransport) -> Result<(), Box<dyn std::error::Error>> {
-    let scene = scene();
-    let mut reducer = PolicyProjectionReducer::new(scene.clone())?;
-    reducer.connect(1)?;
-    let request = reducer.issue_request(vec![OutputId::from_raw(1)])?;
-    transport.accept_and_negotiate(1, Duration::from_secs(2))?;
-    let snapshot = encode_wm_v1_policy_snapshot(TransactionId::from_raw(29), 1, &scene, &[])
-        .map_err(|error| format!("snapshot encode failed: {error:?}"))?;
-    transport.send_snapshot(
-        snapshot.transaction,
-        &snapshot.begin,
-        &snapshot.chunks,
-        &snapshot.end,
-    )?;
-    transport.send_projection_request(TransactionId::from_raw(30), &request)?;
-
-    let mut admitted = None;
-    for _ in 0..=sophia_runtime::POLICY_MAX_TRANSFER_CHUNKS + 1 {
-        if let Some(projection) = transport.receive_projection_part()? {
-            admitted = Some(projection);
-            break;
-        }
-    }
-    let QueuedPolicyProjection::Admitted(projection) = admitted.ok_or("incomplete projection")?
-    else {
-        return Err("projection was discarded".into());
+fn run_host(
+    transport: &mut PolicyWmSessionTransport,
+    scenario: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let scenarios = if scenario == "all" {
+        SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.as_slice()
+    } else {
+        std::slice::from_ref(&scenario)
     };
-    let proposal = decode_wm_v1_policy_projection(&projection.into_wire_transfer())
-        .map_err(|error| format!("projection decode failed: {error:?}"))?;
-    let outcome = reducer.apply_proposal(&proposal);
-    if outcome != PolicyProjectionOutcome::Committed {
-        return Err("canonical reducer rejected C projection".into());
-    }
-    transport.send_projection_outcome(
-        proposal.transaction,
-        proposal.request_id,
-        reducer.scene().generation,
-        outcome,
-    )?;
-    let committed = reducer.committed();
-    if committed.len() != 1
-        || committed[0].placements.len() != 2
-        || committed[0].placements[1].geometry.x != 600
-        || committed[0].focus != Some(SurfaceId::new(3, 1))
-    {
-        return Err("C projection did not preserve the expected semantics".into());
+    let mut reducer = PolicyProjectionReducer::new(scene(scenarios[0])?)?;
+    reducer.connect(1)?;
+    transport.accept_and_negotiate(1, Duration::from_secs(2))?;
+    for (index, scenario) in scenarios.iter().copied().enumerate() {
+        let scene = scene(scenario)?;
+        if index != 0 {
+            reducer.observe_scene(scene.clone())?;
+        }
+        let mut affected_outputs = scene
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<Vec<_>>();
+        affected_outputs.sort_by_key(|output| (*output != scene.active_output, output.raw()));
+        let request = reducer.issue_request(affected_outputs)?;
+        let transaction = 29 + u64::try_from(index)? * 2;
+        let snapshot =
+            encode_wm_v1_policy_snapshot(TransactionId::from_raw(transaction), 1, &scene, &[])
+                .map_err(|error| format!("snapshot encode failed: {error:?}"))?;
+        transport.send_snapshot(
+            snapshot.transaction,
+            &snapshot.begin,
+            &snapshot.chunks,
+            &snapshot.end,
+        )?;
+        transport.send_projection_request(TransactionId::from_raw(transaction + 1), &request)?;
+
+        let mut admitted = None;
+        for _ in 0..=sophia_runtime::POLICY_MAX_TRANSFER_CHUNKS + 1 {
+            if let Some(projection) = transport.receive_projection_part()? {
+                admitted = Some(projection);
+                break;
+            }
+        }
+        let QueuedPolicyProjection::Admitted(projection) =
+            admitted.ok_or("incomplete projection")?
+        else {
+            return Err("projection was discarded".into());
+        };
+        let proposal = decode_wm_v1_policy_projection(&projection.into_wire_transfer())
+            .map_err(|error| format!("projection decode failed: {error:?}"))?;
+        let outcome = reducer.apply_proposal(&proposal);
+        if outcome != PolicyProjectionOutcome::Committed {
+            return Err("canonical reducer rejected policy projection".into());
+        }
+        transport.send_projection_outcome(
+            proposal.transaction,
+            proposal.request_id,
+            reducer.scene().generation,
+            outcome,
+        )?;
+        let committed = reducer.committed();
+        let expected_surfaces = scene
+            .surfaces
+            .iter()
+            .filter(|surface| surface.current_output.is_some())
+            .map(|surface| surface.surface)
+            .collect::<BTreeSet<_>>();
+        let committed_surfaces = committed
+            .iter()
+            .flat_map(|output| output.placements.iter())
+            .map(|placement| placement.surface)
+            .collect::<BTreeSet<_>>();
+        if committed.len() != scene.outputs.len()
+            || committed_surfaces != expected_surfaces
+            || reducer.scene().active_output != scene.active_output
+        {
+            return Err(format!("behavior scenario {scenario} lost canonical semantics").into());
+        }
+        println!(
+            "sophia_policy_behavior schema=1 scenario={scenario} status=complete outputs={} surfaces={}",
+            scene.outputs.len(),
+            expected_surfaces.len(),
+        );
     }
     transport.disconnect()?;
     Ok(())
 }
 
-fn scene() -> PolicySceneSnapshot {
-    let output = OutputId::from_raw(1);
-    PolicySceneSnapshot {
-        generation: 1,
-        active_output: output,
-        outputs: vec![PolicyOutputSnapshot {
-            output,
-            generation: 1,
-            focus: Some(SurfaceId::new(3, 1)),
-            bounds: Rect {
-                x: 0,
-                y: 0,
-                width: 1200,
-                height: 800,
-            },
-            work_area: Rect {
-                x: 0,
-                y: 0,
-                width: 1200,
-                height: 800,
-            },
-        }],
-        surfaces: vec![surface(3, output), surface(4, output)],
+fn scene(scenario: &str) -> Result<PolicySceneSnapshot, Box<dyn std::error::Error>> {
+    let first = OutputId::from_raw(1);
+    let second = OutputId::from_raw(2);
+    let (generation, active_output, outputs, surfaces) = match scenario {
+        "single-output-constraints" => (
+            1,
+            first,
+            vec![output(first, 1, 0, Some(SurfaceId::new(3, 1)))],
+            vec![surface(3, first), surface(4, first)],
+        ),
+        "two-output-partition" => (
+            2,
+            second,
+            vec![
+                output(first, 1, 0, Some(SurfaceId::new(3, 1))),
+                output(second, 1, 1200, Some(SurfaceId::new(5, 1))),
+            ],
+            vec![surface(3, first), surface(4, first), surface(5, second)],
+        ),
+        "output-loss" => (
+            3,
+            first,
+            vec![output(first, 1, 0, Some(SurfaceId::new(3, 3)))],
+            vec![
+                surface_with_generation(3, 3, first),
+                surface_with_generation(4, 3, first),
+                surface_with_generation(5, 3, first),
+            ],
+        ),
+        "returned-output-generation" => (
+            4,
+            second,
+            vec![
+                output(first, 1, 0, Some(SurfaceId::new(3, 4))),
+                output(second, 2, 1200, Some(SurfaceId::new(5, 4))),
+            ],
+            vec![
+                surface_with_generation(3, 4, first),
+                surface_with_generation(4, 4, first),
+                surface_with_generation(5, 4, second),
+            ],
+        ),
+        _ => return Err(format!("unknown policy behavior scenario: {scenario}").into()),
+    };
+    Ok(PolicySceneSnapshot {
+        generation,
+        active_output,
+        outputs,
+        surfaces,
         session_operations: Vec::new(),
-    }
+    })
 }
 
 fn surface(index: u32, output: OutputId) -> PolicySurfaceSnapshot {
+    surface_with_generation(index, 1, output)
+}
+
+fn surface_with_generation(index: u32, generation: u32, output: OutputId) -> PolicySurfaceSnapshot {
     PolicySurfaceSnapshot {
-        surface: SurfaceId::new(index, 1),
-        generation: 1,
+        surface: SurfaceId::new(index, generation),
+        generation: u64::from(generation),
         current_output: Some(output),
         kind: PolicySurfaceKind::Toplevel,
         capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
@@ -138,9 +230,38 @@ fn surface(index: u32, output: OutputId) -> PolicySurfaceSnapshot {
         current_state: PolicyPresentationState::default(),
         transient_owner: None,
         geometry: Rect {
-            x: 0,
+            x: if output == OutputId::from_raw(2) {
+                1200
+            } else {
+                0
+            },
             y: 0,
             width: 600,
+            height: 800,
+        },
+    }
+}
+
+fn output(
+    output: OutputId,
+    generation: u64,
+    x: i32,
+    focus: Option<SurfaceId>,
+) -> PolicyOutputSnapshot {
+    PolicyOutputSnapshot {
+        output,
+        generation,
+        focus,
+        bounds: Rect {
+            x,
+            y: 0,
+            width: 1200,
+            height: 800,
+        },
+        work_area: Rect {
+            x,
+            y: 0,
+            width: 1200,
             height: 800,
         },
     }
