@@ -677,6 +677,20 @@ impl LiveWmSession {
                 let source = public
                     .in_flight_source
                     .ok_or("public WM projection has no owner cause")?;
+                if let LiveWmProposalSource::Manage(surface) = source {
+                    layout.prime_admission_extent(surface);
+                }
+                let (projection, adjusted_surfaces) = reconcile_public_policy_proposal(
+                    layout,
+                    &projection,
+                    &public.work_areas,
+                )?;
+                if adjusted_surfaces != 0 {
+                    println!(
+                        "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={adjusted_surfaces}",
+                        projection.transaction.raw(),
+                    );
+                }
                 match public.reducer.stage_proposal(&projection) {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
@@ -698,9 +712,6 @@ impl LiveWmSession {
                         };
                         public.expected_operation_slot = expected_operation_slot;
                         let projections = staged.projections();
-                        if let LiveWmProposalSource::Manage(surface) = source {
-                            layout.prime_admission_extent(surface);
-                        }
                         let active_output = projection.active_output;
                         public.staged = Some(staged);
                         Some(public_live_proposal(

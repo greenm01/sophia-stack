@@ -30,6 +30,8 @@ sophia_append_session_terminal_base_args() {
                 --session-app-arg=terminal=linux_display_server=x11
                 --session-app-arg=terminal=--override
                 --session-app-arg=terminal=background_opacity=1
+                --session-app-arg=terminal=--override
+                --session-app-arg=terminal=remember_window_size=no
             )
             ;;
         xterm)

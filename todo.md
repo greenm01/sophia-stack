@@ -547,6 +547,13 @@ future compatibility target, not a prerequisite.
   session after deterministic preflight; it has no workday-duration
   prerequisite. Every exit must enter the checksummed Hagia ledger as passed,
   recovered, failed, or pending, with cumulative scenario coverage.
+  Installed attempt `0001` reached both physical outputs and admitted Kitty,
+  then failed closed at `layout_pending`: Hagia proposed `2560x1440` while the
+  Engine retained a coherent `1323x1424` recovery extent. The immutable failed
+  attempt and exact TTY recovery are preserved. Public proposals now undergo
+  Engine constraint reconciliation before reducer staging, the bounded live
+  restart regression passes, and a replacement physical attempt remains the
+  acceptance proof.
 - [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.

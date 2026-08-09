@@ -44,6 +44,8 @@ target/debug/sophia sophia-live-session \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \
     --session-app-arg=terminal=linux_display_server=x11 \
+    --session-app-arg=terminal=--override \
+    --session-app-arg=terminal=remember_window_size=no \
     "--display=$display" \
     --max-runtime-ms=10000 \
     --startup-ready-timeout-ms=6000 \

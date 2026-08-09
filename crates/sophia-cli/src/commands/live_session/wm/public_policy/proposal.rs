@@ -1,3 +1,84 @@
+fn reconcile_public_policy_proposal(
+    layout: &PersistentLiveLayout,
+    proposal: &sophia_protocol::PolicyProjectionProposal,
+    work_areas: &BTreeMap<sophia_protocol::OutputId, Rect>,
+) -> Result<(sophia_protocol::PolicyProjectionProposal, usize), Box<dyn std::error::Error>> {
+    let mut reconciled = proposal.clone();
+    let mut adjusted_surfaces = BTreeSet::new();
+    for output in &mut reconciled.outputs {
+        let bounds = work_areas
+            .get(&output.output)
+            .copied()
+            .ok_or("public WM projection has no Engine work area")?;
+        let transaction = sophia_protocol::LayoutTransaction {
+            transaction: proposal.transaction,
+            requested_sizes: output
+                .placements
+                .iter()
+                .filter_map(|placement| {
+                    placement
+                        .requested_size
+                        .map(|size| sophia_protocol::SurfaceSizeRequest {
+                            surface: placement.surface,
+                            size,
+                        })
+                })
+                .collect(),
+            focus: output.focus,
+            render_positions: output
+                .placements
+                .iter()
+                .enumerate()
+                .map(|(index, placement)| {
+                    Ok(sophia_protocol::SurfacePlacement {
+                        surface: placement.surface,
+                        geometry: placement.geometry,
+                        z_index: i32::try_from(index)
+                            .map_err(|_| "public WM projection stack is excessive")?,
+                        crop: placement.crop,
+                        transform: match placement.transform {
+                            sophia_protocol::PolicyTransform::Identity => Transform::IDENTITY,
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?,
+            timeout_msec: u32::try_from(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC)
+                .unwrap_or(u32::MAX),
+        };
+        let reconciliation = layout
+            .layout_epochs
+            .reconcile_transaction(&transaction, bounds)?;
+        let geometries = reconciliation
+            .transaction
+            .render_positions
+            .into_iter()
+            .map(|placement| (placement.surface, placement.geometry))
+            .collect::<BTreeMap<_, _>>();
+        let requested_sizes = reconciliation
+            .transaction
+            .requested_sizes
+            .into_iter()
+            .map(|request| (request.surface, request.size))
+            .collect::<BTreeMap<_, _>>();
+        for placement in &mut output.placements {
+            let geometry = geometries[&placement.surface];
+            let requested_size = placement
+                .requested_size
+                .and_then(|_| requested_sizes.get(&placement.surface).copied());
+            if placement.geometry != geometry || placement.requested_size != requested_size {
+                adjusted_surfaces.insert(placement.surface);
+            }
+            placement.geometry = geometry;
+            // Public policy separates outer geometry from an optional
+            // client-content request. The generic API-v7 reconciler adds a
+            // request when geometry changes, so preserve omission unless the
+            // public peer actually requested a content size.
+            placement.requested_size = requested_size;
+        }
+    }
+    Ok((reconciled, adjusted_surfaces.len()))
+}
+
 fn public_live_proposal(
     layout: &PersistentLiveLayout,
     active_output: sophia_protocol::OutputId,

@@ -29,7 +29,7 @@ use crate::commands::live_session::{
     LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
     LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
     committed_relayout_nodes, live_layout_node_from_facts, ordered_wm_action_request,
-    planning_state_for_response, wm_transport_requires_reseed,
+    planning_state_for_response, reconcile_public_policy_proposal, wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
@@ -243,6 +243,136 @@ fn first_admission_primes_the_selected_safe_pixel_extent() {
         layout.layout_epochs.admission(surface),
         sophia_engine::SurfaceAdmissionState::PendingLayout
     );
+}
+
+#[test]
+fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(8, 1);
+    let safe = Size {
+        width: 1323,
+        height: 1424,
+    };
+    let proposed = Size {
+        width: 2560,
+        height: 1440,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.set_recovery_extent(surface, safe);
+    let proposal = sophia_protocol::PolicyProjectionProposal {
+        transaction: TransactionId::from_raw(9),
+        connection_epoch: 1,
+        request_id: 1,
+        base_generation: 1,
+        active_output: output,
+        outputs: vec![sophia_protocol::PolicyOutputProjection {
+            output,
+            placements: vec![sophia_protocol::PolicySurfacePlacement {
+                surface,
+                surface_generation: 1,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: proposed.width,
+                    height: proposed.height,
+                },
+                requested_size: Some(proposed),
+                crop: None,
+                transform: sophia_protocol::PolicyTransform::Identity,
+                presentation: sophia_protocol::PolicyPresentationState::default(),
+            }],
+            focus: Some(surface),
+        }],
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
+    };
+
+    let (reconciled, adjusted) = reconcile_public_policy_proposal(
+        &layout,
+        &proposal,
+        &BTreeMap::from([(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: proposed.width,
+                height: proposed.height,
+            },
+        )]),
+    )
+    .unwrap();
+
+    assert_eq!(adjusted, 1);
+    assert_eq!(
+        reconciled.outputs[0].placements[0].requested_size,
+        Some(safe)
+    );
+    assert_eq!(
+        reconciled.outputs[0].placements[0].geometry,
+        Rect {
+            x: 0,
+            y: 0,
+            width: safe.width,
+            height: safe.height,
+        }
+    );
+    assert_eq!(
+        proposal.outputs[0].placements[0].requested_size,
+        Some(proposed)
+    );
+}
+
+#[test]
+fn public_policy_reconciliation_preserves_an_omitted_content_size_request() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(9, 1);
+    let geometry = Rect {
+        x: 20,
+        y: 30,
+        width: 500,
+        height: 400,
+    };
+    let proposal = sophia_protocol::PolicyProjectionProposal {
+        transaction: TransactionId::from_raw(10),
+        connection_epoch: 1,
+        request_id: 1,
+        base_generation: 1,
+        active_output: output,
+        outputs: vec![sophia_protocol::PolicyOutputProjection {
+            output,
+            placements: vec![sophia_protocol::PolicySurfacePlacement {
+                surface,
+                surface_generation: 1,
+                geometry,
+                requested_size: None,
+                crop: None,
+                transform: sophia_protocol::PolicyTransform::Identity,
+                presentation: sophia_protocol::PolicyPresentationState::default(),
+            }],
+            focus: Some(surface),
+        }],
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
+    };
+
+    let (reconciled, adjusted) = reconcile_public_policy_proposal(
+        &PersistentLiveLayout::default(),
+        &proposal,
+        &BTreeMap::from([(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+        )]),
+    )
+    .unwrap();
+
+    assert_eq!(adjusted, 0);
+    assert_eq!(reconciled.outputs[0].placements[0].geometry, geometry);
+    assert_eq!(reconciled.outputs[0].placements[0].requested_size, None);
 }
 
 fn hold_test_resize(

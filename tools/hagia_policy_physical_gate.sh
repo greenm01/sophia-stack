@@ -69,6 +69,8 @@ SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \
     --session-app-arg=terminal=linux_display_server=x11 \
+    --session-app-arg=terminal=--override \
+    --session-app-arg=terminal=remember_window_size=no \
     "--wm-process=$ROOT_DIR/tools/fixtures/hagia_restart_once.sh" \
     --wm-interface=sophia_wm_v1 \
     "--input-seat=$seat" \
