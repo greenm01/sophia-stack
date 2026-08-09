@@ -13,14 +13,15 @@ install -d -m 700 "$release/target/release" "$session" "$identity_dir"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$release/target/release/sophia"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$release/target/release/hagia"
 chmod 755 "$release/target/release/sophia" "$release/target/release/hagia"
-printf 'schema=3\nversion=0.1.0\ncommit=0123456789abcdef\nrelease_id=test\nhagia_included=true\n' >"$release/manifest"
+sophia_digest="$(sha256sum "$release/target/release/sophia" | awk '{print $1}')"
+hagia_digest="$(sha256sum "$release/target/release/hagia" | awk '{print $1}')"
+printf 'schema=3\nversion=0.1.0\ncommit=0123456789abcdef\nrelease_id=test\nhagia_included=true\nhagia_binary_sha256=%s\n' \
+    "$hagia_digest" >"$release/manifest"
 (
     cd "$release"
     sha256sum target/release/sophia target/release/hagia >SHA256SUMS
 )
 ln -s releases/test "$prefix/current"
-sophia_digest="$(sha256sum "$release/target/release/sophia" | awk '{print $1}')"
-hagia_digest="$(sha256sum "$release/target/release/hagia" | awk '{print $1}')"
 
 write_identity() {
     local launch_id="$1"
@@ -82,6 +83,8 @@ record=(env XDG_STATE_HOME="$state" SOPHIA_INSTALL_PREFIX="$prefix" \
 write_identity clean
 write_normal_session
 clean_run="$("${record[@]}" begin)"
+[[ "$(grep -c '^hagia_binary_sha256=' "$clean_run/manifest")" == 1 ]]
+grep -Fxq "hagia_binary_sha256=$hagia_digest" "$clean_run/manifest"
 "${record[@]}" finish "$clean_run" 0
 grep -Fxq 'sophia_installed_hagia schema=1 status=passed exit_status=0' "$clean_run/result.kdl"
 grep -Eq '^sophia_hagia_coverage schema=1 .*physical_actions=1 .*checkpoints=1 ' "$clean_run/coverage.kdl"
@@ -107,6 +110,36 @@ if "${record[@]}" finish "$failed_run" 1; then
     exit 1
 fi
 grep -Fxq 'sophia_installed_hagia schema=1 status=failed exit_status=1 reason=session_exit' "$failed_run/result.kdl"
+
+cp "$release/manifest" "$fixture/release-manifest"
+sed -i 's/^hagia_binary_sha256=.*/hagia_binary_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+    "$release/manifest"
+write_identity mismatched-auxiliary
+write_normal_session
+run_count="$(find "$state/sophia/promotion/hagia-runs" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+if "${record[@]}" begin >/dev/null 2>&1; then
+    echo "Hagia ledger accepted a mismatched release digest" >&2
+    exit 1
+fi
+[[ "$(find "$state/sophia/promotion/hagia-runs" -mindepth 1 -maxdepth 1 -type d | wc -l)" == "$run_count" ]]
+
+cp "$fixture/release-manifest" "$release/manifest"
+printf 'hagia_binary_sha256=%s\n' "$hagia_digest" >>"$release/manifest"
+write_identity duplicate-auxiliary
+write_normal_session
+if "${record[@]}" begin >/dev/null 2>&1; then
+    echo "Hagia ledger accepted duplicate release digests" >&2
+    exit 1
+fi
+[[ "$(find "$state/sophia/promotion/hagia-runs" -mindepth 1 -maxdepth 1 -type d | wc -l)" == "$run_count" ]]
+
+grep -v '^hagia_binary_sha256=' "$fixture/release-manifest" >"$release/manifest"
+write_identity appended-auxiliary
+write_normal_session
+appended_run="$("${record[@]}" begin)"
+[[ "$(grep -c '^hagia_binary_sha256=' "$appended_run/manifest")" == 1 ]]
+grep -Fxq "hagia_binary_sha256=$hagia_digest" "$appended_run/manifest"
+"${record[@]}" finish "$appended_run" 0
 
 printf '\n' >>"$clean_run/session.log"
 if env XDG_STATE_HOME="$state" "$ROOT_DIR/tools/verify_installed_hagia_archive.sh" "$clean_run" >/dev/null 2>&1; then

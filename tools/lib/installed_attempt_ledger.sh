@@ -155,6 +155,32 @@ sophia_installed_attempt_begin() {
         echo "installed attempt has an invalid lifecycle mode: $lifecycle_mode" >&2
         return 1
     }
+    local append_auxiliary_binary=true auxiliary_binary_field=""
+    local -a recorded_auxiliary_binaries=()
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
+        auxiliary_binary_field="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME}_binary_sha256"
+        mapfile -t recorded_auxiliary_binaries < <(
+            sed -n "s/^${auxiliary_binary_field}=//p" \
+                "$SOPHIA_ATTEMPT_PREFIX/current/manifest"
+        )
+        case "${#recorded_auxiliary_binaries[@]}" in
+            0)
+                ;;
+            1)
+                [[ "${recorded_auxiliary_binaries[0]}" =~ ^[0-9a-f]{64}$ \
+                    && "${recorded_auxiliary_binaries[0]}" == \
+                        "$sophia_attempt_auxiliary_binary_sha256" ]] || {
+                    echo "installed release auxiliary binary digest does not match the measured binary" >&2
+                    return 1
+                }
+                append_auxiliary_binary=false
+                ;;
+            *)
+                echo "installed release has duplicate auxiliary binary digests" >&2
+                return 1
+                ;;
+        esac
+    fi
     install -d -m 700 "$SOPHIA_ATTEMPT_RUN_ROOT"
     local -a duplicate_runs
     mapfile -t duplicate_runs < <(
@@ -185,7 +211,8 @@ sophia_installed_attempt_begin() {
         "$SOPHIA_ATTEMPT_KIND" "$lifecycle_mode" "$sophia_attempt_started_at_utc" \
         "$sophia_attempt_identity_sha256" "$sophia_attempt_binary_sha256" \
         >>"$run_dir/manifest"
-    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \
+        && "$append_auxiliary_binary" == true ]]; then
         printf '%s_binary_sha256=%s\n' \
             "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \
             "$sophia_attempt_auxiliary_binary_sha256" >>"$run_dir/manifest"
@@ -217,6 +244,7 @@ sophia_installed_attempt_finish() {
     }
     local resolved_root resolved_run expected_identity recorded_binary recorded_kind
     local recorded_auxiliary_binary
+    local -a recorded_auxiliary_binaries=()
     resolved_root="$(readlink -f "$SOPHIA_ATTEMPT_RUN_ROOT")"
     resolved_run="$(readlink -f "$run_dir")"
     [[ -d "$resolved_run" && "$(dirname "$resolved_run")" == "$resolved_root" ]] || {
@@ -269,11 +297,17 @@ sophia_installed_attempt_finish() {
         && "$sophia_attempt_binary_sha256" == "$recorded_binary" ]] ||
         failure=identity_mismatch
     if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" ]]; then
-        recorded_auxiliary_binary="$(
+        mapfile -t recorded_auxiliary_binaries < <(
             sed -n "s/^${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME}_binary_sha256=//p" \
                 "$run_dir/manifest"
-        )"
-        [[ "$recorded_auxiliary_binary" =~ ^[0-9a-f]{64}$ \
+        )
+        if (( ${#recorded_auxiliary_binaries[@]} == 1 )); then
+            recorded_auxiliary_binary="${recorded_auxiliary_binaries[0]}"
+        else
+            recorded_auxiliary_binary=""
+        fi
+        [[ "${#recorded_auxiliary_binaries[@]}" == 1 \
+            && "$recorded_auxiliary_binary" =~ ^[0-9a-f]{64}$ \
             && "$sophia_attempt_auxiliary_binary_sha256" == \
                 "$recorded_auxiliary_binary" ]] || failure=identity_mismatch
     fi
