@@ -1,4 +1,30 @@
 use super::*;
+
+#[test]
+fn completed_pointer_geometry_reduces_raw_motion_to_one_bounded_target() {
+    let initial = Rect {
+        x: 100,
+        y: 80,
+        width: 300,
+        height: 200,
+    };
+    let resize = sophia_protocol::WmPointerGestureCompleted {
+        surface: SurfaceId::new(91, 1),
+        output: OutputId::INVALID,
+        workspace: sophia_protocol::WorkspaceId::INVALID,
+        mode: sophia_protocol::WmPointerGestureMode::Resize,
+        start: sophia_protocol::WmPointerPosition { x: 120, y: 100 },
+        end: sophia_protocol::WmPointerPosition { x: 220, y: 50 },
+    };
+    assert_eq!(
+        completed_pointer_gesture_geometry(resize, initial),
+        Rect {
+            width: 400,
+            height: 150,
+            ..initial
+        }
+    );
+}
 use crate::commands::live_session::{
     LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
     LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
@@ -560,7 +586,7 @@ fn ordered_action_request_rebases_on_the_latest_committed_state() {
 }
 
 #[test]
-fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
+fn forced_wm_timeout_retains_its_source_for_transport_reseed() {
     let surface = SurfaceId::new(3, 1);
     let geometry = Rect {
         x: 0,
@@ -576,7 +602,7 @@ fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
         requested_sizes: BTreeMap::new(),
         configure_deliveries: 0,
         focus: None,
-        deadline: Instant::now(),
+        deadline: Instant::now() + Duration::from_secs(60),
         update: sophia_engine::WmTransactionUpdate {
             commit: TransactionCommit {
                 transaction,
@@ -592,6 +618,14 @@ fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
         effects: None,
         policy_settlement: None,
     });
+
+    assert!(
+        layout
+            .expire_pending(&mut sophia_cli::session_control::SessionControlQueue::default())
+            .unwrap()
+            .is_none()
+    );
+    assert!(layout.force_pending_timeout());
 
     let result = layout
         .expire_pending(&mut sophia_cli::session_control::SessionControlQueue::default())

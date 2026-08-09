@@ -91,6 +91,10 @@ commands=(
     sophia-verify-xmobar-work-area
     sophia-verify-soak
 )
+hagia_included="$(sed -n 's/^hagia_included=//p' "$artifact/manifest" | head -n 1)"
+if [[ "$hagia_included" == true ]]; then
+    commands+=(sophia-hagia-session)
+fi
 for command in "${commands[@]}"; do
     [[ -x "$target/bin/$command" ]] || {
         echo "Release is missing operator command: $command" >&2
@@ -98,9 +102,14 @@ for command in "${commands[@]}"; do
     }
     ln -sfn "$PREFIX/current/bin/$command" "$COMMAND_DIR/$command"
 done
-for desktop in \
-    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
-    sophia-native-chrome-proof sophia-cycle-proof; do
+desktops=(
+    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof
+    sophia-native-chrome-proof sophia-cycle-proof
+)
+if [[ "$hagia_included" == true ]]; then
+    desktops+=(sophia-hagia)
+fi
+for desktop in "${desktops[@]}"; do
     install -m 644 "$target/share/wayland-sessions/$desktop.desktop" \
         "$SESSION_DIR/$desktop.desktop.template"
     sed "s|@SOPHIA_INSTALL_PREFIX@|$PREFIX|g" \
@@ -114,9 +123,7 @@ echo "Installed Sophia release: $release_id"
 echo "Current: $PREFIX/current"
 echo "Operator guide: $PREFIX/current/share/doc/sophia/operations.md"
 echo "Session entries:"
-for desktop in \
-    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof \
-    sophia-native-chrome-proof sophia-cycle-proof; do
+for desktop in "${desktops[@]}"; do
     echo "  $SESSION_DIR/$desktop.desktop"
 done
 echo "Operator commands: ${commands[*]}"

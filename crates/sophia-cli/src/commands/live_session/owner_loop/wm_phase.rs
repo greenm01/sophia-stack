@@ -13,7 +13,7 @@
         }
     }
     if let Some(wm) = wm_session.as_mut() {
-        let _ = wm.poll_restart(&layout, output)?;
+        let _ = wm.poll_restart(&mut layout, output)?;
     }
     if let Some(runtime) = runtime.as_mut() {
         let style = wm_session

@@ -263,6 +263,26 @@ impl PolicyProjectionReducer {
         })
     }
 
+    /// Revalidates a staged successor without changing authoritative reducer
+    /// state. The owner uses this immediately before atomically settling the
+    /// corresponding frontend layout and reducer successor.
+    pub fn revalidate_staged(&self, staged: &StagedPolicyProjection) -> PolicyProjectionOutcome {
+        if self.active_epoch != Some(staged.connection_epoch) {
+            return PolicyProjectionOutcome::Disconnected;
+        }
+        let exact_request = self
+            .outstanding
+            .as_ref()
+            .is_some_and(|request| request.request_id == staged.request_id);
+        if !exact_request
+            || self.scene.generation != staged.scene_generation
+            || self.commit_serial != staged.commit_serial
+        {
+            return PolicyProjectionOutcome::RejectedStale;
+        }
+        PolicyProjectionOutcome::Committed
+    }
+
     /// Promotes a staged successor only if no connection, scene, request, or
     /// earlier frontend settlement has superseded its validation base.
     pub fn commit_staged(&mut self, staged: StagedPolicyProjection) -> PolicyProjectionOutcome {

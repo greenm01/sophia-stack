@@ -21,6 +21,26 @@ enum LiveWmProposalSource {
     Relayout,
 }
 
+fn completed_pointer_gesture_geometry(
+    gesture: sophia_protocol::WmPointerGestureCompleted,
+    initial: Rect,
+) -> Rect {
+    let delta_x = gesture.end.x.saturating_sub(gesture.start.x);
+    let delta_y = gesture.end.y.saturating_sub(gesture.start.y);
+    match gesture.mode {
+        sophia_protocol::WmPointerGestureMode::Move => Rect {
+            x: initial.x.saturating_add(delta_x),
+            y: initial.y.saturating_add(delta_y),
+            ..initial
+        },
+        sophia_protocol::WmPointerGestureMode::Resize => Rect {
+            width: initial.width.saturating_add(delta_x).max(1),
+            height: initial.height.saturating_add(delta_y).max(1),
+            ..initial
+        },
+    }
+}
+
 impl LiveWmProposalSource {
     const fn reduced_name(self) -> &'static str {
         match self {
@@ -376,7 +396,7 @@ impl LiveWmSession {
 
     fn poll_restart(
         &mut self,
-        layout: &PersistentLiveLayout,
+        layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         if self.public.is_some() {
@@ -653,9 +673,6 @@ impl LiveWmSession {
         mut gesture: sophia_protocol::WmPointerGestureCompleted,
         layout: &PersistentLiveLayout,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if self.public.is_some() {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
         if !layout.is_policy_managed(gesture.surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
@@ -665,6 +682,52 @@ impl LiveWmSession {
         };
         if self.has_request_source(source) {
             return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        if let Some(public) = self.public.as_mut() {
+            let initial = layout
+                .layers
+                .get(&gesture.surface)
+                .ok_or("pointer interaction target is missing from the live layout")?
+                .geometry;
+            let outline = clamp_floating_pointer_outline(
+                FloatingPointerOutline {
+                    surface: gesture.surface,
+                    start: gesture.start,
+                    geometry: completed_pointer_gesture_geometry(gesture, initial),
+                },
+                &wm_output_bounds(&public.outputs),
+            )
+            .ok_or("pointer interaction started outside every public-policy output")?;
+            let output = public
+                .reducer
+                .committed()
+                .into_iter()
+                .find(|projection| {
+                    projection
+                        .placements
+                        .iter()
+                        .any(|placement| placement.surface == gesture.surface)
+                })
+                .map(|projection| projection.output)
+                .ok_or("pointer interaction target is absent from public-policy state")?;
+            public.active_output = output;
+            return Ok(public.queue_cause(LivePublicPolicyCause {
+                source,
+                cause: sophia_protocol::PolicyRequestCause::Interaction {
+                    phase: sophia_protocol::PolicyInteractionPhase::End,
+                    kind: match gesture.mode {
+                        sophia_protocol::WmPointerGestureMode::Move => {
+                            sophia_protocol::PolicyInteractionKind::Move
+                        }
+                        sophia_protocol::WmPointerGestureMode::Resize => {
+                            sophia_protocol::PolicyInteractionKind::Resize
+                        }
+                    },
+                    target: gesture.surface,
+                    geometry: outline.geometry,
+                },
+                affected_outputs: vec![output],
+            }));
         }
         let workspace = self
             .workspace_state

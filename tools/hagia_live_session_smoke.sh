@@ -25,6 +25,9 @@ cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
 set +e
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_RESTART_MARKER="$proof_dir/restarted" \
+SOPHIA_HAGIA_FAULT_AFTER=projection_submitted \
+SOPHIA_HAGIA_FAULT_OCCURRENCE=2 \
+SOPHIA_HAGIA_FAULT_DELAY_MSEC=200 \
 target/debug/sophia sophia-live-session \
     --session-mode=normal \
     "--session-app=terminal=$kitty_bin" \

@@ -13,6 +13,7 @@ export SOPHIA_REQUIRE_LOCAL_VT=true
 export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
 export SOPHIA_X11_WM_BRIDGE_BIN="$RELEASE_DIR/target/release/sophia-x11-wm-bridge"
 export SOPHIA_NATIVE_WM_BIN="$RELEASE_DIR/target/release/sophia-wm-demo"
+export SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
 export SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"
 export SOPHIA_CORE_CONFIG="$RELEASE_DIR/share/sophia-policy/xmonad/core.kdl"
 export SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"
@@ -82,7 +83,11 @@ if [[ -n "$attempt_record" ]]; then
 fi
 
 set +e
-"$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
+if [[ "$SOPHIA_TTY_PROFILE" == hagia ]]; then
+    "$RELEASE_DIR/tools/run_sophia_session.sh" --wm=hagia "$@"
+else
+    "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
+fi
 session_status=$?
 set -e
 if [[ "$attempt_mode" =~ ^(xmonad|firefox|xterm)$ && "$session_status" == 130 ]] &&

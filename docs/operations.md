@@ -62,6 +62,12 @@ It installs six greetd entries:
   logout cycles after one authenticated selection. It is a lifecycle gate, not
   the ordinary desktop.
 
+An artifact packaged with an explicit `SOPHIA_HAGIA_BIN=/absolute/path/hagia`
+also installs `Sophia Hagia (Native Policy)`. The binary digest is retained in
+the manifest and the entry never falls back to API v7 or xmonad. This is an
+opt-in promotion profile until its physical workload gate passes; it does not
+replace the ordinary candidate merely because it was packaged.
+
 ## Status And Logs
 
 From the session, an independent text VT, or SSH as the same user, run:

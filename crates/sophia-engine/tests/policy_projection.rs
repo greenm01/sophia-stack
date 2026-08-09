@@ -98,6 +98,12 @@ fn staged_projection_preserves_last_good_until_frontend_commit() {
     assert_eq!(reducer.commit_serial(), 0);
     assert!(reducer.committed()[0].placements.is_empty());
     assert_eq!(
+        reducer.revalidate_staged(&staged),
+        PolicyProjectionOutcome::Committed
+    );
+    assert_eq!(reducer.commit_serial(), 0);
+    assert!(reducer.committed()[0].placements.is_empty());
+    assert_eq!(
         reducer.commit_staged(staged),
         PolicyProjectionOutcome::Committed
     );

@@ -40,6 +40,29 @@ struct LivePublicPolicyState {
     operation_actions: BTreeMap<u64, WmSessionAction>,
     pending_operation: Option<(TransactionId, sophia_protocol::PolicySessionOperationRequest)>,
     active_output: sophia_protocol::OutputId,
+    deferred_command: Option<PolicyTransportCommand>,
+    transport_unavailable: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PublicPolicyRestartDecision {
+    Idle,
+    AbortSettlement,
+    Restart,
+}
+
+const fn public_policy_restart_decision(
+    restart_requested: bool,
+    process_exited: bool,
+    settlement_pending: bool,
+) -> PublicPolicyRestartDecision {
+    if !restart_requested && !process_exited {
+        PublicPolicyRestartDecision::Idle
+    } else if settlement_pending {
+        PublicPolicyRestartDecision::AbortSettlement
+    } else {
+        PublicPolicyRestartDecision::Restart
+    }
 }
 
 impl LivePublicPolicyState {
@@ -110,6 +133,43 @@ impl LivePublicPolicyState {
         }
         self.queue.push_back(cause);
         LiveWmRequestAdmission::Admitted
+    }
+
+    fn submit_or_defer(
+        &mut self,
+        command: PolicyTransportCommand,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.deferred_command.is_some() {
+            return Err("public WM already has a deferred transport command".into());
+        }
+        if self.transport_unavailable {
+            return Ok(());
+        }
+        let worker = self
+            .worker
+            .as_ref()
+            .ok_or("public WM transport is unavailable")?;
+        if let Err(command) = worker.try_command(command) {
+            self.deferred_command = Some(command);
+        }
+        Ok(())
+    }
+
+    fn flush_deferred_command(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(command) = self.deferred_command.take() else {
+            return Ok(());
+        };
+        if self.transport_unavailable {
+            return Ok(());
+        }
+        let worker = self
+            .worker
+            .as_ref()
+            .ok_or("public WM transport is unavailable")?;
+        if let Err(command) = worker.try_command(command) {
+            self.deferred_command = Some(command);
+        }
+        Ok(())
     }
 
     fn snapshot(
@@ -347,6 +407,8 @@ impl LiveWmSession {
             operation_actions,
             pending_operation: None,
             active_output: active,
+            deferred_command: None,
+            transport_unavailable: false,
         };
         public.queue.push_back(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,
@@ -400,6 +462,7 @@ impl LiveWmSession {
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         let mut public = self.public.take().expect("public WM state is present");
+        public.flush_deferred_command()?;
         let event = public
             .worker
             .as_ref()
@@ -435,16 +498,11 @@ impl LiveWmSession {
                     }
                     _ => sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
                 };
-                public
-                    .worker
-                    .as_ref()
-                    .ok_or("public WM transport is unavailable")?
-                    .try_command(PolicyTransportCommand::ConfigurationOutcome {
+                public.submit_or_defer(PolicyTransportCommand::ConfigurationOutcome {
                         transaction,
                         generation: configuration.generation,
                         outcome,
-                    })
-                    .map_err(|_| "public WM configuration outcome queue is busy")?;
+                    })?;
                 if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
                     transport_failed = Some("invalid_configuration".to_owned());
                 }
@@ -491,18 +549,13 @@ impl LiveWmSession {
                     }
                     Err(outcome) => {
                         defer_cycle = true;
-                        public
-                            .worker
-                            .as_ref()
-                            .ok_or("public WM transport is unavailable")?
-                            .try_command(PolicyTransportCommand::ProjectionOutcome {
+                        public.submit_or_defer(PolicyTransportCommand::ProjectionOutcome {
                                 transaction: projection.transaction,
                                 request_id: projection.request_id,
                                 scene_generation: public.reducer.scene().generation,
                                 outcome,
                                 expect_session_operation: false,
-                            })
-                            .map_err(|_| "public WM projection outcome queue is busy")?;
+                            })?;
                         public.cycle_submitted = false;
                         public.in_flight_request = None;
                         public.in_flight_source = None;
@@ -546,16 +599,11 @@ impl LiveWmSession {
                     || !target_permitted
                 {
                     defer_cycle = true;
-                    public
-                        .worker
-                        .as_ref()
-                        .ok_or("public WM transport is unavailable")?
-                        .try_command(PolicyTransportCommand::SessionOperationOutcome {
+                    public.submit_or_defer(PolicyTransportCommand::SessionOperationOutcome {
                             transaction,
                             request_id: request.request_id,
                             outcome: sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
-                        })
-                        .map_err(|_| "public WM session-operation outcome queue is busy")?;
+                        })?;
                     None
                 } else {
                     public.pending_operation = Some((transaction, request));
@@ -584,6 +632,7 @@ impl LiveWmSession {
             && !public.cycle_submitted
             && public.transport_ready
             && public.in_flight_request.is_none()
+            && public.deferred_command.is_none()
             && let Some(cause) = public.queue.pop_front()
         {
             let scene = public.snapshot(layout)?;
@@ -622,7 +671,7 @@ impl LiveWmSession {
 
     fn poll_public_restart(
         &mut self,
-        _layout: &PersistentLiveLayout,
+        layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         if self.degraded {
@@ -630,8 +679,32 @@ impl LiveWmSession {
         }
         let restart_requested = self.force_transport_restart;
         let process_exited = self.supervisor.poll()?.is_some();
-        if !restart_requested && !process_exited {
-            return Ok(None);
+        let settlement_pending = layout
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.policy_settlement.is_some());
+        match public_policy_restart_decision(
+            restart_requested,
+            process_exited,
+            settlement_pending,
+        ) {
+            PublicPolicyRestartDecision::Idle => return Ok(None),
+            PublicPolicyRestartDecision::AbortSettlement => {
+                if !process_exited {
+                    self.supervisor.terminate()?;
+                }
+                let public = self.public.as_mut().expect("public WM state is present");
+                public.worker.take();
+                public.transport_unavailable = true;
+                public.deferred_command = None;
+                self.force_transport_restart = true;
+                layout.force_pending_timeout();
+                println!(
+                    "sophia_live_wm schema=4 status=settlement_aborting adapter=sophia_wm_v1 reason=transport_lost preserved_layout=true"
+                );
+                return Ok(None);
+            }
+            PublicPolicyRestartDecision::Restart => {}
         }
         if restart_requested && !process_exited {
             self.supervisor.terminate()?;
@@ -691,6 +764,8 @@ impl LiveWmSession {
         public.staged = None;
         public.prepared = None;
         public.pending_operation = None;
+        public.deferred_command = None;
+        public.transport_unavailable = false;
         public.bindings.clear();
         public.queue.clear();
         let affected_outputs = public.all_outputs(output.id);
@@ -778,9 +853,9 @@ impl LiveWmSession {
         }
         let staged = public
             .staged
-            .take()
+            .as_ref()
             .ok_or("ready public layout lost its staged reducer successor")?;
-        let outcome = public.reducer.commit_staged(staged);
+        let outcome = public.reducer.revalidate_staged(staged);
         if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
             return Err(format!(
                 "ready public layout failed canonical revalidation: {outcome:?}"
@@ -790,114 +865,12 @@ impl LiveWmSession {
         public.prepared = Some(identity);
         Ok(())
     }
-}
 
-fn public_live_proposal(
-    layout: &PersistentLiveLayout,
-    active_output: sophia_protocol::OutputId,
-    projections: Vec<sophia_protocol::PolicyOutputProjection>,
-    transaction: TransactionId,
-    source: LiveWmProposalSource,
-    settlement: LivePolicySettlementIdentity,
-) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
-    let mut layers = layout
-        .layers
-        .values()
-        .filter(|layer| !layout.is_policy_managed(layer.surface))
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut requested_sizes = BTreeMap::new();
-    let mut applied_surfaces = Vec::new();
-    let focus = projections
-        .iter()
-        .find(|projection| projection.output == active_output)
-        .and_then(|projection| projection.focus);
-    for projection in projections {
-        for placement in projection.placements {
-            let mut layer = if let Some(layer) = layout.layers.get(&placement.surface) {
-                layer.clone()
-            } else {
-                let facts = layout
-                    .layout_facts(placement.surface)
-                    .ok_or("public WM projection names a missing planning surface")?;
-                LayerSnapshot {
-                    surface: facts.surface,
-                    authority_local_id: None,
-                    namespace: None,
-                    stack_rank: facts.stack_rank,
-                    geometry: facts.geometry,
-                    source: BufferSource::None,
-                    damage: Region::empty(),
-                    opacity: 1.0,
-                    crop: None,
-                    transform: Transform::IDENTITY,
-                    generation: facts.generation,
-                    resize_sync: ResizeSyncCapability::ImplicitOnly,
-                }
-            };
-            layer.geometry = placement.geometry;
-            layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
-            if let Some(size) = placement.requested_size {
-                requested_sizes.insert(placement.surface, size);
-            }
-            applied_surfaces.push(placement.surface);
-            layers.push(layer);
-        }
-    }
-    let moved_surfaces = layers
-        .iter()
-        .filter(|layer| {
-            layout
-                .layers
-                .get(&layer.surface)
-                .is_some_and(|current| current.geometry != layer.geometry)
-        })
-        .count();
-    Ok(LiveWmProposal {
-        transaction,
-        layers,
-        requested_sizes,
-        configure_deliveries: 0,
-        focus,
-        timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
-        update: WmTransactionUpdate {
-            commit: TransactionCommit {
-                transaction,
-                outcome: TransactionOutcome::Committed,
-                applied_surfaces,
-            },
-            ipc_error: None,
-        },
-        moved_surfaces,
-        source: Some(source),
-        effects: None,
-        policy_settlement: Some(settlement),
-    })
-}
-
-fn public_operation_proposal(
-    layout: &PersistentLiveLayout,
-    transaction: TransactionId,
-    settlement: LivePolicySettlementIdentity,
-) -> LiveWmProposal {
-    LiveWmProposal {
-        transaction,
-        layers: layout.layers.values().cloned().collect(),
-        requested_sizes: BTreeMap::new(),
-        configure_deliveries: 0,
-        focus: None,
-        timeout: Duration::from_secs(1),
-        update: WmTransactionUpdate {
-            commit: TransactionCommit {
-                transaction,
-                outcome: TransactionOutcome::Committed,
-                applied_surfaces: Vec::new(),
-            },
-            ipc_error: None,
-        },
-        moved_surfaces: 0,
-        source: None,
-        effects: None,
-        policy_settlement: Some(settlement),
+    fn public_settlement_abort_required(&self) -> bool {
+        self.public
+            .as_ref()
+            .is_some_and(|public| public.transport_unavailable)
     }
 }
+
+include!("public_policy/proposal.rs");

@@ -149,16 +149,11 @@ impl LiveWmSession {
             } else {
                 sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
             };
-            public
-                .worker
-                .as_ref()
-                .ok_or("public WM transport is unavailable")?
-                .try_command(PolicyTransportCommand::SessionOperationOutcome {
+            public.submit_or_defer(PolicyTransportCommand::SessionOperationOutcome {
                     transaction,
                     request_id: request.request_id,
                     outcome,
-                })
-                .map_err(|_| "public WM session-operation outcome queue is busy")?;
+                })?;
             return Ok(LiveWmOwnerCommit {
                 update: result.update,
                 physical_action: None,
@@ -173,8 +168,13 @@ impl LiveWmSession {
             });
         }
 
-        let outcome = if layout_committed && public.prepared.take() == Some(settlement) {
-            sophia_protocol::PolicyProjectionOutcome::Committed
+        let prepared = public.prepared.take();
+        let outcome = if layout_committed && prepared == Some(settlement) {
+            let staged = public
+                .staged
+                .take()
+                .ok_or("public projection committed without its staged reducer successor")?;
+            public.reducer.commit_staged(staged)
         } else if layout_committed {
             let staged = public
                 .staged
@@ -185,18 +185,13 @@ impl LiveWmSession {
             public.staged = None;
             public.reducer.timeout(settlement.request_id)
         };
-        public
-            .worker
-            .as_ref()
-            .ok_or("public WM transport is unavailable")?
-            .try_command(PolicyTransportCommand::ProjectionOutcome {
+        public.submit_or_defer(PolicyTransportCommand::ProjectionOutcome {
                 transaction: settlement.transaction,
                 request_id: settlement.request_id,
                 scene_generation: public.reducer.scene().generation,
                 outcome,
                 expect_session_operation: settlement.expect_session_operation,
-            })
-            .map_err(|_| "public WM projection outcome queue is busy")?;
+            })?;
         public.cycle_submitted = false;
         public.in_flight_request = None;
         public.in_flight_source = None;

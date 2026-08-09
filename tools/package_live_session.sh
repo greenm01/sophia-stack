@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${SOPHIA_ARTIFACT_ROOT:-$ROOT_DIR/.artifacts}"
+hagia_bin="${SOPHIA_HAGIA_BIN:-}"
 
 cd "$ROOT_DIR"
 [[ -z "$(git status --short)" ]] || {
@@ -36,6 +37,10 @@ xmonad_cabal_sha256="$(sha256sum tools/config/sophia-xmonad/sophia-xmonad.cabal 
 xmonad_project_sha256="$(sha256sum tools/config/sophia-xmonad/cabal.project | awk '{print $1}')"
 xmonad_core_config_sha256="$(sha256sum tools/config/sophia-xmonad/core.kdl | awk '{print $1}')"
 xmobar_config_sha256="$(sha256sum tools/fixtures/xmobar_sophia.config | awk '{print $1}')"
+if [[ -n "$hagia_bin" && ! -x "$hagia_bin" ]]; then
+    echo "SOPHIA_HAGIA_BIN is not executable: $hagia_bin" >&2
+    exit 1
+fi
 
 install -d -m 755 \
     "$artifact/bin" \
@@ -54,6 +59,11 @@ install -m 755 target/release/sophia-wm-demo \
 install -m 755 "$xmonad_bin" "$artifact/target/release/xmonad"
 install -m 755 "$xmobar_bin" "$artifact/target/release/xmobar"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
+if [[ -n "$hagia_bin" ]]; then
+    install -m 755 "$hagia_bin" "$artifact/target/release/hagia"
+    install -m 755 tools/installed/sophia-hagia-session \
+        "$artifact/bin/sophia-hagia-session"
+fi
 install -m 755 tools/installed/sophia-kitty-session \
     "$artifact/bin/sophia-kitty-session"
 install -m 755 tools/installed/sophia-firefox-proof \
@@ -148,6 +158,9 @@ install -m 755 tools/run_sophia_xmonad_session.sh \
     tools/resolve_sophia_xmobar.sh \
     tools/stop_sophia_session.sh \
     tools/start_sophia_native_hot_reload_tty3.sh "$artifact/tools/"
+if [[ -n "$hagia_bin" ]]; then
+    install -m 755 tools/run_sophia_session.sh "$artifact/tools/run_sophia_session.sh"
+fi
 install -m 755 tools/verify_packaged_policy.sh \
     "$artifact/tools/verify_packaged_policy.sh"
 install -d -m 755 "$artifact/tools/config"
@@ -193,6 +206,16 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia.desktop"
+if [[ -n "$hagia_bin" ]]; then
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Name=Sophia Hagia (Native Policy)' \
+        'Comment=Bounded Sophia native public-policy profile' \
+        'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-session' \
+        'Type=Application' \
+        'DesktopNames=Sophia' \
+        >"$artifact/share/wayland-sessions/sophia-hagia.desktop"
+fi
 printf '%s\n' \
     '[Desktop Entry]' \
     'Name=Sophia Kitty (Baseline)' \
@@ -241,6 +264,12 @@ printf 'schema=3\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_
     "$xmobar_version" "$xmobar_source_commit" "$xmobar_config_sha256" \
     "$(sha256sum "$xmobar_bin" | awk '{print $1}')" \
     >"$artifact/manifest"
+if [[ -n "$hagia_bin" ]]; then
+    printf 'hagia_included=true\nhagia_binary_sha256=%s\n' \
+        "$(sha256sum "$hagia_bin" | awk '{print $1}')" >>"$artifact/manifest"
+else
+    printf 'hagia_included=false\n' >>"$artifact/manifest"
+fi
 "$artifact/tools/verify_packaged_policy.sh" "$artifact"
 (
     cd "$artifact"

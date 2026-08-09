@@ -817,6 +817,14 @@ impl PersistentLiveLayout {
         })
     }
 
+    fn force_pending_timeout(&mut self) -> bool {
+        let Some(pending) = self.pending.as_mut() else {
+            return false;
+        };
+        pending.deadline = Instant::now();
+        true
+    }
+
     fn expire_pending(
         &mut self,
         session_controls: &mut SessionControlQueue,

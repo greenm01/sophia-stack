@@ -396,6 +396,24 @@ macro_rules! apply_wm_commit_result {
 
 macro_rules! service_layout_progress {
     ($trigger:literal) => {{
+        if pending_wm_update.is_none()
+            && wm_session
+                .as_ref()
+                .is_some_and(LiveWmSession::public_settlement_abort_required)
+            && let Some(result) = layout.expire_pending(&mut session_controls)?
+        {
+            let transaction = result.update.commit.transaction;
+            pending_wm_update = Some(apply_wm_commit_result!(
+                result,
+                focus.focused_surface(seat)
+            ));
+            layout_progress_deferred_reported = false;
+            println!(
+                "sophia_live_layout_progress schema=1 status=aborted trigger={} transaction={} reason=public_transport_lost preserved_layout=true",
+                $trigger,
+                transaction.raw(),
+            );
+        }
         if pending_wm_update.is_none() && layout.pending_is_ready() {
             if let Some(wm) = wm_session.as_mut() {
                 wm.prepare_public_layout_commit(&layout)?;

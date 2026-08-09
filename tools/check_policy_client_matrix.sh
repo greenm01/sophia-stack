@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+
+[[ -f "$HAGIA_ROOT/hagia.nimble" ]] || {
+    echo "SOPHIA_HAGIA_ROOT must name the independent Hagia checkout" >&2
+    exit 2
+}
+
+cd "$ROOT_DIR"
+tools/check_policy_protocol.sh
+cargo test --offline -q -p sophia-wm-demo
+cargo test --offline -q -p sophia-x11-wm-bridge
+
+cd "$HAGIA_ROOT"
+SOPHIA_STACK_ROOT="$ROOT_DIR" nimble test -y
+
+printf '%s\n' \
+    'sophia_policy_client_matrix schema=1 status=complete rust_reference=true c_client=true hagia=true x11_bridge=true'

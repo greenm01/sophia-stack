@@ -474,6 +474,10 @@ future compatibility target, not a prerequisite.
 - [ ] Add Engine-owned pointer interactions, bounded focus history, private
   checkpoint/reconciliation, and crash/restart proof while applications and
   the last committed scene remain alive.
+  One completed Engine-captured move/resize now crosses as a reduced final
+  interaction, and Hagia validates its target, capability, output bounds, and
+  exact floating geometry. Continuous updates, focus history, and persistent
+  checkpoints remain open.
 - [ ] Prove the retained tiling and scrolling layouts plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
   restart, and hot-swap. Defer Janet until candidate validation and fallback
@@ -482,6 +486,10 @@ future compatibility target, not a prerequisite.
   Hagia, the X11 bridge, and the independent C client. Publish
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
   as a permanent compatibility gate.
+  `tools/check_policy_client_matrix.sh` now provides one offline four-client
+  gate over the retained Rust/C wire corpus, authenticated C and Hagia hosts,
+  Rust reference WM, and X11 bridge tests. A shared behavioral scenario corpus
+  broad enough to freeze revision 1 remains open.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 
@@ -490,6 +498,10 @@ future compatibility target, not a prerequisite.
   scrolling layouts. Prove Kitty, Firefox, floating dialogs, work areas,
   ordered repeated actions, pointer move/resize, multi-output views,
   `glxgears`, `vkcube`, policy restart, and clean logout.
+  Packaging and installation now accept an explicitly supplied Hagia binary
+  and publish a separate `Sophia Hagia (Native Policy)` login entry without
+  changing the default. Physical workday proof is still required before
+  promotion.
 - [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.

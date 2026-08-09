@@ -82,6 +82,18 @@ be collapsed into one focus, movement, view, or layout operation. The bounded
 configuration explores 348,608 generated states and 65,467 distinct states to
 depth 26.
 
+`PolicySettlementRecovery.tla` isolates the public Hagia owner-loop boundary
+after proposal validation. It separates non-mutating staged revalidation,
+frontend settlement, one logical reducer/layout promotion, capacity-one
+terminal delivery, transport loss, forced abort, and connection replacement.
+It requires the last-good reducer and layout serials to remain coherent, a
+failed settlement to preserve both, old-epoch terminal ownership to disappear
+before restart, and each delivered terminal identity to occur at most once.
+The bounded configuration explores 314 generated states and 224 distinct
+states to depth 36. A temporary prepare-time reducer promotion immediately
+violates `LastGoodIsCoherent`, preserving the implementation defect found by
+the modeling pass as a negative control.
+
 `ShellWorkAreaCoordination.tla` is a target pre-schema model for future native
 shell reservations. It binds a ready shell candidate and reservation to the
 exact derived work-area request, WM connection epoch, and answering projection

@@ -206,6 +206,24 @@ fn public_policy_output_reappearance_advances_its_generation() {
 }
 
 #[test]
+fn public_policy_restart_aborts_settlement_before_process_replacement() {
+    for (restart, exited) in [(true, false), (false, true), (true, true)] {
+        assert_eq!(
+            public_policy_restart_decision(restart, exited, true),
+            PublicPolicyRestartDecision::AbortSettlement,
+        );
+        assert_eq!(
+            public_policy_restart_decision(restart, exited, false),
+            PublicPolicyRestartDecision::Restart,
+        );
+    }
+    assert_eq!(
+        public_policy_restart_decision(false, false, true),
+        PublicPolicyRestartDecision::Idle,
+    );
+}
+
+#[test]
 fn normal_session_application_registry_is_bounded_and_explicit() {
     let config = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),
