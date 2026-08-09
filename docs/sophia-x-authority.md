@@ -115,6 +115,13 @@ required to complete a focus handoff. A frontend focus acknowledgement alone
 cannot release buffered pointer input: each exact generational target must also
 remain in the last-presented Engine projection and current frontend route
 table. Stale membership discards the whole buffered sequence.
+Client-bound keyboard events use the analogous nonspatial boundary. Engine
+resolves shortcuts first, then retains unmatched keys while Engine focus is
+ahead of frontend focus. The bounded sequence reaches XKB/event-mask delivery
+only after the matching exact-surface acknowledgement; it is discarded rather
+than retargeted on invalidation. Original libinput timestamps remain attached
+to released events so proof and latency accounting describe physical ingress,
+not the later acknowledgement tick.
 X11 map/configure lifecycle
 updates no longer overwrite a surface's committed-pixel generation. Live setup
 and populated RandR CRTC/output/mode resources use Engine-derived topology

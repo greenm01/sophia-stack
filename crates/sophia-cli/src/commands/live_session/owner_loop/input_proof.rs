@@ -91,6 +91,8 @@
                     &mut input_delivery.next,
                     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                     None,
+                    None,
+                    None,
                 )?;
                 if report.keys_routed != expected {
                     return Err(format!(

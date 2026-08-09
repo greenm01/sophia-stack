@@ -427,9 +427,11 @@ future compatibility target, not a prerequisite.
   WM and generic X11 WM bridge against the canonical reducer.
 - [x] Add an explicitly selected Hagia live profile through the public
   transport and canonical reducer, with no silent API-v7 fallback.
-- [ ] Promote that profile to the installed native default, then remove v7 and
-  Engine-owned workspace state after the complete Hagia recovery gate. Migrate
-  xmonad later through the compatibility adapter.
+- [x] Promote that profile to the installed native default while retaining
+  Kitty, xmonad, and the previous immutable release as recovery routes.
+- [ ] Remove v7 and Engine-owned workspace state after the complete Hagia
+  restart and last-layout gates. Migrate xmonad later through the compatibility
+  adapter.
 - [x] Preserve registered physical actions and session operations as opaque,
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
@@ -487,8 +489,20 @@ future compatibility target, not a prerequisite.
   advance and a fresh complete cycle. Both installed Hagia gates require its
   diagnostic after restart, but no physical evidence has been claimed.
   `tools/hagia_policy_physical_gate.sh` now encodes the opt-in two-output
-  restore/presentation/active-output procedure, but it has not been run or
-  promoted as evidence.
+  restore/presentation/active-output procedure. Its first authorized run
+  proved checkpoint save, supervised epoch-2 restart, checkpoint load and
+  reconciliation, retained fullscreen geometry, and post-restart page flips,
+  then failed the exact text boundary because seven keys arrived while Engine
+  and frontend focus differed. Engine now retains only those client-bound keys
+  in a bounded exact-target handoff while continuing to resolve Hagia's
+  reserved chords. A replacement run then proved the exact text and clean
+  bounded shutdown, but the operator entered the final phrase before the
+  post-restart actions. That run also showed that checkpoint occurrence 4 was
+  reached during startup, before the intended physical trigger. The gate now
+  arms occurrence 6, after the two pre-restart actions, labels every missing
+  phase explicitly, and uses the phrase only as the final exit signal. Another
+  replacement run remains required; neither partial run is promoted as passing
+  evidence.
 - [ ] Carry committed public-policy fullscreen, maximize, minimize, and restore
   state through the X frontend's protocol-visible state transition and verify
   exact configure/state feedback. Engine geometry, focus exclusion, semantic
@@ -559,8 +573,17 @@ future compatibility target, not a prerequisite.
   replanning until visual retirement, producing 3,121 reconciliations before
   startup failed closed. A committed public Manage now consumes only its exact
   planning ownership while retaining the independent visual-retirement fence;
-  deterministic tests cap the resulting policy and checkpoint traffic. A
-  successor physical attempt is still required.
+  deterministic tests cap the resulting policy and checkpoint traffic.
+  Installed attempt `0003` then completed the physical session but exposed an
+  evidence-only manifest collision: the release and attempt recorder emitted
+  the same Hagia digest field. The immutable attempt remains failed closed.
+  Signed successor `66a279286bddd0354b6022102c4dac5254e34481`
+  canonicalizes that field without weakening duplicate rejection. Installed
+  attempt `0004` passed exact Sophia/Hagia identity, two-output startup,
+  physical actions, presentation, clean normal logout, lifecycle, coverage,
+  and archive verification. Hagia is now the ordinary remembered session; the
+  item remains open for the named restart, state-transition, application, and
+  output-topology scenarios above.
 - [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.
@@ -722,6 +745,11 @@ named soak failure promotes one.
   - [x] Revalidate deferred pointer-focus handoffs before release. Every exact
     generational target must remain in the last-presented input projection and
     frontend route table; otherwise the complete buffered sequence is dropped.
+  - [x] Preserve ordered client keyboard input across asynchronous focus
+    acknowledgement without retargeting it. Reserved controls resolve first;
+    the remaining keys retain their exact seat, generational surface, order,
+    and libinput timing in a capacity- and timeout-bounded handoff. Focus,
+    target, topology, or security invalidation drops the complete sequence.
   - [x] Turn ordinary and passive-grab pointer sequences into exact
     Engine-visible profile-scoped leases with ordered release acknowledgement.
     VT and seat transitions advance a shared epoch, clear frontend active

@@ -254,8 +254,11 @@ and two connected outputs. The operator exercises fullscreen, maximize,
 minimize/restore, and active-output actions around one checkpoint-triggered
 supervised restart; the verifier requires ordered commits, nonempty checkpoint
 load/reconciliation, output-change evidence, physical text, and clean session
-health. Merely checking in this gate is not physical evidence; its log must be
-retained and reviewed after an authorized hardware run.
+health. Client text typed while a post-policy focus acknowledgement is pending
+is retained by Engine's bounded exact-target keyboard handoff, while Hagia's
+reserved chords remain outside that queue. Merely checking in this gate is not
+physical evidence; its log must be retained and reviewed after an authorized
+hardware run.
 
 Do not make metadata rules, pointer operations, shell overlays, or full Triad
 IPC prerequisites for this proof.

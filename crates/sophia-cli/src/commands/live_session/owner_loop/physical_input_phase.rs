@@ -85,6 +85,7 @@ macro_rules! drain_physical_input {
                     now_msec: u64::try_from(started.elapsed().as_millis())
                         .unwrap_or(u64::MAX),
                     physical_text_proof: physical_text_proof.as_mut(),
+                    keyboard_focus_handoff: &mut keyboard_focus_handoff,
                     pointer_focus_handoff: &mut pointer_focus_handoff,
                     applied_client_focus,
                     floating_gesture: &mut floating_pointer_gesture,
@@ -95,12 +96,40 @@ macro_rules! drain_physical_input {
                 },
             )?;
             let event_timings = poller.drain_event_timings();
+            if report.keyboard_focus_handoff_expired
+                || report.keyboard_focus_handoff_stale_drops != 0
+                || report.keyboard_focus_handoff_capacity_drops != 0
+            {
+                deferred_physical_key_timings.clear();
+            }
+            if physical_input_ready_at.is_some() && input_proof_started_at.is_none() {
+                for (serial, event_time_msec) in &report.deferred_key_presses {
+                    let timing = event_timings
+                        .iter()
+                        .find(|timing| timing.serial == *serial)
+                        .copied()
+                        .ok_or("deferred physical key had no libinput timing sidecar")?;
+                    if timing.event_time_msec != *event_time_msec {
+                        return Err(
+                            "deferred physical key timing sidecar did not match event".into()
+                        );
+                    }
+                    deferred_physical_key_timings.insert(*serial, timing);
+                }
+                if deferred_physical_key_timings.len()
+                    > sophia_engine::KEYBOARD_FOCUS_HANDOFF_CAPACITY
+                {
+                    return Err("deferred physical key timing capacity exhausted".into());
+                }
+            }
             if physical_input_ready_at.is_some()
                 && input_proof_started_at.is_none()
                 && let Some((serial, event_time_msec)) = report.routed_key_presses.last().copied()
                 && let Some(timing) = event_timings
                     .iter()
                     .find(|timing| timing.serial == serial)
+                    .copied()
+                    .or_else(|| deferred_physical_key_timings.remove(&serial))
             {
                 if timing.event_time_msec != event_time_msec {
                     return Err("physical input timing sidecar did not match routed event".into());
@@ -116,6 +145,7 @@ macro_rules! drain_physical_input {
                     timing.queue_dwell_msec,
                 );
                 std::io::stdout().flush()?;
+                deferred_physical_key_timings.clear();
             }
             metrics.physical_events = metrics.physical_events.saturating_add(report.events);
             metrics.physical_keys_routed = metrics
@@ -133,6 +163,29 @@ macro_rules! drain_physical_input {
             if report.pointer_focus_handoff_expired {
                 eprintln!(
                     "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=timeout"
+                );
+            }
+            if report.keyboard_focus_handoff_expired {
+                eprintln!(
+                    "sophia_live_session_keyboard schema=1 status=focus_handoff_dropped reason=timeout"
+                );
+            }
+            if report.keyboard_focus_handoff_stale_drops != 0 {
+                eprintln!(
+                    "sophia_live_session_keyboard schema=1 status=focus_handoff_dropped reason=stale_target count={}",
+                    report.keyboard_focus_handoff_stale_drops,
+                );
+            }
+            if report.keyboard_focus_handoff_capacity_drops != 0 {
+                eprintln!(
+                    "sophia_live_session_keyboard schema=1 status=focus_handoff_dropped reason=capacity count={}",
+                    report.keyboard_focus_handoff_capacity_drops,
+                );
+            }
+            if let Some((surface, count)) = report.keyboard_focus_handoff_released {
+                println!(
+                    "sophia_live_session_keyboard schema=1 status=focus_handoff_released surface={} count={count}",
+                    surface.index(),
                 );
             }
             if report.pointer_focus_handoff_stale_drops != 0 {
@@ -557,6 +610,7 @@ macro_rules! schedule_output_topology_rebuild {
                 route_lease_release_sender,
             )?;
             pointer_focus_handoff = PointerFocusHandoffState::default();
+            keyboard_focus_handoff = KeyboardFocusHandoffState::default();
             key_repeat.cancel_seat(seat);
             println!(
                 "sophia_live_input_epoch schema=1 reason=output_topology transition={} epoch={} revoked_leases={revoked_input_leases}",

@@ -1,7 +1,8 @@
 mod support;
 use sophia_engine::{
-    OutputUnionPointerState, POINTER_FOCUS_HANDOFF_CAPACITY, PointerBoundaryContact,
-    PointerBoundarySide, confine_pointer_to_outputs, scene_contains_input_surface,
+    KEYBOARD_FOCUS_HANDOFF_CAPACITY, KeyboardFocusHandoffState, OutputUnionPointerState,
+    POINTER_FOCUS_HANDOFF_CAPACITY, PointerBoundaryContact, PointerBoundarySide,
+    confine_pointer_to_outputs, scene_contains_input_surface,
 };
 use support::*;
 
@@ -568,6 +569,109 @@ fn physical_input_route_rejects_malformed_routes() {
         routed_input_request_from_physical_event(&event, &mismatched),
         Err(RoutedInputRequestError::MissingLocalPosition)
     );
+}
+
+fn keyboard_handoff_event(serial: u64, target: SurfaceId, pressed: bool) -> InputEventPacket {
+    InputEventPacket {
+        serial,
+        seat: SeatId::from_raw(1),
+        device: DeviceId::from_raw(2),
+        time_msec: serial,
+        kind: InputEventKind::Key {
+            keycode: 35,
+            pressed,
+        },
+        global_position: None,
+        target_surface: Some(target),
+        local_position: None,
+    }
+}
+
+#[test]
+fn keyboard_focus_handoff_releases_one_exact_ordered_sequence() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = KeyboardFocusHandoffState::default();
+    handoff
+        .defer(target, 100, keyboard_handoff_event(1, target, true))
+        .unwrap();
+    handoff
+        .defer(target, 100, keyboard_handoff_event(2, target, false))
+        .unwrap();
+
+    assert!(handoff.take_ready(Some(SurfaceId::new(9, 1))).is_none());
+    let ready = handoff.take_ready(Some(target)).unwrap();
+    assert_eq!(
+        ready
+            .into_iter()
+            .map(|event| event.serial)
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert_eq!(handoff.target(), None);
+}
+
+#[test]
+fn keyboard_focus_handoff_rejects_retargeting_and_discards_the_prefix() {
+    let target = SurfaceId::new(8, 1);
+    let replacement = SurfaceId::new(8, 2);
+    let mut handoff = KeyboardFocusHandoffState::default();
+    handoff
+        .defer(target, 100, keyboard_handoff_event(1, target, true))
+        .unwrap();
+
+    assert!(
+        handoff
+            .defer(
+                replacement,
+                101,
+                keyboard_handoff_event(2, replacement, false),
+            )
+            .is_err()
+    );
+    assert_eq!(handoff.target(), None);
+    assert!(handoff.take_ready(Some(target)).is_none());
+}
+
+#[test]
+fn keyboard_focus_handoff_discards_a_removed_generation_before_acknowledgement() {
+    let target = SurfaceId::new(8, 1);
+    let replacement = SurfaceId::new(8, 2);
+    let mut handoff = KeyboardFocusHandoffState::default();
+    handoff
+        .defer(target, 100, keyboard_handoff_event(1, target, true))
+        .unwrap();
+
+    assert!(handoff.cancel_if_target_stale(|surface| surface == replacement));
+    assert_eq!(handoff.target(), None);
+    assert!(handoff.take_ready(Some(target)).is_none());
+}
+
+#[test]
+fn keyboard_focus_handoff_expires_and_is_capacity_bounded() {
+    let target = SurfaceId::new(8, 1);
+    let mut handoff = KeyboardFocusHandoffState::default();
+    for serial in 1..=KEYBOARD_FOCUS_HANDOFF_CAPACITY as u64 {
+        handoff
+            .defer(
+                target,
+                100,
+                keyboard_handoff_event(serial, target, serial % 2 != 0),
+            )
+            .unwrap();
+    }
+    assert!(
+        handoff
+            .defer(target, 100, keyboard_handoff_event(999, target, true),)
+            .is_err()
+    );
+    assert_eq!(handoff.target(), None);
+
+    handoff
+        .defer(target, 200, keyboard_handoff_event(1_000, target, true))
+        .unwrap();
+    assert!(!handoff.expire(4_199));
+    assert!(handoff.expire(4_200));
+    assert_eq!(handoff.target(), None);
 }
 
 #[test]

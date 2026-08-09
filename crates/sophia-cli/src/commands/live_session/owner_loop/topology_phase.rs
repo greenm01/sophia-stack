@@ -16,6 +16,8 @@
                 route_lease_release_sender,
             )?;
             pointer_focus_handoff = PointerFocusHandoffState::default();
+            keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+            deferred_physical_key_timings.clear();
             key_repeat.cancel_seat(seat);
             println!(
                 "sophia_live_input_epoch schema=1 reason=output_topology transition={} epoch={} revoked_leases={revoked_input_leases}",

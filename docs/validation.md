@@ -1466,6 +1466,21 @@ sophia-verify-cycles 10
 sophia-verify-soak
 ```
 
+The opt-in checkpoint/restart and state-transition proof runs from a logged-in
+TTY 4 and restores the originating display manager and VT on every exit:
+
+```sh
+tools/start_sophia_hagia_policy_tty4.sh
+```
+
+Follow its five on-screen steps once and do not enter the final phrase early:
+the phrase plus Enter terminates the session immediately. The proof keeps
+client-bound keys ordered across asynchronous Engine/frontend focus
+acknowledgement, but still rejects a
+wrong routed character, retargeted sequence, stale surface, or missing physical
+presentation. A restart line or a returned TTY alone is partial evidence; the
+command must print `Hagia physical policy gate passed`.
+
 Use `Sophia Hagia (Native Policy)` for ordinary development after its bounded
 preflight passes. Every launch reserves a Hagia ledger entry before takeover;
 normal logout passes, operator emergency return is marked recovered, and

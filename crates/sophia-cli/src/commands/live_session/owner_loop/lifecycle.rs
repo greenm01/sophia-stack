@@ -44,6 +44,8 @@
                     &layout.client_routes,
                     route_lease_release_sender,
                 )?;
+                keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+                deferred_physical_key_timings.clear();
                 println!(
                     "sophia_live_input_epoch schema=1 reason=virtual_terminal epoch={} revoked_leases={revoked_input_leases}",
                     application_route_leases.control_epoch(),
@@ -229,6 +231,8 @@
                         &layout.client_routes,
                         route_lease_release_sender,
                     )?;
+                    keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+                    deferred_physical_key_timings.clear();
                     println!(
                         "sophia_live_input_epoch schema=1 reason=seat_release epoch={} revoked_leases={revoked_input_leases}",
                         application_route_leases.control_epoch(),

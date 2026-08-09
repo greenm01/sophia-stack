@@ -312,6 +312,8 @@ fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
         &mut next_delivery,
         3,
         None,
+        None,
+        None,
     )
     .unwrap();
     let routed_presses = input_receiver.try_iter().collect::<Vec<_>>();
@@ -561,6 +563,8 @@ fn held_application_pointer_delivery_does_not_freeze_cursor() {
         &mut next_delivery,
         0,
         None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -620,12 +624,155 @@ fn full_routing_suppresses_keyboard_input_when_workspace_focus_is_clear() {
         &mut next_delivery,
         0,
         None,
+        None,
+        None,
     )
     .unwrap();
 
     assert_eq!(report.keys_suppressed_no_focus, 1);
     assert_eq!(report.keys_routed, 0);
     assert!(input_receiver.try_recv().is_err());
+}
+
+#[test]
+fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(41, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let committed = [CommittedSurfaceState {
+        surface,
+        committed_generation: 1,
+        geometry,
+        buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::single(geometry),
+    }];
+    let mut focus = InputFocusState::new();
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+    let events = [true, false]
+        .into_iter()
+        .enumerate()
+        .map(|(index, pressed)| InputEventPacket {
+            serial: u64::try_from(index + 1).unwrap(),
+            seat,
+            device: DeviceId::from_raw(1),
+            time_msec: u64::try_from(index + 1).unwrap(),
+            kind: InputEventKind::Key {
+                keycode: 35,
+                pressed,
+            },
+            global_position: None,
+            target_surface: None,
+            local_position: None,
+        })
+        .collect();
+    let (input_sender, input_receiver) = sync_channel(4);
+    let mut modifiers = XCoreKeyboardMapper::new();
+    let (mut key_repeat, key_repeat_map) = super::test_key_repeat_parts();
+    let mut client_keys = SessionClientKeyState::default();
+    let mut emergency = super::super::EmergencyChordState::awaiting_arm();
+    let mut virtual_terminal = sophia_cli::session_keyboard::VirtualTerminalChordState::default();
+    let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
+    let mut pointer = SessionPointerPlacement::default();
+    let mut next_delivery = 1;
+    let mut proof = PhysicalTextProof::new_without_submit("h").unwrap();
+    let mut handoff = KeyboardFocusHandoffState::default();
+    let mut routes = XAuthorityClientSurfaceRoutes::default();
+    let mut route_batch = super::super::wm_update_coordinator_batch(TransactionId::from_raw(1));
+    route_batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    route_batch.transactions.push(SurfaceTransaction {
+        transaction: TransactionId::from_raw(1),
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        target_content_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+        target_buffer: BufferSource::CpuBuffer { handle: 1 },
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 1_000,
+        previous_committed_generation: 0,
+    });
+    routes.observe(&route_batch);
+
+    let held = route_input_events(
+        events,
+        &focus,
+        &committed,
+        &[],
+        &routes,
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        &mut keyboard_coverage,
+        None,
+        &mut pointer,
+        false,
+        false,
+        false,
+        PhysicalInputRoutingMode::ControlPlaneOnly,
+        &mut next_delivery,
+        10,
+        Some(&mut proof),
+        Some(&mut handoff),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(held.keys_routed, 0);
+    assert_eq!(held.deferred_key_presses, [(1, 1)]);
+    assert!(!proof.is_complete());
+    assert_eq!(handoff.target(), Some(surface));
+    assert!(input_receiver.try_recv().is_err());
+
+    let released = route_input_events(
+        vec![],
+        &focus,
+        &committed,
+        &[],
+        &routes,
+        &input_sender,
+        &mut modifiers,
+        &mut key_repeat,
+        &key_repeat_map,
+        &mut client_keys,
+        &mut emergency,
+        &mut virtual_terminal,
+        &mut keyboard_coverage,
+        None,
+        &mut pointer,
+        false,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        &mut next_delivery,
+        11,
+        Some(&mut proof),
+        Some(&mut handoff),
+        Some(surface),
+    )
+    .unwrap();
+
+    assert_eq!(released.keys_routed, 2);
+    assert_eq!(released.keyboard_focus_handoff_released, Some((surface, 2)));
+    assert!(proof.is_complete());
+    assert_eq!(handoff.target(), None);
+    assert_eq!(input_receiver.try_iter().count(), 2);
+    assert_eq!(client_keys.pending_len(), 0);
 }
 
 #[test]
@@ -683,6 +830,8 @@ fn full_routing_suppresses_pointer_buttons_when_workspace_has_no_target() {
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
         0,
+        None,
+        None,
         None,
     )
     .unwrap();
@@ -763,6 +912,8 @@ fn routed_keyboard_report_retains_the_opaque_focus_target() {
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
         0,
+        None,
+        None,
         None,
     )
     .unwrap();

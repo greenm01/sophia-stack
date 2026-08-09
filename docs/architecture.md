@@ -735,7 +735,13 @@ layers from the last presented output-frame snapshot, and selects a
 generational `SurfaceId`. It constructs a
 `RoutedInputRequest` containing global and surface-local coordinates and sends
 that passive route to the owning authority. Keyboard selection follows Engine
-focus rather than a pointer hit test.
+focus rather than a pointer hit test. If Engine focus advances before the X
+frontend acknowledges that same exact surface, Engine continues resolving
+reserved shortcuts but holds client-bound keys in one bounded ordered handoff.
+It releases them only to the acknowledged generational target. Target or seat
+change, removal, timeout, topology/security transition, or capacity exhaustion
+discards the complete held sequence; client input is neither rerouted to a
+different focus nor sampled as a shortcut twice.
 
 The native X Server Frontend then applies X11 focus, grabs, event masks, XKB/XI
 state, and namespace checks. Confined profiles reject cross-namespace

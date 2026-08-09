@@ -7,6 +7,15 @@ DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:181}"
 RUNTIME_MSEC="${SOPHIA_LIVE_SESSION_RUNTIME_MSEC:-5000}"
 SKIP_PREFLIGHT="${SOPHIA_ATOMIC_SCANOUT_SKIP_PREFLIGHT:-0}"
 SKIP_BUILD="${SOPHIA_LIVE_SESSION_SKIP_BUILD:-0}"
+VERIFY_MODE="${SOPHIA_LIVE_SESSION_VERIFY_MODE:-generic}"
+
+case "$VERIFY_MODE" in
+    generic|caller) ;;
+    *)
+        echo "SOPHIA_LIVE_SESSION_VERIFY_MODE must be generic or caller" >&2
+        exit 2
+        ;;
+esac
 
 mkdir -p "$(dirname "$EVIDENCE_FILE")"
 : > "$EVIDENCE_FILE"
@@ -47,7 +56,7 @@ set +e
 proof_status="${PIPESTATUS[0]}"
 set -e
 
-if [[ "$proof_status" -eq 0 ]]; then
+if [[ "$proof_status" -eq 0 && "$VERIFY_MODE" == generic ]]; then
     "$ROOT_DIR/tools/verify_live_session_persistent_evidence.sh" "$EVIDENCE_FILE"
 fi
 

@@ -41,9 +41,9 @@ use sophia_cli::session_startup::{
     SessionStartupEvent, SessionStartupReadiness, reduce_session_startup,
 };
 use sophia_engine::{
-    InputFocusState, KeyRepeatConfig, KeyRepeatState, OutputFrameServiceObservation,
-    OutputFrameServiceRequest, OutputNativeFramePhase, WmShortcutRegistry, WmShortcutRouter,
-    pointer_offset_for_geometry,
+    InputFocusState, KeyRepeatConfig, KeyRepeatState, KeyboardFocusHandoffState,
+    OutputFrameServiceObservation, OutputFrameServiceRequest, OutputNativeFramePhase,
+    WmShortcutRegistry, WmShortcutRouter, pointer_offset_for_geometry,
 };
 use sophia_protocol::OutputId;
 use sophia_protocol::{
@@ -551,6 +551,8 @@ fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
         &mut next_delivery,
         0,
         None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -625,6 +627,8 @@ fn pending_physical_proof_moves_cursor_without_routing_application_input() {
         &mut next_delivery,
         0,
         Some(&mut proof),
+        None,
+        None,
     )
     .unwrap();
 
@@ -768,6 +772,8 @@ fn physical_pointer_can_move_before_an_application_surface_exists() {
         &mut next_delivery,
         0,
         None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -900,6 +906,8 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
         PhysicalInputRoutingMode::Full,
         &mut next_delivery,
         0,
+        None,
+        None,
         None,
     )
     .unwrap();

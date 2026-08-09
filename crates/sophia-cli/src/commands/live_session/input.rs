@@ -12,6 +12,7 @@ struct PhysicalInputRouteReport {
     keys_suppressed_no_focus: usize,
     key_targets: Vec<SurfaceId>,
     routed_key_presses: Vec<(u64, u64)>,
+    deferred_key_presses: Vec<(u64, u64)>,
     pointer_buttons_observed: usize,
     pointer_buttons_suppressed_no_target: usize,
     pointer_buttons_suppressed_by_policy: usize,
@@ -33,6 +34,10 @@ struct PhysicalInputRouteReport {
     pointer_focus_handoff_stale_drops: usize,
     pointer_focus_handoff_capacity_drops: usize,
     pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
+    keyboard_focus_handoff_expired: bool,
+    keyboard_focus_handoff_stale_drops: usize,
+    keyboard_focus_handoff_capacity_drops: usize,
+    keyboard_focus_handoff_released: Option<(SurfaceId, usize)>,
     pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
     pointer_boundary_reversals: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
     pointer_output_transitions: Vec<(sophia_engine::PointerOutputTransition, bool)>,
@@ -304,6 +309,7 @@ struct PhysicalInputRoutingContext<'a> {
     next_input_delivery: &'a mut u64,
     now_msec: u64,
     physical_text_proof: Option<&'a mut PhysicalTextProof>,
+    keyboard_focus_handoff: &'a mut KeyboardFocusHandoffState,
     pointer_focus_handoff: &'a mut PointerFocusHandoffState,
     applied_client_focus: Option<SurfaceId>,
     floating_gesture: &'a mut FloatingPointerGestureState,
@@ -343,6 +349,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         next_input_delivery,
         now_msec,
         physical_text_proof,
+        keyboard_focus_handoff,
         pointer_focus_handoff,
         applied_client_focus,
         floating_gesture,
@@ -375,6 +382,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         next_input_delivery,
         now_msec,
         physical_text_proof,
+        Some(keyboard_focus_handoff),
         Some(pointer_focus_handoff),
         applied_client_focus,
         Some(floating_gesture),
@@ -411,6 +419,8 @@ fn route_input_events(
     next_input_delivery: &mut u64,
     now_msec: u64,
     physical_text_proof: Option<&mut PhysicalTextProof>,
+    keyboard_focus_handoff: Option<&mut KeyboardFocusHandoffState>,
+    applied_client_focus: Option<SurfaceId>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let surface_roles = BTreeMap::new();
     route_input_events_with_pointer_focus(
@@ -437,8 +447,9 @@ fn route_input_events(
         next_input_delivery,
         now_msec,
         physical_text_proof,
+        keyboard_focus_handoff,
         None,
-        None,
+        applied_client_focus,
         None,
         None,
         None,
@@ -474,6 +485,7 @@ fn route_input_events_with_pointer_focus(
     next_input_delivery: &mut u64,
     now_msec: u64,
     mut physical_text_proof: Option<&mut PhysicalTextProof>,
+    mut keyboard_focus_handoff: Option<&mut KeyboardFocusHandoffState>,
     mut pointer_focus_handoff: Option<&mut PointerFocusHandoffState>,
     applied_client_focus: Option<SurfaceId>,
     mut floating_gesture: Option<&mut FloatingPointerGestureState>,
@@ -494,6 +506,7 @@ fn route_input_events_with_pointer_focus(
         keys_routed: 0,
         key_targets: Vec::new(),
         routed_key_presses: Vec::new(),
+        deferred_key_presses: Vec::new(),
         pointer_events: 0,
         pointer_buttons_observed: 0,
         pointer_buttons_suppressed_no_target: 0,
@@ -514,10 +527,37 @@ fn route_input_events_with_pointer_focus(
         pointer_focus_handoff_stale_drops: 0,
         pointer_focus_handoff_capacity_drops: 0,
         pointer_focus_handoff_released: None,
+        keyboard_focus_handoff_expired: false,
+        keyboard_focus_handoff_stale_drops: 0,
+        keyboard_focus_handoff_capacity_drops: 0,
+        keyboard_focus_handoff_released: None,
         pointer_boundary_entries: Vec::new(),
         pointer_boundary_reversals: Vec::new(),
         pointer_output_transitions: Vec::new(),
     };
+    let mut routed_events = VecDeque::new();
+    if let Some(handoff) = keyboard_focus_handoff.as_deref_mut() {
+        if handoff.cancel_if_target_stale(|target| {
+            committed_surfaces
+                .iter()
+                .any(|committed| committed.surface == target)
+                && client_routes.client_for_surface(target).is_some()
+        }) {
+            report.keyboard_focus_handoff_stale_drops = 1;
+        } else {
+            report.keyboard_focus_handoff_expired = handoff.expire(now_msec);
+        }
+        if routing_mode == PhysicalInputRoutingMode::Full
+            && let Some(mut ready) = handoff.take_ready(applied_client_focus)
+        {
+            let released_target = applied_client_focus;
+            let released_count = ready.len();
+            routed_events.extend(ready.drain(..).map(|event| (event, true)));
+            report.keyboard_focus_handoff_released =
+                released_target.map(|surface| (surface, released_count));
+        }
+    }
+    routed_events.extend(events.into_iter().map(|event| (event, false)));
     if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
         if handoff.cancel_if_target_stale(|target| {
             let present = sophia_engine::scene_contains_input_surface(input_layers, target)
@@ -582,15 +622,13 @@ fn route_input_events_with_pointer_focus(
                 released_target.map(|surface| (surface, released_count));
         }
     }
-    for mut event in events {
+    for (mut event, control_plane_applied) in routed_events {
         match event.kind {
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
-                report.keys_observed = report.keys_observed.saturating_add(1);
-                keyboard_coverage.observe_key(keycode, pressed);
-                if !pressed {
-                    let _ = key_repeat.release(event.seat, event.device, keycode);
-                }
-                match virtual_terminal_chord.observe(keycode, pressed) {
+                if !control_plane_applied {
+                    report.keys_observed = report.keys_observed.saturating_add(1);
+                    keyboard_coverage.observe_key(keycode, pressed);
+                    match virtual_terminal_chord.observe(keycode, pressed) {
                     VirtualTerminalChordAction::Pass => {}
                     VirtualTerminalChordAction::Consume => continue,
                     VirtualTerminalChordAction::Activate(terminal) => {
@@ -663,24 +701,32 @@ fn route_input_events_with_pointer_focus(
                         report.virtual_terminal = Some(terminal);
                         continue;
                     }
-                }
-                if emergency_chord.observe(keycode, pressed) == EmergencyChordAction::Triggered {
-                    report.emergency_exit = true;
-                    continue;
-                }
-                if routing_mode != PhysicalInputRoutingMode::CursorOnly
-                    && let Some(shortcuts) = shortcuts.as_deref_mut()
-                {
-                    let decision = shortcuts.route_key(event.seat, keycode, pressed);
-                    if decision.consumed {
-                        if pressed && key_repeat_map.evdev_key_repeats(keycode) {
-                            key_repeat.cancel_seat(event.seat);
-                        }
-                        report.wm_actions.extend(decision.action);
+                    }
+                    if emergency_chord.observe(keycode, pressed)
+                        == EmergencyChordAction::Triggered
+                    {
+                        report.emergency_exit = true;
                         continue;
                     }
+                    if routing_mode != PhysicalInputRoutingMode::CursorOnly
+                        && let Some(shortcuts) = shortcuts.as_deref_mut()
+                    {
+                        let decision = shortcuts.route_key(event.seat, keycode, pressed);
+                        if decision.consumed {
+                            if pressed && key_repeat_map.evdev_key_repeats(keycode) {
+                                key_repeat.cancel_seat(event.seat);
+                            }
+                            report.wm_actions.extend(decision.action);
+                            continue;
+                        }
+                    }
                 }
-                if routing_mode != PhysicalInputRoutingMode::Full {
+                if !control_plane_applied
+                    && !matches!(
+                        routing_mode,
+                        PhysicalInputRoutingMode::Full | PhysicalInputRoutingMode::ControlPlaneOnly
+                    )
+                {
                     continue;
                 }
                 if sophia_cli::input_proof::pointer_proof_suppresses_return(
@@ -693,19 +739,58 @@ fn route_input_events_with_pointer_focus(
                     report.return_suppressed = true;
                     continue;
                 }
-                let event = match focus.route_keyboard_event(event, committed_surfaces) {
-                    FocusedInputRoute::Routed(event) => event,
-                    FocusedInputRoute::NoFocus(_) => {
-                        report.keys_suppressed_no_focus =
-                            report.keys_suppressed_no_focus.saturating_add(1);
+                let event = if control_plane_applied {
+                    let Some(target) = event.target_surface else {
+                        continue;
+                    };
+                    if focus.focused_surface(event.seat) != Some(target)
+                        || !committed_surfaces
+                            .iter()
+                            .any(|committed| committed.surface == target)
+                    {
                         continue;
                     }
-                    FocusedInputRoute::StaleFocus(_)
-                    | FocusedInputRoute::UnsupportedEvent(_) => continue,
+                    event
+                } else {
+                    match focus.route_keyboard_event(event, committed_surfaces) {
+                        FocusedInputRoute::Routed(event) => event,
+                        FocusedInputRoute::NoFocus(_) => {
+                            report.keys_suppressed_no_focus =
+                                report.keys_suppressed_no_focus.saturating_add(1);
+                            continue;
+                        }
+                        FocusedInputRoute::StaleFocus(_)
+                        | FocusedInputRoute::UnsupportedEvent(_) => continue,
+                    }
                 };
                 let Some(target_surface) = event.target_surface else {
                     continue;
                 };
+                if !control_plane_applied
+                    && routing_mode == PhysicalInputRoutingMode::ControlPlaneOnly
+                {
+                    if let Some(handoff) = keyboard_focus_handoff.as_deref_mut() {
+                        let changed_target = handoff
+                            .target()
+                            .is_some_and(|held| held != target_surface);
+                        let deferred_press =
+                            pressed.then_some((event.serial, event.time_msec));
+                        if handoff.defer(target_surface, now_msec, event).is_err() {
+                            if changed_target {
+                                report.keyboard_focus_handoff_stale_drops = report
+                                    .keyboard_focus_handoff_stale_drops
+                                    .saturating_add(1);
+                            } else {
+                                report.keyboard_focus_handoff_capacity_drops = report
+                                    .keyboard_focus_handoff_capacity_drops
+                                    .saturating_add(1);
+                            }
+                        } else if let Some(deferred_press) = deferred_press {
+                            report.deferred_key_presses.push(deferred_press);
+                        }
+                    }
+                    continue;
+                }
                 let key = SessionClientPressedKey {
                     surface: target_surface,
                     seat: event.seat,
@@ -717,6 +802,9 @@ fn route_input_events_with_pointer_focus(
                     continue;
                 }
                 let evdev_keycode = keycode;
+                if !pressed {
+                    let _ = key_repeat.release(event.seat, event.device, evdev_keycode);
+                }
                 let Some((keycode, state)) = modifiers.map_evdev_key(keycode, pressed) else {
                     continue;
                 };

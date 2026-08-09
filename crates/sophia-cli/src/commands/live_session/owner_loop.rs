@@ -236,6 +236,7 @@ fn run_session_loop(
     let mut input_change_submission_baseline = None;
     let mut input_presented_latency = None;
     let mut input_raw_ingress_msec: Option<u64> = None;
+    let mut deferred_physical_key_timings = BTreeMap::new();
     let mut input_queue_dwell: Option<Duration> = None;
     let mut input_presented_ust_usec: Option<u64> = None;
     let mut input_submit_to_page_flip: Option<Duration> = None;
@@ -264,6 +265,7 @@ fn run_session_loop(
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut keyboard_coverage = PhysicalKeyboardCoverage::default();
     let mut pointer = SessionPointerPlacement::default();
+    let mut keyboard_focus_handoff = KeyboardFocusHandoffState::default();
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     let mut application_route_leases = ApplicationRouteLeaseState::default();
     if native_scanout.is_some() {

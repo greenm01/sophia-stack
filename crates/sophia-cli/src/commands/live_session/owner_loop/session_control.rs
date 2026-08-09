@@ -283,6 +283,8 @@ macro_rules! reconcile_pending_wm_focus {
                         if let Some(previous) = applied_client_focus
                             && previous != surface
                         {
+                            keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+                            deferred_physical_key_timings.clear();
                             flush_client_keys!(previous, "focus_handoff");
                         }
                         let client = layout
@@ -396,6 +398,8 @@ macro_rules! apply_wm_commit_result {
                 })?;
             focus.clear_focus(seat);
             applied_client_focus = None;
+            keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+            deferred_physical_key_timings.clear();
             layout.focus_to_apply = None;
             println!(
                 "sophia_live_wm schema=1 status=hidden_focus_cleared transaction={}",

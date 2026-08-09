@@ -314,12 +314,28 @@ bash -n tools/installed/sophia-native-chrome-proof
 bash -n tools/installed/sophia-stop
 bash -n tools/installed/capture-runtime-identity.sh
 bash -n tools/installed/sophia-hagia-session \
+    tools/start_sophia_hagia_policy_tty4.sh \
     tools/record_installed_hagia_run.sh \
     tools/verify_installed_hagia_session.sh \
     tools/verify_installed_hagia_recovery.sh \
     tools/verify_installed_hagia_archive.sh \
     tools/check_installed_hagia_ledger.sh
 tools/check_installed_hagia_ledger.sh
+grep -Fq 'hagia-policy) tools/hagia_policy_physical_gate.sh' \
+    tools/start_sophia_tty3.sh
+grep -Fq 'export SOPHIA_TTY_NUMBER=4' \
+    tools/start_sophia_hagia_policy_tty4.sh
+if SOPHIA_HAGIA_PHYSICAL_TEXT=hagia-policy-proof \
+    tools/hagia_policy_physical_gate.sh >/dev/null 2>&1; then
+    echo "Hagia physical gate accepted invalid proof text" >&2
+    exit 1
+fi
+grep -Fq 'proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'SOPHIA_HAGIA_FAULT_OCCURRENCE=6' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
+    tools/hagia_policy_physical_gate.sh
 bash -n tools/hagia_live_session_smoke.sh \
     tools/hagia_client_lifecycle_fault_smoke.sh \
     tools/hagia_owner_settlement_fault_smoke.sh \

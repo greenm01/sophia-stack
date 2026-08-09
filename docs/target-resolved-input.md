@@ -40,7 +40,11 @@ semantic epoch for every output from immutable output-frame snapshots after
 accepted presentation retirement. Pointer routing selects the projection for
 the pointer's output. A deferred focus handoff revalidates every exact buffered
 target against presented state and the current frontend route table before
-release.
+release. Keyboard remains nonspatial: when Engine and frontend focus differ,
+only client-bound keys are held in a bounded ordered queue for that exact seat
+and generational surface. Reserved shortcuts remain live, and any focus,
+surface, authority, topology, timeout, or capacity invalidation drops the whole
+held client sequence.
 
 An ordinary or passive-grab pointer press now creates a provisional, exact
 Engine lease. The frontend confirms that lease after applying its X11 grab,

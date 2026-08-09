@@ -29,9 +29,10 @@ use sophia_cli::session_startup::{
 use sophia_engine::{
     ApplicationRouteLeaseCandidate, ApplicationRouteLeasePhase, ApplicationRouteLeaseState,
     ApplicationRouteScope, FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig,
-    KeyRepeatState, KeyRepeatTarget, LayoutEpochCoordinator, NonBlockingInputPoller,
-    OutputFrameServiceRequest, OutputNativeFramePhase, PointerFocusHandoffState,
-    WmPolicyApplyOutcome, WmShortcutRegistry, WmShortcutRouter, WmWorkspaceState,
+    KeyRepeatState, KeyRepeatTarget, KeyboardFocusHandoffState, LayoutEpochCoordinator,
+    NonBlockingInputPoller, OutputFrameServiceRequest, OutputNativeFramePhase,
+    PointerFocusHandoffState, WmPolicyApplyOutcome, WmShortcutRegistry, WmShortcutRouter,
+    WmWorkspaceState,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,

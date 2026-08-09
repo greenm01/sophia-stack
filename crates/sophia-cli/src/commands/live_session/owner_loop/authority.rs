@@ -695,6 +695,10 @@
                 metrics.runtime_surfaces =
                     u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
                 for surface in removed_surfaces {
+                    if keyboard_focus_handoff.target() == Some(surface) {
+                        keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+                        deferred_physical_key_timings.clear();
+                    }
                     if config.application_proof_requested()
                         && metrics.physical_pointer_buttons_routed == 0
                         && Some(surface) == input_surface
