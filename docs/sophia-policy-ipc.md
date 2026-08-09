@@ -1,9 +1,10 @@
 # Sophia Policy IPC
 
 **Role:** normative target contract for external policy and shell interfaces.
-**Status:** target architecture; the draft codecs, session-owned transport,
-transfer reducers, and Engine projection reducer are implemented behind tests.
-The installed API v7 path is unchanged, and the public interface is not stable.
+**Status:** experimental implementation. The codecs, session-owned transport,
+transfer reducers, canonical Engine projection reducer, and supervised Hagia
+session path are implemented. API v7 remains available during migration;
+`sophia_wm_v1` is not yet stable.
 
 Sophia exposes replaceable desktop policy through local, language-neutral IPC.
 The protocol is the extension point. Hagia, the X11 WM bridge, and later shells
@@ -147,12 +148,20 @@ interaction geometry. Non-idempotent action activations use a bounded ordered
 queue and are never merged merely because they carry the same opaque action
 token.
 
-The draft Rust boundary is split deliberately. `sophia-runtime` hosts the
+The Rust boundary is split deliberately. `sophia-runtime` hosts the
 owner-only socket, authenticates the exact supervised peer, negotiates a
 connection epoch, and assembles transfers. `sophia-protocol` owns generated
 records and semantic conversion. `sophia-engine` owns the canonical atomic
-projection reducer. None of these draft modules is selected by the installed
-v7 session yet.
+projection reducer. The session selects this path explicitly with
+`--wm-interface=sophia_wm_v1`; omitting the selector retains API v7.
+
+The public session binds the endpoint before spawning its one policy process,
+authorizes the exact child PID, and keeps blocking wire I/O in a bounded
+worker. Each cycle sends a complete Engine snapshot and one exact projection
+request. A validated proposal remains staged while frontend configure and
+renderable-content obligations settle. Only the owner-loop commit promotes
+that staged reducer successor and returns `committed`; timeout, invalidation,
+disconnect, or replacement retains the previous complete projection.
 
 The dormant Rust reference client completes a full authenticated snapshot,
 request, and proposal cycle over this transport. The generic X11 bridge's v7
@@ -201,8 +210,11 @@ something—its opaque slot and generation. Each physical activation also has a
 recipient-epoch-local identity for duplicate rejection. A broker-issued
 toplevel action cannot be reinterpreted as a policy or session action; stale,
 expired, revoked, wrong-recipient, wrong-generation, and duplicate activations
-fail closed. Concrete fields and bounds remain future schema work, and current
-API-v7 tokens do not claim this target encoding.
+fail closed. The experimental public session mints fresh session-local tokens,
+validates their connection epoch, advertised slot, target permission, and
+exact request identity, and executes the corresponding session-owned operation
+only after the projection transaction commits. API-v7 tokens do not claim this
+encoding.
 
 ## Shell Interfaces
 
@@ -236,8 +248,9 @@ runtime dependency. Its independent envelope and record decoder passes the
 same retained valid and malformed corpus, and its proof client completes one
 authenticated snapshot/request/projection/outcome cycle through the canonical
 reducer. Hagia is the eventual Sophia-native port of Triad's useful policy and
-desktop experience, but that product migration is deferred. Its current role
-is only to challenge this protocol as an independent client.
+desktop experience. It now also runs as the explicitly selected experimental
+live policy client; broader product migration and protocol stability remain
+deferred.
 
 The first public revision is declared stable only after all three paths prove
 negotiation, capabilities, complete and chunked transfers, actions, geometry,

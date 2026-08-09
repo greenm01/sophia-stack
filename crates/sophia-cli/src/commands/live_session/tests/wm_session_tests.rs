@@ -154,6 +154,7 @@ fn newer_committed_policy_replaces_deferred_retirement_focus() {
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(1))),
         effects: None,
+        policy_settlement: None,
     });
 
     assert!(layout.retirement_focus.is_empty());
@@ -249,6 +250,7 @@ fn hold_test_resize(
         admission_surfaces: BTreeSet::new(),
         source: None,
         effects: None,
+        policy_settlement: None,
     });
 }
 
@@ -588,6 +590,7 @@ fn timed_out_wm_proposal_retains_its_source_for_transport_reseed() {
         admission_surfaces: BTreeSet::new(),
         source: Some(LiveWmProposalSource::Manage(surface)),
         effects: None,
+        policy_settlement: None,
     });
 
     let result = layout
@@ -789,6 +792,7 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
             transaction: relayout_transaction,
             session_action: None,
         }),
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -841,6 +845,7 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
             transaction: manage_transaction,
             session_action: None,
         }),
+        policy_settlement: None,
     };
 
     assert!(layout.stage(manage, &mut controls).unwrap().is_none());

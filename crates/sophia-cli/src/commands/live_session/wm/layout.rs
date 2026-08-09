@@ -11,6 +11,7 @@ struct PendingLiveWmLayout {
     admission_surfaces: BTreeSet<SurfaceId>,
     source: Option<LiveWmProposalSource>,
     effects: Option<LiveWmCommitEffects>,
+    policy_settlement: Option<LivePolicySettlementIdentity>,
 }
 
 struct LiveAuthorityLayoutObservation {
@@ -753,6 +754,7 @@ impl PersistentLiveLayout {
             admission_surfaces,
             source: proposal.source,
             effects: proposal.effects,
+            policy_settlement: proposal.policy_settlement,
         });
         println!(
             "sophia_live_resize_epoch schema=1 status=held transaction={} surfaces={}",
@@ -981,6 +983,7 @@ impl PersistentLiveLayout {
             // reseed that speculative peer after rejecting the layout.
             source: pending.source,
             effects: None,
+            policy_settlement: pending.policy_settlement,
         }))
     }
 

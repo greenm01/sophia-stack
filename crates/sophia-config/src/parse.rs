@@ -7,12 +7,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     ApplicationConfig, ChromePolicy, ConfigDigest, ConfigGeneration, CoreConfigSnapshot,
-    ExternalWmConfig, FocusRingStyle, FrameStyle, InputConfig, InputSourceConfig, OutputConfig,
-    RepeatConfig, Rgb8, SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH, SOPHIA_CONFIG_MAX_APPLICATIONS,
-    SOPHIA_CONFIG_MAX_ARGUMENT_BYTES, SOPHIA_CONFIG_MAX_ARGUMENTS, SOPHIA_CONFIG_MAX_OUTPUTS,
-    SOPHIA_CONFIG_MAX_WM_ACTIONS, SOPHIA_CONFIG_MAX_WM_BINDINGS, SOPHIA_CONFIG_MAX_WORKSPACES,
-    SOPHIA_CONFIG_SCHEMA_VERSION, SessionConfig, WmActionBehavior, WmActionConfig, WmBindingConfig,
-    WmConfigSnapshot, WmLayoutKind, XkbConfig,
+    ExternalWmConfig, ExternalWmInterface, FocusRingStyle, FrameStyle, InputConfig,
+    InputSourceConfig, OutputConfig, RepeatConfig, Rgb8, SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH,
+    SOPHIA_CONFIG_MAX_APPLICATIONS, SOPHIA_CONFIG_MAX_ARGUMENT_BYTES, SOPHIA_CONFIG_MAX_ARGUMENTS,
+    SOPHIA_CONFIG_MAX_OUTPUTS, SOPHIA_CONFIG_MAX_WM_ACTIONS, SOPHIA_CONFIG_MAX_WM_BINDINGS,
+    SOPHIA_CONFIG_MAX_WORKSPACES, SOPHIA_CONFIG_SCHEMA_VERSION, SessionConfig, WmActionBehavior,
+    WmActionConfig, WmBindingConfig, WmConfigSnapshot, WmLayoutKind, XkbConfig,
 };
 
 #[path = "parse/chrome.rs"]
@@ -430,7 +430,12 @@ fn parse_namespace(node: &KdlNode) -> Result<String, ConfigParseError> {
 }
 
 fn parse_external_wm(node: &KdlNode) -> Result<ExternalWmConfig, ConfigParseError> {
-    exact_shape(node, 0, &["executable"], true)?;
+    exact_shape(node, 0, &["executable", "interface"], true)?;
+    let interface = match optional_string_property(node, "interface", "api_v7", 1, 64)?.as_str() {
+        "api_v7" => ExternalWmInterface::ApiV7,
+        "sophia_wm_v1" => ExternalWmInterface::SophiaWmV1,
+        other => return schema_error(format!("unsupported external WM interface {other:?}")),
+    };
     Ok(ExternalWmConfig {
         executable: absolute_path_property(node, "executable")?,
         arguments: node
@@ -438,6 +443,7 @@ fn parse_external_wm(node: &KdlNode) -> Result<ExternalWmConfig, ConfigParseErro
             .map(parse_arguments)
             .transpose()?
             .unwrap_or_default(),
+        interface,
     })
 }
 

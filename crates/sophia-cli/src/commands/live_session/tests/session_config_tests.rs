@@ -169,6 +169,43 @@ fn live_x_session_profiles_are_explicit_and_fail_closed() {
 }
 
 #[test]
+fn public_policy_session_operation_tokens_are_fresh_and_slot_stable() {
+    let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
+    let (first, _) = public_session_operations(&config);
+    let (second, _) = public_session_operations(&config);
+
+    assert_eq!(
+        first
+            .iter()
+            .map(|operation| operation.slot)
+            .collect::<Vec<_>>(),
+        second
+            .iter()
+            .map(|operation| operation.slot)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        first
+            .iter()
+            .all(|left| { second.iter().all(|right| left.token != right.token) })
+    );
+}
+
+#[test]
+fn public_policy_output_reappearance_advances_its_generation() {
+    let output = sophia_engine::HeadlessOutput::deterministic();
+    let mut generations = std::collections::BTreeMap::new();
+    let mut live = std::collections::BTreeSet::new();
+
+    observe_public_output_generations(&mut generations, &mut live, &[output]).unwrap();
+    assert_eq!(generations.get(&output.id), Some(&1));
+    observe_public_output_generations(&mut generations, &mut live, &[]).unwrap();
+    observe_public_output_generations(&mut generations, &mut live, &[output]).unwrap();
+
+    assert_eq!(generations.get(&output.id), Some(&2));
+}
+
+#[test]
 fn normal_session_application_registry_is_bounded_and_explicit() {
     let config = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),

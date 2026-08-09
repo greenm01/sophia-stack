@@ -1,5 +1,8 @@
 impl LiveWmSession {
     fn service_policy_update(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.public.is_some() {
+            return Ok(());
+        }
         if self.degraded || self.force_transport_restart {
             return Ok(());
         }

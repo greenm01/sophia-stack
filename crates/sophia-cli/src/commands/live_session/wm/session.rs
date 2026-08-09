@@ -158,6 +158,7 @@ struct LiveWmSession {
     restart_policy: RestartPolicy,
     socket_path: std::path::PathBuf,
     transport: Option<WmTransportWorker>,
+    public: Option<LivePublicPolicyState>,
     queued_requests: LiveWmOwnerQueue<LiveWmQueuedRequest>,
     in_flight_request: Option<LiveWmQueuedRequest>,
     next_transaction: u64,
@@ -196,6 +197,7 @@ struct LiveWmProposal {
     moved_surfaces: usize,
     source: Option<LiveWmProposalSource>,
     effects: Option<LiveWmCommitEffects>,
+    policy_settlement: Option<LivePolicySettlementIdentity>,
 }
 
 struct LiveWmCommitEffects {
@@ -208,6 +210,7 @@ struct LiveWmCommitResult {
     update: WmTransactionUpdate,
     source: Option<LiveWmProposalSource>,
     effects: Option<LiveWmCommitEffects>,
+    policy_settlement: Option<LivePolicySettlementIdentity>,
 }
 
 struct LiveWmOwnerCommit {
@@ -236,6 +239,9 @@ impl LiveWmSession {
         let Some(process) = config.wm_process.as_deref() else {
             return Ok(None);
         };
+        if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
+            return Self::from_public_config(config, outputs, process).map(Some);
+        }
         let _ = std::fs::remove_file(&config.wm_socket_path);
         let socket_arg = format!("--socket={}", config.wm_socket_path.display());
         let spec = config.wm_process_args.iter().fold(
@@ -291,6 +297,7 @@ impl LiveWmSession {
             session_actions,
             socket_path: config.wm_socket_path.clone(),
             transport: None,
+            public: None,
             queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
             in_flight_request: None,
             next_transaction: 1,
@@ -372,6 +379,9 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.public.is_some() {
+            return self.poll_public_restart(layout, output);
+        }
         if self.degraded {
             return Ok(None);
         }
@@ -437,6 +447,16 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            if !layout.is_policy_managed(surface) {
+                return Ok(LiveWmRequestAdmission::Duplicate);
+            }
+            return Ok(public.queue_cause(LivePublicPolicyCause {
+                source: LiveWmProposalSource::Manage(surface),
+                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+                affected_outputs: public.all_outputs(output.id),
+            }));
+        }
         if !layout.is_policy_managed(surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
@@ -490,6 +510,13 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            return Ok(public.queue_cause(LivePublicPolicyCause {
+                source: LiveWmProposalSource::Relayout,
+                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+                affected_outputs: public.all_outputs(output.id),
+            }));
+        }
         if self.has_current_relayout_request(layout) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
@@ -528,6 +555,18 @@ impl LiveWmSession {
         &mut self,
         surface: SurfaceId,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            let active = public
+                .outputs
+                .first()
+                .map(|output| output.id)
+                .ok_or("public WM has no live output")?;
+            return Ok(public.queue_cause(LivePublicPolicyCause {
+                source: LiveWmProposalSource::Manage(surface),
+                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+                affected_outputs: public.all_outputs(active),
+            }));
+        }
         let Some(workspace) = self.workspace_state.surface_workspace(surface) else {
             return Ok(LiveWmRequestAdmission::Duplicate);
         };
@@ -552,6 +591,33 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            let activation_serial = public.mint_transaction()?.raw();
+            let active_output = public.active_output;
+            let admission = public.queue_cause(LivePublicPolicyCause {
+                source: LiveWmProposalSource::Action(action),
+                cause: sophia_protocol::PolicyRequestCause::Action {
+                    activation_serial,
+                    action,
+                },
+                affected_outputs: public.all_outputs(active_output),
+            });
+            return match admission {
+                LiveWmRequestAdmission::Admitted => {
+                    self.action_requests_ordered = self.action_requests_ordered.saturating_add(1);
+                    Ok(LiveOrderedWmActionAdmission::Admitted)
+                }
+                LiveWmRequestAdmission::RejectedCapacity => {
+                    self.request_rejections = self.request_rejections.saturating_add(1);
+                    Ok(LiveOrderedWmActionAdmission::RejectedCapacity {
+                        report: report_wm_rejection_diagnostic(self.request_rejections),
+                    })
+                }
+                LiveWmRequestAdmission::Duplicate => {
+                    unreachable!("public ordered actions are never duplicate-elided")
+                }
+            };
+        }
         let transaction = self.mint_transaction()?;
         let (packet, kind) = ordered_wm_action_request(
             transaction,
@@ -587,6 +653,9 @@ impl LiveWmSession {
         mut gesture: sophia_protocol::WmPointerGestureCompleted,
         layout: &PersistentLiveLayout,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if self.public.is_some() {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
         if !layout.is_policy_managed(gesture.surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
@@ -637,6 +706,27 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            if !layout.layers.contains_key(&surface) {
+                return Err("pointer focus target is missing from the live layout".into());
+            }
+            public.active_output = public
+                .reducer
+                .committed()
+                .into_iter()
+                .find(|projection| {
+                    projection
+                        .placements
+                        .iter()
+                        .any(|placement| placement.surface == surface)
+                })
+                .map_or(output.id, |projection| projection.output);
+            return Ok(public.queue_cause(LivePublicPolicyCause {
+                source: LiveWmProposalSource::Focus(surface),
+                cause: sophia_protocol::PolicyRequestCause::Focus { target: surface },
+                affected_outputs: vec![public.active_output],
+            }));
+        }
         let source = LiveWmProposalSource::Focus(surface);
         if self.has_request_source(source) {
             return Ok(LiveWmRequestAdmission::Duplicate);
@@ -700,6 +790,9 @@ impl LiveWmSession {
         layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.public.is_some() {
+            return self.poll_public_request(layout, output);
+        }
         if self.work_area_relayout_required {
             match self.enqueue_relayout(layout, output)? {
                 LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {}
@@ -898,6 +991,7 @@ impl LiveWmSession {
                 transaction: transaction.transaction,
                 session_action: plan.session_action,
             }),
+            policy_settlement: None,
         })
     }
 

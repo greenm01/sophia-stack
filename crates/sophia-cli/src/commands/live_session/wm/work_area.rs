@@ -1,5 +1,12 @@
 impl LiveWmSession {
     fn has_current_relayout_request(&self, layout: &PersistentLiveLayout) -> bool {
+        if let Some(public) = self.public.as_ref() {
+            return public.in_flight_source == Some(LiveWmProposalSource::Relayout)
+                || public
+                    .queue
+                    .iter()
+                    .any(|cause| cause.source == LiveWmProposalSource::Relayout);
+        }
         let fingerprint = LiveWmLayoutFingerprint::capture(layout, &self.workspace_state);
         self.in_flight_request
             .iter()
@@ -24,6 +31,9 @@ impl LiveWmSession {
         outputs: &[sophia_engine::HeadlessOutput],
         primary: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if self.public.is_some() {
+            return self.update_public_work_areas(layout, outputs, primary);
+        }
         let full_bounds = wm_output_bounds(outputs);
         let root = full_bounds.iter().try_fold(
             Rect {

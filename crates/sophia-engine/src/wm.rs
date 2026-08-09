@@ -1,10 +1,11 @@
 use crate::WmTransactionUpdate;
 use crate::prelude::*;
 use sophia_protocol::{
-    IpcMessageKind, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromePolicy,
-    WmHello, WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
-    decode_frame, decode_wm_hello_frame, decode_wm_policy_update_frame, decode_wm_response_frame,
-    encode_wm_policy_ack_frame, encode_wm_request_frame, encode_wm_session_descriptor_frame,
+    IpcMessageKind, PolicyConfiguration, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId,
+    WmCapabilities, WmChromePolicy, WmHello, WmModifierMask, WmPolicyAck, WmPolicyAckOutcome,
+    WmPolicyUpdate, WmSessionDescriptor, decode_frame, decode_wm_hello_frame,
+    decode_wm_policy_update_frame, decode_wm_response_frame, encode_wm_policy_ack_frame,
+    encode_wm_request_frame, encode_wm_session_descriptor_frame,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +56,18 @@ pub enum WmPolicyApplyOutcome {
 }
 
 impl WmShortcutRegistry {
+    pub fn from_policy_configuration(
+        configuration: &PolicyConfiguration,
+    ) -> Result<Self, WmIpcError> {
+        Self::from_hello(&WmHello {
+            api_version: WM_API_VERSION,
+            capabilities: WmCapabilities::all_supported(),
+            policy_generation: configuration.generation,
+            bindings: configuration.bindings.clone(),
+            chrome: configuration.chrome,
+        })
+    }
+
     pub fn from_hello(hello: &WmHello) -> Result<Self, WmIpcError> {
         if hello.api_version != WM_API_VERSION {
             return Err(WmIpcError::Negotiation("unsupported WM API version"));

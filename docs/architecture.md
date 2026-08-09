@@ -910,10 +910,14 @@ credentials, titles, PIDs, paths, payloads, icons, or buffer contents.
 
 The native-X foundations, production session loop, paired software/GPU gates,
 namespace and portal reference flows, xmonad policy bridge, and Firefox
-daily-driver workload are complete. The current immutable-candidate promotion
-finishes before runtime policy-protocol changes. The next architectural
-milestone then models and proves the public spatial-policy interface with both
-Hagia and the X11 WM bridge before native graphics optimization resumes.
+daily-driver workload are complete. The session can now explicitly install
+Hagia through `sophia_wm_v1`: it binds and authenticates the endpoint before
+spawn, sends complete Engine snapshots, stages complete projections in the
+canonical reducer, and promotes them only with frontend/renderable-content
+settlement. Policy replacement advances the connection epoch and preserves the
+last committed layout while the replacement reconstructs its private state.
+API v7 remains a separately selected migration fallback; no failure silently
+crosses between the two contracts.
 
 New X11 compatibility remains probe-driven; future application protocols are
 outside the active roadmap. XLibre and Wayland stay archived unless a later

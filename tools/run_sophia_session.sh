@@ -8,8 +8,8 @@ if [[ "${1:-}" == --wm=* ]]; then
     shift
 fi
 case "$wm" in
-    xmonad|native|none) ;;
-    *) echo "--wm expects xmonad, native, or none" >&2; exit 1 ;;
+    xmonad|native|hagia|none) ;;
+    *) echo "--wm expects xmonad, native, hagia, or none" >&2; exit 1 ;;
 esac
 
 resolve_program() {
@@ -52,6 +52,17 @@ case "$wm" in
             exit 1
         fi
         wm_args=("--wm-process=$native_wm")
+        ;;
+    hagia)
+        hagia="$(resolve_program "${SOPHIA_HAGIA_BIN:-}" hagia)"
+        if [[ -z "$hagia" ]]; then
+            echo "The Hagia selection requires a hagia executable." >&2
+            exit 1
+        fi
+        wm_args=(
+            "--wm-process=$hagia"
+            --wm-interface=sophia_wm_v1
+        )
         ;;
 esac
 

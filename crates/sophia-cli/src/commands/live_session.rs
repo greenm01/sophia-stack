@@ -67,6 +67,7 @@ use std::time::{Duration, Instant};
 mod authority_file;
 pub(super) mod input_guard;
 mod native_retirement;
+mod policy_transport_worker;
 mod process_supervision;
 mod proof_artifacts;
 mod startup_readiness;
@@ -77,6 +78,9 @@ use authority_file::{LiveXAuthorityFile, fill_session_random};
 use native_retirement::{
     NativePresentRetirementObservation, correlate_physical_input_page_flip,
     record_native_present_retirement, record_native_software_present_retirement,
+};
+use policy_transport_worker::{
+    PolicyTransportCommand, PolicyTransportEvent, PolicyTransportWorker,
 };
 use process_supervision::{
     ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal,
@@ -118,6 +122,7 @@ const SESSION_POINTER_DEVICE_RAW: u64 = 2;
 const PRIMARY_INPUT_PROOF_SCRIPT: &str = r#"printf 'type %s then Return: ' "$1"; IFS= read -r line; umask 077; printf '%s' "$line" > "$2"; printf '\nreceived:%s\n' "$line"; sleep 300"#;
 const SECONDARY_POINTER_WITNESS_SCRIPT: &str = r#"saved=$(stty -g); stty raw -echo; printf '\033[?1000h\033[?1006hPointer witness: click here\r\n'; dd bs=1 count=1 >/dev/null 2>&1; printf '\033[?1000l\033[?1006l'; stty "$saved"; printf 'Pointer input received\n'; sleep 300"#;
 static NEXT_SESSION_GENERATION: AtomicU64 = AtomicU64::new(1);
+static NEXT_POLICY_OPERATION_ISSUER: AtomicU64 = AtomicU64::new(1);
 
 enum SessionPhysicalInput {
     Threaded(sophia_backend_live::ThreadedNativeLibinputEventPoller),

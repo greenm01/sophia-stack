@@ -81,6 +81,7 @@ struct PersistentXtermSessionConfig {
     software_client_rendering: bool,
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
+    wm_interface: sophia_config::ExternalWmInterface,
     wm_socket_path: std::path::PathBuf,
     input_quiet_msec: u64,
     namespace_profile: NamespaceProfile,
@@ -490,6 +491,25 @@ impl PersistentXtermSessionConfig {
         if wm_process.is_none() && !wm_process_args.is_empty() {
             return Err("--wm-process-arg requires --wm-process".into());
         }
+        let wm_interface = match arg_value(args, "--wm-interface").as_deref() {
+            Some("api_v7") => sophia_config::ExternalWmInterface::ApiV7,
+            Some("sophia_wm_v1") => sophia_config::ExternalWmInterface::SophiaWmV1,
+            Some(other) => {
+                return Err(format!(
+                    "--wm-interface expects api_v7 or sophia_wm_v1, got {other:?}"
+                )
+                .into());
+            }
+            None => configured_wm.map_or(
+                sophia_config::ExternalWmInterface::ApiV7,
+                |wm| wm.interface,
+            ),
+        };
+        if wm_process.is_none()
+            && wm_interface != sophia_config::ExternalWmInterface::ApiV7
+        {
+            return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
+        }
         if native_scanout && std::env::var_os("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE").is_none() {
             return Err(
                 "set SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 to run persistent native scanout"
@@ -634,6 +654,7 @@ impl PersistentXtermSessionConfig {
             software_client_rendering,
             wm_process,
             wm_process_args,
+            wm_interface,
             wm_socket_path: std::env::temp_dir().join(format!(
                 "sophia-live-wm-{}-{display_number}.sock",
                 std::process::id()

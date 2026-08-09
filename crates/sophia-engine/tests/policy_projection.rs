@@ -128,6 +128,10 @@ fn frontend_fact_change_invalidates_a_staged_projection() {
     );
     assert_eq!(reducer.commit_serial(), 0);
     assert!(reducer.committed()[0].placements.is_empty());
+    assert!(
+        reducer.issue_request(vec![output(1)]).is_ok(),
+        "the exact stale request must be retired so fresh policy work can proceed"
+    );
 }
 
 #[test]

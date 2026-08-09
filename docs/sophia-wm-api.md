@@ -1,9 +1,9 @@
 # Sophia Window Manager API
 
 **Role:** normative spatial-policy boundary and compatibility contract.
-**Status:** API v7 is the current installed experimental implementation;
-the draft `sophia_wm_v1` transport, codecs, reducer, and proof clients exist,
-but its target semantics are incomplete and the interface is not stable.
+**Status:** API v7 and the experimental `sophia_wm_v1` Hagia session path are
+both implemented. API v7 remains the compatibility fallback during migration;
+the public interface is not stable.
 
 Sophia has one spatial-policy role. A native WM speaks that role directly. A
 classical X11 WM speaks only to the private synthetic X server inside
@@ -51,7 +51,7 @@ ambient IPC that recombines their authority.
 
 ## Current Experimental API v7
 
-The production tree currently implements `WM_API_VERSION = 7`. It uses the
+The retained compatibility path implements `WM_API_VERSION = 7`. It uses the
 common Sophia frame version 1 and has these negotiated capabilities:
 
 - registered opaque bindings;
@@ -70,6 +70,12 @@ actions.
 API v7 remains supported only during migration. It is not the first public
 interface, and its workspace ownership, client-hosted socket, and version
 number must not be frozen as ecosystem architecture.
+
+The live session selects the public path with
+`--wm-interface=sophia_wm_v1`. That path uses the session-hosted endpoint,
+complete snapshots and projections, canonical staged reducer, and connection
+epochs described below. The selector is explicit so public-path failures
+cannot silently downgrade to API v7.
 
 ## Public `sophia_wm_v1` Negotiation
 

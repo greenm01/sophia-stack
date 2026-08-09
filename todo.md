@@ -433,24 +433,26 @@ future compatibility target, not a prerequisite.
   no transport optimization may expose partial policy state.
 - [x] Add the API v7-to-projection adapter and prove the dormant Rust reference
   WM and generic X11 WM bridge against the canonical reducer.
-- [ ] Route the installed native profile through the public transport and
-  canonical reducer, then remove v7 and Engine-owned workspace state after the
-  Hagia recovery gate. Migrate xmonad later through the compatibility adapter.
-- [ ] Preserve registered physical actions and session operations as opaque,
+- [x] Add an explicitly selected Hagia live profile through the public
+  transport and canonical reducer, with no silent API-v7 fallback.
+- [ ] Promote that profile to the installed native default, then remove v7 and
+  Engine-owned workspace state after the complete Hagia recovery gate. Migrate
+  xmonad later through the compatibility adapter.
+- [x] Preserve registered physical actions and session operations as opaque,
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
   policy IPC.
 - [x] Add a two-stage canonical reducer: validate a complete proposal against a
   cloned successor, preserve last-good authority, and reject promotion if its
   connection, request, scene generation, or earlier commit was superseded.
-- [ ] Wire staged projections through production frontend configure and
+- [x] Wire staged projections through production frontend configure and
   renderable-content settlement. Emit `committed` only when authoritative
   state matches; otherwise request a fresh snapshot without silently changing
   policy geometry.
 - [x] Bind the owner-only endpoint before a supervised peer starts, authorize
   its exact UID/PID afterward, and prove that ownership order through the
   independent C and Hagia conformance host.
-- [ ] Host the production endpoint in the Sophia session, supervise exactly one
+- [x] Host the production endpoint in the Sophia session, supervise exactly one
   admitted peer, preserve the committed scene across replacement, and keep
   policy checkpoints private to that peer.
 

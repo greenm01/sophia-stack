@@ -1,7 +1,7 @@
 use sophia_config::{
     COMPILED_CORE_CONFIG, COMPILED_WM_CONFIG, ConfigGeneration, ConfigParseError, CoreConfigDelta,
-    CoreConfigState, FocusRingStyle, InputSourceConfig, ReloadDisposition, WmActionBehavior,
-    WmConfigState, WmLayoutKind, parse_core_config, parse_wm_config,
+    CoreConfigState, ExternalWmInterface, FocusRingStyle, InputSourceConfig, ReloadDisposition,
+    WmActionBehavior, WmConfigState, WmLayoutKind, parse_core_config, parse_wm_config,
 };
 
 const CORE: &str = r##"
@@ -68,7 +68,25 @@ fn parses_complete_core_snapshot() {
     assert_eq!(snapshot.outputs.len(), 1);
     assert_eq!(snapshot.fallback_chrome.focus_ring.width, 3);
     assert_eq!(snapshot.max_chrome_width, 12);
+    assert_eq!(
+        snapshot.external_wm.as_ref().map(|wm| wm.interface),
+        Some(ExternalWmInterface::ApiV7)
+    );
     assert!(snapshot.verbose_diagnostics);
+}
+
+#[test]
+fn parses_public_external_wm_interface() {
+    let source = CORE.replace(
+        "external-wm executable=\"/usr/bin/xmonad\"",
+        "external-wm executable=\"/usr/bin/hagia\" interface=\"sophia_wm_v1\"",
+    );
+    let snapshot = parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL)
+        .expect("public WM interface must parse");
+    assert_eq!(
+        snapshot.external_wm.as_ref().map(|wm| wm.interface),
+        Some(ExternalWmInterface::SophiaWmV1)
+    );
 }
 
 #[test]

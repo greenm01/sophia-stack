@@ -48,6 +48,7 @@ fn hold_resize(
         admission_surfaces: BTreeSet::new(),
         source: None,
         effects: None,
+        policy_settlement: None,
     });
 }
 

@@ -13,6 +13,7 @@ impl PersistentLiveLayout {
             admission_surfaces: BTreeSet::new(),
             source: proposal.source,
             effects: proposal.effects,
+            policy_settlement: proposal.policy_settlement,
         };
         self.commit_pending(pending)
     }
@@ -206,6 +207,7 @@ impl PersistentLiveLayout {
             update: pending.update,
             source: pending.source,
             effects: pending.effects,
+            policy_settlement: pending.policy_settlement,
         }
     }
 

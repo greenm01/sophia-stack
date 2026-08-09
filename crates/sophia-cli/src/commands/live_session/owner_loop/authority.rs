@@ -450,6 +450,7 @@
                         moved_surfaces: 0,
                         source: None,
                         effects: None,
+                        policy_settlement: None,
                     };
                     if let Some(result) =
                         layout.stage(proposal, &mut session_controls)?

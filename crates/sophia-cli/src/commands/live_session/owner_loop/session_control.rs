@@ -396,6 +396,11 @@ macro_rules! apply_wm_commit_result {
 
 macro_rules! service_layout_progress {
     ($trigger:literal) => {{
+        if pending_wm_update.is_none() && layout.pending_is_ready() {
+            if let Some(wm) = wm_session.as_mut() {
+                wm.prepare_public_layout_commit(&layout)?;
+            }
+        }
         match reconcile_live_layout_progress(&mut layout, pending_wm_update.is_none()) {
             LiveLayoutProgress::Committed(result) => {
                 let transaction = result.update.commit.transaction;

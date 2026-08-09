@@ -226,10 +226,27 @@ pub struct OutputConfig {
     pub primary: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ExternalWmInterface {
+    #[default]
+    ApiV7,
+    SophiaWmV1,
+}
+
+impl ExternalWmInterface {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ApiV7 => "api_v7",
+            Self::SophiaWmV1 => "sophia_wm_v1",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalWmConfig {
     pub executable: PathBuf,
     pub arguments: Vec<String>,
+    pub interface: ExternalWmInterface,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

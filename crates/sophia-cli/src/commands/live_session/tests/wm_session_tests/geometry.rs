@@ -131,6 +131,7 @@ fn move_only_surface_receives_geometry_control_without_becoming_a_resize_obligat
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(3))),
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -185,6 +186,7 @@ fn focus_only_layout_emits_no_geometry_control() {
         moved_surfaces: 1,
         source: Some(LiveWmProposalSource::Focus(surface)),
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -234,6 +236,7 @@ fn recovery_reseed_reasserts_geometry_when_only_committed_pixels_are_stale() {
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Relayout),
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -306,6 +309,7 @@ fn resize_timeout_restores_the_complete_committed_rectangle() {
         admission_surfaces: BTreeSet::new(),
         source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(3))),
         effects: None,
+        policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 

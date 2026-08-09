@@ -1,0 +1,903 @@
+#[derive(Clone, Debug)]
+struct LivePublicPolicyCause {
+    source: LiveWmProposalSource,
+    cause: sophia_protocol::PolicyRequestCause,
+    affected_outputs: Vec<sophia_protocol::OutputId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LivePolicySettlementIdentity {
+    connection_epoch: u64,
+    request_id: u64,
+    scene_generation: u64,
+    transaction: TransactionId,
+    expect_session_operation: bool,
+    session_operation: bool,
+}
+
+struct LivePublicPolicyState {
+    directory: std::path::PathBuf,
+    worker: Option<PolicyTransportWorker>,
+    reducer: sophia_engine::PolicyProjectionReducer,
+    connection_epoch: u64,
+    next_connection_epoch: u64,
+    next_transaction: u64,
+    configured: bool,
+    negotiated: bool,
+    cycle_submitted: bool,
+    transport_ready: bool,
+    queue: VecDeque<LivePublicPolicyCause>,
+    in_flight_source: Option<LiveWmProposalSource>,
+    in_flight_request: Option<sophia_protocol::PolicyProjectionRequest>,
+    staged: Option<sophia_engine::StagedPolicyProjection>,
+    prepared: Option<LivePolicySettlementIdentity>,
+    bindings: Vec<sophia_protocol::WmBindingRegistration>,
+    outputs: Vec<sophia_engine::HeadlessOutput>,
+    output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
+    live_output_ids: BTreeSet<sophia_protocol::OutputId>,
+    work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
+    session_operations: Vec<sophia_protocol::PolicySessionOperation>,
+    operation_actions: BTreeMap<u64, WmSessionAction>,
+    pending_operation: Option<(TransactionId, sophia_protocol::PolicySessionOperationRequest)>,
+    active_output: sophia_protocol::OutputId,
+}
+
+impl LivePublicPolicyState {
+    fn initial_scene(
+        outputs: &[sophia_engine::HeadlessOutput],
+        session_operations: Vec<sophia_protocol::PolicySessionOperation>,
+    ) -> sophia_protocol::PolicySceneSnapshot {
+        let bounds = wm_output_bounds(outputs);
+        sophia_protocol::PolicySceneSnapshot {
+            generation: 1,
+            outputs: bounds
+                .into_iter()
+                .map(|(output, bounds)| sophia_protocol::PolicyOutputSnapshot {
+                    output,
+                    generation: 1,
+                    focus: None,
+                    bounds,
+                    work_area: bounds,
+                })
+                .collect(),
+            surfaces: Vec::new(),
+            session_operations,
+        }
+    }
+
+    fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
+        let transaction = TransactionId::from_raw(self.next_transaction);
+        self.next_transaction = self
+            .next_transaction
+            .checked_add(1)
+            .ok_or("public WM transaction identity exhausted")?;
+        Ok(transaction)
+    }
+
+    fn all_outputs(&self, active: sophia_protocol::OutputId) -> Vec<sophia_protocol::OutputId> {
+        let mut outputs = self.outputs.iter().map(|output| output.id).collect::<Vec<_>>();
+        outputs.sort_by_key(|output| output.raw());
+        if let Some(index) = outputs.iter().position(|output| *output == active) {
+            outputs.swap(0, index);
+        }
+        outputs
+    }
+
+    fn observe_outputs(
+        &mut self,
+        outputs: &[sophia_engine::HeadlessOutput],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        observe_public_output_generations(
+            &mut self.output_generations,
+            &mut self.live_output_ids,
+            outputs,
+        )?;
+        self.outputs = outputs.to_vec();
+        Ok(())
+    }
+
+    fn queue_cause(&mut self, cause: LivePublicPolicyCause) -> LiveWmRequestAdmission {
+        if !matches!(cause.source, LiveWmProposalSource::Action(_))
+            && (self.in_flight_source == Some(cause.source)
+                || self.queue.iter().any(|pending| pending.source == cause.source))
+        {
+            return LiveWmRequestAdmission::Duplicate;
+        }
+        if self.queue.len().saturating_add(usize::from(self.in_flight_request.is_some()))
+            >= WM_OWNER_REQUEST_CAPACITY
+        {
+            return LiveWmRequestAdmission::RejectedCapacity;
+        }
+        self.queue.push_back(cause);
+        LiveWmRequestAdmission::Admitted
+    }
+
+    fn snapshot(
+        &self,
+        layout: &PersistentLiveLayout,
+    ) -> Result<sophia_protocol::PolicySceneSnapshot, Box<dyn std::error::Error>> {
+        let previous = self.reducer.scene();
+        let mut current_output = BTreeMap::new();
+        let mut committed_geometry = BTreeMap::new();
+        for projection in self.reducer.committed() {
+            for placement in projection.placements {
+                current_output.insert(placement.surface, projection.output);
+                committed_geometry.insert(placement.surface, placement.geometry);
+            }
+        }
+        let mut surface_ids = layout
+            .layers
+            .keys()
+            .chain(layout.planning_surfaces.keys())
+            .copied()
+            .collect::<BTreeSet<_>>();
+        surface_ids.retain(|surface| layout.is_policy_managed(*surface));
+        let mut surfaces = Vec::with_capacity(surface_ids.len());
+        for surface in surface_ids {
+            let facts = layout
+                .layout_facts(surface)
+                .ok_or("public WM scene lost a known surface")?;
+            let kind = match facts.kind {
+                sophia_protocol::LayoutNodeKind::Toplevel => {
+                    sophia_protocol::PolicySurfaceKind::Toplevel
+                }
+                sophia_protocol::LayoutNodeKind::Dialog => sophia_protocol::PolicySurfaceKind::Dialog,
+                sophia_protocol::LayoutNodeKind::Utility => {
+                    sophia_protocol::PolicySurfaceKind::Utility
+                }
+                sophia_protocol::LayoutNodeKind::Popup => sophia_protocol::PolicySurfaceKind::Popup,
+                sophia_protocol::LayoutNodeKind::Unknown => sophia_protocol::PolicySurfaceKind::Unknown,
+            };
+            surfaces.push(sophia_protocol::PolicySurfaceSnapshot {
+                surface,
+                generation: facts.generation.max(1),
+                current_output: current_output.get(&surface).copied(),
+                kind,
+                capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+                constraints: facts.constraints,
+                exact_size: None,
+                requested_state: sophia_protocol::PolicyPresentationState::default(),
+                current_state: sophia_protocol::PolicyPresentationState::default(),
+                transient_owner: facts.presentation_owner,
+                geometry: committed_geometry
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or(facts.geometry),
+            });
+        }
+        surfaces.sort_by_key(|surface| surface.surface);
+        let bounds = wm_output_bounds(&self.outputs);
+        let outputs = bounds
+            .into_iter()
+            .map(|(output, bounds)| {
+                sophia_protocol::PolicyOutputSnapshot {
+                    output,
+                    generation: self.output_generations.get(&output).copied().unwrap_or(1),
+                    focus: self
+                        .reducer
+                        .committed()
+                        .into_iter()
+                        .find(|projection| projection.output == output)
+                        .and_then(|projection| projection.focus),
+                    bounds,
+                    work_area: self.work_areas.get(&output).copied().unwrap_or(bounds),
+                }
+            })
+            .collect();
+        let mut candidate = sophia_protocol::PolicySceneSnapshot {
+            generation: previous.generation,
+            outputs,
+            surfaces,
+            session_operations: self.session_operations.clone(),
+        };
+        let same_facts = candidate.outputs == previous.outputs
+            && candidate.surfaces == previous.surfaces
+            && candidate.session_operations == previous.session_operations;
+        if !same_facts {
+            candidate.generation = previous
+                .generation
+                .checked_add(1)
+                .ok_or("public WM scene generation exhausted")?;
+        }
+        Ok(candidate)
+    }
+}
+
+fn observe_public_output_generations(
+    generations: &mut BTreeMap<sophia_protocol::OutputId, u64>,
+    live: &mut BTreeSet<sophia_protocol::OutputId>,
+    outputs: &[sophia_engine::HeadlessOutput],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let next = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
+    for output in next.difference(live) {
+        let generation = generations.entry(*output).or_insert(0);
+        *generation = generation
+            .checked_add(1)
+            .ok_or("public WM output generation exhausted")?;
+    }
+    *live = next;
+    Ok(())
+}
+
+fn public_session_operations(
+    config: &PersistentXtermSessionConfig,
+) -> (
+    Vec<sophia_protocol::PolicySessionOperation>,
+    BTreeMap<u64, WmSessionAction>,
+) {
+    let issuer = NEXT_POLICY_OPERATION_ISSUER.fetch_add(1, Ordering::Relaxed);
+    assert!(
+        issuer != 0 && issuer <= (u64::MAX >> 16),
+        "public policy operation issuer identity exhausted"
+    );
+    let token = |slot: u16| (issuer << 16) | u64::from(slot);
+    let mut operations = Vec::new();
+    let mut actions = BTreeMap::new();
+    let mut admit = |slot: u16, token: u64, action: WmSessionAction, target: bool| {
+        operations.push(sophia_protocol::PolicySessionOperation {
+            token,
+            slot,
+            permits_surface_target: target,
+        });
+        actions.insert(token, action);
+    };
+    if !config.normal_session || config.applications.terminal.is_some() {
+        admit(
+            1,
+            token(1),
+            WmSessionAction::LaunchApplication {
+                application: TERMINAL_APPLICATION_ID,
+            },
+            false,
+        );
+    }
+    if config.normal_session && config.applications.firefox.is_some() {
+        admit(
+            2,
+            token(2),
+            WmSessionAction::LaunchApplication {
+                application: BROWSER_APPLICATION_ID,
+            },
+            false,
+        );
+    }
+    admit(3, token(3), WmSessionAction::CloseFocused, true);
+    admit(4, token(4), WmSessionAction::Logout, false);
+    (operations, actions)
+}
+
+impl LiveWmSession {
+    fn from_public_config(
+        config: &PersistentXtermSessionConfig,
+        outputs: &[sophia_engine::HeadlessOutput],
+        process: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let directory = config.wm_socket_path.with_extension("policy");
+        let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+            &directory,
+            rustix::process::geteuid().as_raw(),
+        )?;
+        let socket_path = transport.socket_path().to_path_buf();
+        let spec = config.wm_process_args.iter().fold(
+            ProcessLaunchSpec::new(process)
+                .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, &socket_path)
+                .process_group(),
+            |spec, argument| spec.arg(argument),
+        );
+        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
+        let restart_policy = RestartPolicy::default();
+        let mut supervisor_state =
+            sophia_runtime::SupervisorState::new(SupervisedProcessKind::WindowManager);
+        let (state, command) = update_supervisor(
+            supervisor_state,
+            SupervisorEvent::StartRequested,
+            restart_policy,
+        );
+        supervisor_state = state;
+        let started = supervisor
+            .apply(command)?
+            .ok_or("public WM supervisor did not start Hagia")?;
+        let child_pid = supervisor
+            .child_id()
+            .ok_or("public WM supervisor did not retain Hagia's PID")?;
+        transport.authorize_supervised_pid(child_pid)?;
+        let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
+        supervisor_state = state;
+
+        let (session_operations, operation_actions) = public_session_operations(config);
+        let scene = LivePublicPolicyState::initial_scene(outputs, session_operations.clone());
+        let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene)?;
+        reducer.connect(1)?;
+        let worker = PolicyTransportWorker::new(transport, 1)?;
+        let work_areas = wm_output_bounds(outputs).into_iter().collect();
+        let output_generations = outputs
+            .iter()
+            .map(|output| (output.id, 1))
+            .collect::<BTreeMap<_, _>>();
+        let live_output_ids = outputs
+            .iter()
+            .map(|output| output.id)
+            .collect::<BTreeSet<_>>();
+        let active = outputs
+            .first()
+            .map(|output| output.id)
+            .ok_or("public WM requires at least one output")?;
+        let mut public = LivePublicPolicyState {
+            directory,
+            worker: Some(worker),
+            reducer,
+            connection_epoch: 1,
+            next_connection_epoch: 2,
+            next_transaction: 1,
+            configured: false,
+            negotiated: false,
+            cycle_submitted: false,
+            transport_ready: false,
+            queue: VecDeque::with_capacity(WM_OWNER_REQUEST_CAPACITY),
+            in_flight_source: None,
+            in_flight_request: None,
+            staged: None,
+            prepared: None,
+            bindings: Vec::new(),
+            outputs: outputs.to_vec(),
+            output_generations,
+            live_output_ids,
+            work_areas,
+            session_operations,
+            operation_actions,
+            pending_operation: None,
+            active_output: active,
+        };
+        public.queue.push_back(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs: public.all_outputs(active),
+        });
+        let workspace_state =
+            WmWorkspaceState::new(wm_output_bounds(outputs), WM_DEFAULT_WORKSPACES)?;
+        let session = Self {
+            supervisor,
+            supervisor_state,
+            restart_policy,
+            socket_path,
+            transport: None,
+            public: Some(public),
+            queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
+            in_flight_request: None,
+            next_transaction: 1,
+            requests: 0,
+            request_peak_depth: 0,
+            request_rejections: 0,
+            action_requests_ordered: 0,
+            stale_responses: 0,
+            work_area_relayout_required: false,
+            shortcuts: None,
+            wm_chrome_supported: true,
+            chrome: sophia_protocol::WmChromePolicy::default(),
+            fallback_chrome: config.surface_chrome_style,
+            visual_chrome: config.surface_chrome_style,
+            pending_visual_chrome: None,
+            pending_policy_update: None,
+            force_transport_restart: false,
+            workspace_state,
+            session_actions: Vec::new(),
+            committed: 0,
+            last_committed_at: None,
+            max_request: Duration::ZERO,
+            max_queue_dwell: Duration::ZERO,
+            restarts: 0,
+            degraded: false,
+        };
+        println!(
+            "sophia_live_wm schema=4 status=ready adapter=sophia_wm_v1 socket=session_owned epoch=1 restarts=0"
+        );
+        Ok(session)
+    }
+
+    fn poll_public_request(
+        &mut self,
+        layout: &mut PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        let mut public = self.public.take().expect("public WM state is present");
+        let event = public
+            .worker
+            .as_ref()
+            .ok_or("public WM transport is unavailable")?
+            .try_event();
+        let mut transport_failed = None;
+        let mut defer_cycle = false;
+        let proposal = match event {
+            Ok(Some(PolicyTransportEvent::Negotiated)) => {
+                public.negotiated = true;
+                None
+            }
+            Ok(Some(PolicyTransportEvent::ReadyForCycle)) => {
+                public.transport_ready = true;
+                None
+            }
+            Ok(Some(PolicyTransportEvent::Configuration {
+                transaction,
+                configuration,
+            })) => {
+                defer_cycle = true;
+                let registry = sophia_engine::WmShortcutRegistry::from_policy_configuration(
+                    &configuration,
+                );
+                let outcome = match registry {
+                    Ok(registry) if configuration.connection_epoch == public.connection_epoch => {
+                        self.chrome = configuration.chrome;
+                        self.stage_visual_chrome(self.candidate_chrome_style());
+                        self.shortcuts = Some(sophia_engine::WmShortcutRouter::new(registry));
+                        public.bindings = configuration.bindings.clone();
+                        public.configured = true;
+                        sophia_protocol::PolicyProjectionOutcome::Committed
+                    }
+                    _ => sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
+                };
+                public
+                    .worker
+                    .as_ref()
+                    .ok_or("public WM transport is unavailable")?
+                    .try_command(PolicyTransportCommand::ConfigurationOutcome {
+                        transaction,
+                        generation: configuration.generation,
+                        outcome,
+                    })
+                    .map_err(|_| "public WM configuration outcome queue is busy")?;
+                if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
+                    transport_failed = Some("invalid_configuration".to_owned());
+                }
+                None
+            }
+            Ok(Some(PolicyTransportEvent::Projection(projection))) => {
+                let source = public
+                    .in_flight_source
+                    .ok_or("public WM projection has no owner cause")?;
+                match public.reducer.stage_proposal(&projection) {
+                    Ok(staged) => {
+                        let expect_session_operation = matches!(
+                            source,
+                            LiveWmProposalSource::Action(action)
+                                if (29..=32).contains(&action.raw())
+                        );
+                        let identity = LivePolicySettlementIdentity {
+                            connection_epoch: projection.connection_epoch,
+                            request_id: projection.request_id,
+                            scene_generation: projection.base_generation,
+                            transaction: projection.transaction,
+                            expect_session_operation,
+                            session_operation: false,
+                        };
+                        let projections = staged.projections();
+                        if let LiveWmProposalSource::Manage(surface) = source {
+                            layout.prime_admission_extent(surface);
+                        }
+                        let active_output = public
+                            .in_flight_request
+                            .as_ref()
+                            .and_then(|request| request.affected_outputs.first())
+                            .copied()
+                            .unwrap_or(output.id);
+                        public.staged = Some(staged);
+                        Some(public_live_proposal(
+                            layout,
+                            active_output,
+                            projections,
+                            projection.transaction,
+                            source,
+                            identity,
+                        )?)
+                    }
+                    Err(outcome) => {
+                        defer_cycle = true;
+                        public
+                            .worker
+                            .as_ref()
+                            .ok_or("public WM transport is unavailable")?
+                            .try_command(PolicyTransportCommand::ProjectionOutcome {
+                                transaction: projection.transaction,
+                                request_id: projection.request_id,
+                                scene_generation: public.reducer.scene().generation,
+                                outcome,
+                                expect_session_operation: false,
+                            })
+                            .map_err(|_| "public WM projection outcome queue is busy")?;
+                        public.cycle_submitted = false;
+                        public.in_flight_request = None;
+                        public.in_flight_source = None;
+                        None
+                    }
+                }
+            }
+            Ok(Some(PolicyTransportEvent::SessionOperation {
+                transaction,
+                request,
+            })) => {
+                let identity = LivePolicySettlementIdentity {
+                    connection_epoch: request.connection_epoch,
+                    request_id: request.request_id,
+                    scene_generation: public.reducer.scene().generation,
+                    transaction,
+                    expect_session_operation: false,
+                    session_operation: true,
+                };
+                let action = public.operation_actions.get(&request.operation).copied();
+                let operation = public
+                    .session_operations
+                    .iter()
+                    .find(|operation| operation.token == request.operation);
+                let valid_target = request.target.is_none_or(|target| {
+                    public
+                        .reducer
+                        .scene()
+                        .surfaces
+                        .iter()
+                        .any(|surface| surface.surface == target)
+                });
+                let target_permitted = match (operation, request.target) {
+                    (Some(operation), Some(_)) => operation.permits_surface_target,
+                    (Some(_), None) => true,
+                    (None, _) => false,
+                };
+                if request.connection_epoch != public.connection_epoch
+                    || action.is_none()
+                    || !valid_target
+                    || !target_permitted
+                {
+                    defer_cycle = true;
+                    public
+                        .worker
+                        .as_ref()
+                        .ok_or("public WM transport is unavailable")?
+                        .try_command(PolicyTransportCommand::SessionOperationOutcome {
+                            transaction,
+                            request_id: request.request_id,
+                            outcome: sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
+                        })
+                        .map_err(|_| "public WM session-operation outcome queue is busy")?;
+                    None
+                } else {
+                    public.pending_operation = Some((transaction, request));
+                    Some(public_operation_proposal(
+                        layout,
+                        transaction,
+                        identity,
+                    ))
+                }
+            }
+            Ok(Some(PolicyTransportEvent::Failed(error))) => {
+                transport_failed = Some(error);
+                None
+            }
+            Ok(None) => None,
+            Err(()) => {
+                transport_failed = Some("worker_disconnected".to_owned());
+                None
+            }
+        };
+
+        if proposal.is_none()
+            && transport_failed.is_none()
+            && !defer_cycle
+            && public.configured
+            && !public.cycle_submitted
+            && public.transport_ready
+            && public.in_flight_request.is_none()
+            && let Some(cause) = public.queue.pop_front()
+        {
+            let scene = public.snapshot(layout)?;
+            if scene.generation > public.reducer.scene().generation {
+                public.reducer.observe_scene(scene.clone())?;
+            }
+            let request = public
+                .reducer
+                .issue_request_with_cause(cause.affected_outputs, cause.cause)?;
+            let snapshot_transaction = public.mint_transaction()?;
+            let request_transaction = public.mint_transaction()?;
+            public
+                .worker
+                .as_ref()
+                .ok_or("public WM transport is unavailable")?
+                .try_command(PolicyTransportCommand::Cycle {
+                    snapshot_transaction,
+                    request_transaction,
+                    scene,
+                    bindings: public.bindings.clone(),
+                    request: request.clone(),
+                })
+                .map_err(|_| "public WM cycle queue is busy")?;
+            public.in_flight_source = Some(cause.source);
+            public.in_flight_request = Some(request);
+            public.cycle_submitted = true;
+            public.transport_ready = false;
+            self.requests = self.requests.saturating_add(1);
+        }
+        self.public = Some(public);
+        if let Some(error) = transport_failed {
+            self.request_transport_restart("public_transport_failed", Some(&error));
+        }
+        Ok(proposal)
+    }
+
+    fn poll_public_restart(
+        &mut self,
+        _layout: &PersistentLiveLayout,
+        output: sophia_engine::HeadlessOutput,
+    ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.degraded {
+            return Ok(None);
+        }
+        let restart_requested = self.force_transport_restart;
+        let process_exited = self.supervisor.poll()?.is_some();
+        if !restart_requested && !process_exited {
+            return Ok(None);
+        }
+        if restart_requested && !process_exited {
+            self.supervisor.terminate()?;
+        }
+        let mut public = self.public.take().expect("public WM state is present");
+        public.worker.take();
+        let _ = public.reducer.disconnect(public.connection_epoch);
+        self.shortcuts = None;
+        self.force_transport_restart = false;
+        self.restarts = self.restarts.saturating_add(1);
+        let next_epoch = public.next_connection_epoch;
+        public.next_connection_epoch = public
+            .next_connection_epoch
+            .checked_add(1)
+            .ok_or("public WM connection epoch exhausted")?;
+        let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+            &public.directory,
+            rustix::process::geteuid().as_raw(),
+        )?;
+        let (state, command) = update_supervisor(
+            self.supervisor_state.clone(),
+            SupervisorEvent::ProcessExited,
+            self.restart_policy,
+        );
+        self.supervisor_state = state;
+        let started = match self.supervisor.apply(command) {
+            Ok(Some(started)) => started,
+            Ok(None) => return Err("public WM supervisor did not restart Hagia".into()),
+            Err(error) => {
+                if self.committed == 0 {
+                    return Err(error.into());
+                }
+                self.degraded = true;
+                self.public = Some(public);
+                println!(
+                    "sophia_live_wm schema=4 status=degraded adapter=sophia_wm_v1 reason=restart_failed preserved_layout=true error={error:?}"
+                );
+                return Ok(None);
+            }
+        };
+        let pid = self
+            .supervisor
+            .child_id()
+            .ok_or("restarted public WM has no supervised PID")?;
+        transport.authorize_supervised_pid(pid)?;
+        let (state, _) = update_supervisor(self.supervisor_state.clone(), started, self.restart_policy);
+        self.supervisor_state = state;
+        public.reducer.connect(next_epoch)?;
+        public.worker = Some(PolicyTransportWorker::new(transport, next_epoch)?);
+        public.connection_epoch = next_epoch;
+        public.configured = false;
+        public.negotiated = false;
+        public.cycle_submitted = false;
+        public.transport_ready = false;
+        public.in_flight_request = None;
+        public.in_flight_source = None;
+        public.staged = None;
+        public.prepared = None;
+        public.pending_operation = None;
+        public.bindings.clear();
+        public.queue.clear();
+        let affected_outputs = public.all_outputs(output.id);
+        public.queue.push_back(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs,
+        });
+        self.public = Some(public);
+        println!(
+            "sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch={next_epoch} restarts={} preserved_layout=true",
+            self.restarts
+        );
+        Ok(None)
+    }
+
+    fn update_public_work_areas(
+        &mut self,
+        layout: &PersistentLiveLayout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        primary: sophia_engine::HeadlessOutput,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let full_bounds = wm_output_bounds(outputs);
+        let root = full_bounds.iter().try_fold(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            |root, (_, bounds)| {
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: root.width.max(bounds.x.checked_add(bounds.width)?),
+                    height: root.height.max(bounds.y.checked_add(bounds.height)?),
+                })
+            },
+        );
+        let Some(root) = root.filter(|root| !root.is_empty()) else {
+            return Err("public WM output topology has no valid root bounds".into());
+        };
+        let reduced = sophia_engine::reduce_output_work_areas(
+            root,
+            full_bounds,
+            &layout.active_output_reservations(),
+        );
+        let public = self.public.as_mut().expect("public WM state is present");
+        public.observe_outputs(outputs)?;
+        let mut changed = false;
+        for area in reduced {
+            let Some(work) = area.work else {
+                continue;
+            };
+            changed |= public.work_areas.insert(area.output, work) != Some(work);
+        }
+        if !changed {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        let affected_outputs = public.all_outputs(primary.id);
+        Ok(public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs,
+        }))
+    }
+
+    fn prepare_public_layout_commit(
+        &mut self,
+        layout: &PersistentLiveLayout,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(identity) = layout
+            .pending
+            .as_ref()
+            .and_then(|pending| pending.policy_settlement)
+        else {
+            return Ok(());
+        };
+        if identity.session_operation {
+            return Ok(());
+        }
+        let public = self.public.as_mut().ok_or("public settlement lost its session")?;
+        if public.prepared == Some(identity) {
+            return Ok(());
+        }
+        let staged = public
+            .staged
+            .take()
+            .ok_or("ready public layout lost its staged reducer successor")?;
+        let outcome = public.reducer.commit_staged(staged);
+        if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
+            return Err(format!(
+                "ready public layout failed canonical revalidation: {outcome:?}"
+            )
+            .into());
+        }
+        public.prepared = Some(identity);
+        Ok(())
+    }
+}
+
+fn public_live_proposal(
+    layout: &PersistentLiveLayout,
+    active_output: sophia_protocol::OutputId,
+    projections: Vec<sophia_protocol::PolicyOutputProjection>,
+    transaction: TransactionId,
+    source: LiveWmProposalSource,
+    settlement: LivePolicySettlementIdentity,
+) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
+    let mut layers = layout
+        .layers
+        .values()
+        .filter(|layer| !layout.is_policy_managed(layer.surface))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut requested_sizes = BTreeMap::new();
+    let mut applied_surfaces = Vec::new();
+    let focus = projections
+        .iter()
+        .find(|projection| projection.output == active_output)
+        .and_then(|projection| projection.focus);
+    for projection in projections {
+        for placement in projection.placements {
+            let mut layer = if let Some(layer) = layout.layers.get(&placement.surface) {
+                layer.clone()
+            } else {
+                let facts = layout
+                    .layout_facts(placement.surface)
+                    .ok_or("public WM projection names a missing planning surface")?;
+                LayerSnapshot {
+                    surface: facts.surface,
+                    authority_local_id: None,
+                    namespace: None,
+                    stack_rank: facts.stack_rank,
+                    geometry: facts.geometry,
+                    source: BufferSource::None,
+                    damage: Region::empty(),
+                    opacity: 1.0,
+                    crop: None,
+                    transform: Transform::IDENTITY,
+                    generation: facts.generation,
+                    resize_sync: ResizeSyncCapability::ImplicitOnly,
+                }
+            };
+            layer.geometry = placement.geometry;
+            layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
+            if let Some(size) = placement.requested_size {
+                requested_sizes.insert(placement.surface, size);
+            }
+            applied_surfaces.push(placement.surface);
+            layers.push(layer);
+        }
+    }
+    let moved_surfaces = layers
+        .iter()
+        .filter(|layer| {
+            layout
+                .layers
+                .get(&layer.surface)
+                .is_some_and(|current| current.geometry != layer.geometry)
+        })
+        .count();
+    Ok(LiveWmProposal {
+        transaction,
+        layers,
+        requested_sizes,
+        configure_deliveries: 0,
+        focus,
+        timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
+        update: WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces,
+            },
+            ipc_error: None,
+        },
+        moved_surfaces,
+        source: Some(source),
+        effects: None,
+        policy_settlement: Some(settlement),
+    })
+}
+
+fn public_operation_proposal(
+    layout: &PersistentLiveLayout,
+    transaction: TransactionId,
+    settlement: LivePolicySettlementIdentity,
+) -> LiveWmProposal {
+    LiveWmProposal {
+        transaction,
+        layers: layout.layers.values().cloned().collect(),
+        requested_sizes: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: None,
+        timeout: Duration::from_secs(1),
+        update: WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: Vec::new(),
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: None,
+        effects: None,
+        policy_settlement: Some(settlement),
+    }
+}

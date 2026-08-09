@@ -136,6 +136,18 @@ cd ~/dev/hagia
 SOPHIA_STACK_ROOT=~/dev/sophia-stack tools/check_sophia_policy.sh
 ```
 
+The focused live recovery gate runs real Kitty under the public session path,
+terminates the first supervised Hagia process, admits only its replacement,
+and requires epoch advancement, startup readiness, retained layout, and clean
+session/layout health:
+
+```sh
+SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
+```
+
+This is a bounded headless integration proof. It does not freeze the public
+revision or replace the installed physical-session and multi-output gates.
+
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
 [X11 compatibility matrix](x11-compatibility-matrix.md) identifies each

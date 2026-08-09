@@ -4,6 +4,12 @@ impl LiveWmSession {
     }
 
     fn pending_request_count(&self) -> usize {
+        if let Some(public) = self.public.as_ref() {
+            return public
+                .queue
+                .len()
+                .saturating_add(usize::from(public.in_flight_request.is_some()));
+        }
         self.queued_requests
             .len()
             .saturating_add(usize::from(self.in_flight_request.is_some()))
@@ -14,6 +20,15 @@ impl LiveWmSession {
         surface: SurfaceId,
         output: sophia_protocol::OutputId,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_ref() {
+            return Ok(public.reducer.committed().into_iter().any(|projection| {
+                projection.output == output
+                    && projection
+                        .placements
+                        .iter()
+                        .any(|placement| placement.surface == surface)
+            }));
+        }
         self.workspace_state
             .surface_visible_on_output(surface, output)
             .map_err(Into::into)
@@ -25,6 +40,9 @@ impl LiveWmSession {
         previous_focus: Option<SurfaceId>,
         output: sophia_protocol::OutputId,
     ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
+        if let Some(settlement) = result.policy_settlement.take() {
+            return self.apply_public_commit_result(result, settlement);
+        }
         let committed = result.update.commit.outcome == TransactionOutcome::Committed;
         let restart_speculative_transport = wm_transport_requires_reseed(&result);
         let physical_action = committed
@@ -94,6 +112,115 @@ impl LiveWmSession {
             self.request_transport_restart("uncommitted_proposal", None);
         }
         Ok(owner_commit)
+    }
+}
+
+impl LiveWmSession {
+    fn apply_public_commit_result(
+        &mut self,
+        result: LiveWmCommitResult,
+        settlement: LivePolicySettlementIdentity,
+    ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
+        let public = self.public.as_mut().ok_or("public WM settlement lost its session")?;
+        let layout_committed = result.update.commit.outcome == TransactionOutcome::Committed;
+        if settlement.session_operation {
+            let (transaction, request) = public
+                .pending_operation
+                .take()
+                .ok_or("public session operation settled without a pending request")?;
+            if transaction != settlement.transaction
+                || request.connection_epoch != settlement.connection_epoch
+                || request.request_id != settlement.request_id
+            {
+                return Err("public session-operation settlement identity changed".into());
+            }
+            let action = public.operation_actions.get(&request.operation).copied();
+            let operation = public
+                .session_operations
+                .iter()
+                .find(|operation| operation.token == request.operation);
+            let valid_target = match (operation, request.target) {
+                (Some(operation), Some(_)) => operation.permits_surface_target,
+                (Some(_), None) => true,
+                (None, _) => false,
+            };
+            let outcome = if layout_committed && action.is_some() && valid_target {
+                sophia_protocol::PolicyProjectionOutcome::Committed
+            } else {
+                sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
+            };
+            public
+                .worker
+                .as_ref()
+                .ok_or("public WM transport is unavailable")?
+                .try_command(PolicyTransportCommand::SessionOperationOutcome {
+                    transaction,
+                    request_id: request.request_id,
+                    outcome,
+                })
+                .map_err(|_| "public WM session-operation outcome queue is busy")?;
+            return Ok(LiveWmOwnerCommit {
+                update: result.update,
+                physical_action: None,
+                pointer_gesture: None,
+                session_action: if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
+                    action.map(|action| (transaction, action, request.target))
+                } else {
+                    None
+                },
+                workspace_projection: None,
+                clear_focus: None,
+            });
+        }
+
+        let outcome = if layout_committed && public.prepared.take() == Some(settlement) {
+            sophia_protocol::PolicyProjectionOutcome::Committed
+        } else if layout_committed {
+            let staged = public
+                .staged
+                .take()
+                .ok_or("public projection settled without its staged reducer successor")?;
+            public.reducer.commit_staged(staged)
+        } else {
+            public.staged = None;
+            public.reducer.timeout(settlement.request_id)
+        };
+        public
+            .worker
+            .as_ref()
+            .ok_or("public WM transport is unavailable")?
+            .try_command(PolicyTransportCommand::ProjectionOutcome {
+                transaction: settlement.transaction,
+                request_id: settlement.request_id,
+                scene_generation: public.reducer.scene().generation,
+                outcome,
+                expect_session_operation: settlement.expect_session_operation,
+            })
+            .map_err(|_| "public WM projection outcome queue is busy")?;
+        public.cycle_submitted = false;
+        public.in_flight_request = None;
+        public.in_flight_source = None;
+        if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
+            self.mark_committed();
+        } else {
+            self.stale_responses = self.stale_responses.saturating_add(1);
+        }
+        let physical_action = if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
+            match result.source {
+                Some(LiveWmProposalSource::Action(action)) => Some(action),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        Ok(LiveWmOwnerCommit {
+            update: result.update,
+            physical_action,
+            pointer_gesture: None,
+            session_action: None,
+            workspace_projection: None,
+            clear_focus: None,
+        })
     }
 }
 

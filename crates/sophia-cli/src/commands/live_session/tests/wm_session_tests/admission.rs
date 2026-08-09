@@ -36,6 +36,7 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
         admission_surfaces: BTreeSet::from([surface]),
         source: Some(LiveWmProposalSource::Manage(surface)),
         effects: None,
+        policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -103,6 +104,7 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
         admission_surfaces: BTreeSet::from([surface]),
         source: Some(LiveWmProposalSource::Manage(surface)),
         effects: None,
+        policy_settlement: None,
     });
 
     let withdrawal = layout.expire_pending(&mut controls).unwrap().unwrap();
@@ -227,6 +229,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
         moved_surfaces: 0,
         source: None,
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -508,6 +511,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         moved_surfaces: 0,
         source: None,
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 
@@ -666,6 +670,7 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
         moved_surfaces: 0,
         source: None,
         effects: None,
+        policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
 

@@ -89,6 +89,24 @@ pub struct StagedPolicyProjection {
     commit_serial: u64,
 }
 
+impl StagedPolicyProjection {
+    pub fn projections(&self) -> Vec<PolicyOutputProjection> {
+        self.candidate.committed()
+    }
+
+    pub const fn connection_epoch(&self) -> u64 {
+        self.connection_epoch
+    }
+
+    pub const fn request_id(&self) -> u64 {
+        self.request_id
+    }
+
+    pub const fn scene_generation(&self) -> u64 {
+        self.scene_generation
+    }
+}
+
 impl PolicyProjectionReducer {
     pub fn new(scene: PolicySceneSnapshot) -> Result<Self, PolicyProjectionError> {
         validate_scene(&scene)?;
@@ -251,13 +269,17 @@ impl PolicyProjectionReducer {
         if self.active_epoch != Some(staged.connection_epoch) {
             return PolicyProjectionOutcome::Disconnected;
         }
+        let exact_request = self
+            .outstanding
+            .as_ref()
+            .is_some_and(|request| request.request_id == staged.request_id);
+        if !exact_request {
+            return PolicyProjectionOutcome::RejectedStale;
+        }
         if self.scene.generation != staged.scene_generation
             || self.commit_serial != staged.commit_serial
-            || !self
-                .outstanding
-                .as_ref()
-                .is_some_and(|request| request.request_id == staged.request_id)
         {
+            self.outstanding = None;
             return PolicyProjectionOutcome::RejectedStale;
         }
         *self = staged.candidate;
