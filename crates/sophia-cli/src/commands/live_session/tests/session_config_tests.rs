@@ -206,6 +206,50 @@ fn public_policy_output_reappearance_advances_its_generation() {
 }
 
 #[test]
+fn public_policy_complete_topology_admission_is_atomic_and_generation_aware() {
+    let first = sophia_engine::HeadlessOutput::deterministic();
+    let second = sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(2),
+        ..first
+    };
+    let mut generations = std::collections::BTreeMap::new();
+    let mut live = std::collections::BTreeSet::new();
+    let mut active = first.id;
+
+    assert!(
+        observe_public_output_topology(&mut generations, &mut live, &mut active, &[first, second],)
+            .unwrap()
+    );
+    assert_eq!(generations.get(&first.id), Some(&1));
+    assert_eq!(generations.get(&second.id), Some(&1));
+
+    assert!(
+        observe_public_output_topology(&mut generations, &mut live, &mut active, &[second],)
+            .unwrap()
+    );
+    assert_eq!(active, second.id);
+
+    let before = (generations.clone(), live.clone(), active);
+    assert!(
+        observe_public_output_topology(
+            &mut generations,
+            &mut live,
+            &mut active,
+            &[second, second],
+        )
+        .is_err()
+    );
+    assert_eq!((generations.clone(), live.clone(), active), before);
+
+    assert!(
+        observe_public_output_topology(&mut generations, &mut live, &mut active, &[first, second],)
+            .unwrap()
+    );
+    assert_eq!(generations.get(&first.id), Some(&2));
+    assert_eq!(active, second.id);
+}
+
+#[test]
 fn public_policy_restart_aborts_settlement_before_process_replacement() {
     for (restart, exited) in [(true, false), (false, true), (true, true)] {
         assert_eq!(
