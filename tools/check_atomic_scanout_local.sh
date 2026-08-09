@@ -349,6 +349,7 @@ grep -Fq 'tools/archive_hagia_policy_physical_run.sh' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'event=checkpoint status=saved detail="candidate_nonempty=true"' \
     tools/fixtures/hagia_restart_once.sh
+tools/check_hagia_physical_matchers.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq '"--session-app-arg=terminal=$guide"' \
@@ -369,6 +370,7 @@ bash -n tools/hagia_live_session_smoke.sh \
     tools/hagia_policy_physical_gate.sh \
     tools/fixtures/hagia_restart_once.sh \
     tools/fixtures/hagia_physical_guide.sh \
+    tools/check_hagia_physical_matchers.sh \
     tools/output_topology_physical_gate.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
