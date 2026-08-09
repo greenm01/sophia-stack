@@ -4,7 +4,8 @@ use sophia_protocol::{
     PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionOutcome, PolicySceneSnapshot,
     PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SOPHIA_WM_V1_BEHAVIOR_SCENARIOS,
     SurfaceConstraints, SurfaceId, TransactionId, WmRelayoutWorkspace, WmRequestKind,
-    WmRequestPacket, WmResponsePacket, WorkspaceId, sophia_wm_v1_behavior_scene,
+    WmRequestPacket, WmResponsePacket, WorkspaceId, sophia_wm_v1_behavior_cause,
+    sophia_wm_v1_behavior_scene,
 };
 use sophia_x11_wm_bridge::{LegacyWmRequest, X11WmBridgeState};
 
@@ -199,11 +200,22 @@ fn legacy_x11_adapter_accepts_every_revision_one_behavior_scene() {
             .map(|output| output.output)
             .collect::<Vec<_>>();
         affected.sort_by_key(|output| (*output != scene.active_output, output.raw()));
-        let request = reducer.issue_request(affected).unwrap();
+        let request = reducer
+            .issue_request_with_cause(affected, sophia_wm_v1_behavior_cause(scenario).unwrap())
+            .unwrap();
         let proposal = adapt_v7_policy_plan(&request, &scene, &plan).unwrap();
+        let outcome = if scenario == "timeout-discard" {
+            reducer.timeout(proposal.request_id)
+        } else {
+            reducer.apply_proposal(&proposal)
+        };
         assert_eq!(
-            reducer.apply_proposal(&proposal),
-            PolicyProjectionOutcome::Committed,
+            outcome,
+            if scenario == "timeout-discard" {
+                PolicyProjectionOutcome::TimedOut
+            } else {
+                PolicyProjectionOutcome::Committed
+            },
             "legacy adapter rejected behavior scenario {scenario}",
         );
     }

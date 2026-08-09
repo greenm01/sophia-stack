@@ -1,12 +1,29 @@
 /// Stable names for the revision-1 black-box behavior corpus. Every public
 /// policy client must accept the same complete snapshots and return a proposal
 /// admitted by the canonical reducer for each entry before revision 1 freezes.
-pub const SOPHIA_WM_V1_BEHAVIOR_SCENARIOS: [&str; 4] = [
+pub const SOPHIA_WM_V1_BEHAVIOR_SCENARIOS: [&str; 7] = [
     "single-output-constraints",
     "two-output-partition",
     "output-loss",
     "returned-output-generation",
+    "ordered-action",
+    "timeout-discard",
+    "post-timeout-recovery",
 ];
+
+/// Returns the reduced cause paired with one behavior scene.
+pub fn sophia_wm_v1_behavior_cause(scenario: &str) -> Option<crate::PolicyRequestCause> {
+    match scenario {
+        "ordered-action" => Some(crate::PolicyRequestCause::Action {
+            activation_serial: 41,
+            action: crate::WmActionId::from_raw(1),
+        }),
+        scenario if SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.contains(&scenario) => {
+            Some(crate::PolicyRequestCause::SceneChanged)
+        }
+        _ => None,
+    }
+}
 
 /// Returns the canonical complete scene for one revision-1 behavior scenario.
 /// The sequence is intentionally stateful when consumed in declaration order.
@@ -56,6 +73,9 @@ pub fn sophia_wm_v1_behavior_scene(scenario: &str) -> Option<crate::PolicySceneS
                 surface(5, 4, second),
             ],
         ),
+        "ordered-action" => returned_scene(5, second, 5),
+        "timeout-discard" => returned_scene(6, second, 6),
+        "post-timeout-recovery" => returned_scene(7, second, 7),
         _ => return None,
     };
     Some(crate::PolicySceneSnapshot {
@@ -65,6 +85,43 @@ pub fn sophia_wm_v1_behavior_scene(scenario: &str) -> Option<crate::PolicySceneS
         surfaces,
         session_operations: Vec::new(),
     })
+}
+
+fn returned_scene(
+    generation: u64,
+    active_output: crate::OutputId,
+    surface_generation: u32,
+) -> (
+    u64,
+    crate::OutputId,
+    Vec<crate::PolicyOutputSnapshot>,
+    Vec<crate::PolicySurfaceSnapshot>,
+) {
+    let first = crate::OutputId::from_raw(1);
+    let second = crate::OutputId::from_raw(2);
+    (
+        generation,
+        active_output,
+        vec![
+            output(
+                first,
+                1,
+                0,
+                Some(crate::SurfaceId::new(3, surface_generation)),
+            ),
+            output(
+                second,
+                2,
+                1200,
+                Some(crate::SurfaceId::new(5, surface_generation)),
+            ),
+        ],
+        vec![
+            surface(3, surface_generation, first),
+            surface(4, surface_generation, first),
+            surface(5, surface_generation, second),
+        ],
+    )
 }
 
 fn output(

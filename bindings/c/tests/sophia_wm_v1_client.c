@@ -429,7 +429,8 @@ int main(int argc, char **argv) {
             ) != SOPHIA_WM_V1_OK || outcome_transaction != projection_transaction ||
             outcome.connection_epoch != welcome.connection_epoch ||
             outcome.request_id != request.request_id ||
-            outcome.outcome != SOPHIA_WM_OUTCOME_COMMITTED)
+            outcome.outcome < SOPHIA_WM_OUTCOME_COMMITTED ||
+            outcome.outcome > SOPHIA_WM_OUTCOME_DISCONNECTED)
             return 1;
     }
     close(socket_fd);

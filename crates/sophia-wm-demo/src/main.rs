@@ -17,11 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let request = client.receive_projection_request()?;
             let proposal = client.tile_once(&snapshot.scene, &request)?;
             client.send_projection(&proposal)?;
-            if client.receive_projection_outcome(&proposal)?
-                != sophia_protocol::PolicyProjectionOutcome::Committed
-            {
-                return Err("Sophia rejected the revision-1 reference projection".into());
-            }
+            let _ = client.receive_projection_outcome(&proposal)?;
         }
         return Ok(());
     }

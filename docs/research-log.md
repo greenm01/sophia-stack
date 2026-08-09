@@ -6,21 +6,24 @@ Completed evidence is archived in `research-log-archive.md`.
 ## 2026-08-09: Revision-1 behavior corpus crosses three independent clients
 
 One authenticated host now drives the Rust reference client, the independent
-C99 client, and Hagia through the same four complete policy cycles on a single
+C99 client, and Hagia through the same seven policy cycles on a single
 connection. The sequence covers constrained single-output layout, admission of
 a second output, loss with complete surface migration, and return of the same
-raw output at a new generation. Each proposal must pass the canonical reducer,
+raw output at a new generation. It then delivers one ordered focus action,
+times out that cycle's successor, and requires a later complete cycle to commit
+on the same connection. Committed proposals must pass the canonical reducer,
 retain every assigned surface exactly once, and preserve the snapshot's active
-output. Hagia keeps its private adapter alive across the sequence, so the
-generation-advancing return exercises its real affinity boundary rather than a
-standalone decoder fixture.
+output. Hagia keeps its private adapter alive across the sequence, so both the
+generation-advancing return and noncommitted-candidate discard exercise real
+client state rather than standalone decoder fixtures.
 
-The X11 bridge now consumes the same four canonical scenes through an explicit
-API-v7 corpus adapter. It translates synthetic-X configure/focus decisions for
-every affected output, combines them into one candidate, and passes the
-canonical reducer without being mislabeled as a direct `sophia_wm_v1` peer.
-This still does not freeze revision 1: broader shared action, rejection,
-timeout, and restart scenarios plus an archived client remain open.
+The X11 bridge now consumes the same seven canonical scenes and causes through
+an explicit API-v7 corpus adapter. It translates synthetic-X configure/focus
+decisions for every affected output, combines them into one candidate, and
+passes the canonical reducer without being mislabeled as a direct
+`sophia_wm_v1` peer.
+This still does not freeze revision 1: shared stale/invalid rejection,
+reconnect/restart scenarios, and an archived client remain open.
 
 Dynamic KMS topology ingress is also absent: the live native runtime owns fixed
 per-head sessions, queues, renderer targets, and pointer bounds. A safe hotplug

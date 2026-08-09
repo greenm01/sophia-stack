@@ -8,7 +8,8 @@ use std::time::Duration;
 use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
     PolicyProjectionOutcome, SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, TransactionId,
-    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot, sophia_wm_v1_behavior_scene,
+    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot, sophia_wm_v1_behavior_cause,
+    sophia_wm_v1_behavior_scene,
 };
 use sophia_runtime::{PolicyWmSessionTransport, QueuedPolicyProjection};
 
@@ -87,7 +88,9 @@ fn run_host(
             .map(|output| output.output)
             .collect::<Vec<_>>();
         affected_outputs.sort_by_key(|output| (*output != scene.active_output, output.raw()));
-        let request = reducer.issue_request(affected_outputs)?;
+        let cause = sophia_wm_v1_behavior_cause(scenario)
+            .ok_or_else(|| format!("behavior scenario {scenario} has no cause"))?;
+        let request = reducer.issue_request_with_cause(affected_outputs, cause)?;
         let transaction = 29 + u64::try_from(index)? * 2;
         let snapshot =
             encode_wm_v1_policy_snapshot(TransactionId::from_raw(transaction), 1, &scene, &[])
@@ -114,9 +117,18 @@ fn run_host(
         };
         let proposal = decode_wm_v1_policy_projection(&projection.into_wire_transfer())
             .map_err(|error| format!("projection decode failed: {error:?}"))?;
-        let outcome = reducer.apply_proposal(&proposal);
-        if outcome != PolicyProjectionOutcome::Committed {
-            return Err("canonical reducer rejected policy projection".into());
+        let outcome = if scenario == "timeout-discard" {
+            reducer.timeout(proposal.request_id)
+        } else {
+            reducer.apply_proposal(&proposal)
+        };
+        let expected_outcome = if scenario == "timeout-discard" {
+            PolicyProjectionOutcome::TimedOut
+        } else {
+            PolicyProjectionOutcome::Committed
+        };
+        if outcome != expected_outcome {
+            return Err(format!("behavior scenario {scenario} had outcome {outcome:?}").into());
         }
         transport.send_projection_outcome(
             proposal.transaction,
@@ -124,26 +136,35 @@ fn run_host(
             reducer.scene().generation,
             outcome,
         )?;
-        let committed = reducer.committed();
         let expected_surfaces = scene
             .surfaces
             .iter()
             .filter(|surface| surface.current_output.is_some())
             .map(|surface| surface.surface)
             .collect::<BTreeSet<_>>();
-        let committed_surfaces = committed
-            .iter()
-            .flat_map(|output| output.placements.iter())
-            .map(|placement| placement.surface)
-            .collect::<BTreeSet<_>>();
-        if committed.len() != scene.outputs.len()
-            || committed_surfaces != expected_surfaces
-            || reducer.scene().active_output != scene.active_output
-        {
-            return Err(format!("behavior scenario {scenario} lost canonical semantics").into());
+        if outcome == PolicyProjectionOutcome::Committed {
+            let committed = reducer.committed();
+            let committed_surfaces = committed
+                .iter()
+                .flat_map(|output| output.placements.iter())
+                .map(|placement| placement.surface)
+                .collect::<BTreeSet<_>>();
+            if committed.len() != scene.outputs.len()
+                || committed_surfaces != expected_surfaces
+                || reducer.scene().active_output != scene.active_output
+            {
+                return Err(format!(
+                    "behavior scenario {scenario} lost canonical semantics: outputs={}/{} surfaces={committed_surfaces:?}/{expected_surfaces:?} active={}/{}",
+                    committed.len(),
+                    scene.outputs.len(),
+                    reducer.scene().active_output.raw(),
+                    scene.active_output.raw(),
+                )
+                .into());
+            }
         }
         println!(
-            "sophia_policy_behavior schema=1 scenario={scenario} status=complete outputs={} surfaces={}",
+            "sophia_policy_behavior schema=1 scenario={scenario} status=complete outcome={outcome:?} outputs={} surfaces={}",
             scene.outputs.len(),
             expected_surfaces.len(),
         );
