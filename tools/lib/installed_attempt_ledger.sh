@@ -12,6 +12,7 @@ declare -p SOPHIA_ATTEMPT_SESSION_EVIDENCE >/dev/null 2>&1 ||
     )
 SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME:-}"
 SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH:-}"
+SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME="${SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME:-}"
 
 sophia_installed_attempt_validate_evidence_contract() {
     (( ${#SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES[@]} ==
@@ -56,6 +57,13 @@ sophia_installed_attempt_validate_evidence_contract() {
         resolved_binary="$(readlink -f "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH")"
         [[ "$resolved_binary" == "$release_root/"* ]] || {
             echo "installed attempt auxiliary binary is outside the release" >&2
+            return 1
+        }
+    fi
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME" ]]; then
+        [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \
+            && "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME" =~ ^[a-z][a-z0-9_-]*$ ]] || {
+            echo "installed attempt has an invalid auxiliary identity contract" >&2
             return 1
         }
     fi
@@ -123,9 +131,17 @@ sophia_installed_attempt_load_identity() {
             return 1
         }
     fi
-    if ! "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" \
-        "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
-        "$sophia_attempt_binary_sha256" >/dev/null; then
+    local -a identity_args=(
+        "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG"
+        "$sophia_attempt_binary_sha256"
+    )
+    if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME" ]]; then
+        identity_args+=(
+            "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME"
+            "$sophia_attempt_auxiliary_binary_sha256"
+        )
+    fi
+    if ! "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" "${identity_args[@]}" >/dev/null; then
         echo "runtime identity does not match the installed Sophia binary" >&2
         return 1
     fi
@@ -275,8 +291,17 @@ sophia_installed_attempt_finish() {
         "$SOPHIA_ATTEMPT_VERIFY_SESSION" "${session_evidence[@]}" ||
             failure=session_verification
         if [[ "$failure" == none ]]; then
+            local -a archived_identity_args=(
+                "$run_dir/runtime-identity.log" "$recorded_binary"
+            )
+            if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME" ]]; then
+                archived_identity_args+=(
+                    "$SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME"
+                    "$recorded_auxiliary_binary"
+                )
+            fi
             "$SOPHIA_ATTEMPT_VERIFY_IDENTITY" \
-                "$run_dir/runtime-identity.log" "$recorded_binary" ||
+                "${archived_identity_args[@]}" ||
                 failure=identity_verification
         fi
         if [[ "$failure" == none ]]; then
@@ -287,8 +312,13 @@ sophia_installed_attempt_finish() {
     fi
 
     if [[ "$failure" == none ]]; then
-        printf '%s schema=1 status=passed exit_status=%s\n' \
-            "$SOPHIA_ATTEMPT_RESULT_RECORD" "$session_status" \
+        local success_status="${SOPHIA_ATTEMPT_SUCCESS_STATUS:-passed}"
+        [[ "$success_status" == passed || "$success_status" == recovered ]] || {
+            echo "installed attempt has an invalid success status: $success_status" >&2
+            return 1
+        }
+        printf '%s schema=1 status=%s exit_status=%s\n' \
+            "$SOPHIA_ATTEMPT_RESULT_RECORD" "$success_status" "$session_status" \
             >"$run_dir/result.kdl"
         sophia_installed_attempt_write_checksums "$run_dir"
         echo "Recorded verified installed $SOPHIA_ATTEMPT_KIND run: $run_dir"

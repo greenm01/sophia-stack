@@ -217,18 +217,26 @@ fn run_policy_transport(
                 transport
                     .send_projection_request(request_transaction, &request)
                     .map_err(|error| error.to_string())?;
+                let mut projection_started = false;
                 let proposal = loop {
                     match transport
                         .receive_client_event()
                         .map_err(|error| error.to_string())?
                     {
-                        PolicyClientEvent::ProjectionPending => {}
+                        PolicyClientEvent::ProjectionPending => projection_started = true,
                         PolicyClientEvent::Projection(QueuedPolicyProjection::Admitted(
                             projection,
                         )) => {
                             break decode_wm_v1_policy_projection(&projection.into_wire_transfer())
                                 .map_err(|error| {
                                     format!("policy projection decode failed: {error:?}")
+                                })?;
+                        }
+                        PolicyClientEvent::Dirty { request, .. } if !projection_started => {
+                            events
+                                .send(PolicyTransportEvent::Dirty(request))
+                                .map_err(|_| {
+                                    "policy owner event channel disconnected".to_owned()
                                 })?;
                         }
                         PolicyClientEvent::Projection(QueuedPolicyProjection::Discarded {

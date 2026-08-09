@@ -48,7 +48,7 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
-    directory: std::path::PathBuf,
+    directory: PolicySessionDirectory,
     checkpoint_path: std::path::PathBuf,
     worker: Option<PolicyTransportWorker>,
     reducer: sophia_engine::PolicyProjectionReducer,
@@ -371,8 +371,10 @@ impl LivePublicPolicyState {
 
 impl Drop for LivePublicPolicyState {
     fn drop(&mut self) {
-        // The checkpoint is private session-recovery state. Remove it before
-        // the worker drops its endpoint and removes the enclosing directory.
+        // The checkpoint parent outlives each peer endpoint so supervised
+        // replacement can preserve private policy state. Drop the endpoint
+        // worker first, then remove the checkpoint and its session directory.
+        self.worker.take();
         let _ = std::fs::remove_file(&self.checkpoint_path);
     }
 }
@@ -473,13 +475,15 @@ impl LiveWmSession {
         outputs: &[sophia_engine::HeadlessOutput],
         process: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let directory = config.wm_socket_path.with_extension("policy");
+        let directory = PolicySessionDirectory::create(
+            config.wm_socket_path.with_extension("policy"),
+        )?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
-            &directory,
+            directory.endpoint_path(),
             rustix::process::geteuid().as_raw(),
         )?;
         let socket_path = transport.socket_path().to_path_buf();
-        let checkpoint_path = directory.join("hagia-policy.checkpoint");
+        let checkpoint_path = directory.checkpoint_path();
         let spec = config.wm_process_args.iter().fold(
             ProcessLaunchSpec::new(process)
                 .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, &socket_path)
@@ -893,7 +897,7 @@ impl LiveWmSession {
             .checked_add(1)
             .ok_or("public WM connection epoch exhausted")?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
-            &public.directory,
+            public.directory.endpoint_path(),
             rustix::process::geteuid().as_raw(),
         )?;
         let (state, command) = update_supervisor(

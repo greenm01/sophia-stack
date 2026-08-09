@@ -124,6 +124,23 @@ make_artifact() {
 
 first="$(make_artifact 0001)"
 second="$(make_artifact 0002)"
+hagia_artifact="$TEMP_DIR/artifact-hagia"
+cp -a "$first" "$hagia_artifact"
+for command in sophia-hagia-session sophia-record-hagia-run sophia-verify-hagia; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/bin/$command"
+    chmod 755 "$hagia_artifact/bin/$command"
+done
+printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/hagia"
+chmod 755 "$hagia_artifact/target/release/hagia"
+printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-session\n' \
+    >"$hagia_artifact/share/wayland-sessions/sophia-hagia.desktop"
+hagia_digest="$(sha256sum "$hagia_artifact/target/release/hagia" | awk '{print $1}')"
+printf 'hagia_included=true\nhagia_binary_sha256=%s\n' "$hagia_digest" \
+    >>"$hagia_artifact/manifest"
+(
+    cd "$hagia_artifact"
+    find bin share target tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+)
 expect_policy_rejection() {
     local artifact="$1" label="$2"
     if "$ROOT_DIR/tools/verify_packaged_policy.sh" "$artifact" >/dev/null 2>&1; then
@@ -183,6 +200,17 @@ env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-rollback"
 [[ "$(readlink "$PREFIX/current")" == releases/0001 ]]
 [[ "$(readlink "$PREFIX/previous")" == releases/0002 ]]
 [[ -f "$PREFIX/current/share/doc/sophia/operations.md" ]]
+hagia_prefix="$TEMP_DIR/hagia/prefix"
+hagia_sessions="$TEMP_DIR/hagia/sessions"
+hagia_commands="$TEMP_DIR/hagia/commands"
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" \
+    "$ROOT_DIR/tools/install_live_session.sh" "$hagia_artifact"
+grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-session" \
+    "$hagia_sessions/sophia-hagia.desktop"
+for command in sophia-hagia-session sophia-record-hagia-run sophia-verify-hagia; do
+    [[ "$(readlink "$hagia_commands/$command")" == "$hagia_prefix/current/bin/$command" ]]
+done
 operator_state="$TEMP_DIR/operator-state"
 install -d -m 700 "$operator_state/sophia/promotion/runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/xterm-runs/0001"
@@ -191,6 +219,7 @@ install -d -m 700 "$operator_state/sophia/promotion/fallback-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/emergency-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/watchdog-runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/native-chrome-runs/0001"
+install -d -m 700 "$operator_state/sophia/promotion/hagia-runs/0001"
 printf 'sophia_installed_cycle schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/runs/0001/result.kdl"
 printf 'sophia_installed_xterm schema=1 status=passed exit_status=0\n' \
@@ -205,6 +234,10 @@ printf 'sophia_installed_watchdog schema=1 status=passed exit_status=124\n' \
     >"$operator_state/sophia/promotion/watchdog-runs/0001/result.kdl"
 printf 'sophia_installed_native_chrome schema=1 status=passed exit_status=0\n' \
     >"$operator_state/sophia/promotion/native-chrome-runs/0001/result.kdl"
+printf 'sophia_installed_hagia schema=1 status=passed exit_status=0\n' \
+    >"$operator_state/sophia/promotion/hagia-runs/0001/result.kdl"
+printf 'sophia_hagia_coverage schema=1 terminal_starts=1 firefox_starts=0 physical_actions=2 session_actions=1 pointer_moves=0 pointer_resizes=0 checkpoints=0 reconciliations=0 output_changes=0 topology_changes=0\n' \
+    >"$operator_state/sophia/promotion/hagia-runs/0001/coverage.kdl"
 status_output="$(env \
     SOPHIA_INSTALL_PREFIX="$PREFIX" \
     XDG_STATE_HOME="$operator_state" \
@@ -246,6 +279,11 @@ grep -Fq \
     <<<"$status_output"
 grep -Fq 'sophia_installed_native_chrome schema=1 status=passed exit_status=0' \
     <<<"$status_output"
+grep -Fq \
+    "latest_installed_hagia=$operator_state/sophia/promotion/hagia-runs/0001" \
+    <<<"$status_output"
+grep -Fq 'hagia_passed_runs=1' <<<"$status_output"
+grep -Fq 'hagia_scenario_physical_actions_sessions=1' <<<"$status_output"
 
 stop_runtime="$TEMP_DIR/stop-runtime"
 stop_state="$stop_runtime/sophia-xmonad-session-$UID"

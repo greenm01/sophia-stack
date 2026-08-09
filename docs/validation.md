@@ -1450,23 +1450,31 @@ sophia-verify-fallback
 # Verify the latest automatic native ring/frame proof:
 sophia-verify-native-chrome
 
-# Verify the latest archived two-hour session. The default requires at least
-# ten terminal and five Firefox action launches:
-sophia-verify-soak
+# Verify the latest installed Hagia session or exact emergency recovery. This
+# has no duration or action-count threshold:
+sophia-verify-hagia
+
+# Show identities, rollback target, outcomes, and cumulative scenario coverage:
+sophia-status
 
 # Run and then reverify ten clean installed lifecycle cycles:
 sophia-run-cycles
 sophia-verify-cycles 10
 
-# Full eight-hour workday, with proportionally broader app exercise:
-sophia-verify-soak 28800000 30 15
+# Historical xmonad soak artifacts remain reproducible but are not current
+# promotion gates:
+sophia-verify-soak
 ```
 
-Run the long gates through the installed `Sophia Firefox Proof` entry so the
-same log also contains the redacted keyboard, navigation/scroll, resize,
-refocus, dialog, and lifecycle contract. Selection correctness comes from the
-separately retained focused gates. The installed wrapper applies the focused
-login verifier automatically through `sophia-record-run`. Before xmonad
+Use `Sophia Hagia (Native Policy)` for ordinary development after its bounded
+preflight passes. Every launch reserves a Hagia ledger entry before takeover;
+normal logout passes, operator emergency return is marked recovered, and
+unexpected exit or invalid health fails. The checksummed coverage summary
+records scenarios actually observed without turning absent scenarios or wall
+time into a failure. `sophia-record-hagia-run` binds every attempt to exact
+Sophia and Hagia digests and `sophia-verify-hagia` rechecks the structural
+health or emergency-recovery outcome. The legacy xmonad wrapper applies its
+focused login verifier automatically through `sophia-record-run`. Before xmonad
 takeover, it reserves a numbered attempt with the release and launch identities.
 After handoff it finalizes that attempt with the session, guard, recovery, and
 lifecycle evidence. A clean attempt requires automatic Kitty startup,
@@ -1512,18 +1520,16 @@ emergency exits, incomplete input/WM/native cleanup, or fewer than the
 requested number of runs. An optional ending-run name selects that immutable
 archive and its direct predecessors, retaining the same no-gap fail-closed
 contract after later attempts enter the ledger.
-`sophia-verify-soak` selects the latest immutable normal-run archive by
-default. It rechecks archive checksums, the passed result, schema-4 normal-run
-contract, login and lifecycle cleanup, launch identity, commit, exact Sophia,
-Kitty, Firefox, and xmonad digests, and then one clean supported schema-14
-through schema-16 completion. The completion must meet the requested elapsed
-time and action counts with zero WM, Present, callback, native, or cleanup
-debt. An explicit archive directory may be supplied before the thresholds for
-historical verification.
+`sophia-verify-hagia` selects the latest Hagia archive by default, rechecks its
+checksums, profile, Sophia/Hagia digests, runtime identity, session or recovery
+semantics, lifecycle order, and recomputed coverage. It accepts only `passed`
+or `recovered`; failed and pending attempts remain visible. The retained
+`sophia-verify-soak` command still validates historical xmonad artifacts and
+their original thresholds but is not an active promotion requirement.
 Each installed launch rotates every active reduced log to one `.previous`
 generation, including the recovery log, and captures a content-free schema-2
 runtime identity with the kernel and Mesa versions, the packaged Sophia
-digest, Kitty/Firefox/xmonad binary digests, a hashed input-device identity,
+digest, Kitty/Firefox/xmonad/Hagia binary digests, a hashed input-device identity,
 and connector plus EDID hashes. The schema-4 attempt manifest repeats the
 Sophia digest, and every recorder and archive verifier requires it to match
 the captured identity. A later installation therefore cannot erase which
@@ -1531,9 +1537,11 @@ binary produced an older run. The verifier rejects missing or mismatched
 identities and fields that could contain typed, clipboard, or window content.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
-non-system staging installation for verifier tests. A release is not promoted
-to daily-driver status merely because installation succeeds; the three-login,
-recovery, fallback, repeated-cycle, and soak gates remain mandatory.
+non-system staging installation for verifier tests. Installation alone does
+not freeze the policy protocol or authorize removal of API v7. Those decisions
+require the deterministic reconnect/restart corpus, the archived revision-1
+client, applicable bounded physical scenarios, and no unresolved critical
+Hagia defect; they do not require a wall-clock soak.
 
 If an interactive physical run loses visible terminal content after typing,
 capture a bounded exact-input diagnostic instead of repeating an open-ended

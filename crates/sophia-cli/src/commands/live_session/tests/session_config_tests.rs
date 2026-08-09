@@ -268,6 +268,45 @@ fn public_policy_restart_aborts_settlement_before_process_replacement() {
 }
 
 #[test]
+fn public_policy_checkpoint_parent_survives_peer_endpoint_replacement() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = std::env::temp_dir().join(format!(
+        "sophia-policy-session-test-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let directory = PolicySessionDirectory::create(path.clone()).unwrap();
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    std::fs::write(directory.checkpoint_path(), b"private checkpoint").unwrap();
+    let endpoint_path = directory.endpoint_path();
+    let endpoint = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+        &endpoint_path,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    drop(endpoint);
+    assert!(directory.checkpoint_path().is_file());
+    assert!(!endpoint_path.exists());
+
+    let replacement = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+        &endpoint_path,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    drop(replacement);
+    drop(directory);
+    assert!(!path.exists());
+}
+
+#[test]
 fn public_policy_owner_fault_points_are_bounded_proof_controls() {
     for (value, expected) in [
         ("proposal_staged", PublicPolicyFaultPoint::ProposalStaged),

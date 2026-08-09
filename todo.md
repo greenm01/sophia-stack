@@ -43,45 +43,36 @@ The currently retained installed candidate provides:
 - commit-pinned normal, fallback, watchdog, emergency, native-chrome, and
   switch-away/switch-back evidence with exact runtime identity.
 
-Milestones 9 through 11 are complete. The 30-minute unattended churn gate and
-the automated ten-cycle installed lifecycle gate also pass. Milestone 12 owns
-the remaining promotion boundary. Immutable xterm attempt `0003` closes the
-corrected CPU-scene VT-recovery boundary. The same archive now also closes the focused
-xmobar/work-area gate through exact two-output reservations, repeated exact
-bar repaints, primary retirement, clean logout, and packaged xmobar identity.
-TrueColor attempt `0003` from `883666a2` closes the physical color boundary
-through exact X11 color requests, final primary-output composition evidence,
-Kitty DMA-BUF color, native retirement, normal logout, and exact recovery.
-Independent emergency attempt `0004` and ten-cycle range `0044` through `0053`
-also pass on `883666a2`. Preliminary soak attempt `0054` then retained a
-workspace-isolation and first-admission failure in that candidate. The bridge
-and admission fixes passed short successor run `0055`. The next source
-successor adds the practical opaque-action profile, immutable Engine-owned
-IR_Black chrome, and self-reporting soak evidence. It requires one short
-installed proof before restarting the two-hour soak; the full-workday gate
-remains after it. Active client projection onto output 2 is a separate
-compatibility boundary and is not claimed by the TrueColor gate.
+Milestones 9 through 12 are complete historical evidence for the xmonad
+compatibility profile. Their bounded lifecycle, recovery, color, work-area,
+and soak artifacts remain reproducible regressions, but elapsed wall time is
+not a current promotion criterion. Milestone 13 owns the active product path:
+Hagia becomes the ordinary installed session after bounded deterministic
+preflight, records every real session automatically, and leaves Kitty,
+xmonad, and the previous immutable release available for recovery. Protocol
+freeze and legacy-policy removal remain separate evidence-driven decisions.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
 active roadmap item.
 
-## Daily-Driver Promotion Contract
+## Installed Hagia Promotion Contract
 
-Sophia becomes a first physical daily-driver candidate only when one installed
-xmonad session proves all of the following:
+Sophia/Hagia becomes the ordinary physical session when one packaged candidate
+passes bounded deterministic preflight and preserves all recovery routes. Live
+use then produces immutable evidence rather than serving a fixed-duration gate:
 
 1. Normal login, automatic Kitty startup, and normal logout through greetd.
-2. Keyboard, pointer, focus, workspaces, shortcuts, resizing, and both outputs.
-3. At least two Kitty windows plus Firefox remaining independently usable.
-4. Small-text `CLIPBOARD` and `PRIMARY`, dialog handling, application close,
-   and representative 24-bit color rendering.
-5. Clean application, WM, frontend, renderer, KMS, input, and VT teardown.
-6. Independent emergency recovery from a separate destructive-path run.
-7. Repeated startup/logout cycles and an interactive soak with zero unexpected
-   protocol errors, stuck input, rejected callbacks, or cleanup debt.
-8. Installed release artifacts: no source build, mutable home-directory policy,
+2. Exact Sophia and Hagia executable identities in every archived attempt.
+3. Clean application, policy, frontend, renderer, KMS, input, and VT teardown.
+4. Ctrl-Alt-Backspace returns safely and is classified as `recovered`, never
+   as a clean session.
+5. Unexpected termination and invalid final health remain failed evidence.
+6. Installed release artifacts: no source build, mutable home-directory policy,
    manual service repair, or ad hoc process cleanup during ordinary login.
+7. No minimum elapsed time, launch count, or action count. Scenario coverage is
+   cumulative and informational; a named scenario becomes a gate only when its
+   affected architectural change requires that bounded proof.
 
 ---
 
@@ -184,8 +175,9 @@ retains unbounded ephemeral Firefox profiles. Installed `ce494942` fixes that
 resource lifecycle and run `0042` proves the cleanup. Installed `7a6be56c`
 routes Firefox attempts correctly but exposes a renderer-worker settlement gap
 during VT handoff. Installed `4c312142` closes that gap and passes automatic
-Firefox run `0002`. All remaining promotion gates and soaks must use this exact
-immutable build or a verified source-identical successor.
+Firefox run `0002`. Any reproduction of the historical xmonad promotion or
+soak artifacts must use this exact immutable build or a verified
+source-identical successor; those artifacts do not gate Hagia.
 
 ### 12.1 Close The Intended Desktop Configuration
 
@@ -549,10 +541,12 @@ future compatibility target, not a prerequisite.
   scrolling layouts. Prove Kitty, Firefox, floating dialogs, work areas,
   ordered repeated actions, pointer move/resize, multi-output views,
   `glxgears`, `vkcube`, policy restart, and clean logout.
-  Packaging and installation now accept an explicitly supplied Hagia binary
-  and publish a separate `Sophia Hagia (Native Policy)` login entry without
-  changing the default. Physical workday proof is still required before
-  promotion.
+  Packaging and installation accept an explicitly supplied Hagia binary and
+  publish `Sophia Hagia (Native Policy)` beside Kitty and xmonad recovery
+  entries. Promotion means selecting that entry as the remembered ordinary
+  session after deterministic preflight; it has no workday-duration
+  prerequisite. Every exit must enter the checksummed Hagia ledger as passed,
+  recovered, failed, or pending, with cumulative scenario coverage.
 - [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.
@@ -569,9 +563,10 @@ desktop.
 
 ## Milestone 14: Native Graphics Efficiency
 
-This milestone starts after the installed workday soak. It optimizes the same
-native-X product; XLibre, Xorg, niri, river, and other mature compositors are
-references rather than Sophia runtime components.
+This milestone starts after installed Hagia is the usable ordinary session and
+the revision-1 compatibility gate passes. It does not wait on elapsed dogfood
+time. It optimizes the same native-X product; XLibre, Xorg, niri, river, and
+other mature compositors are references rather than Sophia runtime components.
 
 - [ ] Extend the bounded visual-retirement model before changing frame-slot,
   coalescing, multi-output, shared-worker, direct-scanout, or buffer-lifetime
@@ -634,8 +629,8 @@ named soak failure promotes one.
 ### Classical X11 WM Compatibility
 
 - [ ] After native promotion, reinstall the practical xmonad profile and pass
-  its physical short gate, two-hour soak, and workday soak on one immutable
-  candidate. Require exact action and pointer commits, correct Kitty, Firefox,
+  its bounded physical scenario corpus on one immutable candidate. Require
+  exact action and pointer commits, correct Kitty, Firefox,
   xmobar, chrome, and TrueColor behavior, zero lifecycle debt, redacted health
   summaries, and checksummed artifacts.
 - [ ] Migrate that profile through the public projection transport without

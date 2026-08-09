@@ -1,5 +1,6 @@
 include!("wm/policy_map.rs");
 include!("wm/response_lifetime.rs");
+include!("wm/policy_session_directory.rs");
 include!("wm/public_policy.rs");
 include!("wm/session.rs");
 include!("wm/chrome.rs");

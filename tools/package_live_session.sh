@@ -103,6 +103,8 @@ install -m 755 tools/record_installed_watchdog_run.sh \
     "$artifact/bin/sophia-record-watchdog-run"
 install -m 755 tools/record_installed_native_chrome_run.sh \
     "$artifact/bin/sophia-record-native-chrome-run"
+install -m 755 tools/record_installed_hagia_run.sh \
+    "$artifact/bin/sophia-record-hagia-run"
 install -m 755 tools/verify_installed_session_cycles.sh \
     "$artifact/bin/sophia-verify-cycles"
 install -m 755 tools/verify_installed_soak_archive.sh \
@@ -135,6 +137,12 @@ install -m 755 tools/verify_installed_emergency_archive.sh \
     "$artifact/bin/sophia-verify-emergency"
 install -m 755 tools/verify_installed_runtime_identity.sh \
     "$artifact/bin/sophia-verify-runtime-identity"
+install -m 755 tools/verify_installed_hagia_session.sh \
+    "$artifact/bin/sophia-verify-hagia-session"
+install -m 755 tools/verify_installed_hagia_recovery.sh \
+    "$artifact/bin/sophia-verify-hagia-recovery"
+install -m 755 tools/verify_installed_hagia_archive.sh \
+    "$artifact/bin/sophia-verify-hagia"
 install -m 755 tools/verify_installed_session_lifecycle.sh \
     "$artifact/bin/sophia-verify-lifecycle"
 install -m 755 tools/verify_installed_watchdog_recovery.sh \
@@ -180,6 +188,8 @@ install -m 644 tools/lib/installed_attempt_ledger.sh \
     "$artifact/tools/lib/installed_attempt_ledger.sh"
 install -m 644 tools/lib/installed_soak_evidence.sh \
     "$artifact/tools/lib/installed_soak_evidence.sh"
+install -m 644 tools/lib/installed_hagia_evidence.sh \
+    "$artifact/tools/lib/installed_hagia_evidence.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
 install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"

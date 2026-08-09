@@ -93,7 +93,11 @@ commands=(
 )
 hagia_included="$(sed -n 's/^hagia_included=//p' "$artifact/manifest" | head -n 1)"
 if [[ "$hagia_included" == true ]]; then
-    commands+=(sophia-hagia-session)
+    commands+=(
+        sophia-hagia-session
+        sophia-record-hagia-run
+        sophia-verify-hagia
+    )
 fi
 for command in "${commands[@]}"; do
     [[ -x "$target/bin/$command" ]] || {

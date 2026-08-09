@@ -3,14 +3,23 @@ set -euo pipefail
 
 identity="${1:-}"
 expected_sophia_digest="${2:-}"
-(( $# >= 1 && $# <= 2 )) && [[ -s "$identity" ]] || {
-    echo "usage: tools/verify_installed_runtime_identity.sh IDENTITY [SOPHIA_SHA256]" >&2
+auxiliary_name="${3:-}"
+expected_auxiliary_digest="${4:-}"
+(( $# == 1 || $# == 2 || $# == 4 )) && [[ -s "$identity" ]] || {
+    echo "usage: tools/verify_installed_runtime_identity.sh IDENTITY [SOPHIA_SHA256 [AUXILIARY_NAME AUXILIARY_SHA256]]" >&2
     exit 1
 }
 if [[ -n "$expected_sophia_digest" \
     && ! "$expected_sophia_digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "expected Sophia digest is not a SHA-256 value" >&2
     exit 1
+fi
+if (( $# == 4 )); then
+    [[ "$auxiliary_name" =~ ^[a-z][a-z0-9_-]*$ \
+        && "$expected_auxiliary_digest" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "expected auxiliary identity is malformed" >&2
+        exit 1
+    }
 fi
 require_line() {
     grep -Eq "$1" "$identity" || {
@@ -38,6 +47,21 @@ for application in kitty firefox xmonad xmobar; do
     require_line "^sophia_runtime_identity schema=2 kind=application name=$application version=[^ ]+ digest=([0-9a-f]{64}|unavailable)$" \
         "$application identity"
 done
+if (( $# == 4 )); then
+    mapfile -t auxiliary_lines < <(
+        grep -E "^sophia_runtime_identity schema=2 kind=application name=$auxiliary_name version=[^ ]+ digest=[0-9a-f]{64}$" \
+            "$identity" || true
+    )
+    (( ${#auxiliary_lines[@]} == 1 )) || {
+        echo "installed runtime identity requires one $auxiliary_name executable identity" >&2
+        exit 1
+    }
+    observed_auxiliary_digest="${auxiliary_lines[0]##* digest=}"
+    [[ "$observed_auxiliary_digest" == "$expected_auxiliary_digest" ]] || {
+        echo "installed runtime identity has the wrong $auxiliary_name executable digest" >&2
+        exit 1
+    }
+fi
 require_line '^sophia_runtime_identity schema=2 kind=input seat=seat0 names_sha256=[0-9a-f]{64}$' \
     "input-seat identity"
 connected="$(

@@ -18,13 +18,13 @@ operator_guide="$PREFIX/current/share/doc/sophia/operations.md"
 printf 'operator_guide=%s\n' "$operator_guide"
 printf 'graphical_processes='
 found_graphical=false
-for process in sophia xmonad sophia-wm-demo kitty firefox xterm; do
+for process in sophia hagia xmonad sophia-wm-demo kitty firefox xterm; do
     if pgrep -a -x "$process" 2>/dev/null; then
         found_graphical=true
     fi
 done
 [[ "$found_graphical" == true ]] || echo none
-for profile in xmonad kitty native; do
+for profile in hagia xmonad kitty native; do
     state="$STATE_HOME/sophia/$profile-session"
     lifecycle="$state/lifecycle.log"
     printf '%s_logs=%s\n' "$profile" "$state"
@@ -74,3 +74,40 @@ print_latest_attempt installed_watchdog \
     "$STATE_HOME/sophia/promotion/watchdog-runs"
 print_latest_attempt installed_native_chrome \
     "$STATE_HOME/sophia/promotion/native-chrome-runs"
+print_latest_attempt installed_hagia \
+    "$STATE_HOME/sophia/promotion/hagia-runs"
+
+hagia_root="$STATE_HOME/sophia/promotion/hagia-runs"
+printf 'hagia_coverage_root=%s\n' "$hagia_root"
+for outcome in passed recovered failed pending; do
+    count="$({
+        grep -rlE "^sophia_installed_hagia schema=1 status=$outcome([[:space:]]|$)" \
+            "$hagia_root" --include=result.kdl 2>/dev/null || true
+    } | wc -l)"
+    printf 'hagia_%s_runs=%s\n' "$outcome" "$count"
+done
+mapfile -t hagia_coverage_files < <(
+    find "$hagia_root" -mindepth 2 -maxdepth 2 -type f -name coverage.kdl \
+        2>/dev/null | sort -V || true
+)
+for field in terminal_starts firefox_starts physical_actions session_actions \
+    pointer_moves pointer_resizes checkpoints reconciliations output_changes \
+    topology_changes; do
+    if (( ${#hagia_coverage_files[@]} == 0 )); then
+        observed=0
+    else
+        observed="$(awk -v field="$field" '
+            {
+                for (i = 1; i <= NF; i++) {
+                    split($i, pair, "=")
+                    if (pair[1] == field && pair[2] ~ /^[0-9]+$/ && pair[2] > 0) {
+                        seen++
+                        break
+                    }
+                }
+            }
+            END { print seen + 0 }
+        ' "${hagia_coverage_files[@]}")"
+    fi
+    printf 'hagia_scenario_%s_sessions=%s\n' "$field" "$observed"
+done

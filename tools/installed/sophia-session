@@ -72,6 +72,10 @@ case "$attempt_mode" in
         attempt_record="$RELEASE_DIR/bin/sophia-record-native-chrome-run"
         attempt_result_record=sophia_installed_native_chrome
         ;;
+    hagia)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-hagia-run"
+        attempt_result_record=sophia_installed_hagia
+        ;;
 esac
 # Reserve the ledger slot before takeover. A crash or interrupted handoff then
 # remains a pending attempt and cannot disappear between later clean runs.
@@ -83,11 +87,7 @@ if [[ -n "$attempt_record" ]]; then
 fi
 
 set +e
-if [[ "$SOPHIA_TTY_PROFILE" == hagia ]]; then
-    "$RELEASE_DIR/tools/run_sophia_session.sh" --wm=hagia "$@"
-else
-    "$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
-fi
+"$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
 session_status=$?
 set -e
 if [[ "$attempt_mode" =~ ^(xmonad|firefox|xterm)$ && "$session_status" == 130 ]] &&

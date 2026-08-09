@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
+firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
 seat="${SOPHIA_HAGIA_PHYSICAL_SEAT:-}"
 display="${SOPHIA_HAGIA_PHYSICAL_DISPLAY:-:291}"
 runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-120000}"
@@ -25,6 +26,10 @@ if [[ -z "$hagia_bin" || ! -x "$hagia_bin" ]]; then
 fi
 if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
     echo "set SOPHIA_TERMINAL_BIN to real Kitty" >&2
+    exit 2
+fi
+if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
+    echo "set SOPHIA_FIREFOX_BIN to real Firefox" >&2
     exit 2
 fi
 if [[ ! "$runtime_msec" =~ ^[0-9]+$ ]] || (( runtime_msec < 30000 )); then
@@ -58,6 +63,8 @@ SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
     "--session-app=terminal=$kitty_bin" \
     --session-start=terminal \
     --session-action-app=terminal=terminal \
+    "--session-app=firefox=$firefox_bin" \
+    --session-action-app=firefox=firefox \
     --session-app-arg=terminal=--config \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \

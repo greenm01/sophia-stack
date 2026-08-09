@@ -7,6 +7,7 @@ source "$ROOT_DIR/tools/lib/session_terminal.sh"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
 SOPHIA_NATIVE_WM_BIN="${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
+SOPHIA_HAGIA_BIN="${SOPHIA_HAGIA_BIN:-$(command -v hagia 2>/dev/null || true)}"
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
@@ -50,8 +51,9 @@ fi
 if [[ "$SESSION_PROFILE" != standalone
     && "$SESSION_PROFILE" != xmonad
     && "$SESSION_PROFILE" != native
+    && "$SESSION_PROFILE" != hagia
     && "$SESSION_PROFILE" != kitty ]]; then
-    echo "SOPHIA_TTY_PROFILE must be standalone, xmonad, native, or kitty." >&2
+    echo "SOPHIA_TTY_PROFILE must be standalone, xmonad, native, hagia, or kitty." >&2
     exit 1
 fi
 if [[ -n "$SESSION_WATCHDOG_SECONDS"
@@ -220,6 +222,18 @@ if [[ ( "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone )
     && ! -x "$SOPHIA_NATIVE_WM_BIN" ]]; then
     echo "Sophia native WM is not executable: $SOPHIA_NATIVE_WM_BIN" >&2
     exit 1
+fi
+if [[ "$SESSION_PROFILE" == hagia && ! -x "$SOPHIA_HAGIA_BIN" ]]; then
+    echo "Hagia policy executable is not executable: ${SOPHIA_HAGIA_BIN:-unavailable}" >&2
+    exit 1
+fi
+hagia_firefox_bin=""
+if [[ "$SESSION_PROFILE" == hagia ]]; then
+    hagia_firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
+    if [[ -z "$hagia_firefox_bin" || ! -x "$hagia_firefox_bin" ]]; then
+        echo "The retained Hagia revision-1 profile requires Firefox." >&2
+        exit 1
+    fi
 fi
 lifecycle_phase complete preflight
 
@@ -402,6 +416,9 @@ elif [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 elif [[ "$SESSION_PROFILE" == native ]]; then
     echo "Starting Sophia with its native WM policy on $DISPLAY_NAME."
+    echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
+elif [[ "$SESSION_PROFILE" == hagia ]]; then
+    echo "Starting Sophia with Hagia's native policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 else
     echo "Starting the supported Kitty-only Sophia input session on $DISPLAY_NAME."
@@ -652,6 +669,18 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
             "--session-app-arg=firefox=$firefox_page"
         )
     fi
+elif [[ "$SESSION_PROFILE" == hagia ]]; then
+    session_args+=(
+        --session-action-app=terminal=terminal
+        --wm-process="$SOPHIA_HAGIA_BIN"
+        --wm-interface=sophia_wm_v1
+    )
+    session_args+=(
+        "--session-app=firefox=$hagia_firefox_bin"
+        --session-action-app=firefox=firefox
+        --session-app-arg=firefox=--no-remote
+        --session-app-arg=firefox=--new-instance
+    )
 elif [[ "$SESSION_PROFILE" == native ]]; then
     session_args+=(
         --session-action-app=terminal=terminal

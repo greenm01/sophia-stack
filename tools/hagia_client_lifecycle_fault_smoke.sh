@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
+firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
 base_display="${SOPHIA_HAGIA_CLIENT_FAULT_DISPLAY:-:293}"
 phase_list="${SOPHIA_HAGIA_CLIENT_FAULT_PHASES:-negotiated,snapshot_received}"
 
@@ -13,6 +14,10 @@ if [[ -z "$hagia_bin" || ! -x "$hagia_bin" ]]; then
 fi
 if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
     echo "real Kitty is required; set SOPHIA_TERMINAL_BIN" >&2
+    exit 1
+fi
+if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
+    echo "the retained Hagia revision-1 profile requires Firefox" >&2
     exit 1
 fi
 if [[ ! "$base_display" =~ ^:([0-9]+)$ ]]; then
@@ -54,6 +59,8 @@ for index in "${!phases[@]}"; do
         "--session-app=terminal=$kitty_bin" \
         --session-start=terminal \
         --session-action-app=terminal=terminal \
+        "--session-app=firefox=$firefox_bin" \
+        --session-action-app=firefox=firefox \
         --session-app-arg=terminal=--config \
         --session-app-arg=terminal=NONE \
         --session-app-arg=terminal=--override \

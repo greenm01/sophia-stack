@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-}"
 case "$SESSION_PROFILE" in
-    kitty|native|standalone|xmonad) ;;
+    hagia|kitty|native|standalone|xmonad) ;;
     *)
-        echo "SOPHIA_TTY_PROFILE must be kitty, native, standalone, or xmonad." >&2
+        echo "SOPHIA_TTY_PROFILE must be hagia, kitty, native, standalone, or xmonad." >&2
         exit 1
         ;;
 esac
@@ -108,6 +108,7 @@ fi
 cd "$ROOT_DIR"
 case "$SESSION_PROFILE" in
     kitty) tools/run_sophia_kitty_session.sh "$@" ;;
+    hagia) tools/run_sophia_xmonad_session.sh "$@" ;;
     native) tools/run_sophia_xmonad_session.sh "$@" ;;
     standalone) tools/run_sophia_xmonad_session.sh "$@" ;;
     xmonad) tools/run_sophia_xmonad_session.sh "$@" ;;

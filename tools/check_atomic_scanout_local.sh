@@ -266,6 +266,7 @@ grep -Fq 'standalone) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_kitty_tty3.sh
 grep -Fq 'tools/start_sophia_tty3.sh' tools/start_sophia_xmonad_tty3.sh
 grep -Fq 'native) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
+grep -Fq 'hagia) tools/run_sophia_xmonad_session.sh' tools/start_sophia_tty3.sh
 grep -Fq "status=ready ' 180" tools/start_sophia_native_hot_reload_tty3.sh
 grep -Fq -- '--session-app=terminal-secondary=' tools/start_sophia_native_hot_reload_tty3.sh
 grep -Fq -- '--session-start=terminal-secondary' tools/start_sophia_native_hot_reload_tty3.sh
@@ -312,6 +313,18 @@ bash -n tools/installed/sophia-recovery-proof
 bash -n tools/installed/sophia-native-chrome-proof
 bash -n tools/installed/sophia-stop
 bash -n tools/installed/capture-runtime-identity.sh
+bash -n tools/installed/sophia-hagia-session \
+    tools/record_installed_hagia_run.sh \
+    tools/verify_installed_hagia_session.sh \
+    tools/verify_installed_hagia_recovery.sh \
+    tools/verify_installed_hagia_archive.sh \
+    tools/check_installed_hagia_ledger.sh
+tools/check_installed_hagia_ledger.sh
+bash -n tools/hagia_live_session_smoke.sh \
+    tools/hagia_client_lifecycle_fault_smoke.sh \
+    tools/hagia_owner_settlement_fault_smoke.sh \
+    tools/hagia_policy_physical_gate.sh \
+    tools/output_topology_physical_gate.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof
@@ -336,6 +349,9 @@ grep -Fq 'tools/verify_installed_native_chrome_archive.sh' tools/package_live_se
 grep -Fq 'target/release/sophia-wm-demo' tools/package_live_session.sh
 grep -Fq 'tools/lib/installed_attempt_ledger.sh' tools/package_live_session.sh
 grep -Fq 'tools/lib/installed_soak_evidence.sh' tools/package_live_session.sh
+grep -Fq 'tools/lib/installed_hagia_evidence.sh' tools/package_live_session.sh
+grep -Fq 'tools/record_installed_hagia_run.sh' tools/package_live_session.sh
+grep -Fq 'tools/verify_installed_hagia_archive.sh' tools/package_live_session.sh
 grep -Fq 'tools/installed/sophia-soak-progress' tools/package_live_session.sh
 grep -Fq 'tools/lib/session_terminal.sh' tools/package_live_session.sh
 grep -Fq 'tools/verify_installed_soak_archive.sh' tools/package_live_session.sh
@@ -348,7 +364,8 @@ bash -n tools/record_installed_session_run.sh \
     tools/record_installed_watchdog_run.sh tools/record_installed_fallback_run.sh \
     tools/record_installed_native_chrome_run.sh
 bash -n tools/lib/installed_attempt_ledger.sh \
-    tools/lib/installed_soak_evidence.sh tools/installed/sophia-soak-progress \
+    tools/lib/installed_soak_evidence.sh tools/lib/installed_hagia_evidence.sh \
+    tools/installed/sophia-soak-progress \
     tools/verify_installed_session_cycles.sh \
     tools/verify_installed_fallback_run.sh
 bash -n tools/verify_installed_session_soak.sh tools/check_installed_session_verifiers.sh
