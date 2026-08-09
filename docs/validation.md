@@ -51,6 +51,11 @@ projection.
 derived work area, and exact WM projection promote as one coherent generation;
 normal shell or WM failure preserves the prior presented bundle. It is a target
 pre-schema model and is not evidence of a production shell runtime.
+`OutputTopologyLifecycle` checks the current native owner's rescan boundary:
+replaceable hotplug hints, one routed-input epoch advance, old-scanout
+retirement, complete multi-consumer publication, current policy settlement,
+and presentation-before-input. No-output and bounded rebuild failure remain
+recoverably quarantined.
 The frame-ownership model permits an unrelated frame to submit and retire first
 and proves that only the exact bound frame can emit feedback.
 `GeometryFeedback` separates full rectangles from pixel readiness and proves
@@ -175,6 +180,23 @@ SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
 This is bounded offline integration evidence. It does not freeze the public
 revision or replace dynamic-output ingress, installed physical-session, and
 multi-output gates.
+
+The dynamic-output physical gate is separately armed because it takes
+exclusive DRM/input ownership and asks the operator to disconnect and reconnect
+one of two outputs:
+
+```sh
+SOPHIA_OUTPUT_TOPOLOGY_ARM=1 \
+SOPHIA_OUTPUT_TOPOLOGY_SEAT=seat0 \
+SOPHIA_HAGIA_BIN=~/dev/hagia/hagia \
+  tools/output_topology_physical_gate.sh
+```
+
+It requires one security-epoch barrier per change, complete one-output loss and
+two-output return publications with advancing generations, matching policy
+settlements, later page-flip retirements, a surviving Kitty input proof, and
+clean non-quarantined shutdown. Merely compiling or running the unarmed script
+does not claim physical hotplug evidence.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

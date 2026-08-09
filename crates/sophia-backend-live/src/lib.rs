@@ -37,6 +37,8 @@ mod session_loop;
 mod startup;
 
 pub use api::*;
+#[cfg(feature = "drm-hotplug")]
+pub use drm::{LiveDrmTopologyMonitor, LiveDrmTopologyMonitorStats, LiveDrmTopologyRescanNotice};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use presentation::*;
 pub use production_cpu_cycle::*;

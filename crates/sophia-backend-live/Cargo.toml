@@ -14,6 +14,7 @@ drm = { version = "0.15", optional = true, default-features = false }
 input = { version = "0.10", optional = true, default-features = false, features = ["libinput_1_19", "udev"] }
 libseat = { version = "0.2.4", optional = true, default-features = false }
 rustix = { version = "1.1", optional = true, default-features = false, features = ["event", "fs", "std", "time"] }
+udev = { version = "0.9.3", optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
@@ -24,6 +25,7 @@ default = []
 gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix"]
+drm-hotplug = ["dep:rustix", "dep:udev"]
 libinput-events = ["dep:input", "dep:rustix"]
 seat-control = ["dep:libseat", "dep:rustix"]
 

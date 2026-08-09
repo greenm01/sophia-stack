@@ -180,6 +180,30 @@ from WM transport round-trip and queue-dwell measurements. A slow policy
 process may delay a policy result up to its bounded timeout, but it cannot hold
 page-flip retirement or physical input on the owner thread.
 
+Dynamic DRM topology enters through a capacity-one udev rescan notifier. The
+notification is only a replaceable hint; it never carries authoritative
+connector state. The session owner advances the application-input security
+epoch once, clears deferred pointer ownership, and keeps only Engine shortcuts
+active while it drains or forcibly detaches the old scanout generation. The
+owner then performs a complete libdrm rescan and publishes one replacement
+bundle to native scanout, CPU composition size, pointer confinement, the X
+frontend's RandR snapshot, and public policy. Those cross-process consumers
+settle sequentially under quarantine: “bundle” means every publication carries
+the same complete owner generation and input cannot resume across a partial
+settlement, not that separate IPC endpoints change simultaneously. An empty or
+temporarily failed rescan remains quarantined and retries without consuming
+another security epoch. Applications and the last committed Engine scene
+remain alive.
+
+Input does not resume merely because KMS reopened or RandR acknowledged the
+snapshot. If topology changed, the matching WM projection must commit first;
+only a later page-flip retirement releases the quarantine. A response based on
+the retired output set becomes stale when the owner observes the replacement,
+before a new policy request is issued. VT acquisition, switch rejection, and
+startup scanout recovery use this same owner transition instead of treating a
+changed connector set as a fatal session error. Native connector identities,
+udev records, DRM handles, and rescan errors remain backend-private.
+
 The live X11 path has completed the Milestone 4 presentation work: standard
 DRI3/Present registrations, acquire-fence gating, mixed CPU/GPU composition,
 KMS submission, page-flip-driven Complete/Idle feedback, controlled rejection

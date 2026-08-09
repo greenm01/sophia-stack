@@ -368,10 +368,11 @@
             || session_launches.pending_len() != 0
             || session_launches.admission().is_some()
             || !input_delivery.pending.is_empty()
+            || output_topology_owner.input_quarantined()
             || wm_session.as_ref().is_some_and(|wm| wm.degraded))
     {
         return Err(format!(
-            "normal session ended with pending work: wm_layout={} wm_update={} wm_requests={} actions={} launches={} admission={} input={} degraded={}",
+            "normal session ended with pending work: wm_layout={} wm_update={} wm_requests={} actions={} launches={} admission={} input={} topology={} degraded={}",
             usize::from(layout.pending.is_some()),
             usize::from(pending_wm_update.is_some()),
             wm_session
@@ -381,6 +382,7 @@
             session_launches.pending_len(),
             usize::from(session_launches.admission().is_some()),
             input_delivery.pending.len(),
+            output_topology_owner.input_quarantined(),
             wm_session.as_ref().is_some_and(|wm| wm.degraded),
         )
         .into());
@@ -526,10 +528,14 @@
                 wm_session
                     .as_ref()
                     .map_or(0, LiveWmSession::pending_request_count),
-            ),
+        ),
         committed_session_actions.len(),
         input_delivery.pending.len(),
         wm_session.as_ref().is_some_and(|wm| wm.degraded),
+    );
+    println!(
+        "sophia_live_output_topology_health schema=1 status=clean quarantined={}",
+        output_topology_owner.input_quarantined(),
     );
     println!(
         "sophia_live_layout_health schema=2 status=clean recovery_extents={} standing_targets={} constraint_relayout_pending={}",

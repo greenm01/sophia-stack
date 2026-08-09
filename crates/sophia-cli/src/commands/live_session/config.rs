@@ -5,7 +5,10 @@ mod firefox_stage;
 #[path = "config/output.rs"]
 mod output;
 use firefox_stage::FirefoxM8StageProof;
-use output::{output_topology_from_engine_outputs, wm_output_bounds};
+use output::{
+    output_topology_from_engine_outputs, output_topology_from_engine_outputs_at_generation,
+    wm_output_bounds,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SessionApplicationSpec {

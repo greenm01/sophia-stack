@@ -116,6 +116,15 @@ impl LiveWmSession {
 }
 
 impl LiveWmSession {
+    fn topology_policy_commit_serial(&self) -> u64 {
+        self.public
+            .as_ref()
+            .map_or_else(
+                || u64::try_from(self.committed).unwrap_or(u64::MAX),
+                |public| public.reducer.commit_serial(),
+            )
+    }
+
     fn apply_public_commit_result(
         &mut self,
         result: LiveWmCommitResult,

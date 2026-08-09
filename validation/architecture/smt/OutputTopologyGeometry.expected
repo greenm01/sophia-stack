@@ -1,0 +1,14 @@
+secure_outputs_do_not_overlap
+unsat
+secure_outputs_are_contiguous
+unsat
+secure_root_is_exact_union
+unsat
+secure_root_bounds_do_not_overflow
+unsat
+negative_gapped_outputs
+sat
+negative_partial_root
+sat
+negative_zero_sized_output
+sat

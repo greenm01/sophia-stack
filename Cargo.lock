@@ -505,6 +505,7 @@ dependencies = [
  "sophia-renderer-live",
  "sophia-xshmfence",
  "tracing",
+ "udev",
 ]
 
 [[package]]

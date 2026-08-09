@@ -3,6 +3,13 @@ use super::*;
 pub(super) fn output_topology_from_engine_outputs(
     outputs: &[sophia_engine::HeadlessOutput],
 ) -> Result<sophia_protocol::OutputTopologySnapshot, Box<dyn std::error::Error>> {
+    output_topology_from_engine_outputs_at_generation(outputs, 1)
+}
+
+pub(super) fn output_topology_from_engine_outputs_at_generation(
+    outputs: &[sophia_engine::HeadlessOutput],
+    generation: u64,
+) -> Result<sophia_protocol::OutputTopologySnapshot, Box<dyn std::error::Error>> {
     let primary = outputs
         .first()
         .ok_or("live session requires at least one Engine output")?
@@ -34,7 +41,7 @@ pub(super) fn output_topology_from_engine_outputs(
         })
         .collect();
     let snapshot = sophia_protocol::OutputTopologySnapshot {
-        generation: 1,
+        generation,
         primary,
         outputs: entries,
     };

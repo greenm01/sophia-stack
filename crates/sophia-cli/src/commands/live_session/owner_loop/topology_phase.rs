@@ -1,0 +1,203 @@
+{
+    let monitor_notice = output_topology_monitor
+        .as_mut()
+        .map(sophia_backend_live::LiveDrmTopologyMonitor::poll_notice)
+        .transpose()?
+        .flatten();
+    let retry_due = output_topology_retry_at.is_some_and(|deadline| Instant::now() >= deadline);
+    if let Some(notice) = monitor_notice {
+        let advance_security_epoch = output_topology_owner.begin_rescan(notice.sequence)?;
+        output_topology_retry_at = None;
+        if advance_security_epoch {
+            let revoked_input_leases = advance_application_input_security_epoch(
+                &mut application_route_leases,
+                input_sender,
+                &layout.client_routes,
+                route_lease_release_sender,
+            )?;
+            pointer_focus_handoff = PointerFocusHandoffState::default();
+            key_repeat.cancel_seat(seat);
+            println!(
+                "sophia_live_input_epoch schema=1 reason=output_topology transition={} epoch={} revoked_leases={revoked_input_leases}",
+                output_topology_owner.transition,
+                application_route_leases.control_epoch(),
+            );
+        }
+    }
+
+    let rebuild_requested = (monitor_notice.is_some() || retry_due)
+        && output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+        && seat_state == sophia_backend_live::LiveSeatState::Active
+        && runtime.is_some();
+    if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+        && output_topology_retry_at.is_none()
+    {
+        output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
+    }
+    if rebuild_requested {
+        output_topology_retry_at = None;
+        let mut renderer_handoff = suspended_renderer_images.take();
+        if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
+            match runtime.suspend_native_scanout(native, &outputs, Duration::from_secs(2)) {
+                Ok(report) => {
+                    renderer_handoff = Some(capture_renderer_image_handoff(
+                        runtime,
+                        native,
+                        output.id,
+                    )?);
+                    tracing::info!(
+                        "sophia_live_output_topology schema=1 status=quiesced transition={} outcome={} abandoned_scanouts={}",
+                        output_topology_owner.transition,
+                        report.outcome.reduced_name(),
+                        report.abandoned_scanouts,
+                    );
+                }
+                Err(error) => {
+                    let report = runtime.suspend_revoked_native_scanout(&outputs)?;
+                    let discarded = runtime.discard_retained_renderer_images();
+                    renderer_handoff = None;
+                    tracing::warn!(
+                        "sophia_live_output_topology schema=1 status=forced_detach transition={} error={error} abandoned_scanouts={} discarded_images={discarded}",
+                        output_topology_owner.transition,
+                        report.abandoned_scanouts,
+                    );
+                }
+            }
+        }
+        native_scanout.take();
+
+        let replacement = match seat_controller.as_ref() {
+            Some(controller) => {
+                LiveProductionNativeScanout::new_with_seat(&controller.device_opener())
+                    .map_err(|error| error.to_string())
+            }
+            None => Err("DRM topology rescan lost its seat controller".to_owned()),
+        };
+        match replacement {
+            Err(error) => {
+                let _ = output_topology_owner.observe_rebuild(Vec::new())?;
+                suspended_renderer_images = renderer_handoff;
+                output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
+                tracing::warn!(
+                    "sophia_live_output_topology schema=1 status=unavailable transition={} retry_msec=250 error={error}",
+                    output_topology_owner.transition,
+                );
+            }
+            Ok(mut replacement) => {
+                let replacement_outputs = replacement.outputs();
+                let rebuild = output_topology_owner.observe_rebuild(replacement_outputs.clone())?;
+                let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
+                let replacement_primary = replacement_outputs[0];
+                if scene.reconfigure_output_size(replacement_primary.size)? {
+                    let committed = runtime
+                        .as_ref()
+                        .map(|runtime| runtime.committed_surfaces().to_vec())
+                        .unwrap_or_default();
+                    scene.compose(&committed, None, pointer.position())?;
+                }
+                let runtime = runtime
+                    .as_mut()
+                    .ok_or("DRM topology rescan lost the visual runtime")?;
+                let restored = resume_native_scanout_from_scene(
+                    runtime,
+                    &mut replacement,
+                    &replacement_outputs,
+                    &mut scene,
+                    renderer_handoff,
+                )?;
+
+                if topology_changed {
+                    let snapshot = output_topology_from_engine_outputs_at_generation(
+                        &replacement_outputs,
+                        output_topology_owner.publication_generation,
+                    )?;
+                    let (ack_sender, ack_receiver) = sync_channel(1);
+                    frontend_service_sender.send(
+                        XServerFrontendServiceCommand::UpdateOutputTopology {
+                            snapshot,
+                            acknowledgement: ack_sender,
+                        },
+                    )?;
+                    match ack_receiver.recv_timeout(Duration::from_secs(1))? {
+                        sophia_x_authority::XAuthorityOutputUpdateOutcome::Applied { .. } => {}
+                        outcome => {
+                            return Err(format!(
+                                "X frontend rejected owner topology publication: {outcome:?}"
+                            )
+                            .into());
+                        }
+                    }
+                }
+
+                outputs = replacement_outputs;
+                output = replacement_primary;
+                pointer.set_output_bounds(
+                    wm_output_bounds(&outputs)
+                        .into_iter()
+                        .map(|(_, bounds)| bounds)
+                        .collect(),
+                );
+                cursor_updates.dirty = pointer.position().is_some();
+                cursor_updates.dirty_since = cursor_updates.dirty.then(Instant::now);
+
+                let mut policy_required = false;
+                if topology_changed
+                    && let Some(wm) = wm_session.as_mut()
+                {
+                    let admission = wm.update_output_work_areas(&layout, &outputs, output)?;
+                    if admission == LiveWmRequestAdmission::RejectedCapacity {
+                        return Err("output topology relayout exceeded WM owner capacity".into());
+                    }
+                    policy_required = admission == LiveWmRequestAdmission::Admitted
+                        || wm.has_current_relayout_request(&layout);
+                    output_topology_policy_commit_baseline =
+                        wm.topology_policy_commit_serial();
+                }
+                let presentation_baseline = replacement.retirements;
+                output_topology_owner
+                    .mark_published(presentation_baseline, policy_required)?;
+                *native_scanout = Some(replacement);
+                tracing::info!(
+                    "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",
+                    output_topology_owner.transition,
+                    output_topology_owner.topology_epoch,
+                    output_topology_owner.publication_generation,
+                    outputs.len(),
+                    topology_changed,
+                    restored,
+                    policy_required,
+                );
+            }
+        }
+    }
+
+    if output_topology_owner.phase == LiveOutputTopologyPhase::Published
+        && wm_session.as_ref().is_some_and(|wm| {
+            wm.topology_policy_commit_serial() > output_topology_policy_commit_baseline
+        })
+    {
+        let presentation_baseline = native_scanout
+            .as_ref()
+            .map_or(0, |native| native.retirements);
+        output_topology_owner.mark_policy_committed(presentation_baseline)?;
+        tracing::info!(
+            "sophia_live_output_topology schema=1 status=policy_committed transition={} presentation_baseline={presentation_baseline}",
+            output_topology_owner.transition,
+        );
+    }
+    if let Some(retirements) = native_scanout.as_ref().map(|native| native.retirements)
+        && output_topology_owner.observe_presentation(retirements)
+    {
+        if startup_topology_recovery_pending {
+            let _ = reduce_session_startup(
+                &mut startup_readiness,
+                SessionStartupEvent::NativeRecovered,
+            );
+            startup_topology_recovery_pending = false;
+        }
+        tracing::info!(
+            "sophia_live_output_topology schema=1 status=settled transition={} retirements={retirements} input=enabled",
+            output_topology_owner.transition,
+        );
+    }
+}

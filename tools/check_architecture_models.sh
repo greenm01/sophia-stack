@@ -139,9 +139,22 @@ run_alloy PresentedTargetTopology.als AmbiguousWithoutTieBreakAttack sat
 run_alloy PresentedTargetTopology.als ReusedTargetIdentityAttack sat
 run_alloy PresentedTargetTopology.als SelfIssuedGrantAttack sat
 
+run_alloy OutputTopologyPublication.als AllConsumersShareCompleteEpoch unsat
+run_alloy OutputTopologyPublication.als InputUsesPresentedCurrentTopology unsat
+run_alloy OutputTopologyPublication.als OutputIdentityGenerationIsUnique unsat
+run_alloy OutputTopologyPublication.als PublishedTopologyIsNonempty unsat
+run_alloy OutputTopologyPublication.als ValidPublication sat
+run_alloy OutputTopologyPublication.als MixedConsumerEpochAttack sat
+run_alloy OutputTopologyPublication.als PartialOutputPublicationAttack sat
+run_alloy OutputTopologyPublication.als StalePresentedInputAttack sat
+run_alloy OutputTopologyPublication.als UncommittedPolicyInputAttack sat
+run_alloy OutputTopologyPublication.als ReusedOutputGenerationAttack sat
+run_alloy OutputTopologyPublication.als EmptyPublishedTopologyAttack sat
+
 run_smt TargetGeometryAndDisclosure
 run_smt WmV1WireBounds
 run_smt PolicyPresentationGeometry
+run_smt OutputTopologyGeometry
 
 if [ -n "${SOPHIA_Z3_DIFFERENTIAL:-}" ]; then
     differential_version=$("$SOPHIA_Z3_DIFFERENTIAL" --version 2>/dev/null || true)
@@ -157,6 +170,7 @@ if [ -n "${SOPHIA_Z3_DIFFERENTIAL:-}" ]; then
     run_smt TargetGeometryAndDisclosure
     run_smt WmV1WireBounds
     run_smt PolicyPresentationGeometry
+    run_smt OutputTopologyGeometry
     z3_bin=$stable_z3
     echo "optional Z3 5.x differential matched the stable gate"
 fi

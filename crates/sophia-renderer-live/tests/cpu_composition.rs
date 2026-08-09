@@ -518,6 +518,67 @@ fn production_scene_reuses_unchanged_secondary_output_frames() {
 }
 
 #[test]
+fn production_scene_reconfiguration_preserves_buffers_and_invalidates_frames() {
+    let original = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        scale: 1,
+    };
+    let replacement = HeadlessOutput {
+        size: Size {
+            width: 3,
+            height: 2,
+        },
+        ..original
+    };
+    let mut scene = LiveProductionCpuScene::new(original.size);
+    scene
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 41,
+            size: Size {
+                width: 1,
+                height: 1,
+            },
+            stride: 4,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: vec![0xff; 4],
+        })])
+        .unwrap();
+    scene
+        .compose_display_list(
+            original,
+            &[],
+            &CompositorDisplayList::empty(original.id),
+            None,
+        )
+        .unwrap();
+
+    assert!(scene.reconfigure_output_size(replacement.size).unwrap());
+    assert!(scene.contains_buffer(41));
+    assert!(scene.frames_for_outputs(&[replacement]).is_err());
+
+    scene
+        .compose_display_list(
+            replacement,
+            &[],
+            &CompositorDisplayList::empty(replacement.id),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        scene.frames_for_outputs(&[replacement]).unwrap()[0]
+            .frame
+            .size,
+        replacement.size
+    );
+    assert!(!scene.reconfigure_output_size(replacement.size).unwrap());
+}
+
+#[test]
 fn production_scene_metric_warmup_does_not_schedule_unchanged_content() {
     let output = HeadlessOutput {
         id: OutputId::from_raw(1),

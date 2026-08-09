@@ -998,6 +998,15 @@ impl LiveWmSession {
         if !changed {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
+        // Advance the reducer scene at the owner-observation boundary, before
+        // a replacement request is issued. An in-flight response derived from
+        // the retired output set is stale as soon as the owner accepts the new
+        // topology; waiting until the next cycle would leave a click-through
+        // window in which that response could still stage.
+        let scene = public.snapshot(layout)?;
+        if scene.generation > public.reducer.scene().generation {
+            public.reducer.observe_scene(scene)?;
+        }
         let affected_outputs = public.all_outputs(primary.id);
         Ok(public.queue_cause(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,

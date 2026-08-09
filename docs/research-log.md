@@ -27,10 +27,29 @@ passes the canonical reducer without being mislabeled as a direct
 This still does not freeze revision 1: shared reconnect/restart scenarios and
 an archived client remain open.
 
-Dynamic KMS topology ingress is also absent: the live native runtime owns fixed
-per-head sessions, queues, renderer targets, and pointer bounds. A safe hotplug
-path needs an owner-wide quiescence/rebuild barrier before connector polling
-can become authoritative.
+Dynamic KMS topology ingress now has its offline implementation and formal
+boundary. A capacity-one udev monitor coalesces `HOTPLUG=1` changes into a
+monotonic rescan hint; only the session owner rebuilds authoritative connector
+state. The owner advances routed-input authority once, quiesces or detaches the
+old native generation, retains application processes and CPU buffers, and
+publishes the same complete replacement generation to scanout, pointer, RandR,
+and policy consumers. Cross-process settlement is sequential while input stays
+quarantined; it is not claimed to be simultaneous IPC visibility. Empty or
+failed rescans remain shortcut-only and retry without consuming a second input
+epoch. Changed topology cannot restore application input until its policy
+projection commits and a later page flip retires. VT resume and startup
+recovery enter the same transition rather than aborting on a changed output
+vector.
+
+`OutputTopologyLifecycle.tla` checks that ordering across a replaceable notice,
+security epoch, retirement, rebuild, publication, policy settlement, and first
+presentation. TLC explored 1,484,394 generated and 230,797 distinct states to
+depth 32. Temporary controls exposed old RandR publication, old callback
+acceptance, early input enablement, and output-identity reuse. Alloy separately
+rejects torn publication, while Z3 checks complete horizontal topology
+geometry against both the pinned 4.16.0 solver and the local 5.x differential.
+The physical disconnect/reconnect gate is defined but remains unrun; no live
+hotplug evidence is claimed here.
 
 ## 2026-08-09: Restored Hagia state now drives a bounded private refresh
 

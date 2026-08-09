@@ -104,6 +104,19 @@ a prepared candidate to skip its final topology recheck and allowed an output
 to return without advancing generation. TLC violated
 `CommittedTopologyWasCurrent` and `ReappearedOutputIsFresh`, respectively.
 
+`OutputTopologyLifecycle.tla` carries that policy-level topology rule through
+the native session owner's split ownership-transfer boundary. It separates a
+replaceable rescan hint, routed-input epoch revocation, old scanout retirement,
+complete runtime rebuild, one logical scanout/pointer/RandR/policy publication
+barrier, current policy settlement, and exact first presentation. The logical
+barrier abstracts sequential cross-process settlement while input is
+quarantined; it does not assert simultaneous IPC visibility. No-output and one
+bounded rebuild failure remain input-quarantined and can recover after a later
+valid rescan. Scenario correspondence and exclusions are recorded in
+`validation/specula/output-topology-lifecycle-modeling-brief.md`.
+The bounded configuration explores 1,484,394 generated and 230,797 distinct
+states to depth 32.
+
 `PolicyRefreshLifecycle.tla` isolates the revision-1 refresh contract added for
 native Hagia policy. It admits only strictly increasing private generations,
 coalesces idle dirty output scopes, retains a newer dirty generation that

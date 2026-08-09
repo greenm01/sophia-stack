@@ -102,6 +102,16 @@ fn capture_renderer_image_handoff(
     native_scanout.export_renderer_image_handoff(output, &retained)
 }
 
+fn resume_native_scanout_from_scene(
+    runtime: &mut LiveProductionVisualRuntime,
+    native: &mut LiveProductionNativeScanout,
+    outputs: &[sophia_engine::HeadlessOutput],
+    scene: &mut LiveProductionCpuScene,
+    handoff: Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    runtime.resume_native_scanout(native, outputs, scene.frames_for_outputs(outputs)?, handoff)
+}
+
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
@@ -147,11 +157,23 @@ fn run_session_loop(
     let blank_normal_session = config.normal_session && config.applications.startup.is_empty();
     let initialize_empty_runtime =
         blank_normal_session || (config.normal_session && native_scanout.is_some());
-    let outputs = native_scanout
+    let mut outputs = native_scanout
         .as_ref()
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
-    let output = outputs[0];
+    let mut output = outputs[0];
+    let initial_output_publication_generation =
+        1u64.saturating_add(u64::from(config.inject_output_size.is_some()));
+    let mut output_topology_owner = LiveOutputTopologyOwner::new_at_generation(
+        outputs.clone(),
+        initial_output_publication_generation,
+    )?;
+    let mut output_topology_monitor = native_scanout
+        .is_some()
+        .then(sophia_backend_live::LiveDrmTopologyMonitor::open)
+        .transpose()?;
+    let mut output_topology_retry_at: Option<Instant> = None;
+    let mut output_topology_policy_commit_baseline = 0u64;
     let mut scene = LiveProductionCpuScene::new(output.size);
     if initialize_empty_runtime {
         scene.compose(&[], None, None)?;
@@ -312,6 +334,7 @@ fn run_session_loop(
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
     let mut startup_ready_reported = false;
     let mut startup_native_recovery_attempted = false;
+    let mut startup_topology_recovery_pending = false;
     let mut startup_outputs_ready_reported = false;
     let mut pending_authority_batches = VecDeque::new();
     let mut seat_state = sophia_backend_live::LiveSeatState::Active;

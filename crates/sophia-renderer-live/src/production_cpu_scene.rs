@@ -67,6 +67,27 @@ impl LiveProductionCpuScene {
         }
     }
 
+    /// Rebind composition to a replacement primary output while retaining
+    /// client-owned CPU buffers. Output-sized render products are invalidated;
+    /// callers must compose before requesting replacement native frames.
+    pub fn reconfigure_output_size(
+        &mut self,
+        output_size: Size,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if output_size.width <= 0 || output_size.height <= 0 {
+            return Err("CPU scene replacement output size must be positive".into());
+        }
+        if self.output_size == output_size {
+            return Ok(false);
+        }
+        self.output_size = output_size;
+        self.last_report = None;
+        self.last_output_damage_snapshot = None;
+        self.retained_primary_frames.clear();
+        self.secondary_output_frames.clear();
+        Ok(true)
+    }
+
     pub fn apply_updates(
         &mut self,
         updates: impl IntoIterator<Item = LiveCpuBufferUpdate>,

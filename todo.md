@@ -513,7 +513,12 @@ future compatibility target, not a prerequisite.
   behavior have their own model and deterministic tests.
   `PolicyOutputSettlement.tla` now proves the topology core for an atomic
   two-output candidate, output loss, and generation-advancing return. Dynamic
-  output ingress and its live multi-output harness remain open. The public
+  output ingress now uses a capacity-one udev rescan hint, an owner-wide
+  quiescence/rebuild barrier, one routed-input epoch advance, complete
+  scanout/pointer/RandR/policy publication, and policy-plus-presentation fence
+  before input resumes. `OutputTopologyLifecycle.tla`, Alloy, Z3, and focused
+  Rust tests cover the offline boundary. Its guarded physical multi-output
+  disconnect/reconnect harness remains unrun, so installed evidence is open. The public
   owner now admits only complete, valid output snapshots atomically, advances
   generations after disappearance, selects a surviving active output, and
   recognizes same-ID descriptor changes without partially mutating state.
@@ -800,7 +805,11 @@ named soak failure promotes one.
 - [ ] After work-area, output, or seat changes, re-run the exhaustive xmobar
   reservation lifecycle and require no stale gap, overlap, resize timeout, or
   focus change. Pair dynamic output-topology behavior with the later physical
-  multi-output hotplug gate.
+  multi-output hotplug gate. `tools/output_topology_physical_gate.sh` now arms
+  that exact two-output loss/return procedure and requires two input-epoch
+  barriers, generation-advancing complete publications, policy settlement,
+  later page flips, client survival, and clean final topology health. It has
+  not been run or promoted as evidence.
 
 ---
 

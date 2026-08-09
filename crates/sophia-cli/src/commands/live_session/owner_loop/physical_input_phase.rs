@@ -541,6 +541,55 @@ macro_rules! drain_physical_input {
     }};
 }
 
+macro_rules! schedule_output_topology_rebuild {
+    ($reason:literal, $security_epoch_already_advanced:expr) => {{
+        let notice_sequence = output_topology_owner
+            .notice_sequence
+            .checked_add(1)
+            .ok_or("synthetic output topology notice sequence exhausted")?;
+        let advance_security_epoch =
+            output_topology_owner.begin_rescan(notice_sequence)?;
+        if advance_security_epoch && !$security_epoch_already_advanced {
+            let revoked_input_leases = advance_application_input_security_epoch(
+                &mut application_route_leases,
+                input_sender,
+                &layout.client_routes,
+                route_lease_release_sender,
+            )?;
+            pointer_focus_handoff = PointerFocusHandoffState::default();
+            key_repeat.cancel_seat(seat);
+            println!(
+                "sophia_live_input_epoch schema=1 reason=output_topology transition={} epoch={} revoked_leases={revoked_input_leases}",
+                output_topology_owner.transition,
+                application_route_leases.control_epoch(),
+            );
+        }
+        output_topology_retry_at = Some(Instant::now());
+        tracing::warn!(
+            "sophia_live_output_topology schema=1 status=deferred transition={} source={} security_epoch_already_advanced={}",
+            output_topology_owner.transition,
+            $reason,
+            $security_epoch_already_advanced,
+        );
+    }};
+}
+
+macro_rules! publish_resumed_topology_transport {
+    ($native:expr) => {{
+        if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined {
+            let rebuild = output_topology_owner.observe_rebuild(outputs.clone())?;
+            debug_assert_eq!(rebuild, LiveOutputTopologyRebuild::TransportReplaced);
+            output_topology_owner.mark_published($native.retirements, false)?;
+            output_topology_retry_at = None;
+            tracing::info!(
+                "sophia_live_output_topology schema=1 status=published transition={} outputs={} changed=false source=seat_resume input=quarantined",
+                output_topology_owner.transition,
+                outputs.len(),
+            );
+        }
+    }};
+}
+
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
@@ -552,6 +601,7 @@ loop {
     }
     service_core_config_reload!();
     service_session_controls!();
+    include!("topology_phase.rs");
     include!("lifecycle.rs");
     include!("wm_phase.rs");
     include!("authority.rs");

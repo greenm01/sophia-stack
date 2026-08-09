@@ -32,6 +32,8 @@ unmodeled concurrency is safe.
 | `PolicyOperationBinding.als` | Can numeric action ranges, token substitution, or a target lacking the advertised permission invoke a session operation? | The committed `SnapshotBinding.session_operation_slot`, separately advertised opaque operation token, and optional target permission in `sophia_wm_v1`. |
 | `TargetGeometryAndDisclosure.smt2` | Do containment, intersection clipping, quantization, capability-epoch rate limits, and target/outcome quotas imply their bounded disclosure obligations? | Future target-schema validation and the target-resolved disclosure reducer. Limits remain symbolic until measurement and schema evidence choose values. |
 | `PolicyPresentationGeometry.smt2` | Do fullscreen, ordinary, and minimized placement rules keep geometry and focus consistent with output/work-area facts? | Canonical policy-projection validation: fullscreen is exactly output bounds, nonfullscreen geometry is within the work area, and minimized surfaces cannot hold focus. |
+| `OutputTopologyPublication.als` | Can a release-ready scanout, pointer, RandR, and policy bundle contain different topology epochs, or can input resume before current policy and presentation? | The native session owner's fail-closed topology transition and complete publication barrier. Intermediate IPC settlement is sequential and remains quarantined; this is bounded decision evidence, not a Rust refinement proof. |
+| `OutputTopologyGeometry.smt2` | Does a complete positive-width horizontal output sequence produce nonoverlapping contiguous bounds and the exact root width without overflow? | `output_topology_from_engine_outputs_at_generation`, pointer output bounds, and X frontend root geometry. |
 | `WmV1WireBounds.smt2` | Do current schema maxima fit the envelope, field widths, and checked record arithmetic? | `protocol/sophia-wm-v1.kdl`, the generated Rust/C99 codecs, and bounded begin/chunk/end transfer assemblers. |
 
 `sophia-wm-v1-facts.smt2` is generated from the KDL schema by
@@ -56,6 +58,9 @@ queries must be `sat`. The retained negative controls cover:
   operation requests carrying an unpermitted target;
 - targets outside allocations, occluded and lower-trust interception,
   ambiguous equal-trust overlap, identity reuse, and self-issued grants;
+- torn output-consumer publication, partial output sets, stale presentation,
+  input before current policy settlement, output-generation reuse, and empty
+  published topology;
 - unclipped and unquantized coordinates, frame-local rate-limit reset, and
   unbounded target partitioning;
 - fullscreen geometry that is merely contained, ordinary geometry outside the
