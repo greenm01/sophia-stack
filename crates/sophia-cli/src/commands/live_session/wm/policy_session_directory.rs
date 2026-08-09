@@ -22,6 +22,10 @@ impl PolicySessionDirectory {
     fn checkpoint_path(&self) -> std::path::PathBuf {
         self.path.join("hagia-policy.checkpoint")
     }
+
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
 }
 
 impl Drop for PolicySessionDirectory {

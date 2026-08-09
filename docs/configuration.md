@@ -44,6 +44,23 @@ mutable `~/.config/xmonad` or home-source discovery. In either case, the
 compatibility bridge crosses the same blind, versioned Sophia WM API, and a WM
 never overrides or mutates `config.kdl`.
 
+Hagia sessions additionally use the unified desktop profile at
+`${XDG_CONFIG_HOME:-$HOME/.config}/hagia/config.kdl`. An explicit
+`--desktop-profile=/absolute/path` wins, followed by the XDG file,
+`/etc/hagia/config.kdl`, and the compiled profile. Unlike Sophia's two
+authority-local files, this source permits bounded top-level includes: depth
+10, 64 files, and one MiB in aggregate, with owner/mode checks, cycle
+detection, deterministic expansion, and per-value provenance.
+
+The trusted session coordinator validates and partitions all seven desktop
+authorities before constructing the graphical session. It stages owner-only
+fragments with one generation and digest in the private policy runtime
+directory and gives Hagia only the policy-fragment path. Hagia cannot read or
+replace the shell, shortcut, session, input, output, or broker candidates.
+Watched desktop-profile reload remains disabled until the cross-authority
+prepare/activate/rollback protocol is wired; Sophia's existing core and native
+WM reload behavior is unchanged.
+
 ## Discovery
 
 Each domain resolves exactly one source at startup:

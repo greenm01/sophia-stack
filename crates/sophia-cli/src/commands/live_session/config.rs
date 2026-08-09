@@ -93,6 +93,7 @@ struct PersistentXtermSessionConfig {
     namespace_capabilities: NamespaceCapabilities,
     xkb_config: sophia_x_authority::XkbRmlvoConfig,
     key_repeat_config: sophia_config::RepeatConfig,
+    desktop_profile: sophia_config::DesktopProfileGeneration,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
     surface_chrome_style: sophia_engine::SurfaceChromeStyle,
@@ -139,6 +140,22 @@ impl PersistentXtermSessionConfig {
         };
         let core_config_state = sophia_config::CoreConfigState::load(&core_config_source)?;
         let core_snapshot = core_config_state.active();
+        let explicit_desktop_profile = arg_value(args, "--desktop-profile").map(Into::into);
+        if explicit_desktop_profile
+            .as_ref()
+            .is_some_and(|path: &std::path::PathBuf| !path.is_absolute())
+        {
+            return Err("--desktop-profile requires an absolute path".into());
+        }
+        let user_config_root = sophia_config::default_user_config_root();
+        let desktop_profile_source = sophia_config::discover_desktop_profile_source(
+            explicit_desktop_profile.as_deref(),
+            user_config_root.as_deref(),
+        );
+        let desktop_profile = sophia_config::load_desktop_profile(
+            desktop_profile_source.as_deref(),
+            sophia_config::ConfigGeneration::INITIAL,
+        )?;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
@@ -703,6 +720,7 @@ impl PersistentXtermSessionConfig {
             namespace_capabilities: NamespaceCapabilities::NONE,
             xkb_config,
             key_repeat_config: core_snapshot.input.repeat,
+            desktop_profile,
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,
             core_config_source,

@@ -48,6 +48,7 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
+    _profile_fragments: sophia_config::DesktopProfileFragments,
     directory: PolicySessionDirectory,
     checkpoint_path: std::path::PathBuf,
     worker: Option<PolicyTransportWorker>,
@@ -528,6 +529,23 @@ fn public_session_operations(
     (operations, actions)
 }
 
+fn public_policy_launch_spec(
+    config: &PersistentXtermSessionConfig,
+    process: &str,
+    socket_path: &std::path::Path,
+    checkpoint_path: &std::path::Path,
+    candidate_path: &std::path::Path,
+) -> ProcessLaunchSpec {
+    config.wm_process_args.iter().fold(
+        ProcessLaunchSpec::new(process)
+            .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
+            .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
+            .env("HAGIA_POLICY_CANDIDATE", candidate_path)
+            .process_group(),
+        |spec, argument| spec.arg(argument),
+    )
+}
+
 impl LiveWmSession {
     fn from_public_config(
         config: &PersistentXtermSessionConfig,
@@ -537,18 +555,20 @@ impl LiveWmSession {
         let directory = PolicySessionDirectory::create(
             config.wm_socket_path.with_extension("policy"),
         )?;
+        let profile_fragments =
+            sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
             directory.endpoint_path(),
             rustix::process::geteuid().as_raw(),
         )?;
         let socket_path = transport.socket_path().to_path_buf();
         let checkpoint_path = directory.checkpoint_path();
-        let spec = config.wm_process_args.iter().fold(
-            ProcessLaunchSpec::new(process)
-                .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, &socket_path)
-                .env("HAGIA_POLICY_CHECKPOINT", &checkpoint_path)
-                .process_group(),
-            |spec, argument| spec.arg(argument),
+        let spec = public_policy_launch_spec(
+            config,
+            process,
+            &socket_path,
+            &checkpoint_path,
+            profile_fragments.path(sophia_config::DesktopAuthority::Policy),
         );
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
         let restart_policy = RestartPolicy::default();
@@ -589,6 +609,7 @@ impl LiveWmSession {
             .map(|output| output.id)
             .collect::<BTreeSet<_>>();
         let mut public = LivePublicPolicyState {
+            _profile_fragments: profile_fragments,
             directory,
             checkpoint_path,
             worker: Some(worker),

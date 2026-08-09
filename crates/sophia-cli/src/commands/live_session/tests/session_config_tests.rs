@@ -169,6 +169,73 @@ fn live_x_session_profiles_are_explicit_and_fail_closed() {
 }
 
 #[test]
+fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = std::env::temp_dir().join(format!(
+        "sophia-live-desktop-profile-{}-{}.kdl",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(
+        &path,
+        "schema 1\npolicy { layout \"scroller\"; view-count 7; outer-gap 3; }\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let config =
+        PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
+            .unwrap();
+    let policy = config
+        .desktop_profile
+        .candidates
+        .get(&sophia_config::DesktopAuthority::Policy)
+        .unwrap();
+    assert_eq!(policy.values.len(), 3);
+
+    std::fs::write(&path, "schema 1\npolicy { view-count 99; }\n").unwrap();
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
+            .unwrap_err()
+            .to_string()
+            .contains("view-count")
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&["--desktop-profile=relative.kdl".to_owned()])
+            .unwrap_err()
+            .to_string()
+            .contains("absolute")
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn public_policy_launch_receives_only_the_staged_policy_candidate() {
+    let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
+    let spec = public_policy_launch_spec(
+        &config,
+        "/usr/bin/hagia",
+        std::path::Path::new("/run/user/1000/sophia/policy/endpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
+    );
+    assert!(spec.environment.contains(&(
+        "HAGIA_POLICY_CANDIDATE".into(),
+        "/run/user/1000/sophia/policy/policy.profile.kdl".into()
+    )));
+    assert!(
+        spec.environment
+            .iter()
+            .all(|(_, value)| !value.to_string_lossy().contains("session.profile.kdl"))
+    );
+}
+
+#[test]
 fn public_policy_session_operation_tokens_are_fresh_and_slot_stable() {
     let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
     let (first, _) = public_session_operations(&config);
