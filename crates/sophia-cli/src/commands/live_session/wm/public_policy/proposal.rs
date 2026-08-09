@@ -13,6 +13,7 @@ fn public_live_proposal(
         .cloned()
         .collect::<Vec<_>>();
     let mut requested_sizes = BTreeMap::new();
+    let mut presentation_states = BTreeMap::new();
     let mut applied_surfaces = Vec::new();
     let focus = projections
         .iter()
@@ -21,6 +22,7 @@ fn public_live_proposal(
     for projection in projections {
         for placement in projection.placements {
             applied_surfaces.push(placement.surface);
+            presentation_states.insert(placement.surface, placement.presentation);
             if placement.presentation.minimized {
                 continue;
             }
@@ -66,6 +68,7 @@ fn public_live_proposal(
         transaction,
         layers,
         requested_sizes,
+        presentation_states,
         configure_deliveries: 0,
         focus,
         timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
@@ -93,6 +96,7 @@ fn public_operation_proposal(
         transaction,
         layers: layout.layers.values().cloned().collect(),
         requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::new(),
         configure_deliveries: 0,
         focus: None,
         timeout: Duration::from_secs(1),

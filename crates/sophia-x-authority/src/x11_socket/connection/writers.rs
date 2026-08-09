@@ -317,6 +317,50 @@ fn x11_surface_geometry_records(
 }
 
 #[cfg(unix)]
+fn x11_presentation_property_records(
+    byte_order: XByteOrder,
+    sequence: u16,
+    client: XServerFrontendClientId,
+    window: XResourceId,
+    changed: &[crate::XAtom],
+    selections: &XCoreEventSelectionState,
+    protocol_routing: Option<&XServerFrontendRouteRegistry>,
+) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    const PROPERTY_CHANGE_MASK: u32 = 1 << 22;
+    let mut records = Vec::with_capacity(changed.len());
+    for atom in changed {
+        let event = XClientEvent::PropertyNotify {
+            sequence,
+            window,
+            atom: *atom,
+            time: 0,
+            new_value: true,
+        };
+        let local_selected = if let Some(routing) = protocol_routing {
+            let subscribers = routing.property_change_subscribers(window).map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to inspect presentation property subscriptions: {error:?}"
+                ))
+            })?;
+            for target in subscribers.iter().copied().filter(|target| *target != client) {
+                routing.route_protocol(target, event).map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to route presentation property notification: {error:?}"
+                    ))
+                })?;
+            }
+            subscribers.contains(&client)
+        } else {
+            selections.selects(window, PROPERTY_CHANGE_MASK)
+        };
+        if local_selected {
+            records.push(encode_x_client_event(byte_order, event));
+        }
+    }
+    Ok(records)
+}
+
+#[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 fn spawn_x11_control_writer(
     stream: Arc<Mutex<UnixStream>>,
@@ -544,6 +588,51 @@ fn spawn_x11_control_writer(
                             protocol_routing.as_ref(),
                         )?
                     }
+                }
+                XAuthorityControlCommand::SetPresentationState { state, .. }
+                | XAuthorityControlCommand::RestorePresentationState { state, .. } => {
+                    let mut atoms = atoms
+                        .lock()
+                        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
+                    let mut properties = properties.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 property table lock poisoned")
+                    })?;
+                    let changed = match apply_engine_presentation_state(
+                        &mut properties,
+                        &mut atoms,
+                        namespace,
+                        window,
+                        byte_order,
+                        state,
+                    ) {
+                        Ok(changed) => changed,
+                        Err(_) => {
+                            channels.send_ack(
+                                client,
+                                XAuthorityControlAck {
+                                    kind,
+                                    transaction,
+                                    surface,
+                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
+                                },
+                            )?;
+                            continue;
+                        }
+                    };
+                    drop(properties);
+                    drop(atoms);
+                    let selections = core_event_selections.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 core event selection lock poisoned")
+                    })?;
+                    x11_presentation_property_records(
+                        byte_order,
+                        event_sequence,
+                        client,
+                        window,
+                        &changed,
+                        &selections,
+                        protocol_routing.as_ref(),
+                    )?
                 }
                 XAuthorityControlCommand::CloseSurface { .. } => {
                     let atoms = atoms

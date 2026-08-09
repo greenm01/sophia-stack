@@ -44,6 +44,20 @@ fn control(
                 height: 600,
             },
         },
+        XAuthorityControlKind::SetPresentationState => {
+            XAuthorityControlCommand::SetPresentationState {
+                transaction,
+                surface,
+                state: sophia_protocol::PolicyPresentationState::default(),
+            }
+        }
+        XAuthorityControlKind::RestorePresentationState => {
+            XAuthorityControlCommand::RestorePresentationState {
+                transaction,
+                surface,
+                state: sophia_protocol::PolicyPresentationState::default(),
+            }
+        }
         XAuthorityControlKind::FocusSurface => XAuthorityControlCommand::FocusSurface {
             transaction,
             surface,

@@ -181,6 +181,14 @@ renderable content match the candidate. If settlement changes a relevant fact,
 Engine requests policy again from a fresh complete snapshot rather than
 silently rewriting the proposal.
 
+For X11 surfaces, a public-policy presentation transition also crosses a
+bounded frontend control. The frontend installs `_NET_WM_STATE` plus ICCCM
+`WM_STATE`, emits selected `PropertyNotify` events, flushes them, and only then
+acknowledges the control. That acknowledgement is a commit prerequisite. A
+timed-out or invalidated proposal queues restoration of the last committed
+frontend state; client `ChangeProperty`, `DeleteProperty`, and delete-on-read
+cannot overwrite these Engine-owned feedback properties.
+
 Physical outputs retire independently. The logical projection transaction
 feeds the existing visual-preparation and retirement model; it does not claim
 that separate displays flip at one simultaneous physical instant.

@@ -4,6 +4,8 @@ impl PersistentLiveLayout {
             transaction: proposal.transaction,
             layers: proposal.layers,
             requested_sizes: proposal.requested_sizes,
+            presentation_states: proposal.presentation_states,
+            presentation_settlements: BTreeSet::new(),
             configure_deliveries: proposal.configure_deliveries,
             focus: proposal.focus,
             deadline: Instant::now(),
@@ -138,6 +140,9 @@ impl PersistentLiveLayout {
             .into_iter()
             .map(|layer| (layer.surface, layer))
             .collect();
+        for (surface, state) in pending.presentation_states {
+            self.committed_policy_presentations.insert(surface, state);
+        }
         let selected_admission_transactions = pending
             .admission_surfaces
             .iter()

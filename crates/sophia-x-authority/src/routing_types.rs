@@ -155,6 +155,16 @@ pub enum XAuthorityControlCommand {
         surface: SurfaceId,
         geometry: Rect,
     },
+    SetPresentationState {
+        transaction: TransactionId,
+        surface: SurfaceId,
+        state: sophia_protocol::PolicyPresentationState,
+    },
+    RestorePresentationState {
+        transaction: TransactionId,
+        surface: SurfaceId,
+        state: sophia_protocol::PolicyPresentationState,
+    },
     FocusSurface {
         transaction: TransactionId,
         surface: SurfaceId,
@@ -177,6 +187,8 @@ pub enum XAuthorityControlCommand {
 pub enum XAuthorityControlKind {
     AdmitSurface,
     ConfigureSurface,
+    SetPresentationState,
+    RestorePresentationState,
     FocusSurface,
     ClearFocus,
     CloseSurface,
@@ -188,6 +200,10 @@ impl XAuthorityControlCommand {
         match self {
             Self::AdmitSurface { .. } => XAuthorityControlKind::AdmitSurface,
             Self::ConfigureSurface { .. } => XAuthorityControlKind::ConfigureSurface,
+            Self::SetPresentationState { .. } => XAuthorityControlKind::SetPresentationState,
+            Self::RestorePresentationState { .. } => {
+                XAuthorityControlKind::RestorePresentationState
+            }
             Self::FocusSurface { .. } => XAuthorityControlKind::FocusSurface,
             Self::ClearFocus { .. } => XAuthorityControlKind::ClearFocus,
             Self::CloseSurface { .. } => XAuthorityControlKind::CloseSurface,
@@ -199,6 +215,8 @@ impl XAuthorityControlCommand {
         match self {
             Self::AdmitSurface { transaction, .. }
             | Self::ConfigureSurface { transaction, .. }
+            | Self::SetPresentationState { transaction, .. }
+            | Self::RestorePresentationState { transaction, .. }
             | Self::FocusSurface { transaction, .. }
             | Self::ClearFocus { transaction, .. }
             | Self::CloseSurface { transaction, .. }
@@ -210,6 +228,8 @@ impl XAuthorityControlCommand {
         match self {
             Self::AdmitSurface { surface, .. }
             | Self::ConfigureSurface { surface, .. }
+            | Self::SetPresentationState { surface, .. }
+            | Self::RestorePresentationState { surface, .. }
             | Self::FocusSurface { surface, .. }
             | Self::ClearFocus { surface, .. }
             | Self::CloseSurface { surface, .. }

@@ -1,6 +1,7 @@
 #[cfg(unix)]
 #[test]
 fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() {
+    use std::collections::BTreeMap;
     use std::io::Write;
     use std::num::NonZeroUsize;
     use std::os::unix::net::UnixStream;
@@ -65,7 +66,7 @@ fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() 
             80,
         ))
         .unwrap();
-    let lifecycle_mask = (1_u32 << 15) | (1_u32 << 16) | (1_u32 << 17);
+    let lifecycle_mask = (1_u32 << 15) | (1_u32 << 16) | (1_u32 << 17) | (1_u32 << 22);
     for window in [0x0020_0801, 0x0020_0802] {
         stream
             .write_all(&change_window_event_mask_request(
@@ -218,6 +219,112 @@ fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() 
             },
         }
     );
+
+    let state = PolicyPresentationState {
+        fullscreen: true,
+        ..PolicyPresentationState::default()
+    };
+    control_sender
+        .send(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::SetPresentationState {
+                transaction,
+                surface: intent.surface,
+                state,
+            },
+        })
+        .unwrap();
+    let net_notify = read_x_record(&mut stream);
+    let wm_notify = read_x_record(&mut stream);
+    assert_eq!(net_notify[0], 28);
+    assert_eq!(wm_notify[0], 28);
+    assert_eq!(
+        acknowledgement_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap(),
+        XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::SetPresentationState,
+                transaction,
+                surface: intent.surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        }
+    );
+
+    let mut interned = BTreeMap::new();
+    for name in [
+        X_ATOM_NAME_NET_WM_STATE,
+        X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
+        X_ATOM_NAME_WM_STATE,
+    ] {
+        stream
+            .write_all(&intern_atom_request(XByteOrder::LittleEndian, true, name))
+            .unwrap();
+        let reply = read_x_reply(&mut stream, XByteOrder::LittleEndian);
+        let atom = read_u32(XByteOrder::LittleEndian, &reply[8..12]);
+        assert_ne!(atom, 0);
+        interned.insert(name, atom);
+    }
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &net_notify[8..12]),
+        interned[X_ATOM_NAME_NET_WM_STATE]
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &wm_notify[8..12]),
+        interned[X_ATOM_NAME_WM_STATE]
+    );
+    for (property, expected) in [
+        (
+            interned[X_ATOM_NAME_NET_WM_STATE],
+            vec![interned[X_ATOM_NAME_NET_WM_STATE_FULLSCREEN]],
+        ),
+        (interned[X_ATOM_NAME_WM_STATE], vec![1, 0]),
+    ] {
+        stream
+            .write_all(&get_property_request(
+                XByteOrder::LittleEndian,
+                false,
+                0x0020_0801,
+                property,
+                X_PROPERTY_ANY_TYPE,
+                0,
+                8,
+            ))
+            .unwrap();
+        let reply = read_x_reply(&mut stream, XByteOrder::LittleEndian);
+        assert_eq!(read_u32(XByteOrder::LittleEndian, &reply[16..20]), expected.len() as u32);
+        let values = reply[32..32 + expected.len() * 4]
+            .chunks_exact(4)
+            .map(|bytes| read_u32(XByteOrder::LittleEndian, bytes))
+            .collect::<Vec<_>>();
+        assert_eq!(values, expected);
+    }
+    stream
+        .write_all(&change_property_request(
+            XByteOrder::LittleEndian,
+            XPropertyMode::Replace,
+            0x0020_0801,
+            interned[X_ATOM_NAME_NET_WM_STATE],
+            X_ATOM_ATOM,
+            32,
+            &[],
+        ))
+        .unwrap();
+    let denied_change = read_x_record(&mut stream);
+    assert_eq!(denied_change[0], 0);
+    assert_eq!(denied_change[1], 10, "Engine-owned state rejects ChangeProperty");
+    stream
+        .write_all(&delete_property_request(
+            XByteOrder::LittleEndian,
+            0x0020_0801,
+            interned[X_ATOM_NAME_WM_STATE],
+        ))
+        .unwrap();
+    let denied_delete = read_x_record(&mut stream);
+    assert_eq!(denied_delete[0], 0);
+    assert_eq!(denied_delete[1], 10, "Engine-owned state rejects DeleteProperty");
 
     drop(stream);
     service_sender

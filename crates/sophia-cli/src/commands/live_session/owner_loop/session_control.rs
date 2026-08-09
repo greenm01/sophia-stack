@@ -60,6 +60,18 @@ macro_rules! service_session_controls {
                     completion.key.surface.index(),
                 );
             }
+            if completion.key.kind == XAuthorityControlKind::SetPresentationState
+                && layout.acknowledge_presentation_control(
+                    completion.key.transaction,
+                    completion.key.surface,
+                )
+            {
+                println!(
+                    "sophia_live_surface_presentation schema=1 status=frontend_configured transaction={} surface={}",
+                    completion.key.transaction.raw(),
+                    completion.key.surface.index(),
+                );
+            }
             if completion.key.kind == XAuthorityControlKind::ConfigureSurface
                 && layout.layout_epochs.acknowledge_recovery_configure(
                     completion.key.transaction,

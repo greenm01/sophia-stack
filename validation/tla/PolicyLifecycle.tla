@@ -3,7 +3,8 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 (***************************************************************************
  * Ordered policy causes, policy-initiated reprojection, replaceable pointer *
- * geometry, configuration activation, frontend settlement, and last-good   *
+ * geometry, configuration activation, frontend settlement (including       *
+ * protocol-visible presentation-state acknowledgement), and last-good      *
  * preservation. An activation identity is distinct from its opaque action  *
  * token, so two presses of the same binding remain two ordered operations.  *
  *************************************************************************)

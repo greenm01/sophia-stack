@@ -802,6 +802,7 @@ fn x_error_from_property_read(error: XPropertyError) -> XErrorCode {
         | XPropertyError::TableTooLarge { .. }
         | XPropertyError::TypeMismatch
         | XPropertyError::InvalidOffset => XErrorCode::BadValue,
+        XPropertyError::AuthorityOwned => XErrorCode::BadAccess,
     }
 }
 

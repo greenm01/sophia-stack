@@ -117,6 +117,7 @@ fn move_only_surface_receives_geometry_control_without_becoming_a_resize_obligat
                 },
             ),
         ]),
+        presentation_states: BTreeMap::new(),
         configure_deliveries: 0,
         focus: Some(firefox),
         timeout: Duration::from_secs(1),
@@ -172,6 +173,7 @@ fn focus_only_layout_emits_no_geometry_control() {
         transaction,
         layers: vec![test_layer(surface, geometry)],
         requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::new(),
         configure_deliveries: 0,
         focus: Some(surface),
         timeout: Duration::from_secs(1),
@@ -222,6 +224,7 @@ fn recovery_reseed_reasserts_geometry_when_only_committed_pixels_are_stale() {
         transaction,
         layers: vec![test_layer(surface, geometry)],
         requested_sizes: BTreeMap::from([(surface, requested_size)]),
+        presentation_states: BTreeMap::new(),
         configure_deliveries: 0,
         focus: Some(surface),
         timeout: Duration::from_secs(1),
@@ -293,6 +296,8 @@ fn resize_timeout_restores_the_complete_committed_rectangle() {
                 height: rejected.height,
             },
         )]),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::new(),
         configure_deliveries: 1,
         focus: Some(surface),
         deadline: Instant::now(),
@@ -324,5 +329,141 @@ fn resize_timeout_restores_the_complete_committed_rectangle() {
             surface,
             geometry: committed,
         }
+    );
+}
+
+#[test]
+fn public_presentation_state_waits_for_frontend_acknowledgement() {
+    let surface = SurfaceId::new(8, 1);
+    let transaction = TransactionId::from_raw(18);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+    };
+    let state = sophia_protocol::PolicyPresentationState {
+        maximized: true,
+        ..sophia_protocol::PolicyPresentationState::default()
+    };
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout.layout_epochs.record_committed(
+        surface,
+        Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    );
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::from([(surface, state)]),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: None,
+        effects: None,
+        policy_settlement: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+    assert!(!layout.pending_is_ready());
+    let commands = drain_test_controls(&mut controls);
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].command,
+        sophia_x_authority::XAuthorityControlCommand::SetPresentationState {
+            transaction,
+            surface,
+            state,
+        }
+    );
+    assert!(layout.acknowledge_presentation_control(transaction, surface));
+    assert!(layout.pending_is_ready());
+    assert!(layout.resolve_pending().is_some());
+    assert_eq!(
+        layout.committed_policy_presentations.get(&surface),
+        Some(&state)
+    );
+}
+
+#[test]
+fn rejected_presentation_state_restores_the_last_frontend_value() {
+    let surface = SurfaceId::new(9, 1);
+    let transaction = TransactionId::from_raw(19);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+    };
+    let previous = sophia_protocol::PolicyPresentationState {
+        fullscreen: true,
+        ..sophia_protocol::PolicyPresentationState::default()
+    };
+    let rejected = sophia_protocol::PolicyPresentationState {
+        minimized: true,
+        ..sophia_protocol::PolicyPresentationState::default()
+    };
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout
+        .committed_policy_presentations
+        .insert(surface, previous);
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: Vec::new(),
+        requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::from([(surface, rejected)]),
+        presentation_settlements: BTreeSet::new(),
+        configure_deliveries: 0,
+        focus: None,
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::new(),
+        source: None,
+        effects: None,
+        policy_settlement: None,
+    });
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    let result = layout.expire_pending(&mut controls).unwrap().unwrap();
+    assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+    let commands = drain_test_controls(&mut controls);
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].command,
+        sophia_x_authority::XAuthorityControlCommand::RestorePresentationState {
+            transaction,
+            surface,
+            state: previous,
+        }
+    );
+    assert_eq!(
+        layout.committed_policy_presentations.get(&surface),
+        Some(&previous)
     );
 }

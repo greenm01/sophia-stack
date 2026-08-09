@@ -2,6 +2,8 @@ struct PendingLiveWmLayout {
     transaction: TransactionId,
     layers: Vec<LayerSnapshot>,
     requested_sizes: BTreeMap<SurfaceId, Size>,
+    presentation_states: BTreeMap<SurfaceId, sophia_protocol::PolicyPresentationState>,
+    presentation_settlements: BTreeSet<SurfaceId>,
     configure_deliveries: usize,
     focus: Option<SurfaceId>,
     deadline: Instant,
@@ -62,6 +64,8 @@ struct PersistentLiveLayout {
     center_first_surface_in: Option<Size>,
     constraint_relayout_required: bool,
     awaiting_visual_commits: ResizeVisualCommitTracker,
+    committed_policy_presentations:
+        BTreeMap<SurfaceId, sophia_protocol::PolicyPresentationState>,
 }
 
 impl PersistentLiveLayout {
@@ -446,6 +450,8 @@ impl PersistentLiveLayout {
             .retain(|surface| !removed_surfaces.contains(surface));
         self.presentation_roles
             .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.committed_policy_presentations
+            .retain(|surface, _| !removed_surfaces.contains(surface));
         // Preserve a surviving transient's attachment to a removed owner.  A
         // stale owner is deliberately non-visible until the client publishes
         // a new ownership snapshot; dropping the relation here would promote
@@ -731,13 +737,44 @@ impl PersistentLiveLayout {
                     format!("failed to queue WM configure control: {error:?}")
                 })?;
         }
+        let presentation_settlements = proposal
+            .presentation_states
+            .iter()
+            .filter_map(|(surface, state)| {
+                (self.committed_policy_presentations.get(surface) != Some(state))
+                    .then_some(*surface)
+            })
+            .collect::<BTreeSet<_>>();
+        for surface in &presentation_settlements {
+            let state = proposal.presentation_states[surface];
+            let client = self
+                .client_routes
+                .client_for_surface(*surface)
+                .ok_or("live WM presentation state has no X11 client route")?;
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand {
+                        client,
+                        command: XAuthorityControlCommand::SetPresentationState {
+                            transaction: proposal.transaction,
+                            surface: *surface,
+                            state,
+                        },
+                    },
+                    Instant::now(),
+                )
+                .map_err(|error| {
+                    format!("failed to queue WM presentation-state control: {error:?}")
+                })?;
+        }
         let ready = proposal
             .requested_sizes
             .iter()
             .all(|(surface, size)| {
                 self.layout_epochs.committed_size(*surface) == Some(*size)
                     && !admission_surfaces.contains(surface)
-            });
+            })
+            && presentation_settlements.is_empty();
         if ready {
             return Ok(Some(self.commit_proposal(proposal)));
         }
@@ -745,6 +782,8 @@ impl PersistentLiveLayout {
             transaction: proposal.transaction,
             layers: proposal.layers,
             requested_sizes: proposal.requested_sizes,
+            presentation_states: proposal.presentation_states,
+            presentation_settlements,
             configure_deliveries: proposal.configure_deliveries,
             focus: proposal.focus,
             deadline: Instant::now() + proposal.timeout,
@@ -784,7 +823,8 @@ impl PersistentLiveLayout {
         let Some(pending) = self.pending.as_ref() else {
             return false;
         };
-        pending.requested_sizes.iter().all(|(surface, size)| {
+        pending.presentation_settlements.is_empty()
+            && pending.requested_sizes.iter().all(|(surface, size)| {
             let staged_matches = pending
                 .staged_transactions
                 .get(surface)
@@ -814,7 +854,18 @@ impl PersistentLiveLayout {
                 staged_matches || retained_matches
             };
             pixels_ready && admission_ready
-        })
+            })
+    }
+
+    fn acknowledge_presentation_control(
+        &mut self,
+        transaction: TransactionId,
+        surface: SurfaceId,
+    ) -> bool {
+        let Some(pending) = self.pending.as_mut() else {
+            return false;
+        };
+        pending.transaction == transaction && pending.presentation_settlements.remove(&surface)
     }
 
     fn force_pending_timeout(&mut self) -> bool {
@@ -913,6 +964,35 @@ impl PersistentLiveLayout {
             }, Instant::now()).map_err(|error| {
                 format!("failed to queue WM rollback control: {error:?}")
             })?;
+        }
+        for (surface, desired) in &pending.presentation_states {
+            let previous = self
+                .committed_policy_presentations
+                .get(surface)
+                .copied()
+                .unwrap_or_default();
+            if previous == *desired || terminal_admissions.contains(surface) {
+                continue;
+            }
+            let client = self
+                .client_routes
+                .client_for_surface(*surface)
+                .ok_or("live WM presentation rollback has no X11 client route")?;
+            session_controls
+                .enqueue(
+                    XAuthorityClientControlCommand {
+                        client,
+                        command: XAuthorityControlCommand::RestorePresentationState {
+                            transaction: rollback_transaction,
+                            surface: *surface,
+                            state: previous,
+                        },
+                    },
+                    Instant::now(),
+                )
+                .map_err(|error| {
+                    format!("failed to queue WM presentation rollback: {error:?}")
+                })?;
         }
         for surface in &terminal_admissions {
             let client = self

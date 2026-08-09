@@ -331,6 +331,16 @@ and maps recognized dialog/menu/utility/splash/popup-like functional types to
 `ClientPositioned`. Property replacement or deletion publishes the resulting
 role change; no X atom crosses into Engine state.
 
+Committed public-policy presentation state travels in the opposite direction
+as a protocol-neutral frontend control. X Authority materializes fullscreen,
+paired horizontal/vertical maximize, hidden/minimized, and ordinary/restore as
+`_NET_WM_STATE`; it also publishes ICCCM `WM_STATE` as Normal or Iconic. Both
+properties change as one bounded table operation. Selected `PropertyNotify`
+events are flushed before acknowledgement, and the application cannot mutate,
+delete, or delete-on-read these Engine-owned feedback properties afterward.
+The live policy transaction waits for this acknowledgement and restores the
+last committed values if its candidate aborts.
+
 ## Namespace Model
 
 The normative identity, profile, admission, capability, and grant contract is

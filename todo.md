@@ -495,8 +495,13 @@ future compatibility target, not a prerequisite.
 - [ ] Carry committed public-policy fullscreen, maximize, minimize, and restore
   state through the X frontend's protocol-visible state transition and verify
   exact configure/state feedback. Engine geometry, focus exclusion, semantic
-  minimized placement, and render-layer omission are implemented; they do not
-  yet claim complete EWMH state signaling.
+  minimized placement, and render-layer omission are implemented. The offline
+  path now installs protected `_NET_WM_STATE` and ICCCM `WM_STATE`, waits for a
+  flushed frontend acknowledgement before policy promotion, and restores the
+  previous state on rejection. Exact socket tests cover property values,
+  notifications, and denied client overwrite/deletion. The item remains open
+  until the installed Hagia physical gate proves all four transitions with a
+  real application.
 - [ ] Prove the retained scrolling layout plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
   restart, and hot-swap. Defer Janet until candidate validation and fallback

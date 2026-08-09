@@ -267,6 +267,7 @@ static int build_projection(
             placement->crop_width = 0;
             placement->crop_height = 0;
             placement->transform = 1;
+            placement->presentation_bits = 0;
             if (projected_outputs[output_index].focus_index == 0 &&
                 (surface->capability_bits & SURFACE_FOCUSABLE) != 0) {
                 projected_outputs[output_index].focus_index = surface->surface_index;
@@ -310,6 +311,7 @@ static int send_projection(
     begin.connection_epoch = connection_epoch;
     begin.request_id = request->request_id;
     begin.base_generation = request->scene_generation;
+    begin.active_output = read_u64(request->affected_outputs);
     begin.chunk_count = placement_count == 0 ? 1u : 2u;
     begin.output_count = request->affected_output_count;
     begin.placement_count = (uint32_t)placement_count;

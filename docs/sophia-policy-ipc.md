@@ -163,6 +163,12 @@ renderable-content obligations settle. Only the owner-loop commit promotes
 that staged reducer successor and returns `committed`; timeout, invalidation,
 disconnect, or replacement retains the previous complete projection.
 
+The X frontend refines this generic settlement with protocol-visible
+presentation state. Fullscreen, maximized, minimized, and restored candidates
+do not promote until the corresponding `_NET_WM_STATE` and `WM_STATE` update
+has been flushed and acknowledged. Rejection restores the prior frontend value.
+No X atom or ICCCM/EWMH rule enters the public policy schema.
+
 The dormant Rust reference client completes a full authenticated snapshot,
 request, and proposal cycle over this transport. The generic X11 bridge's v7
 response is covered through the canonical projection adapter. A standalone

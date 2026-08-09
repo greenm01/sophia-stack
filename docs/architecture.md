@@ -504,6 +504,12 @@ No frontend may duplicate Engine's scene graph or infer presentation from
 client traffic. Engine output snapshots and presentation retirement flow back to
 the authority so it can produce native protocol replies and events.
 
+Protocol-visible presentation feedback is likewise frontend-owned. Engine may
+send a reduced fullscreen/maximized/minimized/ordinary state with a settlement
+identity; the X frontend alone translates it to ICCCM/EWMH properties and
+acknowledges after socket visibility. Policy never receives X atoms, and a
+frontend acknowledgement cannot promote a stale Engine candidate.
+
 ### Sophia X Server Frontend
 
 Use **Sophia X Server Frontend** for the component and **X11** for its

@@ -3,10 +3,10 @@ use sophia_protocol::{
     ClientAuthenticationMethod, DeviceId, InputEventKind, LayoutNodeKind, NamespaceCapabilities,
     NamespaceContext, NamespaceId, NamespacePortalCapability, NamespaceProfile, OutputEdge,
     OutputId, OutputReservation, OutputTopologyEntry, OutputTopologySnapshot, Point,
-    PortalBrokerRequestPacket, PortalDecision, PortalGrant, PortalGrantState, PortalRequest,
-    PortalTransfer, PortalTransferKind, Rect, Region, RoutedInputRequest, SeatId, Size,
-    SurfaceConstraints, SurfaceId, SurfacePlacementPreference, SurfacePresentationRole,
-    TransactionId,
+    PolicyPresentationState, PortalBrokerRequestPacket, PortalDecision, PortalGrant,
+    PortalGrantState, PortalRequest, PortalTransfer, PortalTransferKind, Rect, Region,
+    RoutedInputRequest, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePlacementPreference,
+    SurfacePresentationRole, TransactionId,
 };
 use sophia_x_authority::*;
 include!("x11_wire/transport_events.rs");

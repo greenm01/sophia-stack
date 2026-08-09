@@ -45,11 +45,11 @@ use crate::{
     XServerFrontendClientId, XServerFrontendConfig, XServerFrontendPeerCredentials,
     XServerFrontendRenderDeviceError, XServerFrontendRenderDeviceProvider,
     XServerFrontendRouteError, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
-    XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext, decode_x11_core_request,
-    dispatch_x11_parse_error, dispatch_x11_wire_request, encode_x_client_event,
-    encode_x11_setup_failure, encode_x11_setup_success, parse_x11_setup_request,
-    try_emit_x_authority_observation, x_output_reservations_for_window,
-    x11_setup_request_total_len,
+    XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
+    apply_engine_presentation_state, decode_x11_core_request, dispatch_x11_parse_error,
+    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
+    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
+    x_output_reservations_for_window, x11_setup_request_total_len,
 };
 #[cfg(all(unix, test))]
 use sophia_protocol::RoutedInputRequest;

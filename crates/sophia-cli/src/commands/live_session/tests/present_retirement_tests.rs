@@ -32,6 +32,8 @@ fn hold_resize(
                 height: geometry.height,
             },
         )]),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::new(),
         configure_deliveries: 0,
         focus: Some(surface),
         deadline: Instant::now() + Duration::from_secs(1),

@@ -151,9 +151,13 @@ fn dispatch_core_property_request(
                                     response,
                                 )
                             }
-                            Err(_) => (
+                            Err(error) => (
                                 XClientOutput::Error(crate::XClientError {
-                                    code: crate::XErrorCode::BadValue,
+                                    code: if error == crate::XPropertyError::AuthorityOwned {
+                                        crate::XErrorCode::BadAccess
+                                    } else {
+                                        crate::XErrorCode::BadValue
+                                    },
                                     sequence: context.sequence,
                                     resource_id: u32::try_from(change.window.local.raw()).unwrap_or(0),
                                     minor_code: 0,
@@ -189,6 +193,19 @@ fn dispatch_core_property_request(
                         ),
                         Ok(()) => {
                             let removed = properties.remove(context.namespace, window, property);
+                            let Ok(removed) = removed else {
+                                return XDispatchFamilyResult::Handled(XDispatchResult {
+                                    response: None,
+                                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                                        code: crate::XErrorCode::BadAccess,
+                                        sequence: context.sequence,
+                                        resource_id: property,
+                                        minor_code: 0,
+                                        major_code: context.major_opcode,
+                                    })],
+                                    metadata_candidates: Vec::new(),
+                                });
+                            };
                             let response = match atoms.name(property) {
                                 Some("WM_TRANSIENT_FOR") => Some({
                                     let mut response =

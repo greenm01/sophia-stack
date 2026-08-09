@@ -562,6 +562,123 @@ fn x11_property_table_appends_and_rejects_type_mismatch() {
 }
 
 #[test]
+fn engine_presentation_state_materializes_exact_icccm_and_ewmh_properties() {
+    let namespace = NamespaceId::from_raw(7);
+    let window = XResourceId::new(0x210, 1);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let changed = apply_engine_presentation_state(
+        &mut properties,
+        &mut atoms,
+        namespace,
+        window,
+        XByteOrder::LittleEndian,
+        PolicyPresentationState::default(),
+    )
+    .unwrap();
+    assert_eq!(changed.len(), 2);
+    let net_state = atoms.atom(X_ATOM_NAME_NET_WM_STATE).unwrap();
+    let wm_state = atoms.atom(X_ATOM_NAME_WM_STATE).unwrap();
+    assert_eq!(
+        properties.get(namespace, window, net_state).unwrap().bytes,
+        Vec::<u8>::new()
+    );
+    assert_eq!(
+        properties.get(namespace, window, wm_state).unwrap().bytes,
+        [1_u32.to_le_bytes(), 0_u32.to_le_bytes()].concat()
+    );
+    assert!(
+        apply_engine_presentation_state(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            window,
+            XByteOrder::LittleEndian,
+            PolicyPresentationState::default(),
+        )
+        .unwrap()
+        .is_empty()
+    );
+
+    let changed = apply_engine_presentation_state(
+        &mut properties,
+        &mut atoms,
+        namespace,
+        window,
+        XByteOrder::LittleEndian,
+        PolicyPresentationState {
+            maximized: true,
+            ..PolicyPresentationState::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(changed, vec![net_state]);
+    let maximized_vert = atoms
+        .atom(X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT)
+        .unwrap();
+    let maximized_horz = atoms
+        .atom(X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ)
+        .unwrap();
+    assert_eq!(
+        properties.get(namespace, window, net_state).unwrap().bytes,
+        [
+            maximized_vert.to_le_bytes(),
+            maximized_horz.to_le_bytes()
+        ]
+        .concat()
+    );
+
+    let before = properties.clone();
+    assert_eq!(
+        apply_engine_presentation_state(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            window,
+            XByteOrder::LittleEndian,
+            PolicyPresentationState {
+                fullscreen: true,
+                minimized: true,
+                maximized: false,
+            },
+        ),
+        Err(XPresentationPropertyError::InvalidState)
+    );
+    assert_eq!(properties, before);
+
+    assert_eq!(
+        properties.apply_change(
+            namespace,
+            XPropertyChange {
+                mode: XPropertyMode::Replace,
+                window,
+                property: net_state,
+                property_type: X_ATOM_ATOM,
+                format: 32,
+                bytes: Vec::new(),
+            },
+        ),
+        Err(XPropertyError::AuthorityOwned)
+    );
+    let read = properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: true,
+                window,
+                property: net_state,
+                property_type: X_PROPERTY_ANY_TYPE,
+                long_offset: 0,
+                long_length: 8,
+            },
+        )
+        .unwrap();
+    assert!(!read.deleted);
+    assert!(properties.get(namespace, window, net_state).is_some());
+}
+
+#[test]
 fn x11_atom_table_resolves_predefined_and_dynamic_names() {
     let mut atoms = XAtomTable::new();
 

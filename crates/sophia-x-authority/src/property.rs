@@ -1,12 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
-    AxisSpan, LayoutNodeKind, NamespaceId, OutputEdge, OutputReservation, Rect, Size,
-    SurfaceConstraints, SurfacePlacementPreference,
+    AxisSpan, LayoutNodeKind, NamespaceId, OutputEdge, OutputReservation, PolicyPresentationState,
+    Rect, Size, SurfaceConstraints, SurfacePlacementPreference,
 };
 
 use crate::{
-    X_ATOM_CARDINAL, X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, XAtom, XAtomTable,
+    X_ATOM_ATOM, X_ATOM_CARDINAL, X_ATOM_NAME_NET_WM_STATE, X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
+    X_ATOM_NAME_NET_WM_STATE_HIDDEN, X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ,
+    X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT, X_ATOM_NAME_NET_WM_STRUT,
+    X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_STATE, XAtom, XAtomError, XAtomTable,
     XByteOrder, XResourceId, is_metadata_candidate_name,
 };
 
@@ -89,6 +92,26 @@ pub enum XPropertyError {
     TableTooLarge { len: usize, max: usize },
     TypeMismatch,
     InvalidOffset,
+    AuthorityOwned,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum XPresentationPropertyError {
+    InvalidState,
+    Atom(XAtomError),
+    Property(XPropertyError),
+}
+
+impl From<XAtomError> for XPresentationPropertyError {
+    fn from(error: XAtomError) -> Self {
+        Self::Atom(error)
+    }
+}
+
+impl From<XPropertyError> for XPresentationPropertyError {
+    fn from(error: XPropertyError) -> Self {
+        Self::Property(error)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -544,9 +567,18 @@ impl core::fmt::Display for XPropertyError {
 
 impl std::error::Error for XPropertyError {}
 
+impl core::fmt::Display for XPresentationPropertyError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for XPresentationPropertyError {}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct XPropertyTable {
     records: BTreeMap<(NamespaceId, XResourceId, XAtom), XPropertyRecord>,
+    engine_owned: BTreeSet<(NamespaceId, XResourceId, XAtom)>,
 }
 
 impl XPropertyTable {
@@ -574,6 +606,9 @@ impl XPropertyTable {
         }
 
         let key = (namespace, change.window, change.property);
+        if self.engine_owned.contains(&key) {
+            return Err(XPropertyError::AuthorityOwned);
+        }
         let previous = self.records.get(&key);
         let previous_len = previous.map_or(0, |record| record.bytes.len());
         let generation = previous
@@ -659,6 +694,10 @@ impl XPropertyTable {
             .retain(|(record_namespace, record_window, _), _| {
                 *record_namespace != namespace || *record_window != window
             });
+        self.engine_owned
+            .retain(|(record_namespace, record_window, _)| {
+                *record_namespace != namespace || *record_window != window
+            });
         before.saturating_sub(self.records.len())
     }
 
@@ -667,8 +706,12 @@ impl XPropertyTable {
         namespace: NamespaceId,
         window: XResourceId,
         property: XAtom,
-    ) -> Option<XPropertyRecord> {
-        self.records.remove(&(namespace, window, property))
+    ) -> Result<Option<XPropertyRecord>, XPropertyError> {
+        let key = (namespace, window, property);
+        if self.engine_owned.contains(&key) {
+            return Err(XPropertyError::AuthorityOwned);
+        }
+        Ok(self.records.remove(&key))
     }
 
     pub fn len(&self) -> usize {
@@ -716,12 +759,141 @@ impl XPropertyTable {
             && reply.property_type != X_PROPERTY_ANY_TYPE
             && (read.property_type == X_PROPERTY_ANY_TYPE
                 || read.property_type == reply.property_type)
-            && reply.bytes_after == 0;
+            && reply.bytes_after == 0
+            && !self
+                .engine_owned
+                .contains(&(namespace, read.window, read.property));
         if deleted {
-            self.remove(namespace, read.window, read.property);
+            let _ = self.remove(namespace, read.window, read.property)?;
         }
         Ok(XPropertyReadOutcome { reply, deleted })
     }
+}
+
+/// Installs Engine-authoritative logical presentation feedback as one bounded
+/// property-table transition. Geometry and policy remain outside this X11
+/// compatibility adapter; only standard client-visible state is materialized.
+pub fn apply_engine_presentation_state(
+    properties: &mut XPropertyTable,
+    atoms: &mut XAtomTable,
+    namespace: NamespaceId,
+    window: XResourceId,
+    byte_order: XByteOrder,
+    state: PolicyPresentationState,
+) -> Result<Vec<XAtom>, XPresentationPropertyError> {
+    if !namespace.is_valid() {
+        return Err(XPropertyError::InvalidNamespace.into());
+    }
+    if !window.is_valid() {
+        return Err(XPropertyError::InvalidWindow.into());
+    }
+    if (state.fullscreen && state.maximized)
+        || (state.minimized && (state.fullscreen || state.maximized))
+    {
+        return Err(XPresentationPropertyError::InvalidState);
+    }
+
+    let mut atom = |name: &str| -> Result<XAtom, XPresentationPropertyError> {
+        atoms
+            .intern(name, false)?
+            .ok_or(XPresentationPropertyError::Atom(
+                XAtomError::AtomSpaceExhausted,
+            ))
+    };
+    let net_wm_state = atom(X_ATOM_NAME_NET_WM_STATE)?;
+    let fullscreen = atom(X_ATOM_NAME_NET_WM_STATE_FULLSCREEN)?;
+    let hidden = atom(X_ATOM_NAME_NET_WM_STATE_HIDDEN)?;
+    let maximized_horz = atom(X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ)?;
+    let maximized_vert = atom(X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT)?;
+    let wm_state = atom(X_ATOM_NAME_WM_STATE)?;
+
+    let encode = |value: u32| match byte_order {
+        XByteOrder::LittleEndian => value.to_le_bytes(),
+        XByteOrder::BigEndian => value.to_be_bytes(),
+    };
+    let mut net_state_bytes = Vec::with_capacity(16);
+    if state.fullscreen {
+        net_state_bytes.extend_from_slice(&encode(fullscreen));
+    }
+    if state.maximized {
+        net_state_bytes.extend_from_slice(&encode(maximized_vert));
+        net_state_bytes.extend_from_slice(&encode(maximized_horz));
+    }
+    if state.minimized {
+        net_state_bytes.extend_from_slice(&encode(hidden));
+    }
+    let mut wm_state_bytes = Vec::with_capacity(8);
+    // ICCCM NormalState=1 and IconicState=3; the icon window is None.
+    wm_state_bytes.extend_from_slice(&encode(if state.minimized { 3 } else { 1 }));
+    wm_state_bytes.extend_from_slice(&encode(0));
+
+    let changes = [
+        (net_wm_state, X_ATOM_ATOM, net_state_bytes),
+        (wm_state, wm_state, wm_state_bytes),
+    ];
+    let current_total = properties
+        .records
+        .values()
+        .try_fold(0usize, |total, record| {
+            total.checked_add(record.bytes.len())
+        })
+        .ok_or(XPropertyError::TableTooLarge {
+            len: usize::MAX,
+            max: X_PROPERTY_MAX_TABLE_BYTES,
+        })?;
+    let previous_total = changes.iter().try_fold(0usize, |total, (property, _, _)| {
+        total.checked_add(
+            properties
+                .records
+                .get(&(namespace, window, *property))
+                .map_or(0, |record| record.bytes.len()),
+        )
+    });
+    let replacement_total = changes.iter().try_fold(0usize, |total, (_, _, bytes)| {
+        total.checked_add(bytes.len())
+    });
+    let table_len = previous_total
+        .and_then(|previous| current_total.checked_sub(previous))
+        .and_then(|retained| replacement_total.and_then(|added| retained.checked_add(added)))
+        .ok_or(XPropertyError::TableTooLarge {
+            len: usize::MAX,
+            max: X_PROPERTY_MAX_TABLE_BYTES,
+        })?;
+    if table_len > X_PROPERTY_MAX_TABLE_BYTES {
+        return Err(XPropertyError::TableTooLarge {
+            len: table_len,
+            max: X_PROPERTY_MAX_TABLE_BYTES,
+        }
+        .into());
+    }
+
+    let mut changed = Vec::with_capacity(changes.len());
+    for (property, property_type, bytes) in changes {
+        let key = (namespace, window, property);
+        let previous = properties.records.get(&key);
+        let value_changed = previous.is_none_or(|record| {
+            record.property_type != property_type || record.format != 32 || record.bytes != bytes
+        });
+        properties.engine_owned.insert(key);
+        if !value_changed {
+            continue;
+        }
+        changed.push(property);
+        let generation = previous.map_or(1, |record| record.generation.saturating_add(1));
+        properties.records.insert(
+            key,
+            XPropertyRecord {
+                namespace,
+                window,
+                property,
+                property_type,
+                format: 32,
+                bytes,
+                generation,
+            },
+        );
+    }
+    Ok(changed)
 }
 
 pub(crate) fn read_property_value(
