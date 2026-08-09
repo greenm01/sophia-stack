@@ -142,6 +142,11 @@ terminates the first supervised Hagia process, admits only its replacement,
 and requires epoch advancement, startup readiness, retained layout, and clean
 session/layout health:
 
+`tools/hagia_client_lifecycle_fault_smoke.sh` applies the same replacement
+requirements to explicitly armed post-negotiation and complete-snapshot client
+faults. Session-operation client faults remain outside that gate until a
+deterministic opaque-operation activation driver is retained.
+
 ```sh
 SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
 ```

@@ -487,8 +487,9 @@ future compatibility target, not a prerequisite.
   path at proposal-staged, frontend-pending, prepared, and terminal-outcome
   boundaries through the normal supervisor; all four preserve layout, restart
   at a fresh epoch, and drain cleanly. Continuous updates, a physical
-  checkpoint restore, negotiation/snapshot faults, and operation-phase faults
-  remain open.
+  checkpoint restore and operation-phase faults remain open. The separate
+  client lifecycle gate now defines post-negotiation and complete-snapshot
+  crash/replacement checks; it remains unclaimed until an authorized live run.
   Hagia now emits exactly one bounded `PolicyDirty` after a restored checkpoint
   first reconciles and commits; the independent socket test proves generation
   advance and a fresh complete cycle. Both installed Hagia gates require its
