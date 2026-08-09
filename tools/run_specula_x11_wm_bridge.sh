@@ -53,5 +53,5 @@ scope="Complete workspace projection, delayed legacy ConfigureWindow/FocusWindow
         --max-parallel=1 \
         --tlc-memory-limit="$TLC_MEMORY_LIMIT" \
         --tlc-worker-limit="$TLC_WORKER_LIMIT" \
-        "sophia-x11-wm-bridge|greenm01/sophia-stack|Rust|$scope"
+        "sophia-x11-wm-bridge|sophia-org/sophia-stack|Rust|$scope"
 )
