@@ -270,8 +270,11 @@ desktop experience. It now also runs as the explicitly selected experimental
 live policy client; broader product migration and protocol stability remain
 deferred.
 
-The first public revision is declared stable only after all three paths prove
-negotiation, capabilities, complete and chunked transfers, actions, geometry,
-constraints, visibility, multi-output moves, focus, stale rejection, atomic
-failure, timeout, crash, restart, and last-layout preservation. Thereafter an
-archived v1 client remains a compatibility gate for every release.
+The first public revision is declared stable only after the retained Triad
+desktop behavior has been ported through its correctly separated authorities
+and no open retained workflow can still falsify the WM contract. All three WM
+paths then prove negotiation, capabilities, complete and chunked transfers,
+actions, geometry, constraints, visibility, multi-output moves, focus, stale
+rejection, atomic failure, timeout, crash, restart, and last-layout
+preservation. Thereafter an archived v1 client remains a compatibility gate for
+every release.

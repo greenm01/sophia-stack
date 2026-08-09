@@ -272,8 +272,11 @@ or fake-server drawing are rejected rather than widening Engine or the bridge.
 
 ## Stability Gate
 
-`sophia_wm_v1` becomes stable only after the independently implemented Hagia
-client, the X11 WM bridge, and a C conformance client pass identical negotiation,
-snapshot, projection, action, focus, multi-output, rejection, timeout, restart,
-and last-layout tests. Stable revisions remain supported according to
+`sophia_wm_v1` remains experimental until the retained Triad desktop behavior
+has been ported through Hagia's correctly separated policy, shell, session,
+broker, and portal authorities. Only after that product port stops exposing
+missing WM facts or operations do the independently implemented Hagia client,
+X11 WM bridge, and C conformance client run identical negotiation, snapshot,
+projection, action, focus, multi-output, rejection, timeout, restart, and
+last-layout freeze tests. Stable revisions remain supported according to
 [Sophia Policy IPC](sophia-policy-ipc.md).

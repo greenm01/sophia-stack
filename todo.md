@@ -450,7 +450,20 @@ future compatibility target, not a prerequisite.
   admitted peer, preserve the committed scene across replacement, and keep
   policy checkpoints private to that peer.
 
-### 13.4 Prove Hagia And Freeze `sophia_wm_v1`
+### 13.4 Prove The Draft Boundary And Port Triad
+
+Revision 1 remains experimental throughout this section. The fixed nine-view
+scroller proves the public boundary and supports daily use, but it is not the
+feature ceiling. Before any freeze, close Hagia's retained-behavior port ledger
+across spatial policy, Hagia Shell, Sophia session/dedicated authorities, and
+the required brokers/portals. River/Wayland and Niri compatibility machinery
+is excluded; retained product behavior is not.
+
+- [ ] Implement the minimum experimental display-list, target-resolved input,
+  redacted broker, and shell-role transport needed to port retained Triad shell
+  workflows before the WM freeze. Keep this endpoint distinct from
+  `sophia_wm_v1`; this item does not itself stabilize `sophia_shell_v1` or pull
+  general rendering-efficiency work forward from Milestone 14.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its
@@ -468,7 +481,14 @@ future compatibility target, not a prerequisite.
   The fixed nine-view scroller profile now covers ordered view moves, output
   focus and movement, column consume/expel, width/height adjustment, floating,
   fullscreen, maximize, minimize/restore, and operation-slot-bound opaque
-  session requests. General multi-tag mutation and scratchpads remain open.
+  session requests. Hagia now retains nonempty multi-tag view and
+  focused-window membership through eighteen additional opaque actions;
+  dynamic workspace lifecycle, naming, occupancy navigation, and scratchpads
+  remain open. The transitions remain unbound until configuration migration
+  preserves Triad's existing chord meanings. The bootstrap uses 39 of revision
+  1's 64 binding slots, while Triad's baseline default contains 132 key
+  bindings across multiple future authorities; binding-capacity classification
+  therefore remains on the pre-freeze port path.
 - [ ] Add Engine-owned pointer interactions, bounded focus history, private
   checkpoint/reconciliation, and crash/restart proof while applications and
   the last committed scene remain alive.
@@ -585,8 +605,9 @@ future compatibility target, not a prerequisite.
   supervised checkpoint restart and clean shutdown.
 - [ ] Prove the retained scrolling layout plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
-  restart, and hot-swap. Defer Janet until candidate validation and fallback
-  behavior have their own model and deterministic tests.
+  restart, and hot-swap. Port Janet after candidate validation and fallback
+  behavior have their own model and deterministic tests; both remain on the
+  revision-1 freeze path.
   `PolicyOutputSettlement.tla` now proves the topology core for an atomic
   two-output candidate, output loss, and generation-advancing return. Dynamic
   output ingress now uses a capacity-one udev rescan hint, an owner-wide
@@ -603,9 +624,9 @@ future compatibility target, not a prerequisite.
   settles atomically with the frontend layout. Alloy and Z3 retain operation
   binding and presentation-geometry attacks alongside their protected checks.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
-  Hagia, the X11 bridge, and the independent C client. Publish
-  `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
-  as a permanent compatibility gate.
+  Hagia, the X11 bridge, and the independent C client. This is draft boundary
+  evidence while the Triad port is incomplete; it does not publish or freeze
+  `sophia_wm_v1`.
   The authenticated behavior host now runs the Rust reference, independent C,
   and Hagia clients through the same sequential eleven-scenario corpus:
   constrained single output, two-output partition, output loss/migration, and
@@ -658,10 +679,13 @@ future compatibility target, not a prerequisite.
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.
 - [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
-  the Rust reference, Hagia, X11 bridge, and C client pass the complete
-  black-box corpus.
+  the retained Triad behavior port is complete and the Rust reference, Hagia,
+  X11 bridge, and C client pass the complete black-box reconnect/restart
+  corpus. Do not remove API v7, declare stability, or create the permanent
+  archived compatibility client before both conditions hold.
 
 Milestone 13 exits only when the public wire is independently implementable,
+the retained Triad behavior port is complete across the correct authorities,
 the formal and deterministic gates pass, installed Hagia uses the Engine
 projection path, and a policy crash or replacement preserves the last coherent
 desktop.
@@ -832,10 +856,11 @@ named soak failure promotes one.
   animation; Hagia receives only opaque targets and reduced geometry updates.
 - [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
   client, and permanent-compatibility process. Keep its endpoint and
-  capabilities separate from `sophia_wm_v1`. Start only after 13.4 freezes
-  `sophia_wm_v1`; the two interfaces are sequential, not parallel. Derive the
-  vocabulary from a driving client with a retained scene graph rather than from
-  first principles; see `docs/sophia-shell-v1-direction.md`.
+  capabilities separate from `sophia_wm_v1`. Begin experimental modeling and
+  the Hagia Shell port before the WM freeze so retained workflows can falsify
+  both contracts. Derive the vocabulary from a driving client with a retained
+  scene graph rather than from first principles; see
+  `docs/sophia-shell-v1-direction.md`.
 - [ ] Settle the remaining display-list vocabulary before schema work. Admit
   generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget

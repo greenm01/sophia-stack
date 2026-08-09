@@ -219,11 +219,16 @@ configuration should have their own authority and validation.
 ### 1. Geometry Proof
 
 Create Hagia as a standalone repository and run it as a blind external policy
-process. Implement the public Sophia wire independently in Nim. During Sophia
-protocol development, keep this client deliberately narrow: complete snapshots,
-output projections, registered actions, placement, sizing, focus, removal, and
-restart. The critical-path profile retains one scrolling layout; additional
-layouts or Janet are not prerequisites for the revision-1 proof.
+process. Implement the public Sophia wire independently in Nim. During early
+Sophia protocol development, keep the bootstrap client narrow: complete
+snapshots, output projections, registered actions, placement, sizing, focus,
+removal, and restart. That profile proves the boundary but does not define the
+revision-1 feature ceiling. Revision 1 remains experimental until the retained
+Triad behavior is ported across Hagia policy, Hagia Shell, Sophia services, and
+the required brokers/portals. Additional retained layouts,
+candidate-validated configuration, and bounded Janet behavior therefore remain
+on the freeze path even though they need not block daily use of the bootstrap
+profile.
 
 The standalone repository's independent Nim envelope and record decoder passes
 Sophia's retained valid and malformed corpus. Its proof client also passes
@@ -313,8 +318,9 @@ while leaving enough time to read each physical instruction. Other physical
 proofs retain the fail-fast 15-second sequence default unless they explicitly
 request a bounded override.
 
-Do not make metadata rules, pointer operations, shell overlays, or full Triad
-IPC prerequisites for this proof.
+Do not put metadata rules, raw pointer operations, shell overlays, or full
+Triad IPC in the WM interface. Their retained product behaviors still belong
+to the overall port gate through their separately authorized components.
 
 ### 2. Daily-Driver Spatial Policy
 

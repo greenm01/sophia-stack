@@ -96,10 +96,11 @@ Each new record kind needs its own count even though `ProjectionOutputStatus`
 is at most one per output: a policy without the capability declares zero and
 pays no per-output cost.
 
-**This is why the change cannot wait.** Adding a record kind is an additive
-revision. Adding a field to an existing message layout is not — after
-`sophia_wm_v1` freezes at 13.4, it would require a new interface family. The
-descriptor must land in revision 1.
+**This is why the change had to precede stability.** Adding a record kind is an
+additive revision. Adding a field to an existing message layout is not — after
+`sophia_wm_v1` eventually freezes, it would require a new interface family.
+The descriptor therefore belongs in revision 1 while the broader Triad port
+continues to exercise the experimental contract.
 
 ## Permanent Bounds
 

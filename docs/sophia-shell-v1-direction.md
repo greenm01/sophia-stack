@@ -418,14 +418,24 @@ dependencies allow:
 
 - **Milestone 12** must complete. The installed daily-driver candidate is the
   current promotion vehicle and takes precedence.
-- **Milestone 13** must complete, specifically 13.4, which proves Hagia and
-  freezes `sophia_wm_v1`. The shell interface reuses that interface's process
-  and must not be specified against a moving WM contract.
+- **Milestone 13's bootstrap policy path** must be usable and recoverable.
+  Retained Triad shell behavior must then help drive the shell contract before
+  `sophia_wm_v1` freezes; otherwise the product port cannot falsify missing WM
+  correspondence or cross-authority operations in time.
 
-### Sequencing: After `sophia_wm_v1`, Not In Parallel
+### Sequencing: Port Before Freeze, Separate Interface Families
 
-The two interfaces are sequential, and the ordering is `sophia_wm_v1` proven by
-Hagia first. Four reasons:
+The two interfaces retain separate endpoints, roles, schemas, and disclosure
+budgets, but their experimental development may overlap. The ordering is:
+
+1. prove the narrow Hagia WM boundary and use it in ordinary sessions;
+2. port retained Triad policy and shell workflows against experimental WM and
+   shell contracts;
+3. use those workflows to revise either contract while changes are cheap; and
+4. freeze each interface only after its demanding client and conformance gates
+   close.
+
+Four constraints still apply:
 
 - **The specification process is the risky part, not the interface.** Milestone
   13 exercises a full pipeline: ratified boundary, formal model, declarative
@@ -434,31 +444,31 @@ Hagia first. Four reasons:
   gate. Hagia has already shown that pipeline works end to end in a third
   language. Debugging that machinery once, on the simpler and better-understood
   interface, is much cheaper than debugging it twice concurrently.
-- **Freezing requires quiet.** 13.4 exists to freeze `sophia_wm_v1`. Concurrent
-  shell design generates continuous pressure to reopen shared framing,
-  transport, and versioning decisions at exactly the moment they need to stop
-  moving.
-- **Engine is not ready to render a shell.** Path B requires Engine-side
-  display-list lowering, cached-texture strategy, and damage handling. That is
-  Milestone 14 and `docs/compositor-graphics.md` work. The protocol cannot be
-  specified ahead of the rendering model it describes.
+- **Freezing still requires quiet.** Shell-driven discoveries are intentionally
+  resolved before the WM freeze. Once the retained port ledger closes, new
+  shell work cannot casually reopen the WM contract.
+- **Engine needs a minimum shell rendering substrate.** Path B requires
+  Engine-side display-list lowering, cached-texture strategy, damage handling,
+  and target-resolved input. The bounded slice needed by retained Hagia Shell
+  workflows moves onto the pre-freeze port path; general graphics-efficiency
+  work remains in Milestone 14 and `docs/compositor-graphics.md`. The protocol
+  still cannot be specified ahead of the rendering model it describes.
 - **The metadata broker is a larger prerequisite than the protocol.** The
   redacted presentation feed has no implementation. Without it, most of the
   presentation-data table above has nothing to connect to, and the shell
   interface would be specified against a data source that does not exist.
 
-**One item should run in parallel, and only one.** Open question 2 asks whether
-the shared transport can carry shell texture traffic given the 64 KiB frame
-limit, single in-flight transfer, and bytes-only wire. That question reaches
-back into shared code in `sophia-runtime`, so the answer is worth having
-*before* 13.4 freezes rather than after.
+Open question 2 asks whether the shared transport can carry shell texture
+traffic given the 64 KiB frame limit, single in-flight transfer, and bytes-only
+wire. That question reaches back into shared code in `sophia-runtime`, so it
+must be answered during the experimental port rather than after either freeze.
 
 The risk is bounded, not fatal: the 24-byte envelope is deliberately
 role-neutral and each role negotiates its own family and revision, so a
 shell-role descriptor extension is additive and does not rewrite the WM
 contract. The exposure is implementation coupling in the shared transport, not
-wire-format lock-in. That justifies a cheap analysis pass during Milestone 13,
-not a parallel specification effort.
+wire-format lock-in. The shell still requires its own ratification, model,
+schema, and independent client rather than borrowing WM records.
 
 Requirements capture — this document and any refinement of it — is also
 free-running. It consumes no Engine or protocol work and blocks nothing.
