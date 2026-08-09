@@ -15,12 +15,17 @@ output. Hagia keeps its private adapter alive across the sequence, so the
 generation-advancing return exercises its real affinity boundary rather than a
 standalone decoder fixture.
 
-This does not freeze revision 1. The X11 bridge still reaches the canonical
-reducer through API v7 and is not a direct `sophia_wm_v1` peer. Dynamic KMS
-topology ingress is also absent: the live native runtime owns fixed per-head
-sessions, queues, renderer targets, and pointer bounds. A safe hotplug path
-needs an owner-wide quiescence/rebuild barrier before connector polling can
-become authoritative.
+The X11 bridge now consumes the same four canonical scenes through an explicit
+API-v7 corpus adapter. It translates synthetic-X configure/focus decisions for
+every affected output, combines them into one candidate, and passes the
+canonical reducer without being mislabeled as a direct `sophia_wm_v1` peer.
+This still does not freeze revision 1: broader shared action, rejection,
+timeout, and restart scenarios plus an archived client remain open.
+
+Dynamic KMS topology ingress is also absent: the live native runtime owns fixed
+per-head sessions, queues, renderer targets, and pointer bounds. A safe hotplug
+path needs an owner-wide quiescence/rebuild barrier before connector polling
+can become authoritative.
 
 ## 2026-08-09: Restored Hagia state now drives a bounded private refresh
 

@@ -7,10 +7,8 @@ use std::time::Duration;
 
 use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
-    PolicyProjectionOutcome, PolicySceneSnapshot, PolicySurfaceKind, PolicySurfaceSnapshot, Rect,
-    SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
+    PolicyProjectionOutcome, SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, TransactionId,
+    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot, sophia_wm_v1_behavior_scene,
 };
 use sophia_runtime::{PolicyWmSessionTransport, QueuedPolicyProjection};
 
@@ -154,115 +152,9 @@ fn run_host(
     Ok(())
 }
 
-fn scene(scenario: &str) -> Result<PolicySceneSnapshot, Box<dyn std::error::Error>> {
-    let first = OutputId::from_raw(1);
-    let second = OutputId::from_raw(2);
-    let (generation, active_output, outputs, surfaces) = match scenario {
-        "single-output-constraints" => (
-            1,
-            first,
-            vec![output(first, 1, 0, Some(SurfaceId::new(3, 1)))],
-            vec![surface(3, first), surface(4, first)],
-        ),
-        "two-output-partition" => (
-            2,
-            second,
-            vec![
-                output(first, 1, 0, Some(SurfaceId::new(3, 1))),
-                output(second, 1, 1200, Some(SurfaceId::new(5, 1))),
-            ],
-            vec![surface(3, first), surface(4, first), surface(5, second)],
-        ),
-        "output-loss" => (
-            3,
-            first,
-            vec![output(first, 1, 0, Some(SurfaceId::new(3, 3)))],
-            vec![
-                surface_with_generation(3, 3, first),
-                surface_with_generation(4, 3, first),
-                surface_with_generation(5, 3, first),
-            ],
-        ),
-        "returned-output-generation" => (
-            4,
-            second,
-            vec![
-                output(first, 1, 0, Some(SurfaceId::new(3, 4))),
-                output(second, 2, 1200, Some(SurfaceId::new(5, 4))),
-            ],
-            vec![
-                surface_with_generation(3, 4, first),
-                surface_with_generation(4, 4, first),
-                surface_with_generation(5, 4, second),
-            ],
-        ),
-        _ => return Err(format!("unknown policy behavior scenario: {scenario}").into()),
-    };
-    Ok(PolicySceneSnapshot {
-        generation,
-        active_output,
-        outputs,
-        surfaces,
-        session_operations: Vec::new(),
-    })
-}
-
-fn surface(index: u32, output: OutputId) -> PolicySurfaceSnapshot {
-    surface_with_generation(index, 1, output)
-}
-
-fn surface_with_generation(index: u32, generation: u32, output: OutputId) -> PolicySurfaceSnapshot {
-    PolicySurfaceSnapshot {
-        surface: SurfaceId::new(index, generation),
-        generation: u64::from(generation),
-        current_output: Some(output),
-        kind: PolicySurfaceKind::Toplevel,
-        capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
-        constraints: SurfaceConstraints {
-            min_size: Some(Size {
-                width: 100,
-                height: 80,
-            }),
-            max_size: None,
-        },
-        exact_size: None,
-        requested_state: PolicyPresentationState::default(),
-        current_state: PolicyPresentationState::default(),
-        transient_owner: None,
-        geometry: Rect {
-            x: if output == OutputId::from_raw(2) {
-                1200
-            } else {
-                0
-            },
-            y: 0,
-            width: 600,
-            height: 800,
-        },
-    }
-}
-
-fn output(
-    output: OutputId,
-    generation: u64,
-    x: i32,
-    focus: Option<SurfaceId>,
-) -> PolicyOutputSnapshot {
-    PolicyOutputSnapshot {
-        output,
-        generation,
-        focus,
-        bounds: Rect {
-            x,
-            y: 0,
-            width: 1200,
-            height: 800,
-        },
-        work_area: Rect {
-            x,
-            y: 0,
-            width: 1200,
-            height: 800,
-        },
-    }
+fn scene(
+    scenario: &str,
+) -> Result<sophia_protocol::PolicySceneSnapshot, Box<dyn std::error::Error>> {
+    sophia_wm_v1_behavior_scene(scenario)
+        .ok_or_else(|| format!("unknown policy behavior scenario: {scenario}").into())
 }

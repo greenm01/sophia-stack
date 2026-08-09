@@ -18,4 +18,4 @@ cd "$HAGIA_ROOT"
 SOPHIA_STACK_ROOT="$ROOT_DIR" nimble test -y
 
 printf '%s\n' \
-    'sophia_policy_client_matrix schema=2 status=complete public_wire_clients=rust,c,hagia behavior_scenarios=4 sequential=true x11_bridge_adapter=true revision_freeze=false'
+    'sophia_policy_client_matrix schema=3 status=complete public_wire_clients=rust,c,hagia behavior_scenarios=4 sequential=true x11_bridge_behavior_scenarios=4 revision_freeze=false'

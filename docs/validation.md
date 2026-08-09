@@ -137,12 +137,14 @@ the canonical reducer without losing an assigned surface or changing the
 declared active output. Hagia's check below runs the exact same host sequence
 while retaining its private adapter across all four cycles.
 
-This shared black-box corpus currently covers the three direct
-`sophia_wm_v1` clients: Rust, C, and Hagia. The X11 bridge remains an API-v7
-compatibility adapter tested through the same reducer, not a fourth public-wire
-client. Revision 1 is therefore not frozen until the bridge has an explicit
-corpus adapter or the stability requirement is narrowed by a separately
-ratified decision.
+The authenticated black-box host covers the three direct `sophia_wm_v1`
+clients: Rust, C, and Hagia. The X11 bridge remains an API-v7 compatibility
+adapter rather than a fourth public-wire client, but its explicit corpus test
+consumes the same four canonical scenes, translates synthetic-X configure and
+focus decisions for every affected output, and commits the combined proposal
+through the reducer. This closes topology-scenario parity without reversing
+the bridge/public-wire boundary. Revision 1 still requires the broader action,
+rejection, timeout, restart, and archived-client freeze corpus.
 
 The separate, standalone Hagia checkout verifies its independently written Nim
 decoder against the same retained corpus, then runs its proof client through

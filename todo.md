@@ -529,10 +529,11 @@ future compatibility target, not a prerequisite.
   and Hagia clients through the same sequential four-scenario corpus:
   constrained single output, two-output partition, output loss/migration, and
   generational return. All proposals pass the canonical reducer and Hagia
-  retains its private adapter across the sequence. The X11 bridge remains an
-  API-v7 reducer adapter rather than a public-wire black-box client; an explicit
-  corpus adapter or a separately ratified narrowing of this freeze requirement
-  remains open, as does the archived revision-1 client.
+  retains its private adapter across the sequence. The X11 bridge's explicit
+  API-v7 corpus adapter consumes the same canonical scenes, combines each
+  affected output, and passes the reducer without claiming public-wire
+  negotiation. Broader shared action, rejection, timeout, and restart
+  scenarios remain open, as does the archived revision-1 client.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 
