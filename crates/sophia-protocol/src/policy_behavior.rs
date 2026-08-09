@@ -1,7 +1,7 @@
 /// Stable names for the revision-1 black-box behavior corpus. Every public
 /// policy client must accept the same complete snapshots and return a proposal
 /// admitted by the canonical reducer for each entry before revision 1 freezes.
-pub const SOPHIA_WM_V1_BEHAVIOR_SCENARIOS: [&str; 7] = [
+pub const SOPHIA_WM_V1_BEHAVIOR_SCENARIOS: [&str; 11] = [
     "single-output-constraints",
     "two-output-partition",
     "output-loss",
@@ -9,6 +9,10 @@ pub const SOPHIA_WM_V1_BEHAVIOR_SCENARIOS: [&str; 7] = [
     "ordered-action",
     "timeout-discard",
     "post-timeout-recovery",
+    "stale-discard",
+    "post-stale-recovery",
+    "invalid-discard",
+    "post-invalid-recovery",
 ];
 
 /// Returns the reduced cause paired with one behavior scene.
@@ -76,6 +80,10 @@ pub fn sophia_wm_v1_behavior_scene(scenario: &str) -> Option<crate::PolicySceneS
         "ordered-action" => returned_scene(5, second, 5),
         "timeout-discard" => returned_scene(6, second, 6),
         "post-timeout-recovery" => returned_scene(7, second, 7),
+        "stale-discard" => returned_scene(8, second, 8),
+        "post-stale-recovery" => returned_scene(9, second, 9),
+        "invalid-discard" => returned_scene(10, second, 10),
+        "post-invalid-recovery" => returned_scene(11, second, 11),
         _ => return None,
     };
     Some(crate::PolicySceneSnapshot {

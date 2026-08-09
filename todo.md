@@ -526,15 +526,16 @@ future compatibility target, not a prerequisite.
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client
   as a permanent compatibility gate.
   The authenticated behavior host now runs the Rust reference, independent C,
-  and Hagia clients through the same sequential seven-scenario corpus:
+  and Hagia clients through the same sequential eleven-scenario corpus:
   constrained single output, two-output partition, output loss/migration, and
   generational return, followed by an ordered focus action, timeout discard,
   and successful post-timeout recovery. Hagia retains its private adapter
-  across the sequence. The X11 bridge's explicit API-v7 corpus adapter consumes
-  the same canonical scenes and causes, combines each affected output, and
-  passes the reducer without claiming public-wire negotiation. Shared stale
-  and invalid rejection plus reconnect/restart remain open, as does the
-  archived revision-1 client.
+  across the sequence. Stale-scene and invalid-candidate outcomes are also
+  discarded before later successful cycles. The X11 bridge's explicit API-v7
+  corpus adapter consumes the same canonical scenes and causes, combines each
+  affected output, and passes the reducer without claiming public-wire
+  negotiation. Shared reconnect/restart remains open, as does the archived
+  revision-1 client.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 

@@ -101,7 +101,7 @@ fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
 
 #[test]
 fn legacy_x11_adapter_accepts_every_revision_one_behavior_scene() {
-    for scenario in SOPHIA_WM_V1_BEHAVIOR_SCENARIOS {
+    for (index, scenario) in SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.into_iter().enumerate() {
         let scene = sophia_wm_v1_behavior_scene(scenario).unwrap();
         let mut workspace_state = WmWorkspaceState::new(
             scene
@@ -204,17 +204,31 @@ fn legacy_x11_adapter_accepts_every_revision_one_behavior_scene() {
             .issue_request_with_cause(affected, sophia_wm_v1_behavior_cause(scenario).unwrap())
             .unwrap();
         let proposal = adapt_v7_policy_plan(&request, &scene, &plan).unwrap();
-        let outcome = if scenario == "timeout-discard" {
-            reducer.timeout(proposal.request_id)
-        } else {
-            reducer.apply_proposal(&proposal)
+        let outcome = match scenario {
+            "timeout-discard" => reducer.timeout(proposal.request_id),
+            "stale-discard" => {
+                reducer
+                    .observe_scene(
+                        sophia_wm_v1_behavior_scene(SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[index + 1])
+                            .unwrap(),
+                    )
+                    .unwrap();
+                reducer.apply_proposal(&proposal)
+            }
+            "invalid-discard" => {
+                let mut invalid = proposal.clone();
+                invalid.active_output = OutputId::from_raw(0);
+                reducer.apply_proposal(&invalid)
+            }
+            _ => reducer.apply_proposal(&proposal),
         };
         assert_eq!(
             outcome,
-            if scenario == "timeout-discard" {
-                PolicyProjectionOutcome::TimedOut
-            } else {
-                PolicyProjectionOutcome::Committed
+            match scenario {
+                "timeout-discard" => PolicyProjectionOutcome::TimedOut,
+                "stale-discard" => PolicyProjectionOutcome::RejectedStale,
+                "invalid-discard" => PolicyProjectionOutcome::RejectedInvalid,
+                _ => PolicyProjectionOutcome::Committed,
             },
             "legacy adapter rejected behavior scenario {scenario}",
         );

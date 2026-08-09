@@ -129,25 +129,25 @@ their policy output through the same reducer. They do not switch or qualify
 the installed session path.
 
 `tools/check_policy_protocol.sh` additionally runs the Rust reference and
-independent C clients through one authenticated, seven-cycle revision-1
+independent C clients through one authenticated, eleven-cycle revision-1
 behavior corpus. The retained connection observes constrained single-output
 layout, two-output partitioning, output loss with surface migration, and the
 same raw output returning at a new generation, then an ordered focus action, a
-timed-out candidate, and a later successful recovery cycle. Committed replies
+timed-out candidate, a stale candidate superseded by a newer scene, an invalid
+candidate, and a successful recovery after each rejection. Committed replies
 must pass the canonical reducer without losing an assigned surface or changing
-the declared active output; the timeout must not poison later work. Hagia's
+the declared active output; rejected work must not poison later cycles. Hagia's
 check below runs the exact same host sequence while retaining its private
-adapter across all seven cycles.
+adapter across all eleven cycles.
 
 The authenticated black-box host covers the three direct `sophia_wm_v1`
 clients: Rust, C, and Hagia. The X11 bridge remains an API-v7 compatibility
 adapter rather than a fourth public-wire client, but its explicit corpus test
-consumes the same seven canonical scenes and causes, translates synthetic-X
+consumes the same eleven canonical scenes and causes, translates synthetic-X
 configure and focus decisions for every affected output, and commits the
 combined proposal through the reducer. This closes topology-scenario parity
 without reversing the bridge/public-wire boundary. Revision 1 still requires
-shared stale and invalid rejection, reconnect/restart, and archived-client
-freeze coverage.
+shared reconnect/restart and archived-client freeze coverage.
 
 The separate, standalone Hagia checkout verifies its independently written Nim
 decoder against the same retained corpus, then runs its proof client through

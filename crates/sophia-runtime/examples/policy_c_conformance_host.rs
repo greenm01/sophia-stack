@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
-    PolicyProjectionOutcome, SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, TransactionId,
+    OutputId, PolicyProjectionOutcome, SOPHIA_WM_V1_BEHAVIOR_SCENARIOS, TransactionId,
     decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot, sophia_wm_v1_behavior_cause,
     sophia_wm_v1_behavior_scene,
 };
@@ -79,7 +79,7 @@ fn run_host(
     transport.accept_and_negotiate(1, Duration::from_secs(2))?;
     for (index, scenario) in scenarios.iter().copied().enumerate() {
         let scene = scene(scenario)?;
-        if index != 0 {
+        if index != 0 && reducer.scene().generation != scene.generation {
             reducer.observe_scene(scene.clone())?;
         }
         let mut affected_outputs = scene
@@ -117,15 +117,30 @@ fn run_host(
         };
         let proposal = decode_wm_v1_policy_projection(&projection.into_wire_transfer())
             .map_err(|error| format!("projection decode failed: {error:?}"))?;
-        let outcome = if scenario == "timeout-discard" {
-            reducer.timeout(proposal.request_id)
-        } else {
-            reducer.apply_proposal(&proposal)
+        let outcome = match scenario {
+            "timeout-discard" => reducer.timeout(proposal.request_id),
+            "stale-discard" => {
+                let successor_name = scenarios
+                    .get(index + 1)
+                    .copied()
+                    .ok_or("stale scenario has no successor")?;
+                let successor = sophia_wm_v1_behavior_scene(successor_name)
+                    .ok_or("stale scenario successor is unknown")?;
+                reducer.observe_scene(successor)?;
+                reducer.apply_proposal(&proposal)
+            }
+            "invalid-discard" => {
+                let mut invalid = proposal.clone();
+                invalid.active_output = OutputId::from_raw(0);
+                reducer.apply_proposal(&invalid)
+            }
+            _ => reducer.apply_proposal(&proposal),
         };
-        let expected_outcome = if scenario == "timeout-discard" {
-            PolicyProjectionOutcome::TimedOut
-        } else {
-            PolicyProjectionOutcome::Committed
+        let expected_outcome = match scenario {
+            "timeout-discard" => PolicyProjectionOutcome::TimedOut,
+            "stale-discard" => PolicyProjectionOutcome::RejectedStale,
+            "invalid-discard" => PolicyProjectionOutcome::RejectedInvalid,
+            _ => PolicyProjectionOutcome::Committed,
         };
         if outcome != expected_outcome {
             return Err(format!("behavior scenario {scenario} had outcome {outcome:?}").into());

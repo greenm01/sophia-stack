@@ -29,4 +29,4 @@ cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- 
     "$root/target/debug/sophia-wm-demo" "$build_dir/rust" all policy-v1-proof
 
 printf '%s\n' \
-    'sophia_policy_behavior_corpus schema=2 status=complete revision=1 clients=rust,c scenarios=7 sequential=true action=true timeout_recovery=true'
+    'sophia_policy_behavior_corpus schema=3 status=complete revision=1 clients=rust,c scenarios=11 sequential=true action=true timeout_recovery=true stale_recovery=true invalid_recovery=true'
