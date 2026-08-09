@@ -1,0 +1,12 @@
+secure_fullscreen_is_exact_output
+unsat
+secure_nonfullscreen_stays_in_work_area
+unsat
+secure_minimized_cannot_be_focused
+unsat
+negative_normal_geometry_uses_output_bounds
+sat
+negative_fullscreen_is_only_contained
+sat
+negative_minimized_focus
+sat

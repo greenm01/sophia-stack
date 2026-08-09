@@ -96,6 +96,7 @@ fn scene() -> PolicySceneSnapshot {
     let output = OutputId::from_raw(1);
     PolicySceneSnapshot {
         generation: 1,
+        active_output: output,
         outputs: vec![PolicyOutputSnapshot {
             output,
             generation: 1,

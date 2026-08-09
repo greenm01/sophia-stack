@@ -87,6 +87,7 @@ pub struct PolicyWmSessionTransport {
     endpoint: PolicyRoleEndpoint,
     connection: PolicyConnectionState,
     stream: Option<UnixStream>,
+    read_buffer: Vec<u8>,
     peer: Option<PolicyPeerIdentity>,
 }
 
@@ -99,6 +100,7 @@ impl PolicyWmSessionTransport {
             endpoint: PolicyRoleEndpoint::bind(directory, expected_peer)?,
             connection: PolicyConnectionState::default(),
             stream: None,
+            read_buffer: Vec::new(),
             peer: None,
         })
     }
@@ -111,6 +113,7 @@ impl PolicyWmSessionTransport {
             endpoint: PolicyRoleEndpoint::bind_for_supervised_uid(directory, expected_uid)?,
             connection: PolicyConnectionState::default(),
             stream: None,
+            read_buffer: Vec::new(),
             peer: None,
         })
     }
@@ -189,11 +192,25 @@ impl PolicyWmSessionTransport {
     }
 
     pub fn receive_client_event(&mut self) -> Result<PolicyClientEvent, PolicyTransportError> {
-        let stream = self
-            .stream
-            .as_mut()
-            .ok_or(PolicyTransportError::NotConnected)?;
-        let frame = read_policy_frame(stream)?;
+        let frame = self
+            .receive_frame(true)?
+            .expect("blocking receive returns one frame");
+        self.decode_client_event(&frame)
+    }
+
+    /// Polls one complete control frame without consuming a partial frame.
+    pub fn try_receive_client_event(
+        &mut self,
+    ) -> Result<Option<PolicyClientEvent>, PolicyTransportError> {
+        self.receive_frame(false)?
+            .map(|frame| self.decode_client_event(&frame))
+            .transpose()
+    }
+
+    fn decode_client_event(
+        &mut self,
+        frame: &[u8],
+    ) -> Result<PolicyClientEvent, PolicyTransportError> {
         let (header, _) = decode_frame(&frame)?;
         match header.message_kind {
             IpcMessageKind::WmV1ProjectionBegin => {
@@ -256,6 +273,43 @@ impl PolicyWmSessionTransport {
                 })
             }
             other => Err(PolicyTransportError::UnexpectedMessage(other)),
+        }
+    }
+
+    fn receive_frame(&mut self, blocking: bool) -> Result<Option<Vec<u8>>, PolicyTransportError> {
+        if let Some(frame) = take_buffered_frame(&mut self.read_buffer)? {
+            return Ok(Some(frame));
+        }
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        stream
+            .set_nonblocking(!blocking)
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+        let mut bytes = [0_u8; 8192];
+        loop {
+            match stream.read(&mut bytes) {
+                Ok(0) => return Err(PolicyTransportError::Io("policy peer closed".into())),
+                Ok(count) => {
+                    self.read_buffer.extend_from_slice(&bytes[..count]);
+                    if let Some(frame) = take_buffered_frame(&mut self.read_buffer)? {
+                        if !blocking {
+                            stream
+                                .set_nonblocking(false)
+                                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+                        }
+                        return Ok(Some(frame));
+                    }
+                }
+                Err(error) if !blocking && error.kind() == std::io::ErrorKind::WouldBlock => {
+                    stream
+                        .set_nonblocking(false)
+                        .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
+                    return Ok(None);
+                }
+                Err(error) => return Err(PolicyTransportError::Io(error.to_string())),
+            }
         }
     }
 
@@ -399,6 +453,7 @@ impl PolicyWmSessionTransport {
             return Err(PolicyTransportError::NotConnected);
         }
         self.connection.disconnect()?;
+        self.read_buffer.clear();
         let peer = self
             .peer
             .take()
@@ -410,6 +465,27 @@ impl PolicyWmSessionTransport {
     pub const fn connection(&self) -> &PolicyConnectionState {
         &self.connection
     }
+}
+
+fn take_buffered_frame(buffer: &mut Vec<u8>) -> Result<Option<Vec<u8>>, PolicyTransportError> {
+    if buffer.len() < SOPHIA_IPC_HEADER_LEN {
+        return Ok(None);
+    }
+    let payload_len = u32::from_le_bytes(
+        buffer[16..20]
+            .try_into()
+            .expect("fixed frame payload range is present"),
+    ) as usize;
+    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
+        return Err(PolicyTransportError::Codec(IpcCodecError::PayloadTooLarge(
+            payload_len,
+        )));
+    }
+    let frame_len = SOPHIA_IPC_HEADER_LEN + payload_len;
+    if buffer.len() < frame_len {
+        return Ok(None);
+    }
+    Ok(Some(buffer.drain(..frame_len).collect()))
 }
 
 fn read_policy_frame(stream: &mut UnixStream) -> Result<Vec<u8>, PolicyTransportError> {

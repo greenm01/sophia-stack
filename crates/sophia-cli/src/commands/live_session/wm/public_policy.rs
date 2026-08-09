@@ -49,6 +49,7 @@ impl PublicPolicyFaultPoint {
 
 struct LivePublicPolicyState {
     directory: std::path::PathBuf,
+    checkpoint_path: std::path::PathBuf,
     worker: Option<PolicyTransportWorker>,
     reducer: sophia_engine::PolicyProjectionReducer,
     connection_epoch: u64,
@@ -59,17 +60,19 @@ struct LivePublicPolicyState {
     cycle_submitted: bool,
     transport_ready: bool,
     queue: VecDeque<LivePublicPolicyCause>,
+    pending_dirty_outputs: BTreeSet<sophia_protocol::OutputId>,
     in_flight_source: Option<LiveWmProposalSource>,
     in_flight_request: Option<sophia_protocol::PolicyProjectionRequest>,
     staged: Option<sophia_engine::StagedPolicyProjection>,
     prepared: Option<LivePolicySettlementIdentity>,
-    bindings: Vec<sophia_protocol::WmBindingRegistration>,
+    bindings: Vec<sophia_protocol::PolicyBindingRegistration>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
     work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
     session_operations: Vec<sophia_protocol::PolicySessionOperation>,
     operation_actions: BTreeMap<u64, WmSessionAction>,
+    expected_operation_slot: Option<u16>,
     pending_operation: Option<(TransactionId, sophia_protocol::PolicySessionOperationRequest)>,
     active_output: sophia_protocol::OutputId,
     deferred_command: Option<PolicyTransportCommand>,
@@ -102,11 +105,13 @@ const fn public_policy_restart_decision(
 impl LivePublicPolicyState {
     fn initial_scene(
         outputs: &[sophia_engine::HeadlessOutput],
+        active_output: sophia_protocol::OutputId,
         session_operations: Vec<sophia_protocol::PolicySessionOperation>,
     ) -> sophia_protocol::PolicySceneSnapshot {
         let bounds = wm_output_bounds(outputs);
         sophia_protocol::PolicySceneSnapshot {
             generation: 1,
+            active_output,
             outputs: bounds
                 .into_iter()
                 .map(|(output, bounds)| sophia_protocol::PolicyOutputSnapshot {
@@ -143,14 +148,23 @@ impl LivePublicPolicyState {
     fn observe_outputs(
         &mut self,
         outputs: &[sophia_engine::HeadlessOutput],
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let next = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
+        let topology_changed = next != self.live_output_ids;
         observe_public_output_generations(
             &mut self.output_generations,
             &mut self.live_output_ids,
             outputs,
         )?;
         self.outputs = outputs.to_vec();
-        Ok(())
+        self.work_areas.retain(|output, _| next.contains(output));
+        if !next.contains(&self.active_output) {
+            self.active_output = outputs
+                .first()
+                .map(|output| output.id)
+                .ok_or("public WM lost every output")?;
+        }
+        Ok(topology_changed)
     }
 
     fn queue_cause(&mut self, cause: LivePublicPolicyCause) -> LiveWmRequestAdmission {
@@ -167,6 +181,59 @@ impl LivePublicPolicyState {
         }
         self.queue.push_back(cause);
         LiveWmRequestAdmission::Admitted
+    }
+
+    fn admit_dirty(
+        &mut self,
+        request: sophia_protocol::PolicyDirtyRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if request.connection_epoch != self.connection_epoch || request.affected_outputs.is_empty() {
+            return Err("public WM dirty request has an invalid connection or empty scope".into());
+        }
+        let affected = request
+            .affected_outputs
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        if affected.len() != request.affected_outputs.len()
+            || !affected.is_subset(&self.live_output_ids)
+        {
+            return Err("public WM dirty request has duplicate or unknown outputs".into());
+        }
+        self.reducer
+            .admit_policy_generation(request.policy_generation)?;
+        self.pending_dirty_outputs.extend(affected);
+        Ok(())
+    }
+
+    fn materialize_pending_dirty(&mut self) {
+        if self.pending_dirty_outputs.is_empty()
+            || self.in_flight_source == Some(LiveWmProposalSource::Relayout)
+        {
+            return;
+        }
+        if let Some(pending) = self
+            .queue
+            .iter_mut()
+            .find(|pending| pending.source == LiveWmProposalSource::Relayout)
+        {
+            let mut outputs = pending
+                .affected_outputs
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            outputs.append(&mut self.pending_dirty_outputs);
+            pending.affected_outputs = outputs.into_iter().collect();
+            return;
+        }
+        let affected_outputs = std::mem::take(&mut self.pending_dirty_outputs)
+            .into_iter()
+            .collect();
+        self.queue.push_back(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs,
+        });
     }
 
     fn submit_or_defer(
@@ -213,10 +280,12 @@ impl LivePublicPolicyState {
         let previous = self.reducer.scene();
         let mut current_output = BTreeMap::new();
         let mut committed_geometry = BTreeMap::new();
+        let mut committed_presentation = BTreeMap::new();
         for projection in self.reducer.committed() {
             for placement in projection.placements {
                 current_output.insert(placement.surface, projection.output);
                 committed_geometry.insert(placement.surface, placement.geometry);
+                committed_presentation.insert(placement.surface, placement.presentation);
             }
         }
         let mut surface_ids = layout
@@ -250,8 +319,14 @@ impl LivePublicPolicyState {
                 capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
                 constraints: facts.constraints,
                 exact_size: None,
-                requested_state: sophia_protocol::PolicyPresentationState::default(),
-                current_state: sophia_protocol::PolicyPresentationState::default(),
+                requested_state: committed_presentation
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or_default(),
+                current_state: committed_presentation
+                    .get(&surface)
+                    .copied()
+                    .unwrap_or_default(),
                 transient_owner: facts.presentation_owner,
                 geometry: committed_geometry
                     .get(&surface)
@@ -280,11 +355,13 @@ impl LivePublicPolicyState {
             .collect();
         let mut candidate = sophia_protocol::PolicySceneSnapshot {
             generation: previous.generation,
+            active_output: self.active_output,
             outputs,
             surfaces,
             session_operations: self.session_operations.clone(),
         };
-        let same_facts = candidate.outputs == previous.outputs
+        let same_facts = candidate.active_output == previous.active_output
+            && candidate.outputs == previous.outputs
             && candidate.surfaces == previous.surfaces
             && candidate.session_operations == previous.session_operations;
         if !same_facts {
@@ -294,6 +371,14 @@ impl LivePublicPolicyState {
                 .ok_or("public WM scene generation exhausted")?;
         }
         Ok(candidate)
+    }
+}
+
+impl Drop for LivePublicPolicyState {
+    fn drop(&mut self) {
+        // The checkpoint is private session-recovery state. Remove it before
+        // the worker drops its endpoint and removes the enclosing directory.
+        let _ = std::fs::remove_file(&self.checkpoint_path);
     }
 }
 
@@ -372,9 +457,11 @@ impl LiveWmSession {
             rustix::process::geteuid().as_raw(),
         )?;
         let socket_path = transport.socket_path().to_path_buf();
+        let checkpoint_path = directory.join("hagia-policy.checkpoint");
         let spec = config.wm_process_args.iter().fold(
             ProcessLaunchSpec::new(process)
                 .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, &socket_path)
+                .env("HAGIA_POLICY_CHECKPOINT", &checkpoint_path)
                 .process_group(),
             |spec, argument| spec.arg(argument),
         );
@@ -399,7 +486,11 @@ impl LiveWmSession {
         supervisor_state = state;
 
         let (session_operations, operation_actions) = public_session_operations(config);
-        let scene = LivePublicPolicyState::initial_scene(outputs, session_operations.clone());
+        let active = outputs
+            .first()
+            .map(|output| output.id)
+            .ok_or("public WM requires at least one output")?;
+        let scene = LivePublicPolicyState::initial_scene(outputs, active, session_operations.clone());
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene)?;
         reducer.connect(1)?;
         let worker = PolicyTransportWorker::new(transport, 1)?;
@@ -412,12 +503,9 @@ impl LiveWmSession {
             .iter()
             .map(|output| output.id)
             .collect::<BTreeSet<_>>();
-        let active = outputs
-            .first()
-            .map(|output| output.id)
-            .ok_or("public WM requires at least one output")?;
         let mut public = LivePublicPolicyState {
             directory,
+            checkpoint_path,
             worker: Some(worker),
             reducer,
             connection_epoch: 1,
@@ -428,6 +516,7 @@ impl LiveWmSession {
             cycle_submitted: false,
             transport_ready: false,
             queue: VecDeque::with_capacity(WM_OWNER_REQUEST_CAPACITY),
+            pending_dirty_outputs: BTreeSet::new(),
             in_flight_source: None,
             in_flight_request: None,
             staged: None,
@@ -439,6 +528,7 @@ impl LiveWmSession {
             work_areas,
             session_operations,
             operation_actions,
+            expected_operation_slot: None,
             pending_operation: None,
             active_output: active,
             deferred_command: None,
@@ -495,7 +585,7 @@ impl LiveWmSession {
     fn poll_public_request(
         &mut self,
         layout: &mut PersistentLiveLayout,
-        output: sophia_engine::HeadlessOutput,
+        _output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         let mut public = self.public.take().expect("public WM state is present");
         public.flush_deferred_command()?;
@@ -520,11 +610,24 @@ impl LiveWmSession {
                 configuration,
             })) => {
                 defer_cycle = true;
-                let registry = sophia_engine::WmShortcutRegistry::from_policy_configuration(
-                    &configuration,
-                );
+                let admitted_slots = public
+                    .session_operations
+                    .iter()
+                    .map(|operation| operation.slot)
+                    .collect::<BTreeSet<_>>();
+                let slots_valid = configuration.bindings.iter().all(|binding| {
+                    binding
+                        .session_operation_slot
+                        .is_none_or(|slot| admitted_slots.contains(&slot))
+                });
+                let registry = slots_valid
+                    .then(|| {
+                        sophia_engine::WmShortcutRegistry::from_policy_configuration(&configuration)
+                    })
+                    .and_then(Result::ok);
                 let outcome = match registry {
-                    Ok(registry) if configuration.connection_epoch == public.connection_epoch => {
+                    Some(registry)
+                        if configuration.connection_epoch == public.connection_epoch => {
                         self.chrome = configuration.chrome;
                         self.stage_visual_chrome(self.candidate_chrome_style());
                         self.shortcuts = Some(sophia_engine::WmShortcutRouter::new(registry));
@@ -550,11 +653,15 @@ impl LiveWmSession {
                     .ok_or("public WM projection has no owner cause")?;
                 match public.reducer.stage_proposal(&projection) {
                     Ok(staged) => {
-                        let expect_session_operation = matches!(
-                            source,
-                            LiveWmProposalSource::Action(action)
-                                if (29..=32).contains(&action.raw())
-                        );
+                        let expected_operation_slot = match source {
+                            LiveWmProposalSource::Action(action) => public
+                                .bindings
+                                .iter()
+                                .find(|binding| binding.action == action)
+                                .and_then(|binding| binding.session_operation_slot),
+                            _ => None,
+                        };
+                        let expect_session_operation = expected_operation_slot.is_some();
                         let identity = LivePolicySettlementIdentity {
                             connection_epoch: projection.connection_epoch,
                             request_id: projection.request_id,
@@ -563,16 +670,12 @@ impl LiveWmSession {
                             expect_session_operation,
                             session_operation: false,
                         };
+                        public.expected_operation_slot = expected_operation_slot;
                         let projections = staged.projections();
                         if let LiveWmProposalSource::Manage(surface) = source {
                             layout.prime_admission_extent(surface);
                         }
-                        let active_output = public
-                            .in_flight_request
-                            .as_ref()
-                            .and_then(|request| request.affected_outputs.first())
-                            .copied()
-                            .unwrap_or(output.id);
+                        let active_output = projection.active_output;
                         public.staged = Some(staged);
                         Some(public_live_proposal(
                             layout,
@@ -595,9 +698,16 @@ impl LiveWmSession {
                         public.cycle_submitted = false;
                         public.in_flight_request = None;
                         public.in_flight_source = None;
+                        public.expected_operation_slot = None;
                         None
                     }
                 }
+            }
+            Ok(Some(PolicyTransportEvent::Dirty(request))) => {
+                if let Err(error) = public.admit_dirty(request) {
+                    transport_failed = Some(format!("invalid_dirty:{error}"));
+                }
+                None
             }
             Ok(Some(PolicyTransportEvent::SessionOperation {
                 transaction,
@@ -616,6 +726,7 @@ impl LiveWmSession {
                     .session_operations
                     .iter()
                     .find(|operation| operation.token == request.operation);
+                let expected_slot = public.expected_operation_slot.take();
                 let valid_target = request.target.is_none_or(|target| {
                     public
                         .reducer
@@ -631,6 +742,7 @@ impl LiveWmSession {
                 };
                 if request.connection_epoch != public.connection_epoch
                     || action.is_none()
+                    || operation.map(|operation| operation.slot) != expected_slot
                     || !valid_target
                     || !target_permitted
                 {
@@ -660,6 +772,8 @@ impl LiveWmSession {
                 None
             }
         };
+
+        public.materialize_pending_dirty();
 
         if proposal.is_none()
             && transport_failed.is_none()
@@ -800,10 +914,12 @@ impl LiveWmSession {
         public.staged = None;
         public.prepared = None;
         public.pending_operation = None;
+        public.expected_operation_slot = None;
         public.deferred_command = None;
         public.transport_unavailable = false;
         public.bindings.clear();
         public.queue.clear();
+        public.pending_dirty_outputs.clear();
         let affected_outputs = public.all_outputs(output.id);
         public.queue.push_back(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,
@@ -850,8 +966,7 @@ impl LiveWmSession {
             &layout.active_output_reservations(),
         );
         let public = self.public.as_mut().expect("public WM state is present");
-        public.observe_outputs(outputs)?;
-        let mut changed = false;
+        let mut changed = public.observe_outputs(outputs)?;
         for area in reduced {
             let Some(work) = area.work else {
                 continue;

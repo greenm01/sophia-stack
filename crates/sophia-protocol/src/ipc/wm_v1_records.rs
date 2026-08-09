@@ -1,15 +1,15 @@
 use core::mem::size_of;
 
 use crate::{
-    LayoutNodeCapabilities, OutputId, PolicyConfiguration, PolicyDirtyRequest,
-    PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection, PolicyOutputSnapshot,
-    PolicyPresentationState, PolicyProjectionIndicator, PolicyProjectionOutcome,
-    PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicyRequestCause,
-    PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
+    LayoutNodeCapabilities, OutputId, PolicyBindingRegistration, PolicyConfiguration,
+    PolicyDirtyRequest, PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection,
+    PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionIndicator,
+    PolicyProjectionOutcome, PolicyProjectionOutputStatus, PolicyProjectionProposal,
+    PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
     PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
     PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, WmActionId, WmBindingRegistration, WmChromePolicy, WmFocusRingStyle,
-    WmFrameStyle, WmModifierMask, WmRgb8,
+    TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmModifierMask,
+    WmRgb8,
 };
 
 use super::{
@@ -65,7 +65,7 @@ pub struct WmV1SnapshotTransfer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1DecodedSnapshot {
     pub scene: PolicySceneSnapshot,
-    pub bindings: Vec<WmBindingRegistration>,
+    pub bindings: Vec<PolicyBindingRegistration>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,7 +79,11 @@ pub struct WmV1ProjectionTransfer {
 pub fn encode_wm_v1_policy_projection_request(
     request: &crate::PolicyProjectionRequest,
 ) -> Result<WmV1ProjectionRequest, IpcCodecError> {
-    if request.connection_epoch == 0 || request.request_id == 0 || request.scene_generation == 0 {
+    if request.connection_epoch == 0
+        || request.request_id == 0
+        || request.scene_generation == 0
+        || request.policy_generation == 0
+    {
         return Err(invalid("projection_request_identity", 0));
     }
     if request.affected_outputs.is_empty()
@@ -168,6 +172,7 @@ pub fn encode_wm_v1_policy_projection_request(
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         scene_generation: request.scene_generation,
+        policy_generation: request.policy_generation,
         cause_kind,
         interaction_phase,
         interaction_kind,
@@ -188,7 +193,11 @@ pub fn decode_wm_v1_policy_projection_request(
     request: &WmV1ProjectionRequest,
 ) -> Result<crate::PolicyProjectionRequest, IpcCodecError> {
     let count = usize::from(request.affected_output_count);
-    if request.connection_epoch == 0 || request.request_id == 0 || request.scene_generation == 0 {
+    if request.connection_epoch == 0
+        || request.request_id == 0
+        || request.scene_generation == 0
+        || request.policy_generation == 0
+    {
         return Err(invalid("projection_request_identity", 0));
     }
     if count == 0 || count > crate::POLICY_MAX_OUTPUTS {
@@ -296,6 +305,7 @@ pub fn decode_wm_v1_policy_projection_request(
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         scene_generation: request.scene_generation,
+        policy_generation: request.policy_generation,
         affected_outputs,
         cause,
     })
@@ -360,6 +370,7 @@ pub fn encode_wm_v1_policy_configuration(
             action: binding.action.raw(),
             keycode: binding.keycode,
             modifier_bits: binding.modifiers.bits,
+            session_operation_slot: binding.session_operation_slot.unwrap_or(0),
         })
         .collect::<Vec<_>>();
     let chrome = configuration.chrome;
@@ -395,12 +406,14 @@ pub fn decode_wm_v1_policy_configuration(
         generation: configuration.configuration_generation,
         bindings: records
             .into_iter()
-            .map(|record| WmBindingRegistration {
+            .map(|record| PolicyBindingRegistration {
                 action: WmActionId::from_raw(record.action),
                 keycode: record.keycode,
                 modifiers: WmModifierMask {
                     bits: record.modifier_bits,
                 },
+                session_operation_slot: (record.session_operation_slot != 0)
+                    .then_some(record.session_operation_slot),
             })
             .collect(),
         chrome: WmChromePolicy {
@@ -558,10 +571,18 @@ pub fn encode_wm_v1_policy_snapshot(
     transaction: TransactionId,
     connection_epoch: u64,
     scene: &PolicySceneSnapshot,
-    bindings: &[WmBindingRegistration],
+    bindings: &[PolicyBindingRegistration],
 ) -> Result<WmV1SnapshotTransfer, IpcCodecError> {
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if !scene.active_output.is_valid()
+        || !scene
+            .outputs
+            .iter()
+            .any(|output| output.output == scene.active_output)
+    {
+        return Err(invalid("snapshot_active_output", 0));
     }
     let outputs = scene
         .outputs
@@ -598,6 +619,7 @@ pub fn encode_wm_v1_policy_snapshot(
             action: binding.action.raw(),
             keycode: binding.keycode,
             modifier_bits: binding.modifiers.bits,
+            session_operation_slot: binding.session_operation_slot.unwrap_or(0),
         })
         .collect::<Vec<_>>();
     let session_operations = scene
@@ -646,6 +668,7 @@ pub fn encode_wm_v1_policy_snapshot(
     let begin = WmV1SnapshotBegin {
         connection_epoch,
         scene_generation: scene.generation,
+        active_output: scene.active_output.raw(),
         chunk_count,
         output_count: u16::try_from(outputs.len()).map_err(|_| IpcCodecError::CountTooLarge {
             count: outputs.len(),
@@ -678,6 +701,7 @@ pub fn decode_wm_v1_policy_snapshot(
         || transfer.begin.scene_generation != transfer.end.scene_generation
         || transfer.begin.chunk_count != transfer.end.chunk_count
         || usize::from(transfer.begin.chunk_count) != transfer.chunks.len()
+        || transfer.begin.active_output == 0
     {
         return Err(invalid("snapshot_transfer", 0));
     }
@@ -720,6 +744,7 @@ pub fn decode_wm_v1_policy_snapshot(
     Ok(WmV1DecodedSnapshot {
         scene: PolicySceneSnapshot {
             generation: transfer.begin.scene_generation,
+            active_output: OutputId::from_raw(transfer.begin.active_output),
             outputs: outputs
                 .into_iter()
                 .map(|record| {
@@ -771,12 +796,14 @@ pub fn decode_wm_v1_policy_snapshot(
         },
         bindings: bindings
             .into_iter()
-            .map(|record| WmBindingRegistration {
+            .map(|record| PolicyBindingRegistration {
                 action: WmActionId::from_raw(record.action),
                 keycode: record.keycode,
                 modifiers: WmModifierMask {
                     bits: record.modifier_bits,
                 },
+                session_operation_slot: (record.session_operation_slot != 0)
+                    .then_some(record.session_operation_slot),
             })
             .collect(),
     })
@@ -787,6 +814,9 @@ pub fn encode_wm_v1_policy_projection(
 ) -> Result<WmV1ProjectionTransfer, IpcCodecError> {
     if !proposal.transaction.is_valid() {
         return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if !proposal.active_output.is_valid() {
+        return Err(invalid("projection_active_output", 0));
     }
     let outputs = proposal
         .outputs
@@ -878,6 +908,7 @@ pub fn encode_wm_v1_policy_projection(
         connection_epoch: proposal.connection_epoch,
         request_id: proposal.request_id,
         base_generation: proposal.base_generation,
+        active_output: proposal.active_output.raw(),
         chunk_count,
         output_count: outputs.len() as u16,
         placement_count: placements.len() as u32,
@@ -909,6 +940,7 @@ pub fn decode_wm_v1_policy_projection(
         || transfer.begin.base_generation != transfer.end.base_generation
         || transfer.begin.chunk_count != transfer.end.chunk_count
         || usize::from(transfer.begin.chunk_count) != transfer.chunks.len()
+        || transfer.begin.active_output == 0
     {
         return Err(invalid("projection_transfer", 0));
     }
@@ -967,6 +999,7 @@ pub fn decode_wm_v1_policy_projection(
         connection_epoch: transfer.begin.connection_epoch,
         request_id: transfer.begin.request_id,
         base_generation: transfer.begin.base_generation,
+        active_output: OutputId::from_raw(transfer.begin.active_output),
         outputs: projected_outputs,
         indicators: indicators
             .into_iter()

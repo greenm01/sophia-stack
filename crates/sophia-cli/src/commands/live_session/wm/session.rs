@@ -710,7 +710,11 @@ impl LiveWmSession {
                 })
                 .map(|projection| projection.output)
                 .ok_or("pointer interaction target is absent from public-policy state")?;
-            public.active_output = output;
+            let affected_outputs = if output == public.active_output {
+                vec![output]
+            } else {
+                vec![public.active_output, output]
+            };
             return Ok(public.queue_cause(LivePublicPolicyCause {
                 source,
                 cause: sophia_protocol::PolicyRequestCause::Interaction {
@@ -726,7 +730,7 @@ impl LiveWmSession {
                     target: gesture.surface,
                     geometry: outline.geometry,
                 },
-                affected_outputs: vec![output],
+                affected_outputs,
             }));
         }
         let workspace = self
@@ -773,7 +777,7 @@ impl LiveWmSession {
             if !layout.layers.contains_key(&surface) {
                 return Err("pointer focus target is missing from the live layout".into());
             }
-            public.active_output = public
+            let target_output = public
                 .reducer
                 .committed()
                 .into_iter()
@@ -784,10 +788,15 @@ impl LiveWmSession {
                         .any(|placement| placement.surface == surface)
                 })
                 .map_or(output.id, |projection| projection.output);
+            let affected_outputs = if target_output == public.active_output {
+                vec![target_output]
+            } else {
+                vec![public.active_output, target_output]
+            };
             return Ok(public.queue_cause(LivePublicPolicyCause {
                 source: LiveWmProposalSource::Focus(surface),
                 cause: sophia_protocol::PolicyRequestCause::Focus { target: surface },
-                affected_outputs: vec![public.active_output],
+                affected_outputs,
             }));
         }
         let source = LiveWmProposalSource::Focus(surface);

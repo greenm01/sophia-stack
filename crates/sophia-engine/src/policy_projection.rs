@@ -62,6 +62,7 @@ pub struct PolicyProjectionReducer {
     active_epoch: Option<u64>,
     greatest_epoch: u64,
     next_request_id: u64,
+    policy_generation: u64,
     outstanding: Option<PolicyProjectionRequest>,
     commit_serial: u64,
     indicators: BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
@@ -117,6 +118,7 @@ impl PolicyProjectionReducer {
             active_epoch: None,
             greatest_epoch: 0,
             next_request_id: 1,
+            policy_generation: 1,
             outstanding: None,
             commit_serial: 0,
             indicators: BTreeMap::new(),
@@ -194,6 +196,7 @@ impl PolicyProjectionReducer {
             connection_epoch,
             request_id,
             scene_generation: self.scene.generation,
+            policy_generation: self.policy_generation,
             affected_outputs,
             cause,
         };
@@ -234,6 +237,7 @@ impl PolicyProjectionReducer {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
         self.committed = candidate;
+        self.scene.active_output = proposal.active_output;
         self.indicators = indicators;
         self.output_statuses = output_statuses;
         sync_scene_projection(&mut self.scene, &self.committed);
@@ -422,6 +426,19 @@ impl PolicyProjectionReducer {
         self.commit_serial
     }
 
+    /// Advances the latest policy-private generation acknowledged by future
+    /// complete projection requests.
+    pub fn admit_policy_generation(
+        &mut self,
+        generation: u64,
+    ) -> Result<(), PolicyProjectionError> {
+        if generation <= self.policy_generation {
+            return Err(PolicyProjectionError::InvalidSceneGeneration);
+        }
+        self.policy_generation = generation;
+        Ok(())
+    }
+
     pub fn indicator_publication(&self) -> PolicyIndicatorPublication {
         PolicyIndicatorPublication {
             generation: self.indicator_publication_generation,
@@ -457,11 +474,25 @@ impl PolicyProjectionReducer {
         if proposed.len() != proposal.outputs.len() || proposed != affected {
             return Err(PolicyProjectionError::DuplicateOutput);
         }
+        let live_output_ids = self
+            .scene
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<BTreeSet<_>>();
+        if !proposal.active_output.is_valid()
+            || !live_output_ids.contains(&proposal.active_output)
+            || (proposal.active_output != self.scene.active_output
+                && (!affected.contains(&self.scene.active_output)
+                    || !affected.contains(&proposal.active_output)))
+        {
+            return Err(PolicyProjectionError::InvalidOutput);
+        }
         let live_outputs = self
             .scene
             .outputs
             .iter()
-            .map(|output| (output.output, output.bounds))
+            .map(|output| (output.output, (output.bounds, output.work_area)))
             .collect::<BTreeMap<_, _>>();
         let live_surfaces = self
             .scene
@@ -471,11 +502,11 @@ impl PolicyProjectionReducer {
             .collect::<BTreeMap<_, _>>();
         let mut candidate = self.committed.clone();
         for output in &proposal.outputs {
-            let bounds = live_outputs
+            let (bounds, work_area) = live_outputs
                 .get(&output.output)
                 .copied()
                 .ok_or(PolicyProjectionError::InvalidOutput)?;
-            validate_output_projection(output, bounds, &live_surfaces)?;
+            validate_output_projection(output, bounds, work_area, &live_surfaces)?;
             candidate.insert(output.output, output.clone());
         }
         let mut surfaces = BTreeSet::new();
@@ -641,6 +672,7 @@ pub fn adapt_v7_policy_plan(
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         base_generation: request.scene_generation,
+        active_output: scene.active_output,
         outputs,
         indicators: Vec::new(),
         output_statuses: Vec::new(),
@@ -671,6 +703,9 @@ fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyProjectionErr
         {
             return Err(PolicyProjectionError::InvalidOutputGeometry);
         }
+    }
+    if !scene.active_output.is_valid() || !outputs.contains(&scene.active_output) {
+        return Err(PolicyProjectionError::InvalidOutput);
     }
     if scene.surfaces.len() > POLICY_MAX_SURFACES {
         return Err(PolicyProjectionError::ExcessiveSurfaces);
@@ -714,6 +749,7 @@ fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyProjectionErr
                 .get(&output.output)
                 .expect("current projection has every validated output"),
             output.bounds,
+            output.work_area,
             &surface_map,
         )?;
     }
@@ -863,6 +899,7 @@ fn validate_request_cause(
 fn validate_output_projection(
     projection: &PolicyOutputProjection,
     bounds: Rect,
+    work_area: Rect,
     surfaces: &BTreeMap<SurfaceId, &PolicySurfaceSnapshot>,
 ) -> Result<(), PolicyProjectionError> {
     let mut visible = BTreeSet::new();
@@ -876,8 +913,13 @@ fn validate_output_projection(
         if placement.surface_generation != surface.generation {
             return Err(PolicyProjectionError::InvalidSurface);
         }
+        let valid_geometry = if placement.presentation.fullscreen {
+            placement.geometry == bounds
+        } else {
+            rect_contains(work_area, placement.geometry)
+        };
         if placement.geometry.is_empty()
-            || !rect_contains(bounds, placement.geometry)
+            || !valid_geometry
             || placement.crop.is_some_and(Rect::is_empty)
         {
             return Err(PolicyProjectionError::InvalidSurfaceGeometry);
@@ -903,6 +945,11 @@ fn validate_output_projection(
             || !surfaces
                 .get(&focus)
                 .is_some_and(|surface| surface.capabilities.focusable)
+            || projection
+                .placements
+                .iter()
+                .find(|placement| placement.surface == focus)
+                .is_some_and(|placement| placement.presentation.minimized)
     }) {
         return Err(PolicyProjectionError::InvalidSurface);
     }

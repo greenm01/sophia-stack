@@ -175,13 +175,16 @@ completes the same session cycle and commits through the same reducer.
 projections as its semantic baseline. Transport implementations may coalesce
 or later encode equivalent deltas, but they must preserve that behavior.
 
-A snapshot contains output geometry and all live manageable surfaces. Surface
+A snapshot contains one explicit active output, output geometry, and all live
+manageable surfaces. Surface
 records carry opaque identity, generation, capabilities, constraints, reduced
 transient relationships, frontend presentation requests, and current committed
 geometry and state. They contain no workspace, tag, view, layout-tree, or
 application identity.
 
-A proposal names its base snapshot generation and completely replaces each
+A request carries the latest admitted policy-private generation. A proposal
+names its base snapshot generation, explicitly selects one live active output,
+and completely replaces each
 listed output's ordered projection. Order defines stacking. Each placement may
 request content size, outer geometry, crop, and transform. Visibility follows
 projection membership; a live surface absent from every output is hidden.
@@ -192,6 +195,13 @@ epoch, transaction, snapshot generation, output and surface generations,
 counts, capabilities, constraints, geometry, uniqueness, and focus must all be
 valid. A surface may appear on at most one output, and focus must name a visible
 focusable surface. Mirroring is a separate future capability.
+
+An active-output change is valid only when the affected set contains both the
+old and new output. Fullscreen placements equal full output bounds; all other
+presentation states remain within the work area; minimized placements cannot
+hold focus and do not enter the render-layer candidate. `PolicyDirty` admits
+only a newer private generation and coalesces its nonempty live-output scope
+without dropping a refresh that arrives during older in-flight work.
 
 Commit, stale rejection, invalid rejection, and timeout are explicit terminal
 outcomes. Rejection, malformed input, transport failure, or policy restart
@@ -210,9 +220,11 @@ something—its opaque slot and generation. Each physical activation also has a
 recipient-epoch-local identity for duplicate rejection. A broker-issued
 toplevel action cannot be reinterpreted as a policy or session action; stale,
 expired, revoked, wrong-recipient, wrong-generation, and duplicate activations
-fail closed. The experimental public session mints fresh session-local tokens,
-validates their connection epoch, advertised slot, target permission, and
-exact request identity, and executes the corresponding session-owned operation
+fail closed. The experimental public session mints fresh session-local tokens.
+A committed binding explicitly names an optional operation slot; no numeric
+action range has operation semantics. The session validates connection epoch,
+the bound and advertised slot, opaque token, target permission, and exact
+request identity, and executes the corresponding session-owned operation
 only after the projection transaction commits. API-v7 tokens do not claim this
 encoding.
 

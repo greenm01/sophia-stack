@@ -55,6 +55,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "action" type="u64" sample=5
         field "keycode" type="u32" sample=33
         field "modifier_bits" type="u32" sample=8
+        field "session_operation_slot" type="u16" sample=0
+        field "reserved" type="u16" reserved=#true sample=0
     }
     record "SnapshotSessionOperation" transfer="snapshot" kind=4 max=256 {
         field "operation" type="u64" sample=11
@@ -120,6 +122,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
     message "SnapshotBegin" kind=34 direction="session-to-policy" transaction="required" {
         field "connection_epoch" type="u64" sample=9
         field "scene_generation" type="u64" sample=41
+        field "active_output" type="u64" sample=1
         field "chunk_count" type="u16" sample=2
         field "output_count" type="u16" sample=2
         field "surface_count" type="u32" sample=3
@@ -143,6 +146,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "connection_epoch" type="u64" sample=9
         field "request_id" type="u64" sample=17
         field "scene_generation" type="u64" sample=41
+        field "policy_generation" type="u64" sample=3
         field "cause_kind" type="u16" sample=1
         field "interaction_phase" type="u16" sample=0
         field "interaction_kind" type="u16" sample=0
@@ -163,6 +167,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "connection_epoch" type="u64" sample=9
         field "request_id" type="u64" sample=17
         field "base_generation" type="u64" sample=41
+        field "active_output" type="u64" sample=1
         field "chunk_count" type="u16" sample=2
         field "output_count" type="u16" sample=2
         field "placement_count" type="u32" sample=3
@@ -200,7 +205,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "frame_width" type="u32" sample=1
         field "frame_focused_color" type="u32" sample=4281558783
         field "frame_unfocused_color" type="u32" sample=4281348144
-        field "bindings" type="bytes" max=4096 sample="0500000000000000210000000800000006000000000000003900000008000000"
+        field "bindings" type="bytes" max=5120 sample="05000000000000002100000008000000000000000600000000000000390000000800000000000000"
     }
     message "PolicyConfigurationOutcome" kind=43 direction="session-to-policy" transaction="required" {
         field "connection_epoch" type="u64" sample=9

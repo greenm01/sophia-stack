@@ -89,12 +89,13 @@ enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_surface_record(const struc
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_surface_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_surface_record *record);
 
 #define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_KIND 3u
-#define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE 16u
+#define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE 20u
 #define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_MAX 256u
 struct sophia_wm_v1_snapshot_binding_record {
     uint64_t action;
     uint32_t keycode;
     uint32_t modifier_bits;
+    uint16_t session_operation_slot;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_binding_record(const struct sophia_wm_v1_snapshot_binding_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_binding_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_binding_record *record);
@@ -195,6 +196,7 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_server_welcome(const uint8_t *frame
 struct sophia_wm_v1_snapshot_begin {
     uint64_t connection_epoch;
     uint64_t scene_generation;
+    uint64_t active_output;
     uint16_t chunk_count;
     uint16_t output_count;
     uint32_t surface_count;
@@ -227,6 +229,7 @@ struct sophia_wm_v1_projection_request {
     uint64_t connection_epoch;
     uint64_t request_id;
     uint64_t scene_generation;
+    uint64_t policy_generation;
     uint16_t cause_kind;
     uint16_t interaction_phase;
     uint16_t interaction_kind;
@@ -249,6 +252,7 @@ struct sophia_wm_v1_projection_begin {
     uint64_t connection_epoch;
     uint64_t request_id;
     uint64_t base_generation;
+    uint64_t active_output;
     uint16_t chunk_count;
     uint16_t output_count;
     uint32_t placement_count;

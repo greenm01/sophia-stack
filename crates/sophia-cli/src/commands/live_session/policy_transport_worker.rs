@@ -1,11 +1,14 @@
-use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
+use std::sync::mpsc::{
+    Receiver, RecvTimeoutError, SyncSender, TryRecvError, TrySendError, sync_channel,
+};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use sophia_protocol::{
-    PolicyConfiguration, PolicyProjectionOutcome, PolicyProjectionProposal,
-    PolicyProjectionRequest, PolicySceneSnapshot, PolicySessionOperationRequest, TransactionId,
-    WmBindingRegistration, decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
+    PolicyBindingRegistration, PolicyConfiguration, PolicyProjectionOutcome,
+    PolicyProjectionProposal, PolicyProjectionRequest, PolicySceneSnapshot,
+    PolicySessionOperationRequest, TransactionId, decode_wm_v1_policy_projection,
+    encode_wm_v1_policy_snapshot,
 };
 use sophia_runtime::{PolicyClientEvent, PolicyWmSessionTransport, QueuedPolicyProjection};
 
@@ -21,7 +24,7 @@ pub(super) enum PolicyTransportCommand {
         snapshot_transaction: TransactionId,
         request_transaction: TransactionId,
         scene: PolicySceneSnapshot,
-        bindings: Vec<WmBindingRegistration>,
+        bindings: Vec<PolicyBindingRegistration>,
         request: PolicyProjectionRequest,
     },
     ProjectionOutcome {
@@ -46,6 +49,7 @@ pub(super) enum PolicyTransportEvent {
         transaction: TransactionId,
         configuration: PolicyConfiguration,
     },
+    Dirty(sophia_protocol::PolicyDirtyRequest),
     Projection(PolicyProjectionProposal),
     SessionOperation {
         transaction: TransactionId,
@@ -152,10 +156,28 @@ fn run_policy_transport(
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
 
     loop {
-        match commands
-            .recv()
-            .map_err(|_| "policy owner command channel disconnected".to_owned())?
-        {
+        let command = match commands.recv_timeout(Duration::from_millis(10)) {
+            Ok(command) => command,
+            Err(RecvTimeoutError::Timeout) => {
+                match transport
+                    .try_receive_client_event()
+                    .map_err(|error| error.to_string())?
+                {
+                    Some(PolicyClientEvent::Dirty { request, .. }) => events
+                        .send(PolicyTransportEvent::Dirty(request))
+                        .map_err(|_| "policy owner event channel disconnected".to_owned())?,
+                    Some(_) => {
+                        return Err("policy client sent an out-of-phase control message".to_owned());
+                    }
+                    None => {}
+                }
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("policy owner command channel disconnected".to_owned());
+            }
+        };
+        match command {
             PolicyTransportCommand::ConfigurationOutcome {
                 transaction,
                 generation,

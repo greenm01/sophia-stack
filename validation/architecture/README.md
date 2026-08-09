@@ -29,7 +29,9 @@ unmodeled concurrency is safe.
 | `AuthorityTopology.als` | Can an access cross a role or namespace without exact admission or an independently issued portal grant? Can a WM protection domain compose with metadata-bearing roles or observe application metadata through a colluding principal? | `NamespaceRegistry`, role-specific supervised endpoints, X resource ownership, portal grant admission, and the target session protection-domain policy. Exact PID/UID admission alone does not implement process isolation. |
 | `ActionCapabilityTopology.als` | Can an action cross issuer families, recipient or authority epochs, revocation/expiry, target generations, or activation identities? | Future policy, broker, shell, and session action-capability admission. The model fixes identity relations but no wire fields or limits. |
 | `PresentedTargetTopology.als` | Can a target outside owned visible pixels, below a higher-trust target, outside modal scope, or with a reused identity receive a hit? Can a shell issue its own coordinate grant? | The future last-presented interaction snapshot and authority/session/slot/generation target identity described in `docs/target-resolved-input.md`. No production shell schema exists yet. |
+| `PolicyOperationBinding.als` | Can numeric action ranges, token substitution, or a target lacking the advertised permission invoke a session operation? | The committed `SnapshotBinding.session_operation_slot`, separately advertised opaque operation token, and optional target permission in `sophia_wm_v1`. |
 | `TargetGeometryAndDisclosure.smt2` | Do containment, intersection clipping, quantization, capability-epoch rate limits, and target/outcome quotas imply their bounded disclosure obligations? | Future target-schema validation and the target-resolved disclosure reducer. Limits remain symbolic until measurement and schema evidence choose values. |
+| `PolicyPresentationGeometry.smt2` | Do fullscreen, ordinary, and minimized placement rules keep geometry and focus consistent with output/work-area facts? | Canonical policy-projection validation: fullscreen is exactly output bounds, nonfullscreen geometry is within the work area, and minimized surfaces cannot hold focus. |
 | `WmV1WireBounds.smt2` | Do current schema maxima fit the envelope, field widths, and checked record arithmetic? | `protocol/sophia-wm-v1.kdl`, the generated Rust/C99 codecs, and bounded begin/chunk/end transfer assemblers. |
 
 `sophia-wm-v1-facts.smt2` is generated from the KDL schema by
@@ -50,10 +52,14 @@ queries must be `sat`. The retained negative controls cover:
 - cross-issuer action type confusion, wrong recipient roles, stale/revoked
   capabilities, recipient or target-generation substitution, and repeated
   activation identity;
+- numeric session-operation inference, substituted operation tokens, and
+  operation requests carrying an unpermitted target;
 - targets outside allocations, occluded and lower-trust interception,
   ambiguous equal-trust overlap, identity reuse, and self-issued grants;
 - unclipped and unquantized coordinates, frame-local rate-limit reset, and
-  unbounded target partitioning; and
+  unbounded target partitioning;
+- fullscreen geometry that is merely contained, ordinary geometry outside the
+  work area, and minimized focus; and
 - omitted chunk prefixes, unchecked narrow multiplication, record maxima used
   as per-chunk counts, and variable fields that ignore their fixed prefix.
 

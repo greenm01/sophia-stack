@@ -452,9 +452,100 @@ fn committed_presentation_state_is_reflected_in_the_next_snapshot() {
     assert!(reducer.scene().surfaces[0].current_state.maximized);
 }
 
+#[test]
+fn presentation_geometry_and_focus_are_validated_against_output_roles() {
+    let mut initial = scene(1, &[surface(1)]);
+    initial.outputs[0].work_area = Rect {
+        x: 0,
+        y: 10,
+        width: 100,
+        height: 90,
+    };
+    let mut reducer = PolicyProjectionReducer::new(initial).unwrap();
+    reducer.connect(1).unwrap();
+
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let outside_work_area = placed(
+        surface_id(1),
+        1,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        },
+    );
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            51,
+            vec![projected(output(1), vec![outside_work_area], None)],
+        )),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut fullscreen = placed(
+        surface_id(1),
+        1,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        },
+    );
+    fullscreen.presentation.fullscreen = true;
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            52,
+            vec![projected(output(1), vec![fullscreen], Some(surface_id(1)),)],
+        )),
+        PolicyProjectionOutcome::Committed
+    );
+
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut minimized = placed(surface_id(1), 1, rect(0, 10));
+    minimized.presentation.minimized = true;
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            53,
+            vec![projected(output(1), vec![minimized], Some(surface_id(1)),)],
+        )),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+}
+
+#[test]
+fn active_output_and_policy_generation_advance_explicitly() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[])).unwrap();
+    reducer.connect(1).unwrap();
+    assert!(reducer.admit_policy_generation(2).is_ok());
+    assert!(reducer.admit_policy_generation(2).is_err());
+    let request = reducer.issue_request(vec![output(1), output(2)]).unwrap();
+    assert_eq!(request.policy_generation, 2);
+    let mut candidate = proposal(
+        &request,
+        54,
+        vec![
+            projected(output(1), Vec::new(), None),
+            projected(output(2), Vec::new(), None),
+        ],
+    );
+    candidate.active_output = output(2);
+    assert_eq!(
+        reducer.apply_proposal(&candidate),
+        PolicyProjectionOutcome::Committed
+    );
+    assert_eq!(reducer.scene().active_output, output(2));
+}
+
 fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnapshot {
     PolicySceneSnapshot {
         generation,
+        active_output: output(1),
         outputs: vec![
             PolicyOutputSnapshot {
                 output: output(1),
@@ -525,6 +616,7 @@ fn proposal(
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         base_generation: request.scene_generation,
+        active_output: output(1),
         outputs,
         indicators: Vec::new(),
         output_statuses: Vec::new(),

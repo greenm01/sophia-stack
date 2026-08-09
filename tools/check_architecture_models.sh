@@ -120,6 +120,14 @@ run_alloy ActionCapabilityTopology.als TargetGenerationSubstitutionAttack sat
 run_alloy ActionCapabilityTopology.als RecipientSubstitutionAttack sat
 run_alloy ActionCapabilityTopology.als ActivationReplayAttack sat
 
+run_alloy PolicyOperationBinding.als AcceptedOperationUsesCommittedBindingSlot unsat
+run_alloy PolicyOperationBinding.als AcceptedOperationUsesAdvertisedOpaqueToken unsat
+run_alloy PolicyOperationBinding.als TargetDeliveryRequiresPermission unsat
+run_alloy PolicyOperationBinding.als ValidOperation sat
+run_alloy PolicyOperationBinding.als NumericActionInferenceAttack sat
+run_alloy PolicyOperationBinding.als OpaqueTokenSubstitutionAttack sat
+run_alloy PolicyOperationBinding.als UnauthorizedTargetAttack sat
+
 run_alloy PresentedTargetTopology.als DeliveredTargetsAreOwnedVisibleAndModal unsat
 run_alloy PresentedTargetTopology.als HigherTrustAndTieBreakCannotBeIntercepted unsat
 run_alloy PresentedTargetTopology.als PresentedTargetIdentitiesAreUnique unsat
@@ -133,6 +141,7 @@ run_alloy PresentedTargetTopology.als SelfIssuedGrantAttack sat
 
 run_smt TargetGeometryAndDisclosure
 run_smt WmV1WireBounds
+run_smt PolicyPresentationGeometry
 
 if [ -n "${SOPHIA_Z3_DIFFERENTIAL:-}" ]; then
     differential_version=$("$SOPHIA_Z3_DIFFERENTIAL" --version 2>/dev/null || true)
@@ -147,6 +156,7 @@ if [ -n "${SOPHIA_Z3_DIFFERENTIAL:-}" ]; then
     z3_bin=$SOPHIA_Z3_DIFFERENTIAL
     run_smt TargetGeometryAndDisclosure
     run_smt WmV1WireBounds
+    run_smt PolicyPresentationGeometry
     z3_bin=$stable_z3
     echo "optional Z3 5.x differential matched the stable gate"
 fi

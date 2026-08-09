@@ -257,7 +257,7 @@ pub fn decode_wm_v1_snapshot_surface_records(
 }
 
 pub const SNAPSHOT_BINDING_RECORD_KIND: u16 = 3;
-pub const SNAPSHOT_BINDING_RECORD_SIZE: usize = 16;
+pub const SNAPSHOT_BINDING_RECORD_SIZE: usize = 20;
 pub const SNAPSHOT_BINDING_RECORD_MAX: usize = 256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -265,6 +265,7 @@ pub struct WmV1SnapshotBindingRecord {
     pub action: u64,
     pub keycode: u32,
     pub modifier_bits: u32,
+    pub session_operation_slot: u16,
 }
 
 pub fn encode_wm_v1_snapshot_binding_records(
@@ -276,11 +277,13 @@ pub fn encode_wm_v1_snapshot_binding_records(
             max: 256,
         });
     }
-    let mut data = Vec::with_capacity(records.len() * 16);
+    let mut data = Vec::with_capacity(records.len() * 20);
     for record in records {
         push_u64(&mut data, record.action);
         push_u32(&mut data, record.keycode);
         push_u32(&mut data, record.modifier_bits);
+        push_u16(&mut data, record.session_operation_slot);
+        push_u16(&mut data, 0);
     }
     Ok(data)
 }
@@ -294,7 +297,7 @@ pub fn decode_wm_v1_snapshot_binding_records(
         return Err(IpcCodecError::CountTooLarge { count, max: 256 });
     }
     let expected = count
-        .checked_mul(16)
+        .checked_mul(20)
         .ok_or(IpcCodecError::CountTooLarge { count, max: 256 })?;
     if data.len() < expected {
         return Err(IpcCodecError::Truncated);
@@ -308,10 +311,16 @@ pub fn decode_wm_v1_snapshot_binding_records(
         let action = cursor.u64()?;
         let keycode = cursor.u32()?;
         let modifier_bits = cursor.u32()?;
+        let session_operation_slot = cursor.u16()?;
+        let reserved = cursor.u16()?;
+        if reserved != 0 {
+            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+        }
         records.push(WmV1SnapshotBindingRecord {
             action,
             keycode,
             modifier_bits,
+            session_operation_slot,
         });
     }
     cursor.finish()?;
@@ -827,6 +836,7 @@ pub fn decode_wm_v1_server_welcome_frame(frame: &[u8]) -> Result<WmV1ServerWelco
 pub struct WmV1SnapshotBegin {
     pub connection_epoch: u64,
     pub scene_generation: u64,
+    pub active_output: u64,
     pub chunk_count: u16,
     pub output_count: u16,
     pub surface_count: u32,
@@ -844,6 +854,7 @@ pub fn encode_wm_v1_snapshot_begin_frame(
     let mut payload = Vec::new();
     push_u64(&mut payload, message.connection_epoch);
     push_u64(&mut payload, message.scene_generation);
+    push_u64(&mut payload, message.active_output);
     push_u16(&mut payload, message.chunk_count);
     push_u16(&mut payload, message.output_count);
     push_u32(&mut payload, message.surface_count);
@@ -868,6 +879,7 @@ pub fn decode_wm_v1_snapshot_begin_frame(
     let mut cursor = Cursor::new(payload);
     let connection_epoch = cursor.u64()?;
     let scene_generation = cursor.u64()?;
+    let active_output = cursor.u64()?;
     let chunk_count = cursor.u16()?;
     let output_count = cursor.u16()?;
     let surface_count = cursor.u32()?;
@@ -877,6 +889,7 @@ pub fn decode_wm_v1_snapshot_begin_frame(
     let message = WmV1SnapshotBegin {
         connection_epoch,
         scene_generation,
+        active_output,
         chunk_count,
         output_count,
         surface_count,
@@ -1013,6 +1026,7 @@ pub struct WmV1ProjectionRequest {
     pub connection_epoch: u64,
     pub request_id: u64,
     pub scene_generation: u64,
+    pub policy_generation: u64,
     pub cause_kind: u16,
     pub interaction_phase: u16,
     pub interaction_kind: u16,
@@ -1046,6 +1060,7 @@ pub fn encode_wm_v1_projection_request_frame(
     push_u64(&mut payload, message.connection_epoch);
     push_u64(&mut payload, message.request_id);
     push_u64(&mut payload, message.scene_generation);
+    push_u64(&mut payload, message.policy_generation);
     push_u16(&mut payload, message.cause_kind);
     push_u16(&mut payload, message.interaction_phase);
     push_u16(&mut payload, message.interaction_kind);
@@ -1081,6 +1096,7 @@ pub fn decode_wm_v1_projection_request_frame(
     let connection_epoch = cursor.u64()?;
     let request_id = cursor.u64()?;
     let scene_generation = cursor.u64()?;
+    let policy_generation = cursor.u64()?;
     let cause_kind = cursor.u16()?;
     let interaction_phase = cursor.u16()?;
     let interaction_kind = cursor.u16()?;
@@ -1101,7 +1117,7 @@ pub fn decode_wm_v1_projection_request_frame(
     if reserved != 0 {
         return Err(IpcCodecError::ReservedNonZero(reserved as u32));
     }
-    let len = payload.len().saturating_sub(76);
+    let len = payload.len().saturating_sub(84);
     if len > 128 {
         return Err(IpcCodecError::FieldTooLarge {
             field: "affected_outputs",
@@ -1115,6 +1131,7 @@ pub fn decode_wm_v1_projection_request_frame(
         connection_epoch,
         request_id,
         scene_generation,
+        policy_generation,
         cause_kind,
         interaction_phase,
         interaction_kind,
@@ -1137,6 +1154,7 @@ pub struct WmV1ProjectionBegin {
     pub connection_epoch: u64,
     pub request_id: u64,
     pub base_generation: u64,
+    pub active_output: u64,
     pub chunk_count: u16,
     pub output_count: u16,
     pub placement_count: u32,
@@ -1155,6 +1173,7 @@ pub fn encode_wm_v1_projection_begin_frame(
     push_u64(&mut payload, message.connection_epoch);
     push_u64(&mut payload, message.request_id);
     push_u64(&mut payload, message.base_generation);
+    push_u64(&mut payload, message.active_output);
     push_u16(&mut payload, message.chunk_count);
     push_u16(&mut payload, message.output_count);
     push_u32(&mut payload, message.placement_count);
@@ -1180,6 +1199,7 @@ pub fn decode_wm_v1_projection_begin_frame(
     let connection_epoch = cursor.u64()?;
     let request_id = cursor.u64()?;
     let base_generation = cursor.u64()?;
+    let active_output = cursor.u64()?;
     let chunk_count = cursor.u16()?;
     let output_count = cursor.u16()?;
     let placement_count = cursor.u32()?;
@@ -1190,6 +1210,7 @@ pub fn decode_wm_v1_projection_begin_frame(
         connection_epoch,
         request_id,
         base_generation,
+        active_output,
         chunk_count,
         output_count,
         placement_count,
@@ -1402,11 +1423,11 @@ pub fn encode_wm_v1_policy_configuration_frame(
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidTransaction(0));
     }
-    if message.bindings.len() > 4096 {
+    if message.bindings.len() > 5120 {
         return Err(IpcCodecError::FieldTooLarge {
             field: "bindings",
             len: message.bindings.len(),
-            max: 4096,
+            max: 5120,
         });
     }
     let mut payload = Vec::new();
@@ -1451,11 +1472,11 @@ pub fn decode_wm_v1_policy_configuration_frame(
     let frame_focused_color = cursor.u32()?;
     let frame_unfocused_color = cursor.u32()?;
     let len = payload.len().saturating_sub(40);
-    if len > 4096 {
+    if len > 5120 {
         return Err(IpcCodecError::FieldTooLarge {
             field: "bindings",
             len,
-            max: 4096,
+            max: 5120,
         });
     }
     let bindings = cursor.slice(len)?.to_vec();

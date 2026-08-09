@@ -25,7 +25,7 @@ cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
 set +e
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_RESTART_MARKER="$proof_dir/restarted" \
-SOPHIA_HAGIA_FAULT_AFTER=projection_submitted \
+SOPHIA_HAGIA_FAULT_AFTER=checkpoint_saved \
 SOPHIA_HAGIA_FAULT_OCCURRENCE=2 \
 SOPHIA_HAGIA_FAULT_DELAY_MSEC=200 \
 target/debug/sophia sophia-live-session \
@@ -51,6 +51,9 @@ if (( status != 0 )); then
 fi
 
 grep -Eq '^sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch=2 restarts=1 preserved_layout=true$' "$evidence"
+grep -Eq '^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$' "$evidence"
+grep -Eq '^hagia_policy_checkpoint schema=1 status=loaded candidate_nonempty=true$' "$evidence"
+grep -Eq '^hagia_policy_checkpoint schema=1 status=reconciled candidate_nonempty=true$' "$evidence"
 grep -Eq '^sophia_live_session_startup schema=2 status=ready ' "$evidence"
 grep -Eq '^sophia_live_session_health schema=1 status=clean ' "$evidence"
 grep -Eq '^sophia_live_layout_health schema=2 status=clean ' "$evidence"

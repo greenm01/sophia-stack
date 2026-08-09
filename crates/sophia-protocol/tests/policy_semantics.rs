@@ -4,6 +4,7 @@ use sophia_protocol::*;
 fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
     let scene = PolicySceneSnapshot {
         generation: 7,
+        active_output: OutputId::from_raw(1),
         outputs: vec![PolicyOutputSnapshot {
             output: OutputId::from_raw(1),
             generation: 3,
@@ -28,12 +29,13 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
             permits_surface_target: true,
         }],
     };
-    let bindings = vec![WmBindingRegistration {
+    let bindings = vec![PolicyBindingRegistration {
         action: WmActionId::from_raw(4),
         keycode: 33,
         modifiers: WmModifierMask {
             bits: WmModifierMask::SUPER,
         },
+        session_operation_slot: Some(1),
     }];
     let transfer =
         encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &bindings).unwrap();
@@ -51,6 +53,7 @@ fn complete_output_projection_roundtrips_in_stacking_order() {
         connection_epoch: 2,
         request_id: 5,
         base_generation: 7,
+        active_output: OutputId::from_raw(1),
         outputs: vec![PolicyOutputProjection {
             output: OutputId::from_raw(1),
             placements: vec![PolicySurfacePlacement {
@@ -107,6 +110,7 @@ fn projection_record_count_mismatch_fails_closed() {
         connection_epoch: 2,
         request_id: 5,
         base_generation: 7,
+        active_output: OutputId::from_raw(1),
         outputs: vec![PolicyOutputProjection {
             output: OutputId::from_raw(1),
             placements: Vec::new(),
@@ -133,6 +137,7 @@ fn projection_request_carries_the_complete_affected_output_set() {
         connection_epoch: 2,
         request_id: 5,
         scene_generation: 7,
+        policy_generation: 3,
         affected_outputs: vec![OutputId::from_raw(1), OutputId::from_raw(2)],
         cause: PolicyRequestCause::Action {
             activation_serial: 9,
@@ -154,6 +159,7 @@ fn projection_request_rejects_duplicate_or_truncated_output_ids() {
         connection_epoch: 2,
         request_id: 5,
         scene_generation: 7,
+        policy_generation: 3,
         affected_outputs: vec![OutputId::from_raw(1), OutputId::from_raw(1)],
         cause: PolicyRequestCause::SceneChanged,
     };
@@ -190,12 +196,13 @@ fn configuration_dirty_and_session_operations_have_typed_mappings() {
     let configuration = PolicyConfiguration {
         connection_epoch: 2,
         generation: 3,
-        bindings: vec![WmBindingRegistration {
+        bindings: vec![PolicyBindingRegistration {
             action: WmActionId::from_raw(7),
             keycode: 38,
             modifiers: WmModifierMask {
                 bits: WmModifierMask::SUPER,
             },
+            session_operation_slot: Some(1),
         }],
         chrome: WmChromePolicy::default(),
     };
@@ -228,12 +235,13 @@ fn configuration_dirty_and_session_operations_have_typed_mappings() {
 
 #[test]
 fn policy_configuration_rejects_ambiguous_or_reserved_bindings() {
-    let binding = WmBindingRegistration {
+    let binding = PolicyBindingRegistration {
         action: WmActionId::from_raw(7),
         keycode: 38,
         modifiers: WmModifierMask {
             bits: WmModifierMask::SUPER,
         },
+        session_operation_slot: None,
     };
     let mut configuration = PolicyConfiguration {
         connection_epoch: 2,
@@ -243,12 +251,13 @@ fn policy_configuration_rejects_ambiguous_or_reserved_bindings() {
     };
     assert!(encode_wm_v1_policy_configuration(&configuration).is_err());
 
-    configuration.bindings = vec![WmBindingRegistration {
+    configuration.bindings = vec![PolicyBindingRegistration {
         action: WmActionId::from_raw(8),
         keycode: 14,
         modifiers: WmModifierMask {
             bits: WmModifierMask::CONTROL | WmModifierMask::ALT,
         },
+        session_operation_slot: None,
     }];
     assert!(encode_wm_v1_policy_configuration(&configuration).is_err());
 }
@@ -259,6 +268,7 @@ fn reduced_interaction_preserves_kind_phase_and_geometry() {
         connection_epoch: 2,
         request_id: 6,
         scene_generation: 7,
+        policy_generation: 3,
         affected_outputs: vec![OutputId::from_raw(1)],
         cause: PolicyRequestCause::Interaction {
             phase: PolicyInteractionPhase::Cancel,

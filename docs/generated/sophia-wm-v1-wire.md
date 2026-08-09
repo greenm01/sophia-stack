@@ -7,15 +7,15 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | --- | ---: | --- | --- | ---: |
 | `ClientHello` | 32 | policy-to-session | must be zero | 12 |
 | `ServerWelcome` | 33 | session-to-policy | must be zero | 32 |
-| `SnapshotBegin` | 34 | session-to-policy | must be nonzero | 28 |
+| `SnapshotBegin` | 34 | session-to-policy | must be nonzero | 36 |
 | `SnapshotChunk` | 35 | session-to-policy | must be nonzero | ..65536 |
 | `SnapshotEnd` | 36 | session-to-policy | must be nonzero | 20 |
-| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..204 |
-| `ProjectionBegin` | 38 | policy-to-session | must be nonzero | 36 |
+| `ProjectionRequest` | 37 | session-to-policy | must be nonzero | ..212 |
+| `ProjectionBegin` | 38 | policy-to-session | must be nonzero | 44 |
 | `ProjectionChunk` | 39 | policy-to-session | must be nonzero | ..65536 |
 | `ProjectionEnd` | 40 | policy-to-session | must be nonzero | 28 |
 | `ProjectionOutcome` | 41 | session-to-policy | must be nonzero | 28 |
-| `PolicyConfiguration` | 42 | policy-to-session | must be nonzero | ..4136 |
+| `PolicyConfiguration` | 42 | policy-to-session | must be nonzero | ..5160 |
 | `PolicyConfigurationOutcome` | 43 | session-to-policy | must be nonzero | 20 |
 | `PolicyDirty` | 44 | policy-to-session | must be nonzero | ..148 |
 | `SessionOperationRequest` | 45 | policy-to-session | must be nonzero | 32 |
@@ -48,11 +48,12 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | ---: | --- | --- | --- |
 | 0 | `connection_epoch` | `u64` | little-endian |
 | 8 | `scene_generation` | `u64` | little-endian |
-| 16 | `chunk_count` | `u16` | little-endian |
-| 18 | `output_count` | `u16` | little-endian |
-| 20 | `surface_count` | `u32` | little-endian |
-| 24 | `binding_count` | `u16` | little-endian |
-| 26 | `session_operation_count` | `u16` | little-endian |
+| 16 | `active_output` | `u64` | little-endian |
+| 24 | `chunk_count` | `u16` | little-endian |
+| 26 | `output_count` | `u16` | little-endian |
+| 28 | `surface_count` | `u32` | little-endian |
+| 32 | `binding_count` | `u16` | little-endian |
+| 34 | `session_operation_count` | `u16` | little-endian |
 
 ## `SnapshotChunk`
 
@@ -80,21 +81,22 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 0 | `connection_epoch` | `u64` | little-endian |
 | 8 | `request_id` | `u64` | little-endian |
 | 16 | `scene_generation` | `u64` | little-endian |
-| 24 | `cause_kind` | `u16` | little-endian |
-| 26 | `interaction_phase` | `u16` | little-endian |
-| 28 | `interaction_kind` | `u16` | little-endian |
-| 30 | `reserved_cause` | `u16` | must be zero |
-| 32 | `activation_serial` | `u64` | little-endian |
-| 40 | `action` | `u64` | little-endian |
-| 48 | `target_index` | `u32` | little-endian |
-| 52 | `target_generation` | `u32` | little-endian |
-| 56 | `interaction_x` | `i32` | little-endian |
-| 60 | `interaction_y` | `i32` | little-endian |
-| 64 | `interaction_width` | `i32` | little-endian |
-| 68 | `interaction_height` | `i32` | little-endian |
-| 72 | `affected_output_count` | `u16` | little-endian |
-| 74 | `reserved` | `u16` | must be zero |
-| 76 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+| 24 | `policy_generation` | `u64` | little-endian |
+| 32 | `cause_kind` | `u16` | little-endian |
+| 34 | `interaction_phase` | `u16` | little-endian |
+| 36 | `interaction_kind` | `u16` | little-endian |
+| 38 | `reserved_cause` | `u16` | must be zero |
+| 40 | `activation_serial` | `u64` | little-endian |
+| 48 | `action` | `u64` | little-endian |
+| 56 | `target_index` | `u32` | little-endian |
+| 60 | `target_generation` | `u32` | little-endian |
+| 64 | `interaction_x` | `i32` | little-endian |
+| 68 | `interaction_y` | `i32` | little-endian |
+| 72 | `interaction_width` | `i32` | little-endian |
+| 76 | `interaction_height` | `i32` | little-endian |
+| 80 | `affected_output_count` | `u16` | little-endian |
+| 82 | `reserved` | `u16` | must be zero |
+| 84 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
 
 ## `ProjectionBegin`
 
@@ -103,11 +105,12 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 0 | `connection_epoch` | `u64` | little-endian |
 | 8 | `request_id` | `u64` | little-endian |
 | 16 | `base_generation` | `u64` | little-endian |
-| 24 | `chunk_count` | `u16` | little-endian |
-| 26 | `output_count` | `u16` | little-endian |
-| 28 | `placement_count` | `u32` | little-endian |
-| 32 | `indicator_count` | `u16` | little-endian |
-| 34 | `status_count` | `u16` | little-endian |
+| 24 | `active_output` | `u64` | little-endian |
+| 32 | `chunk_count` | `u16` | little-endian |
+| 34 | `output_count` | `u16` | little-endian |
+| 36 | `placement_count` | `u32` | little-endian |
+| 40 | `indicator_count` | `u16` | little-endian |
+| 42 | `status_count` | `u16` | little-endian |
 
 ## `ProjectionChunk`
 
@@ -152,7 +155,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 28 | `frame_width` | `u32` | little-endian |
 | 32 | `frame_focused_color` | `u32` | little-endian |
 | 36 | `frame_unfocused_color` | `u32` | little-endian |
-| 40 | `bindings` | `bytes` | at most 4096 bytes; consumes payload tail |
+| 40 | `bindings` | `bytes` | at most 5120 bytes; consumes payload tail |
 
 ## `PolicyConfigurationOutcome`
 
@@ -242,13 +245,15 @@ Transfer: `snapshot`; record kind: 2; maximum records: 1024; fixed size: 80 byte
 
 ## `SnapshotBinding` record
 
-Transfer: `snapshot`; record kind: 3; maximum records: 256; fixed size: 16 bytes.
+Transfer: `snapshot`; record kind: 3; maximum records: 256; fixed size: 20 bytes.
 
 | Offset | Field | Type | Rule |
 | ---: | --- | --- | --- |
 | 0 | `action` | `u64` | little-endian |
 | 8 | `keycode` | `u32` | little-endian |
 | 12 | `modifier_bits` | `u32` | little-endian |
+| 16 | `session_operation_slot` | `u16` | little-endian |
+| 18 | `reserved` | `u16` | must be zero |
 
 ## `SnapshotSessionOperation` record
 

@@ -465,30 +465,49 @@ future compatibility target, not a prerequisite.
   affected-output request, projection encoding, committed outcome, and
   canonical Engine reduction without generated Sophia or Triad protocol types.
 - [x] Keep Hagia tags, stable `ViewId` values, ordered per-output views, and
-  reconnect affinity private. Project the implemented equal-column and
-  fixed-point scrolling layouts into one-output-per-surface Sophia geometry
+  reconnect affinity private. Project the fixed nine-view, fixed-point
+  scrolling layout into one-output-per-surface Sophia geometry
   with no Hagia back door.
 - [ ] Add deterministic Hagia reducer messages for view/tag changes, focus,
   movement, grouping, layout adjustment, output focus/moves, presentation
   state, floating, scratchpads, and opaque session operations.
+  The fixed nine-view scroller profile now covers ordered view moves, output
+  focus and movement, column consume/expel, width/height adjustment, floating,
+  fullscreen, maximize, minimize/restore, and operation-slot-bound opaque
+  session requests. General multi-tag mutation and scratchpads remain open.
 - [ ] Add Engine-owned pointer interactions, bounded focus history, private
   checkpoint/reconciliation, and crash/restart proof while applications and
   the last committed scene remain alive.
   One completed Engine-captured move/resize now crosses as a reduced final
   interaction, and Hagia validates its target, capability, output bounds, and
-  exact floating geometry. The owner-side recovery matrix now kills the public
+  exact floating geometry. Focus and minimized histories are bounded, and an
+  owner-only, size-bounded checkpoint uses a same-directory fsynced atomic
+  replacement and is revalidated before complete-snapshot reconciliation. The
+  owner-side recovery matrix now kills the public
   path at proposal-staged, frontend-pending, prepared, and terminal-outcome
   boundaries through the normal supervisor; all four preserve layout, restart
-  at a fresh epoch, and drain cleanly. Continuous updates, focus history,
-  persistent checkpoints, negotiation/snapshot faults, and operation-phase
-  faults remain open.
-- [ ] Prove the retained tiling and scrolling layouts plus actions, constraints,
+  at a fresh epoch, and drain cleanly. Continuous updates, a physical
+  checkpoint restore, negotiation/snapshot faults, and operation-phase faults
+  remain open.
+  `tools/hagia_policy_physical_gate.sh` now encodes the opt-in two-output
+  restore/presentation/active-output procedure, but it has not been run or
+  promoted as evidence.
+- [ ] Carry committed public-policy fullscreen, maximize, minimize, and restore
+  state through the X frontend's protocol-visible state transition and verify
+  exact configure/state feedback. Engine geometry, focus exclusion, semantic
+  minimized placement, and render-layer omission are implemented; they do not
+  yet claim complete EWMH state signaling.
+- [ ] Prove the retained scrolling layout plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
   restart, and hot-swap. Defer Janet until candidate validation and fallback
   behavior have their own model and deterministic tests.
   `PolicyOutputSettlement.tla` now proves the topology core for an atomic
   two-output candidate, output loss, and generation-advancing return. Dynamic
   output ingress and its live multi-output harness remain open.
+  `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
+  generations survive an older in-flight refresh and that active output
+  settles atomically with the frontend layout. Alloy and Z3 retain operation
+  binding and presentation-geometry attacks alongside their protected checks.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. Publish
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client

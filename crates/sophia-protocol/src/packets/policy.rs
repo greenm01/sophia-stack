@@ -1,6 +1,6 @@
 use crate::{
     LayoutNodeCapabilities, OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    WmActionId, WmBindingRegistration, WmChromePolicy,
+    WmActionId, WmChromePolicy, WmModifierMask,
 };
 
 pub const POLICY_MAX_OUTPUTS: usize = 16;
@@ -74,6 +74,7 @@ pub struct PolicySurfaceSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicySceneSnapshot {
     pub generation: u64,
+    pub active_output: OutputId,
     pub outputs: Vec<PolicyOutputSnapshot>,
     pub surfaces: Vec<PolicySurfaceSnapshot>,
     pub session_operations: Vec<PolicySessionOperation>,
@@ -83,8 +84,17 @@ pub struct PolicySceneSnapshot {
 pub struct PolicyConfiguration {
     pub connection_epoch: u64,
     pub generation: u64,
-    pub bindings: Vec<WmBindingRegistration>,
+    pub bindings: Vec<PolicyBindingRegistration>,
     pub chrome: WmChromePolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyBindingRegistration {
+    pub action: WmActionId,
+    pub keycode: u32,
+    pub modifiers: WmModifierMask,
+    /// Profile-local session-operation slot, or `None` for a pure policy action.
+    pub session_operation_slot: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -152,6 +162,8 @@ pub struct PolicyProjectionRequest {
     pub connection_epoch: u64,
     pub request_id: u64,
     pub scene_generation: u64,
+    /// Latest policy-private generation admitted through `PolicyDirty`.
+    pub policy_generation: u64,
     pub affected_outputs: Vec<OutputId>,
     pub cause: PolicyRequestCause,
 }
@@ -207,6 +219,7 @@ pub struct PolicyProjectionProposal {
     pub connection_epoch: u64,
     pub request_id: u64,
     pub base_generation: u64,
+    pub active_output: OutputId,
     pub outputs: Vec<PolicyOutputProjection>,
     pub indicators: Vec<PolicyProjectionIndicator>,
     pub output_statuses: Vec<PolicyProjectionOutputStatus>,

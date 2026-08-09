@@ -56,6 +56,7 @@ fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
     let plan = workspace_state.plan_response(&response, &[]).unwrap();
     let scene = PolicySceneSnapshot {
         generation: 1,
+        active_output: output,
         outputs: vec![PolicyOutputSnapshot {
             output,
             generation: 1,

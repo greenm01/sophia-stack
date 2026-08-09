@@ -190,6 +190,7 @@ fn snapshot_assembler_requires_exact_order_and_declared_totals() {
             WmV1SnapshotBegin {
                 connection_epoch: 8,
                 scene_generation: 13,
+                active_output: 1,
                 chunk_count: 3,
                 output_count: 1,
                 surface_count: 2,
@@ -247,6 +248,7 @@ fn projection_begin(epoch: u64) -> WmV1ProjectionBegin {
         connection_epoch: epoch,
         request_id: 17,
         base_generation: 41,
+        active_output: 1,
         chunk_count: 2,
         output_count: 1,
         placement_count: 2,

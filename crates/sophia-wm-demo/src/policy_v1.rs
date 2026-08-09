@@ -287,6 +287,7 @@ pub fn tile_policy_scene(
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
         base_generation: request.scene_generation,
+        active_output: scene.active_output,
         outputs,
         indicators: Vec::new(),
         output_statuses: Vec::new(),

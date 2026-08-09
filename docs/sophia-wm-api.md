@@ -90,17 +90,20 @@ bindings, opaque session actions, reduced pointer interactions, and bounded
 Engine chrome policy. Unsupported bits reject negotiation. An operation is
 legal only when its selected revision and negotiated capability admit it.
 
-Bindings contain one nonzero opaque action ID, normalized evdev keycode, and a
-bounded modifier mask. Engine rejects duplicate chords or action IDs, invalid
-modifiers, excessive registrations, and the emergency chord. Policy updates
-use a strictly increasing client configuration generation and apply only at a
-shortcut-idle boundary.
+Bindings contain one nonzero opaque action ID, normalized evdev keycode, a
+bounded modifier mask, and an optional advertised session-operation slot.
+Engine rejects duplicate chords or action IDs, invalid modifiers, unknown
+operation slots, excessive registrations, and the emergency chord. The slot,
+not an action-number range, associates a committed activation with one
+session-owned capability. Policy updates use a strictly increasing client
+configuration generation and apply only at a shortcut-idle boundary.
 
 ## Complete Scene Snapshot
 
 Engine sends one generation-tagged snapshot containing:
 
-- up to 16 opaque outputs with their full and policy work rectangles;
+- one explicit active output and up to 16 opaque outputs with their full and
+  policy work rectangles;
 - up to 1,024 live manageable opaque surfaces;
 - current visible focus per output when one exists; and
 - advertised opaque session-action tokens.
@@ -132,10 +135,11 @@ continuous interaction geometry may coalesce to their latest state.
 
 ## Projection Proposal
 
-A response repeats the connection epoch, transaction ID, and base snapshot
-generation. It lists every output affected by the decision. Each listed output
-contains a complete ordered projection of its visible surfaces; list order is
-bottom-to-top stacking order.
+A request repeats the latest strictly admitted private policy generation. A
+response repeats the connection epoch, transaction ID, and base snapshot
+generation, and explicitly selects one live active output. It lists every
+output affected by the decision. Each listed output contains a complete ordered
+projection; list order is bottom-to-top stacking order.
 
 Each projected surface may specify:
 
@@ -158,6 +162,12 @@ Engine validates the complete candidate before mutation:
 - no output or surface may be duplicated;
 - a surface may appear on at most one output; and
 - focus must name a visible focusable surface.
+
+Changing the active output requires both the old and new output in the
+affected set. Fullscreen geometry must equal the full output rectangle.
+Ordinary, maximized, and minimized geometry must remain inside the work area,
+and a minimized placement cannot hold focus. A minimized placement remains in
+the semantic projection but is omitted from the renderer's layer candidate.
 
 Success commits all affected outputs as one logical scene transaction.
 Committed, stale, invalid, and timed-out outcomes are explicit. A rejected
@@ -206,10 +216,13 @@ and returns an ordinary projection proposal. It never receives raw motion,
 button payloads, device identity, or cursor authority.
 
 A policy whose private state or validated configuration changes may request a
-fresh cycle. The request contains no placement and cannot mutate Engine state;
-Engine replies with an ordinary complete snapshot and projection request. One
-pending request may coalesce by unioning its affected outputs, while action
-activations retain their bounded order.
+fresh cycle with a strictly increasing private generation. The request contains
+no placement and cannot mutate Engine state; Engine replies with an ordinary
+complete snapshot and projection request carrying the admitted generation. One
+pending request coalesces by unioning its affected outputs. A newer generation
+arriving during an in-flight relayout remains pending for one later complete
+refresh; it is not duplicate-elided. Action activations retain their bounded
+order.
 
 ## Recovery And Replacement
 
@@ -225,6 +238,12 @@ or interpret the predecessor's workspaces, tags, views, or layout history.
 A WM may maintain a private session-local checkpoint. It must reconcile that
 checkpoint against the new snapshot and discard stale opaque IDs. Switching to
 a different WM never transfers that checkpoint.
+
+For the installed Hagia profile, the session provides an owner-only checkpoint
+path inside the policy endpoint directory. Atomic replacement lets it survive
+only supervised child restarts within that session; session teardown removes
+it before endpoint cleanup. The checkpoint is implementation-private and is
+not a `sophia_wm_v1` record or durable user configuration.
 
 ## Legacy X11 WM Profiles
 

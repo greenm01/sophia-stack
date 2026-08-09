@@ -77,8 +77,9 @@ live under `validation/specula`.
 
 The bounded Alloy and SMT-LIB2 gate complements TLA+ without translating or
 duplicating the temporal models. Alloy checks finite authority,
-protection-domain composition, action-capability, and target topologies. Z3
-checks target geometry/disclosure arithmetic and consumes
+protection-domain composition, action-capability, policy-operation binding,
+and target topologies. Z3 checks target geometry/disclosure arithmetic,
+policy presentation geometry, and consumes
 schema-generated `sophia_wm_v1` widths and maxima for wire-bound proofs.
 Every protected query is paired with a retained negative control that must
 produce a counterexample or satisfiable witness.

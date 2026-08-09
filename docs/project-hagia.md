@@ -222,17 +222,37 @@ Create Hagia as a standalone repository and run it as a blind external policy
 process. Implement the public Sophia wire independently in Nim. During Sophia
 protocol development, keep this client deliberately narrow: complete snapshots,
 output projections, registered actions, placement, sizing, focus, removal, and
-restart. Add an ordinary tiling layout, a scrolling layout, or a bounded Janet
-layout only when a Sophia protocol milestone needs the independent proof.
+restart. The critical-path profile retains one scrolling layout; additional
+layouts or Janet are not prerequisites for the revision-1 proof.
 
 The standalone repository's independent Nim envelope and record decoder passes
 Sophia's retained valid and malformed corpus. Its proof client also passes
 authenticated multi-cycle snapshot/request/projection/outcome exchanges
 through the canonical Engine reducer. Hagia now has private nine-view policy,
 ordered actions, scrolling columns, configuration, and a long-running client.
-Sophia's session-hosted frontend-settled public path is the remaining live
-integration boundary; the old xmonad session is regression evidence, not a
-prerequisite for this promotion.
+The native slice now also carries explicit output focus, column consume/expel,
+bounded focus and minimized histories, floating/fullscreen/maximize/minimize
+reduction, generational policy refreshes, and an owner-only, bounded,
+atomically replaced session checkpoint. A restored checkpoint is only a
+candidate: Hagia validates its private indexes and reconciles it against the
+next complete Sophia snapshot before proposing anything. Sophia's installed
+physical-workload proof remains the promotion boundary; the old xmonad session
+is regression evidence, not a prerequisite.
+
+The live Sophia session supplies `HAGIA_POLICY_CHECKPOINT` inside its
+owner-only policy endpoint directory. The file survives supervised Hagia child
+replacement, then session teardown removes it before releasing the endpoint
+directory. It is never transferred to another policy process or treated as
+portable configuration.
+
+The opt-in installed gate is `tools/hagia_policy_physical_gate.sh`. It requires
+an explicit arm variable, real Hagia and Kitty binaries, a named input seat,
+and two connected outputs. The operator exercises fullscreen, maximize,
+minimize/restore, and active-output actions around one checkpoint-triggered
+supervised restart; the verifier requires ordered commits, nonempty checkpoint
+load/reconciliation, output-change evidence, physical text, and clean session
+health. Merely checking in this gate is not physical evidence; its log must be
+retained and reviewed after an authorized hardware run.
 
 Do not make metadata rules, pointer operations, shell overlays, or full Triad
 IPC prerequisites for this proof.

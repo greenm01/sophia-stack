@@ -196,7 +196,13 @@ impl LiveWmSession {
         public.cycle_submitted = false;
         public.in_flight_request = None;
         public.in_flight_source = None;
+        if outcome != sophia_protocol::PolicyProjectionOutcome::Committed
+            || !settlement.expect_session_operation
+        {
+            public.expected_operation_slot = None;
+        }
         if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
+            public.active_output = public.reducer.scene().active_output;
             self.mark_committed();
         } else {
             self.stale_responses = self.stale_responses.saturating_add(1);

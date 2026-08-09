@@ -104,6 +104,16 @@ a prepared candidate to skip its final topology recheck and allowed an output
 to return without advancing generation. TLC violated
 `CommittedTopologyWasCurrent` and `ReappearedOutputIsFresh`, respectively.
 
+`PolicyRefreshLifecycle.tla` isolates the revision-1 refresh contract added for
+native Hagia policy. It admits only strictly increasing private generations,
+coalesces idle dirty output scopes, retains a newer dirty generation that
+arrives during an in-flight relayout, requires active-output switches to cover
+both old and new outputs, and promotes reducer state plus visible layout as one
+settlement. The bounded configuration explores 175 generated states and 71
+distinct states to depth 8. A temporary candidate that promoted the active
+output without the corresponding layout immediately violated
+`ActiveOutputSettlesAtomically`.
+
 `ShellWorkAreaCoordination.tla` is a target pre-schema model for future native
 shell reservations. It binds a ready shell candidate and reservation to the
 exact derived work-area request, WM connection epoch, and answering projection
@@ -232,6 +242,7 @@ Its actions map to the following target boundaries:
 | `ObserveRightOutputLoss`, `ObserveRightOutputReturn` | Engine output lifecycle observation, scene advancement, and non-recyclable output generation |
 | `PrepareCurrentCandidate`, `SettlePreparedCandidate` | non-mutating staged revalidation followed by one reducer/layout settlement |
 | `RejectSupersededCandidate` | stale topology terminal outcome preserving the prior complete projection |
+| `AdmitDirty`, `IssueRefresh`, `StageProposal`, `SettleProposal` in `PolicyRefreshLifecycle.tla` | `PolicyDirty` admission/coalescing, complete refresh issuance, and atomic staged reducer/layout settlement in the public owner |
 
 This map fixes ownership before the Rust names exist. Update the right column
 when implementation establishes the final module names; do not move an action

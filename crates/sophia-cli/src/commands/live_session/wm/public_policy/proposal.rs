@@ -20,6 +20,10 @@ fn public_live_proposal(
         .and_then(|projection| projection.focus);
     for projection in projections {
         for placement in projection.placements {
+            applied_surfaces.push(placement.surface);
+            if placement.presentation.minimized {
+                continue;
+            }
             let mut layer = if let Some(layer) = layout.layers.get(&placement.surface) {
                 layer.clone()
             } else {
@@ -46,7 +50,6 @@ fn public_live_proposal(
             if let Some(size) = placement.requested_size {
                 requested_sizes.insert(placement.surface, size);
             }
-            applied_surfaces.push(placement.surface);
             layers.push(layer);
         }
     }

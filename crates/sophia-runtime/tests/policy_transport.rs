@@ -61,6 +61,7 @@ fn session_and_reference_client_exchange_one_complete_policy_cycle() {
                 connection_epoch: 1,
                 request_id: 1,
                 scene_generation: 1,
+                policy_generation: 1,
                 affected_outputs: vec![OutputId::from_raw(1)],
                 cause: PolicyRequestCause::SceneChanged,
             },
@@ -93,6 +94,7 @@ fn scene() -> PolicySceneSnapshot {
     let output = OutputId::from_raw(1);
     PolicySceneSnapshot {
         generation: 1,
+        active_output: output,
         outputs: vec![PolicyOutputSnapshot {
             output,
             generation: 1,

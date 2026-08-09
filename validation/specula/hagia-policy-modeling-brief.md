@@ -125,6 +125,38 @@ claims of present runtime coverage.
 
 **Priority**: High. Output ABA or partial moves can misroute focus and pixels.
 
+### Scenario 5: Private Refresh, Active Output, And Presentation State
+
+**Mechanism**: A private policy generation may request a fresh complete cycle
+without sending geometry. A newer generation can arrive while an older refresh
+is in flight, active output can switch across the proposal, and fullscreen,
+ordinary, or minimized presentation state changes geometry and focus rules.
+
+**Evidence**:
+
+- Code analysis: the owner admits `PolicyDirty` only at a valid epoch with a
+  strictly newer nonzero generation and a unique live output scope. It unions
+  pending scopes and retains a newer request that arrives during settlement.
+- The canonical reducer carries the admitted policy generation in the request,
+  requires active-output changes to affect both old and new outputs, and
+  validates fullscreen against complete output bounds, nonfullscreen geometry
+  against work areas, and minimized focus as invalid.
+- `PolicyRefreshLifecycle.tla`, `PolicyPresentationGeometry.smt2`, and Hagia's
+  independent codec/reducer tests now cover those boundaries. The installed
+  checkpoint-restore and physical presentation gate remains open.
+
+**Affected code paths**: `PolicyTransportWorker::try_event`,
+`LivePublicPolicyState::admit_dirty`, `materialize_pending_dirty`, snapshot/request construction,
+`PolicyProjectionReducer`, and Hagia's `policy_session`/`policy_adapter`.
+
+**Suggested modeling approach**: keep the private generation, pending dirty
+scope, in-flight refresh, active output, reducer serial, layout serial, and
+presentation class explicit. Do not model the private checkpoint byte format.
+
+**Priority**: High. Dropping a newer dirty generation or partially settling an
+active-output/presentation change makes policy state disagree with visible
+state.
+
 ## 3. Modeling Recommendations
 
 ### 3.1 Model
@@ -134,6 +166,8 @@ claims of present runtime coverage.
   (Scenario 2).
 - Ordered activation and operation completion alongside restart (Scenario 3).
 - Output loss/reappearance during a staged multi-output move (Scenario 4).
+- Dirty-generation coalescing and active-output/presentation settlement
+  (Scenario 5).
 
 ### 3.2 Do Not Model
 
@@ -154,6 +188,8 @@ claims of present runtime coverage.
 | Transport replacement | `transportLive`, `epoch`, `restartPending` | Prevent restart while old settlement owns state | 1, 2 |
 | Terminal slot | `terminalPending`, `terminalDelivered` | Prove retry without duplication | 2, 3 |
 | Output lifecycle | `outputLive`, `outputGeneration` | Fence output ABA and staged moves | 4 |
+| Private refresh | `policyGeneration`, `dirtyOutputs`, `refreshInFlight` | Preserve newer dirty work and bind refreshes to exact policy state | 5 |
+| Presentation settlement | `activeOutput`, `presentation`, `layoutSerial` | Keep active output, placement, focus, reducer, and layout coherent | 5 |
 
 ## 5. Proposed Invariants
 
@@ -165,6 +201,8 @@ claims of present runtime coverage.
 | FailedSettlementPreservesLayout | Safety | Crash, timeout, and rejection cannot change last-good layout | 1 |
 | AcceptedActionsRemainOrdered | Safety | Accepted activation identities terminate in admission order | 3 |
 | ReappearedOutputIsFresh | Safety | Reappearing raw output identity has a greater generation | 4 |
+| NewerDirtyRemainsPending | Safety | Dirty work newer than the in-flight generation survives for a later complete refresh | 5 |
+| ActiveOutputSettlesAtomically | Safety | Reducer and visible layout publish the same active output and presentation state | 5 |
 | RestartEventuallyReissues | Liveness | After abort and replacement, a fresh scene request is eventually issued | 1, 2 |
 
 ## 6. Findings Pending Verification
@@ -176,6 +214,7 @@ claims of present runtime coverage.
 | MC1 | Can prepare-time reducer promotion expose unequal last-good states before layout commit? The negative control did; production now revalidates without promotion. | LastGoodIsCoherent | 1 |
 | MC2 | Can a deferred terminal command survive epoch replacement and be delivered to the new peer? | RestartHasNoOldOwner / TerminalAtMostOnce | 2 |
 | MC3 | Can output loss during a staged cross-output move commit only one side? | LastGoodIsCoherent | 4 |
+| MC4 | Can an in-flight refresh erase a newer private generation, or publish active output before layout settlement? | NewerDirtyRemainsPending / ActiveOutputSettlesAtomically | 5 |
 
 ### 6.2 Test-Verifiable
 
@@ -184,6 +223,7 @@ claims of present runtime coverage.
 | TV1 | Crash at negotiation, snapshot, projection, frontend wait, terminal outcome, and operation phases | `tools/hagia_owner_settlement_fault_smoke.sh` now covers proposal-staged, frontend-pending, prepared, and terminal-outcome-queued owner boundaries through the normal supervised restart path; negotiation/snapshot and session-operation phases remain to add |
 | TV2 | Repeated actions, saturation, launch, close, and logout remain ordered | Deterministic live injection and evidence reducer |
 | TV3 | Multi-output loss/reappearance advances generation and preserves focus/membership | Reducer and headless live topology scenarios |
+| TV4 | Checkpoint restore followed by fullscreen/maximize/minimize, active-output change, and policy-dirty refresh preserves the last presented scene across one supervised restart | Installed Hagia physical recovery gate |
 
 ### 6.3 Code-Review-Only
 

@@ -10,6 +10,7 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
     let output = OutputId::from_raw(1);
     let scene = PolicySceneSnapshot {
         generation: 4,
+        active_output: output,
         outputs: vec![PolicyOutputSnapshot {
             output,
             generation: 1,
@@ -38,6 +39,7 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
         connection_epoch: 7,
         request_id: 8,
         scene_generation: 4,
+        policy_generation: 1,
         affected_outputs: vec![output],
         cause: PolicyRequestCause::SceneChanged,
     };
