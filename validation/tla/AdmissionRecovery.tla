@@ -1,5 +1,5 @@
 -------------------------- MODULE AdmissionRecovery --------------------------
-EXTENDS FiniteSets
+EXTENDS FiniteSets, Naturals
 
 (***************************************************************************
  * Two-phase admission recovery. An observed safe extent primes recovery;   *
@@ -24,11 +24,13 @@ Outcomes == {"none", "complete", "skip"}
 
 VARIABLES selected, storage, fallbackOwner, targetOwner, layout, admission,
           recovery, standing, targetObserved, targetConfigured,
-          targetCommitted, relayouts, outcome, feedback, primed, timedOut
+          targetCommitted, relayouts, outcome, feedback, primed, timedOut,
+          planningEligible, manageOutstanding, manageRequests
 
 vars == <<selected, storage, fallbackOwner, targetOwner, layout, admission,
           recovery, standing, targetObserved, targetConfigured,
-          targetCommitted, relayouts, outcome, feedback, primed, timedOut>>
+          targetCommitted, relayouts, outcome, feedback, primed, timedOut,
+          planningEligible, manageOutstanding, manageRequests>>
 
 Init ==
     /\ selected = NoCandidate
@@ -47,6 +49,21 @@ Init ==
     /\ feedback = {}
     /\ primed = FALSE
     /\ timedOut = FALSE
+    /\ planningEligible = TRUE
+    /\ manageOutstanding = FALSE
+    /\ manageRequests = 0
+
+IssueManage ==
+    /\ planningEligible
+    /\ ~manageOutstanding
+    /\ layout \in {"pending", "fallback"}
+    /\ manageRequests < 2
+    /\ manageOutstanding' = TRUE
+    /\ manageRequests' = manageRequests + 1
+    /\ UNCHANGED <<selected, storage, fallbackOwner, targetOwner, layout,
+                    admission, recovery, standing, targetObserved,
+                    targetConfigured, targetCommitted, relayouts, outcome,
+                    feedback, primed, timedOut, planningEligible>>
 
 ObservePresent ==
     /\ admission # "managed"
@@ -56,7 +73,8 @@ ObservePresent ==
     /\ fallbackOwner' = "quarantine"
     /\ UNCHANGED <<targetOwner, layout, admission, recovery, standing,
                     targetObserved, targetConfigured, targetCommitted,
-                    relayouts, outcome, feedback, primed, timedOut>>
+                    relayouts, outcome, feedback, primed, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 ObserveBacking ==
     /\ admission # "managed"
@@ -69,33 +87,39 @@ ObserveBacking ==
                /\ fallbackOwner' = fallbackOwner
     /\ UNCHANGED <<targetOwner, layout, admission, recovery, standing,
                     targetObserved, targetConfigured, targetCommitted,
-                    relayouts, outcome, feedback, primed, timedOut>>
+                    relayouts, outcome, feedback, primed, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 PrimeAdmission ==
     /\ layout = "pending"
     /\ selected \in Candidates
+    /\ manageOutstanding
     /\ layout' = "recovery"
     /\ recovery' = TRUE
     /\ standing' = TRUE
     /\ primed' = TRUE
     /\ UNCHANGED <<selected, storage, fallbackOwner, targetOwner, admission,
                     targetObserved, targetConfigured, targetCommitted,
-                    relayouts, outcome, feedback, timedOut>>
+                    relayouts, outcome, feedback, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 Timeout ==
     /\ layout = "pending"
     /\ selected = NoCandidate
+    /\ manageOutstanding
     /\ layout' = "recovery"
     /\ recovery' = TRUE
     /\ standing' = TRUE
     /\ timedOut' = TRUE
     /\ UNCHANGED <<selected, storage, fallbackOwner, targetOwner, admission,
                     targetObserved, targetConfigured, targetCommitted,
-                    relayouts, outcome, feedback, primed>>
+                    relayouts, outcome, feedback, primed,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 CommitRecovery ==
     /\ layout = "recovery"
     /\ selected \in Candidates
+    /\ manageOutstanding
     /\ IF selected = PresentCandidate
           THEN /\ layout' = "fallback"
                /\ admission' = "awaiting_retirement"
@@ -105,9 +129,11 @@ CommitRecovery ==
                /\ admission' = "managed"
                /\ recovery' = FALSE
                /\ relayouts' = 1
+    /\ planningEligible' = FALSE
+    /\ manageOutstanding' = FALSE
     /\ UNCHANGED <<selected, storage, fallbackOwner, targetOwner, standing,
                     targetObserved, targetConfigured, targetCommitted,
-                    outcome, feedback, primed, timedOut>>
+                    outcome, feedback, primed, timedOut, manageRequests>>
 
 ObserveTarget ==
     /\ standing
@@ -116,7 +142,8 @@ ObserveTarget ==
     /\ targetOwner' = "quarantine"
     /\ UNCHANGED <<selected, storage, fallbackOwner, layout, admission,
                     recovery, standing, targetConfigured, targetCommitted,
-                    relayouts, outcome, feedback, primed, timedOut>>
+                    relayouts, outcome, feedback, primed, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 ReleaseFallback ==
     /\ selected = PresentCandidate
@@ -127,7 +154,8 @@ ReleaseFallback ==
     /\ UNCHANGED <<selected, storage, targetOwner, layout, admission,
                     recovery, standing, targetObserved, targetConfigured,
                     targetCommitted, relayouts, outcome, feedback,
-                    primed, timedOut>>
+                    primed, timedOut, planningEligible, manageOutstanding,
+                    manageRequests>>
 
 SubmitFallback ==
     /\ fallbackOwner = "scheduler"
@@ -135,7 +163,8 @@ SubmitFallback ==
     /\ UNCHANGED <<selected, storage, targetOwner, layout, admission,
                     recovery, standing, targetObserved, targetConfigured,
                     targetCommitted, relayouts, outcome, feedback,
-                    primed, timedOut>>
+                    primed, timedOut, planningEligible, manageOutstanding,
+                    manageRequests>>
 
 RetireFallback ==
     /\ fallbackOwner = "inflight"
@@ -147,7 +176,8 @@ RetireFallback ==
     /\ outcome' = "complete"
     /\ feedback' = {"complete", "idle"}
     /\ UNCHANGED <<selected, storage, targetOwner, standing, targetObserved,
-                    targetConfigured, targetCommitted, primed, timedOut>>
+                    targetConfigured, targetCommitted, primed, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 ConfigureTarget ==
     /\ admission = "managed"
@@ -159,7 +189,8 @@ ConfigureTarget ==
     /\ layout' = "target"
     /\ UNCHANGED <<selected, storage, fallbackOwner, targetOwner, admission,
                     recovery, standing, targetObserved, targetCommitted,
-                    relayouts, outcome, feedback, primed, timedOut>>
+                    relayouts, outcome, feedback, primed, timedOut,
+                    planningEligible, manageOutstanding, manageRequests>>
 
 ReleaseTarget ==
     /\ targetObserved
@@ -170,7 +201,8 @@ ReleaseTarget ==
     /\ UNCHANGED <<selected, storage, fallbackOwner, layout, admission,
                     recovery, standing, targetObserved, targetConfigured,
                     targetCommitted, relayouts, outcome, feedback,
-                    primed, timedOut>>
+                    primed, timedOut, planningEligible, manageOutstanding,
+                    manageRequests>>
 
 SubmitTarget ==
     /\ targetOwner = "scheduler"
@@ -178,7 +210,8 @@ SubmitTarget ==
     /\ UNCHANGED <<selected, storage, fallbackOwner, layout, admission,
                     recovery, standing, targetObserved, targetConfigured,
                     targetCommitted, relayouts, outcome, feedback,
-                    primed, timedOut>>
+                    primed, timedOut, planningEligible, manageOutstanding,
+                    manageRequests>>
 
 RetireTarget ==
     /\ targetOwner = "inflight"
@@ -188,7 +221,8 @@ RetireTarget ==
     /\ layout' = "committed"
     /\ UNCHANGED <<selected, storage, fallbackOwner, admission, recovery,
                     targetObserved, targetConfigured, relayouts,
-                    outcome, feedback, primed, timedOut>>
+                    outcome, feedback, primed, timedOut, planningEligible,
+                    manageOutstanding, manageRequests>>
 
 Progress ==
     \/ ObserveTarget
@@ -201,6 +235,7 @@ Progress ==
     \/ RetireTarget
 
 Next ==
+    \/ IssueManage
     \/ ObservePresent
     \/ ObserveBacking
     \/ PrimeAdmission
@@ -211,6 +246,7 @@ Next ==
 Spec == Init /\ [][Next]_vars
 BeginRecovery == PrimeAdmission \/ Timeout
 FairSpec == Spec
+            /\ WF_vars(IssueManage)
             /\ WF_vars(BeginRecovery)
             /\ WF_vars(CommitRecovery)
             /\ WF_vars(Progress)
@@ -232,6 +268,9 @@ TypeOK ==
     /\ feedback \subseteq {"complete", "idle"}
     /\ primed \in BOOLEAN
     /\ timedOut \in BOOLEAN
+    /\ planningEligible \in BOOLEAN
+    /\ manageOutstanding \in BOOLEAN
+    /\ manageRequests \in 0..2
 
 BackingCannotReplacePresent ==
     selected = PresentCandidate => fallbackOwner # "none"
@@ -256,6 +295,15 @@ RecoveryHasOneCause ==
 
 PrimedAdmissionAvoidsTimeout ==
     primed => /\ selected \in Candidates /\ ~timedOut
+
+ManagePlanningIsBounded ==
+    manageRequests <= 1
+
+CommittedManageConsumesPlanning ==
+    layout \in {"fallback", "relayout", "target", "committed"} =>
+        /\ ~planningEligible
+        /\ ~manageOutstanding
+        /\ manageRequests = 1
 
 TargetCommitsOnlyAfterExactRetirement ==
     targetCommitted =>

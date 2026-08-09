@@ -135,6 +135,21 @@ impl PersistentLiveLayout {
                 }
             }
         }
+        let committed_public_admission = (pending.update.commit.outcome
+            == TransactionOutcome::Committed
+            && pending.policy_settlement.is_some())
+        .then_some(pending.source)
+        .flatten()
+        .and_then(|source| match source {
+            LiveWmProposalSource::Manage(surface) => Some(surface),
+            _ => None,
+        })
+        .filter(|surface| {
+            pending
+                .layers
+                .iter()
+                .any(|layer| layer.surface == *surface)
+        });
         self.layers = pending
             .layers
             .into_iter()
@@ -156,10 +171,15 @@ impl PersistentLiveLayout {
         self.release_admission_groups(&selected_admission_transactions);
         // A committed relayout can intentionally exclude admissions queued
         // behind it. Keep those surfaces eligible for their own ManageSurface
-        // response while they remain in the planning table; only a candidate
-        // workspace assignment consumes WM admission ownership.
+        // response while they remain in the planning table. The legacy path
+        // consumes ownership through its candidate workspace assignment; the
+        // public reducer has no private workspace effect, so its exact
+        // committed Manage source plus retained placement is the equivalent
+        // ownership boundary. The surface can remain visually fenced in
+        // AwaitingRetirement without being planned again.
         self.unmanaged_surfaces.retain(|surface| {
-            self.planning_surfaces.contains_key(surface)
+            Some(*surface) != committed_public_admission
+                && self.planning_surfaces.contains_key(surface)
                 && pending.effects.as_ref().is_none_or(|effects| {
                     effects.workspace_state.surface_workspace(*surface).is_none()
                 })

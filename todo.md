@@ -554,6 +554,13 @@ future compatibility target, not a prerequisite.
   Engine constraint reconciliation before reducer staging, the bounded live
   restart regression passes, and a replacement physical attempt remains the
   acceptance proof.
+  Installed attempt `0002` then exposed the public admission-ownership half of
+  the same boundary: the corrected Manage committed, but remained eligible for
+  replanning until visual retirement, producing 3,121 reconciliations before
+  startup failed closed. A committed public Manage now consumes only its exact
+  planning ownership while retaining the independent visual-retirement fence;
+  deterministic tests cap the resulting policy and checkpoint traffic. A
+  successor physical attempt is still required.
 - [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
   restart and last-layout gates. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.

@@ -26,10 +26,11 @@ fn completed_pointer_geometry_reduces_raw_motion_to_one_bounded_target() {
     );
 }
 use crate::commands::live_session::{
-    LivePolicyMapMode, LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource,
-    LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
-    committed_relayout_nodes, live_layout_node_from_facts, ordered_wm_action_request,
-    planning_state_for_response, reconcile_public_policy_proposal, wm_transport_requires_reseed,
+    LivePolicyMapMode, LivePolicySettlementIdentity, LiveWmLayoutFingerprint, LiveWmProposal,
+    LiveWmProposalSource, LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout,
+    ResizeVisualCommit, committed_relayout_nodes, live_layout_node_from_facts,
+    ordered_wm_action_request, planning_state_for_response, reconcile_public_policy_proposal,
+    wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
@@ -373,6 +374,74 @@ fn public_policy_reconciliation_preserves_an_omitted_content_size_request() {
     assert_eq!(adjusted, 0);
     assert_eq!(reconciled.outputs[0].placements[0].geometry, geometry);
     assert_eq!(reconciled.outputs[0].placements[0].requested_size, None);
+}
+
+#[test]
+fn committed_public_manage_consumes_planning_ownership_before_visual_retirement() {
+    let surface = SurfaceId::new(9, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 400,
+    };
+    let transaction = TransactionId::from_raw(10);
+    let mut layout = PersistentLiveLayout::default();
+    let mut observed =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(9));
+    observed
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    layout.observe_authority_batch(&observed);
+    assert_eq!(layout.next_unmanaged_surface(), Some(surface));
+
+    let result = layout.commit_proposal(LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 1,
+        source: Some(LiveWmProposalSource::Manage(surface)),
+        effects: None,
+        policy_settlement: Some(LivePolicySettlementIdentity {
+            connection_epoch: 1,
+            request_id: 1,
+            scene_generation: 2,
+            transaction,
+            expect_session_operation: false,
+            session_operation: false,
+        }),
+    });
+
+    assert_eq!(result.source, Some(LiveWmProposalSource::Manage(surface)));
+    assert_eq!(layout.next_unmanaged_surface(), None);
+    assert!(layout.planning_surfaces.contains_key(&surface));
+    assert!(layout.surface_requires_admission(surface));
 }
 
 fn hold_test_resize(

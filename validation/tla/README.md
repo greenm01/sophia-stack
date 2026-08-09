@@ -323,14 +323,16 @@ chain.
 
 `AdmissionRecovery.tla` covers exact PresentedBuffer selection, a later
 backing observation, proactive safe-extent admission, timeout only when no
-complete pixels have been observed, fallback admission, temporary-constraint
-release, one relayout, and exact standing-target retirement. It explores target
-observation both before and after fallback retirement. Its actions map to
-`LayoutEpochCoordinator`, the bounded visual-candidate tracker, pre-admission
-group ownership, the production Present scheduler, and native retirement. The
-model nondeterministically gives the selected fallback Present DMA or CPU
-storage and requires the same retirement lifecycle for either choice. Content
-identity remains distinct from geometry and storage: an extent or
-materialization can choose a rendering path without choosing which candidate
-owns admission. The bounded configuration explores 160 generated states and
-84 distinct states to depth 12.
+complete pixels have been observed, one outstanding Manage request, committed
+public planning-ownership consumption, fallback admission,
+temporary-constraint release, one relayout, and exact standing-target
+retirement. It explores target observation both before and after fallback
+retirement. Its actions map to `LayoutEpochCoordinator`, the bounded
+visual-candidate tracker, public Manage ownership, pre-admission group
+ownership, the production Present scheduler, and native retirement. The model
+nondeterministically gives the selected fallback Present DMA or CPU storage and
+requires the same retirement lifecycle for either choice. Content identity
+remains distinct from geometry and storage: an extent or materialization can
+choose a rendering path without choosing which candidate owns admission. The
+bounded configuration explores 172 generated states and 88 distinct states to
+depth 13.

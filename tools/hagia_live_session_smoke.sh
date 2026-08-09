@@ -67,3 +67,11 @@ grep -Eq '^hagia_policy_refresh schema=1 status=requested reason=checkpoint_reco
 grep -Eq '^sophia_live_session_startup schema=2 status=ready ' "$evidence"
 grep -Eq '^sophia_live_session_health schema=1 status=clean ' "$evidence"
 grep -Eq '^sophia_live_layout_health schema=2 status=clean ' "$evidence"
+
+constraint_reconciliations="$(grep -Ec '^sophia_live_wm schema=1 status=constraints_reconciled ' "$evidence")"
+layout_commits="$(grep -Ec '^sophia_live_wm schema=1 status=layout_committed ' "$evidence")"
+checkpoint_saves="$(grep -Ec '^hagia_policy_checkpoint schema=1 status=saved ' "$evidence")"
+if (( constraint_reconciliations != 1 || layout_commits > 8 || checkpoint_saves > 8 )); then
+    echo "Hagia admission/restart cycle did not remain bounded: constraints=$constraint_reconciliations layouts=$layout_commits checkpoints=$checkpoint_saves" >&2
+    exit 1
+fi
