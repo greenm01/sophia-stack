@@ -253,7 +253,11 @@ replacement, then session teardown removes it before releasing the endpoint
 directory. It is never transferred to another policy process or treated as
 portable configuration.
 
-The opt-in installed gate is `tools/hagia_policy_physical_gate.sh`. It requires
+From a logged-in tty4, `tools/run_current_hagia_policy_gate_tty4.sh` is the
+one-shot current-checkout launcher: it requires clean Sophia and Hagia trees,
+builds both exact commits before takeover, validates the compiled profile, and
+then enters the guarded gate. The underlying opt-in installed gate is
+`tools/hagia_policy_physical_gate.sh`. It requires
 an explicit arm variable, real Hagia and Kitty binaries, a named input seat,
 and two connected outputs. The operator exercises fullscreen, maximize,
 minimize/restore, and active-output actions around one checkpoint-triggered

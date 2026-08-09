@@ -141,6 +141,9 @@ impl PersistentXtermSessionConfig {
         let core_config_state = sophia_config::CoreConfigState::load(&core_config_source)?;
         let core_snapshot = core_config_state.active();
         let explicit_desktop_profile = arg_value(args, "--desktop-profile").map(Into::into);
+        if no_config && explicit_desktop_profile.is_some() {
+            return Err("--no-config and --desktop-profile are mutually exclusive".into());
+        }
         if explicit_desktop_profile
             .as_ref()
             .is_some_and(|path: &std::path::PathBuf| !path.is_absolute())
@@ -148,10 +151,14 @@ impl PersistentXtermSessionConfig {
             return Err("--desktop-profile requires an absolute path".into());
         }
         let user_config_root = sophia_config::default_user_config_root();
-        let desktop_profile_source = sophia_config::discover_desktop_profile_source(
-            explicit_desktop_profile.as_deref(),
-            user_config_root.as_deref(),
-        );
+        let desktop_profile_source = if no_config {
+            None
+        } else {
+            sophia_config::discover_desktop_profile_source(
+                explicit_desktop_profile.as_deref(),
+                user_config_root.as_deref(),
+            )
+        };
         let desktop_profile = sophia_config::load_desktop_profile(
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,

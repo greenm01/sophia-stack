@@ -211,6 +211,20 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
             .to_string()
             .contains("absolute")
     );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--no-config".to_owned(),
+            format!("--desktop-profile={}", path.display()),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("mutually exclusive")
+    );
+    let compiled = PersistentXtermSessionConfig::from_args(&["--no-config".to_owned()]).unwrap();
+    assert_eq!(
+        compiled.desktop_profile.sources,
+        vec![std::path::PathBuf::from("<compiled>")]
+    );
     std::fs::remove_file(path).unwrap();
 }
 
