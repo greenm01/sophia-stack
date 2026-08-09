@@ -1481,6 +1481,13 @@ wrong routed character, retargeted sequence, stale surface, or missing physical
 presentation. A restart line or a returned TTY alone is partial evidence; the
 command must print `Hagia physical policy gate passed`.
 
+Every passing run is rechecked by
+`tools/verify_hagia_policy_physical.sh` and archived under
+`${XDG_STATE_HOME:-$HOME/.local/state}/sophia/promotion/hagia-policy-runs` with
+the source commit, exact Sophia and Hagia executable digests, immutable raw log,
+and checksums. `tools/archive_hagia_policy_physical_run.sh` rejects a duplicate
+evidence digest instead of creating a second proof record.
+
 Use `Sophia Hagia (Native Policy)` for ordinary development after its bounded
 preflight passes. Every launch reserves a Hagia ledger entry before takeover;
 normal logout passes, operator emergency return is marked recovered, and

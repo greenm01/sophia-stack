@@ -319,7 +319,10 @@ bash -n tools/installed/sophia-hagia-session \
     tools/verify_installed_hagia_session.sh \
     tools/verify_installed_hagia_recovery.sh \
     tools/verify_installed_hagia_archive.sh \
-    tools/check_installed_hagia_ledger.sh
+    tools/check_installed_hagia_ledger.sh \
+    tools/hagia_policy_physical_gate.sh \
+    tools/verify_hagia_policy_physical.sh \
+    tools/archive_hagia_policy_physical_run.sh
 tools/check_installed_hagia_ledger.sh
 grep -Fq 'hagia-policy) tools/hagia_policy_physical_gate.sh' \
     tools/start_sophia_tty3.sh
@@ -339,6 +342,10 @@ grep -Fq 'sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-
 grep -Fq 'SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'SOPHIA_HAGIA_RESTART_AFTER_ACTION=34' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'tools/verify_hagia_policy_physical.sh' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'tools/archive_hagia_policy_physical_run.sh' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'NR > trigger && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/' \
     tools/fixtures/hagia_restart_once.sh
