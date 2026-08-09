@@ -489,6 +489,10 @@ future compatibility target, not a prerequisite.
   at a fresh epoch, and drain cleanly. Continuous updates, a physical
   checkpoint restore, negotiation/snapshot faults, and operation-phase faults
   remain open.
+  Hagia now emits exactly one bounded `PolicyDirty` after a restored checkpoint
+  first reconciles and commits; the independent socket test proves generation
+  advance and a fresh complete cycle. Both installed Hagia gates require its
+  diagnostic after restart, but no physical evidence has been claimed.
   `tools/hagia_policy_physical_gate.sh` now encodes the opt-in two-output
   restore/presentation/active-output procedure, but it has not been run or
   promoted as evidence.

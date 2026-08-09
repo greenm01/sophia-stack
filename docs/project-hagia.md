@@ -235,7 +235,10 @@ bounded focus and minimized histories, floating/fullscreen/maximize/minimize
 reduction, generational policy refreshes, and an owner-only, bounded,
 atomically replaced session checkpoint. A restored checkpoint is only a
 candidate: Hagia validates its private indexes and reconciles it against the
-next complete Sophia snapshot before proposing anything. Sophia's installed
+next complete Sophia snapshot before proposing anything. After that candidate
+first commits, Hagia emits one geometry-free `PolicyDirty` request for the
+complete live output set and verifies the resulting fresh cycle at the next
+private generation. Sophia's installed
 physical-workload proof remains the promotion boundary; the old xmonad session
 is regression evidence, not a prerequisite.
 

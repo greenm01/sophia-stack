@@ -54,6 +54,7 @@ grep -Eq '^sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch=2
 grep -Eq '^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$' "$evidence"
 grep -Eq '^hagia_policy_checkpoint schema=1 status=loaded candidate_nonempty=true$' "$evidence"
 grep -Eq '^hagia_policy_checkpoint schema=1 status=reconciled candidate_nonempty=true$' "$evidence"
+grep -Eq '^hagia_policy_refresh schema=1 status=requested reason=checkpoint_reconciled policy_generation=2 outputs=[1-9][0-9]*$' "$evidence"
 grep -Eq '^sophia_live_session_startup schema=2 status=ready ' "$evidence"
 grep -Eq '^sophia_live_session_health schema=1 status=clean ' "$evidence"
 grep -Eq '^sophia_live_layout_health schema=2 status=clean ' "$evidence"

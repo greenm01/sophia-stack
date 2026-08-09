@@ -95,6 +95,7 @@ before_restart '^hagia_policy_projection schema=1 status=active_output_changed$'
 
 after_restart '^hagia_policy_checkpoint schema=1 status=loaded candidate_nonempty=true$'
 after_restart '^hagia_policy_checkpoint schema=1 status=reconciled candidate_nonempty=true$'
+after_restart '^hagia_policy_refresh schema=1 status=requested reason=checkpoint_reconciled policy_generation=2 outputs=2$'
 for action in 37 39 40 33 34; do
     after_restart "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
 done
