@@ -624,12 +624,14 @@ fn live_x_application_client_contract_is_bounded_and_exclusive() {
         "--expect-physical-pointer".to_owned(),
         "--input-devices=/dev/input/event0,/dev/input/event1".to_owned(),
         "--max-runtime-ms=30000".to_owned(),
+        "--physical-sequence-timeout-ms=600000".to_owned(),
     ])
     .unwrap();
     assert_eq!(config.client.as_deref(), Some("zenity"));
     assert_eq!(config.client_args, ["--entry"]);
     assert_eq!(config.expect_client_stdout.as_deref(), Some("sophia\n"));
     assert!(config.require_client_normal_exit);
+    assert_eq!(config.physical_sequence_timeout_msec, 600_000);
 
     assert!(
         PersistentXtermSessionConfig::from_args(&[
@@ -640,6 +642,26 @@ fn live_x_application_client_contract_is_bounded_and_exclusive() {
     );
     assert!(
         PersistentXtermSessionConfig::from_args(&["--client-arg=--entry".to_owned(),]).is_err()
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--physical-sequence-timeout-ms=600000".to_owned(),
+            "--max-runtime-ms=660000".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("requires --expect-physical-text")
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--expect-physical-text=sophia".to_owned(),
+            "--input-seat=seat0".to_owned(),
+            "--physical-sequence-timeout-ms=600001".to_owned(),
+            "--max-runtime-ms=660000".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("1000 through 600000")
     );
 }
 

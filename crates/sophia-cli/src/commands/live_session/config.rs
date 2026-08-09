@@ -76,6 +76,7 @@ struct PersistentXtermSessionConfig {
     max_ticks: Option<usize>,
     inject_text: Option<String>,
     expect_physical_text: Option<String>,
+    physical_sequence_timeout_msec: u64,
     expect_physical_pointer: bool,
     exit_after_input_proof: bool,
     input_devices: Vec<std::path::PathBuf>,
@@ -314,6 +315,23 @@ impl PersistentXtermSessionConfig {
         }
         let inject_text = arg_value(args, "--inject-text");
         let expect_physical_text = arg_value(args, "--expect-physical-text");
+        let physical_sequence_timeout = arg_value(args, "--physical-sequence-timeout-ms")
+            .as_deref()
+            .map(parse_u64)
+            .transpose()?;
+        if physical_sequence_timeout
+            .is_some_and(|timeout| !(1_000..=600_000).contains(&timeout))
+        {
+            return Err(
+                "--physical-sequence-timeout-ms accepts a value from 1000 through 600000"
+                    .into(),
+            );
+        }
+        if physical_sequence_timeout.is_some() && expect_physical_text.is_none() {
+            return Err(
+                "--physical-sequence-timeout-ms requires --expect-physical-text".into(),
+            );
+        }
         let terminal_exec = arg_value(args, "--terminal-exec");
         let terminal_exec_args = args
             .iter()
@@ -663,6 +681,8 @@ impl PersistentXtermSessionConfig {
             max_ticks,
             inject_text,
             expect_physical_text,
+            physical_sequence_timeout_msec: physical_sequence_timeout
+                .unwrap_or(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC),
             expect_physical_pointer,
             exit_after_input_proof,
             input_devices,

@@ -332,14 +332,36 @@ if SOPHIA_HAGIA_PHYSICAL_TEXT=hagia-policy-proof \
 fi
 grep -Fq 'proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq 'SOPHIA_HAGIA_FAULT_OCCURRENCE=6' \
+grep -Fq 'runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-660000}"' \
     tools/hagia_policy_physical_gate.sh
+grep -Fq 'sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-600000}"' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'SOPHIA_HAGIA_RESTART_AFTER_ACTION=34' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq 'NR > trigger && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/' \
+    tools/fixtures/hagia_restart_once.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/hagia_policy_physical_gate.sh
+grep -Fq '"--session-app-arg=terminal=$guide"' \
+    tools/hagia_policy_physical_gate.sh
+grep -Fq "show_step 'Press Super+Y once." \
+    tools/fixtures/hagia_physical_guide.sh
+grep -Fq 'proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"' \
+    tools/fixtures/hagia_physical_guide.sh
+grep -Fq 'printf '\''%s'\'' "$proof_text" >"$proof_result"' \
+    tools/fixtures/hagia_physical_guide.sh
+grep -Fq 'terminal_command.env("SOPHIA_INPUT_PROOF_RESULT", result.path());' \
+    crates/sophia-cli/src/commands/live_session.rs
+grep -Fq 'status=physical_action_admitted' \
+    crates/sophia-cli/src/commands/live_session/owner_loop/physical_input_phase.rs
 bash -n tools/hagia_live_session_smoke.sh \
     tools/hagia_client_lifecycle_fault_smoke.sh \
     tools/hagia_owner_settlement_fault_smoke.sh \
     tools/hagia_policy_physical_gate.sh \
+    tools/fixtures/hagia_restart_once.sh \
+    tools/fixtures/hagia_physical_guide.sh \
     tools/output_topology_physical_gate.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \

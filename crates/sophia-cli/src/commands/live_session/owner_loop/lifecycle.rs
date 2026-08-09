@@ -897,7 +897,9 @@
         );
         if waiting_for_keyboard_sequence {
             let ready_at = physical_input_ready_at.expect("checked above");
-            if ready_at.elapsed() >= Duration::from_millis(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC) {
+            if ready_at.elapsed()
+                >= Duration::from_millis(config.physical_sequence_timeout_msec)
+            {
                 let proof = physical_text_proof.as_ref().expect("checked above");
                 return Err(format!(
                     "persistent live session timed out waiting for exact physical input sequence: matched_events={} expected_events={} keyboard_routed={physical_keys_routed}",
@@ -909,7 +911,8 @@
             }
         } else if waiting_for_pointer_selection {
             let started_at = pointer_phase_started_at.expect("set above");
-            if started_at.elapsed() >= Duration::from_millis(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC)
+            if started_at.elapsed()
+                >= Duration::from_millis(config.physical_sequence_timeout_msec)
             {
                 return Err(format!(
                     "persistent live session timed out waiting for a routed physical pointer button: pointer_observed={physical_pointer_events} pointer_routed={physical_pointer_routed} pointer_buttons={physical_pointer_buttons_routed} pointer_pixels={pointer_pixel_change}",

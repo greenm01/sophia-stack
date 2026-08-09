@@ -7,10 +7,12 @@ kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
 seat="${SOPHIA_HAGIA_PHYSICAL_SEAT:-}"
 display="${SOPHIA_HAGIA_PHYSICAL_DISPLAY:-:291}"
-runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-120000}"
+runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-660000}"
+sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-600000}"
 evidence="${SOPHIA_HAGIA_PHYSICAL_EVIDENCE:-/tmp/sophia-hagia-policy-physical.log}"
 proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"
 restart_marker="${evidence}.restart"
+guide="${SOPHIA_HAGIA_PHYSICAL_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_physical_guide.sh}"
 
 if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
     echo "SOPHIA_HAGIA_PHYSICAL_TEXT must contain 1-24 lowercase ASCII letters" >&2
@@ -36,8 +38,17 @@ if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
     echo "set SOPHIA_FIREFOX_BIN to real Firefox" >&2
     exit 2
 fi
+if [[ ! -x "$guide" ]]; then
+    echo "set SOPHIA_HAGIA_PHYSICAL_GUIDE to the executable proof guide" >&2
+    exit 2
+fi
 if [[ ! "$runtime_msec" =~ ^[0-9]+$ ]] || (( runtime_msec < 30000 )); then
     echo "SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC must be at least 30000" >&2
+    exit 2
+fi
+if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
+    || (( sequence_timeout_msec < 1000 || sequence_timeout_msec > 600000 )); then
+    echo "SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC must be 1000-600000" >&2
     exit 2
 fi
 
@@ -56,13 +67,13 @@ trap 'rm -f "$restart_marker"' EXIT
 
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_RESTART_MARKER="$restart_marker" \
-SOPHIA_HAGIA_FAULT_AFTER=checkpoint_saved \
-SOPHIA_HAGIA_FAULT_OCCURRENCE=6 \
-SOPHIA_HAGIA_FAULT_DELAY_MSEC=200 \
+SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37 \
+SOPHIA_HAGIA_RESTART_AFTER_ACTION=34 \
 SOPHIA_LIVE_SESSION_DISPLAY="$display" \
 SOPHIA_LIVE_SESSION_RUNTIME_MSEC="$runtime_msec" \
 SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
 SOPHIA_LIVE_SESSION_VERIFY_MODE=caller \
+SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     "$ROOT_DIR/tools/live_session_persistent_hardware_proof.sh" \
     --no-config \
     --session-mode=normal \
@@ -77,10 +88,12 @@ SOPHIA_LIVE_SESSION_VERIFY_MODE=caller \
     --session-app-arg=terminal=linux_display_server=x11 \
     --session-app-arg=terminal=--override \
     --session-app-arg=terminal=remember_window_size=no \
+    "--session-app-arg=terminal=$guide" \
     "--wm-process=$ROOT_DIR/tools/fixtures/hagia_restart_once.sh" \
     --wm-interface=sophia_wm_v1 \
     "--input-seat=$seat" \
     "--expect-physical-text=$proof_text" \
+    "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
     --exit-after-input-proof
 
 restart_line="$(awk \
@@ -149,6 +162,15 @@ for action in 37 39 40 33 34; do
     require_after "physical action $action" \
         "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
 done
+restore_line="$(awk -v limit="$restart_line" \
+    'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=40$/ { print NR; exit }' \
+    "$evidence")"
+if [[ -z "$restore_line" ]] || ! awk -v limit="$restore_line" \
+    'NR > limit && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ { found = 1; exit } END { exit found ? 0 : 1 }' \
+    "$evidence"; then
+    echo "Hagia restore did not retain a nonempty policy checkpoint" >&2
+    exit 1
+fi
 maximize_count="$(awk -v limit="$restart_line" \
     'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=38$/ { count++ } END { print count + 0 }' \
     "$evidence")"

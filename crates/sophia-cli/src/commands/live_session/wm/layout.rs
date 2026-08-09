@@ -36,6 +36,7 @@ const PRE_ADMISSION_GROUP_CAPACITY: usize = 256;
 struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
     planning_surfaces: BTreeMap<SurfaceId, sophia_engine::SurfaceLayoutFacts>,
+    authority_surface_facts: BTreeMap<SurfaceId, sophia_engine::SurfaceLayoutFacts>,
     admissions: sophia_engine::SurfaceAdmissionTable,
     dma_buf_sizes: BTreeMap<sophia_protocol::BufferHandle, Size>,
     cpu_buffer_sizes: BTreeMap<u64, Size>,
@@ -103,6 +104,22 @@ impl PersistentLiveLayout {
             &mut withdrawn_surfaces,
         );
         for presentation in &batch.surface_presentations {
+            if !withdrawn_surfaces.contains(&presentation.surface) {
+                self.authority_surface_facts.insert(
+                    presentation.surface,
+                    sophia_engine::SurfaceLayoutFacts {
+                        surface: presentation.surface,
+                        role: presentation.role,
+                        kind: presentation.kind,
+                        placement_preference: presentation.placement_preference,
+                        presentation_owner: presentation.owner,
+                        stack_rank: presentation.stack_rank,
+                        geometry: presentation.geometry,
+                        constraints: presentation.constraints,
+                        generation: presentation.generation,
+                    },
+                );
+            }
             let previous_role = self
                 .presentation_roles
                 .insert(presentation.surface, presentation.role);
@@ -439,6 +456,8 @@ impl PersistentLiveLayout {
         self.layers
             .retain(|surface, _| !removed_surfaces.contains(surface));
         self.planning_surfaces
+            .retain(|surface, _| !removed_surfaces.contains(surface));
+        self.authority_surface_facts
             .retain(|surface, _| !removed_surfaces.contains(surface));
         for surface in removed_surfaces {
             self.layout_epochs.remove(*surface);
@@ -1015,6 +1034,7 @@ impl PersistentLiveLayout {
                 })?;
             self.admissions.remove(*surface);
             self.planning_surfaces.remove(surface);
+            self.authority_surface_facts.remove(surface);
             self.unmanaged_surfaces.remove(surface);
             self.admission_retries.remove(surface);
             self.layout_epochs.remove(*surface);

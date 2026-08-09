@@ -1,7 +1,7 @@
 use sophia_cli::input_proof::{
     PhysicalTextProof, PhysicalTextProofEvent, PhysicalTextProofProgress, application_exit_overdue,
-    cursor_repaint_preserves_application, pointer_proof_suppresses_return,
-    pointer_selection_pending, pointer_selection_waiting,
+    cursor_repaint_preserves_application, physical_text_proof_ignores_evdev_key,
+    pointer_proof_suppresses_return, pointer_selection_pending, pointer_selection_waiting,
 };
 
 #[test]
@@ -9,6 +9,16 @@ fn pointer_selection_stays_pending_until_a_button_is_routed() {
     assert!(pointer_selection_pending(true, 0));
     assert!(!pointer_selection_pending(true, 1));
     assert!(!pointer_selection_pending(false, 0));
+}
+
+#[test]
+fn physical_text_proof_excludes_non_text_modifier_transitions() {
+    for keycode in [29, 42, 54, 56, 97, 100, 125, 126] {
+        assert!(physical_text_proof_ignores_evdev_key(keycode));
+    }
+    for keycode in [21, 28, 35, 43, 50, 105, 106] {
+        assert!(!physical_text_proof_ignores_evdev_key(keycode));
+    }
 }
 
 #[test]

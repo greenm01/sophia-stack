@@ -532,6 +532,7 @@ impl PersistentLiveLayout {
             match intent.kind {
                 sophia_protocol::SurfacePresentationIntentKind::Request => {
                     self.planning_surfaces.insert(intent.surface, facts);
+                    self.authority_surface_facts.insert(intent.surface, facts);
                     self.presentation_roles.insert(intent.surface, intent.role);
                     self.layout_epochs
                         .set_declared_constraints(intent.surface, intent.constraints);
@@ -550,6 +551,7 @@ impl PersistentLiveLayout {
                     withdrawn_surfaces.insert(intent.surface);
                     self.admissions.remove(intent.surface);
                     self.planning_surfaces.remove(&intent.surface);
+                    self.authority_surface_facts.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
                     self.remove_admission_groups(intent.surface);
                 }
@@ -582,7 +584,9 @@ impl PersistentLiveLayout {
     }
 
     fn knows_surface(&self, surface: SurfaceId) -> bool {
-        self.layers.contains_key(&surface) || self.planning_surfaces.contains_key(&surface)
+        self.layers.contains_key(&surface)
+            || self.planning_surfaces.contains_key(&surface)
+            || self.authority_surface_facts.contains_key(&surface)
     }
 
     fn layout_facts(&self, surface: SurfaceId) -> Option<sophia_engine::SurfaceLayoutFacts> {
@@ -615,7 +619,7 @@ impl PersistentLiveLayout {
                 constraints: self.layout_epochs.declared_constraints(surface),
                 generation: layer.generation,
             })
-        })
+        }).or_else(|| self.authority_surface_facts.get(&surface).copied())
     }
 
     fn planning_layers_for_workspace_state(

@@ -808,7 +808,8 @@ fn route_input_events_with_pointer_focus(
                 let Some((keycode, state)) = modifiers.map_evdev_key(keycode, pressed) else {
                     continue;
                 };
-                if let Some(proof) = physical_text_proof.as_deref_mut()
+                if !sophia_cli::input_proof::physical_text_proof_ignores_evdev_key(evdev_keycode)
+                    && let Some(proof) = physical_text_proof.as_deref_mut()
                     && !proof.is_complete() {
                         let observed = PhysicalTextProofEvent {
                             keycode,

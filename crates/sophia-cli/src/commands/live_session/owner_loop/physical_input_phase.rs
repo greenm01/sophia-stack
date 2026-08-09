@@ -363,7 +363,12 @@ macro_rules! drain_physical_input {
                     .as_mut()
                     .ok_or("WM shortcut activated without a live WM session")?;
                 match wm.enqueue_action(action, &layout, output)? {
-                    LiveOrderedWmActionAdmission::Admitted => {}
+                    LiveOrderedWmActionAdmission::Admitted => {
+                        println!(
+                            "sophia_live_wm schema=1 status=physical_action_admitted action={}",
+                            action.raw(),
+                        );
+                    }
                     LiveOrderedWmActionAdmission::RejectedCapacity { report } => {
                         if report {
                             eprintln!(

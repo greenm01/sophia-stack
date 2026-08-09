@@ -402,6 +402,9 @@ pub(crate) fn run_persistent_xterm_session(
                 ])
                 .stdout(Stdio::inherit());
         }
+        if let Some(result) = input_proof_result.as_ref() {
+            terminal_command.env("SOPHIA_INPUT_PROOF_RESULT", result.path());
+        }
         if config.client.is_none()
             && let Some(proof_text) = config
                 .inject_text

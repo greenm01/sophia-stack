@@ -500,19 +500,89 @@ future compatibility target, not a prerequisite.
   post-restart actions. That run also showed that checkpoint occurrence 4 was
   reached during startup, before the intended physical trigger. The gate now
   arms occurrence 6, after the two pre-restart actions, labels every missing
-  phase explicitly, and uses the phrase only as the final exit signal. Another
-  replacement run remains required; neither partial run is promoted as passing
-  evidence.
-- [ ] Carry committed public-policy fullscreen, maximize, minimize, and restore
+  phase explicitly, and uses the phrase only as the final exit signal. A third
+  run delivered exactly the 34 press/release events for the 16-character final
+  phrase plus Enter, with no preceding physical chord events, no ordered
+  actions, and no restart. It was a clean negative attempt rather than routing
+  evidence. The gate now keeps an event-driven procedure visible inside Kitty,
+  advances only when each committed action appears in the evidence stream, and
+  withholds the final phrase until the restart and complete action sequence are
+  proven. Its first guided run exposed a harness-ordering bug: the leading
+  Super transition reached the application path before the bound action key
+  was consumed and incorrectly entered the exact text matcher. The text proof
+  now excludes non-text modifier transitions while leaving their ordinary
+  client delivery intact; an unmatched non-modifier key still fails exactly.
+  The next guided run proved the complete pre-restart sequence, epoch-2
+  checkpoint load/reconciliation and refresh, post-restart fullscreen, and two
+  maximize transitions. It then minimized its own guide before displaying the
+  restore instruction and timed out with no text events. Minimize and restore
+  are now one visible paired instruction. A follow-up still stopped after
+  minimize with exactly the twelve routed modifier transitions belonging to
+  the six committed chords. The guide now leads with an explicit three-line
+  warning to press and release `Super+R` while the screen is blank, and evidence
+  distinguishes immediate physical action admission from later policy commit.
+  A later attempt reached the second maximize prompt but exhausted the old
+  deadline while the operator was reading. Timestamp review corrected that
+  diagnosis: a separate 15-second physical-sequence timeout fired, while the
+  global deadline had not. Physical proofs now retain that fail-fast default
+  but may request an explicit bounded override; this human-guided gate uses ten
+  minutes inside an eleven-minute global ceiling and still exits immediately
+  on success. The following run proved that `Super+R` was admitted and
+  committed but still left a blank scene: minimize had removed the surface
+  from Sophia's supposedly complete policy snapshot, so Hagia correctly
+  reconciled it as destroyed before applying restore. Sophia now retains
+  authority-observed facts separately from visible layers. A follow-up run
+  proved that the X `mapped` observation also cannot carry policy lifetime:
+  Engine admission is not a second client `MapWindow`, so an admitted surface
+  may retain its pre-admission `mapped=false` observation. The snapshot now
+  follows explicit request/withdraw ownership until withdrawal or removal. The
+  gate additionally requires a nonempty checkpoint after restore, rejecting
+  the observed committed no-op. The first request/withdraw-lifetime run then
+  failed closed at startup because authority presentation observations admitted
+  three transient surfaces while one lacked an X11 client route. Snapshot
+  admission now intersects retained policy ownership with a live authority
+  route, which survives minimize but excludes unrouted hierarchy observations;
+  the regression covers that race. The nonexclusive real-Hagia restart smoke
+  passes this boundary with one routed surface, nonempty epoch-2 checkpoint
+  reconciliation, and clean shutdown. The following physical run proved the
+  complete action sequence and, critically, retained one nonempty surface
+  through minimize and restore. It then failed after accepting the final text
+  because Kitty closed while Hagia's last one-surface projection was in flight.
+  Public response handling now advances current Engine scene facts before
+  materializing placements and retires such a response as `RejectedStale`.
+  The guide now remains alive after accepting the phrase until Sophia completes
+  the proof, rather than voluntarily closing during evidence settlement.
+  The next attempt admitted and committed both `Super+Right` chords but never
+  restarted: legitimate extra settlement checkpoints had shifted the fixed
+  occurrence used for fault injection. The physical gate now correlates its
+  one restart to the committed fullscreen action, the first committed
+  active-output action, and the next nonempty checkpoint. Its watcher runs
+  beside an `exec`-replaced Hagia, preserving the supervisor-authorized PID,
+  and the marker prevents a second epoch from being killed.
+  The resulting run proved restart timing, checkpoint recovery, and the entire
+  physical action sequence, then flushed all 52 action-plus-text key
+  transitions. It failed only because the stock semantic-result writer was
+  appended after Kitty's custom guide command and therefore became unused
+  guide arguments. Sophia now passes the private result path explicitly and
+  the guide records the exact line it reads; an isolated completed-log replay
+  proves the witness.
+  The final physical run passed: one causal restart preserved the nonempty
+  checkpoint and fullscreen state; every required post-restart action
+  committed; all 52 routed action-plus-text transitions flushed; exact text
+  changed pixels and reached a kernel page flip in 24 ms; and health, topology,
+  native ownership, namespace, Xauthority, and process cleanup were clean.
+  Continuous pointer updates and operation-phase fault coverage remain open
+  within this broader item.
+- [x] Carry committed public-policy fullscreen, maximize, minimize, and restore
   state through the X frontend's protocol-visible state transition and verify
   exact configure/state feedback. Engine geometry, focus exclusion, semantic
   minimized placement, and render-layer omission are implemented. The offline
   path now installs protected `_NET_WM_STATE` and ICCCM `WM_STATE`, waits for a
   flushed frontend acknowledgement before policy promotion, and restores the
   previous state on rejection. Exact socket tests cover property values,
-  notifications, and denied client overwrite/deletion. The item remains open
-  until the installed Hagia physical gate proves all four transitions with a
-  real application.
+  notifications, and denied client overwrite/deletion. The installed Hagia
+  physical gate now proves all four transitions with real Kitty across one
+  supervised checkpoint restart and clean shutdown.
 - [ ] Prove the retained scrolling layout plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
   restart, and hot-swap. Defer Janet until candidate validation and fallback

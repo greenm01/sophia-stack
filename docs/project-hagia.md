@@ -254,11 +254,64 @@ and two connected outputs. The operator exercises fullscreen, maximize,
 minimize/restore, and active-output actions around one checkpoint-triggered
 supervised restart; the verifier requires ordered commits, nonempty checkpoint
 load/reconciliation, output-change evidence, physical text, and clean session
-health. Client text typed while a post-policy focus acknowledgement is pending
-is retained by Engine's bounded exact-target keyboard handoff, while Hagia's
-reserved chords remain outside that queue. Merely checking in this gate is not
-physical evidence; its log must be retained and reviewed after an authorized
-hardware run.
+health. Restart injection is correlated to the first committed active-output
+action after the committed fullscreen action, and waits for the following
+nonempty checkpoint before killing the authorized Hagia PID. It does not depend
+on a global checkpoint count, because legitimate settlement cycles may add
+checkpoints without advancing the operator procedure. The wrapper then
+`exec`s Hagia so the policy endpoint continues to authenticate the exact PID
+supervised by Sophia. Kitty displays one instruction at a time and advances
+only after the corresponding committed-action evidence appears, so the operator does not have
+to carry instructions across the TTY transition; the final phrase is not shown
+until every required action and the restart have been observed. The minimize
+instruction pairs its temporarily invisible restore chord on the same screen,
+so hiding the proof surface cannot hide the operation needed to return it.
+After the restore commits, both the guide and final verifier require Hagia's
+next private checkpoint to remain nonempty. This binds the action record to
+retained surface ownership instead of accepting a committed no-op. Sophia's
+complete policy snapshot retains every policy-owned surface even when its
+render layer is hidden or its last client-map observation predates Engine
+admission, provided its frontend authority route remains live. Unrouted
+authority observations never become policy capabilities; an explicit
+withdrawal or removal ends snapshot ownership.
+The guide receives an owner-only proof-result path from Sophia. After reading
+the exact final line itself, it records only that bounded line at the path;
+Sophia independently requires the physical key sequence, X11 delivery,
+semantic result, changed terminal pixels, and presented-frame correlation.
+Before materializing any returned placement, Sophia refreshes the canonical
+scene from current Engine facts. A withdrawal that races an in-flight Hagia
+projection therefore advances the scene generation, retires that response as
+stale, and permits a later complete cycle; a response cannot resurrect or
+configure the withdrawn surface.
+Client text typed while a post-policy focus acknowledgement is pending is
+retained by Engine's bounded exact-target keyboard handoff, while Hagia's
+reserved chords remain outside that queue. Non-text modifier transitions that
+surround those reserved chords retain their ordinary client delivery but do
+not enter the exact text-producing proof sequence. Merely checking in this gate
+is not physical evidence. The live gate records action admission immediately
+and committed policy settlement separately; its log must be retained and
+reviewed after an authorized hardware run.
+After accepting the final phrase, the guide remains alive until Sophia's exact
+input proof ends the session; it does not manufacture a surface withdrawal
+while completion evidence is still settling.
+
+The gate passed physically on 2026-08-09 with two outputs and real Kitty. One
+supervised restart preserved layout and loaded, reconciled, and refreshed a
+nonempty checkpoint. All nine ordered policy actions committed, including
+fullscreen, two maximize transitions, minimize/restore, and both active-output
+directions. The exact 34-event text sequence changed terminal pixels and was
+presented 24 ms after its final libinput ingress; all 52 action-plus-text X11
+transitions flushed. Shutdown retained zero pending WM, action, or input work,
+zero unexpected protocol errors, no live native ownership, and clean frontend,
+namespace, Xauthority, and application-group teardown.
+
+The installed guide has a ten-minute physical-sequence safety deadline inside
+an eleven-minute global runtime ceiling, not a soak or minimum-duration
+criterion. Successful completion still terminates immediately; the ceilings
+only prevent an abandoned exclusive DRM/input run from persisting indefinitely
+while leaving enough time to read each physical instruction. Other physical
+proofs retain the fail-fast 15-second sequence default unless they explicitly
+request a bounded override.
 
 Do not make metadata rules, pointer operations, shell overlays, or full Triad
 IPC prerequisites for this proof.

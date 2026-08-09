@@ -268,6 +268,27 @@ impl LivePublicPolicyState {
         Ok(())
     }
 
+    fn settle_rejected_projection(
+        &mut self,
+        projection: &sophia_protocol::PolicyProjectionProposal,
+        outcome: sophia_protocol::PolicyProjectionOutcome,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _ = self.reducer.timeout(projection.request_id);
+        self.submit_or_defer(PolicyTransportCommand::ProjectionOutcome {
+            transaction: projection.transaction,
+            request_id: projection.request_id,
+            scene_generation: self.reducer.scene().generation,
+            outcome,
+            expect_session_operation: false,
+        })?;
+        self.cycle_submitted = false;
+        self.in_flight_request = None;
+        self.in_flight_source = None;
+        self.expected_operation_slot = None;
+        self.staged = None;
+        Ok(())
+    }
+
     fn snapshot(
         &self,
         layout: &PersistentLiveLayout,
@@ -283,53 +304,24 @@ impl LivePublicPolicyState {
                 committed_presentation.insert(placement.surface, placement.presentation);
             }
         }
-        let mut surface_ids = layout
-            .layers
-            .keys()
-            .chain(layout.planning_surfaces.keys())
-            .copied()
-            .collect::<BTreeSet<_>>();
-        surface_ids.retain(|surface| layout.is_policy_managed(*surface));
-        let mut surfaces = Vec::with_capacity(surface_ids.len());
-        for surface in surface_ids {
-            let facts = layout
-                .layout_facts(surface)
-                .ok_or("public WM scene lost a known surface")?;
-            let kind = match facts.kind {
-                sophia_protocol::LayoutNodeKind::Toplevel => {
-                    sophia_protocol::PolicySurfaceKind::Toplevel
-                }
-                sophia_protocol::LayoutNodeKind::Dialog => sophia_protocol::PolicySurfaceKind::Dialog,
-                sophia_protocol::LayoutNodeKind::Utility => {
-                    sophia_protocol::PolicySurfaceKind::Utility
-                }
-                sophia_protocol::LayoutNodeKind::Popup => sophia_protocol::PolicySurfaceKind::Popup,
-                sophia_protocol::LayoutNodeKind::Unknown => sophia_protocol::PolicySurfaceKind::Unknown,
-            };
-            surfaces.push(sophia_protocol::PolicySurfaceSnapshot {
-                surface,
-                generation: facts.generation.max(1),
-                current_output: current_output.get(&surface).copied(),
-                kind,
-                capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
-                constraints: facts.constraints,
-                exact_size: None,
-                requested_state: committed_presentation
-                    .get(&surface)
-                    .copied()
-                    .unwrap_or_default(),
-                current_state: committed_presentation
-                    .get(&surface)
-                    .copied()
-                    .unwrap_or_default(),
-                transient_owner: facts.presentation_owner,
-                geometry: committed_geometry
-                    .get(&surface)
-                    .copied()
-                    .unwrap_or(facts.geometry),
-            });
-        }
-        surfaces.sort_by_key(|surface| surface.surface);
+        let surfaces = public_policy_surface_snapshots(
+            layout,
+            &current_output,
+            &committed_geometry,
+            &committed_presentation,
+        )?;
+        println!(
+            "sophia_live_wm_snapshot schema=1 status=complete surfaces={} minimized={} unassigned={}",
+            surfaces.len(),
+            surfaces
+                .iter()
+                .filter(|surface| surface.current_state.minimized)
+                .count(),
+            surfaces
+                .iter()
+                .filter(|surface| surface.current_output.is_none())
+                .count(),
+        );
         let bounds = wm_output_bounds(&self.outputs);
         let outputs = bounds
             .into_iter()
@@ -367,6 +359,73 @@ impl LivePublicPolicyState {
         }
         Ok(candidate)
     }
+}
+
+fn public_policy_surface_snapshots(
+    layout: &PersistentLiveLayout,
+    current_output: &BTreeMap<SurfaceId, sophia_protocol::OutputId>,
+    committed_geometry: &BTreeMap<SurfaceId, Rect>,
+    committed_presentation: &BTreeMap<
+        SurfaceId,
+        sophia_protocol::PolicyPresentationState,
+    >,
+) -> Result<Vec<sophia_protocol::PolicySurfaceSnapshot>, Box<dyn std::error::Error>> {
+    let mut surface_ids = layout
+        .layers
+        .keys()
+        .chain(layout.planning_surfaces.keys())
+        .chain(layout.authority_surface_facts.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    surface_ids.retain(|surface| {
+        layout.is_policy_managed(*surface)
+            && layout.client_routes.client_for_surface(*surface).is_some()
+    });
+    let mut surfaces = Vec::with_capacity(surface_ids.len());
+    for surface in surface_ids {
+        let facts = layout
+            .layout_facts(surface)
+            .ok_or("public WM scene lost a known surface")?;
+        let kind = match facts.kind {
+            sophia_protocol::LayoutNodeKind::Toplevel => {
+                sophia_protocol::PolicySurfaceKind::Toplevel
+            }
+            sophia_protocol::LayoutNodeKind::Dialog => {
+                sophia_protocol::PolicySurfaceKind::Dialog
+            }
+            sophia_protocol::LayoutNodeKind::Utility => {
+                sophia_protocol::PolicySurfaceKind::Utility
+            }
+            sophia_protocol::LayoutNodeKind::Popup => sophia_protocol::PolicySurfaceKind::Popup,
+            sophia_protocol::LayoutNodeKind::Unknown => {
+                sophia_protocol::PolicySurfaceKind::Unknown
+            }
+        };
+        surfaces.push(sophia_protocol::PolicySurfaceSnapshot {
+            surface,
+            generation: facts.generation.max(1),
+            current_output: current_output.get(&surface).copied(),
+            kind,
+            capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+            constraints: facts.constraints,
+            exact_size: None,
+            requested_state: committed_presentation
+                .get(&surface)
+                .copied()
+                .unwrap_or_default(),
+            current_state: committed_presentation
+                .get(&surface)
+                .copied()
+                .unwrap_or_default(),
+            transient_owner: facts.presentation_owner,
+            geometry: committed_geometry
+                .get(&surface)
+                .copied()
+                .unwrap_or(facts.geometry),
+        });
+    }
+    surfaces.sort_by_key(|surface| surface.surface);
+    Ok(surfaces)
 }
 
 impl Drop for LivePublicPolicyState {
@@ -677,21 +736,42 @@ impl LiveWmSession {
                 let source = public
                     .in_flight_source
                     .ok_or("public WM projection has no owner cause")?;
-                if let LiveWmProposalSource::Manage(surface) = source {
-                    layout.prime_admission_extent(surface);
+                // Surface withdrawal may race a policy response. Advance the
+                // canonical scene before touching response placements so a
+                // proposal derived from the retired snapshot is rejected as
+                // stale instead of trying to materialize a dead surface.
+                let current_scene = public.snapshot(layout)?;
+                if current_scene.generation > public.reducer.scene().generation {
+                    public.reducer.observe_scene(current_scene)?;
                 }
-                let (projection, adjusted_surfaces) = reconcile_public_policy_proposal(
-                    layout,
-                    &projection,
-                    &public.work_areas,
-                )?;
-                if adjusted_surfaces != 0 {
+                if projection.base_generation != public.reducer.scene().generation {
+                    defer_cycle = true;
+                    public.settle_rejected_projection(
+                        &projection,
+                        sophia_protocol::PolicyProjectionOutcome::RejectedStale,
+                    )?;
+                    self.stale_responses = self.stale_responses.saturating_add(1);
                     println!(
-                        "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={adjusted_surfaces}",
+                        "sophia_live_wm schema=1 status=stale_response_rejected transaction={} reason=scene_advanced",
                         projection.transaction.raw(),
                     );
-                }
-                match public.reducer.stage_proposal(&projection) {
+                    None
+                } else {
+                    if let LiveWmProposalSource::Manage(surface) = source {
+                        layout.prime_admission_extent(surface);
+                    }
+                    let (projection, adjusted_surfaces) = reconcile_public_policy_proposal(
+                        layout,
+                        &projection,
+                        &public.work_areas,
+                    )?;
+                    if adjusted_surfaces != 0 {
+                        println!(
+                            "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={adjusted_surfaces}",
+                            projection.transaction.raw(),
+                        );
+                    }
+                    match public.reducer.stage_proposal(&projection) {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
                             LiveWmProposalSource::Action(action) => public
@@ -725,18 +805,9 @@ impl LiveWmSession {
                     }
                     Err(outcome) => {
                         defer_cycle = true;
-                        public.submit_or_defer(PolicyTransportCommand::ProjectionOutcome {
-                                transaction: projection.transaction,
-                                request_id: projection.request_id,
-                                scene_generation: public.reducer.scene().generation,
-                                outcome,
-                                expect_session_operation: false,
-                            })?;
-                        public.cycle_submitted = false;
-                        public.in_flight_request = None;
-                        public.in_flight_source = None;
-                        public.expected_operation_slot = None;
+                        public.settle_rejected_projection(&projection, outcome)?;
                         None
+                    }
                     }
                 }
             }
