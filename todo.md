@@ -476,12 +476,19 @@ future compatibility target, not a prerequisite.
   the last committed scene remain alive.
   One completed Engine-captured move/resize now crosses as a reduced final
   interaction, and Hagia validates its target, capability, output bounds, and
-  exact floating geometry. Continuous updates, focus history, and persistent
-  checkpoints remain open.
+  exact floating geometry. The owner-side recovery matrix now kills the public
+  path at proposal-staged, frontend-pending, prepared, and terminal-outcome
+  boundaries through the normal supervisor; all four preserve layout, restart
+  at a fresh epoch, and drain cleanly. Continuous updates, focus history,
+  persistent checkpoints, negotiation/snapshot faults, and operation-phase
+  faults remain open.
 - [ ] Prove the retained tiling and scrolling layouts plus actions, constraints,
   focus, hidden surfaces, multi-output moves, output loss/return, crash,
   restart, and hot-swap. Defer Janet until candidate validation and fallback
   behavior have their own model and deterministic tests.
+  `PolicyOutputSettlement.tla` now proves the topology core for an atomic
+  two-output candidate, output loss, and generation-advancing return. Dynamic
+  output ingress and its live multi-output harness remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. Publish
   `sophia_wm_v1` only after all paths pass, then retain an archived v1 client

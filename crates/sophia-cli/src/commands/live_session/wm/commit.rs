@@ -154,6 +154,7 @@ impl LiveWmSession {
                     request_id: request.request_id,
                     outcome,
                 })?;
+            self.trigger_public_proof_fault(PublicPolicyFaultPoint::TerminalOutcomeQueued);
             return Ok(LiveWmOwnerCommit {
                 update: result.update,
                 physical_action: None,
@@ -208,6 +209,7 @@ impl LiveWmSession {
         } else {
             None
         };
+        self.trigger_public_proof_fault(PublicPolicyFaultPoint::TerminalOutcomeQueued);
         Ok(LiveWmOwnerCommit {
             update: result.update,
             physical_action,

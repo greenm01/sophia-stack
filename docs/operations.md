@@ -68,6 +68,21 @@ the manifest and the entry never falls back to API v7 or xmonad. This is an
 opt-in promotion profile until its physical workload gate passes; it does not
 replace the ordinary candidate merely because it was packaged.
 
+Before installing a Hagia candidate, a development checkout can exercise the
+owner's exact public-policy settlement boundaries:
+
+```sh
+SOPHIA_HAGIA_BIN=/absolute/path/hagia \
+  tools/hagia_owner_settlement_fault_smoke.sh
+```
+
+The bounded matrix requests one supervised restart after proposal staging,
+while frontend settlement is pending, after non-mutating preparation, and
+after the terminal outcome is queued. Every case must reach connection epoch
+2, preserve the prior coherent layout, and finish with clean session and layout
+health. The control is explicit, requires `sophia_wm_v1` plus a bounded runtime,
+and is not installed as an ordinary login option.
+
 ## Status And Logs
 
 From the session, an independent text VT, or SSH as the same user, run:

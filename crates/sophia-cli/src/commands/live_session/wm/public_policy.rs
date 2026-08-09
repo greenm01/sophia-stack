@@ -15,6 +15,38 @@ struct LivePolicySettlementIdentity {
     session_operation: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PublicPolicyFaultPoint {
+    ProposalStaged,
+    FrontendPending,
+    Prepared,
+    TerminalOutcomeQueued,
+}
+
+impl PublicPolicyFaultPoint {
+    fn parse(value: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        match value {
+            "proposal_staged" => Ok(Self::ProposalStaged),
+            "frontend_pending" => Ok(Self::FrontendPending),
+            "prepared" => Ok(Self::Prepared),
+            "terminal_outcome_queued" => Ok(Self::TerminalOutcomeQueued),
+            _ => Err(format!(
+                "--wm-proof-fault-after expects proposal_staged, frontend_pending, prepared, or terminal_outcome_queued; got {value:?}"
+            )
+            .into()),
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::ProposalStaged => "proposal_staged",
+            Self::FrontendPending => "frontend_pending",
+            Self::Prepared => "prepared",
+            Self::TerminalOutcomeQueued => "terminal_outcome_queued",
+        }
+    }
+}
+
 struct LivePublicPolicyState {
     directory: std::path::PathBuf,
     worker: Option<PolicyTransportWorker>,
@@ -42,6 +74,8 @@ struct LivePublicPolicyState {
     active_output: sophia_protocol::OutputId,
     deferred_command: Option<PolicyTransportCommand>,
     transport_unavailable: bool,
+    proof_fault_after: Option<PublicPolicyFaultPoint>,
+    proof_fault_triggered: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -409,6 +443,8 @@ impl LiveWmSession {
             active_output: active,
             deferred_command: None,
             transport_unavailable: false,
+            proof_fault_after: config.wm_public_fault_after,
+            proof_fault_triggered: false,
         };
         public.queue.push_back(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,
@@ -864,6 +900,24 @@ impl LiveWmSession {
         }
         public.prepared = Some(identity);
         Ok(())
+    }
+
+    fn trigger_public_proof_fault(&mut self, point: PublicPolicyFaultPoint) -> bool {
+        let trigger = self.public.as_mut().is_some_and(|public| {
+            if public.proof_fault_triggered || public.proof_fault_after != Some(point) {
+                return false;
+            }
+            public.proof_fault_triggered = true;
+            true
+        });
+        if trigger {
+            self.request_transport_restart("public_policy_proof_fault", Some(point.name()));
+            println!(
+                "sophia_live_wm schema=4 status=proof_fault_triggered adapter=sophia_wm_v1 phase={} preserved_layout=true",
+                point.name(),
+            );
+        }
+        trigger
     }
 
     fn public_settlement_abort_required(&self) -> bool {

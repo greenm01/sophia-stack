@@ -27,10 +27,22 @@
         && let Some(wm) = wm_session.as_mut()
         && let Some(proposal) = wm.poll_request(&mut layout, output)?
     {
-        let previous_focus = focus.focused_surface(seat);
-        if let Some(result) = layout.stage(proposal, &mut session_controls)? {
-            pending_wm_update =
-                Some(apply_wm_commit_result!(result, previous_focus));
+        let public_projection = proposal
+            .policy_settlement
+            .is_some_and(|settlement| !settlement.session_operation);
+        if public_projection
+            && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::ProposalStaged)
+        {
+            let _ = wm.poll_restart(&mut layout, output)?;
+        } else {
+            let previous_focus = focus.focused_surface(seat);
+            if let Some(result) = layout.stage(proposal, &mut session_controls)? {
+                pending_wm_update = Some(apply_wm_commit_result!(result, previous_focus));
+            } else if public_projection
+                && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::FrontendPending)
+            {
+                let _ = wm.poll_restart(&mut layout, output)?;
+            }
         }
     }
     service_layout_progress!("wm_stage");

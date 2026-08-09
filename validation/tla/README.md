@@ -94,6 +94,16 @@ states to depth 36. A temporary prepare-time reducer promotion immediately
 violates `LastGoodIsCoherent`, preserving the implementation defect found by
 the modeling pass as a negative control.
 
+`PolicyOutputSettlement.tla` isolates output loss and exact-identity return
+during a complete two-output policy settlement. It requires the canonical
+scene generation to fence the staged candidate, both Engine layout and reducer
+projections to promote as one last-good state, and a returned output to carry a
+new generation. The bounded configuration explores 86 generated states and 64
+distinct states to depth 13. Temporary negative controls independently allowed
+a prepared candidate to skip its final topology recheck and allowed an output
+to return without advancing generation. TLC violated
+`CommittedTopologyWasCurrent` and `ReappearedOutputIsFresh`, respectively.
+
 `ShellWorkAreaCoordination.tla` is a target pre-schema model for future native
 shell reservations. It binds a ready shell candidate and reservation to the
 exact derived work-area request, WM connection epoch, and answering projection
@@ -218,6 +228,10 @@ Its actions map to the following target boundaries:
 | `UpdateInteraction`, `IssueInteraction` | Engine-owned grab coalescing reduced continuous geometry |
 | `InstallConfig` | policy configuration generation activated at a shortcut-idle boundary |
 | `FrontendSettlesChanged`, `CommitProposal` | frontend settlement retry and final canonical Engine commit |
+| `IssueCrossOutputRequest`, `StageCompleteProposal` | complete affected-output request and cloned canonical reducer successor |
+| `ObserveRightOutputLoss`, `ObserveRightOutputReturn` | Engine output lifecycle observation, scene advancement, and non-recyclable output generation |
+| `PrepareCurrentCandidate`, `SettlePreparedCandidate` | non-mutating staged revalidation followed by one reducer/layout settlement |
+| `RejectSupersededCandidate` | stale topology terminal outcome preserving the prior complete projection |
 
 This map fixes ownership before the Rust names exist. Update the right column
 when implementation establishes the final module names; do not move an action

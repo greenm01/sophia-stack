@@ -116,6 +116,13 @@ changes, and cross-output moves must share one generation-fenced snapshot.
 state, require both outputs in atomic moves, and model output loss between stage
 and settlement.
 
+`PolicyOutputSettlement.tla` now covers this topology core: loss or
+generation-advancing return changes the canonical scene base, a stale complete
+candidate cannot commit, and reducer/layout state promotes atomically. The
+current live owner has a fixed startup output vector, so dynamic topology
+ingress and a multi-output live harness remain implementation work rather than
+claims of present runtime coverage.
+
 **Priority**: High. Output ABA or partial moves can misroute focus and pixels.
 
 ## 3. Modeling Recommendations
@@ -174,7 +181,7 @@ and settlement.
 
 | ID | Description | Suggested test approach |
 |----|-------------|-------------------------|
-| TV1 | Crash at negotiation, snapshot, projection, frontend wait, terminal outcome, and operation phases | Phase-controlled Hagia subprocess fixture plus retained live session gate |
+| TV1 | Crash at negotiation, snapshot, projection, frontend wait, terminal outcome, and operation phases | `tools/hagia_owner_settlement_fault_smoke.sh` now covers proposal-staged, frontend-pending, prepared, and terminal-outcome-queued owner boundaries through the normal supervised restart path; negotiation/snapshot and session-operation phases remain to add |
 | TV2 | Repeated actions, saturation, launch, close, and logout remain ordered | Deterministic live injection and evidence reducer |
 | TV3 | Multi-output loss/reappearance advances generation and preserves focus/membership | Reducer and headless live topology scenarios |
 

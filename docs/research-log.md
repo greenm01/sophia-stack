@@ -3,6 +3,32 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-08: Public-policy recovery is phase-addressable
+
+The previous Hagia restart smoke killed the client after it submitted a
+projection. That proved supervision and eventual reseeding, but timing could
+not establish whether the owner had only staged the reducer successor, had
+installed a frontend layout, or had already queued the terminal outcome.
+
+The live owner now admits one explicit bounded proof control with four named
+boundaries: `proposal_staged`, `frontend_pending`, `prepared`, and
+`terminal_outcome_queued`. The control requests the ordinary supervised
+transport restart and is consumed once; it does not mutate reducer or layout
+state directly. `tools/hagia_owner_settlement_fault_smoke.sh` ran every point
+against real Hagia and Kitty. Both settlement-bearing cases recorded
+`settlement_aborting`, exact layout timeout/abort, epoch-2 restart, later
+startup readiness, and clean session/layout health. The staged and terminal
+cases also restarted once and drained cleanly.
+
+The complementary `PolicyOutputSettlement` model covers the remaining
+topology mechanism before dynamic output ingress exists. An output loss or
+identity return advances the canonical scene, a stale prepared candidate
+cannot replace either half of the last-good reducer/layout pair, and return
+increments the output generation. TLC explores 86 generated and 64 distinct
+states to depth 13. Removing the final topology recheck produced the expected
+seven-state stale-commit counterexample; suppressing generation advancement
+produced an output-ABA counterexample in three states.
+
 ## 2026-08-08: Native policy replaces xmonad as the promotion path
 
 The retained xmonad/QEMU/physical evidence remains valuable, but continuing to

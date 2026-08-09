@@ -224,6 +224,49 @@ fn public_policy_restart_aborts_settlement_before_process_replacement() {
 }
 
 #[test]
+fn public_policy_owner_fault_points_are_bounded_proof_controls() {
+    for (value, expected) in [
+        ("proposal_staged", PublicPolicyFaultPoint::ProposalStaged),
+        ("frontend_pending", PublicPolicyFaultPoint::FrontendPending),
+        ("prepared", PublicPolicyFaultPoint::Prepared),
+        (
+            "terminal_outcome_queued",
+            PublicPolicyFaultPoint::TerminalOutcomeQueued,
+        ),
+    ] {
+        let config = PersistentXtermSessionConfig::from_args(&[
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--max-runtime-ms=1000".to_owned(),
+            format!("--wm-proof-fault-after={value}"),
+        ])
+        .unwrap();
+        assert_eq!(config.wm_public_fault_after, Some(expected));
+    }
+
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--wm-proof-fault-after=frontend_pending".to_owned(),
+            "--max-runtime-ms=1000".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("requires --wm-interface=sophia_wm_v1")
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--max-runtime-ms=1000".to_owned(),
+            "--wm-proof-fault-after=unknown".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("expects proposal_staged")
+    );
+}
+
+#[test]
 fn normal_session_application_registry_is_bounded_and_explicit() {
     let config = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),

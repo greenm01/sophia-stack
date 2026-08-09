@@ -82,6 +82,7 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     wm_interface: sophia_config::ExternalWmInterface,
+    wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_socket_path: std::path::PathBuf,
     input_quiet_msec: u64,
     namespace_profile: NamespaceProfile,
@@ -510,6 +511,19 @@ impl PersistentXtermSessionConfig {
         {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
+        let wm_public_fault_after = arg_value(args, "--wm-proof-fault-after")
+            .as_deref()
+            .map(PublicPolicyFaultPoint::parse)
+            .transpose()?;
+        if wm_public_fault_after.is_some()
+            && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
+                || max_runtime.is_none())
+        {
+            return Err(
+                "--wm-proof-fault-after requires --wm-interface=sophia_wm_v1 and --max-runtime-ms"
+                    .into(),
+            );
+        }
         if native_scanout && std::env::var_os("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE").is_none() {
             return Err(
                 "set SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 to run persistent native scanout"
@@ -655,6 +669,7 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             wm_interface,
+            wm_public_fault_after,
             wm_socket_path: std::env::temp_dir().join(format!(
                 "sophia-live-wm-{}-{display_number}.sock",
                 std::process::id()

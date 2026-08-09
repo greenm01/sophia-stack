@@ -141,6 +141,48 @@ fn frontend_fact_change_invalidates_a_staged_projection() {
 }
 
 #[test]
+fn output_loss_invalidates_a_staged_multi_output_projection() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1), surface(2)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1), output(2)]).unwrap();
+    let proposal = proposal(
+        &request,
+        9,
+        vec![
+            projected(
+                output(1),
+                vec![placed(surface_id(1), 1, rect(0, 0))],
+                Some(surface_id(1)),
+            ),
+            projected(
+                output(2),
+                vec![placed(surface_id(2), 1, rect(100, 0))],
+                Some(surface_id(2)),
+            ),
+        ],
+    );
+    let staged = reducer.stage_proposal(&proposal).unwrap();
+    let mut after_loss = scene(2, &[surface(1), surface(2)]);
+    after_loss
+        .outputs
+        .retain(|snapshot| snapshot.output == output(1));
+    reducer.observe_scene(after_loss).unwrap();
+
+    assert_eq!(
+        reducer.revalidate_staged(&staged),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    assert_eq!(reducer.commit_serial(), 0);
+    assert_eq!(reducer.committed().len(), 1);
+    assert_eq!(reducer.committed()[0].output, output(1));
+    assert!(reducer.committed()[0].placements.is_empty());
+}
+
+#[test]
 fn guessed_future_generation_cannot_become_current() {
     let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
     reducer.connect(1).unwrap();
