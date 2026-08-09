@@ -14,9 +14,9 @@ sophia_hagia_emit_coverage() {
         "$(sophia_hagia_count "$log" '^sophia_live_wm schema=1 status=session_action_committed ')" \
         "$(sophia_hagia_count "$log" '^sophia_live_wm schema=4 status=pointer_gesture_committed mode=move$')" \
         "$(sophia_hagia_count "$log" '^sophia_live_wm schema=4 status=pointer_gesture_committed mode=resize$')" \
-        "$(sophia_hagia_count "$log" '^hagia_policy_checkpoint schema=1 status=saved ')" \
-        "$(sophia_hagia_count "$log" '^hagia_policy_checkpoint schema=1 status=reconciled ')" \
-        "$(sophia_hagia_count "$log" '^hagia_policy_projection schema=1 status=active_output_changed$')" \
+        "$(sophia_hagia_count "$log" '(^hagia_policy_checkpoint schema=1 status=saved | event=checkpoint status=saved )')" \
+        "$(sophia_hagia_count "$log" '(^hagia_policy_checkpoint schema=1 status=reconciled | event=checkpoint status=reconciled )')" \
+        "$(sophia_hagia_count "$log" '(^hagia_policy_projection schema=1 status=active_output_changed$| event=projection status=active_output_changed detail=$)')" \
         "$(sophia_hagia_count "$log" '^sophia_live_output_topology .*status=(changed|removed|restored)')"
 }
 

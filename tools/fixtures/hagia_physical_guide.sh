@@ -44,7 +44,10 @@ wait_for_nonempty_restore() {
         /^sophia_live_wm schema=1 status=physical_action_committed action=40$/ {
             restore = 1
         }
-        restore && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ {
+        restore && (
+            /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ ||
+            / event=checkpoint status=saved detail="candidate_nonempty=true"$/
+        ) {
             restored = 1
         }
         END { exit restored ? 0 : 1 }

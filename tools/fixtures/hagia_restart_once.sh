@@ -47,7 +47,10 @@ if [ -n "${SOPHIA_HAGIA_RESTART_AFTER_ACTION:-}" ] \
                 && [ -n "$prerequisite_line" ] \
                 && [ "$prerequisite_line" -lt "$trigger_line" ] \
                 && awk -v trigger="$trigger_line" '
-                    NR > trigger && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ {
+                    NR > trigger && (
+                        /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ ||
+                        / event=checkpoint status=saved detail="candidate_nonempty=true"$/
+                    ) {
                         found = 1
                         exit
                     }

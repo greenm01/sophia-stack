@@ -3,6 +3,11 @@ set -euo pipefail
 
 evidence="${1:?usage: verify_hagia_policy_physical.sh EVIDENCE [PROOF_TEXT]}"
 proof_text="${2:-hagiapolicyproof}"
+checkpoint_saved='(^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$| event=checkpoint status=saved detail="candidate_nonempty=true"$)'
+checkpoint_loaded='(^hagia_policy_checkpoint schema=1 status=loaded candidate_nonempty=true$| event=checkpoint status=loaded detail="candidate_nonempty=true"$)'
+checkpoint_reconciled='(^hagia_policy_checkpoint schema=1 status=reconciled candidate_nonempty=true$| event=checkpoint status=reconciled detail="candidate_nonempty=true"$)'
+active_output_changed='(^hagia_policy_projection schema=1 status=active_output_changed$| event=projection status=active_output_changed detail=$)'
+policy_refresh='(^hagia_policy_refresh schema=1 status=requested reason=checkpoint_reconciled policy_generation=2 outputs=2$| event=policy_refresh status=requested detail=checkpoint_reconciled$)'
 
 [[ -s "$evidence" ]] || {
     echo "Hagia physical policy evidence is missing: $evidence" >&2
@@ -62,16 +67,16 @@ require_before "fullscreen action" \
 require_before "active-output action" \
     '^sophia_live_wm schema=1 status=physical_action_committed action=34$'
 require_before "nonempty checkpoint" \
-    '^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$'
+    "$checkpoint_saved"
 require_before "active-output projection" \
-    '^hagia_policy_projection schema=1 status=active_output_changed$'
+    "$active_output_changed"
 
 require_after "checkpoint load" \
-    '^hagia_policy_checkpoint schema=1 status=loaded candidate_nonempty=true$'
+    "$checkpoint_loaded"
 require_after "checkpoint reconciliation" \
-    '^hagia_policy_checkpoint schema=1 status=reconciled candidate_nonempty=true$'
+    "$checkpoint_reconciled"
 require_after "generation-2 policy refresh" \
-    '^hagia_policy_refresh schema=1 status=requested reason=checkpoint_reconciled policy_generation=2 outputs=2$'
+    "$policy_refresh"
 for action in 37 39 40 33 34; do
     require_after "physical action $action" \
         "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
@@ -81,7 +86,7 @@ restore_line="$(awk -v limit="$restart_line" \
     'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=40$/ { print NR; exit }' \
     "$evidence")"
 if [[ -z "$restore_line" ]] || ! awk -v limit="$restore_line" \
-    'NR > limit && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ { found = 1; exit } END { exit found ? 0 : 1 }' \
+    'NR > limit && (/^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/ || / event=checkpoint status=saved detail="candidate_nonempty=true"$/) { found = 1; exit } END { exit found ? 0 : 1 }' \
     "$evidence"; then
     echo "Hagia restore did not retain a nonempty policy checkpoint" >&2
     exit 1
@@ -95,7 +100,7 @@ if (( maximize_count < 2 )); then
     exit 1
 fi
 require_after "active-output projection" \
-    '^hagia_policy_projection schema=1 status=active_output_changed$'
+    "$active_output_changed"
 
 require_line "exact physical text completion" \
     "^sophia_live_session_input schema=2 status=complete source=physical text=$proof_text expected_events=[1-9][0-9]* matched_events=[1-9][0-9]* pixel_change=true$"
@@ -108,7 +113,7 @@ require_line "clean output topology" \
 require_line "clean process cleanup" \
     '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed$'
 
-if grep -Eq '^hagia_policy_checkpoint schema=1 status=(discarded|disabled) ' "$evidence"; then
+if grep -Eq '(^hagia_policy_checkpoint schema=1 status=(discarded|disabled) | event=checkpoint status=(discarded|disabled) )' "$evidence"; then
     echo "Hagia checkpoint was discarded or disabled" >&2
     exit 1
 fi

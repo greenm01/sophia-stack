@@ -347,7 +347,7 @@ grep -Fq 'tools/verify_hagia_policy_physical.sh' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'tools/archive_hagia_policy_physical_run.sh' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq 'NR > trigger && /^hagia_policy_checkpoint schema=1 status=saved candidate_nonempty=true$/' \
+grep -Fq 'event=checkpoint status=saved detail="candidate_nonempty=true"' \
     tools/fixtures/hagia_restart_once.sh
 grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/hagia_policy_physical_gate.sh
