@@ -174,12 +174,13 @@ impl PersistentXtermSessionConfig {
                 user_config_root.as_deref(),
             )
         };
-        let desktop_profile = sophia_config::load_desktop_profile(
+        let sophia_config::PreparedDesktopProfile {
+            profile: desktop_profile,
+            candidates: prepared_desktop,
+        } = sophia_config::load_prepared_desktop_profile(
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
         )?;
-        let prepared_desktop =
-            sophia_config::prepare_desktop_profile_candidates(&desktop_profile)?;
         let desktop_input = &prepared_desktop.input;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;

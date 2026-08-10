@@ -755,8 +755,10 @@ profile's exact generation and digest. Input, output, session, and shortcut
 consumers borrow or clone from that one bundle; the shortcut authority is not
 reparsed later during policy-process setup. The other authority payloads remain
 in the provenance-bearing profile for their future owners. This establishes a
-canonical handler input without treating validation or selection as
-activation.
+canonical handler input. A prepared-profile aggregate constructs the raw
+profile, activation key, and typed bundle in one load/prepare pass, while the
+existing raw-profile API remains a validated projection of that result. None of
+these preparation shapes treats validation or selection as activation.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

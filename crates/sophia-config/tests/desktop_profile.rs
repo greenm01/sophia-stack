@@ -8,9 +8,10 @@ use sophia_config::{
     DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
     DesktopPointerAccelProfile, DesktopProfileError, DesktopSessionShortcut,
     DesktopShortcutBindingKind, DesktopShortcutModifiers, DesktopShortcutTarget,
-    discover_desktop_profile_source, load_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    discover_desktop_profile_source, load_desktop_profile, load_prepared_desktop_profile,
+    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
+    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
+    prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -52,6 +53,37 @@ fn compiled_profile_partitions_every_authority_deterministically() {
                 .all(|value| value.key.starts_with(authority.name()))
         );
     }
+}
+
+#[test]
+fn prepared_load_retains_one_profile_identity_and_typed_bundle() {
+    let prepared = load_prepared_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+
+    assert_eq!(
+        prepared.activation_key().generation(),
+        prepared.profile.generation
+    );
+    assert_eq!(prepared.activation_key().digest(), prepared.profile.digest);
+    assert_eq!(
+        prepared.candidates.shortcut.generation,
+        prepared.profile.generation
+    );
+    assert_eq!(prepared.candidates.shortcut.digest, prepared.profile.digest);
+    assert_eq!(
+        prepared.candidates.session.generation,
+        prepared.profile.generation
+    );
+    assert_eq!(prepared.candidates.session.digest, prepared.profile.digest);
+    assert_eq!(
+        prepared.candidates.input.generation,
+        prepared.profile.generation
+    );
+    assert_eq!(prepared.candidates.input.digest, prepared.profile.digest);
+    assert_eq!(
+        prepared.candidates.output.generation,
+        prepared.profile.generation
+    );
+    assert_eq!(prepared.candidates.output.digest, prepared.profile.digest);
 }
 
 #[test]

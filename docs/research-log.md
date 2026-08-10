@@ -68,6 +68,13 @@ Completed evidence is archived in `research-log-archive.md`.
   bundle, and policy setup clones its shortcut value. This gives future
   authority handlers one canonical input without labeling preparation as
   activation or changing launch order.
+- `load_desktop_profile` had already run the shared preparation boundary before
+  returning, so live-session startup's immediate second preparation was pure
+  duplication. `load_prepared_desktop_profile` now returns a typed aggregate
+  containing the validated provenance-bearing profile and its derived bundle;
+  its activation key is projected directly from that same generation/digest.
+  The raw loader delegates to this path and discards only the bundle when a raw
+  caller explicitly requests that view.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

@@ -159,6 +159,18 @@ pub struct PreparedDesktopProfileCandidates {
     pub output: crate::DesktopOutputCandidate,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedDesktopProfile {
+    pub profile: DesktopProfileGeneration,
+    pub candidates: PreparedDesktopProfileCandidates,
+}
+
+impl PreparedDesktopProfile {
+    pub const fn activation_key(&self) -> crate::DesktopProfileActivationKey {
+        crate::DesktopProfileActivationKey::new(self.profile.generation, self.profile.digest)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DesktopProfileError {
     Io(ConfigIoError),
@@ -238,6 +250,13 @@ pub fn load_desktop_profile(
     source: Option<&Path>,
     generation: ConfigGeneration,
 ) -> Result<DesktopProfileGeneration, DesktopProfileError> {
+    Ok(load_prepared_desktop_profile(source, generation)?.profile)
+}
+
+pub fn load_prepared_desktop_profile(
+    source: Option<&Path>,
+    generation: ConfigGeneration,
+) -> Result<PreparedDesktopProfile, DesktopProfileError> {
     if generation.raw() == 0 {
         return Err(DesktopProfileError::Schema(
             "generation must be nonzero".to_owned(),
@@ -262,8 +281,11 @@ pub fn load_desktop_profile(
         sources: expansion.sources,
         candidates,
     };
-    prepare_desktop_profile_candidates(&profile)?;
-    Ok(profile)
+    let candidates = prepare_desktop_profile_candidates(&profile)?;
+    Ok(PreparedDesktopProfile {
+        profile,
+        candidates,
+    })
 }
 
 pub fn prepare_desktop_profile_candidates(

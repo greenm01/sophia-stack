@@ -98,8 +98,10 @@ match the profile's exact generation and digest, including authorities whose
 payload is consumed by another process. Live-session configuration retains the
 resulting immutable typed bundle rather than splitting it into unrelated
 copies; the public policy setup reuses its prepared shortcut candidate instead
-of reparsing the source profile. This is candidate selection only, not
-authority activation.
+of reparsing the source profile. The startup loader returns the raw
+provenance-bearing profile, exact activation key, and derived bundle together,
+so it does not validate and then immediately prepare the same values again.
+This is candidate selection only, not authority activation.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

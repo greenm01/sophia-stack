@@ -296,7 +296,9 @@ and output bundle intact through live-session configuration. Later policy setup
 clones the already prepared shortcut candidate instead of parsing the profile a
 second time. The bundle is immutable admission data for future participant
 handlers; retaining it neither activates an authority nor changes startup
-visibility.
+visibility. A prepared-profile aggregate now returns that bundle beside the raw
+provenance-bearing generation and exact activation key in one pass, removing
+the remaining load-then-reprepare duplication from live-session startup.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
