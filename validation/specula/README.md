@@ -75,3 +75,19 @@ conformance evidence. Run the offline base search, focused hunts, and trace with
 SOPHIA_SPECULA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar \
     tools/check_profile_activation_protocol_model.sh
 ```
+
+Post-promotion Hagia recovery is modeled independently under
+`profile-reattachment-protocol/`. It freezes the globally active identity and
+committed graphical state, requires a strictly newer authenticated epoch, and
+admits normal policy configuration only after the replacement acknowledges the
+exact retained candidate. This is a design prerequisite for production wiring,
+not evidence that reattachment is already enabled. Run its base search, five
+focused hunts, and complete design trace with:
+
+```sh
+SOPHIA_SPECULA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar \
+    tools/check_profile_reattachment_protocol_model.sh
+```
+
+Both protocol checkers share `tools/lib/specula_tlc.sh`, including the pinned
+jar checksum and isolated temporary model directory.
