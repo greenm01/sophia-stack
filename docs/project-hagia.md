@@ -274,6 +274,16 @@ any graphical client launches; failure aborts startup. The result is explicitly
 recorded as prepared but not applied. Atomic testing, multi-output apply, and
 rollback execution remain deferred.
 
+The output handoff now also has a pure authority-local settlement coordinator.
+It retains the immutable plan only while an exact generation/digest attempt is
+testing, applying, or rolling back; terminal settlement discards the plan.
+Typed effect completions advance only in their matching phase, duplicate or
+stale completions are inert, test rejection needs no rollback, and apply
+failure requires an explicit rollback completion. A rollback failure preserves
+both the activation and recovery causes. The backend executor is intentionally
+not connected yet, so this milestone adds no KMS mutation or policy-only reload
+path.
+
 ## Implementation Progression
 
 ### 1. Geometry Proof

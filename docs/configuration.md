@@ -75,6 +75,12 @@ states, the shared generation/digest, and optional startup focus. It rejects
 capability drift between projection and planning and exposes no connector,
 CRTC, property, or file-descriptor handle. This remains admission only: it
 performs no atomic test, output apply, or candidate activation.
+The next authority-local boundary is also present as a pure coordinator. It
+emits typed test, apply, and rollback effects and accepts only completions for
+the exact profile generation and digest in the expected phase. Test rejection
+discards the candidate without rollback; an apply failure cannot settle until
+rollback succeeds or reports a terminal recovery failure. No executor is wired
+to these effects yet, so startup behavior remains unchanged.
 Watched desktop-profile reload remains disabled until the cross-authority
 prepare/activate/rollback protocol is wired; Sophia's existing core and native
 WM reload behavior is unchanged.

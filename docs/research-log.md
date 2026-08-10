@@ -20,8 +20,16 @@ Completed evidence is archived in `research-log-archive.md`.
   property, framebuffer, or file-descriptor handle crosses the backend
   boundary. A second capability snapshot with changed mode or VRR facts is
   rejected as drift. Startup logs `prepared_not_applied` and performs no KMS
-  test or mutation. Atomic test/apply, typed completion, and rollback execution
-  remain the next tranche.
+  test or mutation. Atomic request construction and effect execution remain
+  the next tranche.
+- A pure coordinator now supplies that typed completion contract without
+  connecting hardware I/O. Test, apply, and rollback effects carry the same
+  immutable plan and exact generation/digest key. Only a completion for the
+  expected phase may advance the attempt; late, duplicate, and out-of-order
+  completions are inert. Test failure discards the candidate immediately,
+  apply failure requires rollback, and rollback failure is a terminal outcome
+  retaining both failure causes. The executor and native request construction
+  remain deliberately deferred.
 
 ## 2026-08-09: Revision 1 remains experimental through the Triad port
 
