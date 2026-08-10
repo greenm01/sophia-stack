@@ -619,6 +619,11 @@ is excluded; retained product behavior is not.
   owner now admits only complete, valid output snapshots atomically, advances
   generations after disappearance, selects a surviving active output, and
   recognizes same-ID descriptor changes without partially mutating state.
+  Unified desktop output admission now also constructs a pure stable-ID plan
+  with exact candidate and rollback states after revalidating the complete
+  reconciliation against the owned capability snapshot. Startup still issues
+  no configuration KMS mutation; atomic test/apply and effect settlement remain
+  the next dedicated output-authority tranche.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation

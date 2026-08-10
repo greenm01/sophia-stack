@@ -3,12 +3,61 @@ use std::fmt;
 
 use sophia_backend_live::LibdrmNativeOutputCapability;
 use sophia_config::{
-    DesktopOutputReconcileError, DesktopOutputScaleCapabilities, DesktopOutputState,
-    DesktopOutputTiming, DesktopOutputTopologyConnector, DesktopOutputTopologySnapshot,
-    DesktopOutputTransform, DesktopOutputTransformSet, DesktopOutputVrrMode,
+    ConfigDigest, ConfigGeneration, DesktopOutputReconcileError, DesktopOutputReconciliation,
+    DesktopOutputScaleCapabilities, DesktopOutputState, DesktopOutputTiming,
+    DesktopOutputTopologyConnector, DesktopOutputTopologySnapshot, DesktopOutputTransform,
+    DesktopOutputTransformSet, DesktopOutputVrrMode, validate_desktop_output_reconciliation,
     validate_desktop_output_topology_snapshot,
 };
 use sophia_engine::HeadlessOutput;
+use sophia_protocol::OutputId;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOutputActivationTarget {
+    output: OutputId,
+    rollback: DesktopOutputState,
+    requested: DesktopOutputState,
+}
+
+impl NativeOutputActivationTarget {
+    pub const fn output(&self) -> OutputId {
+        self.output
+    }
+
+    pub const fn rollback(&self) -> &DesktopOutputState {
+        &self.rollback
+    }
+
+    pub const fn requested(&self) -> &DesktopOutputState {
+        &self.requested
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOutputActivationPlan {
+    generation: ConfigGeneration,
+    digest: ConfigDigest,
+    targets: Vec<NativeOutputActivationTarget>,
+    focused_output: Option<OutputId>,
+}
+
+impl NativeOutputActivationPlan {
+    pub const fn generation(&self) -> ConfigGeneration {
+        self.generation
+    }
+
+    pub const fn digest(&self) -> ConfigDigest {
+        self.digest
+    }
+
+    pub fn targets(&self) -> &[NativeOutputActivationTarget] {
+        &self.targets
+    }
+
+    pub const fn focused_output(&self) -> Option<OutputId> {
+        self.focused_output
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeOutputTopologyProjectionError {
@@ -55,7 +104,131 @@ impl fmt::Display for NativeOutputTopologyProjectionError {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeOutputActivationPlanError {
+    InvalidOutput(u64),
+    DuplicateOutput(u64),
+    DuplicateConnector(String),
+    MissingCapability(String),
+    UnexpectedCapability(String),
+    CapabilityDrift(String),
+    InvalidReconciliation(DesktopOutputReconcileError),
+}
+
+impl fmt::Display for NativeOutputActivationPlanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidOutput(output) => write!(formatter, "native output {output} is invalid"),
+            Self::DuplicateOutput(output) => {
+                write!(formatter, "native output {output} is duplicated")
+            }
+            Self::DuplicateConnector(connector) => {
+                write!(formatter, "native connector {connector:?} is duplicated")
+            }
+            Self::MissingCapability(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} has no DRM capability"
+                )
+            }
+            Self::UnexpectedCapability(connector) => {
+                write!(
+                    formatter,
+                    "DRM connector {connector:?} has no admitted output"
+                )
+            }
+            Self::CapabilityDrift(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} changed after topology projection"
+                )
+            }
+            Self::InvalidReconciliation(error) => error.fmt(formatter),
+        }
+    }
+}
+
+pub fn prepare_native_output_activation_plan(
+    capabilities: &[LibdrmNativeOutputCapability],
+    topology: &DesktopOutputTopologySnapshot,
+    reconciliation: &DesktopOutputReconciliation,
+) -> Result<NativeOutputActivationPlan, NativeOutputActivationPlanError> {
+    validate_desktop_output_reconciliation(reconciliation, topology)
+        .map_err(NativeOutputActivationPlanError::InvalidReconciliation)?;
+
+    let mut output_ids = BTreeSet::new();
+    let mut capabilities_by_connector = BTreeMap::new();
+    for capability in capabilities {
+        let output = capability.output().raw();
+        if output == 0 {
+            return Err(NativeOutputActivationPlanError::InvalidOutput(output));
+        }
+        if !output_ids.insert(output) {
+            return Err(NativeOutputActivationPlanError::DuplicateOutput(output));
+        }
+        let connector = capability.connector_name();
+        if capabilities_by_connector
+            .insert(connector, capability)
+            .is_some()
+        {
+            return Err(NativeOutputActivationPlanError::DuplicateConnector(
+                connector.to_owned(),
+            ));
+        }
+    }
+    let mut requested_by_connector = reconciliation
+        .outputs
+        .iter()
+        .map(|output| (output.connector.as_str(), output))
+        .collect::<BTreeMap<_, _>>();
+    let mut targets = Vec::with_capacity(topology.connectors.len());
+    for connector in &topology.connectors {
+        let capability = capabilities_by_connector
+            .remove(connector.connector.as_str())
+            .ok_or_else(|| {
+                NativeOutputActivationPlanError::MissingCapability(connector.connector.clone())
+            })?;
+        if !capability_matches_topology(capability, connector) {
+            return Err(NativeOutputActivationPlanError::CapabilityDrift(
+                connector.connector.clone(),
+            ));
+        }
+        let requested = requested_by_connector
+            .remove(connector.connector.as_str())
+            .ok_or_else(|| invalid_reconciliation("output is absent from reconciliation"))?;
+        targets.push(NativeOutputActivationTarget {
+            output: capability.output(),
+            rollback: connector.current.clone(),
+            requested: requested.clone(),
+        });
+    }
+    if let Some(connector) = capabilities_by_connector.keys().next() {
+        return Err(NativeOutputActivationPlanError::UnexpectedCapability(
+            (*connector).to_owned(),
+        ));
+    }
+    let focused_output = reconciliation
+        .focused_connector
+        .as_deref()
+        .map(|focused| {
+            targets
+                .iter()
+                .find(|target| target.requested().connector == focused)
+                .map(NativeOutputActivationTarget::output)
+                .ok_or_else(|| invalid_reconciliation("focused output is absent from plan"))
+        })
+        .transpose()?;
+    Ok(NativeOutputActivationPlan {
+        generation: reconciliation.generation,
+        digest: reconciliation.digest,
+        targets,
+        focused_output,
+    })
+}
+
 impl std::error::Error for NativeOutputTopologyProjectionError {}
+
+impl std::error::Error for NativeOutputActivationPlanError {}
 
 pub fn project_native_output_topology(
     capabilities: &[LibdrmNativeOutputCapability],
@@ -141,6 +314,30 @@ pub fn project_native_output_topology(
 
 fn timing(timing: sophia_backend_live::LibdrmNativeOutputTiming) -> DesktopOutputTiming {
     DesktopOutputTiming::new(timing.width, timing.height, timing.refresh_millihz)
+}
+
+fn capability_matches_topology(
+    capability: &LibdrmNativeOutputCapability,
+    connector: &DesktopOutputTopologyConnector,
+) -> bool {
+    let capability_modes = capability
+        .modes()
+        .iter()
+        .copied()
+        .map(timing)
+        .collect::<BTreeSet<_>>();
+    let topology_modes = connector.modes.iter().copied().collect::<BTreeSet<_>>();
+    capability.connector_name() == connector.connector
+        && capability_modes == topology_modes
+        && capability.preferred_mode().map(timing) == connector.preferred_mode
+        && timing(capability.selected_mode()) == connector.current.mode
+        && capability.vrr_configurable() == connector.vrr_capable
+}
+
+fn invalid_reconciliation(message: &str) -> NativeOutputActivationPlanError {
+    NativeOutputActivationPlanError::InvalidReconciliation(
+        DesktopOutputReconcileError::InvalidReconciliation(message.to_owned()),
+    )
 }
 
 fn logical_extent(

@@ -6,7 +6,9 @@ use sophia_backend_live::{
     LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionRetiredPresent,
     LiveProductionVisualRuntime,
 };
-use sophia_cli::desktop_output_topology::project_native_output_topology;
+use sophia_cli::desktop_output_topology::{
+    prepare_native_output_activation_plan, project_native_output_topology,
+};
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
@@ -239,12 +241,15 @@ pub(crate) fn run_persistent_xterm_session(
             &config.desktop_output_candidate,
             &topology,
         )?;
+        let activation =
+            prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
         tracing::info!(
             schema = 1,
-            status = "reconciled_not_activated",
-            generation = reconciled.generation.raw(),
-            outputs = reconciled.outputs.len(),
-            focused = reconciled.focused_connector.is_some(),
+            status = "prepared_not_applied",
+            generation = activation.generation().raw(),
+            outputs = activation.targets().len(),
+            rollback_targets = activation.targets().len(),
+            focused = activation.focused_output().is_some(),
             "native desktop output candidate admitted"
         );
     }

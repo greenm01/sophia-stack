@@ -69,8 +69,12 @@ session, input, and output preparation used by graphical startup; it performs
 no device discovery or activation.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
-graphical client. This is admission only: it performs no output apply or
-candidate activation.
+graphical client. A second pure boundary converts the validated reconciliation
+into a stable-`OutputId` activation plan carrying exact requested and rollback
+states, the shared generation/digest, and optional startup focus. It rejects
+capability drift between projection and planning and exposes no connector,
+CRTC, property, or file-descriptor handle. This remains admission only: it
+performs no atomic test, output apply, or candidate activation.
 Watched desktop-profile reload remains disabled until the cross-authority
 prepare/activate/rollback protocol is wired; Sophia's existing core and native
 WM reload behavior is unchanged.

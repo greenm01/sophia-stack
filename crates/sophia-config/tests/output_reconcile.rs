@@ -4,6 +4,7 @@ use sophia_config::{
     DesktopOutputScaleCapabilities, DesktopOutputState, DesktopOutputTiming,
     DesktopOutputTopologyConnector, DesktopOutputTopologySnapshot, DesktopOutputTransform,
     DesktopOutputTransformSet, DesktopOutputVrrMode, reconcile_desktop_output_candidate,
+    validate_desktop_output_reconciliation,
 };
 
 fn state(connector: &str, mode: DesktopOutputTiming, position: (i32, i32)) -> DesktopOutputState {
@@ -229,4 +230,35 @@ fn manually_constructed_invalid_candidate_is_rejected() {
         reconcile_desktop_output_candidate(&candidate, &topology()),
         Err(DesktopOutputReconcileError::InvalidCandidate(_))
     ));
+}
+
+#[test]
+fn reconciliation_validation_rejects_fabricated_state() {
+    let topology = topology();
+    let reconciled = reconcile_desktop_output_candidate(&candidate(), &topology).unwrap();
+
+    let mut missing = reconciled.clone();
+    missing.outputs.pop();
+    assert!(matches!(
+        validate_desktop_output_reconciliation(&missing, &topology),
+        Err(DesktopOutputReconcileError::InvalidReconciliation(_))
+    ));
+
+    let mut unavailable_mode = reconciled.clone();
+    unavailable_mode.outputs[1].mode = DesktopOutputTiming::new(800, 600, 60_000);
+    assert_eq!(
+        validate_desktop_output_reconciliation(&unavailable_mode, &topology),
+        Err(DesktopOutputReconcileError::ModeUnavailable(
+            "DP-2".to_owned()
+        ))
+    );
+
+    let mut disabled_focus = reconciled;
+    disabled_focus.outputs[0].enabled = false;
+    assert_eq!(
+        validate_desktop_output_reconciliation(&disabled_focus, &topology),
+        Err(DesktopOutputReconcileError::FocusedOutputDisabled(
+            "DP-1".to_owned()
+        ))
+    );
 }

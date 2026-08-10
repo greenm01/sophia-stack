@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::{
@@ -136,6 +136,7 @@ pub struct DesktopOutputReconciliation {
 pub enum DesktopOutputReconcileError {
     InvalidCandidate(String),
     InvalidTopology(String),
+    InvalidReconciliation(String),
     UnknownConnector(String),
     DisconnectedConnector(String),
     PreferredModeUnavailable(String),
@@ -157,6 +158,9 @@ impl fmt::Display for DesktopOutputReconcileError {
             }
             Self::InvalidTopology(message) => {
                 write!(formatter, "invalid output topology: {message}")
+            }
+            Self::InvalidReconciliation(message) => {
+                write!(formatter, "invalid output reconciliation: {message}")
             }
             Self::UnknownConnector(connector) => {
                 write!(formatter, "unknown connector {connector:?}")
@@ -302,18 +306,103 @@ pub fn reconcile_desktop_output_candidate(
         return Err(DesktopOutputReconcileError::NoEnabledOutput);
     }
     reject_overlaps(&outputs)?;
-    Ok(DesktopOutputReconciliation {
+    let reconciliation = DesktopOutputReconciliation {
         generation: candidate.generation,
         digest: candidate.digest,
         outputs,
         focused_connector,
-    })
+    };
+    validate_desktop_output_reconciliation(&reconciliation, topology)?;
+    Ok(reconciliation)
 }
 
 pub fn validate_desktop_output_topology_snapshot(
     topology: &DesktopOutputTopologySnapshot,
 ) -> Result<(), DesktopOutputReconcileError> {
     validate_topology(topology)
+}
+
+pub fn validate_desktop_output_reconciliation(
+    reconciliation: &DesktopOutputReconciliation,
+    topology: &DesktopOutputTopologySnapshot,
+) -> Result<(), DesktopOutputReconcileError> {
+    validate_topology(topology)?;
+    if reconciliation.generation.raw() == 0
+        || reconciliation.outputs.len() != topology.connectors.len()
+    {
+        return Err(DesktopOutputReconcileError::InvalidReconciliation(
+            "generation and output count must match the admitted topology".to_owned(),
+        ));
+    }
+    let mut connectors = topology
+        .connectors
+        .iter()
+        .map(|connector| (connector.connector.as_str(), connector))
+        .collect::<BTreeMap<_, _>>();
+    for output in &reconciliation.outputs {
+        let Some(connector) = connectors.remove(output.connector.as_str()) else {
+            return Err(DesktopOutputReconcileError::InvalidReconciliation(
+                "output connectors must be unique and exactly cover the topology".to_owned(),
+            ));
+        };
+        if output.enabled && !connector.connected {
+            return Err(DesktopOutputReconcileError::DisconnectedConnector(
+                output.connector.clone(),
+            ));
+        }
+        if !connector.modes.contains(&output.mode) {
+            return Err(DesktopOutputReconcileError::ModeUnavailable(
+                output.connector.clone(),
+            ));
+        }
+        if !connector.scales.supports(output.scale_milli) {
+            return Err(DesktopOutputReconcileError::ScaleUnsupported(
+                output.connector.clone(),
+            ));
+        }
+        if !connector.transforms.contains(output.transform) {
+            return Err(DesktopOutputReconcileError::TransformUnsupported(
+                output.connector.clone(),
+            ));
+        }
+        if output.vrr != DesktopOutputVrrMode::Disabled && !connector.vrr_capable {
+            return Err(DesktopOutputReconcileError::VrrUnsupported(
+                output.connector.clone(),
+            ));
+        }
+        if !(-1_000_000..=1_000_000).contains(&output.position.0)
+            || !(-1_000_000..=1_000_000).contains(&output.position.1)
+        {
+            return Err(DesktopOutputReconcileError::InvalidReconciliation(
+                "output position is outside its supported range".to_owned(),
+            ));
+        }
+    }
+    if !connectors.is_empty() {
+        return Err(DesktopOutputReconcileError::InvalidReconciliation(
+            "output connectors must exactly cover the topology".to_owned(),
+        ));
+    }
+    if !reconciliation.outputs.iter().any(|output| output.enabled) {
+        return Err(DesktopOutputReconcileError::NoEnabledOutput);
+    }
+    if let Some(focused) = reconciliation.focused_connector.as_deref() {
+        let Some(output) = reconciliation
+            .outputs
+            .iter()
+            .find(|output| output.connector == focused)
+        else {
+            return Err(DesktopOutputReconcileError::InvalidReconciliation(
+                "focused connector is absent from the output set".to_owned(),
+            ));
+        };
+        if !output.enabled {
+            return Err(DesktopOutputReconcileError::FocusedOutputDisabled(
+                focused.to_owned(),
+            ));
+        }
+    }
+    reject_overlaps(&reconciliation.outputs)
 }
 
 fn validate_candidate(

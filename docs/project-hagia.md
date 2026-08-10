@@ -241,8 +241,9 @@ opens DRM nor mutates live topology. A pure authority-local reconciler can now
 combine that candidate with an immutable capability snapshot, resolve rounded
 refresh requests deterministically, and reject unknown/disconnected connectors,
 unsupported scale/transform/VRR, overlaps, ambiguous modes, or an all-dark
-result. Supplying that snapshot from the trusted backend, atomic KMS testing,
-activation, and rollback are the next output-authority tranche.
+result. The trusted snapshot and pre-I/O activation plan are now supplied;
+atomic KMS testing, activation settlement, and rollback execution are the next
+output-authority tranche.
 
 One shared preparation function now validates the shortcut, session, input,
 and output candidates at profile load, staging revalidation, and live-session
@@ -263,11 +264,15 @@ preserves Engine semantic order, derives checked nonoverlapping current
 positions, and advertises only capabilities the current backend implements:
 integer compositor scale, normal transform, and VRR only after complete
 property discovery. The migrated two-output candidate reconciles against this
-projection in tests. Native-session startup now performs that read-only
-projection and reconciliation immediately after the atomic owner is created
-and before any graphical client launches; failure aborts startup. The result
-is explicitly recorded as reconciled but not activated. Atomic testing,
-multi-output apply, and rollback remain deferred.
+projection in tests. A pure activation planner then joins the reconciliation
+back to stable Engine `OutputId` values and retains each exact current state as
+its rollback target. It rejects zero/duplicate outputs, connector aliases,
+fabricated reconciliations, and any capability drift, while exposing no native
+KMS handle. Native-session startup now performs projection, reconciliation,
+and plan preparation immediately after the atomic owner is created and before
+any graphical client launches; failure aborts startup. The result is explicitly
+recorded as prepared but not applied. Atomic testing, multi-output apply, and
+rollback execution remain deferred.
 
 ## Implementation Progression
 

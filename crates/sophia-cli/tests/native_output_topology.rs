@@ -4,7 +4,8 @@ use sophia_backend_live::{
     LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
 };
 use sophia_cli::desktop_output_topology::{
-    NativeOutputTopologyProjectionError, project_native_output_topology,
+    NativeOutputActivationPlanError, NativeOutputTopologyProjectionError,
+    prepare_native_output_activation_plan, project_native_output_topology,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopNamedOutputCandidate, DesktopOutputCandidate,
@@ -147,4 +148,103 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
     assert_eq!(reconciled.outputs.len(), 2);
     assert_eq!(reconciled.outputs[0].mode.refresh_millihz, 120_000);
     assert_eq!(reconciled.focused_connector.as_deref(), Some("DP-1"));
+}
+
+#[test]
+fn native_activation_plan_retains_stable_targets_and_rollback_state() {
+    let capabilities = [
+        capability(2, "DP-2", 1920, 1080, false),
+        capability(1, "DP-1", 2560, 1440, true),
+    ];
+    let outputs = [output(1, 2560, 1440, 1), output(2, 1920, 1080, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let candidate = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(9),
+        digest: ConfigDigest::new([9; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: "DP-1".to_owned(),
+            mode: Some(DesktopOutputMode::Exact {
+                width: 2560,
+                height: 1440,
+                refresh_millihz: 120_000,
+            }),
+            scale: None,
+            position: None,
+            transform: None,
+            enabled: None,
+            focus_at_startup: Some(true),
+            vrr: Some(DesktopOutputVrrMode::Always),
+        }],
+    };
+    let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
+
+    let plan =
+        prepare_native_output_activation_plan(&capabilities, &topology, &reconciliation).unwrap();
+
+    assert_eq!(plan.generation(), candidate.generation);
+    assert_eq!(plan.digest(), candidate.digest);
+    assert_eq!(plan.focused_output(), Some(OutputId::from_raw(1)));
+    assert_eq!(
+        plan.targets()
+            .iter()
+            .map(|target| target.output())
+            .collect::<Vec<_>>(),
+        vec![OutputId::from_raw(1), OutputId::from_raw(2)]
+    );
+    assert_eq!(plan.targets()[0].rollback().mode.refresh_millihz, 60_000);
+    assert_eq!(plan.targets()[0].requested().mode.refresh_millihz, 120_000);
+    assert_eq!(
+        plan.targets()[0].requested().vrr,
+        DesktopOutputVrrMode::Always
+    );
+    assert_eq!(plan.targets()[1].rollback(), plan.targets()[1].requested());
+}
+
+#[test]
+fn native_activation_plan_rejects_capability_drift_and_aliases() {
+    let capabilities = [
+        capability(1, "DP-1", 2560, 1440, true),
+        capability(2, "DP-2", 1920, 1080, false),
+    ];
+    let outputs = [output(1, 2560, 1440, 1), output(2, 1920, 1080, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let candidate = DesktopOutputCandidate {
+        generation: ConfigGeneration::INITIAL,
+        digest: ConfigDigest::new([3; 32]),
+        inherit_sophia: true,
+        named: Vec::new(),
+    };
+    let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
+
+    let drifted = [
+        capability(1, "DP-1", 1920, 1080, true),
+        capabilities[1].clone(),
+    ];
+    assert_eq!(
+        prepare_native_output_activation_plan(&drifted, &topology, &reconciliation),
+        Err(NativeOutputActivationPlanError::CapabilityDrift(
+            "DP-1".to_owned()
+        ))
+    );
+
+    let duplicate = [
+        capabilities[0].clone(),
+        capability(2, "DP-1", 1920, 1080, false),
+    ];
+    assert_eq!(
+        prepare_native_output_activation_plan(&duplicate, &topology, &reconciliation),
+        Err(NativeOutputActivationPlanError::DuplicateConnector(
+            "DP-1".to_owned()
+        ))
+    );
+
+    let invalid_output = [
+        capability(0, "DP-1", 2560, 1440, true),
+        capabilities[1].clone(),
+    ];
+    assert_eq!(
+        prepare_native_output_activation_plan(&invalid_output, &topology, &reconciliation),
+        Err(NativeOutputActivationPlanError::InvalidOutput(0))
+    );
 }

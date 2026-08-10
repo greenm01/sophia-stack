@@ -3,6 +3,26 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
+
+- Native startup already projected the atomic owner's capabilities and
+  reconciled the unified output candidate before launching clients, but the
+  reconciled connector states had no explicit handoff shape for a future
+  backend executor or rollback path.
+- `sophia-config` now centrally validates a complete output reconciliation
+  against its admitted topology, including exact connector coverage, modes,
+  scale, transform, VRR, focus, overlap, and at least one enabled output. The
+  reconciler calls this same validator, so downstream boundaries do not copy
+  those invariants.
+- The CLI coordinator now prepares one immutable plan in stable Engine output
+  order. Each target carries its `OutputId`, exact requested state, and exact
+  rollback state plus the shared generation/digest; no connector, CRTC,
+  property, framebuffer, or file-descriptor handle crosses the backend
+  boundary. A second capability snapshot with changed mode or VRR facts is
+  rejected as drift. Startup logs `prepared_not_applied` and performs no KMS
+  test or mutation. Atomic test/apply, typed completion, and rollback execution
+  remain the next tranche.
+
 ## 2026-08-09: Revision 1 remains experimental through the Triad port
 
 The fixed nine-view Hagia scroller and its physical checkpoint/restart proof
