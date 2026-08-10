@@ -6,6 +6,7 @@ use sophia_backend_live::{
     LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionRetiredPresent,
     LiveProductionVisualRuntime,
 };
+use sophia_cli::desktop_output_topology::project_native_output_topology;
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::resize_transaction::{
@@ -231,6 +232,22 @@ pub(crate) fn run_persistent_xterm_session(
         .as_ref()
         .map(|controller| LiveProductionNativeScanout::new_with_seat(&controller.device_opener()))
         .transpose()?;
+    if let Some(native) = native_scanout.as_ref() {
+        let capabilities = native.output_capabilities()?;
+        let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+        let reconciled = sophia_config::reconcile_desktop_output_candidate(
+            &config.desktop_output_candidate,
+            &topology,
+        )?;
+        tracing::info!(
+            schema = 1,
+            status = "reconciled_not_activated",
+            generation = reconciled.generation.raw(),
+            outputs = reconciled.outputs.len(),
+            focused = reconciled.focused_connector.is_some(),
+            "native desktop output candidate admitted"
+        );
+    }
     let device_map =
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))

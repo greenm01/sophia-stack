@@ -263,8 +263,11 @@ preserves Engine semantic order, derives checked nonoverlapping current
 positions, and advertises only capabilities the current backend implements:
 integer compositor scale, normal transform, and VRR only after complete
 property discovery. The migrated two-output candidate reconciles against this
-projection in tests. Live owner wiring, atomic testing, and activation remain
-deferred.
+projection in tests. Native-session startup now performs that read-only
+projection and reconciliation immediately after the atomic owner is created
+and before any graphical client launches; failure aborts startup. The result
+is explicitly recorded as reconciled but not activated. Atomic testing,
+multi-output apply, and rollback remain deferred.
 
 ## Implementation Progression
 
