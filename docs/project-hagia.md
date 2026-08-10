@@ -260,15 +260,15 @@ builds both exact commits before takeover, validates the compiled profile, and
 then enters the guarded gate. The underlying opt-in installed gate is
 `tools/hagia_policy_physical_gate.sh`. It requires
 an explicit arm variable, real Hagia and Kitty binaries, a named input seat,
-and two connected outputs. The operator exercises fullscreen, maximize,
-minimize/restore, and active-output actions around one checkpoint-triggered
-supervised restart; the verifier requires ordered commits, nonempty checkpoint
-load/reconciliation, output-change evidence, physical text, and clean session
-health. Restart injection is correlated to the first committed active-output
-action after the committed fullscreen action, and waits for the following
-nonempty checkpoint before killing the authorized Hagia PID. It does not depend
-on a global checkpoint count, because legitimate settlement cycles may add
-checkpoints without advancing the operator procedure. The wrapper then
+and two connected outputs. The operator exercises fullscreen, native layout
+cycling, maximize, minimize/restore, and active-output actions around one
+checkpoint-triggered supervised restart; the verifier requires ordered commits,
+nonempty checkpoint load/reconciliation, output-change evidence, physical text,
+and clean session health. Restart injection is correlated to the first committed
+layout-cycle action after the committed fullscreen action, and waits for the
+following nonempty checkpoint before killing the authorized Hagia PID. It does
+not depend on a global checkpoint count, because legitimate settlement cycles
+may add checkpoints without advancing the operator procedure. The wrapper then
 `exec`s Hagia so the policy endpoint continues to authenticate the exact PID
 supervised by Sophia. Kitty displays one instruction at a time and advances
 only after the corresponding committed-action evidence appears, so the operator does not have

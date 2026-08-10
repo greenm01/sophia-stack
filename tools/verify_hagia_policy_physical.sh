@@ -64,12 +64,21 @@ require_line() {
 
 require_before "fullscreen action" \
     '^sophia_live_wm schema=1 status=physical_action_committed action=37$'
-require_before "active-output action" \
-    '^sophia_live_wm schema=1 status=physical_action_committed action=34$'
+require_before "layout-cycle action" \
+    '^sophia_live_wm schema=1 status=physical_action_committed action=66$'
 require_before "nonempty checkpoint" \
     "$checkpoint_saved"
-require_before "active-output projection" \
-    "$active_output_changed"
+
+layout_line="$(awk -v limit="$restart_line" \
+    'NR < limit && /^sophia_live_wm schema=1 status=physical_action_committed action=66$/ { print NR; exit }' \
+    "$evidence")"
+if [[ -z "$layout_line" ]] || ! awk \
+    -v lower="$layout_line" -v upper="$restart_line" -v pattern="$checkpoint_saved" \
+    'NR > lower && NR < upper && $0 ~ pattern { found = 1; exit } END { exit found ? 0 : 1 }' \
+    "$evidence"; then
+    echo "Hagia layout cycle was not checkpointed before restart" >&2
+    exit 1
+fi
 
 require_after "checkpoint load" \
     "$checkpoint_loaded"
@@ -77,7 +86,7 @@ require_after "checkpoint reconciliation" \
     "$checkpoint_reconciled"
 require_after "generation-2 policy refresh" \
     "$policy_refresh"
-for action in 37 39 40 33 34; do
+for action in 37 66 39 40 33 34; do
     require_after "physical action $action" \
         "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
 done

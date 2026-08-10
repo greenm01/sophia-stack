@@ -341,7 +341,7 @@ grep -Fq 'sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq 'SOPHIA_HAGIA_RESTART_AFTER_ACTION=34' \
+grep -Fq 'SOPHIA_HAGIA_RESTART_AFTER_ACTION=66' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'tools/verify_hagia_policy_physical.sh' \
     tools/hagia_policy_physical_gate.sh
@@ -354,7 +354,7 @@ grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq '"--session-app-arg=terminal=$guide"' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq "show_step 'Press Super+Y once." \
+grep -Fq "show_step 'Press Super+F once." \
     tools/fixtures/hagia_physical_guide.sh
 grep -Fq 'proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"' \
     tools/fixtures/hagia_physical_guide.sh
