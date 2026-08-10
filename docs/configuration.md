@@ -109,6 +109,13 @@ multiple/crossed authority sections, duplicate settings, and any generation or
 digest that differs from the coordinator's exact activation key. The result is
 the existing provenance-bearing raw candidate DTO; loading still performs no
 activation.
+One generic authority-local candidate slot now couples that DTO (or a prepared
+typed candidate) to exactly one participant model. The slot is the sole owner
+of active, previous-active, and candidate payloads; its pure prepare, activate,
+and rollback functions delegate identity changes to the participant reducer.
+Exact retries compare semantic payload while ignoring staging-path provenance,
+but changed settings at the same key fail closed. Fragment admission or payload
+rejection returns without mutating either identity or payload state.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

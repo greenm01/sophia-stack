@@ -308,6 +308,14 @@ all match. This supplies a reusable handler input for local or process-backed
 authorities while preserving Hagia's independent policy-reader evidence and
 performing no activation.
 
+The next reusable handler layer is also pure: a generic authority-local slot
+couples one participant identity model with one active/candidate payload owner.
+It prepares canonical typed candidates or an admitted staged fragment, rejects
+authority/key/payload conflicts without mutation, promotes payload only with a
+matching participant activation, and restores the previous payload on
+rollback. This centralizes payload/identity synchronization without creating a
+coordinator-owned copy of all authority state or wiring live effects.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR

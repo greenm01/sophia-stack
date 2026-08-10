@@ -83,6 +83,16 @@ Completed evidence is archived in `research-log-archive.md`.
   fragment emitted by `stage_desktop_profile` and reject authority crossing,
   generation drift, digest drift, unsafe mode, and symlink substitution. Hagia
   retains its independent Nim reader as cross-implementation evidence.
+- A generic authority-local candidate slot now joins admitted payloads to the
+  participant reducer without duplicating its identity state machine. It owns
+  active, previous-active, and candidate payloads and updates them only after a
+  successful pure participant transition. Prepared typed candidates advertise
+  their fixed authority and key; raw candidates advertise their assigned
+  authority. Exact raw retries compare semantic settings rather than provenance
+  paths, allowing in-memory and staged reconstruction of the same payload while
+  rejecting changed content at one identity. Focused tests cover prepare,
+  activate, restoration, retries, conflicts, invalid identity, unseen rollback
+  tombstones, and fragment rejection with unchanged slot state.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

@@ -768,6 +768,15 @@ candidate DTO only after schema, generation, digest, setting, and duplicate
 checks pass. Round-trip tests cover every authority fragment; negative tests
 cover authority isolation, both key components, unsafe modes, and symlinks.
 
+Authority-local candidate state now has one generic slot rather than separate
+identity and payload mutation paths. The slot owns a participant plus bounded
+active, previous-active, and candidate payloads. It accepts both canonical
+typed in-memory candidates and admitted raw fragments, delegates every identity
+transition to the participant reducer, and updates payloads only after that
+transition succeeds. Semantic retry comparison excludes provenance paths but
+includes setting keys and encodings. No coordinator-owned collection of slots
+or production activation handler exists yet.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a
