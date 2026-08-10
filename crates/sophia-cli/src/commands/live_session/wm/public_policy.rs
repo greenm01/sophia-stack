@@ -84,6 +84,35 @@ struct LivePublicPolicyState {
     proof_fault_triggered: bool,
 }
 
+struct PreparedPublicPolicyLaunch {
+    profile_fragments: sophia_config::DesktopProfileFragments,
+    directory: PolicySessionDirectory,
+    shortcut_profile_slot:
+        sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
+}
+
+impl PreparedPublicPolicyLaunch {
+    fn new(config: &PersistentXtermSessionConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let directory = PolicySessionDirectory::create(
+            config.wm_socket_path.with_extension("policy"),
+        )?;
+        let profile_fragments =
+            sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
+        sophia_config::validate_desktop_profile_fragments(
+            &profile_fragments,
+            sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile),
+        )?;
+        let shortcut_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
+            config.shortcut_profile_candidate.clone(),
+        )?;
+        Ok(Self {
+            profile_fragments,
+            directory,
+            shortcut_profile_slot,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PublicPolicyRestartDecision {
     Idle,
@@ -555,15 +584,13 @@ impl LiveWmSession {
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
         process: &str,
+        prepared_launch: PreparedPublicPolicyLaunch,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let directory = PolicySessionDirectory::create(
-            config.wm_socket_path.with_extension("policy"),
-        )?;
-        let shortcut_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
-            config.shortcut_profile_candidate.clone(),
-        )?;
-        let profile_fragments =
-            sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
+        let PreparedPublicPolicyLaunch {
+            profile_fragments,
+            directory,
+            shortcut_profile_slot,
+        } = prepared_launch;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
             directory.endpoint_path(),
             rustix::process::geteuid().as_raw(),

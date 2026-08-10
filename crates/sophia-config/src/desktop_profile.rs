@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use kdl::{KdlDocument, KdlNode};
 use sha2::{Digest, Sha256};
 
-use crate::{ConfigDigest, ConfigGeneration, ConfigIoError, ConfigParseError, read_config_file};
+use crate::{
+    ConfigDigest, ConfigGeneration, ConfigIoError, ConfigParseError, DesktopProfileActivationKey,
+    read_config_file,
+};
 
 pub const DESKTOP_PROFILE_MAX_DEPTH: usize = 10;
 pub const DESKTOP_PROFILE_MAX_FILES: usize = 64;
@@ -392,6 +395,23 @@ pub fn load_desktop_authority_fragment(
         digest,
         values,
     })
+}
+
+pub fn validate_desktop_profile_fragments(
+    fragments: &DesktopProfileFragments,
+    expected_key: DesktopProfileActivationKey,
+) -> Result<(), DesktopProfileError> {
+    if fragments.generation != expected_key.generation()
+        || fragments.digest != expected_key.digest()
+    {
+        return Err(fragment_schema(
+            "set identity does not match the activation key",
+        ));
+    }
+    for authority in DesktopAuthority::ALL {
+        load_desktop_authority_fragment(fragments.path(authority), authority, expected_key)?;
+    }
+    Ok(())
 }
 
 fn fragment_schema(message: &str) -> DesktopProfileError {

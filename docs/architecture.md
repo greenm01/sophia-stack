@@ -806,6 +806,15 @@ projection and output capability reconciliation consume only their owner's
 payload. These records preserve domain ownership even while the current
 single-process startup coordinator transports them to their execution seams.
 
+Public policy filesystem preparation now has an explicit linear owner. Directly
+after trusted configuration assembly—and before display, seat, input/output, or
+client setup—Sophia creates the private policy directory, stages the profile,
+and re-admits all seven fragments against the exact activation key. The
+resulting context owns the fragment set, directory, and prepared shortcut slot;
+public policy launch consumes it exactly once. Failure or an unused context
+cleans up before any graphical process starts. This is still preparation, not
+the global activation barrier.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

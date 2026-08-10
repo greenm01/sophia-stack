@@ -12,6 +12,7 @@ use sophia_config::{
     load_desktop_profile, load_prepared_desktop_profile, prepare_desktop_input_candidate,
     prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
     prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -561,6 +562,17 @@ fn every_staged_fragment_round_trips_only_its_exact_authority_and_key() {
     let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
     let expected_key = DesktopProfileActivationKey::from(&profile);
     let fragments = stage_desktop_profile(&profile, &root).unwrap();
+    validate_desktop_profile_fragments(&fragments, expected_key).unwrap();
+    assert!(matches!(
+        validate_desktop_profile_fragments(
+            &fragments,
+            DesktopProfileActivationKey::new(
+                ConfigGeneration::from_raw(2),
+                expected_key.digest(),
+            ),
+        ),
+        Err(DesktopProfileError::Schema(message)) if message.contains("set identity")
+    ));
 
     for authority in DesktopAuthority::ALL {
         let loaded =

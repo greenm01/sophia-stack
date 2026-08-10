@@ -517,6 +517,52 @@ fn public_policy_checkpoint_parent_survives_peer_endpoint_replacement() {
 }
 
 #[test]
+fn public_policy_launch_preparation_validates_fragments_and_cleans_up_before_launch() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let root = std::env::temp_dir().join(format!(
+        "sophia-policy-prepare-test-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut config = PersistentXtermSessionConfig::from_args(&[
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+    ])
+    .unwrap();
+    config.wm_socket_path = root.with_extension("sock");
+    let directory_path = config.wm_socket_path.with_extension("policy");
+    let activation_key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+
+    let prepared = PreparedPublicPolicyLaunch::new(&config).unwrap();
+
+    assert_eq!(
+        std::fs::metadata(&directory_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    sophia_config::validate_desktop_profile_fragments(&prepared.profile_fragments, activation_key)
+        .unwrap();
+    assert_eq!(
+        prepared.shortcut_profile_slot.participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Prepared
+    );
+    for authority in sophia_config::DesktopAuthority::ALL {
+        assert!(prepared.profile_fragments.path(authority).is_file());
+    }
+
+    drop(prepared);
+    assert!(!directory_path.exists());
+}
+
+#[test]
 fn public_policy_owner_fault_points_are_bounded_proof_controls() {
     for (value, expected) in [
         ("proposal_staged", PublicPolicyFaultPoint::ProposalStaged),

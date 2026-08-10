@@ -253,15 +253,36 @@ struct LiveWmWorkspaceProjection {
 }
 
 impl LiveWmSession {
+    fn prepare_public_launch(
+        config: &PersistentXtermSessionConfig,
+    ) -> Result<Option<PreparedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
+        if config.wm_process.is_some()
+            && config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1
+        {
+            return PreparedPublicPolicyLaunch::new(config).map(Some);
+        }
+        Ok(None)
+    }
+
     fn from_config(
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
+        prepared_public_launch: Option<PreparedPublicPolicyLaunch>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(process) = config.wm_process.as_deref() else {
+            if prepared_public_launch.is_some() {
+                return Err("public WM preparation exists without a configured process".into());
+            }
             return Ok(None);
         };
         if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            return Self::from_public_config(config, outputs, process).map(Some);
+            let prepared_public_launch = prepared_public_launch
+                .ok_or("public WM launch requires prepared profile fragments")?;
+            return Self::from_public_config(config, outputs, process, prepared_public_launch)
+                .map(Some);
+        }
+        if prepared_public_launch.is_some() {
+            return Err("legacy WM launch cannot consume public profile preparation".into());
         }
         let _ = std::fs::remove_file(&config.wm_socket_path);
         let socket_arg = format!("--socket={}", config.wm_socket_path.display());

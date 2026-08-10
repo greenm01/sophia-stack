@@ -75,6 +75,12 @@ Completed evidence is archived in `research-log-archive.md`.
   A later ownership pass partitions that bundle once into session, input, and
   output owner records plus the shortcut transfer payload; the aggregate is no
   longer retained as a second coordinator-owned copy.
+- Public policy directory creation and fragment staging previously lived inside
+  WM process construction. A linear `PreparedPublicPolicyLaunch` context now
+  performs owner-only directory creation, stages and re-admits every authority
+  fragment against the exact key, and prepares shortcut state immediately after
+  trusted configuration parsing. Tests prove mode, complete fragment presence,
+  exact admission, `Prepared` phase, and cleanup without launching a process.
 - `load_desktop_profile` had already run the shared preparation boundary before
   returning, so live-session startup's immediate second preparation was pure
   duplication. `load_prepared_desktop_profile` now returns a typed aggregate

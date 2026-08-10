@@ -141,6 +141,13 @@ Input and output now likewise have cohesive typed owner records around their
 prepared slots. Keyboard/pointer overlays and output reconciliation read those
 owners' candidate payloads. The transient typed bundle is discarded after
 partitioning, so startup does not keep a second coordinator-owned copy.
+For a public Hagia session, trusted startup next creates an owner-only policy
+launch context before display sockets, seats, input/output setup, or process
+launch. It stages the complete profile, re-admits all seven fragments through
+the owner-safe loader against the exact activation key, and retains the
+prepared shortcut slot. Any failure aborts before graphical startup; dropping
+an unused context removes its files and directory. Public policy launch later
+consumes that exact context rather than staging again.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

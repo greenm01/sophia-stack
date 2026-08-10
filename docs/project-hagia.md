@@ -341,6 +341,13 @@ keyboard/pointer overlay, output reconciliation, and shortcut resolution read
 the owner payloads, removing the long-lived centralized bundle without changing
 activation or hardware behavior.
 
+The public Hagia launch path now receives one prebuilt linear launch context.
+Trusted startup creates it before display or device setup, stages and re-admits
+all seven exact owner-safe fragments, and retains the prepared shortcut owner.
+Later policy launch consumes that context instead of recreating directory or
+fragment state. Early failure cleans it up before Hagia or graphical clients
+start; no authority is activated by this change.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
