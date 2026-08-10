@@ -68,6 +68,11 @@ An injected startup executor boundary converts each typed effect into its
 matching authority call and returns the exact typed completion message. Its
 handlers are not populated by production authority transports yet; the seam
 exists so filesystem or process work cannot re-enter the reducer implicitly.
+A synchronous startup driver now drains that boundary through the complete
+prepare and activate barriers. The first failed operation cancels the
+remaining phase, dispatches rollback to every authority, and retains the prior
+active identity. Even when one rollback fails, every remaining rollback is
+attempted and the exact unresolved recovery set is returned as an error.
 Shortcut candidates are prepared into bounded typed chords before staging:
 at most 256 key or pointer bindings, normalized modifier/key identities, no
 duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
@@ -92,7 +97,7 @@ the exact profile generation and digest in the expected phase. Test rejection
 discards the candidate without rollback; an apply failure cannot settle until
 rollback succeeds or reports a terminal recovery failure. No executor is wired
 to these effects yet, so startup behavior remains unchanged.
-The production session does not execute barrier effects. Watched
+The production session does not yet invoke this driver. Watched
 desktop-profile reload remains disabled until cross-authority
 prepare/activate/rollback protocols populate the executor handlers; Sophia's
 existing core and native WM reload behavior is unchanged.

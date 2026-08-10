@@ -25,6 +25,14 @@ Completed evidence is archived in `research-log-archive.md`.
   authority/generation/digest completion message. Only fakes populate those
   handlers today; production authority transports and watched reload remain
   deliberately disconnected.
+- A synchronous startup driver now drains those effects through both barriers.
+  It stops unused prepare or activation work after the first failure, attempts
+  rollback for all seven authorities even if one rollback fails, preserves the
+  previous active profile, and returns the exact pending recovery model.
+  Deterministic tests enumerate every authority as each failure point, prove
+  initial activation from empty state, and prove that rejected generations
+  cannot be retried. The driver adds no asynchronous interleaving beyond the
+  lifecycle already exhaustively checked in Hagia's TLA+ model.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

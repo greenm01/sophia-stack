@@ -1,9 +1,12 @@
 use sophia_cli::desktop_profile_activation::{
-    DesktopProfileAuthorityEffectExecutor, execute_desktop_profile_activation_effect,
+    DesktopProfileAuthorityEffectExecutor, DesktopProfileStartupActivationDisposition,
+    DesktopProfileStartupActivationErrorKind, execute_desktop_profile_activation_effect,
+    run_desktop_profile_startup_activation,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopProfileActivationEffect,
-    DesktopProfileActivationEffectKind, DesktopProfileActivationKey, DesktopProfileActivationMsg,
+    DesktopProfileActivationEffectKind, DesktopProfileActivationError, DesktopProfileActivationKey,
+    DesktopProfileActivationModel, DesktopProfileActivationMsg, DesktopProfileActivationPhase,
 };
 
 #[derive(Default)]
@@ -13,9 +16,9 @@ struct FakeExecutor {
         DesktopAuthority,
         DesktopProfileActivationKey,
     )>,
-    prepare_success: bool,
-    activate_success: bool,
-    rollback_success: bool,
+    prepare_failure: Option<DesktopAuthority>,
+    activate_failure: Option<DesktopAuthority>,
+    rollback_failure: Option<DesktopAuthority>,
 }
 
 impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
@@ -29,7 +32,7 @@ impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
             authority,
             key,
         ));
-        self.prepare_success
+        self.prepare_failure != Some(authority)
     }
 
     fn activate_authority(
@@ -42,7 +45,7 @@ impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
             authority,
             key,
         ));
-        self.activate_success
+        self.activate_failure != Some(authority)
     }
 
     fn rollback_authority(
@@ -55,7 +58,7 @@ impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
             authority,
             key,
         ));
-        self.rollback_success
+        self.rollback_failure != Some(authority)
     }
 }
 
@@ -76,12 +79,7 @@ fn effect(
 
 #[test]
 fn executor_dispatches_each_effect_to_its_authority_handler() {
-    let mut executor = FakeExecutor {
-        prepare_success: true,
-        activate_success: true,
-        rollback_success: true,
-        ..FakeExecutor::default()
-    };
+    let mut executor = FakeExecutor::default();
 
     let prepared = execute_desktop_profile_activation_effect(
         &mut executor,
@@ -153,7 +151,10 @@ fn executor_dispatches_each_effect_to_its_authority_handler() {
 
 #[test]
 fn executor_preserves_failed_completion_identity() {
-    let mut executor = FakeExecutor::default();
+    let mut executor = FakeExecutor {
+        prepare_failure: Some(DesktopAuthority::Shell),
+        ..FakeExecutor::default()
+    };
     let message = execute_desktop_profile_activation_effect(
         &mut executor,
         effect(
@@ -170,4 +171,231 @@ fn executor_preserves_failed_completion_identity() {
             success: false,
         }
     );
+}
+
+fn active_model() -> DesktopProfileActivationModel {
+    DesktopProfileActivationModel::with_active(DesktopProfileActivationKey::new(
+        ConfigGeneration::from_raw(6),
+        ConfigDigest::new([6; 32]),
+    ))
+    .unwrap()
+}
+
+#[test]
+fn startup_driver_prepares_then_activates_every_authority() {
+    let mut executor = FakeExecutor::default();
+    let report =
+        run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
+
+    assert_eq!(
+        report.disposition,
+        DesktopProfileStartupActivationDisposition::Activated
+    );
+    assert_eq!(report.model.active(), Some(key()));
+    assert_eq!(report.model.phase(), DesktopProfileActivationPhase::Idle);
+    assert_eq!(executor.calls.len(), DesktopAuthority::ALL.len() * 2);
+    for (index, authority) in DesktopAuthority::ALL.into_iter().enumerate() {
+        assert_eq!(
+            executor.calls[index],
+            (
+                DesktopProfileActivationEffectKind::PrepareAuthority,
+                authority,
+                key(),
+            )
+        );
+        assert_eq!(
+            executor.calls[index + DesktopAuthority::ALL.len()],
+            (
+                DesktopProfileActivationEffectKind::ActivateAuthority,
+                authority,
+                key(),
+            )
+        );
+    }
+}
+
+#[test]
+fn startup_driver_activates_the_initial_profile_from_empty_state() {
+    let initial =
+        DesktopProfileActivationKey::new(ConfigGeneration::INITIAL, ConfigDigest::new([1; 32]));
+    let mut executor = FakeExecutor::default();
+    let report = run_desktop_profile_startup_activation(
+        &DesktopProfileActivationModel::default(),
+        initial,
+        &mut executor,
+    )
+    .unwrap();
+
+    assert_eq!(
+        report.disposition,
+        DesktopProfileStartupActivationDisposition::Activated
+    );
+    assert_eq!(report.model.active(), Some(initial));
+}
+
+#[test]
+fn prepare_failure_cancels_batch_and_rolls_back_all_authorities() {
+    for (failure_index, failure) in DesktopAuthority::ALL.into_iter().enumerate() {
+        let mut executor = FakeExecutor {
+            prepare_failure: Some(failure),
+            ..FakeExecutor::default()
+        };
+        let report =
+            run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
+
+        assert_eq!(
+            report.disposition,
+            DesktopProfileStartupActivationDisposition::Rejected
+        );
+        assert_eq!(report.model.active(), active_model().active());
+        assert_eq!(report.model.latest_generation(), 7);
+        assert_eq!(report.model.phase(), DesktopProfileActivationPhase::Idle);
+        let prepare_count = failure_index + 1;
+        assert_eq!(
+            executor.calls[..prepare_count]
+                .iter()
+                .map(|(_, authority, _)| *authority)
+                .collect::<Vec<_>>(),
+            DesktopAuthority::ALL[..prepare_count]
+        );
+        assert!(
+            executor.calls[..prepare_count]
+                .iter()
+                .all(|(kind, _, _)| *kind == DesktopProfileActivationEffectKind::PrepareAuthority)
+        );
+        assert!(
+            executor.calls[prepare_count..]
+                .iter()
+                .all(|(kind, _, _)| *kind == DesktopProfileActivationEffectKind::RollbackAuthority)
+        );
+        assert_eq!(
+            executor.calls.len(),
+            prepare_count + DesktopAuthority::ALL.len()
+        );
+
+        let mut retry_executor = FakeExecutor::default();
+        let retry =
+            run_desktop_profile_startup_activation(&report.model, key(), &mut retry_executor)
+                .unwrap_err();
+        assert_eq!(
+            retry.kind,
+            DesktopProfileStartupActivationErrorKind::Reducer(
+                DesktopProfileActivationError::InvalidCandidateIdentity
+            )
+        );
+        assert!(retry_executor.calls.is_empty());
+    }
+}
+
+#[test]
+fn activation_failure_cancels_batch_and_restores_last_known_good() {
+    for (failure_index, failure) in DesktopAuthority::ALL.into_iter().enumerate() {
+        let mut executor = FakeExecutor {
+            activate_failure: Some(failure),
+            ..FakeExecutor::default()
+        };
+        let report =
+            run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
+
+        assert_eq!(
+            report.disposition,
+            DesktopProfileStartupActivationDisposition::Rejected
+        );
+        assert_eq!(report.model.active(), active_model().active());
+        assert_eq!(report.model.phase(), DesktopProfileActivationPhase::Idle);
+        assert_eq!(
+            executor
+                .calls
+                .iter()
+                .filter(|(kind, _, _)| {
+                    *kind == DesktopProfileActivationEffectKind::PrepareAuthority
+                })
+                .count(),
+            DesktopAuthority::ALL.len()
+        );
+        assert_eq!(
+            executor
+                .calls
+                .iter()
+                .filter(|(kind, _, _)| {
+                    *kind == DesktopProfileActivationEffectKind::ActivateAuthority
+                })
+                .count(),
+            failure_index + 1
+        );
+        assert_eq!(
+            executor
+                .calls
+                .iter()
+                .filter(|(kind, _, _)| {
+                    *kind == DesktopProfileActivationEffectKind::RollbackAuthority
+                })
+                .count(),
+            DesktopAuthority::ALL.len()
+        );
+    }
+}
+
+#[test]
+fn rollback_failure_returns_pending_model_and_exact_failed_effect() {
+    for failure in DesktopAuthority::ALL {
+        let mut executor = FakeExecutor {
+            prepare_failure: Some(DesktopAuthority::Policy),
+            rollback_failure: Some(failure),
+            ..FakeExecutor::default()
+        };
+        let error = run_desktop_profile_startup_activation(&active_model(), key(), &mut executor)
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind,
+            DesktopProfileStartupActivationErrorKind::Reducer(
+                DesktopProfileActivationError::RollbackIncomplete
+            )
+        );
+        assert_eq!(error.model.active(), active_model().active());
+        assert_eq!(
+            error.model.phase(),
+            DesktopProfileActivationPhase::RollingBack
+        );
+        assert_eq!(
+            error.effect,
+            Some(effect(
+                DesktopProfileActivationEffectKind::RollbackAuthority,
+                failure,
+            ))
+        );
+        assert!(error.model.rollback_pending().contains(&failure));
+        assert_eq!(error.model.rollback_pending().len(), 1);
+        assert_eq!(
+            executor
+                .calls
+                .iter()
+                .filter(|(kind, _, _)| {
+                    *kind == DesktopProfileActivationEffectKind::RollbackAuthority
+                })
+                .count(),
+            DesktopAuthority::ALL.len()
+        );
+    }
+}
+
+#[test]
+fn stale_generation_is_rejected_before_any_authority_call() {
+    let mut executor = FakeExecutor::default();
+    let error = run_desktop_profile_startup_activation(
+        &active_model(),
+        DesktopProfileActivationKey::new(ConfigGeneration::from_raw(6), ConfigDigest::new([9; 32])),
+        &mut executor,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.kind,
+        DesktopProfileStartupActivationErrorKind::Reducer(
+            DesktopProfileActivationError::InvalidCandidateIdentity
+        )
+    );
+    assert!(error.effect.is_none());
+    assert!(executor.calls.is_empty());
 }

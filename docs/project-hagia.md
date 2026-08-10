@@ -264,6 +264,15 @@ result back into the exact typed reducer message. Production handlers remain
 unpopulated, so transport and filesystem work are still absent from reduction
 and no partial activation path exists.
 
+The startup-only driver over that seam now completes the successful two-phase
+barrier or cancels the remaining phase on first failure and runs
+generation-wide rollback. Rollback continues past an individual recovery
+failure so every participant receives cleanup; the returned error retains the
+exact failed effect and pending-authority set. Tests enumerate every authority
+as the prepare, activation, and rollback failure point. This deterministic
+schedule refines the existing model-checked lifecycle without adding a live
+reload interleaving.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
