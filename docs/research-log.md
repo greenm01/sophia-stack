@@ -75,6 +75,14 @@ Completed evidence is archived in `research-log-archive.md`.
   its activation key is projected directly from that same generation/digest.
   The raw loader delegates to this path and discards only the bundle when a raw
   caller explicitly requests that view.
+- The next handler prerequisite reuses rather than extends the staged format.
+  `load_desktop_authority_fragment` applies Sophia's existing absolute,
+  regular, bounded, owner-safe file rules, rejects symlinks, parses exactly one
+  assigned authority section, validates its settings, and requires the file's
+  generation/digest to equal the coordinator key. Tests round-trip every
+  fragment emitted by `stage_desktop_profile` and reject authority crossing,
+  generation drift, digest drift, unsafe mode, and symlink substitution. Hagia
+  retains its independent Nim reader as cross-implementation evidence.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

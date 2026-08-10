@@ -102,6 +102,13 @@ of reparsing the source profile. The startup loader returns the raw
 provenance-bearing profile, exact activation key, and derived bundle together,
 so it does not validate and then immediately prepare the same values again.
 This is candidate selection only, not authority activation.
+An authority-local fragment loader now admits the staged format through the
+same absolute-path, regular-file, one-MiB, owner, and mode checks as other
+trusted configuration. It rejects symlinks, malformed or duplicate markers,
+multiple/crossed authority sections, duplicate settings, and any generation or
+digest that differs from the coordinator's exact activation key. The result is
+the existing provenance-bearing raw candidate DTO; loading still performs no
+activation.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

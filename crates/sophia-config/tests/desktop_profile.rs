@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sophia_config::{
     ConfigDigest, ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
     DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
-    DesktopPointerAccelProfile, DesktopProfileError, DesktopSessionShortcut,
-    DesktopShortcutBindingKind, DesktopShortcutModifiers, DesktopShortcutTarget,
-    discover_desktop_profile_source, load_desktop_profile, load_prepared_desktop_profile,
-    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
-    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
-    prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    DesktopPointerAccelProfile, DesktopProfileActivationKey, DesktopProfileError,
+    DesktopSessionShortcut, DesktopShortcutBindingKind, DesktopShortcutModifiers,
+    DesktopShortcutTarget, discover_desktop_profile_source, load_desktop_authority_fragment,
+    load_desktop_profile, load_prepared_desktop_profile, prepare_desktop_input_candidate,
+    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -552,6 +552,98 @@ fn stages_isolated_owner_only_authority_fragments() {
     }
     drop(fragments);
     assert!(fs::read_dir(&root).unwrap().next().is_none());
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn every_staged_fragment_round_trips_only_its_exact_authority_and_key() {
+    let root = temporary_directory("fragment-round-trip");
+    let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    let expected_key = DesktopProfileActivationKey::from(&profile);
+    let fragments = stage_desktop_profile(&profile, &root).unwrap();
+
+    for authority in DesktopAuthority::ALL {
+        let loaded =
+            load_desktop_authority_fragment(fragments.path(authority), authority, expected_key)
+                .unwrap();
+        let original = profile.candidates.get(&authority).unwrap();
+        assert_eq!(loaded.authority, authority);
+        assert_eq!(loaded.generation, profile.generation);
+        assert_eq!(loaded.digest, profile.digest);
+        assert_eq!(
+            loaded
+                .values
+                .iter()
+                .map(|value| (&value.key, &value.encoded))
+                .collect::<Vec<_>>(),
+            original
+                .values
+                .iter()
+                .map(|value| (&value.key, &value.encoded))
+                .collect::<Vec<_>>()
+        );
+    }
+    drop(fragments);
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn fragment_admission_rejects_cross_authority_and_identity_mismatch() {
+    let root = temporary_directory("fragment-identity");
+    let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    let fragments = stage_desktop_profile(&profile, &root).unwrap();
+    let policy = fragments.path(DesktopAuthority::Policy);
+
+    assert!(matches!(
+        load_desktop_authority_fragment(
+            policy,
+            DesktopAuthority::Session,
+            DesktopProfileActivationKey::from(&profile),
+        ),
+        Err(DesktopProfileError::Schema(message)) if message.contains("authority boundary")
+    ));
+    assert!(matches!(
+        load_desktop_authority_fragment(
+            policy,
+            DesktopAuthority::Policy,
+            DesktopProfileActivationKey::new(ConfigGeneration::from_raw(2), profile.digest),
+        ),
+        Err(DesktopProfileError::Schema(message)) if message.contains("activation key")
+    ));
+    assert!(matches!(
+        load_desktop_authority_fragment(
+            policy,
+            DesktopAuthority::Policy,
+            DesktopProfileActivationKey::new(profile.generation, ConfigDigest::new([0xff; 32])),
+        ),
+        Err(DesktopProfileError::Schema(message)) if message.contains("activation key")
+    ));
+    drop(fragments);
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn fragment_admission_reuses_owner_safe_file_constraints() {
+    let root = temporary_directory("fragment-file-safety");
+    let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    let fragments = stage_desktop_profile(&profile, &root).unwrap();
+    let key = DesktopProfileActivationKey::from(&profile);
+    let policy = fragments.path(DesktopAuthority::Policy);
+    fs::set_permissions(policy, fs::Permissions::from_mode(0o620)).unwrap();
+    assert!(matches!(
+        load_desktop_authority_fragment(policy, DesktopAuthority::Policy, key),
+        Err(DesktopProfileError::Io(ConfigIoError::UnsafeMode))
+    ));
+    fs::set_permissions(policy, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let link = root.join("policy-link.kdl");
+    symlink(policy, &link).unwrap();
+    assert!(matches!(
+        load_desktop_authority_fragment(&link, DesktopAuthority::Policy, key),
+        Err(DesktopProfileError::Io(ConfigIoError::NotRegularFile))
+    ));
+    fs::remove_file(link).unwrap();
+    drop(fragments);
     fs::remove_dir(root).unwrap();
 }
 

@@ -300,6 +300,14 @@ visibility. A prepared-profile aggregate now returns that bundle beside the raw
 provenance-bearing generation and exact activation key in one pass, removing
 the remaining load-then-reprepare duplication from live-session startup.
 
+Sophia now also mirrors Hagia's staged-candidate admission constraints at its
+authority boundary without sharing implementation code. One loader consumes
+the existing staged format into the canonical raw candidate DTO only when the
+owner-safe file, assigned authority, and exact coordinator generation/digest
+all match. This supplies a reusable handler input for local or process-backed
+authorities while preserving Hagia's independent policy-reader evidence and
+performing no activation.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR

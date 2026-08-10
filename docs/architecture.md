@@ -760,6 +760,14 @@ profile, activation key, and typed bundle in one load/prepare pass, while the
 existing raw-profile API remains a validated projection of that result. None of
 these preparation shapes treats validation or selection as activation.
 
+Each future authority handler can now load its staged fragment through one
+shared admission function. The function accepts an expected authority and
+activation key, reuses the trusted owner-safe bounded file reader, rejects
+symlinks and cross-authority sections, and reconstructs the existing raw
+candidate DTO only after schema, generation, digest, setting, and duplicate
+checks pass. Round-trip tests cover every authority fragment; negative tests
+cover authority isolation, both key components, unsafe modes, and symlinks.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

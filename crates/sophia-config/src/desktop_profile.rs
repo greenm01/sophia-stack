@@ -288,6 +288,128 @@ pub fn load_prepared_desktop_profile(
     })
 }
 
+pub fn load_desktop_authority_fragment(
+    path: &Path,
+    expected_authority: DesktopAuthority,
+    expected_key: crate::DesktopProfileActivationKey,
+) -> Result<DesktopAuthorityCandidate, DesktopProfileError> {
+    if !path.is_absolute() {
+        return Err(ConfigIoError::InvalidPath.into());
+    }
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| ConfigIoError::Metadata(error.to_string()))?;
+    if metadata.file_type().is_symlink() {
+        return Err(ConfigIoError::NotRegularFile.into());
+    }
+    let canonical =
+        fs::canonicalize(path).map_err(|error| ConfigIoError::Metadata(error.to_string()))?;
+    let bytes = read_config_file(&canonical)?;
+    let source = std::str::from_utf8(&bytes).map_err(|_| ConfigParseError::NotUtf8)?;
+    let document = KdlDocument::parse_v2(source)
+        .map_err(|error| ConfigParseError::Syntax(error.to_string()))?;
+    let mut schema_seen = false;
+    let mut generation = None;
+    let mut digest = None;
+    let mut authority_seen = false;
+    let mut keys = BTreeSet::new();
+    let mut values = Vec::new();
+    for (ordinal, node) in document.nodes().iter().enumerate() {
+        match node.name().value() {
+            "schema" => {
+                if schema_seen || integer_argument(node) != Some(1) || node.children().is_some() {
+                    return Err(fragment_schema("requires exactly one schema 1 declaration"));
+                }
+                schema_seen = true;
+            }
+            "profile-generation" => {
+                let raw = exact_integer_argument(node, "authority fragment generation")?;
+                let raw = u64::try_from(raw)
+                    .ok()
+                    .filter(|raw| *raw != 0)
+                    .ok_or_else(|| fragment_schema("generation must be nonzero u64"))?;
+                if generation
+                    .replace(ConfigGeneration::from_raw(raw))
+                    .is_some()
+                {
+                    return Err(fragment_schema("duplicate generation"));
+                }
+            }
+            "profile-digest" => {
+                let parsed = parse_fragment_digest(exact_string_argument(
+                    node,
+                    "authority fragment digest",
+                )?)?;
+                if digest.replace(parsed).is_some() {
+                    return Err(fragment_schema("duplicate digest"));
+                }
+            }
+            name => {
+                if authority_seen {
+                    return Err(fragment_schema("contains more than one authority section"));
+                }
+                let authority = DesktopAuthority::parse(name)?;
+                if authority != expected_authority {
+                    return Err(fragment_schema("crossed its assigned authority boundary"));
+                }
+                if !node.entries().is_empty() || node.ty().is_some() {
+                    return Err(fragment_schema("authority section has an ambiguous shape"));
+                }
+                let children = node
+                    .children()
+                    .ok_or_else(|| fragment_schema("authority section requires children"))?;
+                authority_seen = true;
+                for child in children.nodes() {
+                    validate_setting(authority, child)?;
+                    let key = setting_key(authority, child)?;
+                    if !keys.insert(key.clone()) {
+                        return Err(fragment_schema("contains a duplicate setting"));
+                    }
+                    values.push(DesktopProfileValue {
+                        key,
+                        encoded: child.to_string().trim().to_owned(),
+                        provenance: DesktopValueProvenance {
+                            path: canonical.clone(),
+                            ordinal: ordinal + 1,
+                        },
+                    });
+                }
+            }
+        }
+    }
+    let generation = generation.ok_or_else(|| fragment_schema("missing generation"))?;
+    let digest = digest.ok_or_else(|| fragment_schema("missing digest"))?;
+    if !schema_seen || !authority_seen {
+        return Err(fragment_schema("is incomplete"));
+    }
+    if generation != expected_key.generation() || digest != expected_key.digest() {
+        return Err(fragment_schema(
+            "identity does not match the activation key",
+        ));
+    }
+    Ok(DesktopAuthorityCandidate {
+        authority: expected_authority,
+        generation,
+        digest,
+        values,
+    })
+}
+
+fn fragment_schema(message: &str) -> DesktopProfileError {
+    DesktopProfileError::Schema(format!("authority fragment {message}"))
+}
+
+fn parse_fragment_digest(value: &str) -> Result<ConfigDigest, DesktopProfileError> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(fragment_schema("digest must be 64 hexadecimal characters"));
+    }
+    let mut bytes = [0; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| fragment_schema("digest must be hexadecimal"))?;
+    }
+    Ok(ConfigDigest::new(bytes))
+}
+
 pub fn prepare_desktop_profile_candidates(
     profile: &DesktopProfileGeneration,
 ) -> Result<PreparedDesktopProfileCandidates, DesktopProfileError> {
