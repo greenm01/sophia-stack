@@ -281,24 +281,127 @@ impl LiveWmSession {
         Ok(None)
     }
 
+    fn activate_public_launch(
+        config: &mut PersistentXtermSessionConfig,
+        prepared_launch: Option<PreparedPublicPolicyLaunch>,
+    ) -> Result<Option<PublicPolicyLaunch>, Box<dyn std::error::Error>> {
+        let Some(mut prepared) = prepared_launch else {
+            return Ok(None);
+        };
+        if !config.wm_profile_activation {
+            return Ok(Some(PublicPolicyLaunch::Prepared(prepared)));
+        }
+        let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+        let activation = prepared.activate_startup_until_policy(
+            &mut config.session_profile,
+            &mut config.input_profile,
+            &mut config.output_profile,
+            &config.desktop_profile_activation,
+            key,
+        )?;
+        if activation.disposition
+            != sophia_cli::desktop_profile_activation::DesktopProfileExternalActivationDisposition::AwaitingPolicy
+        {
+            config.desktop_profile_activation = activation.model;
+            return Err("desktop profile local startup activation was rejected".into());
+        }
+        let policy_effect = activation
+            .effect
+            .ok_or("desktop profile startup omitted the external policy effect")?;
+        let process = config
+            .wm_process
+            .clone()
+            .ok_or("desktop profile activation requires a public WM process")?;
+        let runtime = match prepared.start_runtime(config, &process, Some(key)) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                config.desktop_profile_activation = prepared.reject_policy_startup(
+                    &mut config.session_profile,
+                    &mut config.input_profile,
+                    &mut config.output_profile,
+                    &activation.model,
+                    policy_effect,
+                )?;
+                return Err(error);
+            }
+        };
+        let failure = match runtime.worker.event_timeout(Duration::from_secs(5)) {
+            Ok(PolicyTransportEvent::Negotiated) => None,
+            Ok(PolicyTransportEvent::Failed(error)) => Some(error),
+            Ok(_) => Some("policy worker emitted normal traffic before profile admission".to_owned()),
+            Err(RecvTimeoutError::Timeout) => Some("policy profile admission timed out".to_owned()),
+            Err(RecvTimeoutError::Disconnected) => {
+                Some("policy profile admission worker disconnected".to_owned())
+            }
+        };
+        if let Some(reason) = failure {
+            drop(runtime);
+            config.desktop_profile_activation = prepared.reject_policy_startup(
+                &mut config.session_profile,
+                &mut config.input_profile,
+                &mut config.output_profile,
+                &activation.model,
+                policy_effect,
+            )?;
+            return Err(reason.into());
+        }
+        let activated_policy_slot =
+            sophia_config::activate_desktop_profile_candidate_slot(
+                &prepared.policy_profile.slot,
+                key,
+            );
+        let Ok(activated_policy_slot) = activated_policy_slot else {
+            drop(runtime);
+            config.desktop_profile_activation = prepared.reject_policy_startup(
+                &mut config.session_profile,
+                &mut config.input_profile,
+                &mut config.output_profile,
+                &activation.model,
+                policy_effect,
+            )?;
+            return Err("desktop profile policy retention slot rejected activation".into());
+        };
+        prepared.policy_profile.slot = activated_policy_slot;
+        let settled =
+            sophia_cli::desktop_profile_activation::settle_desktop_profile_policy_activation(
+                &activation.model,
+                policy_effect,
+                true,
+            )?;
+        if !settled.effects.is_empty() {
+            return Err("desktop profile activation emitted effects after promotion".into());
+        }
+        config.desktop_profile_activation = settled.model;
+        Ok(Some(PublicPolicyLaunch::Started(
+            prepared.into_started(runtime, Some(key)),
+        )))
+    }
+
     fn from_config(
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
-        prepared_public_launch: Option<PreparedPublicPolicyLaunch>,
+        public_launch: Option<PublicPolicyLaunch>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(process) = config.wm_process.as_deref() else {
-            if prepared_public_launch.is_some() {
+            if public_launch.is_some() {
                 return Err("public WM preparation exists without a configured process".into());
             }
             return Ok(None);
         };
         if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            let prepared_public_launch = prepared_public_launch
+            let public_launch = public_launch
                 .ok_or("public WM launch requires prepared profile fragments")?;
-            return Self::from_public_config(config, outputs, process, prepared_public_launch)
-                .map(Some);
+            let started = match public_launch {
+                PublicPolicyLaunch::Prepared(prepared) => {
+                    prepared.start_runtime(config, process, None).map(|runtime| {
+                        prepared.into_started(runtime, None)
+                    })?
+                }
+                PublicPolicyLaunch::Started(started) => started,
+            };
+            return Self::from_started_public_config(config, outputs, started).map(Some);
         }
-        if prepared_public_launch.is_some() {
+        if public_launch.is_some() {
             return Err("legacy WM launch cannot consume public profile preparation".into());
         }
         let _ = std::fs::remove_file(&config.wm_socket_path);

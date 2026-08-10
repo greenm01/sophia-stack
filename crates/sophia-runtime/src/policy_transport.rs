@@ -192,7 +192,7 @@ impl PolicyWmSessionTransport {
                 PolicyTransferError::AlreadyConnected,
             ));
         }
-        let mut stream = self.endpoint.accept_expected()?;
+        let mut stream = self.endpoint.accept_expected_timeout(timeout)?;
         let peer = self
             .endpoint
             .active_peer()

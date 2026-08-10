@@ -356,15 +356,19 @@ when the production owners are connected before graphical launch. Public Hagia
 startup now makes that connection through a fixed-field dispatcher borrowing
 the named authority owners. It runs before display, seat, device, or process
 setup, retains the coordinator and participants at the exact prepared key, and
-rolls every owner back if any position rejects. Its activation handler is
-deliberately fail-closed; launch visibility, recovery, and watched reload remain
-separate later milestones.
+rolls every owner back if any position rejects. An explicit opt-in continues by
+activating the six local owners, starting Hagia on its owner-only endpoint, and
+waiting boundedly for the exact external prepare and activate acknowledgements.
+The final completion promotes the shared key before display, seat, KMS, or input
+setup. Failure terminates the child, rolls every owner back, and removes the
+staging directory. The installed default and watched reload remain separate
+later milestones.
 
 Protocol revision 3 now defines fixed-size, generated profile prepare,
 activate, and rollback records plus typed Rust and C codecs. The matching Hagia
-decoder is checked against the same golden corpus. Sophia deliberately does not
-advertise the `profile_activation` capability yet: schema availability does
-not claim that the external authority has prepared or activated a candidate.
+decoder is checked against the same golden corpus. Sophia advertises the
+`profile_activation` capability only for explicit pre-graphics activation;
+normal policy sessions retain the prior capability set.
 An authority-local pure transport reducer now correlates each command with its
 exact epoch, transaction, generation, digest, phase, and closed outcome. Stale
 completions are inert, rejected activation requires an explicit rollback, and
@@ -373,9 +377,9 @@ prove the capability is omitted even when a client requests it.
 The runtime transport now also has an explicit startup-only opt-in constructor
 and typed send/completion paths. A private Unix-socket test drives prepare,
 activate, and rollback through the pure reducer with exact correlation. The
-installed supervised-UID constructor remains non-opt-in, so this plumbing has
-no production effect until the pre-graphics owner is restructured around the
-global barrier.
+normal supervised-UID constructor remains non-opt-in. The profile-aware
+constructor is used only by the pre-graphics barrier and exact-key restart
+reattachment under a fresh connection epoch.
 The shared startup driver can now activate an already-prepared coordinator
 model without replaying preparation. Its canonical activation order settles
 the six Sophia-owned participants before the external policy authority, so an

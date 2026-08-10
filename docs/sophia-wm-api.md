@@ -110,8 +110,10 @@ completion carries the connection epoch and a nonzero transaction; rejection,
 timeout, disconnect, or rollback leaves the graphical startup gate closed.
 Prepare, activate, and rollback outcomes use a profile-specific closed enum and
 do not share the action/chrome configuration generation namespace. Sophia does
-not advertise the capability until the pre-graphics coordinator and Hagia
-participant are both wired and proven.
+not advertise the capability during normal policy startup. The explicit
+`--wm-profile-activation` path negotiates it before graphical resources are
+opened, and supervised restart reattaches the same generation and digest under
+a fresh connection epoch.
 
 ## Complete Scene Snapshot
 

@@ -29,6 +29,23 @@ impl PreparedAuthorityFragment {
 }
 
 impl PreparedPublicPolicyLaunch {
+    fn executor<'a>(
+        &'a mut self,
+        session_profile: &'a mut PreparedSessionProfile,
+        input_profile: &'a mut PreparedInputProfile,
+        output_profile: &'a mut PreparedOutputProfile,
+    ) -> PublicProfilePreparationExecutor<'a> {
+        PublicProfilePreparationExecutor {
+            policy: self.policy_profile.slot_mut(),
+            shell: self.shell_profile.slot_mut(),
+            shortcut: &mut self.shortcut_profile_slot,
+            session: session_profile.slot_mut(),
+            input: input_profile.slot_mut(),
+            output: output_profile.slot_mut(),
+            broker: self.broker_profile.slot_mut(),
+        }
+    }
+
     fn prepare_startup(
         &mut self,
         session_profile: &mut PreparedSessionProfile,
@@ -40,19 +57,73 @@ impl PreparedPublicPolicyLaunch {
         sophia_cli::desktop_profile_activation::DesktopProfileStartupPreparationReport,
         sophia_cli::desktop_profile_activation::DesktopProfileStartupActivationError,
     > {
-        let mut executor = PublicProfilePreparationExecutor {
-            policy: self.policy_profile.slot_mut(),
-            shell: self.shell_profile.slot_mut(),
-            shortcut: &mut self.shortcut_profile_slot,
-            session: session_profile.slot_mut(),
-            input: input_profile.slot_mut(),
-            output: output_profile.slot_mut(),
-            broker: self.broker_profile.slot_mut(),
-        };
+        let mut executor = self.executor(session_profile, input_profile, output_profile);
         sophia_cli::desktop_profile_activation::run_desktop_profile_startup_preparation(
             model,
             key,
             &mut executor,
+        )
+    }
+
+    fn activate_startup_until_policy(
+        &mut self,
+        session_profile: &mut PreparedSessionProfile,
+        input_profile: &mut PreparedInputProfile,
+        output_profile: &mut PreparedOutputProfile,
+        model: &sophia_config::DesktopProfileActivationModel,
+        key: sophia_config::DesktopProfileActivationKey,
+    ) -> Result<
+        sophia_cli::desktop_profile_activation::DesktopProfileExternalActivationReport,
+        sophia_cli::desktop_profile_activation::DesktopProfileStartupActivationError,
+    > {
+        let mut executor = self.executor(session_profile, input_profile, output_profile);
+        sophia_cli::desktop_profile_activation::run_desktop_profile_prepared_activation_until_policy(
+            model,
+            key,
+            &mut executor,
+        )
+    }
+
+    fn rollback_startup(
+        &mut self,
+        session_profile: &mut PreparedSessionProfile,
+        input_profile: &mut PreparedInputProfile,
+        output_profile: &mut PreparedOutputProfile,
+        model: sophia_config::DesktopProfileActivationModel,
+        effects: Vec<sophia_config::DesktopProfileActivationEffect>,
+    ) -> Result<
+        sophia_config::DesktopProfileActivationModel,
+        sophia_cli::desktop_profile_activation::DesktopProfileStartupActivationError,
+    > {
+        let mut executor = self.executor(session_profile, input_profile, output_profile);
+        sophia_cli::desktop_profile_activation::run_desktop_profile_rollback(
+            model,
+            effects,
+            &mut executor,
+        )
+    }
+
+    fn reject_policy_startup(
+        &mut self,
+        session_profile: &mut PreparedSessionProfile,
+        input_profile: &mut PreparedInputProfile,
+        output_profile: &mut PreparedOutputProfile,
+        model: &sophia_config::DesktopProfileActivationModel,
+        effect: sophia_config::DesktopProfileActivationEffect,
+    ) -> Result<
+        sophia_config::DesktopProfileActivationModel,
+        sophia_cli::desktop_profile_activation::DesktopProfileStartupActivationError,
+    > {
+        let rejected =
+            sophia_cli::desktop_profile_activation::settle_desktop_profile_policy_activation(
+                model, effect, false,
+            )?;
+        self.rollback_startup(
+            session_profile,
+            input_profile,
+            output_profile,
+            rejected.model,
+            rejected.effects,
         )
     }
 }

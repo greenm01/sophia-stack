@@ -79,7 +79,6 @@ impl PolicyTransportWorker {
         Self::spawn(transport, connection_epoch, None)
     }
 
-    #[cfg(test)]
     pub(super) fn new_profile_activated(
         transport: PolicyWmSessionTransport,
         connection_epoch: u64,
@@ -146,6 +145,13 @@ impl PolicyTransportWorker {
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(()),
         }
+    }
+
+    pub(super) fn event_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<PolicyTransportEvent, RecvTimeoutError> {
+        self.events.recv_timeout(timeout)
     }
 }
 

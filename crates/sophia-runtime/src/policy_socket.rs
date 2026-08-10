@@ -3,6 +3,7 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub const SOPHIA_WM_SOCKET_ENV: &str = "SOPHIA_WM_SOCKET";
 
@@ -23,6 +24,7 @@ pub enum PolicyRoleEndpointError {
     PeerAlreadyActive,
     WrongReleasedPeer,
     PeerNotAuthorized,
+    AcceptTimedOut,
 }
 
 impl core::fmt::Display for PolicyRoleEndpointError {
@@ -105,20 +107,64 @@ impl PolicyRoleEndpoint {
     }
 
     pub fn accept_expected(&mut self) -> Result<UnixStream, PolicyRoleEndpointError> {
-        if self.active_peer.is_some() {
-            return Err(PolicyRoleEndpointError::PeerAlreadyActive);
-        }
-        let expected_pid = self
-            .expected_pid
-            .ok_or(PolicyRoleEndpointError::PeerNotAuthorized)?;
-        let expected = PolicyPeerIdentity {
-            uid: self.expected_uid,
-            pid: expected_pid,
-        };
+        let expected = self.expected_peer()?;
         let (stream, _) = self
             .listener
             .accept()
             .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
+        self.admit_expected_stream(stream, expected)
+    }
+
+    pub fn accept_expected_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<UnixStream, PolicyRoleEndpointError> {
+        let expected = self.expected_peer()?;
+        self.listener
+            .set_nonblocking(true)
+            .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
+        let deadline = Instant::now() + timeout;
+        let accepted = loop {
+            match self.listener.accept() {
+                Ok((stream, _)) => break Ok(stream),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        break Err(PolicyRoleEndpointError::AcceptTimedOut);
+                    }
+                    std::thread::sleep(
+                        deadline
+                            .saturating_duration_since(now)
+                            .min(Duration::from_millis(2)),
+                    );
+                }
+                Err(error) => break Err(PolicyRoleEndpointError::Io(error.to_string())),
+            }
+        };
+        self.listener
+            .set_nonblocking(false)
+            .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
+        self.admit_expected_stream(accepted?, expected)
+    }
+
+    fn expected_peer(&self) -> Result<PolicyPeerIdentity, PolicyRoleEndpointError> {
+        if self.active_peer.is_some() {
+            return Err(PolicyRoleEndpointError::PeerAlreadyActive);
+        }
+        let pid = self
+            .expected_pid
+            .ok_or(PolicyRoleEndpointError::PeerNotAuthorized)?;
+        Ok(PolicyPeerIdentity {
+            uid: self.expected_uid,
+            pid,
+        })
+    }
+
+    fn admit_expected_stream(
+        &mut self,
+        stream: UnixStream,
+        expected: PolicyPeerIdentity,
+    ) -> Result<UnixStream, PolicyRoleEndpointError> {
         let credentials = rustix::net::sockopt::socket_peercred(&stream)
             .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
         let actual = PolicyPeerIdentity {

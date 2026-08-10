@@ -4,6 +4,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use sophia_runtime::{
     PolicyPeerIdentity, PolicyRoleEndpoint, PolicyRoleEndpointError, SOPHIA_WM_SOCKET_ENV,
@@ -103,6 +104,22 @@ fn endpoint_never_reuses_an_existing_directory() {
         Err(PolicyRoleEndpointError::PathAlreadyExists)
     ));
     fs::remove_dir(directory).unwrap();
+}
+
+#[test]
+fn expected_peer_accept_is_bounded_when_no_client_connects() {
+    let directory = unique_directory("accept-timeout");
+    let mut endpoint = PolicyRoleEndpoint::bind(&directory, current_peer()).unwrap();
+    let started = Instant::now();
+
+    assert_eq!(
+        endpoint
+            .accept_expected_timeout(Duration::from_millis(20))
+            .unwrap_err(),
+        PolicyRoleEndpointError::AcceptTimedOut
+    );
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(endpoint.active_peer(), None);
 }
 
 fn current_peer() -> PolicyPeerIdentity {

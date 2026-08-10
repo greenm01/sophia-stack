@@ -64,7 +64,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -209,6 +209,8 @@ pub(crate) fn run_persistent_xterm_session(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
     let prepared_public_launch = LiveWmSession::prepare_public_launch(&mut config)?;
+    let public_policy_launch =
+        LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;
     let terminal = if config.client.is_none() {
         Some(super::x_authority::resolve_external_probe_binary(
             "xterm",
@@ -286,7 +288,7 @@ pub(crate) fn run_persistent_xterm_session(
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
     let mut wm_session =
-        LiveWmSession::from_config(&config, &initial_outputs, prepared_public_launch)?;
+        LiveWmSession::from_config(&config, &initial_outputs, public_policy_launch)?;
     let policy_map_mode = LivePolicyMapMode::from_external_wm(wm_session.is_some());
     let output_topology = output_topology_from_engine_outputs(&initial_outputs)?;
 

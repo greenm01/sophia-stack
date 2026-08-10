@@ -169,6 +169,37 @@ fn live_x_session_profiles_are_explicit_and_fail_closed() {
 }
 
 #[test]
+fn profile_activation_is_explicit_and_requires_the_public_policy_interface() {
+    assert!(
+        !PersistentXtermSessionConfig::from_args(&[])
+            .unwrap()
+            .wm_profile_activation
+    );
+    let enabled = PersistentXtermSessionConfig::from_args(&[
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        "--wm-profile-activation".to_owned(),
+    ])
+    .unwrap();
+    assert!(enabled.wm_profile_activation);
+    assert!(
+        PersistentXtermSessionConfig::from_args(&["--wm-profile-activation".to_owned()])
+            .unwrap_err()
+            .to_string()
+            .contains("requires --wm-process and --wm-interface=sophia_wm_v1")
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--wm-profile-activation".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("--wm-interface=sophia_wm_v1 requires --wm-process")
+    );
+}
+
+#[test]
 fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -366,6 +397,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         std::path::Path::new("/run/user/1000/sophia/policy/endpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
+        false,
     );
     assert!(spec.environment.contains(&(
         "HAGIA_POLICY_CANDIDATE".into(),
@@ -375,6 +407,25 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         spec.environment
             .iter()
             .all(|(_, value)| !value.to_string_lossy().contains("session.profile.kdl"))
+    );
+    assert!(
+        spec.environment
+            .iter()
+            .all(|(name, _)| name != "HAGIA_POLICY_PROFILE_ACTIVATION")
+    );
+
+    let activated = public_policy_launch_spec(
+        &config,
+        "/usr/bin/hagia",
+        std::path::Path::new("/run/user/1000/sophia/policy/endpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
+        true,
+    );
+    assert!(
+        activated
+            .environment
+            .contains(&("HAGIA_POLICY_PROFILE_ACTIVATION".into(), "required".into()))
     );
 }
 

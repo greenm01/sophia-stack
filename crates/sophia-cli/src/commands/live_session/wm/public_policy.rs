@@ -48,11 +48,12 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
+    worker: Option<PolicyTransportWorker>,
     _profile_fragments: sophia_config::DesktopProfileFragments,
     _profile_slot: PreparedAuthorityFragment,
-    directory: PolicySessionDirectory,
+    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
     checkpoint_path: std::path::PathBuf,
-    worker: Option<PolicyTransportWorker>,
+    directory: PolicySessionDirectory,
     reducer: sophia_engine::PolicyProjectionReducer,
     connection_epoch: u64,
     next_connection_epoch: u64,
@@ -95,6 +96,85 @@ struct PreparedPublicPolicyLaunch {
     broker_profile: PreparedAuthorityFragment,
 }
 
+enum PublicPolicyLaunch {
+    Prepared(PreparedPublicPolicyLaunch),
+    Started(StartedPublicPolicyLaunch),
+}
+
+struct StartedPublicPolicyLaunch {
+    runtime: StartedPublicPolicyRuntime,
+    profile_fragments: sophia_config::DesktopProfileFragments,
+    policy_profile: PreparedAuthorityFragment,
+    shell_profile: PreparedAuthorityFragment,
+    shortcut_profile_slot:
+        sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
+    broker_profile: PreparedAuthorityFragment,
+    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+    directory: PolicySessionDirectory,
+}
+
+struct StartedPublicPolicyRuntime {
+    supervisor: ProcessSupervisor,
+    supervisor_state: sophia_runtime::SupervisorState,
+    restart_policy: RestartPolicy,
+    worker: PolicyTransportWorker,
+    socket_path: std::path::PathBuf,
+    checkpoint_path: std::path::PathBuf,
+}
+
+fn policy_profile_identity(
+    connection_epoch: u64,
+    key: sophia_config::DesktopProfileActivationKey,
+) -> Result<sophia_protocol::WmV1ProfileIdentity, Box<dyn std::error::Error>> {
+    sophia_protocol::WmV1ProfileIdentity::new(
+        connection_epoch,
+        key.generation().raw(),
+        key.digest().bytes(),
+    )
+    .map_err(|error| format!("desktop profile identity is invalid: {error:?}").into())
+}
+
+fn bind_public_policy_transport(
+    directory: &PolicySessionDirectory,
+    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+) -> Result<sophia_runtime::PolicyWmSessionTransport, Box<dyn std::error::Error>> {
+    let expected_uid = rustix::process::geteuid().as_raw();
+    if profile_key.is_some() {
+        return Ok(
+            sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid_profile_activation(
+                directory.endpoint_path(),
+                expected_uid,
+            )?,
+        );
+    }
+    Ok(
+        sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+            directory.endpoint_path(),
+            expected_uid,
+        )?,
+    )
+}
+
+fn start_public_policy_worker(
+    transport: sophia_runtime::PolicyWmSessionTransport,
+    connection_epoch: u64,
+    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+) -> Result<PolicyTransportWorker, Box<dyn std::error::Error>> {
+    match profile_key {
+        Some(key) => Ok(PolicyTransportWorker::new_profile_activated(
+            transport,
+            connection_epoch,
+            policy_profile_identity(connection_epoch, key)?,
+            TransactionId::from_raw(1),
+            TransactionId::from_raw(2),
+        )?),
+        None => Ok(PolicyTransportWorker::new(
+            transport,
+            connection_epoch,
+        )?),
+    }
+}
+
 impl PreparedPublicPolicyLaunch {
     fn new(config: &PersistentXtermSessionConfig) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = PolicySessionDirectory::create(
@@ -133,6 +213,79 @@ impl PreparedPublicPolicyLaunch {
             shortcut_profile_slot,
             broker_profile,
         })
+    }
+
+    fn start_runtime(
+        &self,
+        config: &PersistentXtermSessionConfig,
+        process: &str,
+        profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+    ) -> Result<StartedPublicPolicyRuntime, Box<dyn std::error::Error>> {
+        let mut transport = bind_public_policy_transport(&self.directory, profile_key)?;
+        let socket_path = transport.socket_path().to_path_buf();
+        let checkpoint_path = self.directory.checkpoint_path();
+        let spec = public_policy_launch_spec(
+            config,
+            process,
+            &socket_path,
+            &checkpoint_path,
+            self.profile_fragments
+                .path(sophia_config::DesktopAuthority::Policy),
+            profile_key.is_some(),
+        );
+        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
+        let restart_policy = RestartPolicy::default();
+        let mut supervisor_state =
+            sophia_runtime::SupervisorState::new(SupervisedProcessKind::WindowManager);
+        let (state, command) = update_supervisor(
+            supervisor_state,
+            SupervisorEvent::StartRequested,
+            restart_policy,
+        );
+        supervisor_state = state;
+        let started = supervisor
+            .apply(command)?
+            .ok_or("public WM supervisor did not start Hagia")?;
+        let child_pid = supervisor
+            .child_id()
+            .ok_or("public WM supervisor did not retain Hagia's PID")?;
+        transport.authorize_supervised_pid(child_pid)?;
+        let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
+        supervisor_state = state;
+        let worker = start_public_policy_worker(transport, 1, profile_key)?;
+        Ok(StartedPublicPolicyRuntime {
+            supervisor,
+            supervisor_state,
+            restart_policy,
+            worker,
+            socket_path,
+            checkpoint_path,
+        })
+    }
+
+    fn into_started(
+        self,
+        runtime: StartedPublicPolicyRuntime,
+        profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+    ) -> StartedPublicPolicyLaunch {
+        let Self {
+            profile_fragments,
+            directory,
+            policy_profile,
+            shell_profile,
+            shortcut_profile_slot,
+            broker_profile,
+        } = self;
+        StartedPublicPolicyLaunch {
+            runtime,
+            profile_fragments,
+            policy_profile,
+            shell_profile,
+            shortcut_profile_slot,
+            broker_profile,
+            profile_key,
+            directory,
+        }
     }
 }
 
@@ -591,64 +744,48 @@ fn public_policy_launch_spec(
     socket_path: &std::path::Path,
     checkpoint_path: &std::path::Path,
     candidate_path: &std::path::Path,
+    require_profile_activation: bool,
 ) -> ProcessLaunchSpec {
+    let spec = ProcessLaunchSpec::new(process)
+        .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
+        .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
+        .env("HAGIA_POLICY_CANDIDATE", candidate_path)
+        .process_group();
+    let spec = if require_profile_activation {
+        spec.env("HAGIA_POLICY_PROFILE_ACTIVATION", "required")
+    } else {
+        spec
+    };
     config.wm_process_args.iter().fold(
-        ProcessLaunchSpec::new(process)
-            .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
-            .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
-            .env("HAGIA_POLICY_CANDIDATE", candidate_path)
-            .process_group(),
+        spec,
         |spec, argument| spec.arg(argument),
     )
 }
 
 impl LiveWmSession {
-    fn from_public_config(
+    fn from_started_public_config(
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
-        process: &str,
-        prepared_launch: PreparedPublicPolicyLaunch,
+        started_launch: StartedPublicPolicyLaunch,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let PreparedPublicPolicyLaunch {
+        let StartedPublicPolicyLaunch {
             profile_fragments,
             directory,
             policy_profile,
             shell_profile,
             shortcut_profile_slot,
             broker_profile,
-        } = prepared_launch;
-        let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
-            directory.endpoint_path(),
-            rustix::process::geteuid().as_raw(),
-        )?;
-        let socket_path = transport.socket_path().to_path_buf();
-        let checkpoint_path = directory.checkpoint_path();
-        let spec = public_policy_launch_spec(
-            config,
-            process,
-            &socket_path,
-            &checkpoint_path,
-            profile_fragments.path(sophia_config::DesktopAuthority::Policy),
-        );
-        let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
-        let restart_policy = RestartPolicy::default();
-        let mut supervisor_state =
-            sophia_runtime::SupervisorState::new(SupervisedProcessKind::WindowManager);
-        let (state, command) = update_supervisor(
-            supervisor_state,
-            SupervisorEvent::StartRequested,
-            restart_policy,
-        );
-        supervisor_state = state;
-        let started = supervisor
-            .apply(command)?
-            .ok_or("public WM supervisor did not start Hagia")?;
-        let child_pid = supervisor
-            .child_id()
-            .ok_or("public WM supervisor did not retain Hagia's PID")?;
-        transport.authorize_supervised_pid(child_pid)?;
-        let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
-        supervisor_state = state;
+            runtime:
+                StartedPublicPolicyRuntime {
+                    supervisor,
+                    supervisor_state,
+                    restart_policy,
+                    worker,
+                    socket_path,
+                    checkpoint_path,
+                },
+            profile_key,
+        } = started_launch;
 
         let (session_operations, operation_actions) = public_session_operations(config);
         let active = outputs
@@ -658,7 +795,6 @@ impl LiveWmSession {
         let scene = LivePublicPolicyState::initial_scene(outputs, active, session_operations.clone());
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene)?;
         reducer.connect(1)?;
-        let worker = PolicyTransportWorker::new(transport, 1)?;
         let work_areas = wm_output_bounds(outputs).into_iter().collect();
         let output_generations = outputs
             .iter()
@@ -671,13 +807,14 @@ impl LiveWmSession {
         let mut public = LivePublicPolicyState {
             _profile_fragments: profile_fragments,
             _profile_slot: policy_profile,
+            profile_key,
             directory,
             checkpoint_path,
             worker: Some(worker),
             reducer,
             connection_epoch: 1,
             next_connection_epoch: 2,
-            next_transaction: 1,
+            next_transaction: if profile_key.is_some() { 3 } else { 1 },
             configured: false,
             negotiated: false,
             cycle_submitted: false,
@@ -1069,10 +1206,7 @@ impl LiveWmSession {
             .next_connection_epoch
             .checked_add(1)
             .ok_or("public WM connection epoch exhausted")?;
-        let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
-            public.directory.endpoint_path(),
-            rustix::process::geteuid().as_raw(),
-        )?;
+        let mut transport = bind_public_policy_transport(&public.directory, public.profile_key)?;
         let (state, command) = update_supervisor(
             self.supervisor_state.clone(),
             SupervisorEvent::ProcessExited,
@@ -1102,7 +1236,11 @@ impl LiveWmSession {
         let (state, _) = update_supervisor(self.supervisor_state.clone(), started, self.restart_policy);
         self.supervisor_state = state;
         public.reducer.connect(next_epoch)?;
-        public.worker = Some(PolicyTransportWorker::new(transport, next_epoch)?);
+        public.worker = Some(start_public_policy_worker(
+            transport,
+            next_epoch,
+            public.profile_key,
+        )?);
         public.connection_epoch = next_epoch;
         public.configured = false;
         public.negotiated = false;

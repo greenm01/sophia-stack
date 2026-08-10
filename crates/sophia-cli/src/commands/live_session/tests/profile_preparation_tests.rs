@@ -264,3 +264,101 @@ fn public_profile_prepare_failure_rolls_every_owner_back_without_activation() {
         }
     }
 }
+
+#[test]
+fn pregraphics_policy_launch_failure_rolls_back_before_returning() {
+    let mut config = public_profile_test_config("sophia-profile-launch-failure-test");
+    config.wm_profile_activation = true;
+    let directory_path = config.wm_socket_path.with_extension("policy");
+    let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
+    let started = Instant::now();
+
+    let error = match LiveWmSession::activate_public_launch(&mut config, prepared) {
+        Ok(_) => panic!("nonconnecting policy process unexpectedly activated"),
+        Err(error) => error.to_string(),
+    };
+
+    assert!(
+        error.contains("AcceptTimedOut"),
+        "unexpected error: {error}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(8));
+    assert_eq!(
+        config.desktop_profile_activation.phase(),
+        sophia_config::DesktopProfileActivationPhase::Idle
+    );
+    assert_eq!(config.desktop_profile_activation.active(), None);
+    for participant in [
+        config.session_profile.slot().participant(),
+        config.input_profile.slot().participant(),
+        config.output_profile.slot().participant(),
+    ] {
+        assert_eq!(
+            participant.phase(),
+            sophia_config::DesktopProfileParticipantPhase::Idle
+        );
+        assert_eq!(participant.active(), None);
+        assert_eq!(participant.candidate(), None);
+    }
+    assert!(!directory_path.exists());
+}
+
+#[test]
+fn hagia_pregraphics_profile_admission_activates_every_owner() {
+    let Some(hagia_bin) = std::env::var_os("SOPHIA_HAGIA_BIN") else {
+        return;
+    };
+    let mut config = public_profile_test_config("sophia-hagia-profile-admission-test");
+    config.wm_process = Some(hagia_bin.to_string_lossy().into_owned());
+    config.wm_profile_activation = true;
+    let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+    let directory_path = config.wm_socket_path.with_extension("policy");
+
+    let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
+    let launch = LiveWmSession::activate_public_launch(&mut config, prepared)
+        .unwrap()
+        .unwrap();
+    let PublicPolicyLaunch::Started(started) = &launch else {
+        panic!("profile activation did not retain the started Hagia runtime");
+    };
+
+    assert_eq!(started.profile_key, Some(key));
+    assert_eq!(
+        config.desktop_profile_activation.phase(),
+        sophia_config::DesktopProfileActivationPhase::Idle
+    );
+    assert_eq!(config.desktop_profile_activation.active(), Some(key));
+    for participant in [
+        started.policy_profile.slot.participant(),
+        started.shell_profile.slot.participant(),
+        started.shortcut_profile_slot.participant(),
+        config.session_profile.slot().participant(),
+        config.input_profile.slot().participant(),
+        config.output_profile.slot().participant(),
+        started.broker_profile.slot.participant(),
+    ] {
+        assert_eq!(
+            participant.phase(),
+            sophia_config::DesktopProfileParticipantPhase::Activated
+        );
+        assert_eq!(participant.active(), Some(key));
+        assert_eq!(participant.candidate(), Some(key));
+    }
+
+    drop(launch);
+    assert!(!directory_path.exists());
+}
+
+#[test]
+fn profile_restart_reattaches_the_exact_key_under_a_fresh_epoch() {
+    let config = public_profile_test_config("sophia-profile-restart-identity-test");
+    let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+
+    let initial = policy_profile_identity(1, key).unwrap();
+    let restarted = policy_profile_identity(2, key).unwrap();
+
+    assert_eq!(initial.connection_epoch, 1);
+    assert_eq!(restarted.connection_epoch, 2);
+    assert_eq!(restarted.profile_generation, initial.profile_generation);
+    assert_eq!(restarted.profile_digest, initial.profile_digest);
+}
