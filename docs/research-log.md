@@ -10373,5 +10373,11 @@ acknowledgement ordering.
   retired as a stale target, like `ClientGone`. Other command kinds still
   reject `UnknownSurface` as an error, so configure and focus failures cannot
   be hidden. Focused queue tests cover both sides of that distinction, and the
-  complete `sophia-cli` suite passes. A corrected physical run remains the
-  acceptance proof.
+  complete `sophia-cli` suite passes.
+- The corrected installed run on Sophia `09337bb2` passed the bounded physical
+  policy gate and was archived as promotion record `0003`. The trace commits
+  fullscreen and layout-cycle actions before the supervised restart, loads and
+  reconciles the nonempty checkpoint in epoch 2, then commits fullscreen,
+  layout-cycle, focus, minimize/restore, and output actions afterward. Exact
+  text and pixel evidence passed, all native ownership drained, and all 20
+  session controls completed without rejection, timeout, or cleanup debt.
