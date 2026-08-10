@@ -3,7 +3,7 @@
 
 (define-fun wm_v1_frame_version () Int 1)
 (define-fun wm_v1_interface_major () Int 1)
-(define-fun wm_v1_interface_revision () Int 1)
+(define-fun wm_v1_interface_revision () Int 2)
 (define-fun wm_v1_max_outputs () Int 16)
 (define-fun wm_v1_max_surfaces () Int 1024)
 (define-fun wm_v1_max_bindings () Int 256)
@@ -14,8 +14,8 @@
 (define-fun snapshot_surface_record_width () Int 80)
 (define-fun snapshot_surface_record_max () Int 1024)
 
-(define-fun snapshot_binding_record_width () Int 20)
-(define-fun snapshot_binding_record_max () Int 256)
+(define-fun snapshot_action_record_width () Int 140)
+(define-fun snapshot_action_record_max () Int 256)
 
 (define-fun snapshot_session_operation_record_width () Int 12)
 (define-fun snapshot_session_operation_record_max () Int 256)
@@ -60,7 +60,7 @@
 (define-fun snapshot_begin_field_chunk_count_width () Int 2)
 (define-fun snapshot_begin_field_output_count_width () Int 2)
 (define-fun snapshot_begin_field_surface_count_width () Int 4)
-(define-fun snapshot_begin_field_binding_count_width () Int 2)
+(define-fun snapshot_begin_field_action_count_width () Int 2)
 (define-fun snapshot_begin_field_session_operation_count_width () Int 2)
 
 (define-fun snapshot_chunk_fixed_payload_bytes () Int 16)
@@ -147,19 +147,19 @@
 (define-fun projection_outcome_field_reserved_width () Int 2)
 
 (define-fun policy_configuration_fixed_payload_bytes () Int 40)
-(define-fun policy_configuration_variable_payload_max () Int 5120)
-(define-fun policy_configuration_max_payload_bytes () Int 5160)
+(define-fun policy_configuration_variable_payload_max () Int 35840)
+(define-fun policy_configuration_max_payload_bytes () Int 35880)
 (define-fun policy_configuration_field_connection_epoch_width () Int 8)
 (define-fun policy_configuration_field_configuration_generation_width () Int 8)
-(define-fun policy_configuration_field_binding_count_width () Int 2)
+(define-fun policy_configuration_field_action_count_width () Int 2)
 (define-fun policy_configuration_field_style_bits_width () Int 2)
 (define-fun policy_configuration_field_focus_ring_width_width () Int 4)
 (define-fun policy_configuration_field_focus_ring_color_width () Int 4)
 (define-fun policy_configuration_field_frame_width_width () Int 4)
 (define-fun policy_configuration_field_frame_focused_color_width () Int 4)
 (define-fun policy_configuration_field_frame_unfocused_color_width () Int 4)
-(define-fun policy_configuration_field_bindings_width () Int 0)
-(define-fun policy_configuration_field_bindings_max () Int 5120)
+(define-fun policy_configuration_field_actions_width () Int 0)
+(define-fun policy_configuration_field_actions_max () Int 35840)
 
 (define-fun policy_configuration_outcome_fixed_payload_bytes () Int 20)
 (define-fun policy_configuration_outcome_variable_payload_max () Int 0)

@@ -1,21 +1,20 @@
 use core::mem::size_of;
 
 use crate::{
-    LayoutNodeCapabilities, OutputId, PolicyBindingRegistration, PolicyConfiguration,
+    LayoutNodeCapabilities, OutputId, PolicyActionRegistration, PolicyConfiguration,
     PolicyDirtyRequest, PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection,
     PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionIndicator,
     PolicyProjectionOutcome, PolicyProjectionOutputStatus, PolicyProjectionProposal,
     PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
     PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
     PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmModifierMask,
-    WmRgb8,
+    TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmRgb8,
 };
 
 use super::{
     IpcCodecError, PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
     PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
-    SNAPSHOT_BINDING_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
+    SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
     SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
     SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
     SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
@@ -23,15 +22,15 @@ use super::{
     WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionIndicatorRecord, WmV1ProjectionOutcome,
     WmV1ProjectionOutputRecord, WmV1ProjectionOutputStatusRecord, WmV1ProjectionPlacementRecord,
     WmV1ProjectionRequest, WmV1SessionOperationOutcome, WmV1SessionOperationRequest,
-    WmV1SnapshotBegin, WmV1SnapshotBindingRecord, WmV1SnapshotChunk, WmV1SnapshotEnd,
+    WmV1SnapshotActionRecord, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
     WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord, WmV1SnapshotSurfaceRecord,
     decode_wm_v1_projection_indicator_records, decode_wm_v1_projection_output_records,
     decode_wm_v1_projection_output_status_records, decode_wm_v1_projection_placement_records,
-    decode_wm_v1_snapshot_binding_records, decode_wm_v1_snapshot_output_records,
+    decode_wm_v1_snapshot_action_records, decode_wm_v1_snapshot_output_records,
     decode_wm_v1_snapshot_session_operation_records, decode_wm_v1_snapshot_surface_records,
     encode_wm_v1_projection_indicator_records, encode_wm_v1_projection_output_records,
     encode_wm_v1_projection_output_status_records, encode_wm_v1_projection_placement_records,
-    encode_wm_v1_snapshot_binding_records, encode_wm_v1_snapshot_output_records,
+    encode_wm_v1_snapshot_action_records, encode_wm_v1_snapshot_output_records,
     encode_wm_v1_snapshot_session_operation_records, encode_wm_v1_snapshot_surface_records,
 };
 
@@ -65,7 +64,7 @@ pub struct WmV1SnapshotTransfer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1DecodedSnapshot {
     pub scene: PolicySceneSnapshot,
-    pub bindings: Vec<PolicyBindingRegistration>,
+    pub actions: Vec<PolicyActionRegistration>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -356,42 +355,45 @@ pub fn encode_wm_v1_policy_configuration(
     if configuration.connection_epoch == 0 || configuration.generation == 0 {
         return Err(invalid("policy_configuration_identity", 0));
     }
-    if configuration.bindings.len() > crate::POLICY_MAX_BINDINGS {
+    if configuration.actions.len() > crate::POLICY_MAX_BINDINGS {
         return Err(IpcCodecError::CountTooLarge {
-            count: configuration.bindings.len(),
+            count: configuration.actions.len(),
             max: crate::POLICY_MAX_BINDINGS,
         });
     }
     validate_policy_configuration(configuration)?;
     let records = configuration
-        .bindings
+        .actions
         .iter()
-        .map(|binding| WmV1SnapshotBindingRecord {
-            action: binding.action.raw(),
-            keycode: binding.keycode,
-            modifier_bits: binding.modifiers.bits,
-            session_operation_slot: binding.session_operation_slot.unwrap_or(0),
+        .map(|action| {
+            let (name_len, name) = encode_action_name(&action.name)?;
+            Ok(WmV1SnapshotActionRecord {
+                action: action.action.raw(),
+                session_operation_slot: action.session_operation_slot.unwrap_or(0),
+                name_len,
+                name,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
     let chrome = configuration.chrome;
     Ok(WmV1PolicyConfiguration {
         connection_epoch: configuration.connection_epoch,
         configuration_generation: configuration.generation,
-        binding_count: records.len() as u16,
+        action_count: records.len() as u16,
         style_bits: u16::from(chrome.focus_ring.enabled) | u16::from(chrome.frame.enabled) << 1,
         focus_ring_width: chrome.focus_ring.width,
         focus_ring_color: encode_rgb(chrome.focus_ring.color),
         frame_width: chrome.frame.width,
         frame_focused_color: encode_rgb(chrome.frame.focused_color),
         frame_unfocused_color: encode_rgb(chrome.frame.unfocused_color),
-        bindings: encode_wm_v1_snapshot_binding_records(&records)?,
+        actions: encode_wm_v1_snapshot_action_records(&records)?,
     })
 }
 
 pub fn decode_wm_v1_policy_configuration(
     configuration: &WmV1PolicyConfiguration,
 ) -> Result<PolicyConfiguration, IpcCodecError> {
-    let count = usize::from(configuration.binding_count);
+    let count = usize::from(configuration.action_count);
     if configuration.connection_epoch == 0
         || configuration.configuration_generation == 0
         || count > crate::POLICY_MAX_BINDINGS
@@ -399,23 +401,22 @@ pub fn decode_wm_v1_policy_configuration(
     {
         return Err(invalid("policy_configuration", 0));
     }
-    let records = decode_wm_v1_snapshot_binding_records(&configuration.bindings, count as u32)?;
+    let records = decode_wm_v1_snapshot_action_records(&configuration.actions, count as u32)?;
     require_count(records.len(), count)?;
     let configuration = PolicyConfiguration {
         connection_epoch: configuration.connection_epoch,
         generation: configuration.configuration_generation,
-        bindings: records
+        actions: records
             .into_iter()
-            .map(|record| PolicyBindingRegistration {
-                action: WmActionId::from_raw(record.action),
-                keycode: record.keycode,
-                modifiers: WmModifierMask {
-                    bits: record.modifier_bits,
-                },
-                session_operation_slot: (record.session_operation_slot != 0)
-                    .then_some(record.session_operation_slot),
+            .map(|record| {
+                Ok(PolicyActionRegistration {
+                    action: WmActionId::from_raw(record.action),
+                    name: decode_action_name(record.name_len, &record.name)?,
+                    session_operation_slot: (record.session_operation_slot != 0)
+                        .then_some(record.session_operation_slot),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
         chrome: WmChromePolicy {
             focus_ring: WmFocusRingStyle {
                 enabled: configuration.style_bits & 1 != 0,
@@ -454,23 +455,47 @@ fn validate_policy_configuration(configuration: &PolicyConfiguration) -> Result<
         return Err(invalid("policy_configuration_chrome", 0));
     }
 
-    let mut actions = std::collections::BTreeSet::new();
-    let mut chords = std::collections::BTreeSet::new();
-    for binding in &configuration.bindings {
-        if !binding.action.is_valid()
-            || binding.keycode == 0
-            || binding.keycode > 0x2ff
-            || binding.modifiers.bits & !WmModifierMask::SUPPORTED != 0
-            || (binding.keycode == 14
-                && binding.modifiers.bits & (WmModifierMask::CONTROL | WmModifierMask::ALT)
-                    == WmModifierMask::CONTROL | WmModifierMask::ALT)
-            || !actions.insert(binding.action)
-            || !chords.insert((binding.keycode, binding.modifiers.bits))
+    let mut action_ids = std::collections::BTreeSet::new();
+    let mut action_names = std::collections::BTreeSet::new();
+    for action in &configuration.actions {
+        if !action.action.is_valid()
+            || encode_action_name(&action.name).is_err()
+            || !action_ids.insert(action.action)
+            || !action_names.insert(action.name.as_str())
         {
-            return Err(invalid("policy_configuration_binding", 0));
+            return Err(invalid("policy_configuration_action", 0));
         }
     }
     Ok(())
+}
+
+fn encode_action_name(name: &str) -> Result<(u16, [u8; 128]), IpcCodecError> {
+    if name.is_empty()
+        || name.len() > crate::POLICY_ACTION_NAME_MAX_BYTES
+        || name.trim() != name
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b' ' | b'.'))
+    {
+        return Err(invalid("policy_action_name", 0));
+    }
+    let mut encoded = [0; 128];
+    encoded[..name.len()].copy_from_slice(name.as_bytes());
+    Ok((name.len() as u16, encoded))
+}
+
+fn decode_action_name(length: u16, encoded: &[u8; 128]) -> Result<String, IpcCodecError> {
+    let length = usize::from(length);
+    if length == 0
+        || length > crate::POLICY_ACTION_NAME_MAX_BYTES
+        || encoded[length..].iter().any(|byte| *byte != 0)
+    {
+        return Err(invalid("policy_action_name", length as u32));
+    }
+    let name = core::str::from_utf8(&encoded[..length])
+        .map_err(|_| invalid("policy_action_name", length as u32))?;
+    encode_action_name(name)?;
+    Ok(name.to_owned())
 }
 
 pub fn encode_wm_v1_policy_dirty(
@@ -571,7 +596,7 @@ pub fn encode_wm_v1_policy_snapshot(
     transaction: TransactionId,
     connection_epoch: u64,
     scene: &PolicySceneSnapshot,
-    bindings: &[PolicyBindingRegistration],
+    actions: &[PolicyActionRegistration],
 ) -> Result<WmV1SnapshotTransfer, IpcCodecError> {
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidTransaction(0));
@@ -613,15 +638,18 @@ pub fn encode_wm_v1_policy_snapshot(
         .iter()
         .map(encode_surface_record)
         .collect::<Vec<_>>();
-    let bindings = bindings
+    let actions = actions
         .iter()
-        .map(|binding| WmV1SnapshotBindingRecord {
-            action: binding.action.raw(),
-            keycode: binding.keycode,
-            modifier_bits: binding.modifiers.bits,
-            session_operation_slot: binding.session_operation_slot.unwrap_or(0),
+        .map(|action| {
+            let (name_len, name) = encode_action_name(&action.name)?;
+            Ok(WmV1SnapshotActionRecord {
+                action: action.action.raw(),
+                session_operation_slot: action.session_operation_slot.unwrap_or(0),
+                name_len,
+                name,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
     let session_operations = scene
         .session_operations
         .iter()
@@ -650,9 +678,9 @@ pub fn encode_wm_v1_policy_snapshot(
     push_snapshot_chunk(
         &mut chunks,
         connection_epoch,
-        SNAPSHOT_BINDING_RECORD_KIND,
-        bindings.len(),
-        encode_wm_v1_snapshot_binding_records(&bindings)?,
+        SNAPSHOT_ACTION_RECORD_KIND,
+        actions.len(),
+        encode_wm_v1_snapshot_action_records(&actions)?,
     )?;
     push_snapshot_chunk(
         &mut chunks,
@@ -675,7 +703,7 @@ pub fn encode_wm_v1_policy_snapshot(
             max: u16::MAX as usize,
         })?,
         surface_count: surfaces.len() as u32,
-        binding_count: bindings.len() as u16,
+        action_count: actions.len() as u16,
         session_operation_count: session_operations.len() as u16,
     };
     let end = WmV1SnapshotEnd {
@@ -707,7 +735,7 @@ pub fn decode_wm_v1_policy_snapshot(
     }
     let mut outputs = Vec::new();
     let mut surfaces = Vec::new();
-    let mut bindings = Vec::new();
+    let mut actions = Vec::new();
     let mut session_operations = Vec::new();
     for (ordinal, chunk) in transfer.chunks.iter().enumerate() {
         if chunk.connection_epoch != transfer.begin.connection_epoch
@@ -724,7 +752,7 @@ pub fn decode_wm_v1_policy_snapshot(
                 &chunk.data,
                 chunk.item_count,
             )?),
-            SNAPSHOT_BINDING_RECORD_KIND => bindings.extend(decode_wm_v1_snapshot_binding_records(
+            SNAPSHOT_ACTION_RECORD_KIND => actions.extend(decode_wm_v1_snapshot_action_records(
                 &chunk.data,
                 chunk.item_count,
             )?),
@@ -736,7 +764,7 @@ pub fn decode_wm_v1_policy_snapshot(
     }
     require_count(outputs.len(), transfer.begin.output_count as usize)?;
     require_count(surfaces.len(), transfer.begin.surface_count as usize)?;
-    require_count(bindings.len(), transfer.begin.binding_count as usize)?;
+    require_count(actions.len(), transfer.begin.action_count as usize)?;
     require_count(
         session_operations.len(),
         transfer.begin.session_operation_count as usize,
@@ -794,18 +822,17 @@ pub fn decode_wm_v1_policy_snapshot(
                 })
                 .collect::<Result<Vec<_>, IpcCodecError>>()?,
         },
-        bindings: bindings
+        actions: actions
             .into_iter()
-            .map(|record| PolicyBindingRegistration {
-                action: WmActionId::from_raw(record.action),
-                keycode: record.keycode,
-                modifiers: WmModifierMask {
-                    bits: record.modifier_bits,
-                },
-                session_operation_slot: (record.session_operation_slot != 0)
-                    .then_some(record.session_operation_slot),
+            .map(|record| {
+                Ok(PolicyActionRegistration {
+                    action: WmActionId::from_raw(record.action),
+                    name: decode_action_name(record.name_len, &record.name)?,
+                    session_operation_slot: (record.session_operation_slot != 0)
+                        .then_some(record.session_operation_slot),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
     })
 }
 

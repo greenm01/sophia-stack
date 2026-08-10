@@ -223,7 +223,7 @@ process. Implement the public Sophia wire independently in Nim. During early
 Sophia protocol development, keep the bootstrap client narrow: complete
 snapshots, output projections, registered actions, placement, sizing, focus,
 removal, and restart. That profile proves the boundary but does not define the
-revision-1 feature ceiling. Revision 1 remains experimental until the retained
+revision-2 feature ceiling. Revision 2 remains experimental until the retained
 Triad behavior is ported across Hagia policy, Hagia Shell, Sophia services, and
 the required brokers/portals. Additional retained layouts,
 candidate-validated configuration, and bounded Janet behavior therefore remain

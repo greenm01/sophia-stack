@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define SOPHIA_WM_INTERFACE_MAJOR 1u
-#define SOPHIA_WM_INTERFACE_REVISION 1u
+#define SOPHIA_WM_INTERFACE_REVISION 2u
 #define SOPHIA_WM_MAX_OUTPUTS 16u
 #define SOPHIA_WM_MAX_SURFACES 1024u
 #define SOPHIA_WM_MAX_BINDINGS 256u
@@ -88,17 +88,17 @@ struct sophia_wm_v1_snapshot_surface_record {
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_surface_record(const struct sophia_wm_v1_snapshot_surface_record *record, uint8_t *out, size_t capacity);
 enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_surface_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_surface_record *record);
 
-#define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_KIND 3u
-#define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE 20u
-#define SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_MAX 256u
-struct sophia_wm_v1_snapshot_binding_record {
+#define SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_KIND 3u
+#define SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_SIZE 140u
+#define SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_MAX 256u
+struct sophia_wm_v1_snapshot_action_record {
     uint64_t action;
-    uint32_t keycode;
-    uint32_t modifier_bits;
     uint16_t session_operation_slot;
+    uint16_t name_len;
+    uint8_t name[128];
 };
-enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_binding_record(const struct sophia_wm_v1_snapshot_binding_record *record, uint8_t *out, size_t capacity);
-enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_binding_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_binding_record *record);
+enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_action_record(const struct sophia_wm_v1_snapshot_action_record *record, uint8_t *out, size_t capacity);
+enum sophia_wm_v1_status sophia_wm_v1_decode_snapshot_action_record(const uint8_t *data, size_t data_len, size_t index, struct sophia_wm_v1_snapshot_action_record *record);
 
 #define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_KIND 4u
 #define SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_SIZE 12u
@@ -200,7 +200,7 @@ struct sophia_wm_v1_snapshot_begin {
     uint16_t chunk_count;
     uint16_t output_count;
     uint32_t surface_count;
-    uint16_t binding_count;
+    uint16_t action_count;
     uint16_t session_operation_count;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_snapshot_begin(uint64_t transaction, const struct sophia_wm_v1_snapshot_begin *message, uint8_t *out, size_t capacity, size_t *written);
@@ -294,15 +294,15 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_projection_outcome(const uint8_t *f
 struct sophia_wm_v1_policy_configuration {
     uint64_t connection_epoch;
     uint64_t configuration_generation;
-    uint16_t binding_count;
+    uint16_t action_count;
     uint16_t style_bits;
     uint32_t focus_ring_width;
     uint32_t focus_ring_color;
     uint32_t frame_width;
     uint32_t frame_focused_color;
     uint32_t frame_unfocused_color;
-    const uint8_t *bindings;
-    size_t bindings_len;
+    const uint8_t *actions;
+    size_t actions_len;
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_policy_configuration(uint64_t transaction, const struct sophia_wm_v1_policy_configuration *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_policy_configuration(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_policy_configuration *message);

@@ -1,11 +1,12 @@
 use crate::{
     LayoutNodeCapabilities, OutputId, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    WmActionId, WmChromePolicy, WmModifierMask,
+    WmActionId, WmChromePolicy,
 };
 
 pub const POLICY_MAX_OUTPUTS: usize = 16;
 pub const POLICY_MAX_SURFACES: usize = 1024;
 pub const POLICY_MAX_BINDINGS: usize = 256;
+pub const POLICY_ACTION_NAME_MAX_BYTES: usize = 128;
 pub const POLICY_MAX_INDICATORS: usize = 256;
 pub const POLICY_MAX_OUTPUT_STATUSES: usize = 16;
 pub const POLICY_MAX_INDICATORS_PER_OUTPUT: usize = 32;
@@ -84,15 +85,15 @@ pub struct PolicySceneSnapshot {
 pub struct PolicyConfiguration {
     pub connection_epoch: u64,
     pub generation: u64,
-    pub bindings: Vec<PolicyBindingRegistration>,
+    pub actions: Vec<PolicyActionRegistration>,
     pub chrome: WmChromePolicy,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PolicyBindingRegistration {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyActionRegistration {
     pub action: WmActionId,
-    pub keycode: u32,
-    pub modifiers: WmModifierMask,
+    /// Opaque, profile-facing semantic name owned by the policy process.
+    pub name: String,
     /// Profile-local session-operation slot, or `None` for a pure policy action.
     pub session_operation_slot: Option<u16>,
 }

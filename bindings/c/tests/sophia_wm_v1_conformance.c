@@ -175,15 +175,15 @@ static int check_malformed(const char *path) {
 } while (0)
 
 static int record_roundtrip(const char *name, const uint8_t *data, size_t data_len) {
-    uint8_t encoded[128];
+    uint8_t encoded[256];
     size_t encoded_len = 0;
     enum sophia_wm_v1_status status = SOPHIA_WM_V1_WRONG_MESSAGE_KIND;
     if (strcmp(name, "snapshot_output") == 0)
         ROUNDTRIP_RECORD(snapshot_output, SOPHIA_WM_V1_SNAPSHOT_OUTPUT_RECORD_SIZE);
     else if (strcmp(name, "snapshot_surface") == 0)
         ROUNDTRIP_RECORD(snapshot_surface, SOPHIA_WM_V1_SNAPSHOT_SURFACE_RECORD_SIZE);
-    else if (strcmp(name, "snapshot_binding") == 0)
-        ROUNDTRIP_RECORD(snapshot_binding, SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE);
+    else if (strcmp(name, "snapshot_action") == 0)
+        ROUNDTRIP_RECORD(snapshot_action, SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_SIZE);
     else if (strcmp(name, "snapshot_session_operation") == 0)
         ROUNDTRIP_RECORD(snapshot_session_operation, SOPHIA_WM_V1_SNAPSHOT_SESSION_OPERATION_RECORD_SIZE);
     else if (strcmp(name, "projection_output") == 0)
@@ -203,7 +203,7 @@ static int check_records(const char *path) {
     FILE *input = fopen(path, "r");
     if (input == NULL) return 0;
     char line[512];
-    uint8_t data[128];
+    uint8_t data[256];
     size_t checked = 0;
     while (fgets(line, sizeof(line), input) != NULL) {
         line[strcspn(line, "\r\n")] = '\0';

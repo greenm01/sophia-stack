@@ -1,4 +1,4 @@
-protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 max-outputs=16 max-surfaces=1024 max-bindings=256 {
+protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=2 max-outputs=16 max-surfaces=1024 max-bindings=256 {
     capability "bindings" bit=0
     capability "actions" bit=1
     capability "multi_output" bit=2
@@ -51,12 +51,11 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "exact_width" type="i32" sample=0
         field "exact_height" type="i32" sample=0
     }
-    record "SnapshotBinding" transfer="snapshot" kind=3 max=256 {
+    record "SnapshotAction" transfer="snapshot" kind=3 max=256 {
         field "action" type="u64" sample=5
-        field "keycode" type="u32" sample=33
-        field "modifier_bits" type="u32" sample=8
         field "session_operation_slot" type="u16" sample=0
-        field "reserved" type="u16" reserved=#true sample=0
+        field "name_len" type="u16" sample=10
+        field "name" type="u8" count=128 sample="666f6375732d6e65787400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     }
     record "SnapshotSessionOperation" transfer="snapshot" kind=4 max=256 {
         field "operation" type="u64" sample=11
@@ -126,7 +125,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
         field "chunk_count" type="u16" sample=2
         field "output_count" type="u16" sample=2
         field "surface_count" type="u32" sample=3
-        field "binding_count" type="u16" sample=4
+        field "action_count" type="u16" sample=4
         field "session_operation_count" type="u16" sample=2
     }
     message "SnapshotChunk" kind=35 direction="session-to-policy" transaction="required" {
@@ -198,14 +197,14 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=1 m
     message "PolicyConfiguration" kind=42 direction="policy-to-session" transaction="required" {
         field "connection_epoch" type="u64" sample=9
         field "configuration_generation" type="u64" sample=2
-        field "binding_count" type="u16" sample=2
+        field "action_count" type="u16" sample=1
         field "style_bits" type="u16" sample=3
         field "focus_ring_width" type="u32" sample=2
         field "focus_ring_color" type="u32" sample=4281558783
         field "frame_width" type="u32" sample=1
         field "frame_focused_color" type="u32" sample=4281558783
         field "frame_unfocused_color" type="u32" sample=4281348144
-        field "bindings" type="bytes" max=5120 sample="05000000000000002100000008000000000000000600000000000000390000000800000000000000"
+        field "actions" type="bytes" max=35840 sample="050000000000000000000a00666f6375732d6e65787400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     }
     message "PolicyConfigurationOutcome" kind=43 direction="session-to-policy" transaction="required" {
         field "connection_epoch" type="u64" sample=9

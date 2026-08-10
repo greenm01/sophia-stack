@@ -98,7 +98,7 @@ static int receive_snapshot(
     struct sophia_wm_v1_snapshot_end end;
     uint64_t transaction = 0;
     uint64_t end_transaction = 0;
-    size_t binding_count = 0;
+    size_t action_count = 0;
     size_t frame_len = 0;
     uint16_t ordinal;
     if (!read_frame(socket_fd, frame, &frame_len) ||
@@ -108,7 +108,7 @@ static int receive_snapshot(
     if (begin.connection_epoch != connection_epoch || begin.output_count == 0 ||
         begin.output_count > SOPHIA_WM_MAX_OUTPUTS ||
         begin.surface_count > SOPHIA_WM_MAX_SURFACES ||
-        begin.binding_count > SOPHIA_WM_MAX_BINDINGS)
+        begin.action_count > SOPHIA_WM_MAX_BINDINGS)
         return 0;
     *output_count = 0;
     *surface_count = 0;
@@ -146,18 +146,18 @@ static int receive_snapshot(
                     ) != SOPHIA_WM_V1_OK)
                     return 0;
             *surface_count += chunk.item_count;
-        } else if (chunk.record_kind == SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_KIND) {
-            struct sophia_wm_v1_snapshot_binding_record binding;
-            if (chunk.item_count > SOPHIA_WM_MAX_BINDINGS - binding_count ||
+        } else if (chunk.record_kind == SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_KIND) {
+            struct sophia_wm_v1_snapshot_action_record action;
+            if (chunk.item_count > SOPHIA_WM_MAX_BINDINGS - action_count ||
                 chunk.data_len !=
-                    (size_t)chunk.item_count * SOPHIA_WM_V1_SNAPSHOT_BINDING_RECORD_SIZE)
+                    (size_t)chunk.item_count * SOPHIA_WM_V1_SNAPSHOT_ACTION_RECORD_SIZE)
                 return 0;
             for (index = 0; index < chunk.item_count; ++index)
-                if (sophia_wm_v1_decode_snapshot_binding_record(
-                        chunk.data, chunk.data_len, index, &binding
+                if (sophia_wm_v1_decode_snapshot_action_record(
+                        chunk.data, chunk.data_len, index, &action
                     ) != SOPHIA_WM_V1_OK)
                     return 0;
-            binding_count += chunk.item_count;
+            action_count += chunk.item_count;
         } else {
             return 0;
         }
@@ -170,7 +170,7 @@ static int receive_snapshot(
     if (end_transaction != transaction || end.connection_epoch != connection_epoch ||
         end.scene_generation != begin.scene_generation ||
         end.chunk_count != begin.chunk_count || *output_count != begin.output_count ||
-        *surface_count != begin.surface_count || binding_count != begin.binding_count)
+        *surface_count != begin.surface_count || action_count != begin.action_count)
         return 0;
     *scene_generation = begin.scene_generation;
     return 1;
@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
     struct sophia_wm_v1_projection_output_record projected_outputs[SOPHIA_WM_MAX_OUTPUTS];
     struct sophia_wm_v1_projection_placement_record placements[SOPHIA_WM_MAX_SURFACES];
     struct sophia_wm_v1_client_hello hello = {
-        1, 1,
+        2, 2,
         SOPHIA_WM_CAPABILITY_BINDINGS | SOPHIA_WM_CAPABILITY_ACTIONS |
             SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
     };
@@ -398,7 +398,7 @@ int main(int argc, char **argv) {
         return 1;
     if (!read_frame(socket_fd, frame, &frame_len) ||
         sophia_wm_v1_decode_server_welcome(frame, frame_len, &welcome) != SOPHIA_WM_V1_OK ||
-        welcome.selected_revision != 1 || welcome.connection_epoch == 0)
+        welcome.selected_revision != 2 || welcome.connection_epoch == 0)
         return 1;
     for (cycle = 0; cycle < cycles; ++cycle) {
         uint64_t projection_transaction = (uint64_t)cycle + 1u;

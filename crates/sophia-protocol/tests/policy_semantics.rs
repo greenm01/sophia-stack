@@ -29,20 +29,17 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
             permits_surface_target: true,
         }],
     };
-    let bindings = vec![PolicyBindingRegistration {
+    let actions = vec![PolicyActionRegistration {
         action: WmActionId::from_raw(4),
-        keycode: 33,
-        modifiers: WmModifierMask {
-            bits: WmModifierMask::SUPER,
-        },
+        name: "close-window".to_owned(),
         session_operation_slot: Some(1),
     }];
     let transfer =
-        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &bindings).unwrap();
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &actions).unwrap();
     let decoded = decode_wm_v1_policy_snapshot(&transfer).unwrap();
 
     assert_eq!(decoded.scene, scene);
-    assert_eq!(decoded.bindings, bindings);
+    assert_eq!(decoded.actions, actions);
     assert_eq!(transfer.chunks.len(), 4);
 }
 
@@ -196,12 +193,9 @@ fn configuration_dirty_and_session_operations_have_typed_mappings() {
     let configuration = PolicyConfiguration {
         connection_epoch: 2,
         generation: 3,
-        bindings: vec![PolicyBindingRegistration {
+        actions: vec![PolicyActionRegistration {
             action: WmActionId::from_raw(7),
-            keycode: 38,
-            modifiers: WmModifierMask {
-                bits: WmModifierMask::SUPER,
-            },
+            name: "resize-width 0.1".to_owned(),
             session_operation_slot: Some(1),
         }],
         chrome: WmChromePolicy::default(),
@@ -234,29 +228,23 @@ fn configuration_dirty_and_session_operations_have_typed_mappings() {
 }
 
 #[test]
-fn policy_configuration_rejects_ambiguous_or_reserved_bindings() {
-    let binding = PolicyBindingRegistration {
+fn policy_configuration_rejects_ambiguous_or_invalid_actions() {
+    let action = PolicyActionRegistration {
         action: WmActionId::from_raw(7),
-        keycode: 38,
-        modifiers: WmModifierMask {
-            bits: WmModifierMask::SUPER,
-        },
+        name: "resize-width 0.1".to_owned(),
         session_operation_slot: None,
     };
     let mut configuration = PolicyConfiguration {
         connection_epoch: 2,
         generation: 3,
-        bindings: vec![binding, binding],
+        actions: vec![action.clone(), action],
         chrome: WmChromePolicy::default(),
     };
     assert!(encode_wm_v1_policy_configuration(&configuration).is_err());
 
-    configuration.bindings = vec![PolicyBindingRegistration {
+    configuration.actions = vec![PolicyActionRegistration {
         action: WmActionId::from_raw(8),
-        keycode: 14,
-        modifiers: WmModifierMask {
-            bits: WmModifierMask::CONTROL | WmModifierMask::ALT,
-        },
+        name: " leading-space".to_owned(),
         session_operation_slot: None,
     }];
     assert!(encode_wm_v1_policy_configuration(&configuration).is_err());

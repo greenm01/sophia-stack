@@ -71,8 +71,8 @@ impl PolicyV1Client {
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
         let hello = WmV1ClientHello {
-            minimum_revision: 1,
-            maximum_revision: 1,
+            minimum_revision: 2,
+            maximum_revision: 2,
             capabilities: SOPHIA_WM_CAPABILITY_BINDINGS
                 | SOPHIA_WM_CAPABILITY_ACTIONS
                 | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
@@ -80,7 +80,7 @@ impl PolicyV1Client {
         stream.write_all(&encode_wm_v1_client_hello_frame(&hello)?)?;
         stream.flush()?;
         let welcome = decode_wm_v1_server_welcome_frame(&read_frame(&mut stream)?)?;
-        if welcome.selected_revision != 1 {
+        if welcome.selected_revision != 2 {
             return Err(PolicyV1ClientError::UnsupportedRevision(
                 welcome.selected_revision,
             ));
@@ -140,7 +140,7 @@ impl PolicyV1Client {
         })?;
         if snapshot.scene.outputs.len() > self.max_outputs
             || snapshot.scene.surfaces.len() > self.max_surfaces
-            || snapshot.bindings.len() > self.max_bindings
+            || snapshot.actions.len() > self.max_bindings
         {
             return Err(PolicyV1ClientError::InvalidScene);
         }

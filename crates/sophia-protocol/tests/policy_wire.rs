@@ -60,8 +60,8 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 &decode_wm_v1_snapshot_surface_records(&data, 1).unwrap(),
             )
             .unwrap(),
-            "snapshot_binding" => encode_wm_v1_snapshot_binding_records(
-                &decode_wm_v1_snapshot_binding_records(&data, 1).unwrap(),
+            "snapshot_action" => encode_wm_v1_snapshot_action_records(
+                &decode_wm_v1_snapshot_action_records(&data, 1).unwrap(),
             )
             .unwrap(),
             "snapshot_session_operation" => encode_wm_v1_snapshot_session_operation_records(

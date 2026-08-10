@@ -66,7 +66,8 @@ struct LivePublicPolicyState {
     in_flight_request: Option<sophia_protocol::PolicyProjectionRequest>,
     staged: Option<sophia_engine::StagedPolicyProjection>,
     prepared: Option<LivePolicySettlementIdentity>,
-    bindings: Vec<sophia_protocol::PolicyBindingRegistration>,
+    shortcut_candidate: sophia_config::DesktopShortcutCandidate,
+    actions: Vec<sophia_protocol::PolicyActionRegistration>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
@@ -555,6 +556,13 @@ impl LiveWmSession {
         let directory = PolicySessionDirectory::create(
             config.wm_socket_path.with_extension("policy"),
         )?;
+        let shortcut_candidate = sophia_config::prepare_desktop_shortcut_candidate(
+            config
+                .desktop_profile
+                .candidates
+                .get(&sophia_config::DesktopAuthority::Shortcut)
+                .ok_or("desktop profile has no shortcut candidate")?,
+        )?;
         let profile_fragments =
             sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
@@ -627,7 +635,8 @@ impl LiveWmSession {
             in_flight_request: None,
             staged: None,
             prepared: None,
-            bindings: Vec::new(),
+            shortcut_candidate,
+            actions: Vec::new(),
             outputs: outputs.to_vec(),
             output_generations,
             live_output_ids,
@@ -721,15 +730,13 @@ impl LiveWmSession {
                     .iter()
                     .map(|operation| operation.slot)
                     .collect::<BTreeSet<_>>();
-                let slots_valid = configuration.bindings.iter().all(|binding| {
-                    binding
+                let slots_valid = configuration.actions.iter().all(|action| {
+                    action
                         .session_operation_slot
                         .is_none_or(|slot| admitted_slots.contains(&slot))
                 });
                 let registry = slots_valid
-                    .then(|| {
-                        sophia_engine::WmShortcutRegistry::from_policy_configuration(&configuration)
-                    })
+                    .then(|| resolve_public_shortcuts(&public.shortcut_candidate, &configuration))
                     .and_then(Result::ok);
                 let outcome = match registry {
                     Some(registry)
@@ -737,7 +744,7 @@ impl LiveWmSession {
                         self.chrome = configuration.chrome;
                         self.stage_visual_chrome(self.candidate_chrome_style());
                         self.shortcuts = Some(sophia_engine::WmShortcutRouter::new(registry));
-                        public.bindings = configuration.bindings.clone();
+                        public.actions = configuration.actions.clone();
                         public.configured = true;
                         sophia_protocol::PolicyProjectionOutcome::Committed
                     }
@@ -796,10 +803,10 @@ impl LiveWmSession {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
                             LiveWmProposalSource::Action(action) => public
-                                .bindings
+                                .actions
                                 .iter()
-                                .find(|binding| binding.action == action)
-                                .and_then(|binding| binding.session_operation_slot),
+                                .find(|registered| registered.action == action)
+                                .and_then(|registered| registered.session_operation_slot),
                             _ => None,
                         };
                         let expect_session_operation = expected_operation_slot.is_some();
@@ -931,7 +938,7 @@ impl LiveWmSession {
                     snapshot_transaction,
                     request_transaction,
                     scene,
-                    bindings: public.bindings.clone(),
+                    actions: public.actions.clone(),
                     request: request.clone(),
                 })
                 .map_err(|_| "public WM cycle queue is busy")?;
@@ -1046,7 +1053,7 @@ impl LiveWmSession {
         public.expected_operation_slot = None;
         public.deferred_command = None;
         public.transport_unavailable = false;
-        public.bindings.clear();
+        public.actions.clear();
         public.queue.clear();
         public.pending_dirty_outputs.clear();
         let affected_outputs = public.all_outputs(output.id);

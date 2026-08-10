@@ -20,7 +20,7 @@ fn negotiation_selects_the_shared_revision_and_capabilities() {
         })
         .unwrap();
 
-    assert_eq!(welcome.selected_revision, 1);
+    assert_eq!(welcome.selected_revision, 2);
     assert_eq!(welcome.connection_epoch, 7);
     assert_eq!(
         welcome.capabilities,
@@ -29,6 +29,21 @@ fn negotiation_selects_the_shared_revision_and_capabilities() {
     assert_eq!(welcome.max_outputs, 16);
     assert_eq!(welcome.max_surfaces, 1024);
     assert_eq!(welcome.max_bindings, 256);
+}
+
+#[test]
+fn negotiation_rejects_the_incompatible_revision_one_wire() {
+    let mut connection = PolicyConnectionState::default();
+    connection.connect(7).unwrap();
+
+    assert_eq!(
+        connection.negotiate(&WmV1ClientHello {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            capabilities: 0,
+        }),
+        Err(PolicyTransferError::UnsupportedRevision)
+    );
 }
 
 #[test]
@@ -51,8 +66,8 @@ fn complete_projection_is_admitted_only_while_its_connection_epoch_is_active() {
     connection.connect(2).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 1,
-            maximum_revision: 1,
+            minimum_revision: 2,
+            maximum_revision: 2,
             capabilities: 0,
         })
         .unwrap();
@@ -113,8 +128,8 @@ fn control_messages_are_capability_gated_and_cannot_reuse_transactions() {
     connection.connect(6).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 1,
-            maximum_revision: 1,
+            minimum_revision: 2,
+            maximum_revision: 2,
             capabilities: SOPHIA_WM_CAPABILITY_CONFIGURATION,
         })
         .unwrap();
@@ -152,8 +167,8 @@ fn indicator_records_require_negotiation_and_exact_declared_counts() {
     supported.connect(10).unwrap();
     supported
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 1,
-            maximum_revision: 1,
+            minimum_revision: 2,
+            maximum_revision: 2,
             capabilities: SOPHIA_WM_CAPABILITY_INDICATORS,
         })
         .unwrap();
@@ -194,7 +209,7 @@ fn snapshot_assembler_requires_exact_order_and_declared_totals() {
                 chunk_count: 3,
                 output_count: 1,
                 surface_count: 2,
-                binding_count: 1,
+                action_count: 1,
                 session_operation_count: 0,
             },
         )
@@ -226,7 +241,7 @@ fn snapshot_assembler_requires_exact_order_and_declared_totals() {
 
     assert_eq!(snapshot.output_count, 1);
     assert_eq!(snapshot.surface_count, 2);
-    assert_eq!(snapshot.binding_count, 1);
+    assert_eq!(snapshot.action_count, 1);
     assert_eq!(snapshot.chunks.len(), 3);
 }
 
@@ -235,8 +250,8 @@ fn negotiated_connection(epoch: u64) -> PolicyConnectionState {
     connection.connect(epoch).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 1,
-            maximum_revision: 1,
+            minimum_revision: 2,
+            maximum_revision: 2,
             capabilities: 0,
         })
         .unwrap();

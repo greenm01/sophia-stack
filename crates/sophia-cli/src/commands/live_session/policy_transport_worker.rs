@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use sophia_protocol::{
-    PolicyBindingRegistration, PolicyConfiguration, PolicyProjectionOutcome,
+    PolicyActionRegistration, PolicyConfiguration, PolicyProjectionOutcome,
     PolicyProjectionProposal, PolicyProjectionRequest, PolicySceneSnapshot,
     PolicySessionOperationRequest, TransactionId, decode_wm_v1_policy_projection,
     encode_wm_v1_policy_snapshot,
@@ -24,7 +24,7 @@ pub(super) enum PolicyTransportCommand {
         snapshot_transaction: TransactionId,
         request_transaction: TransactionId,
         scene: PolicySceneSnapshot,
-        bindings: Vec<PolicyBindingRegistration>,
+        actions: Vec<PolicyActionRegistration>,
         request: PolicyProjectionRequest,
     },
     ProjectionOutcome {
@@ -196,14 +196,14 @@ fn run_policy_transport(
                 snapshot_transaction,
                 request_transaction,
                 scene,
-                bindings,
+                actions,
                 request,
             } => {
                 let snapshot = encode_wm_v1_policy_snapshot(
                     snapshot_transaction,
                     connection_epoch,
                     &scene,
-                    &bindings,
+                    &actions,
                 )
                 .map_err(|error| format!("policy snapshot encode failed: {error:?}"))?;
                 transport

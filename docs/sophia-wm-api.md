@@ -90,13 +90,16 @@ bindings, opaque session actions, reduced pointer interactions, and bounded
 Engine chrome policy. Unsupported bits reject negotiation. An operation is
 legal only when its selected revision and negotiated capability admit it.
 
-Bindings contain one nonzero opaque action ID, normalized evdev keycode, a
-bounded modifier mask, and an optional advertised session-operation slot.
-Engine rejects duplicate chords or action IDs, invalid modifiers, unknown
-operation slots, excessive registrations, and the emergency chord. The slot,
-not an action-number range, associates a committed activation with one
-session-owned capability. Policy updates use a strictly increasing client
-configuration generation and apply only at a shortcut-idle boundary.
+Revision 2 separates action registration from physical shortcut ownership.
+The policy client advertises a bounded catalog containing one nonzero opaque
+action ID, a unique semantic name of at most 128 bytes, and an optional
+session-operation slot. It never supplies keycodes or modifier masks. The
+trusted session coordinator resolves the shortcut authority's prepared profile
+against that catalog, then gives Engine only normalized chords and opaque IDs.
+Unknown names, unavailable operation slots, unsupported pointer gestures,
+excessive registrations, duplicate chords, and the emergency chord fail
+closed. The slot, not an action-number range, associates a committed
+activation with one session-owned capability.
 
 ## Complete Scene Snapshot
 

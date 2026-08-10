@@ -1,11 +1,10 @@
 use crate::WmTransactionUpdate;
 use crate::prelude::*;
 use sophia_protocol::{
-    IpcMessageKind, PolicyConfiguration, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId,
-    WmBindingRegistration, WmCapabilities, WmChromePolicy, WmHello, WmModifierMask, WmPolicyAck,
-    WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor, decode_frame, decode_wm_hello_frame,
-    decode_wm_policy_update_frame, decode_wm_response_frame, encode_wm_policy_ack_frame,
-    encode_wm_request_frame, encode_wm_session_descriptor_frame,
+    IpcMessageKind, WM_API_VERSION, WM_MAX_BINDINGS, WmActionId, WmCapabilities, WmChromePolicy,
+    WmHello, WmModifierMask, WmPolicyAck, WmPolicyAckOutcome, WmPolicyUpdate, WmSessionDescriptor,
+    decode_frame, decode_wm_hello_frame, decode_wm_policy_update_frame, decode_wm_response_frame,
+    encode_wm_policy_ack_frame, encode_wm_request_frame, encode_wm_session_descriptor_frame,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,27 +55,6 @@ pub enum WmPolicyApplyOutcome {
 }
 
 impl WmShortcutRegistry {
-    pub fn from_policy_configuration(
-        configuration: &PolicyConfiguration,
-    ) -> Result<Self, WmIpcError> {
-        let bindings = configuration
-            .bindings
-            .iter()
-            .map(|binding| WmBindingRegistration {
-                action: binding.action,
-                keycode: binding.keycode,
-                modifiers: binding.modifiers,
-            })
-            .collect();
-        Self::from_hello(&WmHello {
-            api_version: WM_API_VERSION,
-            capabilities: WmCapabilities::all_supported(),
-            policy_generation: configuration.generation,
-            bindings,
-            chrome: configuration.chrome,
-        })
-    }
-
     pub fn from_hello(hello: &WmHello) -> Result<Self, WmIpcError> {
         if hello.api_version != WM_API_VERSION {
             return Err(WmIpcError::Negotiation("unsupported WM API version"));
@@ -95,7 +73,6 @@ impl WmShortcutRegistry {
         }
 
         let mut bindings = BTreeMap::new();
-        let mut actions = BTreeSet::new();
         for binding in &hello.bindings {
             if !binding.action.is_valid() || binding.keycode == 0 || binding.keycode > 0x2ff {
                 return Err(WmIpcError::Negotiation("invalid WM binding"));
@@ -108,9 +85,6 @@ impl WmShortcutRegistry {
                     == WmModifierMask::CONTROL | WmModifierMask::ALT
             {
                 return Err(WmIpcError::Negotiation("reserved emergency chord"));
-            }
-            if !actions.insert(binding.action) {
-                return Err(WmIpcError::Negotiation("duplicate WM action"));
             }
             if bindings
                 .insert((binding.keycode, binding.modifiers.bits), binding.action)
