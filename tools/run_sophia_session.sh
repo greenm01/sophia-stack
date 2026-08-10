@@ -71,14 +71,20 @@ session_args=(
     --session-mode=normal
     "--session-app=terminal=$terminal_bin"
     --session-start=terminal
-    --session-action-app=terminal=terminal
 )
+if [[ "$wm" != hagia ]]; then
+    session_args+=(--session-action-app=terminal=terminal)
+fi
 firefox_bin="$(resolve_program "${SOPHIA_FIREFOX_BIN:-}" firefox)"
 if [[ -n "$firefox_bin" ]]; then
-    session_args+=(
-        "--session-app=firefox=$firefox_bin"
-        --session-action-app=firefox=firefox
-    )
+    if [[ "$wm" == hagia ]]; then
+        session_args+=("--session-app=browser=$firefox_bin")
+    else
+        session_args+=(
+            "--session-app=firefox=$firefox_bin"
+            --session-action-app=firefox=firefox
+        )
+    fi
 fi
 session_args+=("${wm_args[@]}")
 session_args+=("$@")

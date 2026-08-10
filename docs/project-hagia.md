@@ -214,6 +214,14 @@ session tokens rather than executable paths and arguments supplied by policy.
 Capture and screenshots should use portal decisions. Output and input
 configuration should have their own authority and validation.
 
+The trusted session now prepares the profile's terminal, browser, startup, and
+logout selectors as a typed session candidate. Selectors resolve only against
+the session's bounded registered-application catalog; executable paths remain
+session-owned, ambiguous selectors fail, and explicit session command-line
+mappings remain superior. Before a normal `sophia_wm_v1` session starts, the
+coordinator also rejects any shortcut whose required session capability is not
+available. Hagia receives only the resulting opaque operation slots.
+
 ## Implementation Progression
 
 ### 1. Geometry Proof

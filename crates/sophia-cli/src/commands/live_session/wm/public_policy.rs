@@ -526,7 +526,9 @@ fn public_session_operations(
         );
     }
     admit(3, token(3), WmSessionAction::CloseFocused, true);
-    admit(4, token(4), WmSessionAction::Logout, false);
+    if config.applications.logout_enabled {
+        admit(4, token(4), WmSessionAction::Logout, false);
+    }
     (operations, actions)
 }
 

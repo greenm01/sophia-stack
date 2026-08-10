@@ -7,7 +7,8 @@ use sophia_config::{
     ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
     DesktopShortcutModifiers, DesktopShortcutTarget, discover_desktop_profile_source,
-    load_desktop_profile, prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    load_desktop_profile, prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate,
+    stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -178,6 +179,49 @@ fn shortcut_candidate_rejects_ambiguous_reserved_and_cross_authority_bindings() 
         assert!(matches!(
             load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
             Err(DesktopProfileError::Schema(message)) if message.contains("shortcut candidate")
+        ));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn session_candidate_prepares_bounded_application_selectors() {
+    let root = temporary_directory("session-candidate");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+session {
+  terminal "kitty"
+  browser "helium"
+  startup "kitty"
+  logout #false
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let session = prepare_desktop_session_candidate(
+        profile.candidates.get(&DesktopAuthority::Session).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(session.generation, profile.generation);
+    assert_eq!(session.digest, profile.digest);
+    assert_eq!(session.terminal.as_deref(), Some("kitty"));
+    assert_eq!(session.browser.as_deref(), Some("helium"));
+    assert_eq!(session.startup.as_deref(), Some("kitty"));
+    assert_eq!(session.logout_enabled, Some(false));
+
+    for source in [
+        "schema 1\nsession { terminal \"kitty shell\"; }\n",
+        "schema 1\nsession { browser; }\n",
+        "schema 1\nsession { startup \"kitty\" { arg \"bad\"; }; }\n",
+        "schema 1\nsession { logout \"yes\"; }\n",
+    ] {
+        write_profile(&profile_path, source);
+        assert!(matches!(
+            load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
+            Err(DesktopProfileError::Schema(message)) if message.contains("session candidate")
         ));
     }
     fs::remove_dir_all(root).unwrap();

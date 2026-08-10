@@ -671,15 +671,13 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
     fi
 elif [[ "$SESSION_PROFILE" == hagia ]]; then
     session_args+=(
-        --session-action-app=terminal=terminal
         --wm-process="$SOPHIA_HAGIA_BIN"
         --wm-interface=sophia_wm_v1
     )
     session_args+=(
-        "--session-app=firefox=$hagia_firefox_bin"
-        --session-action-app=firefox=firefox
-        --session-app-arg=firefox=--no-remote
-        --session-app-arg=firefox=--new-instance
+        "--session-app=browser=$hagia_firefox_bin"
+        --session-app-arg=browser=--no-remote
+        --session-app-arg=browser=--new-instance
     )
 elif [[ "$SESSION_PROFILE" == native ]]; then
     session_args+=(

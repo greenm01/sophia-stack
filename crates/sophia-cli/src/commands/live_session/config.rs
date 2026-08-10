@@ -4,27 +4,14 @@ mod chrome;
 mod firefox_stage;
 #[path = "config/output.rs"]
 mod output;
+#[path = "config/session.rs"]
+mod session;
 use firefox_stage::FirefoxM8StageProof;
 use output::{
     output_topology_from_engine_outputs, output_topology_from_engine_outputs_at_generation,
     wm_output_bounds,
 };
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SessionApplicationSpec {
-    id: String,
-    executable: std::path::PathBuf,
-    arguments: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct SessionApplicationConfig {
-    applications: BTreeMap<String, SessionApplicationSpec>,
-    startup: Vec<String>,
-    terminal: Option<String>,
-    launcher: Option<String>,
-    firefox: Option<String>,
-}
+use session::{SessionApplicationConfig, SessionApplicationSpec};
 
 const TERMINAL_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(1);
 const LAUNCHER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(2);
@@ -228,6 +215,34 @@ impl PersistentXtermSessionConfig {
             }
             app.arguments.push(argument.to_owned());
         }
+        let desktop_session = sophia_config::prepare_desktop_session_candidate(
+            desktop_profile
+                .candidates
+                .get(&sophia_config::DesktopAuthority::Session)
+                .expect("desktop profile partition creates a session candidate"),
+        )?;
+        let terminal_overridden = args.iter().any(|argument| {
+            argument
+                .strip_prefix("--session-action-app=")
+                .is_some_and(|value| value.starts_with("terminal="))
+        });
+        let browser_overridden = args.iter().any(|argument| {
+            argument
+                .strip_prefix("--session-action-app=")
+                .is_some_and(|value| value.starts_with("firefox="))
+        });
+        let startup_overridden = args
+            .iter()
+            .any(|argument| argument.starts_with("--session-start="));
+        applications.apply_desktop_candidate(
+            &desktop_session,
+            terminal_overridden,
+            browser_overridden,
+            startup_overridden,
+        )?;
+        if startup_overridden {
+            applications.startup.clear();
+        }
         for id in args
             .iter()
             .filter_map(|arg| arg.strip_prefix("--session-start="))
@@ -241,6 +256,7 @@ impl PersistentXtermSessionConfig {
             }
             applications.startup.push(id.to_owned());
         }
+        let mut explicit_session_actions = BTreeSet::new();
         for value in args
             .iter()
             .filter_map(|arg| arg.strip_prefix("--session-action-app="))
@@ -250,6 +266,9 @@ impl PersistentXtermSessionConfig {
                 .ok_or("--session-action-app expects terminal|launcher|firefox=ID")?;
             if !applications.applications.contains_key(id) {
                 return Err(format!("--session-action-app references unknown app {id:?}").into());
+            }
+            if !explicit_session_actions.insert(action) {
+                return Err(format!("duplicate session action mapping {action:?}").into());
             }
             let slot = match action {
                 "terminal" => &mut applications.terminal,
@@ -261,9 +280,7 @@ impl PersistentXtermSessionConfig {
                     );
                 }
             };
-            if slot.replace(id.to_owned()).is_some() {
-                return Err(format!("duplicate session action mapping {action:?}").into());
-            }
+            *slot = Some(id.to_owned());
         }
         if normal_session {
             let terminal_proof = args.iter().any(|arg| {
@@ -555,6 +572,15 @@ impl PersistentXtermSessionConfig {
             && wm_interface != sophia_config::ExternalWmInterface::ApiV7
         {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
+        }
+        if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
+            let shortcuts = sophia_config::prepare_desktop_shortcut_candidate(
+                desktop_profile
+                    .candidates
+                    .get(&sophia_config::DesktopAuthority::Shortcut)
+                    .expect("desktop profile partition creates a shortcut candidate"),
+            )?;
+            applications.validate_shortcuts(&shortcuts)?;
         }
         let wm_public_fault_after = arg_value(args, "--wm-proof-fault-after")
             .as_deref()

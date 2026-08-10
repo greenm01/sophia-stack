@@ -229,6 +229,71 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
 }
 
 #[test]
+fn desktop_session_candidate_selects_only_registered_applications() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = std::env::temp_dir().join(format!(
+        "sophia-live-session-candidate-{}-{}.kdl",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(
+        &path,
+        r#"schema 1
+policy {}
+shortcut {
+  profile "test"
+  bind "Super+Return" "session:spawn-terminal"
+  bind "Super+b" "session:spawn-browser"
+}
+session { terminal "kitty"; browser "helium"; startup "kitty"; }
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let base = [
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/kitty".to_owned(),
+        "--session-app=browser=/opt/helium/helium".to_owned(),
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        format!("--desktop-profile={}", path.display()),
+    ];
+    let config = PersistentXtermSessionConfig::from_args(&base).unwrap();
+    assert_eq!(config.applications.terminal.as_deref(), Some("terminal"));
+    assert_eq!(config.applications.firefox.as_deref(), Some("browser"));
+    assert_eq!(config.applications.startup, ["terminal"]);
+
+    let mut overridden = base.to_vec();
+    overridden.extend([
+        "--session-app=alternate=/usr/bin/xterm".to_owned(),
+        "--session-action-app=terminal=alternate".to_owned(),
+        "--session-start=alternate".to_owned(),
+    ]);
+    let config = PersistentXtermSessionConfig::from_args(&overridden).unwrap();
+    assert_eq!(config.applications.terminal.as_deref(), Some("alternate"));
+    assert_eq!(config.applications.startup, ["alternate"]);
+
+    let unavailable = base
+        .iter()
+        .filter(|argument| !argument.starts_with("--session-app=browser="))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        PersistentXtermSessionConfig::from_args(&unavailable)
+            .unwrap_err()
+            .to_string()
+            .contains("unavailable session capability")
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
     let spec = public_policy_launch_spec(
