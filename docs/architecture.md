@@ -739,7 +739,12 @@ device setting cannot be applied. Hagia receives neither this candidate nor a
 raw device handle. Watched activation remains disabled pending the shared
 prepare/activate/rollback barrier. The trusted coordinator now has the pure
 seven-authority reducer for that barrier, ported from Hagia's model-checked
-reference semantics; authority protocols and effect executors remain unwired.
+reference semantics. A second shared pure reducer defines each authority's
+local participant state: monotonic admission, exact-key idempotence, previous
+identity restoration, and fail-closed same-generation digest handling. The
+startup launch gate is the only permitted visibility boundary for this model;
+authority protocols, effect executors, and a live-reload visibility barrier
+remain unwired.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

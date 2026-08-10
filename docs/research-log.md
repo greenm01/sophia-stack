@@ -33,6 +33,19 @@ Completed evidence is archived in `research-log-archive.md`.
   initial activation from empty state, and prove that rejected generations
   cannot be retried. The driver adds no asynchronous interleaving beyond the
   lifecycle already exhaustively checked in Hagia's TLA+ model.
+- A reusable authority-local participant reducer now gives every authority the
+  same transition discipline without copying handlers: strict monotonic
+  prepare, exact-key idempotent prepare/activate/rollback, previous-active
+  restoration, and inert strictly older cleanup. It retains the last admitted
+  generation and digest after cleanup, which closes the ambiguity between an
+  exact rollback retry and a same-generation digest mismatch. Tests apply the
+  initial activation and rollback invariants to all seven authorities and
+  cover retries, mismatch rejection, prior-active restoration, generation
+  consumption, and exhaustion.
+- Participant activation is not yet externally visible. Transactional startup
+  may eventually use it behind the existing graphical launch gate, where no
+  client observes partial activation. Watched reload needs a distinct global
+  visibility/recovery protocol and remains out of scope for this milestone.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

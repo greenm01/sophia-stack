@@ -273,6 +273,17 @@ as the prepare, activation, and rollback failure point. This deterministic
 schedule refines the existing model-checked lifecycle without adding a live
 reload interleaving.
 
+The authority side now has one reusable pure participant transition model
+rather than seven bespoke implementations. It retains active, candidate,
+previous-active, latest generation, and the last admitted full key as bounded
+logical state. Prepare consumes generations monotonically; activate and
+rollback are exact-key idempotent; rollback restores the prior identity; older
+cleanup is inert; and a digest collision at the current generation fails
+closed. This model is ready for authority-owned handlers, but does not install
+them. During transactional startup the graphical launch gate can hide partial
+local activation. Live reload cannot use that assumption and remains deferred
+until a separate global visibility and recovery protocol is proved.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR

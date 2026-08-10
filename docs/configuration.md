@@ -73,6 +73,12 @@ prepare and activate barriers. The first failed operation cancels the
 remaining phase, dispatches rollback to every authority, and retains the prior
 active identity. Even when one rollback fails, every remaining rollback is
 attempted and the exact unresolved recovery set is returned as an error.
+Each authority now has one shared pure participant model behind that contract.
+It admits only a strictly newer generation and a different digest, makes exact
+prepare, activate, and rollback retries idempotent, restores the exact previous
+identity on rollback, and rejects a same-generation digest mismatch. The last
+admitted full key remains bounded participant state after cleanup so an exact
+retry cannot be confused with an identity collision.
 Shortcut candidates are prepared into bounded typed chords before staging:
 at most 256 key or pointer bindings, normalized modifier/key identities, no
 duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
@@ -97,10 +103,15 @@ the exact profile generation and digest in the expected phase. Test rejection
 discards the candidate without rollback; an apply failure cannot settle until
 rollback succeeds or reports a terminal recovery failure. No executor is wired
 to these effects yet, so startup behavior remains unchanged.
-The production session does not yet invoke this driver. Watched
-desktop-profile reload remains disabled until cross-authority
-prepare/activate/rollback protocols populate the executor handlers; Sophia's
-existing core and native WM reload behavior is unchanged.
+The production session does not yet invoke this driver or the participant
+transitions. At startup, a future executor may expose authority-local activated
+state only because graphical launch remains gated until every authority has
+activated the same key; failure rolls all participants back before launch.
+That synchronous visibility rule is not a live-reload protocol. Watched
+desktop-profile reload remains disabled until cross-authority transports,
+durable recovery, and an explicit global visibility barrier populate the
+executor handlers; Sophia's existing core and native WM reload behavior is
+unchanged.
 
 ## Discovery
 
