@@ -9,11 +9,12 @@ use sophia_protocol::{
     SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_WM_CAPABILITY_CONFIGURATION,
     SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
     SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, TransactionId, WmV1PolicyConfigurationOutcome,
-    WmV1ProfileCompletion, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, decode_frame,
-    decode_wm_v1_client_hello_frame, decode_wm_v1_policy_configuration,
-    decode_wm_v1_policy_configuration_frame, decode_wm_v1_policy_dirty,
-    decode_wm_v1_policy_dirty_frame, decode_wm_v1_policy_session_operation_request,
-    decode_wm_v1_profile_active, decode_wm_v1_profile_prepared, decode_wm_v1_profile_rolled_back,
+    WmV1ProfileCompletion, WmV1ProfileIdentity, WmV1ProfileOutcome, WmV1SnapshotBegin,
+    WmV1SnapshotChunk, WmV1SnapshotEnd, decode_frame, decode_wm_v1_client_hello_frame,
+    decode_wm_v1_policy_configuration, decode_wm_v1_policy_configuration_frame,
+    decode_wm_v1_policy_dirty, decode_wm_v1_policy_dirty_frame,
+    decode_wm_v1_policy_session_operation_request, decode_wm_v1_profile_active,
+    decode_wm_v1_profile_prepared, decode_wm_v1_profile_rolled_back,
     decode_wm_v1_projection_begin_frame, decode_wm_v1_projection_chunk_frame,
     decode_wm_v1_projection_end_frame, decode_wm_v1_session_operation_request_frame,
     encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_policy_projection_outcome,
@@ -26,9 +27,11 @@ use sophia_protocol::{
 };
 
 use crate::{
-    PolicyConnectionState, PolicyPeerIdentity, PolicyProfileHandoffEffect,
-    PolicyProfileHandoffKind, PolicyRoleEndpoint, PolicyRoleEndpointError, PolicySnapshotAssembler,
-    PolicyTransferError, QueuedPolicyProjection,
+    PolicyConnectionState, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
+    PolicyProfileHandoffEffect, PolicyProfileHandoffError, PolicyProfileHandoffKind,
+    PolicyProfileHandoffModel, PolicyProfileHandoffMsg, PolicyRoleEndpoint,
+    PolicyRoleEndpointError, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
+    reduce_policy_profile_handoff,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,6 +41,13 @@ pub enum PolicyTransportError {
     Codec(IpcCodecError),
     Io(String),
     UnexpectedMessage(IpcMessageKind),
+    ProfileHandoff(PolicyProfileHandoffError),
+    ProfileCompletionOutOfPhase,
+    ProfileCompletionStale,
+    ProfileRejected {
+        kind: PolicyProfileHandoffKind,
+        outcome: WmV1ProfileOutcome,
+    },
     NotConnected,
 }
 
@@ -89,6 +99,12 @@ impl From<IpcCodecError> for PolicyTransportError {
     }
 }
 
+impl From<PolicyProfileHandoffError> for PolicyTransportError {
+    fn from(error: PolicyProfileHandoffError) -> Self {
+        Self::ProfileHandoff(error)
+    }
+}
+
 /// Draft session-owned WM transport. It is not connected to the installed v7
 /// path until the public-protocol milestone reaches its migration gate.
 pub struct PolicyWmSessionTransport {
@@ -101,32 +117,47 @@ pub struct PolicyWmSessionTransport {
 }
 
 impl PolicyWmSessionTransport {
-    pub fn bind(
-        directory: impl AsRef<Path>,
-        expected_peer: PolicyPeerIdentity,
-    ) -> Result<Self, PolicyTransportError> {
-        Ok(Self {
-            endpoint: PolicyRoleEndpoint::bind(directory, expected_peer)?,
+    fn with_endpoint(endpoint: PolicyRoleEndpoint, profile_activation: bool) -> Self {
+        Self {
+            endpoint,
             connection: PolicyConnectionState::default(),
             stream: None,
             read_buffer: Vec::new(),
             peer: None,
-            profile_activation: false,
-        })
+            profile_activation,
+        }
+    }
+
+    pub fn bind(
+        directory: impl AsRef<Path>,
+        expected_peer: PolicyPeerIdentity,
+    ) -> Result<Self, PolicyTransportError> {
+        Ok(Self::with_endpoint(
+            PolicyRoleEndpoint::bind(directory, expected_peer)?,
+            false,
+        ))
     }
 
     pub fn bind_for_supervised_uid(
         directory: impl AsRef<Path>,
         expected_uid: u32,
     ) -> Result<Self, PolicyTransportError> {
-        Ok(Self {
-            endpoint: PolicyRoleEndpoint::bind_for_supervised_uid(directory, expected_uid)?,
-            connection: PolicyConnectionState::default(),
-            stream: None,
-            read_buffer: Vec::new(),
-            peer: None,
-            profile_activation: false,
-        })
+        Ok(Self::with_endpoint(
+            PolicyRoleEndpoint::bind_for_supervised_uid(directory, expected_uid)?,
+            false,
+        ))
+    }
+
+    /// Binds a supervised policy endpoint that requires exact profile
+    /// activation before normal policy traffic is admitted.
+    pub fn bind_for_supervised_uid_profile_activation(
+        directory: impl AsRef<Path>,
+        expected_uid: u32,
+    ) -> Result<Self, PolicyTransportError> {
+        Ok(Self::with_endpoint(
+            PolicyRoleEndpoint::bind_for_supervised_uid(directory, expected_uid)?,
+            true,
+        ))
     }
 
     /// Binds a transport that may negotiate the startup-only profile barrier.
@@ -136,14 +167,10 @@ impl PolicyWmSessionTransport {
         directory: impl AsRef<Path>,
         expected_peer: PolicyPeerIdentity,
     ) -> Result<Self, PolicyTransportError> {
-        Ok(Self {
-            endpoint: PolicyRoleEndpoint::bind(directory, expected_peer)?,
-            connection: PolicyConnectionState::default(),
-            stream: None,
-            read_buffer: Vec::new(),
-            peer: None,
-            profile_activation: true,
-        })
+        Ok(Self::with_endpoint(
+            PolicyRoleEndpoint::bind(directory, expected_peer)?,
+            true,
+        ))
     }
 
     pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), PolicyTransportError> {
@@ -327,7 +354,7 @@ impl PolicyWmSessionTransport {
                     ),
                     _ => unreachable!(),
                 };
-                self.connection.admit_control_message(
+                self.connection.admit_server_completion(
                     completion.transaction,
                     completion.identity.connection_epoch,
                     SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
@@ -430,6 +457,57 @@ impl PolicyWmSessionTransport {
             .write_all(&frame)
             .and_then(|()| stream.flush())
             .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    /// Executes the transport side of exact prepare/activate admission while
+    /// the pure reducer remains the sole phase and correlation authority.
+    pub fn activate_profile_handoff(
+        &mut self,
+        identity: WmV1ProfileIdentity,
+        prepare_transaction: TransactionId,
+        activate_transaction: TransactionId,
+    ) -> Result<PolicyProfileHandoffModel, PolicyTransportError> {
+        let mut model = PolicyProfileHandoffModel::new(identity);
+        for (kind, transaction) in [
+            (PolicyProfileHandoffKind::Prepare, prepare_transaction),
+            (PolicyProfileHandoffKind::Activate, activate_transaction),
+        ] {
+            let update = reduce_policy_profile_handoff(
+                &model,
+                PolicyProfileHandoffMsg::Begin { kind, transaction },
+            )?;
+            self.send_profile_handoff(
+                update
+                    .effect
+                    .expect("a valid profile begin always emits one effect"),
+            )?;
+            let PolicyClientEvent::ProfileCompletion {
+                kind: completion_kind,
+                completion,
+            } = self.receive_client_event()?
+            else {
+                return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
+            };
+            if completion_kind != kind {
+                return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
+            }
+            let settled = reduce_policy_profile_handoff(
+                &update.model,
+                PolicyProfileHandoffMsg::Completion { kind, completion },
+            )?;
+            match settled.completion {
+                Some(PolicyProfileCompletionDisposition::Accepted) => {
+                    model = settled.model;
+                }
+                Some(PolicyProfileCompletionDisposition::Rejected(outcome)) => {
+                    return Err(PolicyTransportError::ProfileRejected { kind, outcome });
+                }
+                Some(PolicyProfileCompletionDisposition::Stale) | None => {
+                    return Err(PolicyTransportError::ProfileCompletionStale);
+                }
+            }
+        }
+        Ok(model)
     }
 
     pub fn send_projection_request(

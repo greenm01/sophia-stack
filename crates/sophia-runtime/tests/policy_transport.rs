@@ -19,8 +19,8 @@ use sophia_protocol::{
 };
 use sophia_runtime::{
     PolicyClientEvent, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
-    PolicyProfileHandoffKind, PolicyProfileHandoffModel, PolicyProfileHandoffMsg,
-    PolicyProfileHandoffPhase, PolicyWmSessionTransport, QueuedPolicyProjection,
+    PolicyProfileHandoffKind, PolicyProfileHandoffMsg, PolicyProfileHandoffPhase,
+    PolicyTransportError, PolicyWmSessionTransport, QueuedPolicyProjection,
     reduce_policy_profile_handoff,
 };
 use sophia_wm_demo::PolicyV1Client;
@@ -171,12 +171,15 @@ fn startup_profile_transport_drives_exact_prepare_activate_and_rollback() {
         .accept_and_negotiate(9, Duration::from_secs(1))
         .unwrap();
     let identity = WmV1ProfileIdentity::new(9, 7, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
-    let mut model = PolicyProfileHandoffModel::new(identity);
-    for (kind, transaction) in [
-        (PolicyProfileHandoffKind::Prepare, 1),
-        (PolicyProfileHandoffKind::Activate, 2),
-        (PolicyProfileHandoffKind::Rollback, 3),
-    ] {
+    let mut model = transport
+        .activate_profile_handoff(
+            identity,
+            TransactionId::from_raw(1),
+            TransactionId::from_raw(2),
+        )
+        .unwrap();
+    assert_eq!(model.phase(), PolicyProfileHandoffPhase::Active);
+    for (kind, transaction) in [(PolicyProfileHandoffKind::Rollback, 3)] {
         let begin = reduce_policy_profile_handoff(
             &model,
             PolicyProfileHandoffMsg::Begin {
@@ -210,6 +213,93 @@ fn startup_profile_transport_drives_exact_prepare_activate_and_rollback() {
     assert_eq!(model.phase(), PolicyProfileHandoffPhase::RolledBack);
     transport.disconnect().unwrap();
     client.join().unwrap();
+}
+
+#[test]
+fn profile_activation_rejects_an_out_of_phase_completion() {
+    assert_eq!(
+        profile_activation_error(ProfileTestResponse::Active(WmV1ProfileOutcome::Accepted)),
+        PolicyTransportError::ProfileCompletionOutOfPhase
+    );
+}
+
+#[test]
+fn profile_activation_preserves_a_typed_identity_rejection() {
+    assert_eq!(
+        profile_activation_error(ProfileTestResponse::Prepared(
+            WmV1ProfileOutcome::RejectedIdentity
+        )),
+        PolicyTransportError::ProfileRejected {
+            kind: PolicyProfileHandoffKind::Prepare,
+            outcome: WmV1ProfileOutcome::RejectedIdentity,
+        }
+    );
+}
+
+#[derive(Clone, Copy)]
+enum ProfileTestResponse {
+    Prepared(WmV1ProfileOutcome),
+    Active(WmV1ProfileOutcome),
+}
+
+fn profile_activation_error(response: ProfileTestResponse) -> PolicyTransportError {
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-policy-profile-rejection-{}-{}",
+        std::process::id(),
+        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let mut transport =
+        PolicyWmSessionTransport::bind_for_startup_profile_activation(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_path_buf();
+    let client = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket_path).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_client_hello_frame(&WmV1ClientHello {
+                    minimum_revision: 3,
+                    maximum_revision: 3,
+                    capabilities: SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        decode_wm_v1_server_welcome_frame(&read_frame(&mut stream)).unwrap();
+        let command = decode_wm_v1_profile_prepare(&read_frame(&mut stream)).unwrap();
+        let completion = WmV1ProfileCompletion {
+            transaction: command.transaction,
+            identity: command.identity,
+            outcome: match response {
+                ProfileTestResponse::Prepared(outcome) | ProfileTestResponse::Active(outcome) => {
+                    outcome
+                }
+            },
+        };
+        let frame = match response {
+            ProfileTestResponse::Prepared(_) => encode_wm_v1_profile_prepared(completion),
+            ProfileTestResponse::Active(_) => encode_wm_v1_profile_active(completion),
+        }
+        .unwrap();
+        stream.write_all(&frame).unwrap();
+    });
+
+    transport
+        .accept_and_negotiate(9, Duration::from_secs(1))
+        .unwrap();
+    let identity = WmV1ProfileIdentity::new(9, 7, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
+    let error = transport
+        .activate_profile_handoff(
+            identity,
+            TransactionId::from_raw(1),
+            TransactionId::from_raw(2),
+        )
+        .unwrap_err();
+    transport.disconnect().unwrap();
+    client.join().unwrap();
+    error
 }
 
 fn read_frame(stream: &mut UnixStream) -> Vec<u8> {

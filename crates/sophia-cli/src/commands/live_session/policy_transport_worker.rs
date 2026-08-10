@@ -7,8 +7,8 @@ use std::time::Duration;
 use sophia_protocol::{
     PolicyActionRegistration, PolicyConfiguration, PolicyProjectionOutcome,
     PolicyProjectionProposal, PolicyProjectionRequest, PolicySceneSnapshot,
-    PolicySessionOperationRequest, TransactionId, decode_wm_v1_policy_projection,
-    encode_wm_v1_policy_snapshot,
+    PolicySessionOperationRequest, TransactionId, WmV1ProfileIdentity,
+    decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
 };
 use sophia_runtime::{PolicyClientEvent, PolicyWmSessionTransport, QueuedPolicyProjection};
 
@@ -64,10 +64,44 @@ pub(super) struct PolicyTransportWorker {
     thread: Option<JoinHandle<()>>,
 }
 
+#[derive(Clone, Copy)]
+struct PolicyProfileAdmission {
+    identity: WmV1ProfileIdentity,
+    prepare_transaction: TransactionId,
+    activate_transaction: TransactionId,
+}
+
 impl PolicyTransportWorker {
     pub(super) fn new(
+        transport: PolicyWmSessionTransport,
+        connection_epoch: u64,
+    ) -> Result<Self, std::io::Error> {
+        Self::spawn(transport, connection_epoch, None)
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_profile_activated(
+        transport: PolicyWmSessionTransport,
+        connection_epoch: u64,
+        identity: WmV1ProfileIdentity,
+        prepare_transaction: TransactionId,
+        activate_transaction: TransactionId,
+    ) -> Result<Self, std::io::Error> {
+        Self::spawn(
+            transport,
+            connection_epoch,
+            Some(PolicyProfileAdmission {
+                identity,
+                prepare_transaction,
+                activate_transaction,
+            }),
+        )
+    }
+
+    fn spawn(
         mut transport: PolicyWmSessionTransport,
         connection_epoch: u64,
+        profile_admission: Option<PolicyProfileAdmission>,
     ) -> Result<Self, std::io::Error> {
         let (command_sender, command_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let (event_sender, event_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
@@ -77,6 +111,7 @@ impl PolicyTransportWorker {
                 let result = run_policy_transport(
                     &mut transport,
                     connection_epoch,
+                    profile_admission,
                     &command_receiver,
                     &event_sender,
                 );
@@ -128,12 +163,22 @@ impl Drop for PolicyTransportWorker {
 fn run_policy_transport(
     transport: &mut PolicyWmSessionTransport,
     connection_epoch: u64,
+    profile_admission: Option<PolicyProfileAdmission>,
     commands: &Receiver<PolicyTransportCommand>,
     events: &SyncSender<PolicyTransportEvent>,
 ) -> Result<(), String> {
     transport
         .accept_and_negotiate(connection_epoch, Duration::from_secs(4))
         .map_err(|error| error.to_string())?;
+    if let Some(admission) = profile_admission {
+        transport
+            .activate_profile_handoff(
+                admission.identity,
+                admission.prepare_transaction,
+                admission.activate_transaction,
+            )
+            .map_err(|error| error.to_string())?;
+    }
     events
         .send(PolicyTransportEvent::Negotiated)
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;

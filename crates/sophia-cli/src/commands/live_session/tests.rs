@@ -65,6 +65,7 @@ use std::time::{Duration, Instant};
 mod desktop_shortcut_tests;
 mod input_policy_tests;
 mod output_topology_owner_tests;
+mod policy_transport_worker_tests;
 mod present_retirement_tests;
 mod presentation_role_tests;
 mod presentation_tests;

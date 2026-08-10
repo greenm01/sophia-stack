@@ -470,6 +470,20 @@ impl PolicyConnectionState {
         Ok(())
     }
 
+    pub(crate) fn admit_server_completion(
+        &self,
+        transaction: TransactionId,
+        connection_epoch: u64,
+        required_capability: u64,
+    ) -> Result<(), PolicyTransferError> {
+        // Completion identities correlate server-originated commands. They do
+        // not consume the independent client-control transaction namespace.
+        if !transaction.is_valid() {
+            return Err(PolicyTransferError::InvalidTransaction);
+        }
+        self.require_server_control(connection_epoch, required_capability)
+    }
+
     pub(crate) fn require_server_control(
         &self,
         connection_epoch: u64,
