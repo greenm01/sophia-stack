@@ -178,12 +178,9 @@ impl PersistentXtermSessionConfig {
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
         )?;
-        let desktop_input = sophia_config::prepare_desktop_input_candidate(
-            desktop_profile
-                .candidates
-                .get(&sophia_config::DesktopAuthority::Input)
-                .expect("desktop profile partition creates an input candidate"),
-        )?;
+        let prepared_desktop =
+            sophia_config::prepare_desktop_profile_candidates(&desktop_profile)?;
+        let desktop_input = prepared_desktop.input;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
@@ -249,12 +246,7 @@ impl PersistentXtermSessionConfig {
             }
             app.arguments.push(argument.to_owned());
         }
-        let desktop_session = sophia_config::prepare_desktop_session_candidate(
-            desktop_profile
-                .candidates
-                .get(&sophia_config::DesktopAuthority::Session)
-                .expect("desktop profile partition creates a session candidate"),
-        )?;
+        let desktop_session = prepared_desktop.session;
         let terminal_overridden = args.iter().any(|argument| {
             argument
                 .strip_prefix("--session-action-app=")
@@ -640,13 +632,7 @@ impl PersistentXtermSessionConfig {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
         if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            let shortcuts = sophia_config::prepare_desktop_shortcut_candidate(
-                desktop_profile
-                    .candidates
-                    .get(&sophia_config::DesktopAuthority::Shortcut)
-                    .expect("desktop profile partition creates a shortcut candidate"),
-            )?;
-            applications.validate_shortcuts(&shortcuts)?;
+            applications.validate_shortcuts(&prepared_desktop.shortcut)?;
         }
         let wm_public_fault_after = arg_value(args, "--wm-proof-fault-after")
             .as_deref()

@@ -3,6 +3,7 @@ pub(crate) fn print(verbose: bool) {
     println!("components: engine, x-authority, protocol, wm-demo");
     println!("commands: config check [--config=/absolute/path]");
     println!("commands: config check --wm [--wm-config=/absolute/path]");
+    println!("commands: config check --desktop-profile=/absolute/path");
     println!("commands: config print-effective [--wm]");
     println!("commands: runtime-damage-epoch-smoke");
     println!("commands: headless-session-driver-smoke");

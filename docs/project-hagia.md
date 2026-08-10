@@ -244,6 +244,13 @@ unsupported scale/transform/VRR, overlaps, ambiguous modes, or an all-dark
 result. Supplying that snapshot from the trusted backend, atomic KMS testing,
 activation, and rollback are the next output-authority tranche.
 
+One shared preparation function now validates the shortcut, session, input,
+and output candidates at profile load, staging revalidation, and live-session
+configuration. `sophia config check --desktop-profile=/absolute/path` invokes
+that same read-only boundary without constructing a graphical session, so a
+migrated profile can be checked by the trusted coordinator rather than only by
+Hagia's structural parser.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR

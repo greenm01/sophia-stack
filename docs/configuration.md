@@ -64,6 +64,9 @@ explicitly authority-qualified, for example `policy:switch-layout` or
 `session:close-window`; pointer bindings cannot invoke session capabilities.
 This preparation does not activate the candidate or grant an unavailable
 capability.
+The desktop-profile form of `config check` runs the same typed shortcut,
+session, input, and output preparation used by graphical startup; it performs
+no device discovery or activation.
 Watched desktop-profile reload remains disabled until the cross-authority
 prepare/activate/rollback protocol is wired; Sophia's existing core and native
 WM reload behavior is unchanged.
@@ -143,6 +146,8 @@ Validate the discovered files without starting a graphical session:
 ```sh
 cargo run --offline -q -p sophia-cli -- config check
 cargo run --offline -q -p sophia-cli -- config check --wm
+cargo run --offline -q -p sophia-cli -- config check \
+    --desktop-profile=/absolute/path/to/hagia/config.kdl
 ```
 
 Inspect the parsed, default-expanded snapshots:

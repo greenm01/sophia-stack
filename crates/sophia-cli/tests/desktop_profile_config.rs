@@ -1,0 +1,112 @@
+use std::fs;
+use std::os::unix::fs::PermissionsExt as _;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
+
+fn temporary_directory() -> PathBuf {
+    let serial = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "sophia-desktop-profile-cli-{}-{serial}",
+        std::process::id()
+    ));
+    fs::create_dir(&path).expect("create test directory");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+        .expect("make test directory private");
+    path
+}
+
+fn write_profile(path: &Path, source: &str) {
+    fs::write(path, source).expect("write profile");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("make profile private");
+}
+
+fn sophia() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_sophia"))
+}
+
+#[test]
+fn config_check_validates_every_typed_desktop_candidate() {
+    let root = temporary_directory();
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        r#"schema 1
+policy { layout scroller; view-count 3; }
+shell { enabled #false; }
+shortcut { profile migrated; }
+session { terminal kitty; logout #true; }
+input {
+  inherit-sophia #true
+  keyboard { repeat-rate 40; repeat-delay 300; numlock #true; }
+  pointer { accel-profile flat; scroll-factor 1.0; }
+}
+output {
+  inherit-sophia #true
+  named DP-1 {
+    mode "2560x1440@120"
+    scale "auto"
+    position 0 0
+    enabled #true
+    focus-at-startup #true
+    vrr 1
+  }
+}
+broker { enabled #false; }
+"#,
+    );
+
+    let output = sophia()
+        .args([
+            "config",
+            "check",
+            &format!("--desktop-profile={}", path.display()),
+        ])
+        .output()
+        .expect("run Sophia profile check");
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("valid domain=desktop-profile schema=1")
+    );
+
+    write_profile(
+        &path,
+        "schema 1\noutput { named DP-1 { enabled #true; vrr 3; } }\n",
+    );
+    let rejected = sophia()
+        .args([
+            "config",
+            "check",
+            &format!("--desktop-profile={}", path.display()),
+        ])
+        .output()
+        .expect("run Sophia profile rejection");
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("output candidate"));
+
+    fs::remove_dir_all(root).expect("remove test directory");
+}
+
+#[test]
+fn desktop_profile_check_rejects_ambiguous_or_relative_selection() {
+    let relative = sophia()
+        .args(["config", "check", "--desktop-profile=relative.kdl"])
+        .output()
+        .expect("run relative profile rejection");
+    assert!(!relative.status.success());
+    assert!(String::from_utf8_lossy(&relative.stderr).contains("absolute path"));
+
+    let ambiguous = sophia()
+        .args([
+            "config",
+            "check",
+            "--desktop-profile=/tmp/profile.kdl",
+            "--wm",
+        ])
+        .output()
+        .expect("run ambiguous profile rejection");
+    assert!(!ambiguous.status.success());
+    assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("rejects option"));
+}

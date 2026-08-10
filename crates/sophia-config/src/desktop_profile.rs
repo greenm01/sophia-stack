@@ -151,6 +151,14 @@ pub struct DesktopProfileGeneration {
     pub candidates: BTreeMap<DesktopAuthority, DesktopAuthorityCandidate>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedDesktopProfileCandidates {
+    pub shortcut: crate::DesktopShortcutCandidate,
+    pub session: crate::DesktopSessionCandidate,
+    pub input: crate::DesktopInputCandidate,
+    pub output: crate::DesktopOutputCandidate,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DesktopProfileError {
     Io(ConfigIoError),
@@ -254,31 +262,26 @@ pub fn load_desktop_profile(
         sources: expansion.sources,
         candidates,
     };
-    crate::prepare_desktop_shortcut_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Shortcut)
-            .expect("partition creates every authority candidate"),
-    )?;
-    crate::prepare_desktop_session_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Session)
-            .expect("partition creates every authority candidate"),
-    )?;
-    crate::prepare_desktop_input_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Input)
-            .expect("partition creates every authority candidate"),
-    )?;
-    crate::prepare_desktop_output_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Output)
-            .expect("partition creates every authority candidate"),
-    )?;
+    prepare_desktop_profile_candidates(&profile)?;
     Ok(profile)
+}
+
+pub fn prepare_desktop_profile_candidates(
+    profile: &DesktopProfileGeneration,
+) -> Result<PreparedDesktopProfileCandidates, DesktopProfileError> {
+    let candidate = |authority| {
+        profile.candidates.get(&authority).ok_or_else(|| {
+            DesktopProfileError::Schema(format!("missing {} authority candidate", authority.name()))
+        })
+    };
+    Ok(PreparedDesktopProfileCandidates {
+        shortcut: crate::prepare_desktop_shortcut_candidate(candidate(
+            DesktopAuthority::Shortcut,
+        )?)?,
+        session: crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session)?)?,
+        input: crate::prepare_desktop_input_candidate(candidate(DesktopAuthority::Input)?)?,
+        output: crate::prepare_desktop_output_candidate(candidate(DesktopAuthority::Output)?)?,
+    })
 }
 
 pub fn stage_desktop_profile(
@@ -293,30 +296,7 @@ pub fn stage_desktop_profile(
             "staging directory must be absolute".to_owned(),
         ));
     }
-    crate::prepare_desktop_shortcut_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Shortcut)
-            .ok_or_else(|| DesktopProfileError::Stage("missing shortcut candidate".to_owned()))?,
-    )?;
-    crate::prepare_desktop_session_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Session)
-            .ok_or_else(|| DesktopProfileError::Stage("missing session candidate".to_owned()))?,
-    )?;
-    crate::prepare_desktop_input_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Input)
-            .ok_or_else(|| DesktopProfileError::Stage("missing input candidate".to_owned()))?,
-    )?;
-    crate::prepare_desktop_output_candidate(
-        profile
-            .candidates
-            .get(&DesktopAuthority::Output)
-            .ok_or_else(|| DesktopProfileError::Stage("missing output candidate".to_owned()))?,
-    )?;
+    prepare_desktop_profile_candidates(profile)?;
     let metadata = fs::symlink_metadata(directory)
         .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
     if metadata.file_type().is_symlink()

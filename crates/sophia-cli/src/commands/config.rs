@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sophia_config::{
     ConfigDomain, ConfigGeneration, ConfigSource, ConfigSourceClass,
-    discover_default_config_source, load_core_snapshot, load_wm_snapshot,
+    discover_default_config_source, load_core_snapshot, load_desktop_profile, load_wm_snapshot,
 };
 
 pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
@@ -10,6 +10,14 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(false);
     }
     let operation = args.get(1).map(String::as_str).unwrap_or("check");
+    if let Some(path) = desktop_profile_path(args)? {
+        validate_desktop_profile_options(args)?;
+        if operation != "check" {
+            return Err("desktop profiles currently support only config check".into());
+        }
+        check_desktop_profile(&path)?;
+        return Ok(true);
+    }
     let wm = args.iter().skip(2).any(|argument| argument == "--wm");
     let domain = if wm {
         ConfigDomain::Wm
@@ -30,6 +38,47 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         }
     }
     Ok(true)
+}
+
+fn desktop_profile_path(args: &[String]) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let values = args
+        .iter()
+        .skip(2)
+        .filter_map(|argument| argument.strip_prefix("--desktop-profile="))
+        .collect::<Vec<_>>();
+    if values.len() > 1 {
+        return Err("duplicate --desktop-profile".into());
+    }
+    let path = values.first().map(PathBuf::from);
+    if path
+        .as_ref()
+        .is_some_and(|path| !path.is_absolute() || path.as_os_str().is_empty())
+    {
+        return Err("--desktop-profile requires an absolute path".into());
+    }
+    Ok(path)
+}
+
+fn validate_desktop_profile_options(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    for argument in args.iter().skip(2) {
+        if argument == "-v" || argument == "--verbose" || argument.starts_with("--desktop-profile=")
+        {
+            continue;
+        }
+        return Err(format!("desktop profile check rejects option {argument:?}").into());
+    }
+    Ok(())
+}
+
+fn check_desktop_profile(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = load_desktop_profile(Some(path), ConfigGeneration::INITIAL)?;
+    println!(
+        "valid domain=desktop-profile schema=1 generation={} digest={} sources={}",
+        profile.generation.raw(),
+        profile.digest,
+        profile.sources.len()
+    );
+    Ok(())
 }
 
 fn validate_options(args: &[String], wm: bool) -> Result<(), Box<dyn std::error::Error>> {
