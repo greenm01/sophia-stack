@@ -57,6 +57,13 @@ authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime
 directory and gives Hagia only the policy-fragment path. Hagia cannot read or
 replace the shell, shortcut, session, input, output, or broker candidates.
+Shortcut candidates are prepared into bounded typed chords before staging:
+at most 256 key or pointer bindings, normalized modifier/key identities, no
+duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
+explicitly authority-qualified, for example `policy:switch-layout` or
+`session:close-window`; pointer bindings cannot invoke session capabilities.
+This preparation does not activate the candidate or grant an unavailable
+capability.
 Watched desktop-profile reload remains disabled until the cross-authority
 prepare/activate/rollback protocol is wired; Sophia's existing core and native
 WM reload behavior is unchanged.

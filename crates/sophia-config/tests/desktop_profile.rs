@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
     ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
-    DesktopProfileError, discover_desktop_profile_source, load_desktop_profile,
-    stage_desktop_profile,
+    DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
+    DesktopShortcutModifiers, DesktopShortcutTarget, discover_desktop_profile_source,
+    load_desktop_profile, prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -108,6 +109,75 @@ fn native_policy_layout_cycle_is_validated_and_partitioned() {
         assert!(matches!(
             load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
             Err(DesktopProfileError::Schema(_))
+        ));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn shortcut_candidate_prepares_typed_chords_and_authority_targets() {
+    let root = temporary_directory("shortcut-candidate");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+shortcut {
+  profile "daily"
+  bind "Super+q" "session:close-window"
+  bind "Super+1" "policy:activate-view 1"
+  pointer-bind "Super+left" "policy:move"
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let shortcut = prepare_desktop_shortcut_candidate(
+        profile.candidates.get(&DesktopAuthority::Shortcut).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(shortcut.generation, profile.generation);
+    assert_eq!(shortcut.digest, profile.digest);
+    assert_eq!(shortcut.profile, "daily");
+    assert_eq!(shortcut.bindings.len(), 3);
+    assert_eq!(
+        shortcut.bindings[0].chord.kind,
+        DesktopShortcutBindingKind::Key
+    );
+    assert_eq!(
+        shortcut.bindings[0].chord.modifiers,
+        DesktopShortcutModifiers::SUPER
+    );
+    assert_eq!(
+        shortcut.bindings[0].target,
+        DesktopShortcutTarget::Session(DesktopSessionShortcut::CloseFocused)
+    );
+    assert_eq!(
+        shortcut.bindings[1].target,
+        DesktopShortcutTarget::PolicyAction("activate-view 1".to_owned())
+    );
+    assert_eq!(
+        shortcut.bindings[2].chord.kind,
+        DesktopShortcutBindingKind::Pointer
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn shortcut_candidate_rejects_ambiguous_reserved_and_cross_authority_bindings() {
+    let root = temporary_directory("shortcut-rejections");
+    let profile_path = root.join("config.kdl");
+    for source in [
+        "schema 1\nshortcut { profile \"daily\"; bind \"Super+q\" \"close-window\"; }\n",
+        "schema 1\nshortcut { profile \"daily\"; bind \"Ctrl+Alt+Backspace\" \"session:logout\"; }\n",
+        "schema 1\nshortcut { profile \"daily\"; pointer-bind \"Super+left\" \"session:logout\"; }\n",
+        "schema 1\nshortcut { profile \"daily\"; bind \"Super+q\" \"policy:first\"; bind \"super+Q\" \"policy:second\"; }\n",
+        "schema 1\nshortcut { profile \"daily\"; bind \"Hyper+q\" \"policy:first\"; }\n",
+        "schema 1\nshortcut { bind \"Super+q\" \"policy:first\"; }\n",
+    ] {
+        write_profile(&profile_path, source);
+        assert!(matches!(
+            load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
+            Err(DesktopProfileError::Schema(message)) if message.contains("shortcut candidate")
         ));
     }
     fs::remove_dir_all(root).unwrap();
@@ -227,6 +297,25 @@ fn stages_isolated_owner_only_authority_fragments() {
         }
     }
     drop(fragments);
+    assert!(fs::read_dir(&root).unwrap().next().is_none());
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn staging_revalidates_a_mutated_shortcut_candidate() {
+    let root = temporary_directory("stage-shortcut-revalidation");
+    let mut profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    profile
+        .candidates
+        .get_mut(&DesktopAuthority::Shortcut)
+        .unwrap()
+        .values[0]
+        .encoded = "bind \"Super+q\" \"close-window\"".to_owned();
+
+    assert!(matches!(
+        stage_desktop_profile(&profile, &root),
+        Err(DesktopProfileError::Schema(message)) if message.contains("shortcut candidate")
+    ));
     assert!(fs::read_dir(&root).unwrap().next().is_none());
     fs::remove_dir(root).unwrap();
 }

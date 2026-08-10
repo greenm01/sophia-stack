@@ -196,12 +196,19 @@ pub fn load_desktop_profile(
     };
     let digest = ConfigDigest::new(Sha256::digest(&expansion.digest_input).into());
     let candidates = partition(&nodes, generation, digest)?;
-    Ok(DesktopProfileGeneration {
+    let profile = DesktopProfileGeneration {
         generation,
         digest,
         sources: expansion.sources,
         candidates,
-    })
+    };
+    crate::prepare_desktop_shortcut_candidate(
+        profile
+            .candidates
+            .get(&DesktopAuthority::Shortcut)
+            .expect("partition creates every authority candidate"),
+    )?;
+    Ok(profile)
 }
 
 pub fn stage_desktop_profile(
@@ -216,6 +223,12 @@ pub fn stage_desktop_profile(
             "staging directory must be absolute".to_owned(),
         ));
     }
+    crate::prepare_desktop_shortcut_candidate(
+        profile
+            .candidates
+            .get(&DesktopAuthority::Shortcut)
+            .ok_or_else(|| DesktopProfileError::Stage("missing shortcut candidate".to_owned()))?,
+    )?;
     let metadata = fs::symlink_metadata(directory)
         .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
     if metadata.file_type().is_symlink()
