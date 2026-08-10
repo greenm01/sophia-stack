@@ -256,7 +256,15 @@ for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
 property discovery. It reuses the already-owned libdrm device and selection;
 there is no second sysfs topology reader and no ioctl that changes state.
-Coordinator translation into the configuration DTO is not yet wired.
+A pure coordinator adapter now joins those facts to Engine outputs by stable
+`OutputId` and constructs the immutable configuration topology DTO. It rejects
+missing/duplicate identities and selected-mode/pixel-size disagreement,
+preserves Engine semantic order, derives checked nonoverlapping current
+positions, and advertises only capabilities the current backend implements:
+integer compositor scale, normal transform, and VRR only after complete
+property discovery. The migrated two-output candidate reconciles against this
+projection in tests. Live owner wiring, atomic testing, and activation remain
+deferred.
 
 ## Implementation Progression
 

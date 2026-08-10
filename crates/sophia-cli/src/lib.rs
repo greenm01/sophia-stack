@@ -1,5 +1,7 @@
 pub mod backend_args;
 pub mod backend_evidence;
+#[cfg(feature = "atomic-scanout-live")]
+pub mod desktop_output_topology;
 pub mod emergency_input;
 pub mod input_proof;
 pub mod resize_transaction;

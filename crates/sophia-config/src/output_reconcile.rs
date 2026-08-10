@@ -310,6 +310,12 @@ pub fn reconcile_desktop_output_candidate(
     })
 }
 
+pub fn validate_desktop_output_topology_snapshot(
+    topology: &DesktopOutputTopologySnapshot,
+) -> Result<(), DesktopOutputReconcileError> {
+    validate_topology(topology)
+}
+
 fn validate_candidate(
     candidate: &DesktopOutputCandidate,
 ) -> Result<(), DesktopOutputReconcileError> {
