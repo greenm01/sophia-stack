@@ -66,7 +66,8 @@ struct LivePublicPolicyState {
     in_flight_request: Option<sophia_protocol::PolicyProjectionRequest>,
     staged: Option<sophia_engine::StagedPolicyProjection>,
     prepared: Option<LivePolicySettlementIdentity>,
-    shortcut_candidate: sophia_config::DesktopShortcutCandidate,
+    shortcut_profile_slot:
+        sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
     actions: Vec<sophia_protocol::PolicyActionRegistration>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
@@ -558,7 +559,9 @@ impl LiveWmSession {
         let directory = PolicySessionDirectory::create(
             config.wm_socket_path.with_extension("policy"),
         )?;
-        let shortcut_candidate = config.desktop_candidates.shortcut.clone();
+        let shortcut_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
+            config.desktop_candidates.shortcut.clone(),
+        )?;
         let profile_fragments =
             sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
@@ -631,7 +634,7 @@ impl LiveWmSession {
             in_flight_request: None,
             staged: None,
             prepared: None,
-            shortcut_candidate,
+            shortcut_profile_slot,
             actions: Vec::new(),
             outputs: outputs.to_vec(),
             output_generations,
@@ -732,7 +735,15 @@ impl LiveWmSession {
                         .is_none_or(|slot| admitted_slots.contains(&slot))
                 });
                 let registry = slots_valid
-                    .then(|| resolve_public_shortcuts(&public.shortcut_candidate, &configuration))
+                    .then(|| {
+                        resolve_public_shortcuts(
+                            public
+                                .shortcut_profile_slot
+                                .candidate()
+                                .expect("public policy retains its prepared shortcut candidate"),
+                            &configuration,
+                        )
+                    })
                     .and_then(Result::ok);
                 let outcome = match registry {
                     Some(registry)

@@ -109,6 +109,11 @@ Completed evidence is archived in `research-log-archive.md`.
   preparation reads the slot's candidate rather than bypassing participant
   state. Tests prove the slot and canonical bundle carry the same payload and
   exact key in `Prepared` phase; startup assembly performs no activation.
+- A shared `with_candidate` constructor now centralizes empty-slot creation and
+  the initial prepare transition. The public shortcut owner uses it to retain
+  the canonical typed shortcut candidate and resolves registrations from the
+  slot payload. This keeps session and shortcut participant state with their
+  respective owners and avoids a coordinator-owned slot collection.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

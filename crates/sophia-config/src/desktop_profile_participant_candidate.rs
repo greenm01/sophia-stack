@@ -94,6 +94,14 @@ where
         })
     }
 
+    pub fn with_candidate(payload: T) -> Result<Self, DesktopProfileCandidateSlotError>
+    where
+        T: Clone,
+    {
+        let slot = Self::new(payload.authority());
+        prepare_desktop_profile_candidate_slot(&slot, payload)
+    }
+
     pub const fn participant(&self) -> &DesktopProfileParticipantModel {
         &self.participant
     }

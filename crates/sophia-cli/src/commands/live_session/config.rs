@@ -184,6 +184,9 @@ impl PersistentXtermSessionConfig {
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
         )?;
+        let session_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
+            prepared_desktop.session.clone(),
+        )?;
         let desktop_input = &prepared_desktop.input;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
@@ -200,12 +203,6 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--startup-ready-timeout-ms accepts 100-60000 milliseconds".into());
         }
-        let session_profile_slot = sophia_config::prepare_desktop_profile_candidate_slot(
-            &sophia_config::DesktopProfileCandidateSlot::new(
-                sophia_config::DesktopAuthority::Session,
-            ),
-            prepared_desktop.session.clone(),
-        )?;
         let session_profile_candidate = session_profile_slot
             .candidate()
             .expect("successful session profile preparation retains its candidate");

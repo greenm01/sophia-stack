@@ -792,6 +792,13 @@ canonical typed session payload in one session-owned generic slot and derives
 the effective configuration from that slot's prepared payload. The slot remains
 exactly `Prepared`; configuration assembly cannot promote it.
 
+Authority owners construct prepared slots through one shared constructor rather
+than reproducing initialization and transition order. The public shortcut
+owner now retains its canonical typed payload in such a slot and resolves
+registrations only from that prepared payload. Session and shortcut slots live
+with their respective owners; they are not a coordinator-owned slot array and
+neither is activated by this preparation path.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

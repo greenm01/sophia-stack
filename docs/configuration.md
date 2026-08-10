@@ -130,6 +130,12 @@ session-owned slot before deriving that effective configuration. The retained
 slot is exactly `Prepared`, advertises the profile's activation key, and is
 checked against the canonical bundle in tests. It is intentionally not
 activated by configuration assembly.
+The generic slot exposes one `with_candidate` constructor so authority owners
+do not repeat `new` plus `prepare` sequencing. The public shortcut owner now
+uses the same constructor, retains its typed shortcut payload in `Prepared`
+state, and resolves action registrations from the slot payload instead of
+bypassing participant state. Shortcut installation is still outside the global
+activation barrier and is not claimed as active profile state.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

@@ -52,6 +52,21 @@ fn prepared_payload_types_report_one_exact_authority_and_key() {
 }
 
 #[test]
+fn candidate_constructor_derives_authority_and_retains_prepared_payload() {
+    let prepared = load_prepared_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    let payload = prepared.candidates.session;
+    let slot = DesktopProfileCandidateSlot::with_candidate(payload.clone()).unwrap();
+
+    assert_eq!(slot.participant().authority(), DesktopAuthority::Session);
+    assert_eq!(
+        slot.participant().phase(),
+        DesktopProfileParticipantPhase::Prepared
+    );
+    assert_eq!(slot.candidate(), Some(&payload));
+    assert_eq!(slot.active(), None);
+}
+
+#[test]
 fn slot_prepares_activates_and_restores_the_previous_payload() {
     let initial = payload(DesktopAuthority::Policy, 1, 1);
     let candidate = payload(DesktopAuthority::Policy, 2, 2);

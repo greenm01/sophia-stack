@@ -330,6 +330,10 @@ activation and watched reload disconnected. Trusted startup now instantiates
 that participant's generic slot, prepares the canonical typed session payload,
 and derives the effective application configuration from the retained slot.
 The slot remains `Prepared` until a future global barrier owns promotion.
+One shared prepared-slot constructor removes repeated initialization sequencing.
+The public shortcut owner now uses it as well and resolves its registrations
+from its own retained prepared payload. These remain separate authority-owned
+slots, not a coordinator collection, and neither is promoted yet.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
