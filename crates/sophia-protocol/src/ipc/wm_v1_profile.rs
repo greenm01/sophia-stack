@@ -85,6 +85,9 @@ fn command(
     profile_generation: u64,
     profile_digest: [u8; WM_V1_PROFILE_DIGEST_BYTES],
 ) -> Result<WmV1ProfileCommand, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(transaction.raw()));
+    }
     Ok(WmV1ProfileCommand {
         transaction,
         identity: WmV1ProfileIdentity::new(connection_epoch, profile_generation, profile_digest)?,
@@ -98,6 +101,9 @@ fn completion(
     profile_digest: [u8; WM_V1_PROFILE_DIGEST_BYTES],
     outcome: u16,
 ) -> Result<WmV1ProfileCompletion, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(transaction.raw()));
+    }
     Ok(WmV1ProfileCompletion {
         transaction,
         identity: WmV1ProfileIdentity::new(connection_epoch, profile_generation, profile_digest)?,

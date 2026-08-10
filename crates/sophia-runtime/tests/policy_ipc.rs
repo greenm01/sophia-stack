@@ -1,8 +1,8 @@
 use sophia_protocol::{
     SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS, TransactionId,
-    WmV1ClientHello, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
-    WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS,
+    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
+    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
 };
 use sophia_runtime::{
     PolicyConnectionState, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
@@ -16,7 +16,10 @@ fn negotiation_selects_the_shared_revision_and_capabilities() {
         .negotiate(&WmV1ClientHello {
             minimum_revision: 1,
             maximum_revision: 3,
-            capabilities: SOPHIA_WM_CAPABILITY_BINDINGS | SOPHIA_WM_CAPABILITY_ACTIONS | (1 << 63),
+            capabilities: SOPHIA_WM_CAPABILITY_BINDINGS
+                | SOPHIA_WM_CAPABILITY_ACTIONS
+                | SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION
+                | (1 << 63),
         })
         .unwrap();
 

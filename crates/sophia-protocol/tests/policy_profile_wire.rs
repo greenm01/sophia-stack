@@ -80,6 +80,23 @@ fn typed_profile_identity_reserves_every_null_field() {
 }
 
 #[test]
+fn typed_profile_messages_reject_null_transactions() {
+    let mut command = command();
+    command.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_wm_v1_profile_prepare(command),
+        Err(IpcCodecError::InvalidTransaction(0))
+    );
+
+    let mut completion = completion(WmV1ProfileOutcome::Accepted);
+    completion.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_wm_v1_profile_prepared(completion),
+        Err(IpcCodecError::InvalidTransaction(0))
+    );
+}
+
+#[test]
 fn typed_profile_completion_rejects_unknown_outcome() {
     let wire = WmV1ProfileActive {
         connection_epoch: 9,

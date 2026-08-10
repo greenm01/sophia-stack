@@ -365,6 +365,11 @@ activate, and rollback records plus typed Rust and C codecs. The matching Hagia
 decoder is checked against the same golden corpus. Sophia deliberately does not
 advertise the `profile_activation` capability yet: schema availability does
 not claim that the external authority has prepared or activated a candidate.
+An authority-local pure transport reducer now correlates each command with its
+exact epoch, transaction, generation, digest, phase, and closed outcome. Stale
+completions are inert, rejected activation requires an explicit rollback, and
+disconnect discards the outstanding operation. Negotiation tests continue to
+prove the capability is omitted even when a client requests it.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

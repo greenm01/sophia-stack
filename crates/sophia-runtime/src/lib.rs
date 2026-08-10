@@ -5,6 +5,7 @@
 
 mod error;
 mod policy_ipc;
+mod policy_profile_handoff;
 #[cfg(target_os = "linux")]
 mod policy_socket;
 #[cfg(target_os = "linux")]
@@ -30,6 +31,7 @@ mod prelude {
 
 pub use error::*;
 pub use policy_ipc::*;
+pub use policy_profile_handoff::*;
 #[cfg(target_os = "linux")]
 pub use policy_socket::*;
 #[cfg(target_os = "linux")]
