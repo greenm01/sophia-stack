@@ -661,8 +661,33 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
     );
     assert_eq!(
         first._session_profile_slot.candidate(),
-        Some(&first.desktop_candidates.session)
+        second._session_profile_slot.candidate()
     );
+    assert_eq!(
+        first.input_profile.slot().participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Prepared
+    );
+    assert_eq!(
+        first.output_profile.slot().participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Prepared
+    );
+    for (generation, digest) in [
+        (
+            first.input_profile.candidate().generation,
+            first.input_profile.candidate().digest,
+        ),
+        (
+            first.output_profile.candidate().generation,
+            first.output_profile.candidate().digest,
+        ),
+        (
+            first.shortcut_profile_candidate.generation,
+            first.shortcut_profile_candidate.digest,
+        ),
+    ] {
+        assert_eq!(generation, first.desktop_profile.generation);
+        assert_eq!(digest, first.desktop_profile.digest);
+    }
     let active_applications = first.applications.clone();
     let active_overrides = first._session_application_overrides.clone();
 

@@ -752,16 +752,17 @@ for every authority. The startup launch gate is the only permitted visibility
 boundary for this model; authority protocols, production effect executors, and
 a live-reload visibility barrier remain unwired.
 
-The startup configuration boundary retains one immutable prepared desktop
+The startup configuration boundary constructs one immutable prepared desktop
 candidate bundle after checking every raw authority candidate against the
-profile's exact generation and digest. Input, output, session, and shortcut
-consumers borrow or clone from that one bundle; the shortcut authority is not
-reparsed later during policy-process setup. The other authority payloads remain
-in the provenance-bearing profile for their future owners. This establishes a
-canonical handler input. A prepared-profile aggregate constructs the raw
-profile, activation key, and typed bundle in one load/prepare pass, while the
-existing raw-profile API remains a validated projection of that result. None of
-these preparation shapes treats validation or selection as activation.
+profile's exact generation and digest. It then partitions that transient bundle
+once: session, input, and output candidates enter cohesive typed owner records
+backed by authority-local slots; shortcut remains only as a transfer payload
+until the public shortcut owner creates its slot. The other authority payloads
+remain in the provenance-bearing profile for their future owners. A
+prepared-profile aggregate still constructs the raw profile, activation key,
+and typed bundle in one load/prepare pass, while the existing raw-profile API
+is a validated projection of that result. No source is reparsed, no long-lived
+coordinator slot collection remains, and selection is not activation.
 
 Each future authority handler can now load its staged fragment through one
 shared admission function. The function accepts an expected authority and
@@ -798,6 +799,12 @@ owner now retains its canonical typed payload in such a slot and resolves
 registrations only from that prepared payload. Session and shortcut slots live
 with their respective owners; they are not a coordinator-owned slot array and
 neither is activated by this preparation path.
+
+Input and output candidates now also live behind distinct typed owner records,
+each containing exactly one prepared generic slot. Input keyboard/pointer
+projection and output capability reconciliation consume only their owner's
+payload. These records preserve domain ownership even while the current
+single-process startup coordinator transports them to their execution seams.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

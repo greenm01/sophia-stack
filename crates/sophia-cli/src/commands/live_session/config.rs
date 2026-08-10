@@ -2,14 +2,17 @@
 mod chrome;
 #[path = "config/firefox_stage.rs"]
 mod firefox_stage;
+#[path = "config/input_profile.rs"]
+mod input_profile;
 #[path = "config/output.rs"]
 mod output;
 #[path = "config/session.rs"]
 mod session;
 use firefox_stage::FirefoxM8StageProof;
+use input_profile::PreparedInputProfile;
 use output::{
-    output_topology_from_engine_outputs, output_topology_from_engine_outputs_at_generation,
-    wm_output_bounds,
+    PreparedOutputProfile, output_topology_from_engine_outputs,
+    output_topology_from_engine_outputs_at_generation, wm_output_bounds,
 };
 use session::{SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec};
 
@@ -85,7 +88,9 @@ struct PersistentXtermSessionConfig {
     key_repeat_config: sophia_config::RepeatConfig,
     initial_caps_lock: bool,
     initial_num_lock: bool,
-    desktop_candidates: sophia_config::PreparedDesktopProfileCandidates,
+    shortcut_profile_candidate: sophia_config::DesktopShortcutCandidate,
+    input_profile: PreparedInputProfile,
+    output_profile: PreparedOutputProfile,
     desktop_profile: sophia_config::DesktopProfileGeneration,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
@@ -112,7 +117,7 @@ impl PersistentXtermSessionConfig {
     }
 
     pub(super) fn native_pointer_policy(&self) -> sophia_backend_live::NativeLibinputPointerPolicy {
-        let Some(candidate) = self.desktop_candidates.input.pointer else {
+        let Some(candidate) = self.input_profile.candidate().pointer else {
             return sophia_backend_live::NativeLibinputPointerPolicy::default();
         };
         sophia_backend_live::NativeLibinputPointerPolicy {
@@ -184,10 +189,18 @@ impl PersistentXtermSessionConfig {
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
         )?;
+        let sophia_config::PreparedDesktopProfileCandidates {
+            shortcut: shortcut_profile_candidate,
+            session: session_profile_candidate,
+            input: input_profile_candidate,
+            output: output_profile_candidate,
+        } = prepared_desktop;
         let session_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
-            prepared_desktop.session.clone(),
+            session_profile_candidate,
         )?;
-        let desktop_input = &prepared_desktop.input;
+        let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
+        let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;
+        let desktop_input = input_profile.candidate();
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
@@ -535,7 +548,7 @@ impl PersistentXtermSessionConfig {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
         if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            applications.validate_shortcuts(&prepared_desktop.shortcut)?;
+            applications.validate_shortcuts(&shortcut_profile_candidate)?;
         }
         let wm_public_fault_after = arg_value(args, "--wm-proof-fault-after")
             .as_deref()
@@ -712,7 +725,9 @@ impl PersistentXtermSessionConfig {
             key_repeat_config,
             initial_caps_lock,
             initial_num_lock,
-            desktop_candidates: prepared_desktop,
+            shortcut_profile_candidate,
+            input_profile,
+            output_profile,
             desktop_profile,
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,

@@ -295,14 +295,13 @@ protocol is proved.
 
 Startup candidate ownership is now narrower and DRY: Sophia validates the
 generation/digest identity of all seven raw candidates once at the shared
-preparation boundary and retains the resulting typed shortcut, session, input,
-and output bundle intact through live-session configuration. Later policy setup
-clones the already prepared shortcut candidate instead of parsing the profile a
-second time. The bundle is immutable admission data for future participant
-handlers; retaining it neither activates an authority nor changes startup
-visibility. A prepared-profile aggregate now returns that bundle beside the raw
-provenance-bearing generation and exact activation key in one pass, removing
-the remaining load-then-reprepare duplication from live-session startup.
+preparation boundary and returns one typed shortcut, session, input, and output
+bundle. Live-session assembly partitions that transient bundle once into
+session, input, and output owner records plus the shortcut transfer payload;
+policy setup creates the shortcut owner's slot without parsing the profile a
+second time. The prepared-profile aggregate still returns the bundle beside the
+raw provenance-bearing generation and exact activation key in one pass, but no
+long-lived coordinator copy remains after partitioning.
 
 Sophia now also mirrors Hagia's staged-candidate admission constraints at its
 authority boundary without sharing implementation code. One loader consumes
@@ -334,6 +333,13 @@ One shared prepared-slot constructor removes repeated initialization sequencing.
 The public shortcut owner now uses it as well and resolves its registrations
 from its own retained prepared payload. These remain separate authority-owned
 slots, not a coordinator collection, and neither is promoted yet.
+
+The transient typed startup bundle is now partitioned once. Session, input, and
+output enter cohesive owner records backed by their separate prepared slots;
+shortcut remains only until transfer to its public owner. Current
+keyboard/pointer overlay, output reconciliation, and shortcut resolution read
+the owner payloads, removing the long-lived centralized bundle without changing
+activation or hardware behavior.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

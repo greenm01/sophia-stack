@@ -560,7 +560,7 @@ impl LiveWmSession {
             config.wm_socket_path.with_extension("policy"),
         )?;
         let shortcut_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
-            config.desktop_candidates.shortcut.clone(),
+            config.shortcut_profile_candidate.clone(),
         )?;
         let profile_fragments =
             sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;

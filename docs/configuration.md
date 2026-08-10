@@ -95,13 +95,14 @@ session, input, and output preparation used by graphical startup; it performs
 no device discovery or activation.
 That preparation boundary first verifies that all seven authority candidates
 match the profile's exact generation and digest, including authorities whose
-payload is consumed by another process. Live-session configuration retains the
-resulting immutable typed bundle rather than splitting it into unrelated
-copies; the public policy setup reuses its prepared shortcut candidate instead
-of reparsing the source profile. The startup loader returns the raw
+payload is consumed by another process. The startup loader returns the raw
 provenance-bearing profile, exact activation key, and derived bundle together,
 so it does not validate and then immediately prepare the same values again.
-This is candidate selection only, not authority activation.
+Live-session assembly partitions that bundle once: session, input, and output
+move into typed owner records backed by their authority-local slots, while the
+shortcut payload is retained only until transfer to the public shortcut owner.
+No consumer reparses the source profile. This is candidate selection only, not
+authority activation.
 An authority-local fragment loader now admits the staged format through the
 same absolute-path, regular-file, one-MiB, owner, and mode checks as other
 trusted configuration. It rejects symlinks, malformed or duplicate markers,
@@ -136,6 +137,10 @@ uses the same constructor, retains its typed shortcut payload in `Prepared`
 state, and resolves action registrations from the slot payload instead of
 bypassing participant state. Shortcut installation is still outside the global
 activation barrier and is not claimed as active profile state.
+Input and output now likewise have cohesive typed owner records around their
+prepared slots. Keyboard/pointer overlays and output reconciliation read those
+owners' candidate payloads. The transient typed bundle is discarded after
+partitioning, so startup does not keep a second coordinator-owned copy.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

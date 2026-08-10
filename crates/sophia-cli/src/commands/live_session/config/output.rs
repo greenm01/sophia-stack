@@ -72,3 +72,33 @@ pub(super) fn wm_output_bounds(
         })
         .collect()
 }
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PreparedOutputProfile {
+    slot: sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate>,
+}
+
+impl PreparedOutputProfile {
+    pub(super) fn new(
+        candidate: sophia_config::DesktopOutputCandidate,
+    ) -> Result<Self, sophia_config::DesktopProfileCandidateSlotError> {
+        Ok(Self {
+            slot: sophia_config::DesktopProfileCandidateSlot::with_candidate(candidate)?,
+        })
+    }
+
+    pub(super) fn candidate(&self) -> &sophia_config::DesktopOutputCandidate {
+        debug_assert_eq!(
+            self.slot().participant().phase(),
+            sophia_config::DesktopProfileParticipantPhase::Prepared
+        );
+        self.slot()
+            .candidate()
+            .expect("trusted startup retains its prepared output candidate")
+    }
+
+    pub(super) const fn slot(
+        &self,
+    ) -> &sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate> {
+        &self.slot
+    }
+}

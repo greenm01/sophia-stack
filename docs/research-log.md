@@ -72,6 +72,9 @@ Completed evidence is archived in `research-log-archive.md`.
   bundle, and policy setup clones its shortcut value. This gives future
   authority handlers one canonical input without labeling preparation as
   activation or changing launch order.
+  A later ownership pass partitions that bundle once into session, input, and
+  output owner records plus the shortcut transfer payload; the aggregate is no
+  longer retained as a second coordinator-owned copy.
 - `load_desktop_profile` had already run the shared preparation boundary before
   returning, so live-session startup's immediate second preparation was pure
   duplication. `load_prepared_desktop_profile` now returns a typed aggregate
