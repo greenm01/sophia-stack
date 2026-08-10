@@ -62,3 +62,16 @@ Do not commit `.specula-output`, copied source trees, agent transcripts, TLC
 state databases, generated patches, or raw traces. Record confirmed behavior
 as the smallest deterministic Rust regression and update the owning TLA+
 model, boundary map, research log, and milestone instead.
+
+The desktop-profile startup activation protocol is modeled before wire
+implementation under `profile-activation-protocol/`. Its checked design model
+separates Sophia's local policy proxy from Hagia's actual authority state,
+binds every completion to epoch/transaction/generation/digest, and keeps the
+graphical launch gate closed through rejection, timeout, disconnect, and
+rollback. The included trace is explicitly a design trace; it is not runtime
+conformance evidence. Run the offline base search, focused hunts, and trace with:
+
+```sh
+SOPHIA_SPECULA_TLA2TOOLS_JAR=/absolute/path/to/tla2tools.jar \
+    tools/check_profile_activation_protocol_model.sh
+```
