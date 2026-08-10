@@ -7,15 +7,18 @@ use sophia_protocol::{
     IpcCodecError, IpcMessageKind, PolicyConfiguration, PolicyDirtyRequest,
     PolicyProjectionOutcome, PolicySessionOperationOutcome, PolicySessionOperationRequest,
     SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_WM_CAPABILITY_CONFIGURATION,
-    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, TransactionId,
-    WmV1PolicyConfigurationOutcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
-    decode_frame, decode_wm_v1_client_hello_frame, decode_wm_v1_policy_configuration,
+    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, TransactionId, WmV1PolicyConfigurationOutcome,
+    WmV1ProfileCompletion, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, decode_frame,
+    decode_wm_v1_client_hello_frame, decode_wm_v1_policy_configuration,
     decode_wm_v1_policy_configuration_frame, decode_wm_v1_policy_dirty,
     decode_wm_v1_policy_dirty_frame, decode_wm_v1_policy_session_operation_request,
+    decode_wm_v1_profile_active, decode_wm_v1_profile_prepared, decode_wm_v1_profile_rolled_back,
     decode_wm_v1_projection_begin_frame, decode_wm_v1_projection_chunk_frame,
     decode_wm_v1_projection_end_frame, decode_wm_v1_session_operation_request_frame,
     encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_policy_projection_outcome,
     encode_wm_v1_policy_projection_request, encode_wm_v1_policy_session_operation_outcome,
+    encode_wm_v1_profile_activate, encode_wm_v1_profile_prepare, encode_wm_v1_profile_rollback,
     encode_wm_v1_projection_outcome_frame, encode_wm_v1_projection_request_frame,
     encode_wm_v1_server_welcome_frame, encode_wm_v1_session_operation_outcome_frame,
     encode_wm_v1_snapshot_begin_frame, encode_wm_v1_snapshot_chunk_frame,
@@ -23,8 +26,9 @@ use sophia_protocol::{
 };
 
 use crate::{
-    PolicyConnectionState, PolicyPeerIdentity, PolicyRoleEndpoint, PolicyRoleEndpointError,
-    PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
+    PolicyConnectionState, PolicyPeerIdentity, PolicyProfileHandoffEffect,
+    PolicyProfileHandoffKind, PolicyRoleEndpoint, PolicyRoleEndpointError, PolicySnapshotAssembler,
+    PolicyTransferError, QueuedPolicyProjection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +56,10 @@ pub enum PolicyClientEvent {
     SessionOperation {
         transaction: TransactionId,
         request: PolicySessionOperationRequest,
+    },
+    ProfileCompletion {
+        kind: PolicyProfileHandoffKind,
+        completion: WmV1ProfileCompletion,
     },
 }
 
@@ -89,6 +97,7 @@ pub struct PolicyWmSessionTransport {
     stream: Option<UnixStream>,
     read_buffer: Vec<u8>,
     peer: Option<PolicyPeerIdentity>,
+    profile_activation: bool,
 }
 
 impl PolicyWmSessionTransport {
@@ -102,6 +111,7 @@ impl PolicyWmSessionTransport {
             stream: None,
             read_buffer: Vec::new(),
             peer: None,
+            profile_activation: false,
         })
     }
 
@@ -115,6 +125,24 @@ impl PolicyWmSessionTransport {
             stream: None,
             read_buffer: Vec::new(),
             peer: None,
+            profile_activation: false,
+        })
+    }
+
+    /// Binds a transport that may negotiate the startup-only profile barrier.
+    /// Selecting the capability does not activate a candidate; callers must
+    /// settle the typed handoff reducer before opening graphical resources.
+    pub fn bind_for_startup_profile_activation(
+        directory: impl AsRef<Path>,
+        expected_peer: PolicyPeerIdentity,
+    ) -> Result<Self, PolicyTransportError> {
+        Ok(Self {
+            endpoint: PolicyRoleEndpoint::bind(directory, expected_peer)?,
+            connection: PolicyConnectionState::default(),
+            stream: None,
+            read_buffer: Vec::new(),
+            peer: None,
+            profile_activation: true,
         })
     }
 
@@ -153,7 +181,8 @@ impl PolicyWmSessionTransport {
             let hello = decode_wm_v1_client_hello_frame(&frame)?;
             let mut connection = self.connection.clone();
             connection.connect(connection_epoch)?;
-            let welcome = connection.negotiate(&hello)?;
+            let welcome =
+                connection.negotiate_profile_activation(&hello, self.profile_activation)?;
             let frame = encode_wm_v1_server_welcome_frame(&welcome)?;
             stream
                 .write_all(&frame)
@@ -187,6 +216,14 @@ impl PolicyWmSessionTransport {
                 Err(PolicyTransportError::UnexpectedMessage(
                     IpcMessageKind::WmV1SessionOperationRequest,
                 ))
+            }
+            PolicyClientEvent::ProfileCompletion { kind, .. } => {
+                let message = match kind {
+                    PolicyProfileHandoffKind::Prepare => IpcMessageKind::WmV1ProfilePrepared,
+                    PolicyProfileHandoffKind::Activate => IpcMessageKind::WmV1ProfileActive,
+                    PolicyProfileHandoffKind::Rollback => IpcMessageKind::WmV1ProfileRolledBack,
+                };
+                Err(PolicyTransportError::UnexpectedMessage(message))
             }
         }
     }
@@ -272,6 +309,31 @@ impl PolicyWmSessionTransport {
                     request,
                 })
             }
+            IpcMessageKind::WmV1ProfilePrepared
+            | IpcMessageKind::WmV1ProfileActive
+            | IpcMessageKind::WmV1ProfileRolledBack => {
+                let (kind, completion) = match header.message_kind {
+                    IpcMessageKind::WmV1ProfilePrepared => (
+                        PolicyProfileHandoffKind::Prepare,
+                        decode_wm_v1_profile_prepared(frame)?,
+                    ),
+                    IpcMessageKind::WmV1ProfileActive => (
+                        PolicyProfileHandoffKind::Activate,
+                        decode_wm_v1_profile_active(frame)?,
+                    ),
+                    IpcMessageKind::WmV1ProfileRolledBack => (
+                        PolicyProfileHandoffKind::Rollback,
+                        decode_wm_v1_profile_rolled_back(frame)?,
+                    ),
+                    _ => unreachable!(),
+                };
+                self.connection.admit_control_message(
+                    completion.transaction,
+                    completion.identity.connection_epoch,
+                    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+                )?;
+                Ok(PolicyClientEvent::ProfileCompletion { kind, completion })
+            }
             other => Err(PolicyTransportError::UnexpectedMessage(other)),
         }
     }
@@ -344,6 +406,29 @@ impl PolicyWmSessionTransport {
         }
         stream
             .flush()
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_profile_handoff(
+        &mut self,
+        effect: PolicyProfileHandoffEffect,
+    ) -> Result<(), PolicyTransportError> {
+        self.connection.require_server_control(
+            effect.command.identity.connection_epoch,
+            SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+        )?;
+        let frame = match effect.kind {
+            PolicyProfileHandoffKind::Prepare => encode_wm_v1_profile_prepare(effect.command)?,
+            PolicyProfileHandoffKind::Activate => encode_wm_v1_profile_activate(effect.command)?,
+            PolicyProfileHandoffKind::Rollback => encode_wm_v1_profile_rollback(effect.command)?,
+        };
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
             .map_err(|error| PolicyTransportError::Io(error.to_string()))
     }
 

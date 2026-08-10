@@ -1,15 +1,28 @@
 #![cfg(target_os = "linux")]
 
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionOutcome, PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot,
-    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
+    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SOPHIA_IPC_HEADER_LEN,
+    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WM_V1_PROFILE_DIGEST_BYTES, WmV1ClientHello, WmV1ProfileCompletion, WmV1ProfileIdentity,
+    WmV1ProfileOutcome, decode_frame, decode_wm_v1_policy_projection,
+    decode_wm_v1_profile_activate, decode_wm_v1_profile_prepare, decode_wm_v1_profile_rollback,
+    decode_wm_v1_server_welcome_frame, encode_wm_v1_client_hello_frame,
+    encode_wm_v1_policy_snapshot, encode_wm_v1_profile_active, encode_wm_v1_profile_prepared,
+    encode_wm_v1_profile_rolled_back,
 };
-use sophia_runtime::{PolicyPeerIdentity, PolicyWmSessionTransport, QueuedPolicyProjection};
+use sophia_runtime::{
+    PolicyClientEvent, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
+    PolicyProfileHandoffKind, PolicyProfileHandoffModel, PolicyProfileHandoffMsg,
+    PolicyProfileHandoffPhase, PolicyWmSessionTransport, QueuedPolicyProjection,
+    reduce_policy_profile_handoff,
+};
 use sophia_wm_demo::PolicyV1Client;
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -88,6 +101,128 @@ fn session_and_reference_client_exchange_one_complete_policy_cycle() {
         Ok(expected)
     );
     transport.disconnect().unwrap();
+}
+
+#[test]
+fn startup_profile_transport_drives_exact_prepare_activate_and_rollback() {
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-policy-profile-transport-{}-{}",
+        std::process::id(),
+        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let mut transport =
+        PolicyWmSessionTransport::bind_for_startup_profile_activation(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_path_buf();
+    let client = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket_path).unwrap();
+        let hello = encode_wm_v1_client_hello_frame(&WmV1ClientHello {
+            minimum_revision: 3,
+            maximum_revision: 3,
+            capabilities: SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+        })
+        .unwrap();
+        stream.write_all(&hello).unwrap();
+        let welcome = decode_wm_v1_server_welcome_frame(&read_frame(&mut stream)).unwrap();
+        assert_eq!(
+            welcome.capabilities,
+            SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION
+        );
+
+        for kind in [
+            PolicyProfileHandoffKind::Prepare,
+            PolicyProfileHandoffKind::Activate,
+            PolicyProfileHandoffKind::Rollback,
+        ] {
+            let frame = read_frame(&mut stream);
+            let command = match kind {
+                PolicyProfileHandoffKind::Prepare => decode_wm_v1_profile_prepare(&frame).unwrap(),
+                PolicyProfileHandoffKind::Activate => {
+                    decode_wm_v1_profile_activate(&frame).unwrap()
+                }
+                PolicyProfileHandoffKind::Rollback => {
+                    decode_wm_v1_profile_rollback(&frame).unwrap()
+                }
+            };
+            let completion = WmV1ProfileCompletion {
+                transaction: command.transaction,
+                identity: command.identity,
+                outcome: WmV1ProfileOutcome::Accepted,
+            };
+            let frame = match kind {
+                PolicyProfileHandoffKind::Prepare => {
+                    encode_wm_v1_profile_prepared(completion).unwrap()
+                }
+                PolicyProfileHandoffKind::Activate => {
+                    encode_wm_v1_profile_active(completion).unwrap()
+                }
+                PolicyProfileHandoffKind::Rollback => {
+                    encode_wm_v1_profile_rolled_back(completion).unwrap()
+                }
+            };
+            stream.write_all(&frame).unwrap();
+        }
+    });
+
+    transport
+        .accept_and_negotiate(9, Duration::from_secs(1))
+        .unwrap();
+    let identity = WmV1ProfileIdentity::new(9, 7, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
+    let mut model = PolicyProfileHandoffModel::new(identity);
+    for (kind, transaction) in [
+        (PolicyProfileHandoffKind::Prepare, 1),
+        (PolicyProfileHandoffKind::Activate, 2),
+        (PolicyProfileHandoffKind::Rollback, 3),
+    ] {
+        let begin = reduce_policy_profile_handoff(
+            &model,
+            PolicyProfileHandoffMsg::Begin {
+                kind,
+                transaction: TransactionId::from_raw(transaction),
+            },
+        )
+        .unwrap();
+        transport
+            .send_profile_handoff(begin.effect.unwrap())
+            .unwrap();
+        let PolicyClientEvent::ProfileCompletion {
+            kind: completion_kind,
+            completion,
+        } = transport.receive_client_event().unwrap()
+        else {
+            panic!("expected a profile completion")
+        };
+        assert_eq!(completion_kind, kind);
+        let settled = reduce_policy_profile_handoff(
+            &begin.model,
+            PolicyProfileHandoffMsg::Completion { kind, completion },
+        )
+        .unwrap();
+        assert_eq!(
+            settled.completion,
+            Some(PolicyProfileCompletionDisposition::Accepted)
+        );
+        model = settled.model;
+    }
+    assert_eq!(model.phase(), PolicyProfileHandoffPhase::RolledBack);
+    transport.disconnect().unwrap();
+    client.join().unwrap();
+}
+
+fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
+    let mut header = [0_u8; SOPHIA_IPC_HEADER_LEN];
+    stream.read_exact(&mut header).unwrap();
+    let payload_len = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+    let mut frame = header.to_vec();
+    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
+    stream
+        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+        .unwrap();
+    decode_frame(&frame).unwrap();
+    frame
 }
 
 fn scene() -> PolicySceneSnapshot {

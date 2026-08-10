@@ -370,6 +370,12 @@ exact epoch, transaction, generation, digest, phase, and closed outcome. Stale
 completions are inert, rejected activation requires an explicit rollback, and
 disconnect discards the outstanding operation. Negotiation tests continue to
 prove the capability is omitted even when a client requests it.
+The runtime transport now also has an explicit startup-only opt-in constructor
+and typed send/completion paths. A private Unix-socket test drives prepare,
+activate, and rollback through the pure reducer with exact correlation. The
+installed supervised-UID constructor remains non-opt-in, so this plumbing has
+no production effect until the pre-graphics owner is restructured around the
+global barrier.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

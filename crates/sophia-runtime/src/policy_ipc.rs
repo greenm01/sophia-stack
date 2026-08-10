@@ -8,11 +8,11 @@ use sophia_protocol::{
     SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_CHROME,
     SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS,
     SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
-    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
-    SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS,
-    SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
-    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer, WmV1ServerWelcome,
-    WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
+    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
+    SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello,
+    WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer,
+    WmV1ServerWelcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
 };
 
 pub const POLICY_MAX_TRANSFER_CHUNKS: usize = 1024;
@@ -208,6 +208,14 @@ impl PolicyConnectionState {
         &mut self,
         hello: &WmV1ClientHello,
     ) -> Result<WmV1ServerWelcome, PolicyTransferError> {
+        self.negotiate_profile_activation(hello, false)
+    }
+
+    pub(crate) fn negotiate_profile_activation(
+        &mut self,
+        hello: &WmV1ClientHello,
+        profile_activation: bool,
+    ) -> Result<WmV1ServerWelcome, PolicyTransferError> {
         if !self.connected {
             return Err(PolicyTransferError::NotConnected);
         }
@@ -224,7 +232,13 @@ impl PolicyConnectionState {
         }
         self.negotiated = true;
         self.selected_revision = selected;
-        self.selected_capabilities = hello.capabilities & POLICY_SUPPORTED_CAPABILITIES;
+        let supported = POLICY_SUPPORTED_CAPABILITIES
+            | if profile_activation {
+                SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION
+            } else {
+                0
+            };
+        self.selected_capabilities = hello.capabilities & supported;
         Ok(WmV1ServerWelcome {
             selected_revision: selected,
             capabilities: self.selected_capabilities,
@@ -452,6 +466,24 @@ impl PolicyConnectionState {
         }
         if !self.used_transactions.insert(transaction) {
             return Err(PolicyTransferError::ReusedTransaction);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_server_control(
+        &self,
+        connection_epoch: u64,
+        required_capability: u64,
+    ) -> Result<(), PolicyTransferError> {
+        self.require_negotiated()?;
+        if connection_epoch != self.connection_epoch {
+            return Err(PolicyTransferError::WrongTransferIdentity);
+        }
+        if self.selected_capabilities & required_capability == 0 {
+            return Err(PolicyTransferError::UnsupportedCapability);
+        }
+        if self.transfer.is_some() {
+            return Err(PolicyTransferError::TransferInProgress);
         }
         Ok(())
     }
