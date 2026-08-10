@@ -237,7 +237,11 @@ Output profile values now have a separate typed preparation boundary as well.
 The coordinator validates bounded exact connector identities, preferred or
 explicit modes, fixed-point scale, position, transform, enablement, startup
 focus uniqueness, and VRR policy before staging fragments. Preparation neither
-opens DRM nor mutates live topology. Topology reconciliation, atomic KMS test,
+opens DRM nor mutates live topology. A pure authority-local reconciler can now
+combine that candidate with an immutable capability snapshot, resolve rounded
+refresh requests deterministically, and reject unknown/disconnected connectors,
+unsupported scale/transform/VRR, overlaps, ambiguous modes, or an all-dark
+result. Supplying that snapshot from the trusted backend, atomic KMS testing,
 activation, and rollback are the next output-authority tranche.
 
 ## Implementation Progression

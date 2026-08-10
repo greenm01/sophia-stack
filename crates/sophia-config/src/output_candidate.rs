@@ -144,15 +144,20 @@ fn connector_name(node: &KdlNode) -> Result<String, DesktopProfileError> {
         .and_then(|value| value.as_string())
         .filter(|value| !value.is_empty() && value.len() <= 64)
         .ok_or_else(|| schema_error("named output connector identity is invalid"))?;
-    if !connector
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
+    if !valid_desktop_output_connector(connector) {
         return Err(schema_error(
             "named output connector contains unsupported characters",
         ));
     }
     Ok(connector.to_owned())
+}
+
+pub(crate) fn valid_desktop_output_connector(connector: &str) -> bool {
+    !connector.is_empty()
+        && connector.len() <= 64
+        && connector
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 fn refresh_millihz(source: &str) -> Option<u32> {

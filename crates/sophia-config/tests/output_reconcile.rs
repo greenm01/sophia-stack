@@ -1,0 +1,232 @@
+use sophia_config::{
+    ConfigDigest, ConfigGeneration, DesktopNamedOutputCandidate, DesktopOutputCandidate,
+    DesktopOutputMode, DesktopOutputReconcileError, DesktopOutputScale,
+    DesktopOutputScaleCapabilities, DesktopOutputState, DesktopOutputTiming,
+    DesktopOutputTopologyConnector, DesktopOutputTopologySnapshot, DesktopOutputTransform,
+    DesktopOutputTransformSet, DesktopOutputVrrMode, reconcile_desktop_output_candidate,
+};
+
+fn state(connector: &str, mode: DesktopOutputTiming, position: (i32, i32)) -> DesktopOutputState {
+    DesktopOutputState {
+        connector: connector.to_owned(),
+        enabled: true,
+        mode,
+        scale_milli: 1_000,
+        position,
+        transform: DesktopOutputTransform::Normal,
+        vrr: DesktopOutputVrrMode::Disabled,
+    }
+}
+
+fn connector(
+    name: &str,
+    mode: DesktopOutputTiming,
+    position: (i32, i32),
+    vrr_capable: bool,
+) -> DesktopOutputTopologyConnector {
+    DesktopOutputTopologyConnector {
+        connector: name.to_owned(),
+        connected: true,
+        modes: vec![mode],
+        preferred_mode: Some(mode),
+        scales: DesktopOutputScaleCapabilities {
+            minimum_milli: 500,
+            maximum_milli: 2_000,
+            step_milli: 250,
+            automatic_milli: 1_000,
+        },
+        transforms: DesktopOutputTransformSet::NORMAL,
+        vrr_capable,
+        current: state(name, mode, position),
+    }
+}
+
+fn topology() -> DesktopOutputTopologySnapshot {
+    DesktopOutputTopologySnapshot {
+        connectors: vec![
+            connector(
+                "DP-1",
+                DesktopOutputTiming::new(2560, 1440, 119_998),
+                (0, 0),
+                true,
+            ),
+            connector(
+                "DP-2",
+                DesktopOutputTiming::new(1920, 1080, 60_000),
+                (2560, 0),
+                false,
+            ),
+        ],
+    }
+}
+
+fn named(
+    connector: &str,
+    mode: DesktopOutputMode,
+    position: (i32, i32),
+) -> DesktopNamedOutputCandidate {
+    DesktopNamedOutputCandidate {
+        connector: connector.to_owned(),
+        mode: Some(mode),
+        scale: Some(DesktopOutputScale::Automatic),
+        position: Some(position),
+        transform: None,
+        enabled: Some(true),
+        focus_at_startup: None,
+        vrr: Some(DesktopOutputVrrMode::Disabled),
+    }
+}
+
+fn candidate() -> DesktopOutputCandidate {
+    let mut first = named(
+        "DP-1",
+        DesktopOutputMode::Exact {
+            width: 2560,
+            height: 1440,
+            refresh_millihz: 120_000,
+        },
+        (0, 0),
+    );
+    first.focus_at_startup = Some(true);
+    first.vrr = Some(DesktopOutputVrrMode::Automatic);
+    DesktopOutputCandidate {
+        generation: ConfigGeneration::INITIAL,
+        digest: ConfigDigest::new([7; 32]),
+        inherit_sophia: true,
+        named: vec![
+            first,
+            named("DP-2", DesktopOutputMode::Preferred, (2560, 0)),
+        ],
+    }
+}
+
+#[test]
+fn reconciliation_is_pure_deterministic_and_resolves_rounded_refresh() {
+    let candidate = candidate();
+    let original = candidate.clone();
+    let topology = topology();
+
+    let first = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
+    let second = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
+
+    assert_eq!(candidate, original);
+    assert_eq!(first, second);
+    assert_eq!(first.generation, candidate.generation);
+    assert_eq!(first.digest, candidate.digest);
+    assert_eq!(first.focused_connector.as_deref(), Some("DP-1"));
+    assert_eq!(first.outputs[0].mode.refresh_millihz, 119_998);
+    assert_eq!(first.outputs[0].vrr, DesktopOutputVrrMode::Automatic);
+    assert_eq!(first.outputs[1].position, (2560, 0));
+}
+
+#[test]
+fn reconciliation_rejects_unknown_disconnected_and_unsupported_requests() {
+    let topology = topology();
+
+    let mut unknown = candidate();
+    unknown.named[0].connector = "DP-9".to_owned();
+    assert_eq!(
+        reconcile_desktop_output_candidate(&unknown, &topology),
+        Err(DesktopOutputReconcileError::UnknownConnector(
+            "DP-9".to_owned()
+        ))
+    );
+
+    let mut disconnected_topology = topology.clone();
+    disconnected_topology.connectors[0].connected = false;
+    disconnected_topology.connectors[0].current.enabled = false;
+    assert_eq!(
+        reconcile_desktop_output_candidate(&candidate(), &disconnected_topology),
+        Err(DesktopOutputReconcileError::DisconnectedConnector(
+            "DP-1".to_owned()
+        ))
+    );
+
+    let mut unsupported_vrr = candidate();
+    unsupported_vrr.named[1].vrr = Some(DesktopOutputVrrMode::Always);
+    assert_eq!(
+        reconcile_desktop_output_candidate(&unsupported_vrr, &topology),
+        Err(DesktopOutputReconcileError::VrrUnsupported(
+            "DP-2".to_owned()
+        ))
+    );
+
+    let mut unsupported_transform = candidate();
+    unsupported_transform.named[0].transform = Some(DesktopOutputTransform::Rotate90);
+    assert_eq!(
+        reconcile_desktop_output_candidate(&unsupported_transform, &topology),
+        Err(DesktopOutputReconcileError::TransformUnsupported(
+            "DP-1".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn reconciliation_rejects_ambiguous_modes_overlap_and_dark_topology() {
+    let mut ambiguous_topology = topology();
+    let lower = DesktopOutputTiming::new(2560, 1440, 119_500);
+    let upper = DesktopOutputTiming::new(2560, 1440, 120_500);
+    ambiguous_topology.connectors[0].modes = vec![lower, upper];
+    ambiguous_topology.connectors[0].preferred_mode = Some(lower);
+    ambiguous_topology.connectors[0].current.mode = lower;
+    assert_eq!(
+        reconcile_desktop_output_candidate(&candidate(), &ambiguous_topology),
+        Err(DesktopOutputReconcileError::ModeAmbiguous(
+            "DP-1".to_owned()
+        ))
+    );
+
+    let mut overlapping = candidate();
+    overlapping.named[1].position = Some((0, 0));
+    assert_eq!(
+        reconcile_desktop_output_candidate(&overlapping, &topology()),
+        Err(DesktopOutputReconcileError::OutputOverlap {
+            first: "DP-1".to_owned(),
+            second: "DP-2".to_owned(),
+        })
+    );
+
+    let mut dark = candidate();
+    dark.named[0].enabled = Some(false);
+    dark.named[0].focus_at_startup = Some(false);
+    dark.named[1].enabled = Some(false);
+    assert_eq!(
+        reconcile_desktop_output_candidate(&dark, &topology()),
+        Err(DesktopOutputReconcileError::NoEnabledOutput)
+    );
+}
+
+#[test]
+fn non_inheriting_candidate_disables_unspecified_connectors() {
+    let mut candidate = candidate();
+    candidate.inherit_sophia = false;
+    candidate.named.truncate(1);
+
+    let reconciled = reconcile_desktop_output_candidate(&candidate, &topology()).unwrap();
+
+    assert!(reconciled.outputs[0].enabled);
+    assert!(!reconciled.outputs[1].enabled);
+}
+
+#[test]
+fn invalid_topology_is_rejected_before_candidate_resolution() {
+    let mut topology = topology();
+    topology.connectors[1].connector = "DP-1".to_owned();
+    topology.connectors[1].current.connector = "DP-1".to_owned();
+
+    assert!(matches!(
+        reconcile_desktop_output_candidate(&candidate(), &topology),
+        Err(DesktopOutputReconcileError::InvalidTopology(_))
+    ));
+}
+
+#[test]
+fn manually_constructed_invalid_candidate_is_rejected() {
+    let mut candidate = candidate();
+    candidate.named[1].connector = "DP-1".to_owned();
+
+    assert!(matches!(
+        reconcile_desktop_output_candidate(&candidate, &topology()),
+        Err(DesktopOutputReconcileError::InvalidCandidate(_))
+    ));
+}
