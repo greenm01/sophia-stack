@@ -13,12 +13,49 @@ use sophia_backend_live::{
     LiveHardwareValidationSmokeReport, LiveHardwareValidationSmokeStatus,
     LiveHardwareValidationTarget, LiveInputReadinessGateReport, LiveInputReadinessGateStatus,
     LiveInputReadinessGatedPoller, NativeLibinputDeviceMap, NativeLibinputEventPoller,
-    NativeLibinputEventReader, NativeLibinputOpenError, NativeLibinputPolicyReport,
-    NonBlockingInputPoller, SeatId, discover_live_backend, native_libinput_event_adapter_report,
-    open_native_libinput_path_poller, real_libinput_events_validation_gate,
-    real_libinput_events_validation_smoke_report, resolve_native_libinput_device_path,
+    NativeLibinputEventReader, NativeLibinputOpenError, NativeLibinputPointerPolicy,
+    NativeLibinputPolicyReport, NonBlockingInputPoller, SeatId, discover_live_backend,
+    native_libinput_event_adapter_report, open_native_libinput_path_poller,
+    real_libinput_events_validation_gate, real_libinput_events_validation_smoke_report,
+    resolve_native_libinput_device_path,
 };
 use sophia_protocol::{InputEventKind, Point};
+
+#[test]
+fn native_pointer_policy_validation_is_bounded() {
+    assert!(NativeLibinputPointerPolicy::default().validate().is_some());
+    assert!(
+        NativeLibinputPointerPolicy {
+            scroll_factor: 10.1,
+            ..NativeLibinputPointerPolicy::default()
+        }
+        .validate()
+        .is_none()
+    );
+    assert!(
+        NativeLibinputPointerPolicy {
+            accel_speed: Some(f64::NAN),
+            ..NativeLibinputPointerPolicy::default()
+        }
+        .validate()
+        .is_none()
+    );
+}
+
+#[test]
+fn native_pointer_scroll_scaling_rounds_and_saturates() {
+    let half = NativeLibinputPointerPolicy {
+        scroll_factor: 0.5,
+        ..NativeLibinputPointerPolicy::default()
+    };
+    assert_eq!(half.scale_scroll_v120(120.0), 60);
+    let maximum = NativeLibinputPointerPolicy {
+        scroll_factor: 10.0,
+        ..NativeLibinputPointerPolicy::default()
+    };
+    assert_eq!(maximum.scale_scroll_v120(f64::MAX), i32::MAX);
+    assert_eq!(maximum.scale_scroll_v120(f64::MIN), i32::MIN);
+}
 
 #[test]
 fn native_libinput_event_adapter_skeleton_reports_ready_without_opening_devices() {

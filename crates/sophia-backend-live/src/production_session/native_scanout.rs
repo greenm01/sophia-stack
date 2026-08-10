@@ -9,6 +9,7 @@ mod persistent_native_scanout {
 
     mod cursor;
     mod frame_damage;
+    mod output_capabilities;
     mod renderer_images;
     mod state;
     use frame_damage::trace_presented_output_damage;

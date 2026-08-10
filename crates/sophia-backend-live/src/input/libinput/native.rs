@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 use super::{
     LibinputNativeEventReadReport, LibinputNativeEventReadResult, NativeLibinputEventPoller,
-    NativeLibinputPointerPolicy, apply_native_pointer_policy, scale_scroll_v120,
+    NativeLibinputPointerPolicy, apply_native_pointer_policy,
 };
 
 use input::DeviceCapability;
@@ -37,7 +37,7 @@ impl NativeLibinputEventReader {
         let axis = |axis| {
             if event.has_axis(axis) {
                 let value = event.scroll_value_v120(axis);
-                scale_scroll_v120(value, self.pointer_policy.scroll_factor)
+                self.pointer_policy.scale_scroll_v120(value)
             } else {
                 0
             }

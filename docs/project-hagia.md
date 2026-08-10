@@ -244,6 +244,13 @@ unsupported scale/transform/VRR, overlaps, ambiguous modes, or an all-dark
 result. Supplying that snapshot from the trusted backend, atomic KMS testing,
 activation, and rollback are the next output-authority tranche.
 
+The existing atomic scanout owner now exposes a read-only capability projection
+for that adapter: stable Engine output identity, exact kernel connector name and
+ID, bounded advertised timings, selected/default timing, and the result of VRR
+property discovery. It reuses the already-owned libdrm device and selection;
+there is no second sysfs topology reader and no ioctl that changes state.
+Coordinator translation into the configuration DTO is not yet wired.
+
 ## Implementation Progression
 
 ### 1. Geometry Proof

@@ -21,10 +21,10 @@ use sophia_backend_live::{
     LibdrmNativeAtomicScanoutSmokePhase, LibdrmNativeAtomicScanoutSmokeStatus,
     LibdrmNativeConnectorSnapshot, LibdrmNativeCrtcRoute, LibdrmNativeEncoderSnapshot,
     LibdrmNativeEventAdapterReport, LibdrmNativeEventAdapterStatus, LibdrmNativeKmsSelectionDevice,
-    LibdrmNativeOutputRoute, LibdrmNativeOutputSlot, LibdrmNativePageFlipCallback,
-    LibdrmNativePageFlipDecodeReport, LibdrmNativePageFlipDecodeStatus,
-    LibdrmNativePageFlipReadResult, LibdrmNativePageFlipReader, LibdrmNativePageFlipSource,
-    LibdrmNativePageFlipSourceReport, LibdrmNativePageFlipSourceStatus,
+    LibdrmNativeOutputCapability, LibdrmNativeOutputRoute, LibdrmNativeOutputSlot,
+    LibdrmNativeOutputTiming, LibdrmNativePageFlipCallback, LibdrmNativePageFlipDecodeReport,
+    LibdrmNativePageFlipDecodeStatus, LibdrmNativePageFlipReadResult, LibdrmNativePageFlipReader,
+    LibdrmNativePageFlipSource, LibdrmNativePageFlipSourceReport, LibdrmNativePageFlipSourceStatus,
     LibdrmNativePlaneFormatModifierSupportStatus, LibdrmNativePlaneFormatModifierTable,
     LibdrmNativePlaneFormatModifierTableParseStatus, LibdrmNativePlaneSnapshot,
     LibdrmNativePollerDiagnostics, LibdrmNativePrimaryPlaneFormatTableStatus,
@@ -119,6 +119,7 @@ use sophia_renderer_live::{
 };
 
 include!("libdrm_events_feature/evidence_gates.rs");
+include!("libdrm_events_feature/output_capability.rs");
 include!("libdrm_events_feature/legacy_cursor.rs");
 include!("libdrm_events_feature/fake_devices.rs");
 include!("libdrm_events_feature/fixtures_and_outputs.rs");

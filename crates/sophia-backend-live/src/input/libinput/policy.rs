@@ -46,6 +46,12 @@ impl NativeLibinputPointerPolicy {
             || self.left_handed.is_some()
             || self.middle_emulation.is_some()
     }
+
+    pub fn scale_scroll_v120(self, value: f64) -> i32 {
+        (value * self.scroll_factor)
+            .round()
+            .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+    }
 }
 
 pub(crate) fn apply_native_pointer_policy(
@@ -93,43 +99,4 @@ pub(crate) fn apply_native_pointer_policy(
         return false;
     }
     true
-}
-
-pub(crate) fn scale_scroll_v120(value: f64, factor: f64) -> i32 {
-    (value * factor)
-        .round()
-        .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pointer_policy_validation_is_bounded() {
-        assert!(NativeLibinputPointerPolicy::default().validate().is_some());
-        assert!(
-            NativeLibinputPointerPolicy {
-                scroll_factor: 10.1,
-                ..NativeLibinputPointerPolicy::default()
-            }
-            .validate()
-            .is_none()
-        );
-        assert!(
-            NativeLibinputPointerPolicy {
-                accel_speed: Some(f64::NAN),
-                ..NativeLibinputPointerPolicy::default()
-            }
-            .validate()
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn scroll_scaling_rounds_and_saturates() {
-        assert_eq!(scale_scroll_v120(120.0, 0.5), 60);
-        assert_eq!(scale_scroll_v120(f64::MAX, 10.0), i32::MAX);
-        assert_eq!(scale_scroll_v120(f64::MIN, 10.0), i32::MIN);
-    }
 }

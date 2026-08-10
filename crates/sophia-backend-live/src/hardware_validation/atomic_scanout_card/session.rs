@@ -261,6 +261,15 @@ impl RealAtomicScanoutPageFlipSession {
         &self.outputs
     }
 
+    pub fn output_capabilities(&self) -> io::Result<Vec<LibdrmNativeOutputCapability>> {
+        self.selections
+            .iter()
+            .copied()
+            .zip(self.outputs.iter().copied())
+            .map(|(selection, output)| read_native_output_capability(&self.card, selection, output))
+            .collect()
+    }
+
     pub fn vrr_properties_for_selection(
         &self,
         selection: LibdrmNativePrimaryPlaneSelection,
