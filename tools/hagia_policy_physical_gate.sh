@@ -4,7 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
-firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
+browser_bin="${SOPHIA_BROWSER_BIN:-${SOPHIA_FIREFOX_BIN:-}}"
+if [[ -z "$browser_bin" ]]; then
+    browser_bin="$(command -v helium || command -v firefox || true)"
+fi
 seat="${SOPHIA_HAGIA_PHYSICAL_SEAT:-}"
 display="${SOPHIA_HAGIA_PHYSICAL_DISPLAY:-:291}"
 runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-660000}"
@@ -34,8 +37,8 @@ if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
     echo "set SOPHIA_TERMINAL_BIN to real Kitty" >&2
     exit 2
 fi
-if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
-    echo "set SOPHIA_FIREFOX_BIN to real Firefox" >&2
+if [[ -z "$browser_bin" || ! -x "$browser_bin" ]]; then
+    echo "set SOPHIA_BROWSER_BIN to an executable browser" >&2
     exit 2
 fi
 if [[ ! -x "$guide" ]]; then
@@ -80,8 +83,8 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     "--session-app=terminal=$kitty_bin" \
     --session-start=terminal \
     --session-action-app=terminal=terminal \
-    "--session-app=firefox=$firefox_bin" \
-    --session-action-app=firefox=firefox \
+    "--session-app=browser=$browser_bin" \
+    --session-action-app=firefox=browser \
     --session-app-arg=terminal=--config \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \
