@@ -638,6 +638,40 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
 }
 
 #[test]
+fn session_authority_preparation_is_deterministic_and_rejection_preserves_active_state() {
+    let args = [
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/kitty".to_owned(),
+        "--session-app-arg=terminal=--single-instance".to_owned(),
+        "--session-start=terminal".to_owned(),
+        "--session-action-app=terminal=terminal".to_owned(),
+    ];
+    let first = PersistentXtermSessionConfig::from_args(&args).unwrap();
+    let second = PersistentXtermSessionConfig::from_args(&args).unwrap();
+
+    assert_eq!(first.applications, second.applications);
+    assert_eq!(
+        first._session_application_overrides,
+        second._session_application_overrides
+    );
+    assert_eq!(
+        first.desktop_candidates.session,
+        second.desktop_candidates.session
+    );
+    let active_applications = first.applications.clone();
+    let active_overrides = first._session_application_overrides.clone();
+
+    let rejected = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/kitty".to_owned(),
+        "--session-start=missing".to_owned(),
+    ]);
+    assert!(rejected.is_err());
+    assert_eq!(first.applications, active_applications);
+    assert_eq!(first._session_application_overrides, active_overrides);
+}
+
+#[test]
 fn normal_session_rejects_proof_only_options() {
     let result = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),

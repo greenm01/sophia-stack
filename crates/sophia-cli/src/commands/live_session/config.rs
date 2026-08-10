@@ -11,7 +11,7 @@ use output::{
     output_topology_from_engine_outputs, output_topology_from_engine_outputs_at_generation,
     wm_output_bounds,
 };
-use session::{SessionApplicationConfig, SessionApplicationSpec};
+use session::{SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec};
 
 const TERMINAL_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(1);
 const LAUNCHER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(2);
@@ -58,6 +58,7 @@ struct PersistentXtermSessionConfig {
     exit_when_startup_exits: bool,
     startup_ready_timeout: Option<Duration>,
     applications: SessionApplicationConfig,
+    _session_application_overrides: SessionApplicationOverrides,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
     max_ticks: Option<usize>,
@@ -197,118 +198,11 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--startup-ready-timeout-ms accepts 100-60000 milliseconds".into());
         }
-        let mut applications = Self::applications_from_core(core_snapshot)?;
-        for value in args
-            .iter()
-            .filter_map(|arg| arg.strip_prefix("--session-app="))
-        {
-            let (id, executable) = value
-                .split_once('=')
-                .ok_or("--session-app expects ID=/absolute/executable")?;
-            Self::validate_session_app_id(id)?;
-            let executable = std::path::PathBuf::from(executable);
-            if !executable.is_absolute() || executable.as_os_str().is_empty() {
-                return Err("--session-app executable must be an absolute path".into());
-            }
-            if applications.applications.len() >= 32 {
-                return Err("--session-app accepts at most 32 applications".into());
-            }
-            if applications
-                .applications
-                .insert(
-                    id.to_owned(),
-                    SessionApplicationSpec {
-                        id: id.to_owned(),
-                        executable,
-                        arguments: Vec::new(),
-                    },
-                )
-                .is_some()
-            {
-                return Err(format!("duplicate --session-app ID {id:?}").into());
-            }
-        }
-        for value in args
-            .iter()
-            .filter_map(|arg| arg.strip_prefix("--session-app-arg="))
-        {
-            let (id, argument) = value
-                .split_once('=')
-                .ok_or("--session-app-arg expects ID=ARG")?;
-            if argument.len() > 4_096 {
-                return Err("--session-app-arg accepts at most 4096 bytes".into());
-            }
-            let app = applications
-                .applications
-                .get_mut(id)
-                .ok_or_else(|| format!("--session-app-arg references unknown app {id:?}"))?;
-            if app.arguments.len() >= 32 {
-                return Err(format!("session app {id:?} accepts at most 32 arguments").into());
-            }
-            app.arguments.push(argument.to_owned());
-        }
-        let desktop_session = &prepared_desktop.session;
-        let terminal_overridden = args.iter().any(|argument| {
-            argument
-                .strip_prefix("--session-action-app=")
-                .is_some_and(|value| value.starts_with("terminal="))
-        });
-        let browser_overridden = args.iter().any(|argument| {
-            argument
-                .strip_prefix("--session-action-app=")
-                .is_some_and(|value| value.starts_with("firefox="))
-        });
-        let startup_overridden = args
-            .iter()
-            .any(|argument| argument.starts_with("--session-start="));
-        applications.apply_desktop_candidate(
-            desktop_session,
-            terminal_overridden,
-            browser_overridden,
-            startup_overridden,
+        let session_application_overrides = SessionApplicationOverrides::parse(args)?;
+        let applications = session_application_overrides.prepare(
+            Self::applications_from_core(core_snapshot)?,
+            &prepared_desktop.session,
         )?;
-        if startup_overridden {
-            applications.startup.clear();
-        }
-        for id in args
-            .iter()
-            .filter_map(|arg| arg.strip_prefix("--session-start="))
-        {
-            Self::validate_session_app_id(id)?;
-            if !applications.applications.contains_key(id) {
-                return Err(format!("--session-start references unknown app {id:?}").into());
-            }
-            if applications.startup.iter().any(|entry| entry == id) {
-                return Err(format!("duplicate --session-start ID {id:?}").into());
-            }
-            applications.startup.push(id.to_owned());
-        }
-        let mut explicit_session_actions = BTreeSet::new();
-        for value in args
-            .iter()
-            .filter_map(|arg| arg.strip_prefix("--session-action-app="))
-        {
-            let (action, id) = value
-                .split_once('=')
-                .ok_or("--session-action-app expects terminal|launcher|firefox=ID")?;
-            if !applications.applications.contains_key(id) {
-                return Err(format!("--session-action-app references unknown app {id:?}").into());
-            }
-            if !explicit_session_actions.insert(action) {
-                return Err(format!("duplicate session action mapping {action:?}").into());
-            }
-            let slot = match action {
-                "terminal" => &mut applications.terminal,
-                "launcher" => &mut applications.launcher,
-                "firefox" => &mut applications.firefox,
-                _ => {
-                    return Err(
-                        "--session-action-app expects terminal, launcher, or firefox".into(),
-                    );
-                }
-            };
-            *slot = Some(id.to_owned());
-        }
         if normal_session {
             let terminal_proof = args.iter().any(|arg| {
                 arg.starts_with("--inject-text=") || arg.starts_with("--expect-physical-text=")
@@ -781,6 +675,7 @@ impl PersistentXtermSessionConfig {
             exit_when_startup_exits,
             startup_ready_timeout,
             applications,
+            _session_application_overrides: session_application_overrides,
             max_ticks,
             inject_text,
             expect_physical_text,
@@ -861,21 +756,6 @@ impl PersistentXtermSessionConfig {
             );
         }
         Ok(applications)
-    }
-
-    fn validate_session_app_id(id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        if id.is_empty()
-            || id.len() > 32
-            || !id.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
-            })
-        {
-            return Err(
-                "session application IDs accept 1-32 lowercase ASCII letters, digits, '-' or '_'"
-                    .into(),
-            );
-        }
-        Ok(())
     }
 
     fn input_proof_requested(&self) -> bool {

@@ -97,6 +97,13 @@ Completed evidence is archived in `research-log-archive.md`.
   rejecting changed content at one identity. Focused tests cover prepare,
   activate, restoration, retries, conflicts, invalid identity, unseen rollback
   tombstones, and fragment rejection with unchanged slot state.
+- Session startup previously parsed and mutated CLI application overrides in
+  the middle of configuration assembly. A typed immutable overlay now owns the
+  bounded application additions, argument extensions, startup order, and action
+  selectors. One pure preparation function applies the canonical session
+  profile candidate and CLI-superior overlay to a cloned trusted registry.
+  Existing profile/CLI parity tests still pass; new evidence covers identical
+  preparation and rejection with the previously accepted state unchanged.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

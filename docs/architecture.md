@@ -780,6 +780,15 @@ transition succeeds. Semantic retry comparison excludes provenance paths but
 includes setting keys and encodings. No coordinator-owned collection of slots
 or production activation handler exists yet.
 
+The first production-owned preparation seam is session-local and remains pure.
+Explicit CLI applications, arguments, startup ordering, and action mappings are
+parsed once into a bounded immutable overlay. The session authority applies the
+canonical typed profile candidate and that overlay, in precedence order, to a
+clone of Sophia's trusted application registry. Unknown or ambiguous selectors,
+duplicates, and bounds failures discard the clone. The accepted effective
+configuration is unchanged from the prior startup behavior; this tranche does
+not install a participant slot or activate anything before the global barrier.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

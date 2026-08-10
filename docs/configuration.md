@@ -116,6 +116,15 @@ and rollback functions delegate identity changes to the participant reducer.
 Exact retries compare semantic payload while ignoring staging-path provenance,
 but changed settings at the same key fail closed. Fragment admission or payload
 rejection returns without mutating either identity or payload state.
+The trusted session authority now has one deterministic preparation seam for
+its effective application configuration. It parses explicit CLI application,
+argument, startup, and action selections into a bounded immutable overlay,
+then applies that overlay and the canonical typed session candidate to a clone
+of the trusted application registry. The ordering preserves CLI superiority,
+and any unknown, duplicate, ambiguous, or over-limit reference rejects the
+clone without changing accepted state. This preparation is retained admission
+data; it does not activate the session participant or enable desktop-profile
+reload.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

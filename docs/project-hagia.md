@@ -320,6 +320,14 @@ matching participant activation, and restores the previous payload on
 rollback. This centralizes payload/identity synchronization without creating a
 coordinator-owned copy of all authority state or wiring live effects.
 
+Session-owned preparation now routes through one typed overlay rather than
+mutating the trusted application registry inline. CLI application additions,
+arguments, startup order, and action selectors remain superior to the desktop
+profile; the canonical session candidate and overlay are applied to a clone and
+fail without changing accepted state. This provides the deterministic local
+prepare operation needed by a future session participant while leaving global
+activation and watched reload disconnected.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
