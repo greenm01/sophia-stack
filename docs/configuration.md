@@ -78,7 +78,11 @@ It admits only a strictly newer generation and a different digest, makes exact
 prepare, activate, and rollback retries idempotent, restores the exact previous
 identity on rollback, and rejects a same-generation digest mismatch. The last
 admitted full key remains bounded participant state after cleanup so an exact
-retry cannot be confused with an identity collision.
+retry cannot be confused with an identity collision. Because the synchronous
+driver stops preparation at the first failure but rolls every authority back,
+an idle authority consumes an exact unseen rollback key as a no-state
+tombstone. That prevents local reuse of a generation it was never asked to
+prepare while preserving its active identity.
 Shortcut candidates are prepared into bounded typed chords before staging:
 at most 256 key or pointer bindings, normalized modifier/key identities, no
 duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is

@@ -104,12 +104,7 @@ pub fn prepare_desktop_profile_participant(
     if model.phase == DesktopProfileParticipantPhase::Prepared {
         return Err(DesktopProfileParticipantError::Busy);
     }
-    if key.generation().raw() == 0
-        || key.generation().raw() <= model.latest_generation
-        || model
-            .active
-            .is_some_and(|active| key.digest() == active.digest())
-    {
+    if !is_new_candidate(model, key) {
         return Err(DesktopProfileParticipantError::InvalidCandidateIdentity);
     }
     let mut next = model.clone();
@@ -171,7 +166,25 @@ pub fn rollback_desktop_profile_participant(
     if model.latest_candidate == Some(key) {
         return Ok(model.clone());
     }
+    if model.phase != DesktopProfileParticipantPhase::Prepared && is_new_candidate(model, key) {
+        let mut next = model.clone();
+        clear_candidate(&mut next);
+        next.latest_candidate = Some(key);
+        next.latest_generation = key.generation().raw();
+        return Ok(next);
+    }
     Err(DesktopProfileParticipantError::IdentityMismatch)
+}
+
+fn is_new_candidate(
+    model: &DesktopProfileParticipantModel,
+    key: DesktopProfileActivationKey,
+) -> bool {
+    key.generation().raw() != 0
+        && key.generation().raw() > model.latest_generation
+        && !model
+            .active
+            .is_some_and(|active| key.digest() == active.digest())
 }
 
 fn clear_candidate(model: &mut DesktopProfileParticipantModel) {

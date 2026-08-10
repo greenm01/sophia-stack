@@ -91,10 +91,6 @@ fn mismatched_or_out_of_order_transitions_fail_closed() {
         activate_desktop_profile_participant(&empty, key(1, 1)),
         Err(DesktopProfileParticipantError::NotPrepared)
     );
-    assert_eq!(
-        rollback_desktop_profile_participant(&empty, key(1, 1)),
-        Err(DesktopProfileParticipantError::IdentityMismatch)
-    );
     let prepared = prepare_desktop_profile_participant(&empty, key(1, 1)).unwrap();
     assert_eq!(
         prepare_desktop_profile_participant(&prepared, key(2, 2)),
@@ -116,6 +112,41 @@ fn mismatched_or_out_of_order_transitions_fail_closed() {
         rollback_desktop_profile_participant(&prepared, key(0, 0)),
         Err(DesktopProfileParticipantError::InvalidCandidateIdentity)
     );
+}
+
+#[test]
+fn generation_wide_rollback_tombstones_an_unseen_candidate() {
+    let empty = DesktopProfileParticipantModel::new(DesktopAuthority::Input);
+    let cancelled = rollback_desktop_profile_participant(&empty, key(1, 1)).unwrap();
+
+    assert_eq!(cancelled.phase(), DesktopProfileParticipantPhase::Idle);
+    assert_eq!(cancelled.active(), None);
+    assert_eq!(cancelled.latest_generation(), 1);
+    assert_eq!(
+        rollback_desktop_profile_participant(&cancelled, key(1, 1)).unwrap(),
+        cancelled
+    );
+    assert_eq!(
+        rollback_desktop_profile_participant(&cancelled, key(1, 2)),
+        Err(DesktopProfileParticipantError::IdentityMismatch)
+    );
+    assert_eq!(
+        prepare_desktop_profile_participant(&cancelled, key(1, 1)),
+        Err(DesktopProfileParticipantError::InvalidCandidateIdentity)
+    );
+}
+
+#[test]
+fn unseen_rollback_finalizes_the_prior_activation_without_reverting_it() {
+    let initial = DesktopProfileParticipantModel::new(DesktopAuthority::Shell);
+    let prepared = prepare_desktop_profile_participant(&initial, key(1, 1)).unwrap();
+    let activated = activate_desktop_profile_participant(&prepared, key(1, 1)).unwrap();
+    let cancelled = rollback_desktop_profile_participant(&activated, key(2, 2)).unwrap();
+
+    assert_eq!(cancelled.phase(), DesktopProfileParticipantPhase::Idle);
+    assert_eq!(cancelled.active(), Some(key(1, 1)));
+    assert_eq!(cancelled.candidate(), None);
+    assert_eq!(cancelled.latest_generation(), 2);
 }
 
 #[test]

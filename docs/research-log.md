@@ -46,6 +46,20 @@ Completed evidence is archived in `research-log-archive.md`.
   may eventually use it behind the existing graphical launch gate, where no
   client observes partial activation. Watched reload needs a distinct global
   visibility/recovery protocol and remains out of scope for this milestone.
+- Refinement testing found that the synchronous driver stops the remaining
+  prepare batch after one rejection but deliberately rolls all authorities
+  back. A participant skipped by that batch had treated the future rollback as
+  an identity mismatch, which would turn every early preparation rejection
+  into a false recovery failure and leave the skipped generation locally
+  reusable. Idle or previously activated participants now consume that exact
+  unseen rollback as a no-state tombstone while retaining the active identity;
+  conflicting prepared work and same-generation digest mismatches still fail
+  closed.
+- A test-only executor now drives the coordinator's real effect sequence
+  through seven independent participant models. Across every authority as the
+  prepare, activation, and rollback failure, it proves successful identity
+  agreement, complete last-known-good restoration, rejected-generation
+  consumption, exact single-authority divergence, and deterministic recovery.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

@@ -741,10 +741,13 @@ prepare/activate/rollback barrier. The trusted coordinator now has the pure
 seven-authority reducer for that barrier, ported from Hagia's model-checked
 reference semantics. A second shared pure reducer defines each authority's
 local participant state: monotonic admission, exact-key idempotence, previous
-identity restoration, and fail-closed same-generation digest handling. The
-startup launch gate is the only permitted visibility boundary for this model;
-authority protocols, effect executors, and a live-reload visibility barrier
-remain unwired.
+identity restoration, fail-closed same-generation digest handling, and
+generation-wide tombstones for participants skipped after an earlier prepare
+failure. An offline refinement harness drives the coordinator's actual effects
+through seven independent participant models and checks convergence or exact
+recovery divergence at every failure position. The startup launch gate is the
+only permitted visibility boundary for this model; authority protocols,
+effect executors, and a live-reload visibility barrier remain unwired.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
