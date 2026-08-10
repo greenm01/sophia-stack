@@ -258,7 +258,11 @@ deterministically ordered prepare, activate, and generation-wide rollback
 effects for all seven authorities; preserves the active generation during
 partial or rejected work; ignores stale completions; and prevents rejected
 generation reuse. This is lifecycle parity, not live reload: no authority
-protocol or effect executor consumes those effects yet.
+protocol consumes those effects yet. An injected startup executor seam now
+maps every effect to only its matching authority handler and converts the
+result back into the exact typed reducer message. Production handlers remain
+unpopulated, so transport and filesystem work are still absent from reduction
+and no partial activation path exists.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

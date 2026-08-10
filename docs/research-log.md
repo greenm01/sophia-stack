@@ -17,8 +17,14 @@ Completed evidence is archived in `research-log-archive.md`.
   generation exhaustion cannot wrap. Mirrored Rust tests cover success,
   rejection, partial activation, stale completion, failed rollback, and the
   rejected-generation reuse defect previously found through Hagia's formal
-  verification. Authority protocols, effect executors, and watched reload
-  remain deliberately disconnected.
+  verification. Authority protocols, production effect handlers, and watched
+  reload remain deliberately disconnected.
+- The CLI now has the corresponding injected startup executor seam, porting
+  Hagia's typed-completion pattern without importing its runtime. Prepare,
+  activate, and rollback dispatch to separate handlers and return the exact
+  authority/generation/digest completion message. Only fakes populate those
+  handlers today; production authority transports and watched reload remain
+  deliberately disconnected.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

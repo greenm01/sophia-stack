@@ -4,6 +4,7 @@ pub mod backend_evidence;
 pub mod desktop_output_activation;
 #[cfg(feature = "atomic-scanout-live")]
 pub mod desktop_output_topology;
+pub mod desktop_profile_activation;
 pub mod emergency_input;
 pub mod input_proof;
 pub mod resize_transaction;

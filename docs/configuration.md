@@ -64,6 +64,10 @@ for every matching activation completion. A prepare or activation failure
 emits generation-wide rollback while retaining the active profile. Attempted
 generations advance monotonically even after rejection, so delayed completion
 cannot alias a retry.
+An injected startup executor boundary converts each typed effect into its
+matching authority call and returns the exact typed completion message. Its
+handlers are not populated by production authority transports yet; the seam
+exists so filesystem or process work cannot re-enter the reducer implicitly.
 Shortcut candidates are prepared into bounded typed chords before staging:
 at most 256 key or pointer bindings, normalized modifier/key identities, no
 duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
@@ -88,10 +92,10 @@ the exact profile generation and digest in the expected phase. Test rejection
 discards the candidate without rollback; an apply failure cannot settle until
 rollback succeeds or reports a terminal recovery failure. No executor is wired
 to these effects yet, so startup behavior remains unchanged.
-The pure barrier does not execute authority effects. Watched desktop-profile
-reload remains disabled until its cross-authority prepare/activate/rollback
-protocol and executors are wired; Sophia's existing core and native WM reload
-behavior is unchanged.
+The production session does not execute barrier effects. Watched
+desktop-profile reload remains disabled until cross-authority
+prepare/activate/rollback protocols populate the executor handlers; Sophia's
+existing core and native WM reload behavior is unchanged.
 
 ## Discovery
 
