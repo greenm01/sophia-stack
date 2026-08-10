@@ -49,6 +49,7 @@ impl PublicPolicyFaultPoint {
 
 struct LivePublicPolicyState {
     _profile_fragments: sophia_config::DesktopProfileFragments,
+    _profile_slot: PreparedAuthorityFragment,
     directory: PolicySessionDirectory,
     checkpoint_path: std::path::PathBuf,
     worker: Option<PolicyTransportWorker>,
@@ -87,8 +88,11 @@ struct LivePublicPolicyState {
 struct PreparedPublicPolicyLaunch {
     profile_fragments: sophia_config::DesktopProfileFragments,
     directory: PolicySessionDirectory,
+    policy_profile: PreparedAuthorityFragment,
+    shell_profile: PreparedAuthorityFragment,
     shortcut_profile_slot:
         sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
+    broker_profile: PreparedAuthorityFragment,
 }
 
 impl PreparedPublicPolicyLaunch {
@@ -102,13 +106,32 @@ impl PreparedPublicPolicyLaunch {
             &profile_fragments,
             sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile),
         )?;
+        let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+        let policy_profile = PreparedAuthorityFragment::new(
+            &profile_fragments,
+            sophia_config::DesktopAuthority::Policy,
+            key,
+        )?;
+        let shell_profile = PreparedAuthorityFragment::new(
+            &profile_fragments,
+            sophia_config::DesktopAuthority::Shell,
+            key,
+        )?;
         let shortcut_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
             config.shortcut_profile_candidate.clone(),
+        )?;
+        let broker_profile = PreparedAuthorityFragment::new(
+            &profile_fragments,
+            sophia_config::DesktopAuthority::Broker,
+            key,
         )?;
         Ok(Self {
             profile_fragments,
             directory,
+            policy_profile,
+            shell_profile,
             shortcut_profile_slot,
+            broker_profile,
         })
     }
 }
@@ -589,7 +612,10 @@ impl LiveWmSession {
         let PreparedPublicPolicyLaunch {
             profile_fragments,
             directory,
+            policy_profile,
+            shell_profile,
             shortcut_profile_slot,
+            broker_profile,
         } = prepared_launch;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
             directory.endpoint_path(),
@@ -644,6 +670,7 @@ impl LiveWmSession {
             .collect::<BTreeSet<_>>();
         let mut public = LivePublicPolicyState {
             _profile_fragments: profile_fragments,
+            _profile_slot: policy_profile,
             directory,
             checkpoint_path,
             worker: Some(worker),
@@ -691,6 +718,8 @@ impl LiveWmSession {
             socket_path,
             transport: None,
             public: Some(public),
+            _shell_profile: Some(shell_profile),
+            _broker_profile: Some(broker_profile),
             queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
             in_flight_request: None,
             next_transaction: 1,

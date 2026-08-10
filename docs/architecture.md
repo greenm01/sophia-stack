@@ -749,8 +749,9 @@ and payload convergence or exact recovery divergence at every failure
 position. A second integration case feeds those slots the exact seven
 owner-safe fragments emitted by staging and proves semantic payload promotion
 for every authority. The startup launch gate is the only permitted visibility
-boundary for this model; authority protocols, production effect executors, and
-a live-reload visibility barrier remain unwired.
+boundary for this model. Production prepare/rollback dispatch is now wired for
+public Hagia startup; activation, cross-process authority protocols, and a
+live-reload visibility barrier remain unwired.
 
 The startup configuration boundary constructs one immutable prepared desktop
 candidate bundle after checking every raw authority candidate against the
@@ -810,18 +811,23 @@ Public policy filesystem preparation now has an explicit linear owner. Directly
 after trusted configuration assembly—and before display, seat, input/output, or
 client setup—Sophia creates the private policy directory, stages the profile,
 and re-admits all seven fragments against the exact activation key. The
-resulting context owns the fragment set, directory, and prepared shortcut slot;
-public policy launch consumes it exactly once. Failure or an unused context
-cleans up before any graphical process starts. This is still preparation, not
-the global activation barrier.
+resulting context owns the fragment set, directory, named policy/shell/broker
+slots, and prepared shortcut slot; the typed session/input/output slots remain
+with their existing owners. Public policy launch consumes its context exactly
+once. Failure or an unused context cleans up before any graphical process
+starts. This is still preparation, not activation.
 
 The coordinator's synchronous driver now exposes that prepare barrier as its
 own typed operation. It begins one exact key, drains the seven prepare effects,
 performs generation-wide rollback on any rejection, and otherwise stops at
 `Prepared` with the previous active identity untouched. It emits no activation
 effects. The complete startup driver reuses this operation before its activate
-phase, keeping one reducer/effect schedule for both offline proof and future
-pre-graphical wiring.
+phase. Public Hagia startup now constructs a fixed-field dispatcher that
+borrows the seven separate owners, invokes this operation before any graphical
+setup, and retains the settled coordinator model at `Prepared`. Every local
+failure triggers generation-wide owner rollback and aborts startup. The
+dispatcher fails closed if activation is requested, so this milestone cannot
+make a profile visible early.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

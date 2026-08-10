@@ -179,6 +179,8 @@ struct LiveWmSession {
     socket_path: std::path::PathBuf,
     transport: Option<WmTransportWorker>,
     public: Option<LivePublicPolicyState>,
+    _shell_profile: Option<PreparedAuthorityFragment>,
+    _broker_profile: Option<PreparedAuthorityFragment>,
     queued_requests: LiveWmOwnerQueue<LiveWmQueuedRequest>,
     in_flight_request: Option<LiveWmQueuedRequest>,
     next_transaction: u64,
@@ -254,12 +256,27 @@ struct LiveWmWorkspaceProjection {
 
 impl LiveWmSession {
     fn prepare_public_launch(
-        config: &PersistentXtermSessionConfig,
+        config: &mut PersistentXtermSessionConfig,
     ) -> Result<Option<PreparedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
         if config.wm_process.is_some()
             && config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1
         {
-            return PreparedPublicPolicyLaunch::new(config).map(Some);
+            let mut prepared = PreparedPublicPolicyLaunch::new(config)?;
+            let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+            let report = prepared.prepare_startup(
+                &mut config.session_profile,
+                &mut config.input_profile,
+                &mut config.output_profile,
+                &config.desktop_profile_activation,
+                key,
+            )?;
+            if report.disposition
+                != sophia_cli::desktop_profile_activation::DesktopProfileStartupPreparationDisposition::Prepared
+            {
+                return Err("desktop profile startup preparation was rejected".into());
+            }
+            config.desktop_profile_activation = report.model;
+            return Ok(Some(prepared));
         }
         Ok(None)
     }
@@ -340,6 +357,8 @@ impl LiveWmSession {
             socket_path: config.wm_socket_path.clone(),
             transport: None,
             public: None,
+            _shell_profile: None,
+            _broker_profile: None,
             queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
             in_flight_request: None,
             next_transaction: 1,

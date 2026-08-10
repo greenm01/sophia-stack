@@ -208,7 +208,7 @@ pub(crate) fn run_persistent_xterm_session(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
-    let prepared_public_launch = LiveWmSession::prepare_public_launch(&config)?;
+    let prepared_public_launch = LiveWmSession::prepare_public_launch(&mut config)?;
     let terminal = if config.client.is_none() {
         Some(super::x_authority::resolve_external_probe_binary(
             "xterm",
@@ -259,7 +259,7 @@ pub(crate) fn run_persistent_xterm_session(
             .with_keyboard_device(DeviceId::from_raw(SESSION_KEYBOARD_DEVICE_RAW))
             .with_pointer_device(DeviceId::from_raw(SESSION_POINTER_DEVICE_RAW));
     let mut physical_input = open_session_physical_input(
-        &mut config,
+        &config,
         device_map,
         seat_controller
             .as_ref()

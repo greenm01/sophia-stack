@@ -66,8 +66,9 @@ generations advance monotonically even after rejection, so delayed completion
 cannot alias a retry.
 An injected startup executor boundary converts each typed effect into its
 matching authority call and returns the exact typed completion message. Its
-handlers are not populated by production authority transports yet; the seam
-exists so filesystem or process work cannot re-enter the reducer implicitly.
+prepare and rollback handlers now borrow the public Hagia startup owners;
+activation and cross-process authority transports remain unpopulated. The seam
+keeps filesystem or process work from re-entering the reducer implicitly.
 A synchronous startup driver now drains that boundary through the complete
 prepare and activate barriers. The first failed operation cancels the
 remaining phase, dispatches rollback to every authority, and retains the prior
@@ -78,6 +79,13 @@ settles all seven prepare effects and returns either `Prepared` or `Rejected`
 without emitting an activation effect. The existing full driver calls this same
 function before requesting activation, so offline proofs and future
 pre-graphical production wiring cannot drift into two implementations.
+For public Hagia startup, Sophia invokes that prepare-only driver immediately
+after staging and exact fragment admission and before display sockets, seats,
+devices, or processes. The dispatcher has seven fixed authority fields that
+borrow the separate policy, shell, shortcut, session, input, output, and broker
+owners. Success retains the coordinator and every participant at the same
+`Prepared` key with no active identity; any local failure rolls all seven slots
+back and aborts startup. The dispatcher deliberately rejects activation calls.
 Each authority now has one shared pure participant model behind that contract.
 It admits only a strictly newer generation and a different digest, makes exact
 prepare, activate, and rollback retries idempotent, restores the exact previous
@@ -149,9 +157,13 @@ partitioning, so startup does not keep a second coordinator-owned copy.
 For a public Hagia session, trusted startup next creates an owner-only policy
 launch context before display sockets, seats, input/output setup, or process
 launch. It stages the complete profile, re-admits all seven fragments through
-the owner-safe loader against the exact activation key, and retains the
-prepared shortcut slot. Any failure aborts before graphical startup; dropping
-an unused context removes its files and directory. Public policy launch later
+the owner-safe loader against the exact activation key, and retains named raw
+policy, shell, and broker owners plus the prepared shortcut owner. The
+session, input, and output owners remain in their typed configuration records.
+The prepare-only coordinator borrows those seven records, settles the complete
+barrier, and stores its `Prepared` model before startup can continue. Any
+failure rolls every owner back and aborts before graphical startup; dropping an
+unused context removes its files and directory. Public policy launch later
 consumes that exact context rather than staging again.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a

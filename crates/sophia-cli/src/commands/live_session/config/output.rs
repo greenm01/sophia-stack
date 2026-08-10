@@ -101,4 +101,10 @@ impl PreparedOutputProfile {
     ) -> &sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate> {
         &self.slot
     }
+
+    pub(super) const fn slot_mut(
+        &mut self,
+    ) -> &mut sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate> {
+        &mut self.slot
+    }
 }

@@ -352,7 +352,13 @@ Sophia's synchronous coordinator driver now has a separate typed prepare-only
 entry point. It drains all seven prepare effects, rolls the generation back on
 any failure, and stops exactly at `Prepared` without activation. The full
 startup driver reuses that entry point, preventing a second orchestration path
-when the production owners are connected before graphical launch.
+when the production owners are connected before graphical launch. Public Hagia
+startup now makes that connection through a fixed-field dispatcher borrowing
+the named authority owners. It runs before display, seat, device, or process
+setup, retains the coordinator and participants at the exact prepared key, and
+rolls every owner back if any position rejects. Its activation handler is
+deliberately fail-closed; launch visibility, recovery, and watched reload remain
+separate later milestones.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

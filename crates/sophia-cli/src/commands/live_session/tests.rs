@@ -8,7 +8,7 @@ use super::{
     FirefoxM10KittyProof, FirefoxM10PrimaryProof, FirefoxM10SelectionKittyProof,
     FloatingPointerGestureState, FloatingPointerOutline, FloatingPointerOutlineUpdate,
     LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene, LiveProductionVisualRuntime,
-    LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig,
+    LiveWmSession, LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig,
     PhysicalInputRoutingMode, PhysicalTextProof, PolicySessionDirectory,
     PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy, PublicPolicyFaultPoint,
     PublicPolicyRestartDecision, Rect, Region, ResizeSyncCapability,
@@ -68,6 +68,7 @@ mod output_topology_owner_tests;
 mod present_retirement_tests;
 mod presentation_role_tests;
 mod presentation_tests;
+mod profile_preparation_tests;
 mod session_config_tests;
 mod startup_output_tests;
 mod visual_candidate_tests;

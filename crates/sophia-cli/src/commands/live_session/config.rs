@@ -8,40 +8,23 @@ mod input_profile;
 mod output;
 #[path = "config/session.rs"]
 mod session;
+#[path = "config/session_profile.rs"]
+mod session_profile;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 use output::{
     PreparedOutputProfile, output_topology_from_engine_outputs,
     output_topology_from_engine_outputs_at_generation, wm_output_bounds,
 };
-use session::{SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec};
+use session::{
+    SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec,
+    session_action_evidence_name,
+};
+use session_profile::PreparedSessionProfile;
 
 const TERMINAL_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(1);
 const LAUNCHER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(2);
 const BROWSER_APPLICATION_ID: SessionApplicationId = SessionApplicationId::from_raw(3);
-
-fn session_action_evidence_name(action: WmSessionAction) -> &'static str {
-    match action {
-        WmSessionAction::LaunchApplication { application }
-            if application == TERMINAL_APPLICATION_ID =>
-        {
-            "LaunchTerminal"
-        }
-        WmSessionAction::LaunchApplication { application }
-            if application == LAUNCHER_APPLICATION_ID =>
-        {
-            "LaunchApplicationMenu"
-        }
-        WmSessionAction::LaunchApplication { application }
-            if application == BROWSER_APPLICATION_ID =>
-        {
-            "LaunchFirefox"
-        }
-        WmSessionAction::LaunchApplication { .. } => "LaunchApplication",
-        WmSessionAction::CloseFocused => "CloseFocused",
-        WmSessionAction::Logout => "Logout",
-    }
-}
 
 #[derive(Clone, Debug)]
 struct PersistentXtermSessionConfig {
@@ -62,8 +45,7 @@ struct PersistentXtermSessionConfig {
     startup_ready_timeout: Option<Duration>,
     applications: SessionApplicationConfig,
     _session_application_overrides: SessionApplicationOverrides,
-    _session_profile_slot:
-        sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopSessionCandidate>,
+    session_profile: PreparedSessionProfile,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
     max_ticks: Option<usize>,
@@ -92,6 +74,7 @@ struct PersistentXtermSessionConfig {
     input_profile: PreparedInputProfile,
     output_profile: PreparedOutputProfile,
     desktop_profile: sophia_config::DesktopProfileGeneration,
+    desktop_profile_activation: sophia_config::DesktopProfileActivationModel,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
     surface_chrome_style: sophia_engine::SurfaceChromeStyle,
@@ -195,9 +178,7 @@ impl PersistentXtermSessionConfig {
             input: input_profile_candidate,
             output: output_profile_candidate,
         } = prepared_desktop;
-        let session_profile_slot = sophia_config::DesktopProfileCandidateSlot::with_candidate(
-            session_profile_candidate,
-        )?;
+        let session_profile = PreparedSessionProfile::new(session_profile_candidate)?;
         let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
         let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;
         let desktop_input = input_profile.candidate();
@@ -216,9 +197,7 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--startup-ready-timeout-ms accepts 100-60000 milliseconds".into());
         }
-        let session_profile_candidate = session_profile_slot
-            .candidate()
-            .expect("successful session profile preparation retains its candidate");
+        let session_profile_candidate = session_profile.candidate();
         let session_application_overrides = SessionApplicationOverrides::parse(args)?;
         let applications = session_application_overrides.prepare(
             Self::applications_from_core(core_snapshot)?,
@@ -697,7 +676,7 @@ impl PersistentXtermSessionConfig {
             startup_ready_timeout,
             applications,
             _session_application_overrides: session_application_overrides,
-            _session_profile_slot: session_profile_slot,
+            session_profile,
             max_ticks,
             inject_text,
             expect_physical_text,
@@ -729,6 +708,7 @@ impl PersistentXtermSessionConfig {
             input_profile,
             output_profile,
             desktop_profile,
+            desktop_profile_activation: sophia_config::DesktopProfileActivationModel::default(),
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,
             core_config_source,

@@ -87,6 +87,14 @@ Completed evidence is archived in `research-log-archive.md`.
   `Prepared`/`Rejected` report after settling exactly the prepare batch and any
   rollback, with no activation calls. The complete driver reuses it. Tests
   cover success plus every authority as the prepare rejection point.
+- Public Hagia startup now invokes that prepare-only driver immediately after
+  staging and exact fragment admission. A fixed-field dispatcher borrows the
+  separate raw policy/shell/broker owners, the public shortcut owner, and the
+  typed session/input/output owners; it owns no slot collection. Success leaves
+  all seven participants and the coordinator at the same `Prepared` key before
+  display setup. Injected failure at every authority proves generation-wide
+  rollback, empty candidates, unchanged active identity, cleanup, and no
+  process launch. Activation remains fail-closed and unwired.
 - `load_desktop_profile` had already run the shared preparation boundary before
   returning, so live-session startup's immediate second preparation was pure
   duplication. `load_prepared_desktop_profile` now returns a typed aggregate

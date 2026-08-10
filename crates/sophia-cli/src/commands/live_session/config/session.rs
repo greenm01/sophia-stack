@@ -1,6 +1,33 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use super::{
+    BROWSER_APPLICATION_ID, LAUNCHER_APPLICATION_ID, TERMINAL_APPLICATION_ID, WmSessionAction,
+};
+
+pub(super) fn session_action_evidence_name(action: WmSessionAction) -> &'static str {
+    match action {
+        WmSessionAction::LaunchApplication { application }
+            if application == TERMINAL_APPLICATION_ID =>
+        {
+            "LaunchTerminal"
+        }
+        WmSessionAction::LaunchApplication { application }
+            if application == LAUNCHER_APPLICATION_ID =>
+        {
+            "LaunchApplicationMenu"
+        }
+        WmSessionAction::LaunchApplication { application }
+            if application == BROWSER_APPLICATION_ID =>
+        {
+            "LaunchFirefox"
+        }
+        WmSessionAction::LaunchApplication { .. } => "LaunchApplication",
+        WmSessionAction::CloseFocused => "CloseFocused",
+        WmSessionAction::Logout => "Logout",
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SessionApplicationSpec {
     pub(super) id: String,
