@@ -337,7 +337,14 @@ fn effects(
     kind: DesktopProfileActivationEffectKind,
     key: DesktopProfileActivationKey,
 ) -> Vec<DesktopProfileActivationEffect> {
-    DesktopAuthority::ALL
+    let authorities = match kind {
+        DesktopProfileActivationEffectKind::ActivateAuthority => {
+            DesktopAuthority::STARTUP_ACTIVATION_ORDER
+        }
+        DesktopProfileActivationEffectKind::PrepareAuthority
+        | DesktopProfileActivationEffectKind::RollbackAuthority => DesktopAuthority::ALL,
+    };
+    authorities
         .into_iter()
         .map(|authority| DesktopProfileActivationEffect {
             kind,

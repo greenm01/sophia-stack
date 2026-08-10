@@ -110,9 +110,17 @@ fn all_authorities_prepare_and_activate_one_shared_generation() {
         effect.kind == DesktopProfileActivationEffectKind::ActivateAuthority
             && effect.key == candidate
     }));
+    assert_eq!(
+        activating
+            .effects
+            .iter()
+            .map(|effect| effect.authority)
+            .collect::<Vec<_>>(),
+        DesktopAuthority::STARTUP_ACTIVATION_ORDER
+    );
 
     let mut model = activating.model;
-    for authority in DesktopAuthority::ALL {
+    for authority in DesktopAuthority::STARTUP_ACTIVATION_ORDER {
         model = reduce_desktop_profile_activation(
             &model,
             DesktopProfileActivationMsg::AuthorityActivated {

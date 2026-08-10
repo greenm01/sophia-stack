@@ -135,13 +135,22 @@ where
     if preparation.disposition == DesktopProfileStartupPreparationDisposition::Rejected {
         return Ok(rejected_report(preparation.model));
     }
-    let prepared = preparation.model;
+    run_desktop_profile_prepared_activation(&preparation.model, key, executor)
+}
 
+pub fn run_desktop_profile_prepared_activation<E>(
+    prepared: &DesktopProfileActivationModel,
+    key: DesktopProfileActivationKey,
+    executor: &mut E,
+) -> Result<DesktopProfileStartupActivationReport, DesktopProfileStartupActivationError>
+where
+    E: DesktopProfileAuthorityEffectExecutor,
+{
     let activation = reduce_desktop_profile_activation(
-        &prepared,
+        prepared,
         DesktopProfileActivationMsg::ActivationRequested { key },
     )
-    .map_err(|error| startup_error(error, &prepared, None))?;
+    .map_err(|error| startup_error(error, prepared, None))?;
     let activated = execute_candidate_batch(
         activation.model,
         activation.effects,

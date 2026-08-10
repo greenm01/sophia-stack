@@ -105,6 +105,19 @@ impl DesktopAuthority {
         Self::Broker,
     ];
 
+    /// Startup activates the external policy authority last. Once Hagia
+    /// acknowledges activation it may emit normal policy traffic, so every
+    /// Sophia-owned participant must already be active.
+    pub const STARTUP_ACTIVATION_ORDER: [Self; 7] = [
+        Self::Shell,
+        Self::Shortcut,
+        Self::Session,
+        Self::Input,
+        Self::Output,
+        Self::Broker,
+        Self::Policy,
+    ];
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Policy => "policy",

@@ -376,6 +376,12 @@ activate, and rollback through the pure reducer with exact correlation. The
 installed supervised-UID constructor remains non-opt-in, so this plumbing has
 no production effect until the pre-graphics owner is restructured around the
 global barrier.
+The shared startup driver can now activate an already-prepared coordinator
+model without replaying preparation. Its canonical activation order settles
+the six Sophia-owned participants before the external policy authority, so an
+accepted Hagia `ProfileActive` completion can be the final global barrier and
+cannot race later local activation. Existing prepare and rollback ordering is
+unchanged.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

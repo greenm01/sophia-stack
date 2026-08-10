@@ -1,8 +1,8 @@
 use sophia_cli::desktop_profile_activation::{
     DesktopProfileAuthorityEffectExecutor, DesktopProfileStartupActivationDisposition,
     DesktopProfileStartupActivationErrorKind, DesktopProfileStartupPreparationDisposition,
-    execute_desktop_profile_activation_effect, run_desktop_profile_startup_activation,
-    run_desktop_profile_startup_preparation,
+    execute_desktop_profile_activation_effect, run_desktop_profile_prepared_activation,
+    run_desktop_profile_startup_activation, run_desktop_profile_startup_preparation,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
@@ -330,6 +330,11 @@ fn startup_driver_prepares_then_activates_every_authority() {
                 key(),
             )
         );
+    }
+    for (index, authority) in DesktopAuthority::STARTUP_ACTIVATION_ORDER
+        .into_iter()
+        .enumerate()
+    {
         assert_eq!(
             executor.calls[index + DesktopAuthority::ALL.len()],
             (
@@ -393,6 +398,40 @@ fn preparation_driver_rejection_rolls_back_without_activation() {
             DesktopAuthority::ALL.len()
         );
     }
+}
+
+#[test]
+fn prepared_activation_driver_does_not_repeat_preparation() {
+    let mut preparation_executor = FakeExecutor::default();
+    let prepared =
+        run_desktop_profile_startup_preparation(&active_model(), key(), &mut preparation_executor)
+            .unwrap();
+    let mut activation_executor = FakeExecutor::default();
+    let activated =
+        run_desktop_profile_prepared_activation(&prepared.model, key(), &mut activation_executor)
+            .unwrap();
+
+    assert_eq!(
+        activated.disposition,
+        DesktopProfileStartupActivationDisposition::Activated
+    );
+    assert_eq!(activated.model.active(), Some(key()));
+    assert_eq!(
+        activation_executor
+            .calls
+            .iter()
+            .map(|(kind, authority, _)| (*kind, *authority))
+            .collect::<Vec<_>>(),
+        DesktopAuthority::STARTUP_ACTIVATION_ORDER
+            .into_iter()
+            .map(|authority| {
+                (
+                    DesktopProfileActivationEffectKind::ActivateAuthority,
+                    authority,
+                )
+            })
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -470,7 +509,10 @@ fn prepare_failure_cancels_batch_and_rolls_back_all_authorities() {
 
 #[test]
 fn activation_failure_cancels_batch_and_restores_last_known_good() {
-    for (failure_index, failure) in DesktopAuthority::ALL.into_iter().enumerate() {
+    for (failure_index, failure) in DesktopAuthority::STARTUP_ACTIVATION_ORDER
+        .into_iter()
+        .enumerate()
+    {
         let mut executor = FakeExecutor {
             activate_failure: Some(failure),
             ..FakeExecutor::default()
