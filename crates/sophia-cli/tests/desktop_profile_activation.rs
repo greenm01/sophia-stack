@@ -4,12 +4,13 @@ use sophia_cli::desktop_profile_activation::{
     run_desktop_profile_startup_activation,
 };
 use sophia_config::{
-    ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopProfileActivationEffect,
-    DesktopProfileActivationEffectKind, DesktopProfileActivationError, DesktopProfileActivationKey,
-    DesktopProfileActivationModel, DesktopProfileActivationMsg, DesktopProfileActivationPhase,
-    DesktopProfileParticipantModel, DesktopProfileParticipantPhase,
-    activate_desktop_profile_participant, prepare_desktop_profile_participant,
-    reduce_desktop_profile_activation, rollback_desktop_profile_participant,
+    ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
+    DesktopProfileActivationEffect, DesktopProfileActivationEffectKind,
+    DesktopProfileActivationError, DesktopProfileActivationKey, DesktopProfileActivationModel,
+    DesktopProfileActivationMsg, DesktopProfileActivationPhase, DesktopProfileCandidatePayload,
+    DesktopProfileCandidateSlot, DesktopProfileParticipantPhase,
+    activate_desktop_profile_candidate_slot, prepare_desktop_profile_candidate_slot,
+    reduce_desktop_profile_activation, rollback_desktop_profile_candidate_slot,
 };
 
 #[derive(Default)]
@@ -65,20 +66,20 @@ impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
     }
 }
 
-struct ParticipantExecutor {
-    models: Vec<DesktopProfileParticipantModel>,
+struct CandidateSlotExecutor {
+    slots: Vec<DesktopProfileCandidateSlot<DesktopAuthorityCandidate>>,
     prepare_failure: Option<DesktopAuthority>,
     activate_failure: Option<DesktopAuthority>,
     rollback_failure: Option<DesktopAuthority>,
 }
 
-impl ParticipantExecutor {
+impl CandidateSlotExecutor {
     fn with_active(active: DesktopProfileActivationKey) -> Self {
         Self {
-            models: DesktopAuthority::ALL
+            slots: DesktopAuthority::ALL
                 .into_iter()
                 .map(|authority| {
-                    DesktopProfileParticipantModel::with_active(authority, active).unwrap()
+                    DesktopProfileCandidateSlot::with_active(payload(authority, active)).unwrap()
                 })
                 .collect(),
             prepare_failure: None,
@@ -87,19 +88,22 @@ impl ParticipantExecutor {
         }
     }
 
-    fn model(&self, authority: DesktopAuthority) -> &DesktopProfileParticipantModel {
-        &self.models[self.index(authority)]
+    fn slot(
+        &self,
+        authority: DesktopAuthority,
+    ) -> &DesktopProfileCandidateSlot<DesktopAuthorityCandidate> {
+        &self.slots[self.index(authority)]
     }
 
     fn index(&self, authority: DesktopAuthority) -> usize {
-        self.models
+        self.slots
             .iter()
-            .position(|model| model.authority() == authority)
-            .expect("all desktop authorities have one participant")
+            .position(|slot| slot.participant().authority() == authority)
+            .expect("all desktop authorities have one candidate slot")
     }
 }
 
-impl DesktopProfileAuthorityEffectExecutor for ParticipantExecutor {
+impl DesktopProfileAuthorityEffectExecutor for CandidateSlotExecutor {
     fn prepare_authority(
         &mut self,
         authority: DesktopAuthority,
@@ -109,10 +113,12 @@ impl DesktopProfileAuthorityEffectExecutor for ParticipantExecutor {
             return false;
         }
         let index = self.index(authority);
-        let Ok(model) = prepare_desktop_profile_participant(&self.models[index], key) else {
+        let Ok(slot) =
+            prepare_desktop_profile_candidate_slot(&self.slots[index], payload(authority, key))
+        else {
             return false;
         };
-        self.models[index] = model;
+        self.slots[index] = slot;
         true
     }
 
@@ -125,10 +131,10 @@ impl DesktopProfileAuthorityEffectExecutor for ParticipantExecutor {
             return false;
         }
         let index = self.index(authority);
-        let Ok(model) = activate_desktop_profile_participant(&self.models[index], key) else {
+        let Ok(slot) = activate_desktop_profile_candidate_slot(&self.slots[index], key) else {
             return false;
         };
-        self.models[index] = model;
+        self.slots[index] = slot;
         true
     }
 
@@ -141,11 +147,23 @@ impl DesktopProfileAuthorityEffectExecutor for ParticipantExecutor {
             return false;
         }
         let index = self.index(authority);
-        let Ok(model) = rollback_desktop_profile_participant(&self.models[index], key) else {
+        let Ok(slot) = rollback_desktop_profile_candidate_slot(&self.slots[index], key) else {
             return false;
         };
-        self.models[index] = model;
+        self.slots[index] = slot;
         true
+    }
+}
+
+fn payload(
+    authority: DesktopAuthority,
+    key: DesktopProfileActivationKey,
+) -> DesktopAuthorityCandidate {
+    DesktopAuthorityCandidate {
+        authority,
+        generation: key.generation(),
+        digest: key.digest(),
+        values: Vec::new(),
     }
 }
 
@@ -487,16 +505,27 @@ fn stale_generation_is_rejected_before_any_authority_call() {
     assert!(executor.calls.is_empty());
 }
 
+fn assert_slot_active(
+    slot: &DesktopProfileCandidateSlot<DesktopAuthorityCandidate>,
+    key: DesktopProfileActivationKey,
+) {
+    assert_eq!(
+        slot.active().map(|payload| payload.activation_key()),
+        Some(key)
+    );
+}
+
 #[test]
-fn coordinator_success_aligns_every_independent_participant() {
+fn coordinator_success_aligns_every_independent_candidate_slot() {
     let known_good = active_model().active().unwrap();
-    let mut executor = ParticipantExecutor::with_active(known_good);
+    let mut executor = CandidateSlotExecutor::with_active(known_good);
     let report =
         run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
 
     assert_eq!(report.model.active(), Some(key()));
     for authority in DesktopAuthority::ALL {
-        let participant = executor.model(authority);
+        let slot = executor.slot(authority);
+        let participant = slot.participant();
         assert_eq!(participant.active(), Some(key()));
         assert_eq!(participant.candidate(), Some(key()));
         assert_eq!(participant.latest_generation(), key().generation().raw());
@@ -504,14 +533,19 @@ fn coordinator_success_aligns_every_independent_participant() {
             participant.phase(),
             DesktopProfileParticipantPhase::Activated
         );
+        assert_slot_active(slot, key());
+        assert_eq!(
+            slot.candidate().map(|payload| payload.authority),
+            Some(authority)
+        );
     }
 }
 
 #[test]
-fn coordinator_prepare_failure_tombstones_every_participant() {
+fn coordinator_prepare_failure_tombstones_every_candidate_slot() {
     let known_good = active_model().active().unwrap();
     for failure in DesktopAuthority::ALL {
-        let mut executor = ParticipantExecutor::with_active(known_good);
+        let mut executor = CandidateSlotExecutor::with_active(known_good);
         executor.prepare_failure = Some(failure);
         let report =
             run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
@@ -521,20 +555,23 @@ fn coordinator_prepare_failure_tombstones_every_participant() {
             DesktopProfileStartupActivationDisposition::Rejected
         );
         for authority in DesktopAuthority::ALL {
-            let participant = executor.model(authority);
+            let slot = executor.slot(authority);
+            let participant = slot.participant();
             assert_eq!(participant.active(), Some(known_good));
             assert_eq!(participant.candidate(), None);
             assert_eq!(participant.latest_generation(), key().generation().raw());
             assert_eq!(participant.phase(), DesktopProfileParticipantPhase::Idle);
+            assert_slot_active(slot, known_good);
+            assert_eq!(slot.candidate(), None);
         }
     }
 }
 
 #[test]
-fn coordinator_activation_failure_restores_every_participant() {
+fn coordinator_activation_failure_restores_every_candidate_slot() {
     let known_good = active_model().active().unwrap();
     for failure in DesktopAuthority::ALL {
-        let mut executor = ParticipantExecutor::with_active(known_good);
+        let mut executor = CandidateSlotExecutor::with_active(known_good);
         executor.activate_failure = Some(failure);
         let report =
             run_desktop_profile_startup_activation(&active_model(), key(), &mut executor).unwrap();
@@ -544,11 +581,14 @@ fn coordinator_activation_failure_restores_every_participant() {
             DesktopProfileStartupActivationDisposition::Rejected
         );
         for authority in DesktopAuthority::ALL {
-            let participant = executor.model(authority);
+            let slot = executor.slot(authority);
+            let participant = slot.participant();
             assert_eq!(participant.active(), Some(known_good));
             assert_eq!(participant.candidate(), None);
             assert_eq!(participant.latest_generation(), key().generation().raw());
             assert_eq!(participant.phase(), DesktopProfileParticipantPhase::Idle);
+            assert_slot_active(slot, known_good);
+            assert_eq!(slot.candidate(), None);
         }
     }
 }
@@ -557,7 +597,7 @@ fn coordinator_activation_failure_restores_every_participant() {
 fn coordinator_rollback_failure_preserves_and_recovers_exact_divergence() {
     let known_good = active_model().active().unwrap();
     for failure in DesktopAuthority::ALL {
-        let mut executor = ParticipantExecutor::with_active(known_good);
+        let mut executor = CandidateSlotExecutor::with_active(known_good);
         executor.prepare_failure = Some(DesktopAuthority::Policy);
         executor.rollback_failure = Some(failure);
         let error = run_desktop_profile_startup_activation(&active_model(), key(), &mut executor)
@@ -573,10 +613,12 @@ fn coordinator_rollback_failure_preserves_and_recovers_exact_divergence() {
             vec![failure]
         );
         for authority in DesktopAuthority::ALL {
-            let participant = executor.model(authority);
+            let slot = executor.slot(authority);
+            let participant = slot.participant();
             let expected_generation = if authority == failure { 6 } else { 7 };
             assert_eq!(participant.active(), Some(known_good));
             assert_eq!(participant.latest_generation(), expected_generation);
+            assert_slot_active(slot, known_good);
         }
 
         executor.rollback_failure = None;
@@ -594,10 +636,13 @@ fn coordinator_rollback_failure_preserves_and_recovers_exact_divergence() {
         assert_eq!(recovered.phase(), DesktopProfileActivationPhase::Idle);
         assert_eq!(recovered.active(), Some(known_good));
         for authority in DesktopAuthority::ALL {
-            let participant = executor.model(authority);
+            let slot = executor.slot(authority);
+            let participant = slot.participant();
             assert_eq!(participant.phase(), DesktopProfileParticipantPhase::Idle);
             assert_eq!(participant.active(), Some(known_good));
             assert_eq!(participant.latest_generation(), key().generation().raw());
+            assert_slot_active(slot, known_good);
+            assert_eq!(slot.candidate(), None);
         }
     }
 }

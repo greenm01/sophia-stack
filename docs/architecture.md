@@ -744,10 +744,11 @@ local participant state: monotonic admission, exact-key idempotence, previous
 identity restoration, fail-closed same-generation digest handling, and
 generation-wide tombstones for participants skipped after an earlier prepare
 failure. An offline refinement harness drives the coordinator's actual effects
-through seven independent participant models and checks convergence or exact
-recovery divergence at every failure position. The startup launch gate is the
-only permitted visibility boundary for this model; authority protocols,
-effect executors, and a live-reload visibility barrier remain unwired.
+through seven independent authority-local candidate slots and checks identity
+and payload convergence or exact recovery divergence at every failure
+position. The startup launch gate is the only permitted visibility boundary
+for this model; authority protocols, production effect executors, and a
+live-reload visibility barrier remain unwired.
 
 The startup configuration boundary retains one immutable prepared desktop
 candidate bundle after checking every raw authority candidate against the

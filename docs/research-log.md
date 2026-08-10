@@ -55,10 +55,11 @@ Completed evidence is archived in `research-log-archive.md`.
   unseen rollback as a no-state tombstone while retaining the active identity;
   conflicting prepared work and same-generation digest mismatches still fail
   closed.
-- A test-only executor now drives the coordinator's real effect sequence
-  through seven independent participant models. Across every authority as the
-  prepare, activation, and rollback failure, it proves successful identity
-  agreement, complete last-known-good restoration, rejected-generation
+- The test-only executor now drives the coordinator's real effect sequence
+  through seven independent authority-local candidate slots rather than
+  identity-only participant models. Across every authority as the prepare,
+  activation, and rollback failure, it proves successful identity and payload
+  agreement, complete last-known-good payload restoration, rejected-generation
   consumption, exact single-authority divergence, and deterministic recovery.
 - Startup tracing found one avoidable split in candidate ownership: the shared
   preparation result was partially moved into session fields, while public

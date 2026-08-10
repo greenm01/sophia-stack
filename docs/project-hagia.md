@@ -281,13 +281,15 @@ rollback are exact-key idempotent; rollback restores the prior identity; older
 cleanup is inert; and a digest collision at the current generation fails
 closed. An unseen generation-wide rollback becomes a no-state tombstone when
 the startup driver skipped that participant after an earlier prepare failure.
-The coordinator-to-participant refinement tests enumerate every authority as
-the prepare, activation, and rollback failure, proving global/local convergence
-and exact recovery divergence. This model is ready for authority-owned
-handlers, but does not install them. During transactional startup the graphical
-launch gate can hide partial local activation. Live reload cannot use that
-assumption and remains deferred until a separate global visibility and recovery
-protocol is proved.
+The coordinator-to-participant refinement tests now execute through seven
+authority-local candidate slots rather than identity-only participant models.
+They enumerate every authority as the prepare, activation, and rollback
+failure, proving global/local identity and payload convergence plus exact
+recovery divergence. This model is ready for authority-owned handlers, but does
+not install them. During transactional startup the graphical launch gate can
+hide partial local activation. Live reload cannot use that assumption and
+remains deferred until a separate global visibility and recovery protocol is
+proved.
 
 Startup candidate ownership is now narrower and DRY: Sophia validates the
 generation/digest identity of all seven raw candidates once at the shared
