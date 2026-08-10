@@ -18,10 +18,9 @@ use sophia_protocol::{
     encode_wm_v1_profile_rolled_back,
 };
 use sophia_runtime::{
-    PolicyClientEvent, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
-    PolicyProfileHandoffKind, PolicyProfileHandoffMsg, PolicyProfileHandoffPhase,
-    PolicyTransportError, PolicyWmSessionTransport, QueuedPolicyProjection,
-    reduce_policy_profile_handoff,
+    PolicyPeerIdentity, PolicyProfileCompletionDisposition, PolicyProfileHandoffKind,
+    PolicyProfileHandoffPhase, PolicyTransportError, PolicyWmSessionTransport,
+    QueuedPolicyProjection,
 };
 use sophia_wm_demo::PolicyV1Client;
 
@@ -180,30 +179,9 @@ fn startup_profile_transport_drives_exact_prepare_activate_and_rollback() {
         .unwrap();
     assert_eq!(model.phase(), PolicyProfileHandoffPhase::Active);
     for (kind, transaction) in [(PolicyProfileHandoffKind::Rollback, 3)] {
-        let begin = reduce_policy_profile_handoff(
-            &model,
-            PolicyProfileHandoffMsg::Begin {
-                kind,
-                transaction: TransactionId::from_raw(transaction),
-            },
-        )
-        .unwrap();
-        transport
-            .send_profile_handoff(begin.effect.unwrap())
+        let settled = transport
+            .execute_profile_handoff_step(&model, kind, TransactionId::from_raw(transaction))
             .unwrap();
-        let PolicyClientEvent::ProfileCompletion {
-            kind: completion_kind,
-            completion,
-        } = transport.receive_client_event().unwrap()
-        else {
-            panic!("expected a profile completion")
-        };
-        assert_eq!(completion_kind, kind);
-        let settled = reduce_policy_profile_handoff(
-            &begin.model,
-            PolicyProfileHandoffMsg::Completion { kind, completion },
-        )
-        .unwrap();
         assert_eq!(
             settled.completion,
             Some(PolicyProfileCompletionDisposition::Accepted)

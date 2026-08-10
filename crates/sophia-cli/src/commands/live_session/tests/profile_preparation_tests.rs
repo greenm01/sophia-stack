@@ -90,6 +90,60 @@ fn public_profile_startup_reaches_the_complete_prepare_barrier_before_launch() {
 }
 
 #[test]
+fn public_profile_activation_promotes_local_slots_and_pauses_at_policy() {
+    let mut config = public_profile_test_config("sophia-profile-local-activation-test");
+    let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+    let mut prepared = LiveWmSession::prepare_public_launch(&mut config)
+        .unwrap()
+        .unwrap();
+    let model = config.desktop_profile_activation.clone();
+    let mut executor = PublicProfilePreparationExecutor {
+        policy: prepared.policy_profile.slot_mut(),
+        shell: prepared.shell_profile.slot_mut(),
+        shortcut: &mut prepared.shortcut_profile_slot,
+        session: config.session_profile.slot_mut(),
+        input: config.input_profile.slot_mut(),
+        output: config.output_profile.slot_mut(),
+        broker: prepared.broker_profile.slot_mut(),
+    };
+
+    let report = sophia_cli::desktop_profile_activation::run_desktop_profile_prepared_activation_until_policy(
+        &model,
+        key,
+        &mut executor,
+    )
+    .unwrap();
+    drop(executor);
+
+    assert_eq!(
+        report.disposition,
+        sophia_cli::desktop_profile_activation::DesktopProfileExternalActivationDisposition::AwaitingPolicy
+    );
+    assert_eq!(
+        report.effect.unwrap().authority,
+        sophia_config::DesktopAuthority::Policy
+    );
+    assert_eq!(
+        prepared.policy_profile.slot.participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Prepared
+    );
+    for participant in [
+        prepared.shell_profile.slot.participant(),
+        prepared.shortcut_profile_slot.participant(),
+        config.session_profile.slot().participant(),
+        config.input_profile.slot().participant(),
+        config.output_profile.slot().participant(),
+        prepared.broker_profile.slot.participant(),
+    ] {
+        assert_eq!(
+            participant.phase(),
+            sophia_config::DesktopProfileParticipantPhase::Activated
+        );
+        assert_eq!(participant.active(), Some(key));
+    }
+}
+
+#[test]
 fn public_profile_prepare_failure_rolls_every_owner_back_without_activation() {
     for (failure_index, authority) in sophia_config::DesktopAuthority::ALL.into_iter().enumerate() {
         let mut config =

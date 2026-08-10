@@ -29,9 +29,9 @@ use sophia_protocol::{
 use crate::{
     PolicyConnectionState, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
     PolicyProfileHandoffEffect, PolicyProfileHandoffError, PolicyProfileHandoffKind,
-    PolicyProfileHandoffModel, PolicyProfileHandoffMsg, PolicyRoleEndpoint,
-    PolicyRoleEndpointError, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
-    reduce_policy_profile_handoff,
+    PolicyProfileHandoffModel, PolicyProfileHandoffMsg, PolicyProfileHandoffUpdate,
+    PolicyRoleEndpoint, PolicyRoleEndpointError, PolicySnapshotAssembler, PolicyTransferError,
+    QueuedPolicyProjection, reduce_policy_profile_handoff,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -472,29 +472,7 @@ impl PolicyWmSessionTransport {
             (PolicyProfileHandoffKind::Prepare, prepare_transaction),
             (PolicyProfileHandoffKind::Activate, activate_transaction),
         ] {
-            let update = reduce_policy_profile_handoff(
-                &model,
-                PolicyProfileHandoffMsg::Begin { kind, transaction },
-            )?;
-            self.send_profile_handoff(
-                update
-                    .effect
-                    .expect("a valid profile begin always emits one effect"),
-            )?;
-            let PolicyClientEvent::ProfileCompletion {
-                kind: completion_kind,
-                completion,
-            } = self.receive_client_event()?
-            else {
-                return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
-            };
-            if completion_kind != kind {
-                return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
-            }
-            let settled = reduce_policy_profile_handoff(
-                &update.model,
-                PolicyProfileHandoffMsg::Completion { kind, completion },
-            )?;
+            let settled = self.execute_profile_handoff_step(&model, kind, transaction)?;
             match settled.completion {
                 Some(PolicyProfileCompletionDisposition::Accepted) => {
                     model = settled.model;
@@ -508,6 +486,41 @@ impl PolicyWmSessionTransport {
             }
         }
         Ok(model)
+    }
+
+    /// Executes one reducer-owned handoff step and returns the candidate model
+    /// even when the peer rejects it, so a coordinator can issue exact
+    /// rollback without reconstructing transport phase state.
+    pub fn execute_profile_handoff_step(
+        &mut self,
+        model: &PolicyProfileHandoffModel,
+        kind: PolicyProfileHandoffKind,
+        transaction: TransactionId,
+    ) -> Result<PolicyProfileHandoffUpdate, PolicyTransportError> {
+        let update = reduce_policy_profile_handoff(
+            model,
+            PolicyProfileHandoffMsg::Begin { kind, transaction },
+        )?;
+        self.send_profile_handoff(
+            update
+                .effect
+                .expect("a valid profile begin always emits one effect"),
+        )?;
+        let PolicyClientEvent::ProfileCompletion {
+            kind: completion_kind,
+            completion,
+        } = self.receive_client_event()?
+        else {
+            return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
+        };
+        if completion_kind != kind {
+            return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
+        }
+        reduce_policy_profile_handoff(
+            &update.model,
+            PolicyProfileHandoffMsg::Completion { kind, completion },
+        )
+        .map_err(Into::into)
     }
 
     pub fn send_projection_request(

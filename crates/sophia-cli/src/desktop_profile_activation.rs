@@ -3,7 +3,8 @@ use std::fmt;
 use sophia_config::{
     DesktopAuthority, DesktopProfileActivationEffect, DesktopProfileActivationEffectKind,
     DesktopProfileActivationError, DesktopProfileActivationKey, DesktopProfileActivationModel,
-    DesktopProfileActivationMsg, DesktopProfileActivationPhase, reduce_desktop_profile_activation,
+    DesktopProfileActivationMsg, DesktopProfileActivationPhase, DesktopProfileActivationUpdate,
+    reduce_desktop_profile_activation,
 };
 
 pub trait DesktopProfileAuthorityEffectExecutor {
@@ -94,6 +95,19 @@ pub struct DesktopProfileStartupPreparationReport {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopProfileExternalActivationDisposition {
+    AwaitingPolicy,
+    Rejected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopProfileExternalActivationReport {
+    pub model: DesktopProfileActivationModel,
+    pub disposition: DesktopProfileExternalActivationDisposition,
+    pub effect: Option<DesktopProfileActivationEffect>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopProfileStartupActivationErrorKind {
     Reducer(DesktopProfileActivationError),
     UnexpectedEffect,
@@ -168,6 +182,91 @@ where
         model: activated,
         disposition: DesktopProfileStartupActivationDisposition::Activated,
     })
+}
+
+/// Activates every Sophia-owned startup authority in canonical order and
+/// returns the final external Policy effect without executing it.
+pub fn run_desktop_profile_prepared_activation_until_policy<E>(
+    prepared: &DesktopProfileActivationModel,
+    key: DesktopProfileActivationKey,
+    executor: &mut E,
+) -> Result<DesktopProfileExternalActivationReport, DesktopProfileStartupActivationError>
+where
+    E: DesktopProfileAuthorityEffectExecutor,
+{
+    let activation = reduce_desktop_profile_activation(
+        prepared,
+        DesktopProfileActivationMsg::ActivationRequested { key },
+    )
+    .map_err(|error| startup_error(error, prepared, None))?;
+    let mut effects = activation.effects;
+    let Some(policy_effect) = effects.pop() else {
+        return Err(incomplete_error(activation.model));
+    };
+    if policy_effect.kind != DesktopProfileActivationEffectKind::ActivateAuthority
+        || policy_effect.authority != DesktopAuthority::Policy
+    {
+        return Err(unexpected_effect(activation.model, policy_effect));
+    }
+    if let Some(effect) = effects
+        .iter()
+        .find(|effect| effect.authority == DesktopAuthority::Policy)
+        .copied()
+    {
+        return Err(unexpected_effect(activation.model, effect));
+    }
+    let activated = execute_candidate_batch(
+        activation.model,
+        effects,
+        DesktopProfileActivationPhase::Activating,
+        DesktopProfileActivationEffectKind::ActivateAuthority,
+        executor,
+    )?;
+    let CandidateBatchResult::Completed(model) = activated else {
+        return Ok(DesktopProfileExternalActivationReport {
+            model: activated.model(),
+            disposition: DesktopProfileExternalActivationDisposition::Rejected,
+            effect: None,
+        });
+    };
+    if model.phase() != DesktopProfileActivationPhase::Activating
+        || model
+            .activated_authorities()
+            .contains(&DesktopAuthority::Policy)
+        || model.activated_authorities().len() + 1 != DesktopAuthority::ALL.len()
+    {
+        return Err(incomplete_error(model));
+    }
+    Ok(DesktopProfileExternalActivationReport {
+        model,
+        disposition: DesktopProfileExternalActivationDisposition::AwaitingPolicy,
+        effect: Some(policy_effect),
+    })
+}
+
+/// Feeds the exact external Policy completion back into the pure coordinator.
+/// A rejection returns the typed rollback effects without executing them.
+pub fn settle_desktop_profile_policy_activation(
+    model: &DesktopProfileActivationModel,
+    effect: DesktopProfileActivationEffect,
+    success: bool,
+) -> Result<DesktopProfileActivationUpdate, DesktopProfileStartupActivationError> {
+    if effect.kind != DesktopProfileActivationEffectKind::ActivateAuthority
+        || effect.authority != DesktopAuthority::Policy
+        || model.phase() != DesktopProfileActivationPhase::Activating
+        || model.candidate() != Some(effect.key)
+    {
+        return Err(unexpected_effect(model.clone(), effect));
+    }
+    reduce_desktop_profile_activation(
+        model,
+        DesktopProfileActivationMsg::AuthorityActivated {
+            key: effect.key,
+            authority: effect.authority,
+            success,
+        },
+    )
+    .map_err(|error| startup_error(error, model, Some(effect)))
 }
 
 pub fn run_desktop_profile_startup_preparation<E>(

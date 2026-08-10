@@ -1,8 +1,10 @@
 use sophia_cli::desktop_profile_activation::{
-    DesktopProfileAuthorityEffectExecutor, DesktopProfileStartupActivationDisposition,
-    DesktopProfileStartupActivationErrorKind, DesktopProfileStartupPreparationDisposition,
-    execute_desktop_profile_activation_effect, run_desktop_profile_prepared_activation,
+    DesktopProfileAuthorityEffectExecutor, DesktopProfileExternalActivationDisposition,
+    DesktopProfileStartupActivationDisposition, DesktopProfileStartupActivationErrorKind,
+    DesktopProfileStartupPreparationDisposition, execute_desktop_profile_activation_effect,
+    run_desktop_profile_prepared_activation, run_desktop_profile_prepared_activation_until_policy,
     run_desktop_profile_startup_activation, run_desktop_profile_startup_preparation,
+    settle_desktop_profile_policy_activation,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
@@ -431,6 +433,127 @@ fn prepared_activation_driver_does_not_repeat_preparation() {
                 )
             })
             .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn prepared_activation_pauses_after_local_authorities_and_settles_policy_last() {
+    let mut preparation_executor = FakeExecutor::default();
+    let prepared =
+        run_desktop_profile_startup_preparation(&active_model(), key(), &mut preparation_executor)
+            .unwrap();
+    let mut activation_executor = FakeExecutor::default();
+    let awaiting = run_desktop_profile_prepared_activation_until_policy(
+        &prepared.model,
+        key(),
+        &mut activation_executor,
+    )
+    .unwrap();
+
+    assert_eq!(
+        awaiting.disposition,
+        DesktopProfileExternalActivationDisposition::AwaitingPolicy
+    );
+    assert_eq!(
+        activation_executor
+            .calls
+            .iter()
+            .map(|(_, authority, _)| *authority)
+            .collect::<Vec<_>>(),
+        DesktopAuthority::STARTUP_ACTIVATION_ORDER[..6]
+    );
+    assert_eq!(
+        awaiting.effect,
+        Some(DesktopProfileActivationEffect {
+            kind: DesktopProfileActivationEffectKind::ActivateAuthority,
+            authority: DesktopAuthority::Policy,
+            key: key(),
+        })
+    );
+    let settled =
+        settle_desktop_profile_policy_activation(&awaiting.model, awaiting.effect.unwrap(), true)
+            .unwrap();
+    assert_eq!(settled.model.phase(), DesktopProfileActivationPhase::Idle);
+    assert_eq!(settled.model.active(), Some(key()));
+    assert!(settled.effects.is_empty());
+}
+
+#[test]
+fn local_activation_rejection_rolls_back_before_policy_is_contacted() {
+    for failure in DesktopAuthority::STARTUP_ACTIVATION_ORDER[..6]
+        .iter()
+        .copied()
+    {
+        let mut preparation_executor = FakeExecutor::default();
+        let prepared = run_desktop_profile_startup_preparation(
+            &active_model(),
+            key(),
+            &mut preparation_executor,
+        )
+        .unwrap();
+        let mut activation_executor = FakeExecutor {
+            activate_failure: Some(failure),
+            ..FakeExecutor::default()
+        };
+        let report = run_desktop_profile_prepared_activation_until_policy(
+            &prepared.model,
+            key(),
+            &mut activation_executor,
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.disposition,
+            DesktopProfileExternalActivationDisposition::Rejected
+        );
+        assert_eq!(report.model.phase(), DesktopProfileActivationPhase::Idle);
+        assert_eq!(report.model.active(), active_model().active());
+        assert_eq!(report.effect, None);
+        assert!(
+            !activation_executor
+                .calls
+                .iter()
+                .any(|(kind, authority, _)| {
+                    *kind == DesktopProfileActivationEffectKind::ActivateAuthority
+                        && *authority == DesktopAuthority::Policy
+                })
+        );
+    }
+}
+
+#[test]
+fn policy_rejection_emits_complete_typed_rollback_batch() {
+    let mut preparation_executor = FakeExecutor::default();
+    let prepared =
+        run_desktop_profile_startup_preparation(&active_model(), key(), &mut preparation_executor)
+            .unwrap();
+    let mut activation_executor = FakeExecutor::default();
+    let awaiting = run_desktop_profile_prepared_activation_until_policy(
+        &prepared.model,
+        key(),
+        &mut activation_executor,
+    )
+    .unwrap();
+    let rejected =
+        settle_desktop_profile_policy_activation(&awaiting.model, awaiting.effect.unwrap(), false)
+            .unwrap();
+
+    assert_eq!(
+        rejected.model.phase(),
+        DesktopProfileActivationPhase::RollingBack
+    );
+    assert_eq!(rejected.model.active(), active_model().active());
+    assert_eq!(rejected.effects.len(), DesktopAuthority::ALL.len());
+    assert!(
+        rejected
+            .effects
+            .iter()
+            .zip(DesktopAuthority::ALL)
+            .all(|(effect, authority)| {
+                effect.kind == DesktopProfileActivationEffectKind::RollbackAuthority
+                    && effect.authority == authority
+                    && effect.key == key()
+            })
     );
 }
 

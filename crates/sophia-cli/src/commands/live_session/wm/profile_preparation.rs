@@ -107,6 +107,20 @@ where
     true
 }
 
+fn activate_profile_slot<T>(
+    slot: &mut sophia_config::DesktopProfileCandidateSlot<T>,
+    key: sophia_config::DesktopProfileActivationKey,
+) -> bool
+where
+    T: Clone + sophia_config::DesktopProfileCandidatePayload,
+{
+    let Ok(next) = sophia_config::activate_desktop_profile_candidate_slot(slot, key) else {
+        return false;
+    };
+    *slot = next;
+    true
+}
+
 impl PublicProfilePreparationExecutor<'_> {
     fn dispatch_prepare(
         &mut self,
@@ -141,6 +155,23 @@ impl PublicProfilePreparationExecutor<'_> {
             sophia_config::DesktopAuthority::Broker => rollback_profile_slot(self.broker, key),
         }
     }
+
+    fn dispatch_activate(
+        &mut self,
+        authority: sophia_config::DesktopAuthority,
+        key: sophia_config::DesktopProfileActivationKey,
+    ) -> bool {
+        match authority {
+            // Hagia, not this local slot, settles the external policy effect.
+            sophia_config::DesktopAuthority::Policy => false,
+            sophia_config::DesktopAuthority::Shell => activate_profile_slot(self.shell, key),
+            sophia_config::DesktopAuthority::Shortcut => activate_profile_slot(self.shortcut, key),
+            sophia_config::DesktopAuthority::Session => activate_profile_slot(self.session, key),
+            sophia_config::DesktopAuthority::Input => activate_profile_slot(self.input, key),
+            sophia_config::DesktopAuthority::Output => activate_profile_slot(self.output, key),
+            sophia_config::DesktopAuthority::Broker => activate_profile_slot(self.broker, key),
+        }
+    }
 }
 
 impl sophia_cli::desktop_profile_activation::DesktopProfileAuthorityEffectExecutor
@@ -156,10 +187,10 @@ impl sophia_cli::desktop_profile_activation::DesktopProfileAuthorityEffectExecut
 
     fn activate_authority(
         &mut self,
-        _authority: sophia_config::DesktopAuthority,
-        _key: sophia_config::DesktopProfileActivationKey,
+        authority: sophia_config::DesktopAuthority,
+        key: sophia_config::DesktopProfileActivationKey,
     ) -> bool {
-        false
+        self.dispatch_activate(authority, key)
     }
 
     fn rollback_authority(

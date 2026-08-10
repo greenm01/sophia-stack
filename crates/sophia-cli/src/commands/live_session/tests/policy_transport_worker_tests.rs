@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -20,18 +21,7 @@ static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
 #[test]
 fn profile_admission_precedes_negotiation_and_configuration_events() {
-    let directory = std::env::temp_dir().join(format!(
-        "sophia-policy-worker-profile-{}-{}",
-        std::process::id(),
-        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
-    ));
-    let peer = PolicyPeerIdentity {
-        uid: rustix::process::geteuid().as_raw(),
-        pid: std::process::id(),
-    };
-    let transport =
-        PolicyWmSessionTransport::bind_for_startup_profile_activation(&directory, peer).unwrap();
-    let socket_path = transport.socket_path().to_path_buf();
+    let (transport, socket_path) = bind_profile_transport("success");
     let identity = WmV1ProfileIdentity::new(9, 7, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
     let client = std::thread::spawn(move || {
         let mut stream = UnixStream::connect(socket_path).unwrap();
@@ -120,6 +110,70 @@ fn profile_admission_precedes_negotiation_and_configuration_events() {
     ));
     drop(worker);
     client.join().unwrap();
+}
+
+#[test]
+fn rejected_profile_admission_fails_before_negotiated() {
+    let (transport, socket_path) = bind_profile_transport("rejected");
+    let identity = WmV1ProfileIdentity::new(9, 7, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
+    let client = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket_path).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_client_hello_frame(&WmV1ClientHello {
+                    minimum_revision: 3,
+                    maximum_revision: 3,
+                    capabilities: SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        decode_wm_v1_server_welcome_frame(&read_frame(&mut stream)).unwrap();
+        let prepare = decode_wm_v1_profile_prepare(&read_frame(&mut stream)).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_profile_prepared(WmV1ProfileCompletion {
+                    transaction: prepare.transaction,
+                    identity: prepare.identity,
+                    outcome: WmV1ProfileOutcome::RejectedIdentity,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let mut closed = [0_u8; 1];
+        assert_eq!(stream.read(&mut closed).unwrap(), 0);
+    });
+
+    let worker = PolicyTransportWorker::new_profile_activated(
+        transport,
+        9,
+        identity,
+        TransactionId::from_raw(1),
+        TransactionId::from_raw(2),
+    )
+    .unwrap();
+    let PolicyTransportEvent::Failed(error) = next_event(&worker) else {
+        panic!("rejected profile admission must fail before negotiation")
+    };
+    assert!(error.contains("RejectedIdentity"));
+    assert!(matches!(worker.try_event(), Err(())));
+    client.join().unwrap();
+}
+
+fn bind_profile_transport(label: &str) -> (PolicyWmSessionTransport, PathBuf) {
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-policy-worker-profile-{label}-{}-{}",
+        std::process::id(),
+        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let transport =
+        PolicyWmSessionTransport::bind_for_startup_profile_activation(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_path_buf();
+    (transport, socket_path)
 }
 
 fn next_event(worker: &PolicyTransportWorker) -> PolicyTransportEvent {
