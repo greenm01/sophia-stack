@@ -70,6 +70,12 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
         44 => IpcMessageKind::WmV1PolicyDirty,
         45 => IpcMessageKind::WmV1SessionOperationRequest,
         46 => IpcMessageKind::WmV1SessionOperationOutcome,
+        47 => IpcMessageKind::WmV1ProfilePrepare,
+        48 => IpcMessageKind::WmV1ProfilePrepared,
+        49 => IpcMessageKind::WmV1ProfileActivate,
+        50 => IpcMessageKind::WmV1ProfileActive,
+        51 => IpcMessageKind::WmV1ProfileRollback,
+        52 => IpcMessageKind::WmV1ProfileRolledBack,
         other => return Err(IpcCodecError::UnknownMessageKind(other)),
     };
     let transaction = TransactionId::from_raw(cursor.u64()?);

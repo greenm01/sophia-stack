@@ -20,7 +20,7 @@ fn negotiation_selects_the_shared_revision_and_capabilities() {
         })
         .unwrap();
 
-    assert_eq!(welcome.selected_revision, 2);
+    assert_eq!(welcome.selected_revision, 3);
     assert_eq!(welcome.connection_epoch, 7);
     assert_eq!(
         welcome.capabilities,
@@ -66,8 +66,8 @@ fn complete_projection_is_admitted_only_while_its_connection_epoch_is_active() {
     connection.connect(2).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 2,
-            maximum_revision: 2,
+            minimum_revision: 3,
+            maximum_revision: 3,
             capabilities: 0,
         })
         .unwrap();
@@ -128,8 +128,8 @@ fn control_messages_are_capability_gated_and_cannot_reuse_transactions() {
     connection.connect(6).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 2,
-            maximum_revision: 2,
+            minimum_revision: 3,
+            maximum_revision: 3,
             capabilities: SOPHIA_WM_CAPABILITY_CONFIGURATION,
         })
         .unwrap();
@@ -167,8 +167,8 @@ fn indicator_records_require_negotiation_and_exact_declared_counts() {
     supported.connect(10).unwrap();
     supported
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 2,
-            maximum_revision: 2,
+            minimum_revision: 3,
+            maximum_revision: 3,
             capabilities: SOPHIA_WM_CAPABILITY_INDICATORS,
         })
         .unwrap();
@@ -250,8 +250,8 @@ fn negotiated_connection(epoch: u64) -> PolicyConnectionState {
     connection.connect(epoch).unwrap();
     connection
         .negotiate(&WmV1ClientHello {
-            minimum_revision: 2,
-            maximum_revision: 2,
+            minimum_revision: 3,
+            maximum_revision: 3,
             capabilities: 0,
         })
         .unwrap();

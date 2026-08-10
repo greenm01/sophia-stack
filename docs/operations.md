@@ -28,7 +28,7 @@ An installed candidate requires:
 - The runtime libraries used by the packaged binary: libdrm, GBM/Mesa,
   libseat, libudev, libinput, and libxkbcommon.
 - Bash, Python 3, GNU core utilities, procps, Kitty, Helium, and xterm on
-  `PATH`. Helium is required by the retained Hagia revision-2 desktop profile;
+  `PATH`. Helium is required by the retained Hagia revision-3 desktop profile;
   other profiles require it only for named browser scenarios. Xmonad and xmobar are
   frozen recovery/regression components
   inside the release; neither is discovered from a home source checkout.

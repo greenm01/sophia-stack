@@ -29,7 +29,13 @@
   (<= policy_configuration_outcome_max_payload_bytes ipc_max_payload_bytes)
   (<= policy_dirty_max_payload_bytes ipc_max_payload_bytes)
   (<= session_operation_request_max_payload_bytes ipc_max_payload_bytes)
-  (<= session_operation_outcome_max_payload_bytes ipc_max_payload_bytes))))
+  (<= session_operation_outcome_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_prepare_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_prepared_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_activate_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_active_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_rollback_max_payload_bytes ipc_max_payload_bytes)
+  (<= profile_rolled_back_max_payload_bytes ipc_max_payload_bytes))))
 (check-sat)
 (pop)
 
@@ -61,7 +67,7 @@
 (assert (not (and
   (<= (* snapshot_output_record_max snapshot_output_record_width) u64_max)
   (<= (* snapshot_surface_record_max snapshot_surface_record_width) u64_max)
-  (<= (* snapshot_binding_record_max snapshot_binding_record_width) u64_max)
+  (<= (* snapshot_action_record_max snapshot_action_record_width) u64_max)
   (<= (* snapshot_session_operation_record_max snapshot_session_operation_record_width) u64_max)
   (<= (* projection_output_record_max projection_output_record_width) u64_max)
   (<= (* projection_placement_record_max projection_placement_record_width) u64_max)

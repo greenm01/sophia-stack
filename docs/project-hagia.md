@@ -360,6 +360,12 @@ rolls every owner back if any position rejects. Its activation handler is
 deliberately fail-closed; launch visibility, recovery, and watched reload remain
 separate later milestones.
 
+Protocol revision 3 now defines fixed-size, generated profile prepare,
+activate, and rollback records plus typed Rust and C codecs. The matching Hagia
+decoder is checked against the same golden corpus. Sophia deliberately does not
+advertise the `profile_activation` capability yet: schema availability does
+not claim that the external authority has prepared or activated a candidate.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
@@ -401,7 +407,7 @@ process. Implement the public Sophia wire independently in Nim. During early
 Sophia protocol development, keep the bootstrap client narrow: complete
 snapshots, output projections, registered actions, placement, sizing, focus,
 removal, and restart. That profile proves the boundary but does not define the
-revision-2 feature ceiling. Revision 2 remains experimental until the retained
+revision-3 feature ceiling. Revision 3 remains experimental until the retained
 Triad behavior is ported across Hagia policy, Hagia Shell, Sophia services, and
 the required brokers/portals. Additional retained layouts,
 candidate-validated configuration, and bounded Janet behavior therefore remain

@@ -216,6 +216,36 @@ fn roundtrip(name: &str, transaction: u64, frame: &[u8]) -> Vec<u8> {
             assert_eq!(actual, expected_transaction);
             encode_wm_v1_session_operation_outcome_frame(actual, &message).unwrap()
         }
+        "profile_prepare" => {
+            let (actual, message) = decode_wm_v1_profile_prepare_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_prepare_frame(actual, &message).unwrap()
+        }
+        "profile_prepared" => {
+            let (actual, message) = decode_wm_v1_profile_prepared_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_prepared_frame(actual, &message).unwrap()
+        }
+        "profile_activate" => {
+            let (actual, message) = decode_wm_v1_profile_activate_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_activate_frame(actual, &message).unwrap()
+        }
+        "profile_active" => {
+            let (actual, message) = decode_wm_v1_profile_active_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_active_frame(actual, &message).unwrap()
+        }
+        "profile_rollback" => {
+            let (actual, message) = decode_wm_v1_profile_rollback_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_rollback_frame(actual, &message).unwrap()
+        }
+        "profile_rolled_back" => {
+            let (actual, message) = decode_wm_v1_profile_rolled_back_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_profile_rolled_back_frame(actual, &message).unwrap()
+        }
         other => panic!("unknown golden message `{other}`"),
     }
 }

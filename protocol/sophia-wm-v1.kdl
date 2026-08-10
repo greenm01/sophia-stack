@@ -1,4 +1,4 @@
-protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=2 max-outputs=16 max-surfaces=1024 max-bindings=256 {
+protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 max-outputs=16 max-surfaces=1024 max-bindings=256 {
     capability "bindings" bit=0
     capability "actions" bit=1
     capability "multi_output" bit=2
@@ -8,12 +8,16 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=2 m
     capability "configuration" bit=6
     capability "session_operations" bit=7
     capability "indicators" bit=8
+    capability "profile_activation" bit=9
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
     outcome "rejected_invalid" value=3
     outcome "timed_out" value=4
     outcome "disconnected" value=5
+    outcome "profile_accepted" value=1
+    outcome "profile_rejected_identity" value=2
+    outcome "profile_rejected_state" value=3
 
     record "SnapshotOutput" transfer="snapshot" kind=1 max=16 {
         field "output" type="u64" sample=1
@@ -229,6 +233,42 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=2 m
     message "SessionOperationOutcome" kind=46 direction="session-to-policy" transaction="required" {
         field "connection_epoch" type="u64" sample=9
         field "request_id" type="u64" sample=29
+        field "outcome" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "ProfilePrepare" kind=47 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
+    }
+    message "ProfilePrepared" kind=48 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
+        field "outcome" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "ProfileActivate" kind=49 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
+    }
+    message "ProfileActive" kind=50 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
+        field "outcome" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+    }
+    message "ProfileRollback" kind=51 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
+    }
+    message "ProfileRolledBack" kind=52 direction="policy-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "profile_generation" type="u64" sample=7
+        field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
         field "outcome" type="u16" sample=1
         field "reserved" type="u16" reserved=#true sample=0
     }

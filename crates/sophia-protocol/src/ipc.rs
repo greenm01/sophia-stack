@@ -6,6 +6,7 @@ mod primitives;
 mod types;
 mod wm;
 mod wm_v1;
+mod wm_v1_profile;
 mod wm_v1_records;
 
 pub use broker::{decode_broker_health_frame, encode_broker_health_frame};
@@ -23,4 +24,5 @@ pub use wm::{
     encode_wm_request_frame, encode_wm_response_frame, encode_wm_session_descriptor_frame,
 };
 pub use wm_v1::*;
+pub use wm_v1_profile::*;
 pub use wm_v1_records::*;

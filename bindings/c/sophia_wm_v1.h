@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define SOPHIA_WM_INTERFACE_MAJOR 1u
-#define SOPHIA_WM_INTERFACE_REVISION 2u
+#define SOPHIA_WM_INTERFACE_REVISION 3u
 #define SOPHIA_WM_MAX_OUTPUTS 16u
 #define SOPHIA_WM_MAX_SURFACES 1024u
 #define SOPHIA_WM_MAX_BINDINGS 256u
@@ -20,12 +20,16 @@
 #define SOPHIA_WM_CAPABILITY_CONFIGURATION (UINT64_C(1) << 6)
 #define SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS (UINT64_C(1) << 7)
 #define SOPHIA_WM_CAPABILITY_INDICATORS (UINT64_C(1) << 8)
+#define SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION (UINT64_C(1) << 9)
 
 #define SOPHIA_WM_OUTCOME_COMMITTED 1u
 #define SOPHIA_WM_OUTCOME_REJECTED_STALE 2u
 #define SOPHIA_WM_OUTCOME_REJECTED_INVALID 3u
 #define SOPHIA_WM_OUTCOME_TIMED_OUT 4u
 #define SOPHIA_WM_OUTCOME_DISCONNECTED 5u
+#define SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED 1u
+#define SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY 2u
+#define SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE 3u
 
 enum sophia_wm_v1_status {
     SOPHIA_WM_V1_OK = 0,
@@ -342,5 +346,56 @@ struct sophia_wm_v1_session_operation_outcome {
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_session_operation_outcome(uint64_t transaction, const struct sophia_wm_v1_session_operation_outcome *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_session_operation_outcome(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_session_operation_outcome *message);
+
+struct sophia_wm_v1_profile_prepare {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_prepare(uint64_t transaction, const struct sophia_wm_v1_profile_prepare *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_prepare(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_prepare *message);
+
+struct sophia_wm_v1_profile_prepared {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_prepared(uint64_t transaction, const struct sophia_wm_v1_profile_prepared *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_prepared(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_prepared *message);
+
+struct sophia_wm_v1_profile_activate {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_activate(uint64_t transaction, const struct sophia_wm_v1_profile_activate *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_activate(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_activate *message);
+
+struct sophia_wm_v1_profile_active {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_active(uint64_t transaction, const struct sophia_wm_v1_profile_active *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_active(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_active *message);
+
+struct sophia_wm_v1_profile_rollback {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_rollback(uint64_t transaction, const struct sophia_wm_v1_profile_rollback *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rollback(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_rollback *message);
+
+struct sophia_wm_v1_profile_rolled_back {
+    uint64_t connection_epoch;
+    uint64_t profile_generation;
+    uint8_t profile_digest[32];
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_rolled_back(uint64_t transaction, const struct sophia_wm_v1_profile_rolled_back *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rolled_back(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_rolled_back *message);
 
 #endif

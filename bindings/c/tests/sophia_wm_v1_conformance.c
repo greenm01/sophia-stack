@@ -72,6 +72,12 @@ static int roundtrip(const char *name, uint64_t transaction, const uint8_t *fram
     else if (strcmp(name, "policy_dirty") == 0) ROUNDTRIP_REQUIRED(policy_dirty);
     else if (strcmp(name, "session_operation_request") == 0) ROUNDTRIP_REQUIRED(session_operation_request);
     else if (strcmp(name, "session_operation_outcome") == 0) ROUNDTRIP_REQUIRED(session_operation_outcome);
+    else if (strcmp(name, "profile_prepare") == 0) ROUNDTRIP_REQUIRED(profile_prepare);
+    else if (strcmp(name, "profile_prepared") == 0) ROUNDTRIP_REQUIRED(profile_prepared);
+    else if (strcmp(name, "profile_activate") == 0) ROUNDTRIP_REQUIRED(profile_activate);
+    else if (strcmp(name, "profile_active") == 0) ROUNDTRIP_REQUIRED(profile_active);
+    else if (strcmp(name, "profile_rollback") == 0) ROUNDTRIP_REQUIRED(profile_rollback);
+    else if (strcmp(name, "profile_rolled_back") == 0) ROUNDTRIP_REQUIRED(profile_rolled_back);
     else return 0;
 
     return status == SOPHIA_WM_V1_OK && encoded_len == frame_len &&
@@ -136,7 +142,7 @@ static int check_valid(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 15;
+    return checked == 21;
 }
 
 static int check_malformed(const char *path) {

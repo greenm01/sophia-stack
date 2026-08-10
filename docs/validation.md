@@ -134,7 +134,7 @@ their policy output through the same reducer. They do not switch or qualify
 the installed session path.
 
 `tools/check_policy_protocol.sh` additionally runs the Rust reference and
-independent C clients through one authenticated, eleven-cycle revision-2
+independent C clients through one authenticated, eleven-cycle revision-3
 behavior corpus. The retained connection observes constrained single-output
 layout, two-output partitioning, output loss with surface migration, and the
 same raw output returning at a new generation, then an ordered focus action, a

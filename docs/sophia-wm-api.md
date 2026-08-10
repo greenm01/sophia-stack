@@ -101,6 +101,18 @@ excessive registrations, duplicate chords, and the emergency chord fail
 closed. The slot, not an action-number range, associates a committed
 activation with one session-owned capability.
 
+Revision 3 adds the optional `profile_activation` capability without changing
+normal snapshot/projection settlement. Before policy configuration or a first
+snapshot, Sophia names one staged desktop-profile generation and fixed 32-byte
+digest through prepare and activate commands. Hagia acknowledges only the exact
+candidate it loaded from Sophia's owner-only fragment. Every command and
+completion carries the connection epoch and a nonzero transaction; rejection,
+timeout, disconnect, or rollback leaves the graphical startup gate closed.
+Prepare, activate, and rollback outcomes use a profile-specific closed enum and
+do not share the action/chrome configuration generation namespace. Sophia does
+not advertise the capability until the pre-graphics coordinator and Hagia
+participant are both wired and proven.
+
 ## Complete Scene Snapshot
 
 Engine sends one generation-tagged snapshot containing:

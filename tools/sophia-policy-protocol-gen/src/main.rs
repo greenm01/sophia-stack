@@ -346,12 +346,29 @@ fn validate_schema(protocol: &Protocol) -> Result<(), String> {
                         return Err("bytes fields cannot be reserved".into());
                     }
                 }
-                FieldKind::FixedBytes(_) => {
-                    return Err(format!(
-                        "field `{}` in `{}` may not be a fixed octet run; messages carry \
-                         variable payloads as a final `bytes` field",
-                        field.name, message.name
-                    ));
+                FieldKind::FixedBytes(count) => {
+                    if field.reserved {
+                        return Err(format!(
+                            "fixed octet field `{}` cannot be reserved",
+                            field.name
+                        ));
+                    }
+                    match &field.sample {
+                        Sample::Bytes(bytes) if bytes.len() as u64 == count => {}
+                        Sample::Bytes(bytes) => {
+                            return Err(format!(
+                                "field `{}` sample is {} bytes but declares {count}",
+                                field.name,
+                                bytes.len()
+                            ));
+                        }
+                        Sample::Integer(_) => {
+                            return Err(format!(
+                                "field `{}` sample must be a hex string",
+                                field.name
+                            ));
+                        }
+                    }
                 }
             }
             fixed_len += field_width(field.kind);
@@ -832,7 +849,7 @@ fn render_rust_message(_protocol: &Protocol, message: &Message, out: &mut String
     for field in &message.fields {
         if field.reserved {
             writeln!(out, "    {}(&mut payload, 0);", rust_push(field.kind)).unwrap();
-        } else if field.kind == FieldKind::Bytes {
+        } else if matches!(field.kind, FieldKind::Bytes | FieldKind::FixedBytes(_)) {
             writeln!(
                 out,
                 "    payload.extend_from_slice(&message.{});",
@@ -920,6 +937,14 @@ fn render_rust_message(_protocol: &Protocol, message: &Message, out: &mut String
             .unwrap();
             writeln!(out, "    if len > {} {{ return Err(IpcCodecError::FieldTooLarge {{ field: \"{}\", len, max: {} }}); }}", field.max.unwrap(), field.name, field.max.unwrap()).unwrap();
             writeln!(out, "    let {} = cursor.slice(len)?.to_vec();", field.name).unwrap();
+        } else if let FieldKind::FixedBytes(count) = field.kind {
+            writeln!(out, "    let mut {} = [0u8; {count}];", field.name).unwrap();
+            writeln!(
+                out,
+                "    {}.copy_from_slice(cursor.slice({count})?);",
+                field.name
+            )
+            .unwrap();
         } else {
             writeln!(
                 out,
@@ -1028,6 +1053,8 @@ fn render_c_header(protocol: &Protocol) -> String {
             if field.kind == FieldKind::Bytes {
                 writeln!(out, "    const uint8_t *{};", field.name).unwrap();
                 writeln!(out, "    size_t {}_len;", field.name).unwrap();
+            } else if let FieldKind::FixedBytes(count) = field.kind {
+                writeln!(out, "    uint8_t {}[{count}];", field.name).unwrap();
             } else {
                 writeln!(out, "    {} {};", c_type(field.kind), field.name).unwrap();
             }
@@ -1243,9 +1270,14 @@ fn render_c_message(message: &Message, out: &mut String) {
     let mut offset = 0;
     for field in &message.fields {
         match field.kind {
-            // Rejected during validation: messages carry variable payloads as
-            // a final `bytes` field, never as a fixed octet run.
-            FieldKind::FixedBytes(_) => unreachable!(),
+            FieldKind::FixedBytes(count) => {
+                writeln!(
+                    out,
+                    "    put_bytes(cursor + {offset}, message->{}, {count}u);",
+                    field.name
+                )
+                .unwrap();
+            }
             FieldKind::U16 => {
                 let value = if field.reserved {
                     "0".to_string()
@@ -1344,9 +1376,14 @@ fn render_c_message(message: &Message, out: &mut String) {
     let mut offset = 0;
     for field in &message.fields {
         match field.kind {
-            // Rejected during validation: messages carry variable payloads as
-            // a final `bytes` field, never as a fixed octet run.
-            FieldKind::FixedBytes(_) => unreachable!(),
+            FieldKind::FixedBytes(count) => {
+                writeln!(
+                    out,
+                    "    get_bytes(cursor + {offset}, message->{}, {count}u);",
+                    field.name
+                )
+                .unwrap();
+            }
             FieldKind::U16 if field.reserved => writeln!(
                 out,
                 "    if (get_u16(cursor + {offset}) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;"
@@ -1518,6 +1555,8 @@ fn render_docs(protocol: &Protocol) -> String {
                 "must be zero".to_string()
             } else if let Some(max) = field.max {
                 format!("at most {max} bytes; consumes payload tail")
+            } else if matches!(field.kind, FieldKind::FixedBytes(_)) {
+                "fixed octet run".to_string()
             } else {
                 "little-endian".to_string()
             };
@@ -1782,7 +1821,9 @@ fn sample_payload(message: &Message) -> Result<Vec<u8>, String> {
             (FieldKind::I32, Sample::Integer(value)) => {
                 out.extend_from_slice(&(*value as i32).to_le_bytes())
             }
-            (FieldKind::Bytes, Sample::Bytes(bytes)) => out.extend_from_slice(bytes),
+            (FieldKind::Bytes | FieldKind::FixedBytes(_), Sample::Bytes(bytes)) => {
+                out.extend_from_slice(bytes)
+            }
             _ => return Err(format!("sample type mismatch for `{}`", field.name)),
         }
     }

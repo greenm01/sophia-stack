@@ -71,8 +71,8 @@ impl PolicyV1Client {
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
         let hello = WmV1ClientHello {
-            minimum_revision: 2,
-            maximum_revision: 2,
+            minimum_revision: 3,
+            maximum_revision: 3,
             capabilities: SOPHIA_WM_CAPABILITY_BINDINGS
                 | SOPHIA_WM_CAPABILITY_ACTIONS
                 | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
@@ -80,7 +80,7 @@ impl PolicyV1Client {
         stream.write_all(&encode_wm_v1_client_hello_frame(&hello)?)?;
         stream.flush()?;
         let welcome = decode_wm_v1_server_welcome_frame(&read_frame(&mut stream)?)?;
-        if welcome.selected_revision != 2 {
+        if welcome.selected_revision != 3 {
             return Err(PolicyV1ClientError::UnsupportedRevision(
                 welcome.selected_revision,
             ));

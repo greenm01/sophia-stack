@@ -870,3 +870,183 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_session_operation_outcome(const uin
     if (get_u16(cursor + 18) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
     return SOPHIA_WM_V1_OK;
 }
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_prepare(uint64_t transaction, const struct sophia_wm_v1_profile_prepare *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 48u;
+    enum sophia_wm_v1_status status = write_header(47u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_prepare(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_prepare *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 47u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 48u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 48u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_prepared(uint64_t transaction, const struct sophia_wm_v1_profile_prepared *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 52u;
+    enum sophia_wm_v1_status status = write_header(48u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    put_u16(cursor + 48, message->outcome);
+    put_u16(cursor + 50, 0);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_prepared(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_prepared *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 48u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 52u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 52u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    message->outcome = get_u16(cursor + 48);
+    if (get_u16(cursor + 50) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_activate(uint64_t transaction, const struct sophia_wm_v1_profile_activate *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 48u;
+    enum sophia_wm_v1_status status = write_header(49u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_activate(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_activate *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 49u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 48u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 48u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_active(uint64_t transaction, const struct sophia_wm_v1_profile_active *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 52u;
+    enum sophia_wm_v1_status status = write_header(50u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    put_u16(cursor + 48, message->outcome);
+    put_u16(cursor + 50, 0);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_active(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_active *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 50u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 52u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 52u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    message->outcome = get_u16(cursor + 48);
+    if (get_u16(cursor + 50) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_rollback(uint64_t transaction, const struct sophia_wm_v1_profile_rollback *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 48u;
+    enum sophia_wm_v1_status status = write_header(51u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rollback(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_rollback *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 51u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 48u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 48u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_encode_profile_rolled_back(uint64_t transaction, const struct sophia_wm_v1_profile_rolled_back *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    size_t payload_len = 52u;
+    enum sophia_wm_v1_status status = write_header(52u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->profile_generation);
+    put_bytes(cursor + 16, message->profile_digest, 32u);
+    put_u16(cursor + 48, message->outcome);
+    put_u16(cursor + 50, 0);
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rolled_back(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_rolled_back *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 52u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 52u) return SOPHIA_WM_V1_TRUNCATED;
+    if (payload_len > 52u) return SOPHIA_WM_V1_TRAILING_BYTES;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->profile_generation = get_u64(cursor + 8);
+    get_bytes(cursor + 16, message->profile_digest, 32u);
+    message->outcome = get_u16(cursor + 48);
+    if (get_u16(cursor + 50) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
+    return SOPHIA_WM_V1_OK;
+}

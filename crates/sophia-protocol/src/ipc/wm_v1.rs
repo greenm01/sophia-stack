@@ -7,7 +7,7 @@ use super::types::{IpcCodecError, IpcMessageKind};
 use crate::TransactionId;
 
 pub const SOPHIA_WM_INTERFACE_MAJOR: u16 = 1;
-pub const SOPHIA_WM_INTERFACE_REVISION: u16 = 2;
+pub const SOPHIA_WM_INTERFACE_REVISION: u16 = 3;
 pub const SOPHIA_WM_MAX_OUTPUTS: usize = 16;
 pub const SOPHIA_WM_MAX_SURFACES: usize = 1024;
 pub const SOPHIA_WM_MAX_BINDINGS: usize = 256;
@@ -21,12 +21,16 @@ pub const SOPHIA_WM_CAPABILITY_POLICY_DIRTY: u64 = 1 << 5;
 pub const SOPHIA_WM_CAPABILITY_CONFIGURATION: u64 = 1 << 6;
 pub const SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS: u64 = 1 << 7;
 pub const SOPHIA_WM_CAPABILITY_INDICATORS: u64 = 1 << 8;
+pub const SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION: u64 = 1 << 9;
 
 pub const SOPHIA_WM_OUTCOME_COMMITTED: u16 = 1;
 pub const SOPHIA_WM_OUTCOME_REJECTED_STALE: u16 = 2;
 pub const SOPHIA_WM_OUTCOME_REJECTED_INVALID: u16 = 3;
 pub const SOPHIA_WM_OUTCOME_TIMED_OUT: u16 = 4;
 pub const SOPHIA_WM_OUTCOME_DISCONNECTED: u16 = 5;
+pub const SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED: u16 = 1;
+pub const SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY: u16 = 2;
+pub const SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE: u16 = 3;
 
 pub const SNAPSHOT_OUTPUT_RECORD_KIND: u16 = 1;
 pub const SNAPSHOT_OUTPUT_RECORD_SIZE: usize = 56;
@@ -1729,6 +1733,321 @@ pub fn decode_wm_v1_session_operation_outcome_frame(
     let message = WmV1SessionOperationOutcome {
         connection_epoch,
         request_id,
+        outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfilePrepare {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+}
+
+pub fn encode_wm_v1_profile_prepare_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfilePrepare,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    encode_frame(IpcMessageKind::WmV1ProfilePrepare, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_prepare_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfilePrepare), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfilePrepare {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    cursor.finish()?;
+    let message = WmV1ProfilePrepare {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfilePrepared {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_profile_prepared_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfilePrepared,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(IpcMessageKind::WmV1ProfilePrepared, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_prepared_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfilePrepared), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfilePrepared {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1ProfilePrepared {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
+        outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfileActivate {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+}
+
+pub fn encode_wm_v1_profile_activate_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfileActivate,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    encode_frame(IpcMessageKind::WmV1ProfileActivate, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_activate_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfileActivate), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfileActivate {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    cursor.finish()?;
+    let message = WmV1ProfileActivate {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfileActive {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_profile_active_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfileActive,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(IpcMessageKind::WmV1ProfileActive, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_active_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfileActive), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfileActive {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1ProfileActive {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
+        outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfileRollback {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+}
+
+pub fn encode_wm_v1_profile_rollback_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfileRollback,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    encode_frame(IpcMessageKind::WmV1ProfileRollback, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_rollback_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfileRollback), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfileRollback {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    cursor.finish()?;
+    let message = WmV1ProfileRollback {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1ProfileRolledBack {
+    pub connection_epoch: u64,
+    pub profile_generation: u64,
+    pub profile_digest: [u8; 32],
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_profile_rolled_back_frame(
+    transaction: TransactionId,
+    message: &WmV1ProfileRolledBack,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.profile_generation);
+    payload.extend_from_slice(&message.profile_digest);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(IpcMessageKind::WmV1ProfileRolledBack, transaction, &payload)
+}
+
+pub fn decode_wm_v1_profile_rolled_back_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1ProfileRolledBack), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1ProfileRolledBack {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let profile_generation = cursor.u64()?;
+    let mut profile_digest = [0u8; 32];
+    profile_digest.copy_from_slice(cursor.slice(32)?);
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1ProfileRolledBack {
+        connection_epoch,
+        profile_generation,
+        profile_digest,
         outcome,
     };
     Ok((header.transaction, message))

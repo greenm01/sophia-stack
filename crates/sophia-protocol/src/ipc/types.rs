@@ -35,6 +35,12 @@ pub enum IpcMessageKind {
     WmV1PolicyDirty = 44,
     WmV1SessionOperationRequest = 45,
     WmV1SessionOperationOutcome = 46,
+    WmV1ProfilePrepare = 47,
+    WmV1ProfilePrepared = 48,
+    WmV1ProfileActivate = 49,
+    WmV1ProfileActive = 50,
+    WmV1ProfileRollback = 51,
+    WmV1ProfileRolledBack = 52,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +74,7 @@ pub enum IpcCodecError {
         max: usize,
     },
     InvalidTransaction(u64),
+    InvalidProfileIdentity(&'static str),
     InvalidUtf8 {
         field: &'static str,
     },

@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
     struct sophia_wm_v1_projection_output_record projected_outputs[SOPHIA_WM_MAX_OUTPUTS];
     struct sophia_wm_v1_projection_placement_record placements[SOPHIA_WM_MAX_SURFACES];
     struct sophia_wm_v1_client_hello hello = {
-        2, 2,
+        3, 3,
         SOPHIA_WM_CAPABILITY_BINDINGS | SOPHIA_WM_CAPABILITY_ACTIONS |
             SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
     };
@@ -398,7 +398,7 @@ int main(int argc, char **argv) {
         return 1;
     if (!read_frame(socket_fd, frame, &frame_len) ||
         sophia_wm_v1_decode_server_welcome(frame, frame_len, &welcome) != SOPHIA_WM_V1_OK ||
-        welcome.selected_revision != 2 || welcome.connection_epoch == 0)
+        welcome.selected_revision != 3 || welcome.connection_epoch == 0)
         return 1;
     for (cycle = 0; cycle < cycles; ++cycle) {
         uint64_t projection_transaction = (uint64_t)cycle + 1u;
