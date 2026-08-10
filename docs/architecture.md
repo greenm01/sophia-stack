@@ -787,7 +787,10 @@ canonical typed profile candidate and that overlay, in precedence order, to a
 clone of Sophia's trusted application registry. Unknown or ambiguous selectors,
 duplicates, and bounds failures discard the clone. The accepted effective
 configuration is unchanged from the prior startup behavior; this tranche does
-not install a participant slot or activate anything before the global barrier.
+not activate anything before the global barrier. Startup now retains the
+canonical typed session payload in one session-owned generic slot and derives
+the effective configuration from that slot's prepared payload. The slot remains
+exactly `Prepared`; configuration assembly cannot promote it.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

@@ -654,9 +654,14 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
         first._session_application_overrides,
         second._session_application_overrides
     );
+    assert_eq!(first._session_profile_slot, second._session_profile_slot);
     assert_eq!(
-        first.desktop_candidates.session,
-        second.desktop_candidates.session
+        first._session_profile_slot.participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Prepared
+    );
+    assert_eq!(
+        first._session_profile_slot.candidate(),
+        Some(&first.desktop_candidates.session)
     );
     let active_applications = first.applications.clone();
     let active_overrides = first._session_application_overrides.clone();

@@ -104,6 +104,11 @@ Completed evidence is archived in `research-log-archive.md`.
   profile candidate and CLI-superior overlay to a cloned trusted registry.
   Existing profile/CLI parity tests still pass; new evidence covers identical
   preparation and rejection with the previously accepted state unchanged.
+- The trusted session configuration now retains its canonical typed profile
+  payload in the generic authority-local slot. Effective application
+  preparation reads the slot's candidate rather than bypassing participant
+  state. Tests prove the slot and canonical bundle carry the same payload and
+  exact key in `Prepared` phase; startup assembly performs no activation.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

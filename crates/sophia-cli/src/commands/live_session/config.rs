@@ -59,6 +59,8 @@ struct PersistentXtermSessionConfig {
     startup_ready_timeout: Option<Duration>,
     applications: SessionApplicationConfig,
     _session_application_overrides: SessionApplicationOverrides,
+    _session_profile_slot:
+        sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopSessionCandidate>,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
     max_ticks: Option<usize>,
@@ -198,10 +200,19 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--startup-ready-timeout-ms accepts 100-60000 milliseconds".into());
         }
+        let session_profile_slot = sophia_config::prepare_desktop_profile_candidate_slot(
+            &sophia_config::DesktopProfileCandidateSlot::new(
+                sophia_config::DesktopAuthority::Session,
+            ),
+            prepared_desktop.session.clone(),
+        )?;
+        let session_profile_candidate = session_profile_slot
+            .candidate()
+            .expect("successful session profile preparation retains its candidate");
         let session_application_overrides = SessionApplicationOverrides::parse(args)?;
         let applications = session_application_overrides.prepare(
             Self::applications_from_core(core_snapshot)?,
-            &prepared_desktop.session,
+            session_profile_candidate,
         )?;
         if normal_session {
             let terminal_proof = args.iter().any(|arg| {
@@ -676,6 +687,7 @@ impl PersistentXtermSessionConfig {
             startup_ready_timeout,
             applications,
             _session_application_overrides: session_application_overrides,
+            _session_profile_slot: session_profile_slot,
             max_ticks,
             inject_text,
             expect_physical_text,

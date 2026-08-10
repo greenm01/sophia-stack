@@ -326,7 +326,10 @@ arguments, startup order, and action selectors remain superior to the desktop
 profile; the canonical session candidate and overlay are applied to a clone and
 fail without changing accepted state. This provides the deterministic local
 prepare operation needed by a future session participant while leaving global
-activation and watched reload disconnected.
+activation and watched reload disconnected. Trusted startup now instantiates
+that participant's generic slot, prepares the canonical typed session payload,
+and derives the effective application configuration from the retained slot.
+The slot remains `Prepared` until a future global barrier owns promotion.
 
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and

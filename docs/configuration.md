@@ -125,6 +125,11 @@ and any unknown, duplicate, ambiguous, or over-limit reference rejects the
 clone without changing accepted state. This preparation is retained admission
 data; it does not activate the session participant or enable desktop-profile
 reload.
+Startup now places the canonical typed session payload in the generic
+session-owned slot before deriving that effective configuration. The retained
+slot is exactly `Prepared`, advertises the profile's activation key, and is
+checked against the canonical bundle in tests. It is intentionally not
+activated by configuration assembly.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation
