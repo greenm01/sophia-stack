@@ -88,6 +88,32 @@ fn includes_expand_in_place_with_per_value_provenance() {
 }
 
 #[test]
+fn native_policy_layout_cycle_is_validated_and_partitioned() {
+    let root = temporary_directory("layout-cycle");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        "schema 1\npolicy { layout \"grid\"; layout-cycle \"grid\" \"monocle\"; }\n",
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let policy = profile.candidates.get(&DesktopAuthority::Policy).unwrap();
+    assert_eq!(policy.values.len(), 2);
+
+    for source in [
+        "schema 1\npolicy { layout \"spiral\"; }\n",
+        "schema 1\npolicy { layout-cycle \"grid\" \"grid\"; }\n",
+        "schema 1\npolicy { layout-cycle \"grid\" \"spiral\"; }\n",
+    ] {
+        write_profile(&profile_path, source);
+        assert!(matches!(
+            load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
+            Err(DesktopProfileError::Schema(_))
+        ));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_cycles_duplicates_unsupported_and_reserved_controls() {
     let root = temporary_directory("rejections");
     let main = root.join("config.kdl");

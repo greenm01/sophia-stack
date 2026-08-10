@@ -15,6 +15,7 @@ pub const DESKTOP_PROFILE_MAX_BYTES: usize = 1024 * 1024;
 pub const COMPILED_DESKTOP_PROFILE: &str = r#"schema 1
 policy {
   layout "scroller"
+  layout-cycle "scroller" "tile" "grid" "monocle" "vertical-scroller"
   view-count 9
   outer-gap 0
   inner-gap 0
@@ -505,6 +506,7 @@ fn validate_setting(
     let supported = match authority {
         DesktopAuthority::Policy => [
             "layout",
+            "layout-cycle",
             "view-count",
             "outer-gap",
             "inner-gap",
@@ -524,13 +526,34 @@ fn validate_setting(
             authority.name()
         )));
     }
-    if authority == DesktopAuthority::Policy
-        && name == "layout"
-        && exact_string_argument(node, "policy layout")? != "scroller"
-    {
-        return Err(DesktopProfileError::Schema(
-            "unsupported policy layout".to_owned(),
-        ));
+    if authority == DesktopAuthority::Policy && name == "layout" {
+        validate_policy_layout(exact_string_argument(node, "policy layout")?)?;
+    }
+    if authority == DesktopAuthority::Policy && name == "layout-cycle" {
+        if node.entries().is_empty() || node.entries().len() > 5 || node.children().is_some() {
+            return Err(DesktopProfileError::Schema(
+                "policy layout-cycle requires one to five layouts".to_owned(),
+            ));
+        }
+        let mut layouts = std::collections::BTreeSet::new();
+        for entry in node.entries() {
+            let layout = entry
+                .name()
+                .is_none()
+                .then(|| entry.value().as_string())
+                .flatten()
+                .ok_or_else(|| {
+                    DesktopProfileError::Schema(
+                        "policy layout-cycle requires layout names".to_owned(),
+                    )
+                })?;
+            validate_policy_layout(layout)?;
+            if !layouts.insert(layout) {
+                return Err(DesktopProfileError::Schema(
+                    "policy layout-cycle contains duplicates".to_owned(),
+                ));
+            }
+        }
     }
     if authority == DesktopAuthority::Policy && name == "view-count" {
         let value = exact_integer_argument(node, "policy view-count")?;
@@ -561,6 +584,16 @@ fn validate_setting(
         ));
     }
     Ok(())
+}
+
+fn validate_policy_layout(layout: &str) -> Result<(), DesktopProfileError> {
+    if ["scroller", "tile", "grid", "monocle", "vertical-scroller"].contains(&layout) {
+        Ok(())
+    } else {
+        Err(DesktopProfileError::Schema(
+            "unsupported policy layout".to_owned(),
+        ))
+    }
 }
 
 fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, DesktopProfileError> {
