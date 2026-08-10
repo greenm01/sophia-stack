@@ -9,11 +9,10 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::prelude::*;
 
-#[cfg(feature = "seat-control")]
-use super::open_native_libinput_udev_poller_with_seat;
 use super::{
-    NativeLibinputDeviceMap, NativeLibinputOpenError, NativeLibinputPolicyReport,
-    open_native_libinput_path_poller, open_native_libinput_udev_poller,
+    NativeLibinputDeviceMap, NativeLibinputOpenError, NativeLibinputPointerPolicy,
+    NativeLibinputPolicyReport, open_native_libinput_path_poller_with_pointer_policy,
+    open_native_libinput_udev_poller_with_pointer_policy,
 };
 
 const INPUT_THREAD_POLL_MSEC: i64 = 1;
@@ -127,6 +126,22 @@ pub fn open_threaded_native_libinput_path_poller(
     max_read_per_poll: usize,
     queue_capacity: usize,
 ) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
+    open_threaded_native_libinput_path_poller_with_pointer_policy(
+        paths,
+        devices,
+        max_read_per_poll,
+        queue_capacity,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+pub fn open_threaded_native_libinput_path_poller_with_pointer_policy(
+    paths: &[std::path::PathBuf],
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    queue_capacity: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
     if paths.is_empty() {
         return Err(NativeLibinputOpenError::NoDevices);
     }
@@ -138,6 +153,7 @@ pub fn open_threaded_native_libinput_path_poller(
         devices,
         max_read_per_poll,
         queue_capacity,
+        pointer_policy,
     )
 }
 
@@ -147,11 +163,28 @@ pub fn open_threaded_native_libinput_udev_poller(
     max_read_per_poll: usize,
     queue_capacity: usize,
 ) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
+    open_threaded_native_libinput_udev_poller_with_pointer_policy(
+        seat_name,
+        devices,
+        max_read_per_poll,
+        queue_capacity,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+pub fn open_threaded_native_libinput_udev_poller_with_pointer_policy(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    queue_capacity: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
     open_threaded_native_libinput_poller(
         NativeLibinputSource::Udev(seat_name.to_owned()),
         devices,
         max_read_per_poll,
         queue_capacity,
+        pointer_policy,
     )
 }
 
@@ -163,11 +196,31 @@ pub fn open_threaded_native_libinput_udev_poller_with_seat(
     queue_capacity: usize,
     opener: crate::LiveSeatDeviceOpener,
 ) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
+    open_threaded_native_libinput_udev_poller_with_seat_and_pointer_policy(
+        seat_name,
+        devices,
+        max_read_per_poll,
+        queue_capacity,
+        opener,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+#[cfg(feature = "seat-control")]
+pub fn open_threaded_native_libinput_udev_poller_with_seat_and_pointer_policy(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    queue_capacity: usize,
+    opener: crate::LiveSeatDeviceOpener,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
     open_threaded_native_libinput_poller(
         NativeLibinputSource::SeatUdev(seat_name.to_owned(), opener),
         devices,
         max_read_per_poll,
         queue_capacity,
+        pointer_policy,
     )
 }
 
@@ -183,6 +236,7 @@ fn open_threaded_native_libinput_poller(
     devices: NativeLibinputDeviceMap,
     max_read_per_poll: usize,
     queue_capacity: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
 ) -> Result<ThreadedNativeLibinputEventPoller, NativeLibinputOpenError> {
     let max_read_per_poll = max_read_per_poll.clamp(1, 256);
     let queue_capacity = queue_capacity.clamp(1, 4_096);
@@ -200,18 +254,29 @@ fn open_threaded_native_libinput_poller(
     let worker = std::thread::spawn(move || {
         let opened = match source {
             NativeLibinputSource::Paths(paths) => {
-                open_native_libinput_path_poller(&paths, devices, max_read_per_poll)
+                open_native_libinput_path_poller_with_pointer_policy(
+                    &paths,
+                    devices,
+                    max_read_per_poll,
+                    pointer_policy,
+                )
             }
             NativeLibinputSource::Udev(seat) => {
-                open_native_libinput_udev_poller(&seat, devices, max_read_per_poll)
+                open_native_libinput_udev_poller_with_pointer_policy(
+                    &seat,
+                    devices,
+                    max_read_per_poll,
+                    pointer_policy,
+                )
             }
             #[cfg(feature = "seat-control")]
             NativeLibinputSource::SeatUdev(seat, opener) => {
-                open_native_libinput_udev_poller_with_seat(
+                super::open_native_libinput_udev_poller_with_seat_and_pointer_policy(
                     &seat,
                     devices,
                     max_read_per_poll,
                     opener,
+                    pointer_policy,
                 )
             }
         };

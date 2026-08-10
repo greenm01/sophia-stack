@@ -19,6 +19,16 @@ fn evdev_keyboard_mapping_preserves_x_modifier_event_order() {
 }
 
 #[test]
+fn core_keyboard_mapping_applies_and_toggles_initial_locks() {
+    let mut keyboard = XCoreKeyboardMapper::with_locks(true, true);
+    assert_eq!(keyboard.modifier_mask(), (1 << 1) | (1 << 4));
+
+    keyboard.map_evdev_key(58, true).unwrap();
+    keyboard.map_evdev_key(69, true).unwrap();
+    assert_eq!(keyboard.modifier_mask(), 0);
+}
+
+#[test]
 fn xkb_us_shift_semicolon_delivers_colon_state() {
     let mut keyboard = XkbKeyboardState::new(&XkbRmlvoConfig::default())
         .expect("the default US keymap must compile");

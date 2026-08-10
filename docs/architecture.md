@@ -730,6 +730,16 @@ dependency graph, protocol surface, or session loop.
 ## Input
 
 Sophia Engine is the single physical-input authority. For the implemented
+startup path, the trusted session coordinator validates a typed input candidate
+before opening the graphical session. Keyboard RMLVO and repeat values overlay
+the effective Sophia configuration, explicit CLI RMLVO values remain superior,
+and initial lock state is held only by the X authority adapter. The live backend
+owns the translated libinput pointer policy and fails startup when a requested
+device setting cannot be applied. Hagia receives neither this candidate nor a
+raw device handle. Watched activation remains disabled pending the shared
+prepare/activate/rollback barrier.
+
+For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a
 generational `SurfaceId`. It constructs a

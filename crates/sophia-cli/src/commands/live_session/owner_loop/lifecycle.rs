@@ -17,7 +17,7 @@
                 if !input_delivery.pending.is_empty() {
                     if queued_at.elapsed() >= Duration::from_millis(500) {
                         pending_virtual_terminal = None;
-                        modifiers = XCoreKeyboardMapper::new();
+                        modifiers = config.keyboard_mapper();
                         virtual_terminal_chord = VirtualTerminalChordState::default();
                         if let Some(wm) = wm_session.as_mut()
                             && let Some(shortcuts) = wm.shortcuts.as_mut()
@@ -132,7 +132,7 @@
                                     device_map,
                                     Some(controller.device_opener()),
                                 )?;
-                                modifiers = XCoreKeyboardMapper::new();
+                                modifiers = config.keyboard_mapper();
                                 virtual_terminal_chord = VirtualTerminalChordState::default();
                                 emergency_chord = EmergencyChordState::armed();
                                 cursor_updates =
@@ -154,7 +154,7 @@
                             device_map,
                             Some(controller.device_opener()),
                         )?;
-                        modifiers = XCoreKeyboardMapper::new();
+                        modifiers = config.keyboard_mapper();
                         virtual_terminal_chord = VirtualTerminalChordState::default();
                         emergency_chord = EmergencyChordState::armed();
                         eprintln!(
@@ -201,7 +201,7 @@
                     device_map,
                     Some(controller.device_opener()),
                 )?;
-                modifiers = XCoreKeyboardMapper::new();
+                modifiers = config.keyboard_mapper();
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();
@@ -264,7 +264,7 @@
                 seat_state = seat_state.released();
                 seat_release_prepared = false;
                 requested_virtual_terminal = None;
-                modifiers = XCoreKeyboardMapper::new();
+                modifiers = config.keyboard_mapper();
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
                 emergency_chord = EmergencyChordState::armed();

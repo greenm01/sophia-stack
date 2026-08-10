@@ -80,6 +80,9 @@ struct PersistentXtermSessionConfig {
     namespace_capabilities: NamespaceCapabilities,
     xkb_config: sophia_x_authority::XkbRmlvoConfig,
     key_repeat_config: sophia_config::RepeatConfig,
+    initial_caps_lock: bool,
+    initial_num_lock: bool,
+    pointer_candidate: Option<sophia_config::DesktopPointerCandidate>,
     desktop_profile: sophia_config::DesktopProfileGeneration,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
@@ -101,6 +104,31 @@ struct PersistentXtermSessionConfig {
 }
 
 impl PersistentXtermSessionConfig {
+    pub(super) fn keyboard_mapper(&self) -> XCoreKeyboardMapper {
+        XCoreKeyboardMapper::with_locks(self.initial_caps_lock, self.initial_num_lock)
+    }
+
+    pub(super) fn native_pointer_policy(&self) -> sophia_backend_live::NativeLibinputPointerPolicy {
+        let Some(candidate) = self.pointer_candidate else {
+            return sophia_backend_live::NativeLibinputPointerPolicy::default();
+        };
+        sophia_backend_live::NativeLibinputPointerPolicy {
+            natural_scroll: candidate.natural_scroll,
+            accel_profile: candidate.accel_profile.map(|profile| match profile {
+                sophia_config::DesktopPointerAccelProfile::Flat => {
+                    sophia_backend_live::NativeLibinputAccelProfile::Flat
+                }
+                sophia_config::DesktopPointerAccelProfile::Adaptive => {
+                    sophia_backend_live::NativeLibinputAccelProfile::Adaptive
+                }
+            }),
+            accel_speed: candidate.accel_speed,
+            left_handed: candidate.left_handed,
+            middle_emulation: candidate.middle_emulation,
+            scroll_factor: candidate.scroll_factor.unwrap_or(1.0),
+        }
+    }
+
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
         let no_config = args.iter().any(|argument| argument == "--no-config");
         let explicit_config = arg_value(args, "--config")
@@ -149,6 +177,12 @@ impl PersistentXtermSessionConfig {
         let desktop_profile = sophia_config::load_desktop_profile(
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
+        )?;
+        let desktop_input = sophia_config::prepare_desktop_input_candidate(
+            desktop_profile
+                .candidates
+                .get(&sophia_config::DesktopAuthority::Input)
+                .expect("desktop profile partition creates an input candidate"),
         )?;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
@@ -444,19 +478,51 @@ impl PersistentXtermSessionConfig {
                 .into());
             }
         };
-        let defaults = sophia_x_authority::XkbRmlvoConfig {
-            rules: core_snapshot.input.xkb.rules.clone(),
-            model: core_snapshot.input.xkb.model.clone(),
-            layout: core_snapshot.input.xkb.layout.clone(),
-            variant: core_snapshot.input.xkb.variant.clone(),
-            options: core_snapshot.input.xkb.options.clone(),
+        let mut effective_xkb = if desktop_input.inherit_sophia {
+            core_snapshot.input.xkb.clone()
+        } else {
+            sophia_config::XkbConfig::default()
         };
+        let mut key_repeat_config = if desktop_input.inherit_sophia {
+            core_snapshot.input.repeat
+        } else {
+            sophia_config::RepeatConfig::default()
+        };
+        let mut initial_caps_lock = false;
+        let mut initial_num_lock = false;
+        if let Some(keyboard) = desktop_input.keyboard.as_ref() {
+            if let Some(xkb) = keyboard.xkb.as_ref() {
+                if let Some(value) = xkb.rules.as_ref() {
+                    effective_xkb.rules.clone_from(value);
+                }
+                if let Some(value) = xkb.model.as_ref() {
+                    effective_xkb.model.clone_from(value);
+                }
+                if let Some(value) = xkb.layout.as_ref() {
+                    effective_xkb.layout.clone_from(value);
+                }
+                if let Some(value) = xkb.variant.as_ref() {
+                    effective_xkb.variant.clone_from(value);
+                }
+                if let Some(value) = xkb.options.as_ref() {
+                    effective_xkb.options.clone_from(value);
+                }
+            }
+            if let Some(rate) = keyboard.repeat_rate {
+                key_repeat_config.interval_msec = u64::from(1_000_u32.div_ceil(rate));
+            }
+            if let Some(delay) = keyboard.repeat_delay_msec {
+                key_repeat_config.delay_msec = delay;
+            }
+            initial_caps_lock = keyboard.caps_lock.unwrap_or(false);
+            initial_num_lock = keyboard.num_lock.unwrap_or(false);
+        }
         let xkb_config = sophia_x_authority::XkbRmlvoConfig {
-            rules: arg_value(args, "--xkb-rules").unwrap_or(defaults.rules),
-            model: arg_value(args, "--xkb-model").unwrap_or(defaults.model),
-            layout: arg_value(args, "--xkb-layout").unwrap_or(defaults.layout),
-            variant: arg_value(args, "--xkb-variant").unwrap_or(defaults.variant),
-            options: arg_value(args, "--xkb-options").unwrap_or(defaults.options),
+            rules: arg_value(args, "--xkb-rules").unwrap_or(effective_xkb.rules),
+            model: arg_value(args, "--xkb-model").unwrap_or(effective_xkb.model),
+            layout: arg_value(args, "--xkb-layout").unwrap_or(effective_xkb.layout),
+            variant: arg_value(args, "--xkb-variant").unwrap_or(effective_xkb.variant),
+            options: arg_value(args, "--xkb-options").unwrap_or(effective_xkb.options),
         };
         xkb_config.validate()?;
         let inject_output_size = arg_value(args, "--inject-output-size")
@@ -752,7 +818,10 @@ impl PersistentXtermSessionConfig {
 
             namespace_capabilities: NamespaceCapabilities::NONE,
             xkb_config,
-            key_repeat_config: core_snapshot.input.repeat,
+            key_repeat_config,
+            initial_caps_lock,
+            initial_num_lock,
+            pointer_candidate: desktop_input.pointer,
             desktop_profile,
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,

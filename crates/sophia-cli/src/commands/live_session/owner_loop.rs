@@ -249,7 +249,7 @@ fn run_session_loop(
     let mut input_batch_baseline = None;
     let mut input_cpu_update_baseline = None;
     let mut focus = InputFocusState::new();
-    let mut modifiers = XCoreKeyboardMapper::new();
+    let mut modifiers = config.keyboard_mapper();
     let key_repeat_map = XkbKeymapSnapshot::new(&config.xkb_config)?;
     let key_repeat_config = KeyRepeatConfig::new(
         config.key_repeat_config.delay_msec,

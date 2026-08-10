@@ -164,11 +164,12 @@ fn open_session_physical_input(
 ) -> Result<Option<SessionPhysicalInput>, Box<dyn std::error::Error>> {
     if !config.input_devices.is_empty() {
         return Ok(Some(SessionPhysicalInput::Threaded(
-            sophia_backend_live::open_threaded_native_libinput_path_poller(
+            sophia_backend_live::open_threaded_native_libinput_path_poller_with_pointer_policy(
                 &config.input_devices,
                 device_map,
                 64,
                 256,
+                config.native_pointer_policy(),
             )?,
         )));
     }
@@ -177,12 +178,21 @@ fn open_session_physical_input(
         .as_deref()
         .map(|seat_name| {
             if let Some(opener) = seat_opener {
-                sophia_backend_live::open_threaded_native_libinput_udev_poller_with_seat(
-                    seat_name, device_map, 64, 256, opener,
+                sophia_backend_live::open_threaded_native_libinput_udev_poller_with_seat_and_pointer_policy(
+                    seat_name,
+                    device_map,
+                    64,
+                    256,
+                    opener,
+                    config.native_pointer_policy(),
                 )
             } else {
-                sophia_backend_live::open_threaded_native_libinput_udev_poller(
-                    seat_name, device_map, 64, 256,
+                sophia_backend_live::open_threaded_native_libinput_udev_poller_with_pointer_policy(
+                    seat_name,
+                    device_map,
+                    64,
+                    256,
+                    config.native_pointer_policy(),
                 )
             }
             .map(SessionPhysicalInput::Threaded)

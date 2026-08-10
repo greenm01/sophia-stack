@@ -2,6 +2,7 @@ use crate::prelude::*;
 
 use super::{
     LibinputNativeEventReadReport, LibinputNativeEventReadResult, NativeLibinputEventPoller,
+    NativeLibinputPointerPolicy, apply_native_pointer_policy, scale_scroll_v120,
 };
 
 use input::DeviceCapability;
@@ -25,6 +26,7 @@ pub struct NativeLibinputEventReader {
     libinput: input::Libinput,
     devices: NativeLibinputDeviceMap,
     policy: Arc<Mutex<NativeLibinputPolicyReport>>,
+    pointer_policy: NativeLibinputPointerPolicy,
     pointer_position: Point,
     next_serial: u64,
 }
@@ -34,10 +36,8 @@ impl NativeLibinputEventReader {
         let device = self.devices.pointer_device?;
         let axis = |axis| {
             if event.has_axis(axis) {
-                event
-                    .scroll_value_v120(axis)
-                    .round()
-                    .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+                let value = event.scroll_value_v120(axis);
+                scale_scroll_v120(value, self.pointer_policy.scroll_factor)
             } else {
                 0
             }
@@ -59,7 +59,12 @@ impl NativeLibinputEventReader {
     }
 
     pub fn new(libinput: input::Libinput, devices: NativeLibinputDeviceMap) -> Self {
-        Self::new_with_policy(libinput, devices, NativeLibinputPolicyReport::default())
+        Self::new_with_policies(
+            libinput,
+            devices,
+            NativeLibinputPolicyReport::default(),
+            NativeLibinputPointerPolicy::default(),
+        )
     }
 
     pub fn new_with_policy(
@@ -67,10 +72,25 @@ impl NativeLibinputEventReader {
         devices: NativeLibinputDeviceMap,
         policy: NativeLibinputPolicyReport,
     ) -> Self {
+        Self::new_with_policies(
+            libinput,
+            devices,
+            policy,
+            NativeLibinputPointerPolicy::default(),
+        )
+    }
+
+    pub(crate) fn new_with_policies(
+        libinput: input::Libinput,
+        devices: NativeLibinputDeviceMap,
+        policy: NativeLibinputPolicyReport,
+        pointer_policy: NativeLibinputPointerPolicy,
+    ) -> Self {
         Self {
             libinput,
             devices,
             policy: Arc::new(Mutex::new(policy)),
+            pointer_policy,
             pointer_position: Point { x: 0.0, y: 0.0 },
             next_serial: 1,
         }
@@ -142,6 +162,15 @@ impl NativeLibinputEventReader {
                     }
                     if device.has_capability(DeviceCapability::Pointer) {
                         policy.pointers = policy.pointers.saturating_add(1);
+                        if apply_native_pointer_policy(&mut device, self.pointer_policy) {
+                            if self.pointer_policy.requires_device_configuration() {
+                                policy.pointer_configured =
+                                    policy.pointer_configured.saturating_add(1);
+                            }
+                        } else {
+                            policy.configuration_failures =
+                                policy.configuration_failures.saturating_add(1);
+                        }
                     }
                     if device.has_capability(DeviceCapability::Touch) {
                         policy.touch_devices = policy.touch_devices.saturating_add(1);
@@ -245,6 +274,13 @@ impl LiveLibinputEventReader for NativeLibinputEventReader {
             }
         }
 
+        if self.policy_report().configuration_failures > 0 {
+            return LibinputNativeEventReadResult {
+                report: LibinputNativeEventReadReport::read_failed(),
+                events: Vec::new(),
+            };
+        }
+
         LibinputNativeEventReadResult {
             report: LibinputNativeEventReadReport::events_read(events.len(), 0),
             events,
@@ -334,6 +370,8 @@ pub struct NativeLibinputPolicyReport {
     pub touch_devices: usize,
     pub tap_capable: usize,
     pub tap_enabled: usize,
+    pub pointer_configured: usize,
+    pub configuration_failures: usize,
     pub udev_managed: bool,
 }
 
@@ -350,6 +388,23 @@ pub fn open_native_libinput_path_poller(
     devices: NativeLibinputDeviceMap,
     max_read_per_poll: usize,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
+    open_native_libinput_path_poller_with_pointer_policy(
+        paths,
+        devices,
+        max_read_per_poll,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+pub fn open_native_libinput_path_poller_with_pointer_policy(
+    paths: &[PathBuf],
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
+    let pointer_policy = pointer_policy
+        .validate()
+        .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed)?;
     if paths.is_empty() {
         return Err(NativeLibinputOpenError::NoDevices);
     }
@@ -373,6 +428,12 @@ pub fn open_native_libinput_path_poller(
         }
         if device.has_capability(DeviceCapability::Pointer) {
             policy.pointers = policy.pointers.saturating_add(1);
+            if !apply_native_pointer_policy(&mut device, pointer_policy) {
+                return Err(NativeLibinputOpenError::DeviceConfigurationFailed);
+            }
+            if pointer_policy.requires_device_configuration() {
+                policy.pointer_configured = policy.pointer_configured.saturating_add(1);
+            }
         }
         if device.has_capability(DeviceCapability::Touch) {
             policy.touch_devices = policy.touch_devices.saturating_add(1);
@@ -389,7 +450,7 @@ pub fn open_native_libinput_path_poller(
         }
     }
     Ok(NativeLibinputEventPoller::new(
-        NativeLibinputEventReader::new_with_policy(libinput, devices, policy),
+        NativeLibinputEventReader::new_with_policies(libinput, devices, policy, pointer_policy),
         max_read_per_poll.clamp(1, 256),
     ))
 }
@@ -399,6 +460,20 @@ pub fn open_native_libinput_udev_poller(
     devices: NativeLibinputDeviceMap,
     max_read_per_poll: usize,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
+    open_native_libinput_udev_poller_with_pointer_policy(
+        seat_name,
+        devices,
+        max_read_per_poll,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+pub fn open_native_libinput_udev_poller_with_pointer_policy(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
     if seat_name.is_empty() || seat_name.len() > 64 || !seat_name.is_ascii() {
         return Err(NativeLibinputOpenError::SeatAssignmentFailed);
     }
@@ -406,26 +481,7 @@ pub fn open_native_libinput_udev_poller(
     libinput
         .udev_assign_seat(seat_name)
         .map_err(|_| NativeLibinputOpenError::SeatAssignmentFailed)?;
-    let mut reader = NativeLibinputEventReader::new_with_policy(
-        libinput,
-        devices,
-        NativeLibinputPolicyReport {
-            udev_managed: true,
-            ..NativeLibinputPolicyReport::default()
-        },
-    );
-    let _ = reader.read_ready_input_events(256);
-    let policy = reader.policy_report();
-    if policy.keyboards == 0 {
-        return Err(NativeLibinputOpenError::MissingKeyboard);
-    }
-    if policy.pointers == 0 && policy.touch_devices == 0 {
-        return Err(NativeLibinputOpenError::MissingPointer);
-    }
-    Ok(NativeLibinputEventPoller::new(
-        reader,
-        max_read_per_poll.clamp(1, 256),
-    ))
+    finish_udev_open(libinput, devices, max_read_per_poll, pointer_policy)
 }
 
 #[cfg(feature = "seat-control")]
@@ -435,6 +491,23 @@ pub fn open_native_libinput_udev_poller_with_seat(
     max_read_per_poll: usize,
     opener: crate::LiveSeatDeviceOpener,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
+    open_native_libinput_udev_poller_with_seat_and_pointer_policy(
+        seat_name,
+        devices,
+        max_read_per_poll,
+        opener,
+        NativeLibinputPointerPolicy::default(),
+    )
+}
+
+#[cfg(feature = "seat-control")]
+pub fn open_native_libinput_udev_poller_with_seat_and_pointer_policy(
+    seat_name: &str,
+    devices: NativeLibinputDeviceMap,
+    max_read_per_poll: usize,
+    opener: crate::LiveSeatDeviceOpener,
+    pointer_policy: NativeLibinputPointerPolicy,
+) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
     if seat_name.is_empty() || seat_name.len() > 64 || !seat_name.is_ascii() {
         return Err(NativeLibinputOpenError::SeatAssignmentFailed);
     }
@@ -442,22 +515,26 @@ pub fn open_native_libinput_udev_poller_with_seat(
     libinput
         .udev_assign_seat(seat_name)
         .map_err(|_| NativeLibinputOpenError::SeatAssignmentFailed)?;
-    finish_udev_open(libinput, devices, max_read_per_poll)
+    finish_udev_open(libinput, devices, max_read_per_poll, pointer_policy)
 }
 
-#[cfg(feature = "seat-control")]
 fn finish_udev_open(
     libinput: input::Libinput,
     devices: NativeLibinputDeviceMap,
     max_read_per_poll: usize,
+    pointer_policy: NativeLibinputPointerPolicy,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
-    let mut reader = NativeLibinputEventReader::new_with_policy(
+    let pointer_policy = pointer_policy
+        .validate()
+        .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed)?;
+    let mut reader = NativeLibinputEventReader::new_with_policies(
         libinput,
         devices,
         NativeLibinputPolicyReport {
             udev_managed: true,
             ..NativeLibinputPolicyReport::default()
         },
+        pointer_policy,
     );
     let _ = reader.read_ready_input_events(256);
     let policy = reader.policy_report();
@@ -466,6 +543,9 @@ fn finish_udev_open(
     }
     if policy.pointers == 0 && policy.touch_devices == 0 {
         return Err(NativeLibinputOpenError::MissingPointer);
+    }
+    if policy.configuration_failures > 0 {
+        return Err(NativeLibinputOpenError::DeviceConfigurationFailed);
     }
     Ok(NativeLibinputEventPoller::new(
         reader,

@@ -234,11 +234,20 @@ pub struct XCoreKeyboardMapper {
     control: u8,
     alt: u8,
     caps_lock: bool,
+    num_lock: bool,
 }
 
 impl XCoreKeyboardMapper {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_locks(caps_lock: bool, num_lock: bool) -> Self {
+        Self {
+            caps_lock,
+            num_lock,
+            ..Self::default()
+        }
     }
 
     pub fn map_evdev_key(&mut self, evdev_keycode: u32, pressed: bool) -> Option<(u8, u16)> {
@@ -254,6 +263,7 @@ impl XCoreKeyboardMapper {
             56 => update_modifier_bit(&mut self.alt, 1, pressed),
             100 => update_modifier_bit(&mut self.alt, 2, pressed),
             58 if pressed => self.caps_lock = !self.caps_lock,
+            69 if pressed => self.num_lock = !self.num_lock,
             _ => {}
         }
         let x_keycode = evdev_keycode
@@ -267,6 +277,7 @@ impl XCoreKeyboardMapper {
             | (u16::from(self.caps_lock) << 1)
             | (u16::from(self.control > 0) << 2)
             | (u16::from(self.alt > 0) << 3)
+            | (u16::from(self.num_lock) << 4)
     }
 }
 

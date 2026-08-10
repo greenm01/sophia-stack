@@ -1,6 +1,7 @@
 mod defaults;
 mod desktop_profile;
 mod discovery;
+mod input_candidate;
 mod load;
 mod parse;
 mod session_candidate;
@@ -11,6 +12,7 @@ mod watch;
 pub use defaults::*;
 pub use desktop_profile::*;
 pub use discovery::*;
+pub use input_candidate::*;
 pub use load::*;
 pub use parse::*;
 pub use session_candidate::*;

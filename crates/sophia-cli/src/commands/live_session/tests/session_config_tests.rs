@@ -294,6 +294,70 @@ session { terminal "kitty"; browser "helium"; startup "kitty"; }
 }
 
 #[test]
+fn desktop_input_candidate_overlays_keyboard_with_cli_precedence() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = std::env::temp_dir().join(format!(
+        "sophia-live-input-candidate-{}-{}.kdl",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(
+        &path,
+        r#"schema 1
+input {
+  inherit-sophia #true
+  keyboard {
+    repeat-rate 40
+    repeat-delay 300
+    numlock #true
+    capslock #false
+    xkb { model "profile-model"; layout "de"; }
+  }
+  pointer {
+    natural-scroll #true
+    accel-profile "flat"
+    accel-speed -0.25
+    left-handed #true
+    middle-emulation #true
+    scroll-factor 1.5
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let config = PersistentXtermSessionConfig::from_args(&[
+        format!("--desktop-profile={}", path.display()),
+        "--xkb-layout=us".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(config.xkb_config.model, "profile-model");
+    assert_eq!(config.xkb_config.layout, "us");
+    assert_eq!(config.key_repeat_config.delay_msec, 300);
+    assert_eq!(config.key_repeat_config.interval_msec, 25);
+    assert_eq!(config.keyboard_mapper().modifier_mask(), 1 << 4);
+    assert_eq!(
+        config.native_pointer_policy(),
+        sophia_backend_live::NativeLibinputPointerPolicy {
+            natural_scroll: Some(true),
+            accel_profile: Some(sophia_backend_live::NativeLibinputAccelProfile::Flat),
+            accel_speed: Some(-0.25),
+            left_handed: Some(true),
+            middle_emulation: Some(true),
+            scroll_factor: 1.5,
+        }
+    );
+
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
     let spec = public_policy_launch_spec(

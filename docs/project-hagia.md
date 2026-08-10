@@ -222,6 +222,17 @@ mappings remain superior. Before a normal `sophia_wm_v1` session starts, the
 coordinator also rejects any shortcut whose required session capability is not
 available. Hagia receives only the resulting opaque operation slots.
 
+The coordinator also prepares the input fragment as a typed startup candidate.
+Keyboard RMLVO, repeat timing, and initial Caps Lock and Num Lock state overlay
+Sophia's effective input configuration, while explicit CLI RMLVO values remain
+superior. Pointer natural scrolling, acceleration profile and speed,
+left-handed mode, middle-button emulation, and bounded wheel scaling lower to
+a backend-owned libinput policy. Unsupported requested device settings reject
+graphical startup; a later hot-plug configuration failure terminates native
+input acquisition instead of silently accepting an ineffective profile. Live
+input reload and device-scoped transactional rollback remain deferred with the
+cross-authority activation protocol.
+
 ## Implementation Progression
 
 ### 1. Geometry Proof

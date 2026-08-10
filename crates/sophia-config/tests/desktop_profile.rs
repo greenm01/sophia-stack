@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
     ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
-    DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
-    DesktopShortcutModifiers, DesktopShortcutTarget, discover_desktop_profile_source,
-    load_desktop_profile, prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate,
-    stage_desktop_profile,
+    DesktopPointerAccelProfile, DesktopProfileError, DesktopSessionShortcut,
+    DesktopShortcutBindingKind, DesktopShortcutModifiers, DesktopShortcutTarget,
+    discover_desktop_profile_source, load_desktop_profile, prepare_desktop_input_candidate,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -222,6 +222,69 @@ session {
         assert!(matches!(
             load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
             Err(DesktopProfileError::Schema(message)) if message.contains("session candidate")
+        ));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn input_candidate_prepares_keyboard_and_pointer_values() {
+    let root = temporary_directory("input-candidate");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+input {
+  inherit-sophia #true
+  keyboard {
+    repeat-rate 40
+    repeat-delay 300
+    numlock #true
+    capslock #false
+    xkb { rules "evdev"; model "pc105"; layout "us"; variant ""; options ""; }
+  }
+  pointer {
+    natural-scroll #false
+    accel-profile "flat"
+    accel-speed 0.0
+    left-handed #false
+    middle-emulation #false
+    scroll-factor 1.0
+  }
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let input =
+        prepare_desktop_input_candidate(profile.candidates.get(&DesktopAuthority::Input).unwrap())
+            .unwrap();
+
+    assert!(input.inherit_sophia);
+    let keyboard = input.keyboard.unwrap();
+    assert_eq!(keyboard.repeat_rate, Some(40));
+    assert_eq!(keyboard.repeat_delay_msec, Some(300));
+    assert_eq!(keyboard.num_lock, Some(true));
+    assert_eq!(keyboard.xkb.unwrap().layout.as_deref(), Some("us"));
+    let pointer = input.pointer.unwrap();
+    assert_eq!(
+        pointer.accel_profile,
+        Some(DesktopPointerAccelProfile::Flat)
+    );
+    assert_eq!(pointer.accel_speed, Some(0.0));
+    assert_eq!(pointer.scroll_factor, Some(1.0));
+
+    for source in [
+        "schema 1\ninput { inherit-sophia \"yes\"; }\n",
+        "schema 1\ninput { keyboard { repeat-rate 0; } }\n",
+        "schema 1\ninput { keyboard { xkb { layout \"\"; } } }\n",
+        "schema 1\ninput { pointer { accel-profile \"fast\"; } }\n",
+        "schema 1\ninput { pointer { accel-speed 2.0; } }\n",
+        "schema 1\ninput { pointer { scroll-factor 0.0; } }\n",
+    ] {
+        write_profile(&profile_path, source);
+        assert!(matches!(
+            load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
+            Err(DesktopProfileError::Schema(message)) if message.contains("input candidate")
         ));
     }
     fs::remove_dir_all(root).unwrap();
