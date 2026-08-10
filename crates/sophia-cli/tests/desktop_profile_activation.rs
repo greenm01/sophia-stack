@@ -1,7 +1,8 @@
 use sophia_cli::desktop_profile_activation::{
     DesktopProfileAuthorityEffectExecutor, DesktopProfileStartupActivationDisposition,
-    DesktopProfileStartupActivationErrorKind, execute_desktop_profile_activation_effect,
-    run_desktop_profile_startup_activation,
+    DesktopProfileStartupActivationErrorKind, DesktopProfileStartupPreparationDisposition,
+    execute_desktop_profile_activation_effect, run_desktop_profile_startup_activation,
+    run_desktop_profile_startup_preparation,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
@@ -336,6 +337,60 @@ fn startup_driver_prepares_then_activates_every_authority() {
                 authority,
                 key(),
             )
+        );
+    }
+}
+
+#[test]
+fn preparation_driver_stops_at_the_complete_prepare_barrier() {
+    let mut executor = FakeExecutor::default();
+    let report =
+        run_desktop_profile_startup_preparation(&active_model(), key(), &mut executor).unwrap();
+
+    assert_eq!(
+        report.disposition,
+        DesktopProfileStartupPreparationDisposition::Prepared
+    );
+    assert_eq!(
+        report.model.phase(),
+        DesktopProfileActivationPhase::Prepared
+    );
+    assert_eq!(report.model.active(), active_model().active());
+    assert_eq!(report.model.candidate(), Some(key()));
+    assert_eq!(executor.calls.len(), DesktopAuthority::ALL.len());
+    assert!(executor.calls.iter().all(|(kind, _, effect_key)| {
+        *kind == DesktopProfileActivationEffectKind::PrepareAuthority && *effect_key == key()
+    }));
+}
+
+#[test]
+fn preparation_driver_rejection_rolls_back_without_activation() {
+    for failure in DesktopAuthority::ALL {
+        let mut executor = FakeExecutor {
+            prepare_failure: Some(failure),
+            ..FakeExecutor::default()
+        };
+        let report =
+            run_desktop_profile_startup_preparation(&active_model(), key(), &mut executor).unwrap();
+
+        assert_eq!(
+            report.disposition,
+            DesktopProfileStartupPreparationDisposition::Rejected
+        );
+        assert_eq!(report.model.phase(), DesktopProfileActivationPhase::Idle);
+        assert_eq!(report.model.active(), active_model().active());
+        assert!(executor.calls.iter().all(|(kind, _, _)| {
+            *kind != DesktopProfileActivationEffectKind::ActivateAuthority
+        }));
+        assert_eq!(
+            executor
+                .calls
+                .iter()
+                .filter(|(kind, _, _)| {
+                    *kind == DesktopProfileActivationEffectKind::RollbackAuthority
+                })
+                .count(),
+            DesktopAuthority::ALL.len()
         );
     }
 }

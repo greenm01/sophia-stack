@@ -815,6 +815,14 @@ public policy launch consumes it exactly once. Failure or an unused context
 cleans up before any graphical process starts. This is still preparation, not
 the global activation barrier.
 
+The coordinator's synchronous driver now exposes that prepare barrier as its
+own typed operation. It begins one exact key, drains the seven prepare effects,
+performs generation-wide rollback on any rejection, and otherwise stops at
+`Prepared` with the previous active identity untouched. It emits no activation
+effects. The complete startup driver reuses this operation before its activate
+phase, keeping one reducer/effect schedule for both offline proof and future
+pre-graphical wiring.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

@@ -81,6 +81,12 @@ Completed evidence is archived in `research-log-archive.md`.
   fragment against the exact key, and prepares shortcut state immediately after
   trusted configuration parsing. Tests prove mode, complete fragment presence,
   exact admission, `Prepared` phase, and cleanup without launching a process.
+- The synchronous startup driver previously fused its prepare and activate
+  phases even though the graphical launch gate needs a stable prepared pause.
+  `run_desktop_profile_startup_preparation` now returns a typed
+  `Prepared`/`Rejected` report after settling exactly the prepare batch and any
+  rollback, with no activation calls. The complete driver reuses it. Tests
+  cover success plus every authority as the prepare rejection point.
 - `load_desktop_profile` had already run the shared preparation boundary before
   returning, so live-session startup's immediate second preparation was pure
   duplication. `load_prepared_desktop_profile` now returns a typed aggregate

@@ -82,6 +82,18 @@ pub struct DesktopProfileStartupActivationReport {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopProfileStartupPreparationDisposition {
+    Prepared,
+    Rejected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopProfileStartupPreparationReport {
+    pub model: DesktopProfileActivationModel,
+    pub disposition: DesktopProfileStartupPreparationDisposition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopProfileStartupActivationErrorKind {
     Reducer(DesktopProfileActivationError),
     UnexpectedEffect,
@@ -119,24 +131,11 @@ pub fn run_desktop_profile_startup_activation<E>(
 where
     E: DesktopProfileAuthorityEffectExecutor,
 {
-    let started = reduce_desktop_profile_activation(
-        model,
-        DesktopProfileActivationMsg::BeginCandidate { key },
-    )
-    .map_err(|error| startup_error(error, model, None))?;
-    let prepared = execute_candidate_batch(
-        started.model,
-        started.effects,
-        DesktopProfileActivationPhase::Preparing,
-        DesktopProfileActivationEffectKind::PrepareAuthority,
-        executor,
-    )?;
-    let CandidateBatchResult::Completed(prepared) = prepared else {
-        return Ok(rejected_report(prepared.model()));
-    };
-    if prepared.phase() != DesktopProfileActivationPhase::Prepared {
-        return Err(incomplete_error(prepared));
+    let preparation = run_desktop_profile_startup_preparation(model, key, executor)?;
+    if preparation.disposition == DesktopProfileStartupPreparationDisposition::Rejected {
+        return Ok(rejected_report(preparation.model));
     }
+    let prepared = preparation.model;
 
     let activation = reduce_desktop_profile_activation(
         &prepared,
@@ -159,6 +158,41 @@ where
     Ok(DesktopProfileStartupActivationReport {
         model: activated,
         disposition: DesktopProfileStartupActivationDisposition::Activated,
+    })
+}
+
+pub fn run_desktop_profile_startup_preparation<E>(
+    model: &DesktopProfileActivationModel,
+    key: DesktopProfileActivationKey,
+    executor: &mut E,
+) -> Result<DesktopProfileStartupPreparationReport, DesktopProfileStartupActivationError>
+where
+    E: DesktopProfileAuthorityEffectExecutor,
+{
+    let started = reduce_desktop_profile_activation(
+        model,
+        DesktopProfileActivationMsg::BeginCandidate { key },
+    )
+    .map_err(|error| startup_error(error, model, None))?;
+    let prepared = execute_candidate_batch(
+        started.model,
+        started.effects,
+        DesktopProfileActivationPhase::Preparing,
+        DesktopProfileActivationEffectKind::PrepareAuthority,
+        executor,
+    )?;
+    let CandidateBatchResult::Completed(prepared) = prepared else {
+        return Ok(DesktopProfileStartupPreparationReport {
+            model: prepared.model(),
+            disposition: DesktopProfileStartupPreparationDisposition::Rejected,
+        });
+    };
+    if prepared.phase() != DesktopProfileActivationPhase::Prepared {
+        return Err(incomplete_error(prepared));
+    }
+    Ok(DesktopProfileStartupPreparationReport {
+        model: prepared,
+        disposition: DesktopProfileStartupPreparationDisposition::Prepared,
     })
 }
 

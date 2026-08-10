@@ -73,6 +73,11 @@ prepare and activate barriers. The first failed operation cancels the
 remaining phase, dispatches rollback to every authority, and retains the prior
 active identity. Even when one rollback fails, every remaining rollback is
 attempted and the exact unresolved recovery set is returned as an error.
+The prepare barrier is now also exposed as a separate typed startup driver. It
+settles all seven prepare effects and returns either `Prepared` or `Rejected`
+without emitting an activation effect. The existing full driver calls this same
+function before requesting activation, so offline proofs and future
+pre-graphical production wiring cannot drift into two implementations.
 Each authority now has one shared pure participant model behind that contract.
 It admits only a strictly newer generation and a different digest, makes exact
 prepare, activate, and rollback retries idempotent, restores the exact previous

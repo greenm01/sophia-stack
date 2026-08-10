@@ -348,6 +348,12 @@ Later policy launch consumes that context instead of recreating directory or
 fragment state. Early failure cleans it up before Hagia or graphical clients
 start; no authority is activated by this change.
 
+Sophia's synchronous coordinator driver now has a separate typed prepare-only
+entry point. It drains all seven prepare effects, rolls the generation back on
+any failure, and stops exactly at `Prepared` without activation. The full
+startup driver reuses that entry point, preventing a second orchestration path
+when the production owners are connected before graphical launch.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
