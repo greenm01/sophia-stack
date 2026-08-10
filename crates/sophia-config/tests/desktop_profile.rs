@@ -5,10 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
     ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
+    DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
     DesktopPointerAccelProfile, DesktopProfileError, DesktopSessionShortcut,
     DesktopShortcutBindingKind, DesktopShortcutModifiers, DesktopShortcutTarget,
     discover_desktop_profile_source, load_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    prepare_desktop_output_candidate, prepare_desktop_session_candidate,
+    prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -291,6 +293,91 @@ input {
 }
 
 #[test]
+fn output_candidate_prepares_named_outputs_without_touching_hardware() {
+    let root = temporary_directory("output-candidate");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+output {
+  inherit-sophia #true
+  named "DP-1" {
+    mode "2560x1440@119.999"
+    scale "auto"
+    position 0 0
+    transform "normal"
+    enabled #true
+    focus-at-startup #true
+    vrr 1
+  }
+  named "DP-2" {
+    mode "preferred"
+    scale 1.25
+    position 2560 0
+    enabled #true
+    vrr 0
+  }
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let output = prepare_desktop_output_candidate(
+        profile.candidates.get(&DesktopAuthority::Output).unwrap(),
+    )
+    .unwrap();
+
+    assert!(output.inherit_sophia);
+    assert_eq!(output.named.len(), 2);
+    assert_eq!(output.named[0].connector, "DP-1");
+    assert_eq!(
+        output.named[0].mode,
+        Some(DesktopOutputMode::Exact {
+            width: 2560,
+            height: 1440,
+            refresh_millihz: 119_999,
+        })
+    );
+    assert_eq!(output.named[0].scale, Some(DesktopOutputScale::Automatic));
+    assert_eq!(
+        output.named[0].transform,
+        Some(DesktopOutputTransform::Normal)
+    );
+    assert_eq!(output.named[0].vrr, Some(DesktopOutputVrrMode::Automatic));
+    assert_eq!(
+        output.named[1].scale,
+        Some(DesktopOutputScale::FixedMilli(1_250))
+    );
+    assert!(matches!(
+        prepare_desktop_output_candidate(
+            profile.candidates.get(&DesktopAuthority::Input).unwrap()
+        ),
+        Err(DesktopProfileError::Schema(message)) if message.contains("authority boundary")
+    ));
+
+    for source in [
+        "schema 1\noutput { inherit-sophia #false; }\n",
+        "schema 1\noutput { named \"../DP-1\" { enabled #true; } }\n",
+        "schema 1\noutput { named \"DP-1\" {} }\n",
+        "schema 1\noutput { named \"DP-1\" { mode \"2560x1440\"; } }\n",
+        "schema 1\noutput { named \"DP-1\" { scale 1.0001; } }\n",
+        "schema 1\noutput { named \"DP-1\" { position 0 \"left\"; } }\n",
+        "schema 1\noutput { named \"DP-1\" { transform \"diagonal\"; } }\n",
+        "schema 1\noutput { named \"DP-1\" { vrr 3; } }\n",
+        "schema 1\noutput { named \"DP-1\" { enabled #true; enabled #false; } }\n",
+        "schema 1\noutput { named \"DP-1\" { enabled #true; }; named \"DP-1\" { enabled #false; } }\n",
+        "schema 1\noutput { named \"DP-1\" { focus-at-startup #true; }; named \"DP-2\" { focus-at-startup #true; } }\n",
+    ] {
+        write_profile(&profile_path, source);
+        let result = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL);
+        assert!(
+            matches!(result, Err(DesktopProfileError::Schema(_))),
+            "source unexpectedly passed a different path: {source:?}: {result:?}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_cycles_duplicates_unsupported_and_reserved_controls() {
     let root = temporary_directory("rejections");
     let main = root.join("config.kdl");
@@ -422,6 +509,25 @@ fn staging_revalidates_a_mutated_shortcut_candidate() {
     assert!(matches!(
         stage_desktop_profile(&profile, &root),
         Err(DesktopProfileError::Schema(message)) if message.contains("shortcut candidate")
+    ));
+    assert!(fs::read_dir(&root).unwrap().next().is_none());
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn staging_revalidates_a_mutated_output_candidate() {
+    let root = temporary_directory("stage-output-revalidation");
+    let mut profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    profile
+        .candidates
+        .get_mut(&DesktopAuthority::Output)
+        .unwrap()
+        .values[0]
+        .encoded = "named \"DP-1\" { mode \"unbounded\"; }".to_owned();
+
+    assert!(matches!(
+        stage_desktop_profile(&profile, &root),
+        Err(DesktopProfileError::Schema(message)) if message.contains("output candidate")
     ));
     assert!(fs::read_dir(&root).unwrap().next().is_none());
     fs::remove_dir(root).unwrap();

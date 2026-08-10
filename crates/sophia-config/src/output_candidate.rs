@@ -1,0 +1,360 @@
+use std::collections::BTreeSet;
+
+use kdl::{KdlDocument, KdlNode};
+
+use crate::{
+    ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
+    DesktopProfileError,
+};
+
+pub const DESKTOP_OUTPUT_MAX_NAMED: usize = 16;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopOutputMode {
+    Preferred,
+    Exact {
+        width: u32,
+        height: u32,
+        refresh_millihz: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopOutputScale {
+    Automatic,
+    FixedMilli(u32),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopOutputTransform {
+    Normal,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    Flipped,
+    Flipped90,
+    Flipped180,
+    Flipped270,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DesktopOutputVrrMode {
+    Disabled,
+    Automatic,
+    Always,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopNamedOutputCandidate {
+    pub connector: String,
+    pub mode: Option<DesktopOutputMode>,
+    pub scale: Option<DesktopOutputScale>,
+    pub position: Option<(i32, i32)>,
+    pub transform: Option<DesktopOutputTransform>,
+    pub enabled: Option<bool>,
+    pub focus_at_startup: Option<bool>,
+    pub vrr: Option<DesktopOutputVrrMode>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopOutputCandidate {
+    pub generation: ConfigGeneration,
+    pub digest: ConfigDigest,
+    pub inherit_sophia: bool,
+    pub named: Vec<DesktopNamedOutputCandidate>,
+}
+
+fn schema_error(message: impl Into<String>) -> DesktopProfileError {
+    DesktopProfileError::Schema(format!("output candidate: {}", message.into()))
+}
+
+fn single_node(encoded: &str) -> Result<KdlNode, DesktopProfileError> {
+    let document = KdlDocument::parse_v2(encoded)
+        .map_err(|error| schema_error(format!("invalid staged value: {error}")))?;
+    if document.nodes().len() != 1 {
+        return Err(schema_error("staged value must contain exactly one node"));
+    }
+    Ok(document.nodes()[0].clone())
+}
+
+fn children<'a>(node: &'a KdlNode, setting: &str) -> Result<&'a KdlDocument, DesktopProfileError> {
+    if node.ty().is_some() {
+        return Err(schema_error(format!("{setting} has an ambiguous shape")));
+    }
+    node.children()
+        .ok_or_else(|| schema_error(format!("{setting} requires children")))
+}
+
+fn one_bool(node: &KdlNode, setting: &str) -> Result<bool, DesktopProfileError> {
+    if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
+        return Err(schema_error(format!("{setting} requires one boolean")));
+    }
+    node.get(0)
+        .and_then(|value| value.as_bool())
+        .ok_or_else(|| schema_error(format!("{setting} requires one boolean")))
+}
+
+fn one_integer(
+    node: &KdlNode,
+    setting: &str,
+    minimum: i128,
+    maximum: i128,
+) -> Result<i128, DesktopProfileError> {
+    if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
+        return Err(schema_error(format!("{setting} requires one integer")));
+    }
+    node.get(0)
+        .and_then(|value| value.as_integer())
+        .filter(|value| (minimum..=maximum).contains(value))
+        .ok_or_else(|| schema_error(format!("{setting} is outside its supported range")))
+}
+
+fn one_number(node: &KdlNode, setting: &str) -> Result<f64, DesktopProfileError> {
+    if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
+        return Err(schema_error(format!("{setting} requires one number")));
+    }
+    node.get(0)
+        .and_then(|value| {
+            value.as_float().or_else(|| {
+                value
+                    .as_integer()
+                    .and_then(|integer| i64::try_from(integer).ok())
+                    .map(|integer| integer as f64)
+            })
+        })
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| schema_error(format!("{setting} requires one finite number")))
+}
+
+fn one_string<'a>(node: &'a KdlNode, setting: &str) -> Result<&'a str, DesktopProfileError> {
+    if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
+        return Err(schema_error(format!("{setting} requires one string")));
+    }
+    node.get(0)
+        .and_then(|value| value.as_string())
+        .ok_or_else(|| schema_error(format!("{setting} requires one string")))
+}
+
+fn connector_name(node: &KdlNode) -> Result<String, DesktopProfileError> {
+    if node.entries().len() != 1 || node.ty().is_some() {
+        return Err(schema_error("named output requires one connector identity"));
+    }
+    let connector = node
+        .get(0)
+        .and_then(|value| value.as_string())
+        .filter(|value| !value.is_empty() && value.len() <= 64)
+        .ok_or_else(|| schema_error("named output connector identity is invalid"))?;
+    if !connector
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(schema_error(
+            "named output connector contains unsupported characters",
+        ));
+    }
+    Ok(connector.to_owned())
+}
+
+fn refresh_millihz(source: &str) -> Option<u32> {
+    let (whole, fractional) = source.split_once('.').unwrap_or((source, ""));
+    if whole.is_empty()
+        || whole.len() > 4
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || fractional.len() > 3
+        || !fractional.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let whole = whole.parse::<u32>().ok()?;
+    let mut fractional_value = if fractional.is_empty() {
+        0
+    } else {
+        fractional.parse::<u32>().ok()?
+    };
+    for _ in fractional.len()..3 {
+        fractional_value = fractional_value.checked_mul(10)?;
+    }
+    whole.checked_mul(1_000)?.checked_add(fractional_value)
+}
+
+fn output_mode(node: &KdlNode) -> Result<DesktopOutputMode, DesktopProfileError> {
+    let source = one_string(node, "output mode")?;
+    if source == "preferred" {
+        return Ok(DesktopOutputMode::Preferred);
+    }
+    let (dimensions, refresh) = source
+        .split_once('@')
+        .ok_or_else(|| schema_error("output mode must be preferred or WIDTHxHEIGHT@REFRESH"))?;
+    let (width, height) = dimensions
+        .split_once('x')
+        .ok_or_else(|| schema_error("output mode must be preferred or WIDTHxHEIGHT@REFRESH"))?;
+    let width = width
+        .parse::<u32>()
+        .ok()
+        .filter(|value| (1..=16_384).contains(value));
+    let height = height
+        .parse::<u32>()
+        .ok()
+        .filter(|value| (1..=16_384).contains(value));
+    let refresh_millihz =
+        refresh_millihz(refresh).filter(|value| (1_000..=1_000_000).contains(value));
+    match (width, height, refresh_millihz) {
+        (Some(width), Some(height), Some(refresh_millihz)) => Ok(DesktopOutputMode::Exact {
+            width,
+            height,
+            refresh_millihz,
+        }),
+        _ => Err(schema_error("output mode is outside its supported range")),
+    }
+}
+
+fn output_scale(node: &KdlNode) -> Result<DesktopOutputScale, DesktopProfileError> {
+    if node
+        .get(0)
+        .and_then(|value| value.as_string())
+        .is_some_and(|value| value == "auto")
+    {
+        if node.entries().len() == 1 && node.children().is_none() && node.ty().is_none() {
+            return Ok(DesktopOutputScale::Automatic);
+        }
+        return Err(schema_error("output scale has an ambiguous shape"));
+    }
+    let scale = one_number(node, "output scale")?;
+    if !(0.25..=8.0).contains(&scale) {
+        return Err(schema_error("output scale is outside its supported range"));
+    }
+    let milli = (scale * 1_000.0).round();
+    if ((milli / 1_000.0) - scale).abs() > f64::EPSILON {
+        return Err(schema_error("output scale supports at most three decimals"));
+    }
+    Ok(DesktopOutputScale::FixedMilli(milli as u32))
+}
+
+fn output_position(node: &KdlNode) -> Result<(i32, i32), DesktopProfileError> {
+    if node.entries().len() != 2 || node.children().is_some() || node.ty().is_some() {
+        return Err(schema_error("output position requires two integers"));
+    }
+    let coordinate = |index| {
+        node.get(index)
+            .and_then(|value| value.as_integer())
+            .filter(|value| (-1_000_000..=1_000_000).contains(value))
+            .and_then(|value| i32::try_from(value).ok())
+            .ok_or_else(|| schema_error("output position is outside its supported range"))
+    };
+    Ok((coordinate(0)?, coordinate(1)?))
+}
+
+fn output_transform(node: &KdlNode) -> Result<DesktopOutputTransform, DesktopProfileError> {
+    Ok(match one_string(node, "output transform")? {
+        "normal" => DesktopOutputTransform::Normal,
+        "90" => DesktopOutputTransform::Rotate90,
+        "180" => DesktopOutputTransform::Rotate180,
+        "270" => DesktopOutputTransform::Rotate270,
+        "flipped" => DesktopOutputTransform::Flipped,
+        "flipped-90" => DesktopOutputTransform::Flipped90,
+        "flipped-180" => DesktopOutputTransform::Flipped180,
+        "flipped-270" => DesktopOutputTransform::Flipped270,
+        _ => return Err(schema_error("unsupported output transform")),
+    })
+}
+
+fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopProfileError> {
+    let connector = connector_name(node)?;
+    let mut result = DesktopNamedOutputCandidate {
+        connector,
+        mode: None,
+        scale: None,
+        position: None,
+        transform: None,
+        enabled: None,
+        focus_at_startup: None,
+        vrr: None,
+    };
+    let children = children(node, "named output")?;
+    if children.nodes().is_empty() {
+        return Err(schema_error("named output requires at least one setting"));
+    }
+    for child in children.nodes() {
+        match child.name().value() {
+            "mode" if result.mode.is_none() => result.mode = Some(output_mode(child)?),
+            "scale" if result.scale.is_none() => result.scale = Some(output_scale(child)?),
+            "position" if result.position.is_none() => {
+                result.position = Some(output_position(child)?)
+            }
+            "transform" if result.transform.is_none() => {
+                result.transform = Some(output_transform(child)?)
+            }
+            "enabled" if result.enabled.is_none() => {
+                result.enabled = Some(one_bool(child, "output enabled")?)
+            }
+            "focus-at-startup" if result.focus_at_startup.is_none() => {
+                result.focus_at_startup = Some(one_bool(child, "output focus-at-startup")?)
+            }
+            "vrr" if result.vrr.is_none() => {
+                result.vrr = Some(match one_integer(child, "output vrr", 0, 2)? {
+                    0 => DesktopOutputVrrMode::Disabled,
+                    1 => DesktopOutputVrrMode::Automatic,
+                    2 => DesktopOutputVrrMode::Always,
+                    _ => unreachable!("bounded VRR mode"),
+                })
+            }
+            "mode" | "scale" | "position" | "transform" | "enabled" | "focus-at-startup"
+            | "vrr" => {
+                return Err(schema_error("duplicate named output setting"));
+            }
+            _ => return Err(schema_error("unsupported named output setting")),
+        }
+    }
+    Ok(result)
+}
+
+pub fn prepare_desktop_output_candidate(
+    candidate: &DesktopAuthorityCandidate,
+) -> Result<DesktopOutputCandidate, DesktopProfileError> {
+    if candidate.authority != DesktopAuthority::Output {
+        return Err(schema_error("candidate crossed its authority boundary"));
+    }
+    let mut prepared = DesktopOutputCandidate {
+        generation: candidate.generation,
+        digest: candidate.digest,
+        inherit_sophia: true,
+        named: Vec::new(),
+    };
+    let mut inheritance_seen = false;
+    let mut connectors = BTreeSet::new();
+    let mut focused_connector = None;
+    for value in &candidate.values {
+        let node = single_node(&value.encoded)?;
+        match node.name().value() {
+            "inherit-sophia" if !inheritance_seen => {
+                prepared.inherit_sophia = one_bool(&node, "inherit-sophia")?;
+                inheritance_seen = true;
+            }
+            "named" => {
+                if prepared.named.len() == DESKTOP_OUTPUT_MAX_NAMED {
+                    return Err(schema_error("too many named outputs"));
+                }
+                let output = named_output(&node)?;
+                if !connectors.insert(output.connector.clone()) {
+                    return Err(schema_error("duplicate named output connector"));
+                }
+                if output.focus_at_startup == Some(true)
+                    && focused_connector
+                        .replace(output.connector.clone())
+                        .is_some()
+                {
+                    return Err(schema_error("more than one output requests startup focus"));
+                }
+                prepared.named.push(output);
+            }
+            "inherit-sophia" => return Err(schema_error("duplicate output setting")),
+            _ => return Err(schema_error("candidate contains a non-output setting")),
+        }
+    }
+    if !prepared.inherit_sophia && prepared.named.is_empty() {
+        return Err(schema_error(
+            "non-inheriting output candidate requires a named output",
+        ));
+    }
+    Ok(prepared)
+}

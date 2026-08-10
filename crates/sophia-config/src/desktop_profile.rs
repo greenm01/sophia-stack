@@ -272,6 +272,12 @@ pub fn load_desktop_profile(
             .get(&DesktopAuthority::Input)
             .expect("partition creates every authority candidate"),
     )?;
+    crate::prepare_desktop_output_candidate(
+        profile
+            .candidates
+            .get(&DesktopAuthority::Output)
+            .expect("partition creates every authority candidate"),
+    )?;
     Ok(profile)
 }
 
@@ -304,6 +310,12 @@ pub fn stage_desktop_profile(
             .candidates
             .get(&DesktopAuthority::Input)
             .ok_or_else(|| DesktopProfileError::Stage("missing input candidate".to_owned()))?,
+    )?;
+    crate::prepare_desktop_output_candidate(
+        profile
+            .candidates
+            .get(&DesktopAuthority::Output)
+            .ok_or_else(|| DesktopProfileError::Stage("missing output candidate".to_owned()))?,
     )?;
     let metadata = fs::symlink_metadata(directory)
         .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;

@@ -233,6 +233,13 @@ input acquisition instead of silently accepting an ineffective profile. Live
 input reload and device-scoped transactional rollback remain deferred with the
 cross-authority activation protocol.
 
+Output profile values now have a separate typed preparation boundary as well.
+The coordinator validates bounded exact connector identities, preferred or
+explicit modes, fixed-point scale, position, transform, enablement, startup
+focus uniqueness, and VRR policy before staging fragments. Preparation neither
+opens DRM nor mutates live topology. Topology reconciliation, atomic KMS test,
+activation, and rollback are the next output-authority tranche.
+
 ## Implementation Progression
 
 ### 1. Geometry Proof
