@@ -3,6 +3,23 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-10: The trusted profile barrier now shares Hagia's proven semantics
+
+- Sophia already validated and staged exact fragments for all seven desktop
+  authorities, but the executable prepare/activate/rollback reducer existed
+  only in Hagia's model-checked reference implementation.
+- `sophia-config` now ports that transition shape over Sophia's canonical
+  `DesktopAuthority`, `ConfigGeneration`, and `ConfigDigest` types. Effects are
+  emitted in deterministic authority order; all preparations are required
+  before activation; any prepare or activation failure rolls every authority
+  back; and the active identity changes only after all matching activations.
+- Rejected generations remain consumed, stale completions are inert, and
+  generation exhaustion cannot wrap. Mirrored Rust tests cover success,
+  rejection, partial activation, stale completion, failed rollback, and the
+  rejected-generation reuse defect previously found through Hagia's formal
+  verification. Authority protocols, effect executors, and watched reload
+  remain deliberately disconnected.
+
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 
 - Native startup already projected the atomic owner's capabilities and

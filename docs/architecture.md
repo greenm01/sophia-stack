@@ -737,7 +737,9 @@ and initial lock state is held only by the X authority adapter. The live backend
 owns the translated libinput pointer policy and fails startup when a requested
 device setting cannot be applied. Hagia receives neither this candidate nor a
 raw device handle. Watched activation remains disabled pending the shared
-prepare/activate/rollback barrier.
+prepare/activate/rollback barrier. The trusted coordinator now has the pure
+seven-authority reducer for that barrier, ported from Hagia's model-checked
+reference semantics; authority protocols and effect executors remain unwired.
 
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable

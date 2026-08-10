@@ -57,6 +57,13 @@ authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime
 directory and gives Hagia only the policy-fragment path. Hagia cannot read or
 replace the shell, shortcut, session, input, output, or broker candidates.
+The trusted side now also has a pure seven-authority activation reducer ported
+from Hagia's exhaustively checked lifecycle model. One generation/digest must
+prepare everywhere before activation effects are emitted, and promotion waits
+for every matching activation completion. A prepare or activation failure
+emits generation-wide rollback while retaining the active profile. Attempted
+generations advance monotonically even after rejection, so delayed completion
+cannot alias a retry.
 Shortcut candidates are prepared into bounded typed chords before staging:
 at most 256 key or pointer bindings, normalized modifier/key identities, no
 duplicate chord, and no reserved Ctrl-Alt-Backspace override. Every target is
@@ -81,9 +88,10 @@ the exact profile generation and digest in the expected phase. Test rejection
 discards the candidate without rollback; an apply failure cannot settle until
 rollback succeeds or reports a terminal recovery failure. No executor is wired
 to these effects yet, so startup behavior remains unchanged.
-Watched desktop-profile reload remains disabled until the cross-authority
-prepare/activate/rollback protocol is wired; Sophia's existing core and native
-WM reload behavior is unchanged.
+The pure barrier does not execute authority effects. Watched desktop-profile
+reload remains disabled until its cross-authority prepare/activate/rollback
+protocol and executors are wired; Sophia's existing core and native WM reload
+behavior is unchanged.
 
 ## Discovery
 

@@ -252,6 +252,14 @@ that same read-only boundary without constructing a graphical session, so a
 migrated profile can be checked by the trusted coordinator rather than only by
 Hagia's structural parser.
 
+Sophia now also carries the trusted pure activation barrier using the same
+state transitions as Hagia's exhaustively checked reference model. It emits
+deterministically ordered prepare, activate, and generation-wide rollback
+effects for all seven authorities; preserves the active generation during
+partial or rejected work; ignores stale completions; and prevents rejected
+generation reuse. This is lifecycle parity, not live reload: no authority
+protocol or effect executor consumes those effects yet.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR
