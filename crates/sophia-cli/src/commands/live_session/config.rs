@@ -82,8 +82,7 @@ struct PersistentXtermSessionConfig {
     key_repeat_config: sophia_config::RepeatConfig,
     initial_caps_lock: bool,
     initial_num_lock: bool,
-    pointer_candidate: Option<sophia_config::DesktopPointerCandidate>,
-    desktop_output_candidate: sophia_config::DesktopOutputCandidate,
+    desktop_candidates: sophia_config::PreparedDesktopProfileCandidates,
     desktop_profile: sophia_config::DesktopProfileGeneration,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
@@ -110,7 +109,7 @@ impl PersistentXtermSessionConfig {
     }
 
     pub(super) fn native_pointer_policy(&self) -> sophia_backend_live::NativeLibinputPointerPolicy {
-        let Some(candidate) = self.pointer_candidate else {
+        let Some(candidate) = self.desktop_candidates.input.pointer else {
             return sophia_backend_live::NativeLibinputPointerPolicy::default();
         };
         sophia_backend_live::NativeLibinputPointerPolicy {
@@ -181,7 +180,7 @@ impl PersistentXtermSessionConfig {
         )?;
         let prepared_desktop =
             sophia_config::prepare_desktop_profile_candidates(&desktop_profile)?;
-        let desktop_input = prepared_desktop.input;
+        let desktop_input = &prepared_desktop.input;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
@@ -247,7 +246,7 @@ impl PersistentXtermSessionConfig {
             }
             app.arguments.push(argument.to_owned());
         }
-        let desktop_session = prepared_desktop.session;
+        let desktop_session = &prepared_desktop.session;
         let terminal_overridden = args.iter().any(|argument| {
             argument
                 .strip_prefix("--session-action-app=")
@@ -262,7 +261,7 @@ impl PersistentXtermSessionConfig {
             .iter()
             .any(|argument| argument.starts_with("--session-start="));
         applications.apply_desktop_candidate(
-            &desktop_session,
+            desktop_session,
             terminal_overridden,
             browser_overridden,
             startup_overridden,
@@ -808,8 +807,7 @@ impl PersistentXtermSessionConfig {
             key_repeat_config,
             initial_caps_lock,
             initial_num_lock,
-            pointer_candidate: desktop_input.pointer,
-            desktop_output_candidate: prepared_desktop.output,
+            desktop_candidates: prepared_desktop,
             desktop_profile,
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             verbose_diagnostics: core_snapshot.verbose_diagnostics,

@@ -60,6 +60,14 @@ Completed evidence is archived in `research-log-archive.md`.
   prepare, activation, and rollback failure, it proves successful identity
   agreement, complete last-known-good restoration, rejected-generation
   consumption, exact single-authority divergence, and deterministic recovery.
+- Startup tracing found one avoidable split in candidate ownership: the shared
+  preparation result was partially moved into session fields, while public
+  policy setup parsed the shortcut candidate again from the raw profile. The
+  preparation boundary now checks all seven candidate identities against the
+  profile generation/digest, session configuration retains one immutable typed
+  bundle, and policy setup clones its shortcut value. This gives future
+  authority handlers one canonical input without labeling preparation as
+  activation or changing launch order.
 
 ## 2026-08-10: Desktop output activation has an immutable pre-I/O plan
 

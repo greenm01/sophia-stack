@@ -269,18 +269,31 @@ pub fn load_desktop_profile(
 pub fn prepare_desktop_profile_candidates(
     profile: &DesktopProfileGeneration,
 ) -> Result<PreparedDesktopProfileCandidates, DesktopProfileError> {
-    let candidate = |authority| {
-        profile.candidates.get(&authority).ok_or_else(|| {
+    for authority in DesktopAuthority::ALL {
+        let candidate = profile.candidates.get(&authority).ok_or_else(|| {
             DesktopProfileError::Schema(format!("missing {} authority candidate", authority.name()))
-        })
+        })?;
+        if candidate.authority != authority
+            || candidate.generation != profile.generation
+            || candidate.digest != profile.digest
+        {
+            return Err(DesktopProfileError::Schema(format!(
+                "inconsistent {} candidate identity",
+                authority.name()
+            )));
+        }
+    }
+    let candidate = |authority| {
+        profile
+            .candidates
+            .get(&authority)
+            .expect("all desktop authority candidates validated")
     };
     Ok(PreparedDesktopProfileCandidates {
-        shortcut: crate::prepare_desktop_shortcut_candidate(candidate(
-            DesktopAuthority::Shortcut,
-        )?)?,
-        session: crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session)?)?,
-        input: crate::prepare_desktop_input_candidate(candidate(DesktopAuthority::Input)?)?,
-        output: crate::prepare_desktop_output_candidate(candidate(DesktopAuthority::Output)?)?,
+        shortcut: crate::prepare_desktop_shortcut_candidate(candidate(DesktopAuthority::Shortcut))?,
+        session: crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session))?,
+        input: crate::prepare_desktop_input_candidate(candidate(DesktopAuthority::Input))?,
+        output: crate::prepare_desktop_output_candidate(candidate(DesktopAuthority::Output))?,
     })
 }
 
@@ -311,18 +324,10 @@ pub fn stage_desktop_profile(
 
     let mut paths = BTreeMap::new();
     for authority in DesktopAuthority::ALL {
-        let candidate = profile.candidates.get(&authority).ok_or_else(|| {
-            DesktopProfileError::Stage(format!("missing {} candidate", authority.name()))
-        })?;
-        if candidate.authority != authority
-            || candidate.generation != profile.generation
-            || candidate.digest != profile.digest
-        {
-            return Err(DesktopProfileError::Stage(format!(
-                "inconsistent {} candidate identity",
-                authority.name()
-            )));
-        }
+        let candidate = profile
+            .candidates
+            .get(&authority)
+            .expect("all desktop authority candidates validated before staging");
         let path = directory.join(format!("{}.profile.kdl", authority.name()));
         let mut file = fs::OpenOptions::new()
             .write(true)

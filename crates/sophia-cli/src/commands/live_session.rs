@@ -238,7 +238,7 @@ pub(crate) fn run_persistent_xterm_session(
         let capabilities = native.output_capabilities()?;
         let topology = project_native_output_topology(&capabilities, &native.outputs())?;
         let reconciled = sophia_config::reconcile_desktop_output_candidate(
-            &config.desktop_output_candidate,
+            &config.desktop_candidates.output,
             &topology,
         )?;
         let activation =

@@ -558,13 +558,7 @@ impl LiveWmSession {
         let directory = PolicySessionDirectory::create(
             config.wm_socket_path.with_extension("policy"),
         )?;
-        let shortcut_candidate = sophia_config::prepare_desktop_shortcut_candidate(
-            config
-                .desktop_profile
-                .candidates
-                .get(&sophia_config::DesktopAuthority::Shortcut)
-                .ok_or("desktop profile has no shortcut candidate")?,
-        )?;
+        let shortcut_candidate = config.desktop_candidates.shortcut.clone();
         let profile_fragments =
             sophia_config::stage_desktop_profile(&config.desktop_profile, directory.path())?;
         let mut transport = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(

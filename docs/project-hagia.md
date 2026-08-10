@@ -289,6 +289,15 @@ launch gate can hide partial local activation. Live reload cannot use that
 assumption and remains deferred until a separate global visibility and recovery
 protocol is proved.
 
+Startup candidate ownership is now narrower and DRY: Sophia validates the
+generation/digest identity of all seven raw candidates once at the shared
+preparation boundary and retains the resulting typed shortcut, session, input,
+and output bundle intact through live-session configuration. Later policy setup
+clones the already prepared shortcut candidate instead of parsing the profile a
+second time. The bundle is immutable admission data for future participant
+handlers; retaining it neither activates an authority nor changes startup
+visibility.
+
 The existing atomic scanout owner now exposes a read-only capability projection
 for that adapter: stable Engine output identity, exact kernel connector name and
 ID, bounded advertised timings, selected/default timing, and the result of VRR

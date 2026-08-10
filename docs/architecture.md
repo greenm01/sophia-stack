@@ -749,6 +749,15 @@ recovery divergence at every failure position. The startup launch gate is the
 only permitted visibility boundary for this model; authority protocols,
 effect executors, and a live-reload visibility barrier remain unwired.
 
+The startup configuration boundary retains one immutable prepared desktop
+candidate bundle after checking every raw authority candidate against the
+profile's exact generation and digest. Input, output, session, and shortcut
+consumers borrow or clone from that one bundle; the shortcut authority is not
+reparsed later during policy-process setup. The other authority payloads remain
+in the provenance-bearing profile for their future owners. This establishes a
+canonical handler input without treating validation or selection as
+activation.
+
 For the implemented
 application path it applies reserved shortcuts, walks transformed renderable
 layers from the last presented output-frame snapshot, and selects a

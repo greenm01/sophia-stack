@@ -93,6 +93,13 @@ capability.
 The desktop-profile form of `config check` runs the same typed shortcut,
 session, input, and output preparation used by graphical startup; it performs
 no device discovery or activation.
+That preparation boundary first verifies that all seven authority candidates
+match the profile's exact generation and digest, including authorities whose
+payload is consumed by another process. Live-session configuration retains the
+resulting immutable typed bundle rather than splitting it into unrelated
+copies; the public policy setup reuses its prepared shortcut candidate instead
+of reparsing the source profile. This is candidate selection only, not
+authority activation.
 When native scanout is requested, startup additionally projects the already
 owned DRM capabilities and reconciles the output candidate before launching a
 graphical client. A second pure boundary converts the validated reconciliation

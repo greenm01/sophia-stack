@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
-    ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
+    ConfigDigest, ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
     DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
     DesktopPointerAccelProfile, DesktopProfileError, DesktopSessionShortcut,
     DesktopShortcutBindingKind, DesktopShortcutModifiers, DesktopShortcutTarget,
     discover_desktop_profile_source, load_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_output_candidate, prepare_desktop_session_candidate,
-    prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -51,6 +51,34 @@ fn compiled_profile_partitions_every_authority_deterministically() {
                 .iter()
                 .all(|value| value.key.starts_with(authority.name()))
         );
+    }
+}
+
+#[test]
+fn preparation_rejects_identity_drift_in_every_authority_candidate() {
+    for authority in DesktopAuthority::ALL {
+        let mut profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+        profile.candidates.get_mut(&authority).unwrap().generation = ConfigGeneration::from_raw(2);
+
+        assert!(matches!(
+            prepare_desktop_profile_candidates(&profile),
+            Err(DesktopProfileError::Schema(message))
+                if message.contains(authority.name()) && message.contains("identity")
+        ));
+    }
+}
+
+#[test]
+fn preparation_rejects_digest_drift_in_every_authority_candidate() {
+    for authority in DesktopAuthority::ALL {
+        let mut profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+        profile.candidates.get_mut(&authority).unwrap().digest = ConfigDigest::new([0xff; 32]);
+
+        assert!(matches!(
+            prepare_desktop_profile_candidates(&profile),
+            Err(DesktopProfileError::Schema(message))
+                if message.contains(authority.name()) && message.contains("identity")
+        ));
     }
 }
 
