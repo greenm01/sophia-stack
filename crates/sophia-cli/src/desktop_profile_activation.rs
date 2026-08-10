@@ -269,6 +269,17 @@ pub fn settle_desktop_profile_policy_activation(
     .map_err(|error| startup_error(error, model, Some(effect)))
 }
 
+pub fn run_desktop_profile_rollback<E>(
+    model: DesktopProfileActivationModel,
+    effects: Vec<DesktopProfileActivationEffect>,
+    executor: &mut E,
+) -> Result<DesktopProfileActivationModel, DesktopProfileStartupActivationError>
+where
+    E: DesktopProfileAuthorityEffectExecutor,
+{
+    execute_rollback(model, effects, executor)
+}
+
 pub fn run_desktop_profile_startup_preparation<E>(
     model: &DesktopProfileActivationModel,
     key: DesktopProfileActivationKey,

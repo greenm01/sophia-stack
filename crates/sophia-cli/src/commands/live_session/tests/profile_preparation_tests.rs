@@ -114,13 +114,14 @@ fn public_profile_activation_promotes_local_slots_and_pauses_at_policy() {
     )
     .unwrap();
     drop(executor);
+    let policy_effect = report.effect.unwrap();
 
     assert_eq!(
         report.disposition,
         sophia_cli::desktop_profile_activation::DesktopProfileExternalActivationDisposition::AwaitingPolicy
     );
     assert_eq!(
-        report.effect.unwrap().authority,
+        policy_effect.authority,
         sophia_config::DesktopAuthority::Policy
     );
     assert_eq!(
@@ -140,6 +141,51 @@ fn public_profile_activation_promotes_local_slots_and_pauses_at_policy() {
             sophia_config::DesktopProfileParticipantPhase::Activated
         );
         assert_eq!(participant.active(), Some(key));
+    }
+
+    let rejected =
+        sophia_cli::desktop_profile_activation::settle_desktop_profile_policy_activation(
+            &report.model,
+            policy_effect,
+            false,
+        )
+        .unwrap();
+    let mut rollback_executor = PublicProfilePreparationExecutor {
+        policy: prepared.policy_profile.slot_mut(),
+        shell: prepared.shell_profile.slot_mut(),
+        shortcut: &mut prepared.shortcut_profile_slot,
+        session: config.session_profile.slot_mut(),
+        input: config.input_profile.slot_mut(),
+        output: config.output_profile.slot_mut(),
+        broker: prepared.broker_profile.slot_mut(),
+    };
+    let rolled_back = sophia_cli::desktop_profile_activation::run_desktop_profile_rollback(
+        rejected.model,
+        rejected.effects,
+        &mut rollback_executor,
+    )
+    .unwrap();
+    drop(rollback_executor);
+    assert_eq!(
+        rolled_back.phase(),
+        sophia_config::DesktopProfileActivationPhase::Idle
+    );
+    assert_eq!(rolled_back.active(), None);
+    for participant in [
+        prepared.policy_profile.slot.participant(),
+        prepared.shell_profile.slot.participant(),
+        prepared.shortcut_profile_slot.participant(),
+        config.session_profile.slot().participant(),
+        config.input_profile.slot().participant(),
+        config.output_profile.slot().participant(),
+        prepared.broker_profile.slot.participant(),
+    ] {
+        assert_eq!(
+            participant.phase(),
+            sophia_config::DesktopProfileParticipantPhase::Idle
+        );
+        assert_eq!(participant.active(), None);
+        assert_eq!(participant.candidate(), None);
     }
 }
 

@@ -3,8 +3,8 @@ use sophia_cli::desktop_profile_activation::{
     DesktopProfileStartupActivationDisposition, DesktopProfileStartupActivationErrorKind,
     DesktopProfileStartupPreparationDisposition, execute_desktop_profile_activation_effect,
     run_desktop_profile_prepared_activation, run_desktop_profile_prepared_activation_until_policy,
-    run_desktop_profile_startup_activation, run_desktop_profile_startup_preparation,
-    settle_desktop_profile_policy_activation,
+    run_desktop_profile_rollback, run_desktop_profile_startup_activation,
+    run_desktop_profile_startup_preparation, settle_desktop_profile_policy_activation,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopAuthority, DesktopAuthorityCandidate,
@@ -555,6 +555,13 @@ fn policy_rejection_emits_complete_typed_rollback_batch() {
                     && effect.key == key()
             })
     );
+
+    let rolled_back =
+        run_desktop_profile_rollback(rejected.model, rejected.effects, &mut activation_executor)
+            .unwrap();
+    assert_eq!(rolled_back.phase(), DesktopProfileActivationPhase::Idle);
+    assert_eq!(rolled_back.active(), active_model().active());
+    assert_eq!(rolled_back.candidate(), None);
 }
 
 #[test]
