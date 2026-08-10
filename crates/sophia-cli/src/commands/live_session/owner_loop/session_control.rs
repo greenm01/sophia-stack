@@ -15,7 +15,7 @@ macro_rules! service_session_controls {
             .map_err(|error| format!("session control service failed: {error:?}"))?;
         for completion in session_control_completions.drain(..) {
             if let Some(failure) = completion.failure {
-                if failure.is_stale_target() {
+                if failure.is_stale_target_for(completion.key.kind) {
                     if applied_client_focus == Some(completion.key.surface) {
                         applied_client_focus = None;
                     }

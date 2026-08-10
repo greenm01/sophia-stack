@@ -355,7 +355,7 @@ grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq '"--session-app-arg=terminal=$guide"' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq "show_step 'Press Super+F once." \
+grep -Fq "show_step 'Press Super+Y once." \
     tools/fixtures/hagia_physical_guide.sh
 grep -Fq 'proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"' \
     tools/fixtures/hagia_physical_guide.sh

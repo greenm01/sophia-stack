@@ -10356,3 +10356,22 @@ acknowledgement ordering.
   clean session/topology health, drained native ownership, and clean process
   teardown. Generic CPU-layer proof assumptions no longer mask the more
   specific Hagia result.
+
+## 2026-08-09: the layout-cycle proof exposed a stale close acknowledgement
+
+- The first layout-cycle replacement run used X keycode labels for an evdev
+  binding table. `Super+F` therefore committed the browser operation instead of
+  fullscreen. The guide now uses the actual retained bindings: `Super+Y` for
+  fullscreen, `Super+N` for layout cycling, `Super+I` for minimize, and
+  `Super+R` for restore.
+- The accidentally launched Chromium client could not initialize its GPU path
+  and left a presented surface after its X Authority route disappeared.
+  Pointer buttons remained fail-closed during the unresolved focus handoff.
+  Closing that stale surface returned `UnknownSurface`; Sophia treated the
+  expected teardown race as fatal even though the client was already gone.
+- A rejected `CloseSurface` acknowledgement with `UnknownSurface` is now
+  retired as a stale target, like `ClientGone`. Other command kinds still
+  reject `UnknownSurface` as an error, so configure and focus failures cannot
+  be hidden. Focused queue tests cover both sides of that distinction, and the
+  complete `sophia-cli` suite passes. A corrected physical run remains the
+  acceptance proof.

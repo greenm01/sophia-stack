@@ -390,7 +390,12 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
     assert!(
         completions[0]
             .failure
-            .is_some_and(|failure| !failure.is_stale_target())
+            .is_some_and(|failure| failure.is_stale_target_for(completions[0].key.kind))
+    );
+    assert!(
+        completions[0].failure.is_some_and(
+            |failure| !failure.is_stale_target_for(XAuthorityControlKind::FocusSurface)
+        )
     );
 
     let gone = control(1, 2, surface(2), XAuthorityControlKind::FocusSurface);
@@ -413,7 +418,7 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
     assert!(
         completions[1]
             .failure
-            .is_some_and(SessionControlFailure::is_stale_target)
+            .is_some_and(|failure| failure.is_stale_target_for(completions[1].key.kind))
     );
 }
 
