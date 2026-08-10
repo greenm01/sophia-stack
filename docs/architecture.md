@@ -746,9 +746,11 @@ generation-wide tombstones for participants skipped after an earlier prepare
 failure. An offline refinement harness drives the coordinator's actual effects
 through seven independent authority-local candidate slots and checks identity
 and payload convergence or exact recovery divergence at every failure
-position. The startup launch gate is the only permitted visibility boundary
-for this model; authority protocols, production effect executors, and a
-live-reload visibility barrier remain unwired.
+position. A second integration case feeds those slots the exact seven
+owner-safe fragments emitted by staging and proves semantic payload promotion
+for every authority. The startup launch gate is the only permitted visibility
+boundary for this model; authority protocols, production effect executors, and
+a live-reload visibility barrier remain unwired.
 
 The startup configuration boundary retains one immutable prepared desktop
 candidate bundle after checking every raw authority candidate against the

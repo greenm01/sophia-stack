@@ -285,11 +285,13 @@ The coordinator-to-participant refinement tests now execute through seven
 authority-local candidate slots rather than identity-only participant models.
 They enumerate every authority as the prepare, activation, and rollback
 failure, proving global/local identity and payload convergence plus exact
-recovery divergence. This model is ready for authority-owned handlers, but does
-not install them. During transactional startup the graphical launch gate can
-hide partial local activation. Live reload cannot use that assumption and
-remains deferred until a separate global visibility and recovery protocol is
-proved.
+recovery divergence. The same executor also consumes the exact owner-safe
+fragments produced by staging and proves that every admitted semantic payload
+becomes active under the shared key. This model is ready for authority-owned
+handlers, but does not install them. During transactional startup the graphical
+launch gate can hide partial local activation. Live reload cannot use that
+assumption and remains deferred until a separate global visibility and recovery
+protocol is proved.
 
 Startup candidate ownership is now narrower and DRY: Sophia validates the
 generation/digest identity of all seven raw candidates once at the shared

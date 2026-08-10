@@ -8,9 +8,10 @@ use sophia_config::{
     DesktopProfileActivationEffect, DesktopProfileActivationEffectKind,
     DesktopProfileActivationError, DesktopProfileActivationKey, DesktopProfileActivationModel,
     DesktopProfileActivationMsg, DesktopProfileActivationPhase, DesktopProfileCandidatePayload,
-    DesktopProfileCandidateSlot, DesktopProfileParticipantPhase,
+    DesktopProfileCandidateSlot, DesktopProfileFragments, DesktopProfileParticipantPhase,
     activate_desktop_profile_candidate_slot, prepare_desktop_profile_candidate_slot,
-    reduce_desktop_profile_activation, rollback_desktop_profile_candidate_slot,
+    prepare_desktop_profile_candidate_slot_from_fragment, reduce_desktop_profile_activation,
+    rollback_desktop_profile_candidate_slot,
 };
 
 #[derive(Default)]
@@ -68,6 +69,7 @@ impl DesktopProfileAuthorityEffectExecutor for FakeExecutor {
 
 struct CandidateSlotExecutor {
     slots: Vec<DesktopProfileCandidateSlot<DesktopAuthorityCandidate>>,
+    fragments: Option<DesktopProfileFragments>,
     prepare_failure: Option<DesktopAuthority>,
     activate_failure: Option<DesktopAuthority>,
     rollback_failure: Option<DesktopAuthority>,
@@ -82,9 +84,20 @@ impl CandidateSlotExecutor {
                     DesktopProfileCandidateSlot::with_active(payload(authority, active)).unwrap()
                 })
                 .collect(),
+            fragments: None,
             prepare_failure: None,
             activate_failure: None,
             rollback_failure: None,
+        }
+    }
+
+    fn with_staged_profile(
+        active: DesktopProfileActivationKey,
+        fragments: DesktopProfileFragments,
+    ) -> Self {
+        Self {
+            fragments: Some(fragments),
+            ..Self::with_active(active)
         }
     }
 
@@ -113,9 +126,17 @@ impl DesktopProfileAuthorityEffectExecutor for CandidateSlotExecutor {
             return false;
         }
         let index = self.index(authority);
-        let Ok(slot) =
-            prepare_desktop_profile_candidate_slot(&self.slots[index], payload(authority, key))
-        else {
+        let prepared = match self.fragments.as_ref() {
+            Some(fragments) => prepare_desktop_profile_candidate_slot_from_fragment(
+                &self.slots[index],
+                fragments.path(authority),
+                key,
+            ),
+            None => {
+                prepare_desktop_profile_candidate_slot(&self.slots[index], payload(authority, key))
+            }
+        };
+        let Ok(slot) = prepared else {
             return false;
         };
         self.slots[index] = slot;
@@ -539,6 +560,48 @@ fn coordinator_success_aligns_every_independent_candidate_slot() {
             Some(authority)
         );
     }
+}
+
+#[test]
+fn coordinator_promotes_every_owner_safe_staged_fragment_payload() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-profile-refinement-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let prepared =
+        sophia_config::load_prepared_desktop_profile(None, ConfigGeneration::from_raw(7)).unwrap();
+    let activation_key = prepared.activation_key();
+    let fragments = sophia_config::stage_desktop_profile(&prepared.profile, &directory).unwrap();
+    let known_good = active_model().active().unwrap();
+    let mut executor = CandidateSlotExecutor::with_staged_profile(known_good, fragments);
+
+    let report =
+        run_desktop_profile_startup_activation(&active_model(), activation_key, &mut executor)
+            .unwrap();
+
+    assert_eq!(report.model.active(), Some(activation_key));
+    for authority in DesktopAuthority::ALL {
+        let active = executor
+            .slot(authority)
+            .active()
+            .expect("every staged authority payload becomes active");
+        let expected = prepared
+            .profile
+            .candidates
+            .get(&authority)
+            .expect("the prepared profile contains every authority");
+        assert!(active.same_payload(expected));
+    }
+    drop(executor);
+    std::fs::remove_dir(directory).unwrap();
 }
 
 #[test]

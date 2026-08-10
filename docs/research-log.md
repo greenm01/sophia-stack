@@ -61,6 +61,9 @@ Completed evidence is archived in `research-log-archive.md`.
   activation, and rollback failure, it proves successful identity and payload
   agreement, complete last-known-good payload restoration, rejected-generation
   consumption, exact single-authority divergence, and deterministic recovery.
+  A staged integration case then loads the exact owner-safe fragments for all
+  seven authorities through the shared admission function and proves semantic
+  payload promotion under the coordinator's exact activation key.
 - Startup tracing found one avoidable split in candidate ownership: the shared
   preparation result was partially moved into session fields, while public
   policy setup parsed the shortcut candidate again from the raw profile. The
