@@ -92,9 +92,16 @@ fn run_host(
             .ok_or_else(|| format!("behavior scenario {scenario} has no cause"))?;
         let request = reducer.issue_request_with_cause(affected_outputs, cause)?;
         let transaction = 29 + u64::try_from(index)? * 2;
-        let snapshot =
-            encode_wm_v1_policy_snapshot(TransactionId::from_raw(transaction), 1, &scene, &[])
-                .map_err(|error| format!("snapshot encode failed: {error:?}"))?;
+        // Gate on what the client actually negotiated, so the corpus exercises the
+        // real outbound path rather than assuming every capability is present.
+        let snapshot = encode_wm_v1_policy_snapshot(
+            TransactionId::from_raw(transaction),
+            1,
+            &scene,
+            &[],
+            transport.selected_capabilities(),
+        )
+        .map_err(|error| format!("snapshot encode failed: {error:?}"))?;
         transport.send_snapshot(
             snapshot.transaction,
             &snapshot.begin,

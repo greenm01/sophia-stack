@@ -255,6 +255,7 @@ fn run_policy_transport(
                     connection_epoch,
                     &scene,
                     &actions,
+                    transport.selected_capabilities(),
                 )
                 .map_err(|error| format!("policy snapshot encode failed: {error:?}"))?;
                 transport

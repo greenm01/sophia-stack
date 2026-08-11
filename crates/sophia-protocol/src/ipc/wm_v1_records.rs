@@ -7,8 +7,9 @@ use crate::{
     PolicyProjectionOutcome, PolicyProjectionOutputStatus, PolicyProjectionProposal,
     PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
     PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
-    PolicySurfaceSnapshot, PolicyTransform, Rect, Size, SurfaceConstraints, SurfaceId,
-    TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmRgb8,
+    PolicySurfaceSnapshot, PolicyTransform, Rect, SOPHIA_WM_CAPABILITY_ACTIONS,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmRgb8,
 };
 
 use super::{
@@ -592,11 +593,25 @@ pub fn decode_wm_v1_policy_session_operation_outcome(
     })
 }
 
+/// Encodes one complete scene snapshot for a client that negotiated
+/// `selected_capabilities`.
+///
+/// Capability-governed record kinds are omitted, along with their declared
+/// counts, when the client did not negotiate them. Omission keeps a frozen client
+/// from ever receiving a record kind it must reject, which is what makes
+/// server-to-client additions reversible after a revision freezes. Callers must
+/// pass the capability set the server actually selected during negotiation, not
+/// the set it supports; see `docs/sophia-policy-ipc.md`.
+///
+/// Scene outputs and surfaces are not gated. They are the interface's core
+/// semantics, and a client that negotiated nothing still requires a complete
+/// scene to propose against.
 pub fn encode_wm_v1_policy_snapshot(
     transaction: TransactionId,
     connection_epoch: u64,
     scene: &PolicySceneSnapshot,
     actions: &[PolicyActionRegistration],
+    selected_capabilities: u64,
 ) -> Result<WmV1SnapshotTransfer, IpcCodecError> {
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidTransaction(0));
@@ -638,28 +653,37 @@ pub fn encode_wm_v1_policy_snapshot(
         .iter()
         .map(encode_surface_record)
         .collect::<Vec<_>>();
-    let actions = actions
-        .iter()
-        .map(|action| {
-            let (name_len, name) = encode_action_name(&action.name)?;
-            Ok(WmV1SnapshotActionRecord {
-                action: action.action.raw(),
-                session_operation_slot: action.session_operation_slot.unwrap_or(0),
-                name_len,
-                name,
+    let actions = if selected_capabilities & SOPHIA_WM_CAPABILITY_ACTIONS == 0 {
+        Vec::new()
+    } else {
+        actions
+            .iter()
+            .map(|action| {
+                let (name_len, name) = encode_action_name(&action.name)?;
+                Ok(WmV1SnapshotActionRecord {
+                    action: action.action.raw(),
+                    session_operation_slot: action.session_operation_slot.unwrap_or(0),
+                    name_len,
+                    name,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, IpcCodecError>>()?;
-    let session_operations = scene
-        .session_operations
-        .iter()
-        .map(|operation| WmV1SnapshotSessionOperationRecord {
-            operation: operation.token,
-            slot: operation.slot,
-            target_bits: u16::from(operation.permits_surface_target)
-                * POLICY_SESSION_OPERATION_SURFACE_TARGET,
-        })
-        .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, IpcCodecError>>()?
+    };
+    let session_operations = if selected_capabilities & SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS == 0
+    {
+        Vec::new()
+    } else {
+        scene
+            .session_operations
+            .iter()
+            .map(|operation| WmV1SnapshotSessionOperationRecord {
+                operation: operation.token,
+                slot: operation.slot,
+                target_bits: u16::from(operation.permits_surface_target)
+                    * POLICY_SESSION_OPERATION_SURFACE_TARGET,
+            })
+            .collect::<Vec<_>>()
+    };
     let mut chunks = Vec::new();
     push_snapshot_chunk(
         &mut chunks,

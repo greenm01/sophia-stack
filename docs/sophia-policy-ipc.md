@@ -96,11 +96,17 @@ directory in `$XDG_RUNTIME_DIR`. The WM path is advertised as
 are owner-only. The session accepts only the expected supervised peer with
 matching credentials and permits one active client for each exclusive role.
 
-The client sends `ClientHello` first, naming an interface family, its maximum
-supported revision, and requested capability bits. The server returns
-`ServerWelcome` with the selected revision and capabilities, a server-owned
-connection epoch, and effective limits. No other message is legal before this
-exchange succeeds.
+The client sends `ClientHello` first, carrying its minimum and maximum supported
+revision and its requested capability bits. The server returns `ServerWelcome`
+with the selected revision and capabilities, a server-owned connection epoch, and
+effective limits. No other message is legal before this exchange succeeds.
+
+`ClientHello` deliberately carries **no interface-family field**. The family is
+already determined twice over — by the role socket the client connected to and by
+the message kind itself — so a family field would add a permanent wire field with
+no information gain. This is a settled decision, not an omission: adding one after
+a revision freezes is impossible, so it is recorded here rather than left to be
+rediscovered.
 
 The connection epoch distinguishes process incarnations. The transport worker
 tags every decoded item with that epoch, and every client proposal repeats it.
@@ -117,9 +123,56 @@ cover exact peer admission only and make no sandbox claim.
 ## Versioning
 
 The first public spatial-policy family is `sophia_wm_v1`. Revisions within an
-interface are additive. A server sends only messages admitted by the selected
-revision and capabilities. An incompatible redesign uses a new interface
-family rather than changing an existing layout.
+interface are additive. A server sends only messages and record content admitted
+by the selected revision and capabilities. An incompatible redesign uses a new
+interface family rather than changing an existing layout.
+
+### The Forward-Compatibility Rule
+
+When `sophia_wm_v1` freezes, three clauses govern every later addition. They are
+stated together because each one only holds if the others do.
+
+1. **The frozen revision is final for record layouts and enum vocabularies.**
+   Field order, field width, record size, and the set of admitted discriminants in
+   any server-to-client enum or bitfield cannot change. Unknown discriminants are
+   rejected, not skipped, and an enum value sits at a fixed offset inside a
+   fixed-width record where no side channel reaches it. Client-to-server
+   discriminants remain additive, because a server accepting more never breaks an
+   older client.
+2. **New WM-side facts arrive as capability-gated extension chunks.** An extension
+   chunk carries a record kind from the reserved extension range **`0xFF00` through
+   `0xFFFF`, in both the snapshot and projection transfers**, and is *not* counted
+   by any `*Begin` count field, which is what keeps it out of the frozen message
+   layouts. Ordinary record kinds stay sequentially allocated from 1, so the two
+   ranges cannot collide. An extension chunk must carry at least one item, must
+   append last so chunk ordinals stay dense, and must be sent only to a client that
+   negotiated the governing capability. Receivers continue to reject unknown record
+   kinds; that fail-closed behavior is preserved precisely because gating
+   guarantees they are never sent one they did not ask for.
+
+   The schema generator does not enforce this range — it validates only that record
+   kinds are non-zero, within `u16`, and unique per transfer. Keeping `0xFF00`+ free
+   of ordinary records is therefore a review-time rule, and a declared record in
+   that range is a schema-review error.
+3. **New authorities take new interface families.** Shell, broker, portal, and
+   session interfaces get their own family, their own role socket, and their own
+   revision line. They never appear as placeholder messages inside the WM
+   interface. The 24-byte envelope is role-neutral, so this costs the WM interface
+   nothing.
+
+The rule depends on outbound capability gating. A producer that ignores the
+negotiated capability set can send a frozen client something it must reject, which
+would make clause 2 unsound and clause 1 unenforceable. Outbound gating is
+therefore a prerequisite of the freeze, not an optimization, and one pinning test
+must assert that the default capability set produces a byte-identical stream.
+
+Because gated-off chunks are elided rather than emitted empty, adding a gated
+extension chunk must leave the default-capability byte stream unchanged. That is
+the property the pinning test checks.
+
+Golden corpora pin the default capability set plus each capability in isolation.
+They do not enumerate capability combinations; without that bound the corpus grows
+multiplicatively with every new bit.
 
 Once an interface revision is declared stable, later Sophia releases continue
 to accept it. Old wire records are decoded at the session boundary and reduced

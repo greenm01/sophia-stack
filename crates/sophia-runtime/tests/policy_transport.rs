@@ -9,7 +9,8 @@ use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionOutcome, PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot,
     PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size, SurfaceConstraints, SurfaceId, TransactionId,
     WM_V1_PROFILE_DIGEST_BYTES, WmV1ClientHello, WmV1ProfileCompletion, WmV1ProfileIdentity,
     WmV1ProfileOutcome, decode_frame, decode_wm_v1_policy_projection,
     decode_wm_v1_profile_activate, decode_wm_v1_profile_prepare, decode_wm_v1_profile_rollback,
@@ -56,8 +57,14 @@ fn session_and_reference_client_exchange_one_complete_policy_cycle() {
         .accept_and_negotiate(1, Duration::from_secs(1))
         .unwrap();
     let scene = scene();
-    let snapshot =
-        encode_wm_v1_policy_snapshot(TransactionId::from_raw(29), 1, &scene, &[]).unwrap();
+    let snapshot = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(29),
+        1,
+        &scene,
+        &[],
+        SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    )
+    .unwrap();
     transport
         .send_snapshot(
             snapshot.transaction,

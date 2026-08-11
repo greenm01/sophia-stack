@@ -6,6 +6,39 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub const SOPHIA_WM_SOCKET_ENV: &str = "SOPHIA_WM_SOCKET";
+pub const SOPHIA_SHELL_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
+
+/// One exclusive policy role, and therefore one interface family.
+///
+/// A client's family is determined by the role socket it connects to and by the
+/// message kind it sends; `ClientHello` deliberately carries no family field. Each
+/// later authority takes its own role here rather than appearing as placeholder
+/// messages inside an existing family. See `docs/sophia-policy-ipc.md`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyRole {
+    /// `sophia_wm_v1`, the spatial-policy family.
+    Wm,
+    /// The reserved shell family. Its interface is not yet published.
+    Shell,
+}
+
+impl PolicyRole {
+    /// The socket file name beneath the session's private runtime directory.
+    pub const fn socket_file_name(self) -> &'static str {
+        match self {
+            Self::Wm => "wm.sock",
+            Self::Shell => "shell.sock",
+        }
+    }
+
+    /// The environment variable advertising this role's socket path.
+    pub const fn socket_env(self) -> &'static str {
+        match self {
+            Self::Wm => SOPHIA_WM_SOCKET_ENV,
+            Self::Shell => SOPHIA_SHELL_SOCKET_ENV,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicyPeerIdentity {
@@ -50,6 +83,17 @@ impl PolicyRoleEndpoint {
         directory: impl AsRef<Path>,
         expected_peer: PolicyPeerIdentity,
     ) -> Result<Self, PolicyRoleEndpointError> {
+        Self::bind_role(directory, PolicyRole::Wm, expected_peer)
+    }
+
+    /// Binds the owner-only listener for one role beneath a fresh mode-0700
+    /// directory. The directory must not already exist, so two roles bind under
+    /// separate parents rather than sharing one.
+    pub fn bind_role(
+        directory: impl AsRef<Path>,
+        role: PolicyRole,
+        expected_peer: PolicyPeerIdentity,
+    ) -> Result<Self, PolicyRoleEndpointError> {
         let directory = directory.as_ref().to_path_buf();
         match fs::create_dir(&directory) {
             Ok(()) => {}
@@ -62,7 +106,7 @@ impl PolicyRoleEndpoint {
             let _ = fs::remove_dir(&directory);
             return Err(PolicyRoleEndpointError::Io(error.to_string()));
         }
-        let socket_path = directory.join("wm.sock");
+        let socket_path = directory.join(role.socket_file_name());
         let listener = match UnixListener::bind(&socket_path) {
             Ok(listener) => listener,
             Err(error) => {

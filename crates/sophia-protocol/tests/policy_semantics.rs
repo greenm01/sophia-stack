@@ -34,8 +34,14 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
         name: "close-window".to_owned(),
         session_operation_slot: Some(1),
     }];
-    let transfer =
-        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &actions).unwrap();
+    let transfer = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &actions,
+        SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    )
+    .unwrap();
     let decoded = decode_wm_v1_policy_snapshot(&transfer).unwrap();
 
     assert_eq!(decoded.scene, scene);
@@ -276,6 +282,139 @@ fn reduced_interaction_preserves_kind_phase_and_geometry() {
         decode_wm_v1_policy_projection_request(&encoded),
         Ok(request)
     );
+}
+
+/// Pins what the producer emits for a given capability set.
+///
+/// The existing golden tests are round-trip identity checks: they prove the codec
+/// re-encodes a recorded frame to itself, never that the compositor emits those
+/// bytes. This test pins the producer instead, which is what makes the
+/// forward-compatibility rule in `docs/sophia-policy-ipc.md` enforceable. Without
+/// it, silently widening what the server sends a client that negotiated nothing
+/// would go unnoticed until a frozen client rejected a transfer in the field.
+#[test]
+fn capability_gating_omits_ungated_content_without_perturbing_the_rest() {
+    let scene = gated_scene();
+    let actions = vec![PolicyActionRegistration {
+        action: WmActionId::from_raw(4),
+        name: "close-window".to_owned(),
+        session_operation_slot: Some(1),
+    }];
+
+    let ungated =
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &actions, 0).unwrap();
+    let gated = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &actions,
+        SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    )
+    .unwrap();
+
+    // A client that negotiated nothing receives only the core scene, and the
+    // declared counts drop with the chunks so the transfer stays self-consistent.
+    assert_eq!(ungated.chunks.len(), 2);
+    assert_eq!(ungated.begin.action_count, 0);
+    assert_eq!(ungated.begin.session_operation_count, 0);
+    assert_eq!(ungated.begin.chunk_count, 2);
+    assert_eq!(ungated.end.chunk_count, 2);
+
+    // The same scene for a fully capable client carries both governed kinds.
+    assert_eq!(gated.chunks.len(), 4);
+    assert_eq!(gated.begin.action_count, 1);
+    assert_eq!(gated.begin.session_operation_count, 1);
+
+    // The producer pin: enabling a capability must not perturb ungated content.
+    // Chunk ordinals and bytes for outputs and surfaces are identical, so adding a
+    // gated record kind cannot shift what an existing client already parses.
+    for (lhs, rhs) in ungated.chunks.iter().zip(gated.chunks.iter()) {
+        assert_eq!(lhs.ordinal, rhs.ordinal);
+        assert_eq!(lhs.record_kind, rhs.record_kind);
+        assert_eq!(lhs.item_count, rhs.item_count);
+        assert_eq!(lhs.data, rhs.data);
+    }
+
+    // Both transfers decode. The ungated one fails closed by omission rather than
+    // by carrying a count it never satisfies.
+    let decoded_ungated = decode_wm_v1_policy_snapshot(&ungated).unwrap();
+    assert!(decoded_ungated.actions.is_empty());
+    assert!(decoded_ungated.scene.session_operations.is_empty());
+    assert_eq!(decoded_ungated.scene.outputs, scene.outputs);
+    assert_eq!(decoded_ungated.scene.surfaces, scene.surfaces);
+
+    let decoded_gated = decode_wm_v1_policy_snapshot(&gated).unwrap();
+    assert_eq!(decoded_gated.scene, scene);
+    assert_eq!(decoded_gated.actions, actions);
+}
+
+/// Each governed capability is independently gated, so a client negotiating one
+/// does not receive the other. Corpora pin the default set plus each capability in
+/// isolation; they deliberately do not enumerate combinations.
+#[test]
+fn each_governed_capability_gates_only_its_own_record_kind() {
+    let scene = gated_scene();
+    let actions = vec![PolicyActionRegistration {
+        action: WmActionId::from_raw(4),
+        name: "close-window".to_owned(),
+        session_operation_slot: Some(1),
+    }];
+
+    let actions_only = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &actions,
+        SOPHIA_WM_CAPABILITY_ACTIONS,
+    )
+    .unwrap();
+    assert_eq!(actions_only.begin.action_count, 1);
+    assert_eq!(actions_only.begin.session_operation_count, 0);
+    assert_eq!(actions_only.chunks.len(), 3);
+    decode_wm_v1_policy_snapshot(&actions_only).unwrap();
+
+    let operations_only = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &actions,
+        SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    )
+    .unwrap();
+    assert_eq!(operations_only.begin.action_count, 0);
+    assert_eq!(operations_only.begin.session_operation_count, 1);
+    assert_eq!(operations_only.chunks.len(), 3);
+    decode_wm_v1_policy_snapshot(&operations_only).unwrap();
+}
+
+fn gated_scene() -> PolicySceneSnapshot {
+    PolicySceneSnapshot {
+        generation: 7,
+        active_output: OutputId::from_raw(1),
+        outputs: vec![PolicyOutputSnapshot {
+            output: OutputId::from_raw(1),
+            generation: 3,
+            focus: Some(SurfaceId::new(3, 1)),
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            work_area: Rect {
+                x: 0,
+                y: 24,
+                width: 1920,
+                height: 1056,
+            },
+        }],
+        surfaces: vec![surface()],
+        session_operations: vec![PolicySessionOperation {
+            token: 11,
+            slot: 1,
+            permits_surface_target: true,
+        }],
+    }
 }
 
 fn surface() -> PolicySurfaceSnapshot {

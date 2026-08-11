@@ -470,11 +470,39 @@ is excluded; retained product behavior is not.
   generation/digest completions, rejects stale or phase-invalid results,
   discards test-rejected candidates, and requires terminal rollback settlement
   after apply failure. The executor remains disconnected, so native request
-  construction and all output mutation are still deferred.
+  construction and all output mutation are still deferred. The DRM primitives it
+  needs already exist: `LibdrmNativeAtomicCommitRequest` exposes `modeset`,
+  `allow_modeset`, and `test_only`, and property discovery already finds connector
+  `CRTC_ID` and CRTC `MODE_ID`/`ACTIVE`. What is missing is the authority layer
+  above them — composing one request across N heads, reservations, rollback, and
+  evidence — plus a path from a planned timing to a mode blob, since blob creation
+  currently requires an already-selected mode.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation
   binding and presentation-geometry attacks alongside their protected checks.
+- [ ] Implement native output mirroring as one logical output backed by N
+  connectors, and prove it on two same-mode heads. This closes the port ledger's
+  mirroring requirement with evidence rather than an exclusion. The shape is fixed:
+  policy sees exactly one `SnapshotOutput` and no connector identity, so mirroring
+  carries no `sophia_wm_v1` wire risk. The rejected shape is two logical outputs
+  sharing surfaces, which violates one-output-per-surface and raises
+  `DuplicateSurface`; do not attempt it.
+  Ordering is fixed by the standing rule that the bounded visual-retirement model
+  is extended before multi-output or buffer-lifetime semantics change. Joint
+  multi-head retirement is exactly that, so Milestone 14's first item moves here:
+  extend `validation/tla/VisualRetirement.tla` for joint retirement within a mirror
+  group and independent retirement between groups, then narrowly amend the ratified
+  output-scoped presentation invariant in `docs/engine-architecture.md` to match.
+  Implementation then lifts singular per-output connector selection to a set with
+  per-head page-flip intake, shares the rendered buffer lease that is exclusive
+  today, allows N heads per logical rect in the topology, exempts mirror-group
+  members from the overlap rejection they would otherwise trip, adds a `mirror` arm
+  to the closed named-output KDL match plus fields on the candidate and state, and
+  handles mirror-group member loss in topology settlement. Mirroring is same-mode
+  only because no plane scaling exists anywhere; mismatched modes must fail closed
+  at reconcile time rather than silently letterbox. Hagia's output migrator gains a
+  `mirror` arm, which closes a Triad config-migration gap.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
@@ -546,20 +574,26 @@ is excluded; retained product behavior is not.
   summarizes its 27 retained rows. The shell and broker/portal tables are
   entirely open and are inside the gate, so the freeze is not near.
   Before it lands, settle the wire decisions enumerated in
-  `docs/wm-v1-freeze-surface.md`: unknown record kinds and enum values are
-  rejected rather than skipped, and both `*Begin` messages are fixed-layout, so
-  a new record kind is a new interface family after the freeze. Twenty-three of
-  the 27 rows need no wire change; the residue is workspace-name projection,
-  broker classification shape, the continuous-pointer payload, and the output
-  logical-space contract.
-- [ ] Decide the `sophia_wm_v1` forward-compatibility rule before the freeze:
-  either admit unknown record kinds by skipping them behind a generic extension
-  chunk, requiring the archived revision-1 client to tolerate what it cannot
-  decode, or declare revision 3 final for WM-side records so every later
-  authority takes its own interface family. The role-neutral envelope and
-  per-role negotiation suggest the second is already the intent, but it is not
-  written as a constraint on `sophia_wm_v1`. See
-  `docs/wm-v1-freeze-surface.md`.
+  `docs/wm-v1-freeze-surface.md`. Twenty-three of the 27 rows need no wire change;
+  the residue is workspace-name projection, broker classification shape, the
+  continuous-pointer payload, and the output logical-space contract. The binding
+  constraint is server-to-client enum vocabularies, not record kinds: an uncounted
+  extension chunk in reserved kinds `0xFF00`–`0xFFFF` stays available after the
+  freeze, but enum values sit at fixed offsets inside fixed-width records where no
+  side channel reaches them.
+- [x] Decide the `sophia_wm_v1` forward-compatibility rule. The three-clause form
+  is recorded normatively in `docs/sophia-policy-ipc.md` under Versioning: the
+  frozen revision is final for record layouts and enum vocabularies; new WM-side
+  facts arrive as capability-gated extension chunks in the reserved kind range;
+  new authorities take new interface families. Receivers keep rejecting unknown
+  kinds because gating guarantees they are never sent one they did not negotiate.
+- [ ] Build outbound capability gating before the freeze. It is a prerequisite of
+  the rule above, not an optimization: `selected_capabilities` currently has no
+  consumer outside `crates/sophia-runtime/src/policy_ipc.rs`, its accessor is never
+  called, and the snapshot encoder takes no capability argument, so a frozen client
+  can be sent content it must reject. Add one pinning test asserting the default
+  capability set produces a byte-identical stream, and bound golden corpora to the
+  default set plus each capability in isolation.
 
 Milestone 13 exits only when the public wire is independently implementable,
 the retained Triad behavior port is complete across the correct authorities,

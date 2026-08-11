@@ -182,6 +182,14 @@ impl PolicyWmSessionTransport {
         self.endpoint.socket_path()
     }
 
+    /// Returns the capability set selected during negotiation, or zero before it.
+    ///
+    /// Producers must gate outbound content on this rather than on the set the
+    /// server supports, so a client never receives a record kind it must reject.
+    pub fn selected_capabilities(&self) -> u64 {
+        self.connection.selected_capabilities()
+    }
+
     pub fn accept_and_negotiate(
         &mut self,
         connection_epoch: u64,

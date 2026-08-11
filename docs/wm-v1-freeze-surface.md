@@ -16,18 +16,47 @@ the retained Triad behavior port completes. The canonical ledger is
 
 ---
 
+## The Direction Rule
+
+Every "is this pre-freeze only?" question reduces to one check, so establish it
+first:
+
+- **Client to server, additive forever.** The server simply accepts more than it
+  used to, and an older client never sends the new value. Inbound capability
+  gating already exists (`crates/sophia-runtime/src/policy_ipc.rs:289`, `:461`,
+  `:496`).
+- **Server to client, irreversible without outbound gating.** A frozen client
+  rejects what it cannot decode, and *the producer does not currently consult the
+  negotiated capability set*. `selected_capabilities` has no consumer outside
+  `policy_ipc.rs`; the accessor at `:444` is never called, and
+  `crates/sophia-cli/src/commands/live_session/policy_transport_worker.rs:253`
+  encodes snapshots with no capability argument at all.
+
+So the sentence "a client that never negotiates the capability never receives it"
+is **not true today in the outbound direction**. Until it is, every server-to-client
+addition is genuinely now-or-never. Building the outbound gate is therefore the
+cheapest way to buy back optionality across this entire document; it is not a wire
+change.
+
+Note which direction the pointer work sits in: `ProjectionRequest` is
+`direction="session-to-policy"` — server to client — and carries
+`interaction_kind`, whose client-side reject arm is
+`crates/sophia-protocol/src/ipc/wm_v1_records.rs:290`.
+
 ## What Costs What
 
-Four expansion moves, cheapest first. Only the last is impossible after the
-freeze, but the middle two are impossible *without* a new interface family, which
-amounts to the same thing.
+Four expansion moves, cheapest first. Read each against the direction rule above.
 
-### 1. A new message kind — cheap, survives the freeze
+### 1. A new message kind — cheap, but not free for a frozen client
 
 Message kinds 32 through 52 are assigned; 53 and above are free. A new message
-does not touch any existing layout, and a client that never negotiates the
-capability never receives it. **This is the correct home for genuinely new
-behavior.** The watched-reload visibility protocol is the known candidate.
+does not touch any existing layout, so it is the correct home for genuinely new
+behavior — the watched-reload visibility protocol is the known candidate.
+
+The caveat is directional: a frozen client that *receives* an unknown message kind
+fails at the envelope (`crates/sophia-protocol/src/ipc/frame.rs:79`
+`UnknownMessageKind`), so new server-to-client messages still need outbound
+capability gating. New client-to-server messages are additive without ceremony.
 
 ### 2. Reserved-field consumption — cheap, but asymmetric and finite
 
@@ -61,10 +90,16 @@ below. `capabilities` is a `u64` with bits 0 through 9 assigned, leaving 54.
 per-output, per-surface, per-placement, or per-indicator fact is therefore either
 a bitfield/enum extension or a layout change.
 
-### 3. An existing enum or bitfield gains a value — pre-freeze only
+### 3. An existing enum or bitfield gains a value — pre-freeze only, and the binding constraint
 
-Unknown discriminants are rejected, not ignored, so a pre-freeze client cannot
-tolerate a post-freeze value. The extensible fields are `SnapshotSurface.kind`,
+Unknown discriminants are rejected, not ignored, so a frozen client cannot tolerate
+a post-freeze value in anything the server sends it. **This is the constraint that
+actually binds**, not record kinds: enum values live at fixed offsets inside
+fixed-width records, so the uncounted extension chunk of section 4 cannot carry
+them. Client-to-server widening stays additive forever; server-to-client widening
+is irreversible until outbound gating exists.
+
+The extensible fields are `SnapshotSurface.kind`,
 `SnapshotSurface.capability_bits`, `request_state_bits`, `current_state_bits`,
 `ProjectionPlacement.transform`, `presentation_bits`,
 `ProjectionIndicator.state_bits`, `ProjectionOutputStatus.focus_bits`,
@@ -81,25 +116,64 @@ Three of these are near-empty today and are the standing one-way doors:
   (`:125-132`), but only `End` is ever constructed, so the other three are
   wire-reachable and implementation-absent. No wire change needed to use them.
 
-### 4. A new record kind — pre-freeze only, and the expensive one
+### 4. A new record kind — depends entirely on whether it is *counted*
 
-Unknown record kinds are rejected outright:
+Unknown record kinds are rejected outright today:
 `crates/sophia-protocol/src/ipc/wm_v1_records.rs:762` for snapshots and `:997`
 for projections both end in
 `other => return Err(invalid("…_record_kind", u32::from(other)))`.
 
-A new record kind also needs a declared count, and both `*Begin` messages are
-fixed-layout with a strict `cursor.finish()?`
-(`crates/sophia-protocol/src/ipc/wm_v1.rs:886-896`). `WmV1SnapshotBegin` carries
-`chunk_count, output_count, surface_count, action_count,
-session_operation_count`; `WmV1ProjectionBegin` carries `chunk_count,
-output_count, placement_count, indicator_count, status_count`. Adding a sixth
-count changes an existing message layout, which per
-`docs/sophia-indicator-descriptor.md` requires a new interface family.
+**A counted record kind is the expensive one, and it is pre-freeze only.** It needs
+a declared count in `*Begin`, and both `*Begin` messages are fixed-layout with a
+strict `cursor.finish()?` (`crates/sophia-protocol/src/ipc/wm_v1.rs:886-896`).
+`WmV1SnapshotBegin` carries `chunk_count, output_count, surface_count,
+action_count, session_operation_count`; `WmV1ProjectionBegin` carries
+`chunk_count, output_count, placement_count, indicator_count, status_count`.
+Adding a sixth count changes an existing message layout, which per
+`docs/sophia-indicator-descriptor.md` requires a new interface family. The
+indicator descriptor is the worked precedent: it landed pre-freeze precisely so
+`indicator_count` and `status_count` could be added to `ProjectionBegin`, and that
+change moved the `projection_begin` payload from `0x20` to `0x24` bytes.
 
-The indicator descriptor is the worked precedent: it landed pre-freeze precisely
-so `indicator_count` and `status_count` could be added to `ProjectionBegin`.
-That door closes at the freeze.
+**An uncounted extension chunk is not.** It is structurally representable today
+without touching either `*Begin`, because nothing in the transfer protocol requires
+a chunk to map to a declared count:
+
+- The chunk is **self-delimiting**. `crates/sophia-protocol/src/ipc/wm_v1.rs:952`
+  derives `data` length from `payload.len().saturating_sub(16)`, not from
+  `item_count × record_width`, so a receiver that does not know a record's width
+  can still consume the frame correctly.
+- Assembly (`wm_v1_records.rs:726-771`) validates
+  `begin.chunk_count == end.chunk_count == chunks.len()`, per-chunk connection
+  epoch, and dense monotone ordinals, then makes exactly four `require_count`
+  calls — one per *known* kind. **Nothing ties the sum of `item_count` across
+  chunks to the sum of the declared counts, and nothing requires every chunk to
+  contribute to a declared count.**
+- `chunk_count` is already dynamic, not structural: `push_snapshot_chunk` and
+  `push_projection_chunk` early-return on an empty record slice, so live transfers
+  carry between one and four chunks depending on content.
+
+Three constraints bind any extension chunk, and they are permanent:
+
+1. **It must carry at least one item.** Both independent clients reject
+   `item_count == 0` (`bindings/c/tests/sophia_wm_v1_client.c:125`, and Hagia's
+   `src/sophia/policy_client.nim:354`). It can never be a zero-length probe.
+2. **It must append last**, because ordinals must stay dense.
+3. **It must be capability-gated outbound**, or a frozen client receives it and
+   fails. See the direction rule above.
+
+Two shapes are genuinely unavailable and no amount of care recovers them: new
+message kinds die at the envelope for a frozen receiver (`frame.rs:79`), and a
+trailing extension region on `*Begin`/`*End` dies at `cursor.finish()`
+(`wm_v1.rs:888`, `:1208`) and again at `frame.rs:98` `TrailingBytes`. The uncounted
+extension chunk is the only mechanically available escape hatch.
+
+**What this changes about the freeze.** The freeze does not foreclose adding a
+WM-side fact later; it makes doing so a deliberate, reviewable relaxation of the
+unknown-kind reject arms rather than a forced new interface family. That is why
+revision 3 can be frozen confidently. It does **not** rescue enum values: those sit
+at fixed offsets inside fixed-width records that a frozen client parses, and no
+opaque side channel reaches them. Section 3 remains pre-freeze-only work.
 
 ---
 
@@ -273,21 +347,42 @@ real. `SnapshotOutput` has no reserved space; widening it is a layout change.
 
 ---
 
-## Two Open Items This Pass Does Not Decide
+## Two Resolved Product Decisions
 
-Both belong to whoever owns the product call, not to this enumeration.
+Both were open when this enumeration was first written. Both are now settled.
 
-1. **The forward-compatibility rule.** Either admit unknown record kinds by
-   skipping them and add a generic extension chunk, requiring the archived
-   revision-1 client to ignore what it does not know; or declare that revision 3
-   is final for WM-side records and that every future authority gets its own
-   interface family. The second appears to be the existing intent — the envelope
-   is deliberately role-neutral and each role negotiates independently — but it
-   is nowhere written as a constraint on `sophia_wm_v1`. Writing it down removes
-   most of the residual risk at no engineering cost.
+1. **The forward-compatibility rule is the three-clause form**, recorded normatively
+   in `docs/sophia-policy-ipc.md` under Versioning: the frozen revision is final for
+   record layouts and enum vocabularies; new WM-side facts arrive as
+   capability-gated extension chunks in reserved kinds `0xFF00`–`0xFFFF`; new
+   authorities take new interface families. Receivers keep rejecting unknown kinds,
+   because gating guarantees they are never sent one they did not negotiate.
 
-2. **Native output mirroring.** The ledger requires it to be implemented with
-   evidence or explicitly rejected with a written architectural or product
-   rationale before the port gate closes; "not yet implemented" is not an
-   exclusion. This is an output-service product decision. Resolving it either way
-   removes a row from the freeze critical path.
+   Its prerequisite is outbound capability gating, which does not exist yet — see
+   the direction rule at the top of this file. Until that lands, clause 2 is unsound
+   and every server-to-client addition is now-or-never.
+
+2. **Native output mirroring will be implemented before the freeze.** The
+   alternative — rejecting the port obligation while retaining mirroring as a named
+   future capability — was considered and not taken.
+
+   The shape is fixed by this document's own boundary: **one logical output backed
+   by N connectors**, which is invisible to policy because `SnapshotOutput` carries
+   no connector identity, mode, scale, or enabled flag. The rejected shape is two
+   logical outputs sharing surfaces, which is inexpressible — it violates
+   one-output-per-surface and raises `DuplicateSurface`. So mirroring carries **zero
+   `sophia_wm_v1` wire risk** and does not compete for the pre-freeze window; it is
+   Engine and output-authority work.
+
+   Two constraints are load-bearing. It requires narrowly amending the ratified
+   invariant that presentation is output-scoped with no globally simultaneous
+   multi-output retirement instant (`docs/engine-architecture.md`), to joint
+   retirement *within* a mirror group and independent retirement *between* groups.
+   And it is same-mode-only, because no plane scaling exists anywhere in the tree —
+   mismatched modes must fail closed at reconcile time rather than silently
+   letterbox.
+
+   Because joint multi-head retirement changes multi-output and buffer-lifetime
+   semantics, it triggers the standing requirement to extend the bounded
+   visual-retirement model first. That pulls Milestone 14's first roadmap item
+   forward into Milestone 13.
