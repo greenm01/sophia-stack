@@ -218,6 +218,22 @@ is output-scoped; Sophia does not claim a globally simultaneous multi-output
 retirement instant. Subsystem-specific shortcuts around that path are
 forbidden.
 
+A logical output may be backed by more than one head, which is what output
+mirroring is. Retirement is therefore **joint within a mirror group and
+independent between groups**: one framebuffer is scanned out by every head in
+the group, so the logical output retires only when its last head flips, and the
+buffer stays leased until then. This narrows the output-scoped rule rather than
+replacing it — the unit of retirement is still one logical output, and distinct
+logical outputs still retire independently on their own page-flip timelines.
+Sophia continues to claim no globally simultaneous multi-output retirement
+instant.
+
+A head that disappears mid-flight drops its lease without counting as a flip,
+and the candidate fails closed instead of committing a partial group; a
+surviving-head topology is a new candidate, not a salvaged one.
+`validation/tla/VisualRetirement.tla` carries the head layer and checks both
+properties.
+
 ## Current Rust Module Map
 
 | Domain | Current `sophia-engine` modules |

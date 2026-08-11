@@ -4,21 +4,35 @@
 proof of the Rust implementation.
 
 `VisualRetirement.tla` explores the asynchronous lifetime of immutable visual
-candidates across two outputs and two generations. That is the smallest scope
-that still explores out-of-order retirement and supersession. It excludes
-X11 objects, application metadata, pixel content, renderer handles, and native
-KMS objects.
+candidates across two outputs and two generations. Each logical output is backed
+by one or more heads, and one output is a two-head mirror group, so a single run
+exercises joint retirement within a group and independent retirement between
+groups. That is the smallest scope that still explores out-of-order retirement,
+supersession, and mirror-group member loss. It excludes X11 objects, application
+metadata, pixel content, renderer handles, and native KMS objects.
 
 The model checks that:
 
 - a successful commit follows retirement of every output required by that
-  candidate;
+  candidate, and a logical output retires only when every one of its heads has
+  flipped;
+- distinct logical outputs never share a head, so one group's flip cannot retire
+  another group's output;
+- a candidate whose mirror group lost a head never commits, and the lost lease is
+  dropped without counting as a flip;
 - a late or superseded generation cannot replace newer committed state;
 - committed input generation advances with committed visual generation;
 - successful feedback exists only for a committed generation;
-- active, submitted, or committed resources cannot be released; and
+- active, submitted, or committed resources cannot be released, which now also
+  means no generation is released while any head still scans it out; and
 - admitted work eventually reaches one terminal settlement under the weak
   fairness assumption documented in the module.
+
+`MirrorGroupCommitsOnlyWithEveryHead` looks redundant beside
+`CommittedAfterExactRetirement` and is not. The latter is expressed through the
+`RetiredOutputs` definition and goes blind if that definition is itself wrong,
+which is the likely shape of a mirroring regression. Head loss is deliberately
+outside the fairness assumption: nothing guarantees a connector disappears.
 
 `PresentFrameOwnership.tla` isolates the output-frame association needed by
 software Present. It allows an unrelated frame to submit and retire before the

@@ -490,10 +490,16 @@ is excluded; retained product behavior is not.
   `DuplicateSurface`; do not attempt it.
   Ordering is fixed by the standing rule that the bounded visual-retirement model
   is extended before multi-output or buffer-lifetime semantics change. Joint
-  multi-head retirement is exactly that, so Milestone 14's first item moves here:
-  extend `validation/tla/VisualRetirement.tla` for joint retirement within a mirror
-  group and independent retirement between groups, then narrowly amend the ratified
-  output-scoped presentation invariant in `docs/engine-architecture.md` to match.
+  multi-head retirement is exactly that, so Milestone 14's first item moved here.
+  Both prerequisites are now closed. `validation/tla/VisualRetirement.tla` carries
+  a head layer beneath output retirement: a logical output retires only when its
+  last head flips, the framebuffer stays leased until then, and one output in the
+  checked configuration is a two-head mirror group, so a single run exercises
+  joint retirement within a group and independent retirement between groups.
+  Head loss drops its lease without counting as a flip and fails the candidate
+  closed. 112,252 distinct states at depth 19; all 23 models pass. The ratified
+  output-scoped presentation invariant in `docs/engine-architecture.md` is
+  narrowed to match rather than dropped.
   Implementation then lifts singular per-output connector selection to a set with
   per-head page-flip intake, shares the rendered buffer lease that is exclusive
   today, allows N heads per logical rect in the topology, exempts mirror-group
