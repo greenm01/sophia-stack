@@ -44,13 +44,17 @@ The currently retained installed candidate provides:
   switch-away/switch-back evidence with exact runtime identity.
 
 Milestones 9 through 12 are complete historical evidence for the xmonad
-compatibility profile. Their bounded lifecycle, recovery, color, work-area,
-and soak artifacts remain reproducible regressions, but elapsed wall time is
-not a current promotion criterion. Milestone 13 owns the active product path:
-Hagia becomes the ordinary installed session after bounded deterministic
-preflight, records every real session automatically, and leaves Kitty,
-xmonad, and the previous immutable release available for recovery. Protocol
-freeze and legacy-policy removal remain separate evidence-driven decisions.
+compatibility profile and are archived in `docs/roadmap-history.md`. Their
+bounded lifecycle, recovery, color, work-area, and soak artifacts remain
+reproducible regressions, but elapsed wall time is not a current promotion
+criterion. Milestone 13 owns the active product path. Hagia is already the
+ordinary remembered installed session: it passed bounded deterministic
+preflight as attempt `0004`, records every real session automatically, and
+leaves Kitty, xmonad, and the previous immutable release available for
+recovery. What remains in Milestone 13 is the `sophia_wm_v1` freeze and the
+retained Triad behavior port that gates it. Protocol freeze and legacy-policy
+removal remain separate evidence-driven decisions, in that order: API v7 may
+not be removed until the freeze conditions hold.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -160,172 +164,6 @@ the correct authority.
   demanding Sophia-native WM and shell family: a blind spatial-policy process,
   an optional separately authorized shell, and ordinary Sophia session and
   portal services.
-
----
-
-## Milestone 12: Frozen Classical-WM Compatibility Baseline
-
-The previous ten-cycle gates remain valid historical evidence for commits
-`958fb5e6` and `56dad4de`. Installed `1a7d67c3` retains the admission-recovery
-failure, installed `7bd3e7db` retains the move-feedback failure, and installed
-`a50dfb67` retains the committed-layout reseed failure. Installed `53a21365`
-fixes that failure but retains the false core `GetImage` reply ceiling.
-Installed `fb1c3804` fixes both and reaches zero unexpected protocol errors but
-retains unbounded ephemeral Firefox profiles. Installed `ce494942` fixes that
-resource lifecycle and run `0042` proves the cleanup. Installed `7a6be56c`
-routes Firefox attempts correctly but exposes a renderer-worker settlement gap
-during VT handoff. Installed `4c312142` closes that gap and passes automatic
-Firefox run `0002`. Any reproduction of the historical xmonad promotion or
-soak artifacts must use this exact immutable build or a verified
-source-identical successor; those artifacts do not gate Hagia.
-
-### 12.1 Close The Intended Desktop Configuration
-
-This section records the xmonad compatibility baseline. Its profile-specific
-work remains behind the generic compatibility boundary; it must not make
-xmonad concepts part of Engine or the universal WM API.
-
-- [x] Modernize the personal xmonad configuration for the packaged xmonad
-  0.18 series without loading mutable `~/.config/xmonad` state at session
-  runtime. Preserve the established Sophia key actions and use only supported
-  blind geometry policy.
-- [x] Admit `ThreeColMid`, `Tall`, `Mirror Tall`, `Full`, and `Spiral` with
-  exact configured multi-surface geometry. Retain profile-level constraint,
-  focus, workspace, floating-pointer, work-area, output-change, release, and
-  bridge-restart regressions around those layout transitions.
-- [x] Exclude xmonad `Tabbed`, title/class manage hooks, dzen property control,
-  and xmonad-owned decorations from this candidate. Record any later native-tab
-  design as Engine chrome, not an expansion of fake X drawing or WM metadata.
-- [x] Package the exact configured xmonad executable and exact xmobar
-  executable as immutable release inputs. Record source revision, build
-  configuration, binary digest, and runtime path; reject home-source discovery
-  and digest mismatch.
-- [x] Keep xmobar's present static/redacted content for this milestone unless
-  the soak demonstrates that a dynamic status feed is required. Dynamic
-  workspace/layout/focus status belongs to the post-promotion broker slice.
-- [x] Adapt the safe practical core of the retained personal xmonad profile to
-  opaque Sophia actions: focus/swap master, swap up/down, shrink/expand,
-  master-count, layout reset, floating toggle, and sink. Keep physical chords
-  Super-based and private compatibility chords inside the bridge.
-- [x] Package the IR_Black-derived one-pixel focused/unfocused frame as an
-  Engine core configuration. Keep xmonad borders disabled and xmobar static,
-  redacted, and title-free.
-- [x] Add one shared soak-evidence reducer, an installed
-  `sophia-soak-progress --watch` command, and a checksummed redacted summary.
-  Require every practical action once while retaining workload thresholds and
-  exact zero-debt health gates.
-
-### 12.2 Complete TrueColor Semantics
-
-- [x] Make the X Authority's advertised TrueColor contract internally exact:
-  validate the 24-bit XRGB and 32-bit ARGB visual/depth combinations, convert
-  `AllocColor` RGB16 components through the advertised masks, and make
-  `QueryColors` recover the corresponding channel intensities instead of
-  reducing every nonzero pixel to white.
-- [x] Replace the current “black or white” `AllocNamedColor` behavior with a
-  bounded, deterministic color-name table required by retained clients.
-  Unknown names must return the correct X error rather than silently becoming
-  white. Do not add mutable server-wide colormap allocation to TrueColor.
-- [x] Keep visual IDs, colormap IDs, channel masks, and X color names inside X
-  Authority. Engine receives only bounded XRGB8888/ARGB8888 pixel content and
-  protocol-neutral opacity facts.
-- [x] Verify setup, create-window/pixmap/colormap validation, `AllocColor`,
-  `AllocNamedColor`, `QueryColors`, both byte orders, XRGB upload, ARGB
-  allocation facts, disconnect cleanup, and invalid-resource/error paths
-  against X11 wire rules and the retained XLibre/Yserver references.
-- [x] Advertise and retain the conventional 1/4/8/15/16 auxiliary pixmap
-  formats separately from 24-bit XRGB and 32-bit ARGB visuals. Prove creation
-  and geometry for every retained depth in both byte orders while keeping others
-  fail-closed.
-- [x] Add a deterministic non-gray XRGB upload fixture with distinct red,
-  green, blue, mixed, and grayscale pixels and exact byte preservation.
-- [x] Run the real-client physical proof with `sophia-truecolor-proof` and
-  verify it with `sophia-verify-truecolor-runs 1`. Require the same palette to
-  survive client rendering, Engine composition, native presentation, and capture
-  without channel swaps or black/white collapse. Include a Kitty 24-bit
-  ANSI-color sample, while treating its client-side rendering as an end-to-end
-  pixel proof rather than a colormap-wire proof.
-- [ ] Update the X11 compatibility matrix only after both the wire regression
-  and visible physical proof pass.
-
-### 12.3 Rebuild And Re-Prove The Candidate
-
-- [x] Model and implement two-phase admission recovery: retire the fallback,
-  clear only its temporary constraint, retain one bounded standing-target
-  successor, queue one normal relayout, and commit the target only after exact
-  native retirement. Fail session completion on any standing-target debt.
-- [x] Deliver complete position-and-size geometry to X Authority for every
-  changed surface while retaining resize-only pixel epochs. Require pure-move
-  Present-before-core ConfigureNotify, no-op silence, complete timeout
-  rollback, focus-only stability, terminal Engine/X convergence, and a
-  committed-layout reassertion when stale pixels remain at another size.
-  Cover the boundary in Rust, verifier, and TLA+ gates.
-- [x] Build and install the new source successor as one repository-independent
-  candidate containing the pinned Sophia, configured xmonad, and xmobar
-  artifacts. Verify the greetd entry uses those exact paths and digests without
-  a source checkout. Installed `4c312142` and Firefox run `0002` prove the
-  immutable artifact, runtime identity, automatic recorder, and handoff fix.
-- [x] Re-run the installed xterm startup that exposed the auxiliary-pixmap
-  defect. Require exact two-output and work-area readiness, a presented
-  correctly sized xterm, clean VT switch-away/resume, normal WM logout, zero
-  protocol errors, exact TTY restoration, and no host process residue. The
-  installed `sophia-xterm-proof` command now reserves and verifies this
-  profile-specific archive automatically. Attempt `0001` exposed and now
-  regresses the launcher's Kitty-only argument leak. Attempt `0002` then proved
-  the corrected launcher and clean CPU-backed VT recovery, while exposing that
-  the first verifier fixture had incorrectly modeled xterm as a Present client
-  with an imported image. The corrected CPU-snapshot contract and a fresh
-  immutable run remained. Installed attempt `0003` passes on `7e18ea3a`: exact
-  inset CPU geometry, two-output scene rehydration, normal VT recovery and WM
-  logout, zero protocol errors, exact TTY restoration, and no process residue.
-- [x] Run the focused Kitty, Firefox, floating-dialog, xmonad-layout, VT-switch,
-  and normal-logout gate on that exact candidate. Automatic Firefox run `0002`
-  passes the immutable aggregate verifier.
-- [x] Close the focused xmobar/work-area gate from the checksummed installed
-  xterm attempt `0003`. `sophia-verify-xmobar-work-area` now requires exactly
-  one 14-pixel reservation on both outputs, repeated exact 2560-by-14 primary
-  repaints, native retirement, packaged xmobar identity, normal logout, clean
-  lifecycle, and unmodified archive checksums.
-- [x] Run the automatic physical TrueColor gate on the source successor.
-  Installed attempt `0003` passes directly with `reverified=0` on `883666a2`.
-- [x] Run the independent emergency-recovery gate on that same candidate.
-  Installed attempt `0004` passes on `883666a2` with both observers, drained
-  keys and native presentation, status-130 handoff, and exact TTY restoration.
-- [x] Repeat the one-shot ten-cycle installed lifecycle gate. It must stop at
-  the first failure and return to greetd after aggregate verification, with no
-  manual repair, stale graphical process, or emergency recovery in an ordinary
-  cycle. Installed runs `0044` through `0053` pass on `883666a2`; startup
-  readiness remained between 288 and 324 milliseconds across both outputs.
-
-### 12.4 Interactive Soak And Promotion
-
-- [x] Retain preliminary soak attempt `0054` as a failed immutable artifact.
-  It completed clean logout and TTY recovery after 413,133 milliseconds but
-  recorded four layout timeouts and WM restarts. Hidden synthetic-window
-  geometry now stops at the compatibility bridge, and first admission uses
-  the selected safe pixel extent before driving the WM's standing target.
-- [x] Audit workspace/admission recovery with the optional commit-pinned
-  Specula development tool, then retain only project-sized formal models and
-  deterministic regressions. Exact snapshot replacement and direct assignment
-  now keep unique cached membership; hard-deadline or other bridge failure
-  requires process replacement; and a pixel-silent first admission preserves
-  its owner, standing target, and one bounded retry. The pinned TLA+ suite
-  covers projection, response-boundary, and pixel-silent behavior without
-  adding a runtime or build dependency.
-- [x] Install the successor and pass one short workspace/admission proof with
-  Kitty, Firefox, glxgears, and vkcube before repeating a long soak. Installed
-  run `0055` on `a2fdf4f6` retained clean admission and workspace projection,
-  two independently advancing animated surfaces, zero layout timeout, resize
-  abort, hidden-surface configure/render command, or WM restart, and clean
-  normal-session teardown.
-- [x] Re-run the retained practical xmonad acceptance in isolated QEMU after
-  the physical launch incident. It completed focus, layout, workspace,
-  pointer, launch, bridge restart/reseed, and clean logout; the prelude's
-  one-versus-two visible-surface predicate was corrected and locked by the
-  verifier regression. QEMU does not satisfy the physical short gate below.
-The remaining practical short gate and long xmonad soaks are deferred to the
-Classical X11 WM Compatibility roadmap. Resume them after native Hagia is
-solid; xmonad is regression evidence, not the promotion vehicle.
 
 ---
 
@@ -483,12 +321,16 @@ is excluded; retained product behavior is not.
   fullscreen, maximize, minimize/restore, and operation-slot-bound opaque
   session requests. Hagia now retains nonempty multi-tag view and
   focused-window membership through eighteen additional opaque actions;
-  dynamic workspace lifecycle, naming, occupancy navigation, and scratchpads
-  remain open. The transitions remain unbound until configuration migration
-  preserves Triad's existing chord meanings. The bootstrap uses 39 of revision
-  1's 64 binding slots, while Triad's baseline default contains 132 key
-  bindings across multiple future authorities; binding-capacity classification
-  therefore remains on the pre-freeze port path.
+  dynamic workspace lifecycle, occupancy navigation, and scratchpads are now
+  implemented in Hagia's action catalog; configured workspace naming remains
+  partial because `setWorkspaceName` has no bound action. The transitions
+  remain unbound until configuration migration preserves Triad's existing chord
+  meanings. Revision 1 admits 256 binding registrations, so capacity is not the
+  constraint: the bootstrap emits 39 key plus 2 pointer bindings from Triad's
+  baseline 132 key plus 5 pointer bindings, and the other 96 classify into
+  shell, broker, portal, and session authorities that do not exist yet. That
+  authority split, not a slot count, is what keeps binding classification on
+  the pre-freeze port path.
 - [ ] Add Engine-owned pointer interactions, bounded focus history, private
   checkpoint/reconciliation, and crash/restart proof while applications and
   the last committed scene remain alive.
@@ -685,14 +527,39 @@ is excluded; retained product behavior is not.
   and archive verification. Hagia is now the ordinary remembered session; the
   item remains open for the named restart, state-transition, application, and
   output-topology scenarios above.
-- [ ] Remove API v7 and Engine-owned workspace policy after Hagia passes the
-  restart and last-layout gates. Keep the adapter and its deterministic xmonad
+- [ ] Remove API v7 and Engine-owned workspace policy only after both freeze
+  conditions below hold. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.
+  Extraction is not gated and comes first: the public path still fabricates a
+  v7 `WmHello` stamped `WM_API_VERSION` to build the Engine shortcut registry,
+  and still constructs Engine-owned `WmWorkspaceState`. Lift
+  `WmShortcutRegistry`, `WmShortcutRouter`, and `WmSocketTransport` out of the
+  v7 module before any deletion; `crates/sophia-engine/src/wm.rs` cannot be
+  removed while the public path depends on them.
 - [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart
   corpus. Do not remove API v7, declare stability, or create the permanent
   archived compatibility client before both conditions hold.
+  The first condition is defined by Hagia's `docs/triad-port-ledger.md` at Triad
+  baseline `fb8fb27e`; `docs/triad-port-ledger-pointer.md` locates it and
+  summarizes its 27 retained rows. The shell and broker/portal tables are
+  entirely open and are inside the gate, so the freeze is not near.
+  Before it lands, settle the wire decisions enumerated in
+  `docs/wm-v1-freeze-surface.md`: unknown record kinds and enum values are
+  rejected rather than skipped, and both `*Begin` messages are fixed-layout, so
+  a new record kind is a new interface family after the freeze. Twenty-three of
+  the 27 rows need no wire change; the residue is workspace-name projection,
+  broker classification shape, the continuous-pointer payload, and the output
+  logical-space contract.
+- [ ] Decide the `sophia_wm_v1` forward-compatibility rule before the freeze:
+  either admit unknown record kinds by skipping them behind a generic extension
+  chunk, requiring the archived revision-1 client to tolerate what it cannot
+  decode, or declare revision 3 final for WM-side records so every later
+  authority takes its own interface family. The role-neutral envelope and
+  per-role negotiation suggest the second is already the intent, but it is not
+  written as a constraint on `sophia_wm_v1`. See
+  `docs/wm-v1-freeze-surface.md`.
 
 Milestone 13 exits only when the public wire is independently implementable,
 the retained Triad behavior port is complete across the correct authorities,
@@ -750,8 +617,11 @@ Sophia's native-X authority model.
 
 ## Post-Promotion Capability Roadmap
 
-These are ordered product capabilities, not Milestone 12 blockers unless a
-named soak failure promotes one.
+These are ordered product capabilities. They do not block Milestone 13's freeze
+unless the retained Triad port ledger names the same behavior as a retained row,
+or a named failure promotes one. Check the ledger before assuming an item here
+is post-freeze work: several rows under Native Sophia Follow-Ups and Status,
+Launcher, And Shell Integration are pre-freeze port requirements.
 
 ### Blind WM And Multi-Output Policy
 

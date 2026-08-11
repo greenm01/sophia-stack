@@ -39,6 +39,11 @@ unimplemented target behavior explicitly.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.
+- [WM v1 Freeze Surface](wm-v1-freeze-surface.md) enumerates which retained port
+  rows can force a `sophia_wm_v1` layout change, what each expansion move costs,
+  and the decisions that must be settled before the freeze forecloses them.
+- [Triad Port Ledger Pointer](triad-port-ledger-pointer.md) locates the external
+  freeze gate that lives in the Hagia repository and summarizes its row states.
 - [Target-Resolved Input](target-resolved-input.md) defines presented-state
   target resolution, profile-scoped application arbitration, bounded capture,
   paced continuous values, independently authorized region-local coordinate
