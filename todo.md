@@ -469,14 +469,22 @@ is excluded; retained product behavior is not.
   coordinator now models those typed test/apply/rollback effects and exact
   generation/digest completions, rejects stale or phase-invalid results,
   discards test-rejected candidates, and requires terminal rollback settlement
-  after apply failure. The executor remains disconnected, so native request
-  construction and all output mutation are still deferred. The DRM primitives it
-  needs already exist: `LibdrmNativeAtomicCommitRequest` exposes `modeset`,
-  `allow_modeset`, and `test_only`, and property discovery already finds connector
-  `CRTC_ID` and CRTC `MODE_ID`/`ACTIVE`. What is missing is the authority layer
-  above them — composing one request across N heads, reservations, rollback, and
-  evidence — plus a path from a planned timing to a mode blob, since blob creation
-  currently requires an already-selected mode.
+  after apply failure. That coordinator is no longer dead code: a typed effect
+  executor trait and a bounded driver now carry one prepared candidate from test
+  through apply or rollback to a terminal settlement, and startup drives the real
+  phase machine. Until a multi-connector request builder exists the wired executor
+  declines the test phase, which the reducer treats as a rejection needing no
+  rollback, so startup still issues no configuration KMS mutation. Deterministic
+  tests cover activation, declined test, rollback after apply failure, and failed
+  recovery, and prove the declined path never reaches apply. Swapping the executor
+  is the only change that turns this into real mutation.
+  The DRM primitives that executor needs already exist:
+  `LibdrmNativeAtomicCommitRequest` exposes `modeset`, `allow_modeset`, and
+  `test_only`, and property discovery already finds connector `CRTC_ID` and CRTC
+  `MODE_ID`/`ACTIVE`. What is missing is the authority layer above them —
+  composing one request across N heads, reservations, rollback, and evidence —
+  plus a path from a planned timing to a mode blob, since blob creation currently
+  requires an already-selected mode.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation

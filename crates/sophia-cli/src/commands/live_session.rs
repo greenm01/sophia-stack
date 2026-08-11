@@ -6,6 +6,10 @@ use sophia_backend_live::{
     LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionRetiredPresent,
     LiveProductionVisualRuntime,
 };
+use sophia_cli::desktop_output_activation::{
+    NativeOutputActivationFailure, NativeOutputActivationSettlement,
+    NativeOutputRollbackSettlement, UnavailableNativeOutputExecutor, run_native_output_activation,
+};
 use sophia_cli::desktop_output_topology::{
     prepare_native_output_activation_plan, project_native_output_topology,
 };
@@ -246,13 +250,45 @@ pub(crate) fn run_persistent_xterm_session(
         )?;
         let activation =
             prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
+        let generation = activation.generation().raw();
+        let targets = activation.targets().len();
+        let focused = activation.focused_output().is_some();
+        // The prepared plan now drives the real activation phase machine. Until a
+        // multi-connector atomic request builder exists, the executor declines the
+        // test phase, so this settles as rejected with no rollback required and
+        // startup still performs no KMS mutation. Swapping the executor is the
+        // only change needed once that builder lands.
+        let report =
+            run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?;
+        let (status, phase, cause) = match report.settlement {
+            NativeOutputActivationSettlement::Activated { .. } => ("applied", "activated", "none"),
+            NativeOutputActivationSettlement::Rejected {
+                cause, rollback, ..
+            } => (
+                "prepared_not_applied",
+                match rollback {
+                    NativeOutputRollbackSettlement::Failed(_) => "recovery_failed",
+                    _ => "rejected",
+                },
+                match cause {
+                    NativeOutputActivationFailure::Invalidated => "invalidated",
+                    NativeOutputActivationFailure::Rejected => "rejected",
+                    NativeOutputActivationFailure::WouldBlock => "would_block",
+                    NativeOutputActivationFailure::TimedOut => "timed_out",
+                    NativeOutputActivationFailure::Disconnected => "disconnected",
+                },
+            ),
+        };
         tracing::info!(
             schema = 1,
-            status = "prepared_not_applied",
-            generation = activation.generation().raw(),
-            outputs = activation.targets().len(),
-            rollback_targets = activation.targets().len(),
-            focused = activation.focused_output().is_some(),
+            status,
+            phase,
+            cause,
+            executor = "unavailable",
+            generation,
+            outputs = targets,
+            rollback_targets = targets,
+            focused,
             "native desktop output candidate admitted"
         );
     }

@@ -4,10 +4,11 @@ use sophia_backend_live::{
     LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
 };
 use sophia_cli::desktop_output_activation::{
-    NativeOutputActivationDisposition, NativeOutputActivationEffect, NativeOutputActivationFailure,
+    NativeOutputActivationDisposition, NativeOutputActivationEffect,
+    NativeOutputActivationEffectExecutor, NativeOutputActivationFailure, NativeOutputActivationKey,
     NativeOutputActivationModel, NativeOutputActivationMsg, NativeOutputActivationPhase,
     NativeOutputActivationSettlement, NativeOutputEffectCompletion, NativeOutputRollbackSettlement,
-    reduce_native_output_activation,
+    UnavailableNativeOutputExecutor, reduce_native_output_activation, run_native_output_activation,
 };
 use sophia_cli::desktop_output_topology::{
     NativeOutputActivationPlan, prepare_native_output_activation_plan,
@@ -332,4 +333,175 @@ fn rollback_failure_is_terminal_and_preserves_both_causes() {
             ),
         })
     );
+}
+
+/// Records what the driver actually asked for, so a test can assert that a
+/// declined test phase never reaches apply. That is the property keeping startup
+/// free of KMS mutation while the executor is absent.
+#[derive(Default)]
+struct RecordingExecutor {
+    test: Vec<NativeOutputActivationKey>,
+    apply: Vec<NativeOutputActivationKey>,
+    rollback: Vec<NativeOutputActivationKey>,
+    test_result: Option<NativeOutputEffectCompletion>,
+    apply_result: Option<NativeOutputEffectCompletion>,
+    rollback_result: Option<NativeOutputEffectCompletion>,
+}
+
+impl RecordingExecutor {
+    fn succeeding() -> Self {
+        Self {
+            test_result: Some(NativeOutputEffectCompletion::Succeeded),
+            apply_result: Some(NativeOutputEffectCompletion::Succeeded),
+            rollback_result: Some(NativeOutputEffectCompletion::Succeeded),
+            ..Self::default()
+        }
+    }
+}
+
+impl NativeOutputActivationEffectExecutor for RecordingExecutor {
+    fn test(
+        &mut self,
+        key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        self.test.push(key);
+        self.test_result
+            .expect("test executed without a configured result")
+    }
+
+    fn apply(
+        &mut self,
+        key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        self.apply.push(key);
+        self.apply_result
+            .expect("apply executed without a configured result")
+    }
+
+    fn rollback(
+        &mut self,
+        key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        self.rollback.push(key);
+        self.rollback_result
+            .expect("rollback executed without a configured result")
+    }
+}
+
+#[test]
+fn driver_carries_one_candidate_from_test_through_apply() {
+    let candidate = plan(4, 7);
+    let key = NativeOutputActivationKey::from(&candidate);
+    let mut executor = RecordingExecutor::succeeding();
+
+    let report = run_native_output_activation(candidate, &mut executor).unwrap();
+
+    assert_eq!(
+        report.settlement,
+        NativeOutputActivationSettlement::Activated { key }
+    );
+    assert_eq!(report.model.phase(), NativeOutputActivationPhase::Activated);
+    // Exactly one test then one apply, both for the same key, and no rollback.
+    assert_eq!(executor.test, vec![key]);
+    assert_eq!(executor.apply, vec![key]);
+    assert!(executor.rollback.is_empty());
+}
+
+#[test]
+fn declined_test_never_reaches_apply_or_rollback() {
+    let candidate = plan(5, 9);
+    let key = NativeOutputActivationKey::from(&candidate);
+    let mut executor = RecordingExecutor {
+        test_result: Some(NativeOutputEffectCompletion::Failed(
+            NativeOutputActivationFailure::WouldBlock,
+        )),
+        ..RecordingExecutor::default()
+    };
+
+    let report = run_native_output_activation(candidate, &mut executor).unwrap();
+
+    assert_eq!(
+        report.settlement,
+        NativeOutputActivationSettlement::Rejected {
+            key,
+            cause: NativeOutputActivationFailure::WouldBlock,
+            rollback: NativeOutputRollbackSettlement::NotRequired,
+        }
+    );
+    assert_eq!(executor.test, vec![key]);
+    // The load-bearing assertion: nothing was applied, so nothing was mutated,
+    // and no rollback was needed to get back to a coherent topology.
+    assert!(executor.apply.is_empty());
+    assert!(executor.rollback.is_empty());
+}
+
+#[test]
+fn failed_apply_drives_rollback_before_settling() {
+    let candidate = plan(6, 11);
+    let key = NativeOutputActivationKey::from(&candidate);
+    let mut executor = RecordingExecutor {
+        test_result: Some(NativeOutputEffectCompletion::Succeeded),
+        apply_result: Some(NativeOutputEffectCompletion::Failed(
+            NativeOutputActivationFailure::Rejected,
+        )),
+        rollback_result: Some(NativeOutputEffectCompletion::Succeeded),
+        ..RecordingExecutor::default()
+    };
+
+    let report = run_native_output_activation(candidate, &mut executor).unwrap();
+
+    assert_eq!(
+        report.settlement,
+        NativeOutputActivationSettlement::Rejected {
+            key,
+            cause: NativeOutputActivationFailure::Rejected,
+            rollback: NativeOutputRollbackSettlement::Succeeded,
+        }
+    );
+    assert_eq!(executor.rollback, vec![key]);
+}
+
+#[test]
+fn failed_rollback_settles_as_recovery_failed() {
+    let candidate = plan(7, 13);
+    let mut executor = RecordingExecutor {
+        test_result: Some(NativeOutputEffectCompletion::Succeeded),
+        apply_result: Some(NativeOutputEffectCompletion::Failed(
+            NativeOutputActivationFailure::Disconnected,
+        )),
+        rollback_result: Some(NativeOutputEffectCompletion::Failed(
+            NativeOutputActivationFailure::Invalidated,
+        )),
+        ..RecordingExecutor::default()
+    };
+
+    let report = run_native_output_activation(candidate, &mut executor).unwrap();
+
+    assert_eq!(
+        report.model.phase(),
+        NativeOutputActivationPhase::RecoveryFailed
+    );
+}
+
+#[test]
+fn the_absent_executor_declines_without_mutating_anything() {
+    let candidate = plan(8, 15);
+    let key = NativeOutputActivationKey::from(&candidate);
+
+    let report =
+        run_native_output_activation(candidate, &mut UnavailableNativeOutputExecutor).unwrap();
+
+    // This is what startup logs today: prepared, declined, no rollback required.
+    assert_eq!(
+        report.settlement,
+        NativeOutputActivationSettlement::Rejected {
+            key,
+            cause: NativeOutputActivationFailure::WouldBlock,
+            rollback: NativeOutputRollbackSettlement::NotRequired,
+        }
+    );
+    assert_eq!(report.model.phase(), NativeOutputActivationPhase::Rejected);
 }
