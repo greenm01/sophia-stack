@@ -160,7 +160,7 @@ pub(crate) const fn is_valid_native_primary_plane_scanout_size(size: Size) -> bo
 }
 
 #[cfg(feature = "libdrm-events")]
-fn add_primary_plane_properties(
+pub(super) fn add_primary_plane_properties(
     request: &mut drm::control::atomic::AtomicModeReq,
     objects: LibdrmNativePrimaryPlaneObjects,
     properties: LibdrmNativePrimaryPlanePropertyHandles,

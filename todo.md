@@ -481,10 +481,20 @@ is excluded; retained product behavior is not.
   The DRM primitives that executor needs already exist:
   `LibdrmNativeAtomicCommitRequest` exposes `modeset`, `allow_modeset`, and
   `test_only`, and property discovery already finds connector `CRTC_ID` and CRTC
-  `MODE_ID`/`ACTIVE`. What is missing is the authority layer above them —
-  composing one request across N heads, reservations, rollback, and evidence —
-  plus a path from a planned timing to a mode blob, since blob creation currently
-  requires an already-selected mode.
+  `MODE_ID`/`ACTIVE`. Composing one request across N heads now exists too:
+  `build_native_multi_head_atomic_request` folds every head into one
+  `AtomicModeReq` so the kernel accepts or rejects the complete topology and a
+  partially applied desktop is never observable. It validates before adding any
+  property, so a rejected build never yields a half-populated request, and it
+  rejects an empty head set, a shared connector, CRTC, or plane, an invalid size,
+  and a missing mode blob on a modeset. Heads sharing one framebuffer are a mirror
+  group and must agree on scanout size, which is where the same-mode rule is
+  enforced. The returned request carries the previously dead `test_only` path, so
+  a caller can validate a topology without touching hardware.
+  What remains is a path from a planned timing to a mode blob, since blob creation
+  still requires an already-selected mode; an executor that resolves heads for a
+  candidate and submits test then apply; plus reservations, a separate power
+  authority, and evidence.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation

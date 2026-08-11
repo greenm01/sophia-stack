@@ -16,11 +16,12 @@ use sophia_backend_live::{
     LibdrmKernelPageFlipTimestamp, LibdrmNativeAtomicCommitDevice,
     LibdrmNativeAtomicCommitFlagsReport, LibdrmNativeAtomicCommitRequest,
     LibdrmNativeAtomicCommitRequestScope, LibdrmNativeAtomicCommitSubmitReport,
-    LibdrmNativeAtomicCommitSubmitStatus, LibdrmNativeAtomicRequestBuildStatus,
-    LibdrmNativeAtomicScanoutPageFlipWaitStatus, LibdrmNativeAtomicScanoutSmokeEvidence,
-    LibdrmNativeAtomicScanoutSmokePhase, LibdrmNativeAtomicScanoutSmokeStatus,
-    LibdrmNativeConnectorSnapshot, LibdrmNativeCrtcRoute, LibdrmNativeEncoderSnapshot,
-    LibdrmNativeEventAdapterReport, LibdrmNativeEventAdapterStatus, LibdrmNativeKmsSelectionDevice,
+    LibdrmNativeAtomicCommitSubmitStatus, LibdrmNativeAtomicHead,
+    LibdrmNativeAtomicRequestBuildStatus, LibdrmNativeAtomicScanoutPageFlipWaitStatus,
+    LibdrmNativeAtomicScanoutSmokeEvidence, LibdrmNativeAtomicScanoutSmokePhase,
+    LibdrmNativeAtomicScanoutSmokeStatus, LibdrmNativeConnectorSnapshot, LibdrmNativeCrtcRoute,
+    LibdrmNativeEncoderSnapshot, LibdrmNativeEventAdapterReport, LibdrmNativeEventAdapterStatus,
+    LibdrmNativeKmsSelectionDevice, LibdrmNativeMultiHeadRequestBuildStatus,
     LibdrmNativeOutputCapability, LibdrmNativeOutputRoute, LibdrmNativeOutputSlot,
     LibdrmNativeOutputTiming, LibdrmNativePageFlipCallback, LibdrmNativePageFlipDecodeReport,
     LibdrmNativePageFlipDecodeStatus, LibdrmNativePageFlipReadResult, LibdrmNativePageFlipReader,
@@ -60,7 +61,8 @@ use sophia_backend_live::{
     NativeLibdrmPageFlipEventPoller, NativeLibdrmPageFlipEventReader, OutputId, QueuedInputPoller,
     RealAtomicScanoutCardSelectionStatus, RealAtomicScanoutPageFlipSessionStatus,
     RealAtomicScanoutPageFlipWaitPolicy, RuntimeScanoutState, Size,
-    build_native_primary_plane_atomic_request, build_native_primary_plane_atomic_request_with_vrr,
+    build_native_multi_head_atomic_request, build_native_primary_plane_atomic_request,
+    build_native_primary_plane_atomic_request_with_vrr,
     build_native_primary_plane_page_flip_atomic_request,
     build_native_primary_plane_page_flip_atomic_request_with_vrr,
     create_native_primary_plane_page_flip_resources,
@@ -131,3 +133,4 @@ include!("libdrm_events_feature/session_loop.rs");
 include!("libdrm_events_feature/native_gbm.rs");
 include!("libdrm_events_feature/resource_lifetime.rs");
 include!("libdrm_events_feature/builders.rs");
+include!("libdrm_events_feature/multi_head_request.rs");
