@@ -100,10 +100,26 @@ impl LibdrmNativeAtomicTopologyHead {
 /// the CRTC is already scanning out, so reusing it is how a topology can be applied
 /// without first allocating at the new mode's size.
 ///
-/// `None` means this head cannot be built that way: either the CRTC displays
-/// nothing, or what it displays is the wrong size. No primary plane scaling exists
-/// on this path, so a buffer that disagrees with the mode cannot drive it, and
-/// failing here is better than a kernel refusal that says only `EINVAL`.
+/// A refusal names what was found, because "no usable framebuffer" alone cannot
+/// separate an output displaying nothing from one displaying the wrong size, and
+/// those want different fixes. No primary plane scaling exists on this path, so a
+/// buffer that disagrees with the mode cannot drive it; failing here beats a kernel
+/// refusal that says only `EINVAL`.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug)]
+pub enum LibdrmNativeCurrentFramebufferHead {
+    Composed(LibdrmNativeAtomicHead),
+    /// The CRTC scans out nothing, so there is no buffer to reuse.
+    NoFramebuffer,
+    /// The CRTC scans out a buffer of this size, which is not the size asked for.
+    SizeMismatch {
+        width: u32,
+        height: u32,
+    },
+    /// The framebuffer exists but could not be read.
+    Unreadable,
+}
+
 #[cfg(feature = "libdrm-events")]
 pub fn compose_native_head_from_current_framebuffer<D>(
     device: &D,
@@ -111,20 +127,26 @@ pub fn compose_native_head_from_current_framebuffer<D>(
     properties: LibdrmNativePrimaryPlanePropertyHandles,
     mode_blob: u64,
     scanout: Size,
-) -> Option<LibdrmNativeAtomicHead>
+) -> LibdrmNativeCurrentFramebufferHead
 where
     D: drm::control::Device,
 {
-    let framebuffer = device
-        .get_crtc(selection.crtc_handle())
-        .ok()?
-        .framebuffer()?;
-    let (width, height) = device.get_framebuffer(framebuffer).ok()?.size();
-    if i32::try_from(width).ok()? != scanout.width || i32::try_from(height).ok()? != scanout.height
+    let Ok(crtc) = device.get_crtc(selection.crtc_handle()) else {
+        return LibdrmNativeCurrentFramebufferHead::Unreadable;
+    };
+    let Some(framebuffer) = crtc.framebuffer() else {
+        return LibdrmNativeCurrentFramebufferHead::NoFramebuffer;
+    };
+    let Ok(info) = device.get_framebuffer(framebuffer) else {
+        return LibdrmNativeCurrentFramebufferHead::Unreadable;
+    };
+    let (width, height) = info.size();
+    if i64::from(width) != i64::from(scanout.width)
+        || i64::from(height) != i64::from(scanout.height)
     {
-        return None;
+        return LibdrmNativeCurrentFramebufferHead::SizeMismatch { width, height };
     }
-    Some(LibdrmNativeAtomicHead::new(
+    LibdrmNativeCurrentFramebufferHead::Composed(LibdrmNativeAtomicHead::new(
         LibdrmNativePrimaryPlaneObjects::new(
             selection.connector_handle(),
             selection.crtc_handle(),

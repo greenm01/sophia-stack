@@ -451,9 +451,10 @@ fn an_output_with_no_usable_framebuffer_stops_the_apply() {
     // keeps a half-applied desktop from being attempted.
     let (plan, capabilities) = plan_for(&[1, 2]);
     let mut hardware = FakeScanoutHardware::new();
-    hardware
-        .apply_failures
-        .insert(2, NativeOutputHeadUnavailable::NeedsFramebuffer);
+    hardware.apply_failures.insert(
+        2,
+        NativeOutputHeadUnavailable::NeedsFramebuffer { have: None },
+    );
 
     let error = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
         .expect_err("an output without a framebuffer cannot be applied");
@@ -462,7 +463,7 @@ fn an_output_with_no_usable_framebuffer_stops_the_apply() {
         error,
         NativeOutputHeadResolveError::Unavailable {
             output: 2,
-            cause: NativeOutputHeadUnavailable::NeedsFramebuffer,
+            cause: NativeOutputHeadUnavailable::NeedsFramebuffer { have: None },
         }
     );
     assert!(
@@ -477,9 +478,10 @@ fn an_unrestorable_output_stops_the_apply_before_anything_is_submitted() {
     // failure that would otherwise be discovered only after the screen changed.
     let (plan, capabilities) = plan_for(&[1]);
     let mut hardware = FakeScanoutHardware::new();
-    hardware
-        .rollback_failures
-        .insert(1, NativeOutputHeadUnavailable::NeedsFramebuffer);
+    hardware.rollback_failures.insert(
+        1,
+        NativeOutputHeadUnavailable::NeedsFramebuffer { have: None },
+    );
 
     let error = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
         .expect_err("an output that cannot be restored cannot be applied");
@@ -488,7 +490,7 @@ fn an_unrestorable_output_stops_the_apply_before_anything_is_submitted() {
         error,
         NativeOutputHeadResolveError::Unavailable {
             output: 1,
-            cause: NativeOutputHeadUnavailable::NeedsFramebuffer,
+            cause: NativeOutputHeadUnavailable::NeedsFramebuffer { have: None },
         }
     );
     assert_eq!(

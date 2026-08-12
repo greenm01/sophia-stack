@@ -1,9 +1,10 @@
 use std::fmt;
 
 use sophia_backend_live::{
-    LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead, LibdrmNativeOutputCapability,
-    LibdrmNativeOutputTiming, LibdrmNativePrimaryPlanePropertyHandles,
-    LibdrmNativePrimaryPlaneResourceDevice, LiveProductionNativeScanout,
+    LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead, LibdrmNativeCurrentFramebufferHead,
+    LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
+    LibdrmNativePrimaryPlanePropertyHandles, LibdrmNativePrimaryPlaneResourceDevice,
+    LibdrmNativePrimaryPlaneSelection, LiveProductionNativeScanout,
     compose_native_head_from_current_framebuffer, discover_native_primary_plane_property_handles,
     resolve_native_connector_mode,
 };
@@ -29,9 +30,12 @@ pub enum NativeOutputHeadUnavailable {
     ModeBlobRefused,
     /// No framebuffer of the right size exists for this output yet.
     ///
-    /// Only applying hits this. Validation names no framebuffer at all, which is
-    /// exactly why a topology can be checked before one exists.
-    NeedsFramebuffer,
+    /// Carries what the CRTC actually scans out, because "displays nothing" and
+    /// "displays the wrong size" want different fixes: the first needs a buffer
+    /// allocated, the second needs one allocated *at the new mode's size*. Only
+    /// applying hits this; validation names no framebuffer at all, which is exactly
+    /// why a topology can be checked before one exists.
+    NeedsFramebuffer { have: Option<(u32, u32)> },
 }
 
 /// One head plus the mode blob it names.
@@ -102,8 +106,15 @@ impl fmt::Display for NativeOutputHeadResolveError {
                         "does not advertise the requested timing"
                     }
                     NativeOutputHeadUnavailable::ModeBlobRefused => "was refused a mode blob",
-                    NativeOutputHeadUnavailable::NeedsFramebuffer => {
-                        "has no framebuffer at the requested mode's size"
+                    NativeOutputHeadUnavailable::NeedsFramebuffer { have: None } => {
+                        "scans out nothing, so there is no framebuffer to reuse"
+                    }
+                    NativeOutputHeadUnavailable::NeedsFramebuffer { have: Some((w, h)) } => {
+                        return write!(
+                            formatter,
+                            "native output {output} scans out a {w}x{h} framebuffer, which is not \
+the requested mode's size"
+                        );
                     }
                 };
                 write!(formatter, "native output {output} {reason}")
@@ -397,6 +408,44 @@ impl LiveNativeOutputTopologyHardware<'_> {
         .properties
         .ok_or(NativeOutputHeadUnavailable::MissingProperties)
     }
+
+    /// Builds a scanout head from what the CRTC already displays, releasing the
+    /// blob if it cannot. A blob outliving the head it was made for is a leak.
+    fn compose_from_current_framebuffer(
+        &self,
+        output: OutputId,
+        selection: LibdrmNativePrimaryPlaneSelection,
+        properties: LibdrmNativePrimaryPlanePropertyHandles,
+        mode_blob: u64,
+        scanout: Size,
+    ) -> Result<NativeOutputComposedHead<LibdrmNativeAtomicHead>, NativeOutputHeadUnavailable> {
+        let Some(index) = self.scanout.output_index(output) else {
+            self.release(output, mode_blob);
+            return Err(NativeOutputHeadUnavailable::MissingSelection);
+        };
+        match compose_native_head_from_current_framebuffer(
+            self.scanout.card(index),
+            selection,
+            properties,
+            mode_blob,
+            scanout,
+        ) {
+            LibdrmNativeCurrentFramebufferHead::Composed(head) => {
+                Ok(NativeOutputComposedHead { head, mode_blob })
+            }
+            LibdrmNativeCurrentFramebufferHead::SizeMismatch { width, height } => {
+                self.release(output, mode_blob);
+                Err(NativeOutputHeadUnavailable::NeedsFramebuffer {
+                    have: Some((width, height)),
+                })
+            }
+            LibdrmNativeCurrentFramebufferHead::NoFramebuffer
+            | LibdrmNativeCurrentFramebufferHead::Unreadable => {
+                self.release(output, mode_blob);
+                Err(NativeOutputHeadUnavailable::NeedsFramebuffer { have: None })
+            }
+        }
+    }
 }
 
 impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
@@ -486,21 +535,18 @@ impl NativeOutputScanoutHardware for LiveNativeOutputTopologyHardware<'_> {
         // what is displayed and nothing else. A mode change needs a buffer allocated
         // at the new size, which is renderer work, and declining here says so rather
         // than letting the kernel refuse with EINVAL.
-        let scanout = Size {
-            width: i32::try_from(timing.width)
-                .map_err(|_| NativeOutputHeadUnavailable::NeedsFramebuffer)?,
-            height: i32::try_from(timing.height)
-                .map_err(|_| NativeOutputHeadUnavailable::NeedsFramebuffer)?,
+        let (Ok(width), Ok(height)) = (i32::try_from(timing.width), i32::try_from(timing.height))
+        else {
+            self.release(output, mode_blob);
+            return Err(NativeOutputHeadUnavailable::NeedsFramebuffer { have: None });
         };
-        match compose_native_head_from_current_framebuffer(
-            card, selection, properties, mode_blob, scanout,
-        ) {
-            Some(head) => Ok(NativeOutputComposedHead { head, mode_blob }),
-            None => {
-                self.release(output, mode_blob);
-                Err(NativeOutputHeadUnavailable::NeedsFramebuffer)
-            }
-        }
+        self.compose_from_current_framebuffer(
+            output,
+            selection,
+            properties,
+            mode_blob,
+            Size { width, height },
+        )
     }
 
     fn compose_rollback_head(
@@ -519,19 +565,13 @@ impl NativeOutputScanoutHardware for LiveNativeOutputTopologyHardware<'_> {
         let Ok(mode_blob) = card.create_mode_blob_for_selection(selection) else {
             return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
         };
-        match compose_native_head_from_current_framebuffer(
-            card,
+        self.compose_from_current_framebuffer(
+            output,
             selection,
             properties,
             mode_blob,
             selection.size(),
-        ) {
-            Some(head) => Ok(NativeOutputComposedHead { head, mode_blob }),
-            None => {
-                self.release(output, mode_blob);
-                Err(NativeOutputHeadUnavailable::NeedsFramebuffer)
-            }
-        }
+        )
     }
 
     fn release_mode_blob(&self, output: OutputId, blob: u64) {

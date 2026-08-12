@@ -509,9 +509,21 @@ is excluded; retained product behavior is not.
   already scans out, so the only topology expressible is one whose scanout size
   matches what is displayed, and anything else declines as `NeedsFramebuffer` before
   a commit is submitted. A mode change needs a buffer allocated at the new size,
-  which is renderer work and is not in this tranche. The first useful run therefore
-  re-applies the topology already on screen, where success looks like nothing
-  happening — the smallest real mutation available, and the right one to take first.
+  which is renderer work and is not in this tranche.
+  **That bound turns out to exclude the reference host, which was not the
+  expectation.** The plan was that re-applying the topology already on screen would
+  be the smallest real mutation available. It is not available: the first authorized
+  run refused, and the refusal names why. `DP-2` is a 1920x1080 panel scanning out a
+  2560x1440 framebuffer, because the console gives both CRTCs one buffer sized for
+  the larger monitor, while the candidate asks each output for its own preferred
+  mode. There is no correctly sized buffer to reuse, so no apply is expressible here
+  without allocating one. Notably the shared buffer is the mirror-group shape, and
+  the two outputs disagree on size, so reusing it for both heads would fail
+  `MismatchedMirrorSize` as well — the same constraint reached from the other side.
+  Apply therefore stays unrun, and its hardware evidence is blocked on
+  output-scoped framebuffer allocation rather than on anything in the apply path.
+  Nothing was submitted and no output state changed; the resolver failed closed
+  before the first commit, which is the behavior the gate exists for.
   Rollback heads are resolved beside apply heads, before anything is submitted,
   from the topology still on screen. Sourcing them afterwards would source them from
   a desktop that is already wrong. An output that cannot be restored fails the whole
