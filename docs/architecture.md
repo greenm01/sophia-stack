@@ -491,7 +491,7 @@ remain historical evidence and cannot become alternate production loops.
 | Spatial policy process (current Sophia WM) | layout, workspace, focus and launch policy through opaque handles | XIDs, protocol objects, namespaces, titles, PIDs, payloads, rendering |
 | Portal broker | bounded transfer policy, decision and grant lifecycle | protocol object tables, payload rendering, DRM/KMS, client-global visibility |
 | Portal executor | concrete payload/handle transfer and native protocol completion | policy decisions or ambient namespace authority |
-| Metadata broker/shell | sanitization and compositor-owned chrome | WM identity disclosure or client-protocol authority |
+| Metadata broker/shell | disclosure policy, trust assignment, icon tokens, cross-authority aggregation, compositor-owned chrome | raw client identity, WM identity disclosure, client-protocol authority |
 
 No component may acquire another row's authority merely because it currently
 runs in the same process. Crate and process boundaries may evolve; ownership
@@ -520,9 +520,12 @@ A frontend emits:
 
 - `AuthoritySurface` and `SurfaceTransaction` values;
 - surface removal and lifecycle facts;
-- sanitized metadata candidates;
+- metadata candidates, and labels reduced under the broker's disclosure rule;
 - bounded portal request facts;
 - accept/reject acknowledgements for Engine-routed input and control.
+
+A frontend keeps its raw titles, classes, PIDs, and paths. They are inputs to its
+own reduction, not to anyone else's.
 
 No frontend may duplicate Engine's scene graph or infer presentation from
 client traffic. Engine output snapshots and presentation retirement flow back to

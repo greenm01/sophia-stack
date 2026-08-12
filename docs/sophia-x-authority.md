@@ -470,11 +470,25 @@ semantics:
   decides the polite path failed;
 - map/unmap/destroy events become reduced lifecycle facts for Engine and WM
   relayout;
-- raw titles, classes, icons, PIDs, and paths remain metadata-broker inputs,
-  never WM layout inputs.
+- raw titles, classes, icons, PIDs, and paths remain **authority-private**. They
+  are never WM layout inputs, and they do not leave this process — not even to the
+  metadata broker.
 
-The metadata broker emits sanitized `ChromeDescriptor` data. Sophia Engine owns
-the chrome presentation and chrome hit-testing.
+What leaves is a reduced label. The broker publishes a `MetadataDisclosureRule` per
+surface, this authority applies it to text it already legitimately holds, and only
+the result crosses. The existing metadata candidate is already shaped for this: it
+carries the property's name, type, and byte length, never its bytes.
+
+The reason is least privilege. Concentrating raw identity in the broker would be
+convenient — one sanitizer, one policy — but it would move every client's title,
+class, and PID across a process boundary and make one component the place where all
+of it lives, across every authority that will ever exist. Reduction belongs where
+the data already is; policy belongs where it can be consistent. Those are different
+places.
+
+The broker still owns what only it can: disclosure policy, trust assignment, icon
+tokens, and aggregation across authorities. It emits sanitized `ChromeDescriptor`
+data. Sophia Engine owns the chrome presentation and chrome hit-testing.
 
 ## Input Delivery
 

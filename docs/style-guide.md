@@ -274,18 +274,21 @@ Authorities emit bounded surface transactions, metadata candidates, portal
 requests, and lifecycle facts. Sophia Engine decides whether a visual transaction
 is committed, delayed, rejected, or timed out.
 
-A metadata candidate is not sanitized output. Raw titles, classes, icons, PIDs,
-and paths are inputs to the metadata broker and go nowhere else: not to the WM,
-which must stay blind, and not to Engine, which receives only the broker's
-sanitized packet. The broker owns sanitization, icon tokens, and trust
-assignment, because those are policy over a token space shared by every
-authority, and an authority that decided them locally would make two authorities
-disagree about what a user is looking at.
+Raw titles, classes, icons, PIDs, and paths are authority-private. They never
+reach the WM, which must stay blind, and they never reach Engine, which receives
+only reduced descriptors. They do not reach the metadata broker either.
 
-This wording used to say authorities emit *sanitized* candidates, which put the
-sanitization boundary in two places at once. `docs/architecture.md` and
-`docs/sophia-x-authority.md` are the normative statements; sanitization belongs to
-the broker.
+An authority reduces its own metadata under a disclosure rule the broker
+publishes, and emits the result. The split is deliberate: reduction belongs where
+the data already is, because moving raw identity across a process boundary buys
+nothing and costs a copy, a serialization surface, and a component that would hold
+every client's identity across every authority. Policy belongs where it can be
+consistent, so the broker still owns disclosure rules, trust assignment, icon
+tokens, and aggregation — the facts an authority cannot decide alone without two
+authorities disagreeing about what a user is looking at.
+
+The reduced label is bounded and validated the same way by every authority, so the
+only thing distributed is truncate-and-validate, not policy.
 
 ## XLibre Prototype Patches
 

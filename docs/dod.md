@@ -917,6 +917,11 @@ The compositor may use this data to draw title bars, top bars, tab strips, and
 security badges. The external WM should not need this packet to tile or focus
 surfaces.
 
+The chain is reduced at every hop. An authority reduces its own raw metadata under
+the broker's published disclosure rule and emits a bounded label; the broker adds
+trust, icon token, and attention state; Engine receives the result. Raw properties
+exist in exactly one process, the authority that already owns them.
+
 Sanitized metadata broker output enters Sophia Engine as a bounded metadata
 packet, not raw X properties. It may contain only `SurfaceId`, optional bounded
 display label, redaction bit, icon token, trust level, attention state, and

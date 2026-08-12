@@ -98,9 +98,13 @@ Sophia Engine owns:
 
 The metadata broker and shell own:
 
-- sanitizing labels, icon tokens, trust state, and attention state;
+- the disclosure rule that decides how much of a label an authority may emit;
+- icon tokens, trust state, and attention state, which are cross-authority facts;
 - proposing bounded compositor content from those sanitized facts;
 - shell interaction policy that does not belong to the external WM.
+
+They do not own the reduction itself. An authority applies the published rule to
+text it already holds, so raw identity never crosses to the broker.
 
 The native renderer owns:
 
