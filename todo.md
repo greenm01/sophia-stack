@@ -302,6 +302,32 @@ is excluded; retained product behavior is not.
   workflows before the WM freeze. Keep this endpoint distinct from
   `sophia_wm_v1`; this item does not itself stabilize `sophia_shell_v1` or pull
   general rendering-efficiency work forward from Milestone 14.
+  **Start with the broker, not the transport.**
+  `docs/sophia-shell-v1-direction.md` is explicit that the metadata broker is the
+  larger prerequisite: the redacted presentation feed has no implementation, and
+  without it the shell interface would be specified against a data source that does
+  not exist. Specifying a transport first would produce a wire for nothing to send.
+  The feed has exactly two sources with different trust properties, and conflating
+  them is the failure this row is most likely to have. Policy-authored structure —
+  workspace list, occupancy, focus — is blind-safe by construction and already
+  answered by `docs/sophia-indicator-descriptor.md`, because workspace state
+  originates in the policy process where no broker can see it. Only toplevel
+  identity for taskbars and docks needs real sanitization, and keeping the two apart
+  is what lets a status bar never request identity at all.
+  The first buildable piece is therefore the toplevel descriptor and its reduction:
+  a record a shell can render, constructible only by reducing client metadata, so
+  that leaking a title, app ID, PID, or path is a compile error rather than a review
+  finding. Activation, close, and minimize ride the existing opaque action tokens,
+  which already exist and already carry issuer scoping — the broker mints no new
+  authority for them. Decision 2 settled the neighbouring question for the WM side:
+  classifications reach policy through a capability-gated extension chunk, so the
+  broker's design is no longer constrained by what fits in `SnapshotSurface`.
+  One structural question is open and should be settled before code: which crate
+  owns the broker. `docs/style-guide.md` assigns `portal` cross-namespace transfer
+  policy, which is the closest existing layer, but a metadata broker is a
+  disclosure authority rather than a transfer one. Picking wrong is expensive
+  because it decides who may see client metadata, so this is a decision to take
+  deliberately rather than by whichever module was open at the time.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its

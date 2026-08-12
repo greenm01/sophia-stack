@@ -3,6 +3,32 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-12: Mirror groups are configurable before they are drivable
+
+- The configuration half of mirroring landed ahead of the scanout half, which
+  raises the question of what a `mirror` directive should do while nothing can
+  drive it. It is validated fully and then refused. Accepting and ignoring it would
+  leave an operator staring at an unmirrored screen with no error to search for,
+  which is the worst of the three options; refusing without validating would hide
+  configuration mistakes until the day the feature arrives.
+- Validation is split by what each layer can answer, which kept each rule where its
+  inputs are. Parsing rejects self-reference, repeats, emptiness, and the bound —
+  true whatever hardware is attached. The candidate as a whole rejects one connector
+  claimed by two logical outputs, the only rule needing more than one output in
+  view, and the only arrangement that would make "one logical output backed by N
+  connectors" untrue. The topology rejects unknown, disconnected, or mode-mismatched
+  members.
+- Same-mode is enforced at reconcile because no plane scaling exists on this path.
+  The alternative to refusing is letterboxing a screen the operator asked to match,
+  and silently changing what a display shows is not a fallback.
+- Ordering the errors mattered more than expected. An impossible request and an
+  unimplemented one send an operator to different places, so the topology checks run
+  before the unsupported refusal. A single "not supported" for both would have
+  buried real configuration errors until the feature shipped.
+- The mode is resolved through the primary's own `resolve_mode` rather than a second
+  copy. Two answers to "which mode did the operator ask for" is one too many, and
+  the copy would have drifted the first time preferred-mode handling changed.
+
 ## 2026-08-12: Topology apply is fed by a committed frame, not a scratch buffer
 
 - The apply path has been blocked on "output-scoped framebuffer allocation" since
