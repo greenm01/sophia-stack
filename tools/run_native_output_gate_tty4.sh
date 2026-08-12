@@ -23,6 +23,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EVIDENCE_ROOT="${SOPHIA_NATIVE_OUTPUT_GATE_ROOT:-/tmp/sophia-native-output-gate}"
+mkdir -p "$EVIDENCE_ROOT"
 APPLY="${SOPHIA_NATIVE_OUTPUT_APPLY:-0}"
 REQUIRE_TTY="${SOPHIA_NATIVE_OUTPUT_GATE_TTY:-/dev/tty4}"
 
@@ -63,8 +64,23 @@ sophia_bin="$ROOT_DIR/target/release/sophia"
 }
 binary_sha="$(sha256sum "$sophia_bin" | cut -d' ' -f1)"
 
-evidence="$EVIDENCE_ROOT/${commit:0:12}"
+# Per run, not per commit. Two runs of the same commit are two different pieces of
+# evidence, and keying only by commit let a second run overwrite the first mid-flight
+# -- which produced one transcript assembled from two runs, reporting another
+# process's tty and a validation that failed only because both were contending for
+# DRM master. A result that mixes two runs is worse than no result, because it looks
+# like a finding.
+evidence="$EVIDENCE_ROOT/${commit:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$evidence"
+
+# Only one gate may hold the card at a time. The lock is advisory and process-bound,
+# so it dies with the run rather than needing cleanup.
+exec 9>"$EVIDENCE_ROOT/.lock"
+if ! flock -n 9; then
+    echo "Another output gate is already running. DRM master admits one holder, so a" >&2
+    echo "second run would report refusals that say nothing about this hardware." >&2
+    exit 1
+fi
 
 {
     echo "commit=$commit"
