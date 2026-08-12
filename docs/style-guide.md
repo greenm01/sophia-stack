@@ -267,11 +267,25 @@ Authority code must not own:
 - compositor scene graph or scanout;
 - workspace/layout policy;
 - compositor chrome;
-- cross-namespace portal policy.
+- cross-namespace portal policy;
+- metadata sanitization or disclosure policy.
 
-Authorities emit bounded surface transactions, sanitized metadata candidates,
-portal requests, and lifecycle facts. Sophia Engine decides whether a visual
-transaction is committed, delayed, rejected, or timed out.
+Authorities emit bounded surface transactions, metadata candidates, portal
+requests, and lifecycle facts. Sophia Engine decides whether a visual transaction
+is committed, delayed, rejected, or timed out.
+
+A metadata candidate is not sanitized output. Raw titles, classes, icons, PIDs,
+and paths are inputs to the metadata broker and go nowhere else: not to the WM,
+which must stay blind, and not to Engine, which receives only the broker's
+sanitized packet. The broker owns sanitization, icon tokens, and trust
+assignment, because those are policy over a token space shared by every
+authority, and an authority that decided them locally would make two authorities
+disagree about what a user is looking at.
+
+This wording used to say authorities emit *sanitized* candidates, which put the
+sanitization boundary in two places at once. `docs/architecture.md` and
+`docs/sophia-x-authority.md` are the normative statements; sanitization belongs to
+the broker.
 
 ## XLibre Prototype Patches
 

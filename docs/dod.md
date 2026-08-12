@@ -920,7 +920,7 @@ surfaces.
 Sanitized metadata broker output enters Sophia Engine as a bounded metadata
 packet, not raw X properties. It may contain only `SurfaceId`, optional bounded
 display label, redaction bit, icon token, trust level, attention state, and
-generation. `ChromeBroker` maps accepted packets into `ChromeDescriptor`
+generation. `ChromeDescriptorTable` maps accepted packets into `ChromeDescriptor`
 entries and rejects invalid labels, invalid surfaces, and stale generations.
 Descriptor removal follows the same generation rule.
 
