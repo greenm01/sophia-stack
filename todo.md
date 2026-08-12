@@ -1190,6 +1190,25 @@ blocker. Work on it only when it shortens an active milestone.
   Note also that a failure here truncates the workspace run, because cargo stops
   before the remaining test binaries. A full-suite total that drops by roughly
   thirty-six tests is this flake, not a missing suite.
+  A third attempt narrowed the mechanism to `read_x_reply`
+  (`tests/x11_wire/support_extensions.rs`) and then failed too, which is the most
+  useful thing recorded here. That helper reads 32 bytes and derives a body length
+  from bytes 4..8 whatever the record is. Only a reply has a body: an error's bytes
+  4..8 are its offending resource id, and an event has none at all. So a non-reply
+  record yields a nonsense length and a read that blocks for the full timeout.
+  What makes it stubborn is that the two failing tests **depend on that mis-parse**.
+  Instrumenting the helper to reject non-replies showed both reading Sophia Present
+  **event type 35** through `read_x_reply` on *every* run, not only under load — one
+  call site even names the result `present`. The mis-parse is load-bearing: those
+  events carry zero in bytes 4..8, so the bogus length is zero and the helper
+  happens to return the event intact. Returning non-reply records whole, which is
+  what the wire actually says, also broke both tests deterministically, so they rely
+  on more than the zero-length coincidence.
+  Two conclusions. The fix is **not local to the helper** — those two tests must be
+  rewritten alongside it, which needs someone to work out what they intend to assert
+  about Present events versus replies. And raising timeouts remains wrong: the
+  records arrive promptly, they are simply parsed as the wrong kind.
+  Both attempted fixes were reverted. Baseline is 178 passing.
   A suite that fails for non-reasons erodes every other claim in this file, so this
   is worth closing even though it is not on the critical path.
 - [ ] Complete one human-visible `xmonad-interactive` capture proving pointer
