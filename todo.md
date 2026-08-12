@@ -637,8 +637,12 @@ is excluded; retained product behavior is not.
   entirely open and are inside the gate, so the freeze is not near.
   Before it lands, settle the wire decisions enumerated in
   `docs/wm-v1-freeze-surface.md`. Twenty-three of the 27 rows need no wire change;
-  the residue is workspace-name projection, broker classification shape, the
-  continuous-pointer payload, and the output logical-space contract. The binding
+  the residue was workspace-name projection, broker classification shape, the
+  continuous-pointer payload, and the output logical-space contract. The last of
+  those is now settled and normative in `docs/sophia-policy-ipc.md` under Stable
+  Spatial Semantics, deliberately ahead of the output-authority tranche that would
+  otherwise be the first thing tempted to widen `SnapshotOutput`. Three remain, and
+  broker classification shape is the only one that can force a layout change. The binding
   constraint is server-to-client enum vocabularies, not record kinds: an uncounted
   extension chunk in reserved kinds `0xFF00`–`0xFFFF` stays available after the
   freeze, but enum values sit at fixed offsets inside fixed-width records where no
@@ -649,13 +653,19 @@ is excluded; retained product behavior is not.
   facts arrive as capability-gated extension chunks in the reserved kind range;
   new authorities take new interface families. Receivers keep rejecting unknown
   kinds because gating guarantees they are never sent one they did not negotiate.
-- [ ] Build outbound capability gating before the freeze. It is a prerequisite of
-  the rule above, not an optimization: `selected_capabilities` currently has no
-  consumer outside `crates/sophia-runtime/src/policy_ipc.rs`, its accessor is never
-  called, and the snapshot encoder takes no capability argument, so a frozen client
-  can be sent content it must reject. Add one pinning test asserting the default
-  capability set produces a byte-identical stream, and bound golden corpora to the
-  default set plus each capability in isolation.
+- [x] Build outbound capability gating before the freeze. It is a prerequisite of
+  the rule above, not an optimization: without it a frozen client can be sent
+  content it must reject. `encode_wm_v1_policy_snapshot` now takes the selected
+  capability set and omits governed record kinds along with their declared counts,
+  so the transfer stays self-consistent; scene outputs and surfaces stay ungated as
+  core semantics. The production caller passes what negotiation actually selected.
+  Two tests hold the line, both in `crates/sophia-protocol/tests/policy_semantics.rs`:
+  a producer pin asserting that enabling a capability leaves ungated chunk ordinals,
+  kinds, item counts, and bytes byte-identical, and one binding the corpora to the
+  default set plus each capability in isolation. Clause 2 of the forward-compatibility
+  rule is sound as a result: an extension chunk in the reserved kind range reaches
+  only a client that negotiated it. Enum widening remains now-or-never, because no
+  gate reaches a value at a fixed offset inside a record already being sent.
 
 Milestone 13 exits only when the public wire is independently implementable,
 the retained Triad behavior port is complete across the correct authorities,

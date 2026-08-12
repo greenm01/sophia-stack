@@ -253,7 +253,34 @@ Engine validates the complete candidate before mutation. The active connection
 epoch, transaction, snapshot generation, output and surface generations,
 counts, capabilities, constraints, geometry, uniqueness, and focus must all be
 valid. A surface may appear on at most one output, and focus must name a visible
-focusable surface. Mirroring is a separate future capability.
+focusable surface. One surface shared by two logical outputs stays inexpressible
+and raises `DuplicateSurface`; mirroring does not work that way, as the output
+logical-space contract below records.
+
+### The Output Logical Space Is The Whole Contract
+
+`SnapshotOutput` carries `output`, `generation`, `focus`, `bounds`, and
+`work_area`. It carries no scale, transform, mode, connector identity, or enabled
+flag, and it has no reserved space. That is deliberate and, once the revision
+freezes, permanent: widening the record is a layout change, so every fact below
+must reach policy through the logical rectangle or not at all.
+
+- **Scale never crosses.** Engine owns display scaling and hands policy a logical
+  space already expressed in it. A policy-side scale, such as Hagia's fixed-point
+  column-width ratio, is a private layout parameter that happens to share the name.
+- **Transform never crosses.** Rotation is absorbed by Engine presenting
+  pre-rotated logical bounds. A rotated output is an output with different bounds.
+- **Mode and timing never cross.** Refresh, pixel clock, and connector timing are
+  output-authority concerns with no policy meaning.
+- **Enablement is expressed by omission.** A disabled output is absent from the
+  complete snapshot rather than present with a flag, which the permanent 16-output
+  maximum keeps bounded.
+- **Mirroring is invisible.** One logical output backed by N connectors projects as
+  exactly one `SnapshotOutput`; no connector identity or head count crosses.
+
+The pressure on this contract comes from the output authority, which handles every
+one of those facts and will be tempted to publish them. It must not. A policy that
+needs to know an output's mode has been handed the wrong abstraction.
 
 An active-output change is valid only when the affected set contains both the
 old and new output. Fullscreen placements equal full output bounds; all other

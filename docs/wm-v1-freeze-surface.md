@@ -26,17 +26,19 @@ first:
   gating already exists (`crates/sophia-runtime/src/policy_ipc.rs:289`, `:461`,
   `:496`).
 - **Server to client, irreversible without outbound gating.** A frozen client
-  rejects what it cannot decode, and *the producer does not currently consult the
-  negotiated capability set*. `selected_capabilities` has no consumer outside
-  `policy_ipc.rs`; the accessor at `:444` is never called, and
-  `crates/sophia-cli/src/commands/live_session/policy_transport_worker.rs:253`
-  encodes snapshots with no capability argument at all.
+  rejects what it cannot decode, so the producer must consult the negotiated
+  capability set. It now does: `encode_wm_v1_policy_snapshot` takes the selected
+  capabilities and omits governed record kinds along with their declared counts
+  (`crates/sophia-protocol/src/ipc/wm_v1_records.rs:609`), and the production
+  caller passes what negotiation actually selected
+  (`crates/sophia-cli/src/commands/live_session/policy_transport_worker.rs:258`).
 
 So the sentence "a client that never negotiates the capability never receives it"
-is **not true today in the outbound direction**. Until it is, every server-to-client
-addition is genuinely now-or-never. Building the outbound gate is therefore the
-cheapest way to buy back optionality across this entire document; it is not a wire
-change.
+holds in both directions. That is what makes a server-to-client addition reversible
+after the freeze, and it is why the decisions below are bounded rather than
+now-or-never. The gate covers governed record kinds only; enum values inside
+already-sent records sit at fixed offsets and no gate reaches them, which is why
+enum vocabularies remain the binding constraint.
 
 Note which direction the pointer work sits in: `ProjectionRequest` is
 `direction="session-to-policy"` — server to client — and carries
@@ -345,6 +347,12 @@ reservations and a separate power authority beyond test/apply/rollback, and that
 reservations couple to the shell work-area coordinator — so the temptation will be
 real. `SnapshotOutput` has no reserved space; widening it is a layout change.
 
+**Settled.** The contract is now normative in `docs/sophia-policy-ipc.md` under
+Stable Spatial Semantics: scale, transform, mode, and connector identity never
+cross; enablement is expressed by omission; mirroring projects as one output. It
+was ratified before the output-authority tranche rather than after, which is the
+whole point — the guardrail is worth nothing once the code that needed it exists.
+
 ---
 
 ## Two Resolved Product Decisions
@@ -358,9 +366,10 @@ Both were open when this enumeration was first written. Both are now settled.
    authorities take new interface families. Receivers keep rejecting unknown kinds,
    because gating guarantees they are never sent one they did not negotiate.
 
-   Its prerequisite is outbound capability gating, which does not exist yet — see
-   the direction rule at the top of this file. Until that lands, clause 2 is unsound
-   and every server-to-client addition is now-or-never.
+   Its prerequisite was outbound capability gating, which now exists — see the
+   direction rule at the top of this file. Clause 2 is therefore sound: an extension
+   chunk in the reserved range reaches only a client that negotiated it. What
+   remains now-or-never is enum widening, not record addition.
 
 2. **Native output mirroring will be implemented before the freeze.** The
    alternative — rejecting the port obligation while retaining mirroring as a named
