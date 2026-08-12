@@ -87,7 +87,7 @@ impl NativeOutputTopologyHardware for FakeHardware {
         })
     }
 
-    fn release_mode_blob(&self, blob: u64) {
+    fn release_mode_blob(&self, _output: OutputId, blob: u64) {
         self.released.borrow_mut().push(blob);
     }
 }

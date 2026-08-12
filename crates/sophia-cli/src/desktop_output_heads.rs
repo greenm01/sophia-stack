@@ -1,6 +1,10 @@
 use std::fmt;
 
-use sophia_backend_live::{LibdrmNativeOutputCapability, LibdrmNativeOutputTiming};
+use sophia_backend_live::{
+    LibdrmNativeAtomicTopologyHead, LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
+    LibdrmNativePrimaryPlaneResourceDevice, LiveProductionNativeScanout,
+    discover_native_primary_plane_property_handles, resolve_native_connector_mode,
+};
 use sophia_protocol::OutputId;
 
 use crate::desktop_output_topology::NativeOutputActivationPlan;
@@ -51,9 +55,13 @@ pub trait NativeOutputTopologyHardware {
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
 
-    /// Releases a blob this hardware created. Called for every blob the resolver
-    /// took, including on the failure path.
-    fn release_mode_blob(&self, blob: u64);
+    /// Releases a blob this hardware created for `output`. Called for every blob
+    /// the resolver took, including on the failure path.
+    ///
+    /// The output is named because a blob belongs to the card that created it, and
+    /// a session can span more than one card. Releasing against the wrong device
+    /// would leak the blob and disturb an unrelated one.
+    fn release_mode_blob(&self, output: OutputId, blob: u64);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,7 +119,7 @@ where
 {
     hardware: &'a H,
     heads: Vec<H::Head>,
-    blobs: Vec<u64>,
+    blobs: Vec<(OutputId, u64)>,
 }
 
 impl<H> NativeOutputTopologyHeads<'_, H>
@@ -136,8 +144,8 @@ where
     H: NativeOutputTopologyHardware,
 {
     fn drop(&mut self) {
-        for blob in self.blobs.drain(..) {
-            self.hardware.release_mode_blob(blob);
+        for (output, blob) in self.blobs.drain(..) {
+            self.hardware.release_mode_blob(output, blob);
         }
     }
 }
@@ -195,7 +203,7 @@ where
         );
         match hardware.compose_head(output, timing) {
             Ok(composed) => {
-                resolved.blobs.push(composed.mode_blob);
+                resolved.blobs.push((output, composed.mode_blob));
                 resolved.heads.push(composed.head);
             }
             Err(cause) => {
@@ -208,4 +216,81 @@ where
         return Err(NativeOutputHeadResolveError::NoEnabledOutputs);
     }
     Ok(resolved)
+}
+
+/// Composes heads from the live scanout's own KMS objects.
+///
+/// Every output the session drives already has a selection naming its connector,
+/// CRTC, and plane, and the card that owns them. This reads those rather than
+/// re-deriving an assignment, so a validated topology names exactly the objects the
+/// session runs on.
+pub struct LiveNativeOutputTopologyHardware<'a> {
+    scanout: &'a LiveProductionNativeScanout,
+}
+
+impl<'a> LiveNativeOutputTopologyHardware<'a> {
+    pub const fn new(scanout: &'a LiveProductionNativeScanout) -> Self {
+        Self { scanout }
+    }
+}
+
+impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
+    type Head = LibdrmNativeAtomicTopologyHead;
+
+    fn compose_head(
+        &self,
+        output: OutputId,
+        timing: LibdrmNativeOutputTiming,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
+        let Some(index) = self.scanout.output_index(output) else {
+            return Err(NativeOutputHeadUnavailable::MissingSelection);
+        };
+        let selection = self.scanout.selection(index);
+        let card = self.scanout.card(index);
+
+        let discovery = discover_native_primary_plane_property_handles(
+            card,
+            selection.connector_handle(),
+            selection.crtc_handle(),
+            selection.plane_handle(),
+        );
+        let Some(properties) = discovery.properties else {
+            return Err(NativeOutputHeadUnavailable::MissingProperties);
+        };
+
+        // A timing this connector never advertised is a configuration error, and it
+        // fails here rather than as an opaque kernel refusal later.
+        let Ok(Some(mode)) =
+            resolve_native_connector_mode(card, selection.connector_handle(), timing)
+        else {
+            return Err(NativeOutputHeadUnavailable::UnknownTiming);
+        };
+        let Ok(mode_blob) = card.create_mode_blob(mode) else {
+            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
+        };
+        if mode_blob == 0 {
+            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
+        }
+
+        Ok(NativeOutputComposedHead {
+            head: LibdrmNativeAtomicTopologyHead::from_selection(selection, mode_blob, properties),
+            mode_blob,
+        })
+    }
+
+    fn release_mode_blob(&self, output: OutputId, blob: u64) {
+        // Release against the card that created it. Failing to release is worth a
+        // line but not worth failing a validation that already completed.
+        let Some(index) = self.scanout.output_index(output) else {
+            return;
+        };
+        if let Err(error) = self.scanout.card(index).destroy_mode_blob(blob) {
+            tracing::warn!(
+                schema = 1,
+                blob,
+                %error,
+                "sophia_native_output_mode_blob release failed"
+            );
+        }
+    }
 }

@@ -1,6 +1,7 @@
 use sophia_backend_live::{
-    LibdrmNativeAtomicCommitDevice, LibdrmNativeAtomicHead, NativeLibdrmAtomicScanoutCommitter,
-    NativeTopologySubmitIntent, NativeTopologySubmitOutcome, submit_native_multi_head_topology,
+    LibdrmNativeAtomicCommitDevice, LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead,
+    NativeLibdrmAtomicScanoutCommitter, NativeTopologySubmitIntent, NativeTopologySubmitOutcome,
+    submit_native_multi_head_topology, validate_native_multi_head_topology_on_device,
 };
 
 use crate::desktop_output_activation::{
@@ -21,6 +22,83 @@ use crate::desktop_output_topology::NativeOutputActivationPlan;
 pub struct NativeOutputHeadSet {
     pub apply: Vec<LibdrmNativeAtomicHead>,
     pub rollback: Vec<LibdrmNativeAtomicHead>,
+}
+
+/// Validates a candidate against real hardware and never mutates anything.
+///
+/// This is the executor a session runs before it owns framebuffers. Its heads carry
+/// no plane state, so the kernel judges the topology itself: whether these
+/// connectors can be driven by these CRTCs at these modes, together, in one commit.
+/// That is the question startup needs answered, and it can be answered before a
+/// single pixel exists.
+///
+/// Apply is not gated here, it is absent. The type cannot mutate output state
+/// because a topology request has nothing to scan out; a caller who wants to apply
+/// needs `NativeOutputCommitExecutor` and real framebuffers. Rollback succeeds
+/// trivially for the same reason: nothing was applied, so nothing needs undoing.
+pub struct NativeOutputTopologyValidationExecutor<'a, D> {
+    device: &'a D,
+    heads: &'a [LibdrmNativeAtomicTopologyHead],
+    validation: Option<NativeTopologySubmitOutcome>,
+}
+
+impl<'a, D> NativeOutputTopologyValidationExecutor<'a, D> {
+    pub const fn new(device: &'a D, heads: &'a [LibdrmNativeAtomicTopologyHead]) -> Self {
+        Self {
+            device,
+            heads,
+            validation: None,
+        }
+    }
+
+    /// What the kernel said about the topology, as one word for evidence.
+    ///
+    /// The settlement alone cannot carry this. A validation that succeeds still
+    /// settles as rejected, because apply then refuses, and it refuses with the
+    /// same `WouldBlock` a busy device produces. Without this, an accepted topology
+    /// and a busy card are indistinguishable in the log, which would make the
+    /// interesting outcome invisible.
+    pub const fn validation(&self) -> &'static str {
+        match self.validation {
+            None => "not_attempted",
+            Some(NativeTopologySubmitOutcome::Accepted) => "accepted",
+            Some(NativeTopologySubmitOutcome::Busy) => "busy",
+            Some(NativeTopologySubmitOutcome::Rejected) => "rejected",
+            Some(NativeTopologySubmitOutcome::Unbuildable(_)) => "unbuildable",
+        }
+    }
+}
+
+impl<D> NativeOutputActivationEffectExecutor for NativeOutputTopologyValidationExecutor<'_, D>
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    fn test(
+        &mut self,
+        _key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        let outcome = validate_native_multi_head_topology_on_device(self.device, self.heads);
+        self.validation = Some(outcome);
+        completion(outcome)
+    }
+
+    fn apply(
+        &mut self,
+        _key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        // Unreachable behind a declined test, and refused if it is ever reached.
+        NativeOutputEffectCompletion::Failed(NativeOutputActivationFailure::WouldBlock)
+    }
+
+    fn rollback(
+        &mut self,
+        _key: NativeOutputActivationKey,
+        _plan: &NativeOutputActivationPlan,
+    ) -> NativeOutputEffectCompletion {
+        NativeOutputEffectCompletion::Succeeded
+    }
 }
 
 /// Adapts topology submission to the activation reducer's effect executor.

@@ -46,6 +46,10 @@ impl LibdrmNativePrimaryPlaneSelection {
         self.crtc
     }
 
+    pub const fn plane_handle(self) -> drm::control::plane::Handle {
+        self.plane
+    }
+
     pub fn crtc_id(self) -> u32 {
         self.crtc.into()
     }

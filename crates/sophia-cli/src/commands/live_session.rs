@@ -10,8 +10,13 @@ use sophia_cli::desktop_output_activation::{
     NativeOutputActivationFailure, NativeOutputActivationSettlement,
     NativeOutputRollbackSettlement, UnavailableNativeOutputExecutor, run_native_output_activation,
 };
+use sophia_cli::desktop_output_commit::NativeOutputTopologyValidationExecutor;
+use sophia_cli::desktop_output_heads::{
+    LiveNativeOutputTopologyHardware, resolve_native_output_topology_heads,
+};
 use sophia_cli::desktop_output_topology::{
-    prepare_native_output_activation_plan, project_native_output_topology,
+    NativeOutputActivationPlan, prepare_native_output_activation_plan,
+    project_native_output_topology,
 };
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
@@ -164,6 +169,30 @@ impl SessionPhysicalInput {
     }
 }
 
+/// The one DRM device every enabled output in a plan is driven by, if there is one.
+///
+/// An atomic request reaches exactly one device, so a topology spanning two cards
+/// cannot be validated as a unit. Returning `None` for that case keeps startup from
+/// validating a fragment and reporting the answer as if it covered the desktop.
+fn plan_validation_device<'a>(
+    scanout: &'a LiveProductionNativeScanout,
+    plan: &NativeOutputActivationPlan,
+) -> Option<&'a sophia_backend_live::RealAtomicScanoutCard> {
+    let mut device: Option<&sophia_backend_live::RealAtomicScanoutCard> = None;
+    for target in plan.targets() {
+        if !target.requested().enabled {
+            continue;
+        }
+        let card = scanout.card(scanout.output_index(target.output())?);
+        match device {
+            Some(existing) if !std::ptr::eq(existing, card) => return None,
+            Some(_) => {}
+            None => device = Some(card),
+        }
+    }
+    device
+}
+
 fn open_session_physical_input(
     config: &PersistentXtermSessionConfig,
     device_map: sophia_backend_live::NativeLibinputDeviceMap,
@@ -253,13 +282,44 @@ pub(crate) fn run_persistent_xterm_session(
         let generation = activation.generation().raw();
         let targets = activation.targets().len();
         let focused = activation.focused_output().is_some();
-        // The prepared plan now drives the real activation phase machine. Until a
-        // multi-connector atomic request builder exists, the executor declines the
-        // test phase, so this settles as rejected with no rollback required and
-        // startup still performs no KMS mutation. Swapping the executor is the
-        // only change needed once that builder lands.
-        let report =
-            run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?;
+        // The prepared plan drives the real activation phase machine, and the test
+        // phase now reaches hardware: the candidate is resolved into topology heads
+        // and submitted as one TEST_ONLY request, so the kernel judges the whole
+        // desktop. Startup still performs no KMS mutation, because a validation
+        // executor has no apply. What it settles as is now evidence about the
+        // topology rather than evidence that nothing was attempted.
+        let hardware = LiveNativeOutputTopologyHardware::new(native);
+        let resolved = resolve_native_output_topology_heads(&activation, &capabilities, &hardware);
+        let (report, executor, validation) = match &resolved {
+            Ok(heads) => match plan_validation_device(native, &activation) {
+                Some(card) => {
+                    let mut executor =
+                        NativeOutputTopologyValidationExecutor::new(card, heads.heads());
+                    let report = run_native_output_activation(activation, &mut executor)?;
+                    (report, "topology_validation", executor.validation())
+                }
+                // One atomic request cannot span two DRM devices, so a topology
+                // that does is not validatable as a unit and must not be reported
+                // as refused.
+                None => (
+                    run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?,
+                    "multi_device_unvalidatable",
+                    "not_attempted",
+                ),
+            },
+            Err(error) => {
+                tracing::warn!(
+                    schema = 1,
+                    %error,
+                    "native desktop output candidate could not be resolved into heads"
+                );
+                (
+                    run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?,
+                    "unresolved",
+                    "not_attempted",
+                )
+            }
+        };
         let (status, phase, cause) = match report.settlement {
             NativeOutputActivationSettlement::Activated { .. } => ("applied", "activated", "none"),
             NativeOutputActivationSettlement::Rejected {
@@ -284,7 +344,8 @@ pub(crate) fn run_persistent_xterm_session(
             status,
             phase,
             cause,
-            executor = "unavailable",
+            executor,
+            validation,
             generation,
             outputs = targets,
             rollback_targets = targets,

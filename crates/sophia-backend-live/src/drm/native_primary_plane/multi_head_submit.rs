@@ -71,6 +71,24 @@ pub fn validate_native_multi_head_topology<D>(
 where
     D: LibdrmNativeAtomicCommitDevice,
 {
+    validate_native_multi_head_topology_on_device(committer.device(), heads)
+}
+
+/// Validates a topology against a device directly.
+///
+/// A validation is not a commit: nothing is scheduled, nothing retires, and the
+/// committer's submit and reject counters would describe work that never happened.
+/// A caller holding only a borrowed card — which is what a running session has —
+/// also has no committer to lend. Both point the same way, so the device is the
+/// primitive here and the committer form delegates to it.
+#[cfg(feature = "libdrm-events")]
+pub fn validate_native_multi_head_topology_on_device<D>(
+    device: &D,
+    heads: &[LibdrmNativeAtomicTopologyHead],
+) -> NativeTopologySubmitOutcome
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
     let build = build_native_multi_head_topology_request(heads);
     if build.status != LibdrmNativeMultiHeadRequestBuildStatus::Built {
         return NativeTopologySubmitOutcome::Unbuildable(build.status);
@@ -78,7 +96,14 @@ where
     let Some(request) = build.request else {
         return NativeTopologySubmitOutcome::Unbuildable(build.status);
     };
-    submit(committer, request.test_only().allow_modeset())
+    let (flags, native) = request.test_only().allow_modeset().into_native();
+    match device.submit_atomic_commit(flags, native) {
+        Ok(()) => NativeTopologySubmitOutcome::Accepted,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            NativeTopologySubmitOutcome::Busy
+        }
+        Err(_) => NativeTopologySubmitOutcome::Rejected,
+    }
 }
 
 #[cfg(feature = "libdrm-events")]
