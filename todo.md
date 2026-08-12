@@ -739,8 +739,13 @@ is excluded; retained product behavior is not.
   never touches it. Moving it would relocate v7 code rather than free anything, and
   it should be deleted with v7 once the xmonad profile migrates to the public
   projection transport.
-  Still to extract: Engine-owned `WmWorkspaceState`, which the public path also
-  constructs.
+  The extraction item is therefore complete. Engine-owned `WmWorkspaceState` is
+  *not* a second extraction: it lives in `wm_policy.rs`, already a separate module
+  from the v7 one, and the public path's use of it is removed by the gated item in
+  13.3 — "after the complete Hagia restart and last-layout gates" — not by lifting
+  anything. `wm_policy.rs` does import `WM_API_VERSION` and v7 packet types, so it
+  still has to be untangled before v7 is deleted, but that untangling is part of the
+  gated removal and is deliberately not ahead of its gate.
 - [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart
@@ -1080,6 +1085,24 @@ Launcher, And Shell Integration are pre-freeze port requirements.
 Interactive QEMU is useful for reproduction but is not a physical daily-driver
 blocker. Work on it only when it shortens an active milestone.
 
+- [ ] Fix the load-sensitive flake in `sophia-x-authority`'s `x11_wire` suite.
+  Diagnosed, not fixed. It is **not** a timeout: under a parallel build,
+  `routed_service_confines_input_and_control_to_two_workers_and_drains` fails at
+  `socket_observation.rs:710` with `BadWindow` (3) where `BadAccess` (10) is
+  expected, and `routed_lifecycle_events_follow_structure_and_substructure_masks`
+  and `configured_present_child_receives_xlibre_ordered_geometry_notification`
+  fail the same way intermittently. The shape is a cross-client race: the first
+  client writes four requests and never reads, so nothing establishes that the
+  server processed its `CreateWindow` before a second client refers to that window.
+  The obvious fix is wrong. Adding a round-trip barrier on the first client — a
+  request against an absent resource, whose error reply proves everything earlier
+  was processed — makes the test fail **deterministically** rather than fixing it.
+  So per-connection request ordering is not the whole mechanism, and the routed
+  two-worker path or the confined-namespace boundary between the two clients is
+  involved. That is where the next attempt should start, and it is worth more than
+  the failed patch, which was reverted.
+  A suite that fails for non-reasons erodes every other claim in this file, so this
+  is worth closing even though it is not on the critical path.
 - [ ] Complete one human-visible `xmonad-interactive` capture proving pointer
   movement, terminal launch, typed text, focus change, application close, and
   clean manual shutdown. The fail-closed verifier, mutations, and RFB capture
