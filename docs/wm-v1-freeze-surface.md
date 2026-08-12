@@ -271,6 +271,24 @@ sanitization is required.
 This costs nothing and closes the naming half of the row. The only cost is the
 32-byte label ceiling, which is already permanent for indicators.
 
+**Settled as recommended.** A workspace name reaches the desktop as a
+`ProjectionIndicator` label, and no wire change is required. Two consequences are
+worth stating because they are easy to rediscover as bugs:
+
+- **32 bytes is a hard ceiling, and it is UTF-8.** A name is truncated on a
+  character boundary, never mid-sequence, and truncation is silent to policy —
+  policy authored the label, so there is nobody to report it to. A configuration
+  that names workspaces longer than the ceiling is a configuration error caught at
+  migration, not a runtime negotiation.
+- **A name is not an identity.** Indicators already carry an action token for
+  activation; nothing may resolve a workspace *by* its label, or the label stops
+  being presentation and becomes a namespace. Hagia's `ViewId` values stay private
+  and stay the identity.
+
+This closes only the naming half of its ledger row. Dynamic creation and pruning,
+occupancy navigation, and scratchpads are implemented; complete command parity is
+what keeps the row partial.
+
 ### Decision 2 — How broker-issued classifications reach Hagia
 
 This is the one row that can genuinely force a `*Begin` layout change, and it
@@ -395,6 +413,29 @@ Two coupling notes that constrain *when*, not *what*:
   surface and mode. Continuous updates need a coalescing rule — replaceable
   latest-value, matching the reduced-continuous-value discipline already ratified
   for target-resolved input — not a queue-capacity increase.
+
+**Settled as recommended, with the vocabulary fixed now and the behavior later.**
+The wire half must land before the freeze because it is enum widening, which no
+gate reaches; the implementation half can follow, because values that exist but are
+never sent break nothing.
+
+Fixed now:
+
+- `PolicyInteractionKind` gains `Drag` and `Scroll` beside `Move = 1` and
+  `Resize = 2`. Four values is the whole vocabulary — a gesture Sophia later wants
+  that is none of these needs a new interface family, not a fifth value.
+- The continuous payload rides `interaction_x`/`y`/`width`/`height` with the axis
+  discriminant in `reserved_cause`. Scroll uses `interaction_x`/`y` as the delta
+  pair and leaves the size fields zero; drag uses all four exactly as move and
+  resize do. Record the reuse in the schema so it is not rediscovered as a mystery.
+- `PolicyInteractionPhase` needs nothing: `Begin`, `Update`, `End`, and `Cancel`
+  are already wire-reachable and only `End` is constructed.
+
+Deferred, and why that is safe: the coalescing rule and `Cancel`'s revocation
+semantics are behavior, not layout. Specifying `Cancel` early would either
+duplicate the lock and security-authority epoch barrier or guess at it, and a
+guessed revocation contract is worse than a late one. Both remain gated on that
+barrier, and neither can force a wire change once the four values above exist.
 
 ### Decision 4 — The logical-space contract for outputs
 

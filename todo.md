@@ -623,6 +623,17 @@ is excluded; retained product behavior is not.
   means deciding at the layer that does hold previous state
   (`SurfaceOutputReservationState`), and it changes behavior for every bar, so it is
   called out here rather than settled quietly.
+  That decision is now taken, and it rules out both shortcuts. Failing closed by
+  preserving the previous work area is wrong after a shrink: the preserved rectangle
+  belongs to the larger output and would put policy beyond the screen. Releasing the
+  reservation is suboptimal; preserving a stale one is incoherent. Clamping the span
+  inside the pure reducer is also wrong, because the reducer cannot tell a span
+  clamped by a shrink from one that arrived malformed, and admitting the latter to
+  fix the former trades a fail-open edge for weaker rejection. The fix belongs in
+  `SurfaceOutputReservationState`: a reservation already admitted against a larger
+  root is re-projected onto the smaller one, while a reservation arriving for the
+  first time is validated against the current root and rejected if it does not fit.
+  Same geometry, different provenance, different answer. Implementation is open.
   Evidence follows that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
@@ -759,8 +770,23 @@ is excluded; retained product behavior is not.
   analysis predates it.
   The generator now rejects any ordinary record declaring a kind in the reserved
   range, so what was a review-time rule about a number is checked.
-  Two decisions remain: workspace-name projection and the continuous-pointer
-  payload. Neither can force a layout change. The binding
+  The last two are now settled too, both as recommended, so all four wire decisions
+  are closed and none of them cost a layout change.
+  Workspace names project as `ProjectionIndicator` labels: no field, no record, a
+  hard 32-byte UTF-8 ceiling truncated on a character boundary, and a name is never
+  an identity — activation stays on the action token so a label cannot become a
+  namespace. This closes the naming half of its row; complete command parity is what
+  keeps the row partial.
+  The continuous-pointer payload fixes its vocabulary now and its behavior later.
+  `PolicyInteractionKind` gains `Drag` and `Scroll`, and four values is the whole
+  vocabulary; the payload rides the existing `interaction_*` fields with the axis
+  discriminant in `reserved_cause`, scroll using the coordinate pair as its delta
+  and leaving the size fields zero. `PolicyInteractionPhase` needs nothing — all
+  four phases are already wire-reachable and only `End` is ever constructed. The
+  coalescing rule and `Cancel`'s revocation semantics are behavior rather than
+  layout, and both stay gated on the lock and security-authority epoch barrier: a
+  guessed revocation contract would be worse than a late one.
+  What remains pre-freeze from this analysis is implementation, not decisions. The binding
   constraint is server-to-client enum vocabularies, not record kinds: an uncounted
   extension chunk in reserved kinds `0xFF00`–`0xFFFF` stays available after the
   freeze, but enum values sit at fixed offsets inside fixed-width records where no
