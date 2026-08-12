@@ -1,5 +1,6 @@
 mod buffer;
 mod multi_head_request;
+mod multi_head_submit;
 mod objects;
 mod request;
 mod resource_bundle;
@@ -9,6 +10,7 @@ mod resource_device;
 
 pub use buffer::*;
 pub use multi_head_request::*;
+pub use multi_head_submit::*;
 pub use objects::*;
 pub use request::*;
 pub use resource_bundle::*;

@@ -297,3 +297,132 @@ fn an_empty_mode_list_resolves_nothing() {
         LibdrmNativeModeResolutionStatus::UnknownTiming
     );
 }
+
+/// Records the flags of every submission, so a test can prove the validation pass
+/// really carried TEST_ONLY and that nothing else reached the device.
+#[derive(Default)]
+struct RecordingCommitDevice {
+    submissions: std::cell::RefCell<Vec<drm::control::AtomicCommitFlags>>,
+    results: std::cell::RefCell<Vec<Result<(), std::io::ErrorKind>>>,
+}
+
+impl RecordingCommitDevice {
+    fn with_results(results: Vec<Result<(), std::io::ErrorKind>>) -> Self {
+        Self {
+            submissions: std::cell::RefCell::new(Vec::new()),
+            results: std::cell::RefCell::new(results),
+        }
+    }
+}
+
+impl LibdrmNativeAtomicCommitDevice for RecordingCommitDevice {
+    fn submit_atomic_commit(
+        &self,
+        flags: drm::control::AtomicCommitFlags,
+        _request: drm::control::atomic::AtomicModeReq,
+    ) -> io::Result<()> {
+        self.submissions.borrow_mut().push(flags);
+        let mut results = self.results.borrow_mut();
+        if results.is_empty() {
+            return Ok(());
+        }
+        match results.remove(0) {
+            Ok(()) => Ok(()),
+            Err(kind) => Err(io::Error::new(kind, "synthetic commit failure")),
+        }
+    }
+}
+
+fn submitted_flags(
+    committer: &NativeLibdrmAtomicScanoutCommitter<RecordingCommitDevice>,
+) -> Vec<drm::control::AtomicCommitFlags> {
+    committer.device().submissions.borrow().clone()
+}
+
+#[test]
+fn validating_a_topology_sets_test_only_and_allows_modeset() {
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::default());
+    let heads = [
+        head(21, 41, 51, 61, scanout_size(1920, 1080)),
+        head(22, 42, 52, 61, scanout_size(1920, 1080)),
+    ];
+
+    let outcome = submit_native_multi_head_topology(
+        &mut committer,
+        &heads,
+        NativeTopologySubmitIntent::Validate,
+    );
+
+    assert_eq!(outcome, NativeTopologySubmitOutcome::Accepted);
+    let flags = submitted_flags(&committer);
+    assert_eq!(flags.len(), 1);
+    // The safety property: validation must not be able to change anything.
+    assert!(flags[0].contains(drm::control::AtomicCommitFlags::TEST_ONLY));
+    assert!(flags[0].contains(drm::control::AtomicCommitFlags::ALLOW_MODESET));
+}
+
+#[test]
+fn activating_a_topology_does_not_set_test_only() {
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::default());
+    let heads = [head(21, 41, 51, 61, scanout_size(1920, 1080))];
+
+    let outcome = submit_native_multi_head_topology(
+        &mut committer,
+        &heads,
+        NativeTopologySubmitIntent::Activate,
+    );
+
+    assert_eq!(outcome, NativeTopologySubmitOutcome::Accepted);
+    let flags = submitted_flags(&committer);
+    assert!(!flags[0].contains(drm::control::AtomicCommitFlags::TEST_ONLY));
+    assert!(flags[0].contains(drm::control::AtomicCommitFlags::ALLOW_MODESET));
+}
+
+#[test]
+fn an_unbuildable_topology_never_reaches_the_device() {
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::default());
+    // One framebuffer, two sizes: a mirror group that cannot be expressed.
+    let heads = [
+        head(21, 41, 51, 61, scanout_size(1920, 1080)),
+        head(22, 42, 52, 61, scanout_size(1280, 720)),
+    ];
+
+    let outcome = submit_native_multi_head_topology(
+        &mut committer,
+        &heads,
+        NativeTopologySubmitIntent::Activate,
+    );
+
+    assert_eq!(
+        outcome,
+        NativeTopologySubmitOutcome::Unbuildable(
+            LibdrmNativeMultiHeadRequestBuildStatus::MismatchedMirrorSize
+        )
+    );
+    assert!(submitted_flags(&committer).is_empty());
+}
+
+#[test]
+fn a_kernel_refusal_and_a_busy_device_are_reported_apart() {
+    let heads = [head(21, 41, 51, 61, scanout_size(1920, 1080))];
+
+    let mut refusing = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::with_results(
+        vec![Err(io::ErrorKind::InvalidInput)],
+    ));
+    assert_eq!(
+        submit_native_multi_head_topology(
+            &mut refusing,
+            &heads,
+            NativeTopologySubmitIntent::Validate
+        ),
+        NativeTopologySubmitOutcome::Rejected
+    );
+
+    let mut busy = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::with_results(
+        vec![Err(io::ErrorKind::WouldBlock)],
+    ));
+    assert_eq!(
+        submit_native_multi_head_topology(&mut busy, &heads, NativeTopologySubmitIntent::Validate),
+        NativeTopologySubmitOutcome::Busy
+    );
+}

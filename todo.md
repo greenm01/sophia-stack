@@ -491,10 +491,25 @@ is excluded; retained product behavior is not.
   group and must agree on scanout size, which is where the same-mode rule is
   enforced. The returned request carries the previously dead `test_only` path, so
   a caller can validate a topology without touching hardware.
-  What remains is a path from a planned timing to a mode blob, since blob creation
-  still requires an already-selected mode; an executor that resolves heads for a
-  candidate and submits test then apply; plus reservations, a separate power
-  authority, and evidence.
+  A planned timing now resolves to a mode too: `resolve_native_output_mode_index`
+  matches a requested timing against a connector's reported modes and returns the
+  first match, which is the same choice the capability reader makes when it dedupes
+  reduced timings, so advertisement and commit cannot disagree about which mode a
+  timing names. `create_mode_blob` takes that resolved mode, and
+  `create_mode_blob_for_selection` delegates to it.
+  `submit_native_multi_head_topology` submits one topology as one request, setting
+  `TEST_ONLY` for a validation intent and reporting an unbuildable head set apart
+  from a kernel refusal, since one is a mistake in what was asked for and the other
+  is hardware declining something well-formed. `NativeOutputCommitExecutor` adapts
+  that to the activation reducer and gates apply, so a caller can validate against
+  real hardware and then decline.
+  What remains is the piece that cannot be settled offline: resolving a candidate
+  into heads. That means naming connectors, CRTCs, and planes for outputs that may
+  not be active yet, sourcing correctly sized framebuffers for a mode that is not
+  running, and sourcing the previous topology's heads for rollback. Whether a
+  `TEST_ONLY` modeset even requires a valid `FB_ID` is driver-dependent and needs
+  hardware to answer. Reservations, a separate power authority, and evidence follow
+  that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation

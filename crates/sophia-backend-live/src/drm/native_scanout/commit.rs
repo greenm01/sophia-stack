@@ -37,6 +37,12 @@ impl<D> NativeLibdrmAtomicScanoutCommitter<D> {
         }
     }
 
+    /// Borrows the underlying device, so a caller can read whatever the device
+    /// itself records about the commits it received.
+    pub const fn device(&self) -> &D {
+        &self.device
+    }
+
     pub const fn submitted_count(&self) -> usize {
         self.submitted
     }
