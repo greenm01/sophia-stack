@@ -7,7 +7,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROBE_FILE="${SOPHIA_NATIVE_TOPOLOGY_PROBE:-/tmp/sophia-native-topology-probe.log}"
-FORCE="${SOPHIA_NATIVE_TOPOLOGY_PROBE_FORCE:-0}"
+
+# shellcheck source=tools/lib/drm_master_guard.sh
+. "$ROOT_DIR/tools/lib/drm_master_guard.sh"
 
 mkdir -p "$(dirname "$PROBE_FILE")"
 : > "$PROBE_FILE"
@@ -18,35 +20,7 @@ echo "one the CRTC already scans out, so nothing is allocated and no output chan
 echo "Probe: $PROBE_FILE"
 echo
 
-# A compositor holding the card means the probe reports MasterUnavailable and
-# concludes nothing. Refusing up front is cheaper than a run that proves nothing.
-blockers=()
-[[ -n "${DISPLAY:-}" ]] && blockers+=("DISPLAY=${DISPLAY} is set")
-[[ -n "${WAYLAND_DISPLAY:-}" ]] && blockers+=("WAYLAND_DISPLAY=${WAYLAND_DISPLAY} is set")
-for name in Xorg X Xwayland xlibre-server sophia hyprland sway niri weston kwin_wayland gnome-shell; do
-    if pgrep -x "$name" >/dev/null 2>&1; then
-        blockers+=("$name is running")
-    fi
-done
-
-if [[ "${#blockers[@]}" -gt 0 ]]; then
-    echo "A display server appears to hold the card:" >&2
-    printf '  - %s\n' "${blockers[@]}" >&2
-    echo >&2
-    if [[ "$FORCE" != "1" ]]; then
-        echo "Atomic commits need DRM master even to validate, so this run would report" >&2
-        echo "MasterUnavailable and conclude nothing. Switch to a bare TTY with no" >&2
-        echo "compositor, or set SOPHIA_NATIVE_TOPOLOGY_PROBE_FORCE=1 to run anyway." >&2
-        exit 1
-    fi
-    echo "SOPHIA_NATIVE_TOPOLOGY_PROBE_FORCE=1; running anyway." >&2
-    echo >&2
-fi
-
-if [[ ! -d /dev/dri ]]; then
-    echo "/dev/dri is missing; no primary card node to probe." >&2
-    exit 1
-fi
+sophia_require_drm_master_available SOPHIA_NATIVE_TOPOLOGY_PROBE_FORCE || exit 1
 
 # Build separately so compiler output never lands in the probe log.
 echo "Building sophia-cli..."

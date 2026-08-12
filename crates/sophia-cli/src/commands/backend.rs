@@ -38,6 +38,12 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    #[cfg(feature = "atomic-scanout-live")]
+    if args.iter().any(|arg| arg == "native-topology-validate") {
+        run_native_topology_validation()?;
+        return Ok(true);
+    }
+
     if args.iter().any(|arg| arg == "atomic-scanout-preflight") {
         let report = sophia_backend_live::real_atomic_scanout_preflight_report();
         println!("{}", report.reduced_log_line());
@@ -268,6 +274,72 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
     }
 
     Ok(false)
+}
+
+/// Runs startup's output-activation path against real hardware and changes nothing.
+///
+/// This is the same chain a session runs: read capabilities, project a topology,
+/// reconcile the configured candidate, prepare an activation plan, resolve it into
+/// heads, and drive the activation phase machine. It differs from startup in two
+/// ways worth stating, because they bound what a passing run proves: it opens the
+/// cards directly rather than through a seat controller, and it stops at the
+/// settlement instead of continuing into a session.
+///
+/// It is read-only. The executor is the validation one, which has no apply, and
+/// bringing the scanout up performs no modeset. It does need DRM master, so no
+/// other compositor may hold the card.
+#[cfg(feature = "atomic-scanout-live")]
+fn run_native_topology_validation() -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_cli::desktop_output_activation::{
+        NativeOutputActivationSettlement, run_native_output_activation,
+    };
+    use sophia_cli::desktop_output_commit::NativeOutputTopologyValidationExecutor;
+    use sophia_cli::desktop_output_heads::{
+        LiveNativeOutputTopologyHardware, resolve_native_output_topology_heads,
+    };
+    use sophia_cli::desktop_output_topology::{
+        prepare_native_output_activation_plan, project_native_output_topology,
+    };
+
+    let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
+    let capabilities = native.output_capabilities()?;
+    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let prepared = sophia_config::load_prepared_desktop_profile(
+        None,
+        sophia_config::ConfigGeneration::INITIAL,
+    )?;
+    let reconciled =
+        sophia_config::reconcile_desktop_output_candidate(&prepared.candidates.output, &topology)?;
+    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
+    let outputs = plan.targets().len();
+    let generation = plan.generation().raw();
+
+    let hardware = LiveNativeOutputTopologyHardware::new(&native);
+    let resolved = resolve_native_output_topology_heads(&plan, &capabilities, &hardware)
+        .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
+    let heads = resolved.len();
+    let card = super::live_session::plan_validation_device(&native, &plan)
+        .ok_or("native topology spans more than one DRM device and cannot be validated as one")?;
+
+    let mut executor = NativeOutputTopologyValidationExecutor::new(card, resolved.heads());
+    let report = run_native_output_activation(plan, &mut executor)?;
+    let validation = executor.validation();
+    let settlement = match report.settlement {
+        // Activation is unreachable: this executor never applies. Naming it keeps
+        // the match honest rather than collapsing two outcomes into one label.
+        NativeOutputActivationSettlement::Activated { .. } => "activated",
+        NativeOutputActivationSettlement::Rejected { .. } => "not_applied",
+    };
+
+    println!(
+        "sophia_native_topology_validate schema=1 validation={validation} settlement={settlement} \
+outputs={outputs} heads={heads} generation={generation}"
+    );
+
+    if validation != "accepted" {
+        return Err(format!("native topology validation did not pass: {validation}").into());
+    }
+    Ok(())
 }
 
 #[cfg(feature = "atomic-scanout-live")]

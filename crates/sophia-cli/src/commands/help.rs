@@ -52,6 +52,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: atomic-scanout-preflight");
     #[cfg(feature = "atomic-scanout-live")]
     println!("commands: native-topology-probe (read-only; needs DRM master)");
+    println!("commands: native-topology-validate (read-only; needs DRM master)");
     #[cfg(feature = "atomic-scanout-smoke-live")]
     println!("commands: atomic-vrr-inspect");
     #[cfg(feature = "atomic-scanout-smoke-live")]

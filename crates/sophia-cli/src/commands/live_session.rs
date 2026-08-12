@@ -174,7 +174,7 @@ impl SessionPhysicalInput {
 /// An atomic request reaches exactly one device, so a topology spanning two cards
 /// cannot be validated as a unit. Returning `None` for that case keeps startup from
 /// validating a fragment and reporting the answer as if it covered the desktop.
-fn plan_validation_device<'a>(
+pub(super) fn plan_validation_device<'a>(
     scanout: &'a LiveProductionNativeScanout,
     plan: &NativeOutputActivationPlan,
 ) -> Option<&'a sophia_backend_live::RealAtomicScanoutCard> {

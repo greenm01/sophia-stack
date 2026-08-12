@@ -472,12 +472,35 @@ is excluded; retained product behavior is not.
   after apply failure. That coordinator is no longer dead code: a typed effect
   executor trait and a bounded driver now carry one prepared candidate from test
   through apply or rollback to a terminal settlement, and startup drives the real
-  phase machine. Until a multi-connector request builder exists the wired executor
-  declines the test phase, which the reducer treats as a rejection needing no
-  rollback, so startup still issues no configuration KMS mutation. Deterministic
+  phase machine. Deterministic
   tests cover activation, declined test, rollback after apply failure, and failed
-  recovery, and prove the declined path never reaches apply. Swapping the executor
-  is the only change that turns this into real mutation.
+  recovery, and prove the declined path never reaches apply.
+  **Startup's test phase now reaches the kernel.** The candidate is resolved into
+  topology heads and submitted as one `TEST_ONLY` request, so the kernel judges the
+  complete desktop rather than nothing at all. Startup still issues no configuration
+  KMS mutation, and not because a flag says so:
+  `NativeOutputTopologyValidationExecutor` has no apply to gate. Its heads carry no
+  plane state, so there is nothing to scan out and applying them would activate
+  CRTCs showing nothing; mutation needs `NativeOutputCommitExecutor` and real
+  framebuffers.
+  A validated topology still settles as rejected, because apply then refuses, and it
+  refuses with the same `WouldBlock` a busy device reports. The settlement alone
+  therefore cannot distinguish an accepted desktop from a busy card, so the executor
+  retains what the kernel said and startup logs it separately as `validation=`.
+  A topology spanning two DRM devices is declined rather than validated: one atomic
+  request reaches one device, and validating a fragment would answer a question
+  nobody asked.
+  `tools/native_topology_validate.sh` runs that chain read-only against real
+  hardware — capabilities, projection, reconciliation, plan, heads, phase machine —
+  differing from startup only in opening the cards directly rather than through a
+  seat controller. **Its first run passed on the AMD two-output reference:**
+  `validation=accepted settlement=not_applied outputs=2 heads=2`. The kernel accepts
+  the configured two-output desktop as one atomic request.
+  What remains unproven offline is the executor adapter itself. Covering its three
+  arms needs a fake atomic-commit device, which means the `drm` crate in
+  `sophia-cli`, and `docs/live-backend-dependency-policy.md` keeps device-facing
+  types in `sophia-backend-live`. The submission beneath it and the resolution above
+  it are both covered; the seam is covered by that hardware run.
   The DRM primitives that executor needs already exist:
   `LibdrmNativeAtomicCommitRequest` exposes `modeset`, `allow_modeset`, and
   `test_only`, and property discovery already finds connector `CRTC_ID` and CRTC
