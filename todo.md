@@ -520,18 +520,26 @@ is excluded; retained product behavior is not.
   Atomic commits need DRM master even to validate, so the probe reports
   `MasterUnavailable` rather than a rejection when a compositor holds the card, and
   refuses to draw a conclusion.
-  The first run that reached the kernel took master from a bare TTY on the AMD
-  two-output reference: 2 connected connectors, 36 modes, and both probes rejected.
-  That is a real refusal rather than a master failure, since `validate` maps the
-  not-master errors to `MasterUnavailable` before anything can be called rejected.
-  It leaves the framebuffer question open instead of answering it, and the report
-  cannot say why: it records `Accepted`/`Rejected` only and discards the error once
-  the master case is ruled out. Two candidates remain. The selected mode's size may
-  disagree with the framebuffer the CRTC currently scans out, which would fail the
-  second probe on plane sizing rather than on `FB_ID` policy; or amdgpu may refuse
-  an active CRTC carrying no primary plane, which would reject the first probe by
-  construction. Carrying the raw errno and both sizes into the report separates
-  them. Re-run the script once that lands.
+  **The framebuffer question is answered.** On the AMD two-output reference, from a
+  bare TTY holding DRM master, both probes are accepted: 2 connected connectors, 36
+  modes, `without_plane_state=accepted`, `with_current_framebuffer=accepted`. A
+  `TEST_ONLY` modeset validates with connector `CRTC_ID` and CRTC `MODE_ID`/`ACTIVE`
+  alone, so resolving a candidate into heads does **not** need a framebuffer
+  allocated at the new mode's size before anything can be checked. Validation can
+  precede allocation.
+  Getting there required fixing a defect the probe existed to expose. Its first run
+  reported both probes rejected with `EINVAL` at matching mode and framebuffer sizes,
+  which was not the hardware refusing anything: `LibdrmNativeAtomicCommitRequest`
+  defaulted `page_flip_event` true and `test_only()` did not clear it, and the kernel
+  rejects `TEST_ONLY` together with `PAGE_FLIP_EVENT` with `EINVAL` before inspecting
+  a single property. Every validation-only commit in the tree returned `EINVAL`
+  unconditionally, including `submit_native_multi_head_topology`'s `Validate` intent,
+  so `NativeOutputCommitExecutor::validating` would have declined every topology and
+  looked like hardware saying no. The flag is now derived rather than stored, so the
+  combination is unrepresentable, and a deterministic test holds it.
+  That is also the reason the report now carries errno and both sizes: the first run
+  recorded `Rejected` with nothing to diagnose it by, and a rejection that cannot say
+  why is indistinguishable from a bug in the asker.
   Reservations, a separate power authority, and evidence follow that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output

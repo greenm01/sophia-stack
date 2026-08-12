@@ -439,6 +439,8 @@ fn a_probe_that_lacked_drm_master_is_not_a_rejected_topology() {
         without_plane_state: NativeTopologyValidationOutcome::NotAttempted,
         with_current_framebuffer: NativeTopologyValidationOutcome::NotAttempted,
         reused_current_framebuffer: false,
+        mode_size: (2560, 1440),
+        framebuffer_size: None,
     };
 
     assert!(!report.answered());
@@ -456,6 +458,8 @@ fn a_probe_answers_only_when_it_validated_something() {
         without_plane_state: NativeTopologyValidationOutcome::Accepted,
         with_current_framebuffer: NativeTopologyValidationOutcome::Accepted,
         reused_current_framebuffer: true,
+        mode_size: (2560, 1440),
+        framebuffer_size: Some((2560, 1440)),
     };
     assert!(probed.answered());
     assert!(
@@ -480,9 +484,11 @@ fn a_rejected_validation_is_still_a_conclusion() {
         status: NativeTopologyProbeStatus::Probed,
         connected_connectors: 1,
         modes_on_selected_connector: 3,
-        without_plane_state: NativeTopologyValidationOutcome::Rejected,
+        without_plane_state: NativeTopologyValidationOutcome::Rejected(22),
         with_current_framebuffer: NativeTopologyValidationOutcome::Accepted,
         reused_current_framebuffer: true,
+        mode_size: (2560, 1440),
+        framebuffer_size: Some((2560, 1440)),
     };
 
     assert!(report.answered());
@@ -490,4 +496,35 @@ fn a_rejected_validation_is_still_a_conclusion() {
     assert!(line.contains("without_plane_state=rejected"));
     assert!(line.contains("with_current_framebuffer=accepted"));
     assert!(line.contains("reused_framebuffer=true"));
+
+    // The errno is what separates "this driver requires plane state" from "this
+    // request was malformed", and both sizes are what separate a plane-sizing
+    // refusal from an FB_ID one. A rejection reported without them is not a
+    // diagnosis.
+    assert!(line.contains("without_plane_state_errno=22"));
+    assert!(line.contains("with_current_framebuffer_errno=0"));
+    assert!(line.contains("mode_size=2560x1440"));
+    assert!(line.contains("framebuffer_size=2560x1440"));
+}
+
+#[test]
+fn a_validation_only_commit_never_asks_for_a_page_flip_event() {
+    // The kernel rejects TEST_ONLY together with PAGE_FLIP_EVENT with EINVAL before
+    // it inspects any property. A validation carrying both therefore reports a
+    // refused topology no matter what the topology is, which is exactly the false
+    // negative that cost one hardware probe run.
+    let request = LibdrmNativeAtomicCommitRequest::modeset(
+        drm::control::atomic::AtomicModeReq::new(),
+    );
+    assert!(request.reduced_flags().page_flip_event);
+
+    let validating = LibdrmNativeAtomicCommitRequest::modeset(
+        drm::control::atomic::AtomicModeReq::new(),
+    )
+    .test_only()
+    .allow_modeset();
+    let flags = validating.reduced_flags();
+    assert!(flags.test_only);
+    assert!(flags.allow_modeset);
+    assert!(!flags.page_flip_event);
 }

@@ -75,8 +75,25 @@ fi
 field() { sed -n "s/.* $1=\([^ ]*\).*/\1/p" <<<"$line"; }
 status="$(field status)"
 without="$(field without_plane_state)"
+without_errno="$(field without_plane_state_errno)"
 with_fb="$(field with_current_framebuffer)"
+with_fb_errno="$(field with_current_framebuffer_errno)"
 reused="$(field reused_framebuffer)"
+mode_size="$(field mode_size)"
+fb_size="$(field framebuffer_size)"
+
+errno_name() {
+    case "$1" in
+        0) echo "none reported" ;;
+        13) echo "EACCES" ;;
+        16) echo "EBUSY" ;;
+        22) echo "EINVAL" ;;
+        28) echo "ENOSPC" ;;
+        34) echo "ERANGE" ;;
+        95) echo "EOPNOTSUPP" ;;
+        *) echo "errno $1" ;;
+    esac
+}
 
 echo "Conclusion"
 case "$status" in
@@ -88,15 +105,25 @@ case "$status" in
                 echo "  at the new mode's size before anything can be checked."
                 ;;
             rejected)
-                echo "  The kernel refused a modeset carrying no plane state."
+                echo "  Probe one refused with $(errno_name "$without_errno"): the kernel will not"
+                echo "  validate a modeset carrying no plane state."
                 if [[ "$with_fb" == "accepted" ]]; then
-                    echo "  The same modeset with plane state was accepted, so validation requires"
-                    echo "  a valid FB_ID: a framebuffer must exist at the new mode's size before"
-                    echo "  a topology can be validated. This changes the shape of the whole path."
+                    echo "  Probe two, the same modeset plus plane state, was accepted. Validation"
+                    echo "  therefore requires a valid FB_ID: a framebuffer must exist at the new"
+                    echo "  mode's size before a topology can be validated at all. This decides the"
+                    echo "  shape of head resolution."
+                elif [[ "$reused" != "true" ]]; then
+                    echo "  Probe two never ran: the CRTC had no current framebuffer to reuse, so"
+                    echo "  the FB_ID question is still open. Re-run where an output is active."
+                elif [[ "$mode_size" != "$fb_size" ]]; then
+                    echo "  Probe two also refused with $(errno_name "$with_fb_errno"), but it asked"
+                    echo "  for mode $mode_size while reusing a $fb_size framebuffer. That mismatch"
+                    echo "  alone explains the refusal, so this run says nothing about FB_ID policy."
+                    echo "  Ask again with a scratch framebuffer allocated at the mode's own size."
                 else
-                    echo "  Adding plane state did not help (with_current_framebuffer=$with_fb,"
-                    echo "  reused_framebuffer=$reused), so the refusal is not about FB_ID alone."
-                    echo "  Capture this log; the topology itself may be invalid on this hardware."
+                    echo "  Probe two also refused with $(errno_name "$with_fb_errno") while mode and"
+                    echo "  framebuffer agree at $mode_size. Plane state is present and correctly"
+                    echo "  sized, so the refusal is about the topology itself rather than FB_ID."
                 fi
                 ;;
             *)

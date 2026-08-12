@@ -51,9 +51,19 @@ impl LibdrmNativeAtomicCommitRequest {
         self
     }
 
+    /// A validation-only commit never reaches scanout, so it never completes with
+    /// an event. The kernel does not merely ignore the combination: it rejects
+    /// `TEST_ONLY` together with `PAGE_FLIP_EVENT` with `EINVAL` before inspecting
+    /// a single property, so leaving both set makes every validation look like a
+    /// refused topology. Deriving the flag instead of storing it keeps that
+    /// unrepresentable whatever order a caller sets things in.
+    const fn effective_page_flip_event(&self) -> bool {
+        self.page_flip_event && !self.test_only
+    }
+
     pub const fn reduced_flags(&self) -> LibdrmNativeAtomicCommitFlagsReport {
         LibdrmNativeAtomicCommitFlagsReport {
-            page_flip_event: self.page_flip_event,
+            page_flip_event: self.effective_page_flip_event(),
             nonblocking: self.nonblocking,
             allow_modeset: self.allow_modeset,
             test_only: self.test_only,
@@ -71,7 +81,7 @@ impl LibdrmNativeAtomicCommitRequest {
         drm::control::atomic::AtomicModeReq,
     ) {
         let mut flags = drm::control::AtomicCommitFlags::empty();
-        if self.page_flip_event {
+        if self.effective_page_flip_event() {
             flags |= drm::control::AtomicCommitFlags::PAGE_FLIP_EVENT;
         }
         if self.nonblocking {

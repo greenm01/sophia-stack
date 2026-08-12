@@ -24,7 +24,11 @@ pub enum NativeTopologyProbeStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeTopologyValidationOutcome {
     Accepted,
-    Rejected,
+    /// Carries the kernel's errno. A rejection without one is unrepresentable
+    /// deliberately: "rejected" alone cannot separate a malformed request from a
+    /// driver refusing a well-formed one, and those two answers send the caller
+    /// down different paths.
+    Rejected(i32),
     NotAttempted,
 }
 
@@ -33,8 +37,17 @@ impl NativeTopologyValidationOutcome {
     const fn label(self) -> &'static str {
         match self {
             Self::Accepted => "accepted",
-            Self::Rejected => "rejected",
+            Self::Rejected(_) => "rejected",
             Self::NotAttempted => "not_attempted",
+        }
+    }
+
+    /// Zero means the kernel reported no errno, which cannot collide with a real
+    /// one because errno 0 is success.
+    const fn errno(self) -> i32 {
+        match self {
+            Self::Rejected(errno) => errno,
+            Self::Accepted | Self::NotAttempted => 0,
         }
     }
 }
@@ -62,6 +75,13 @@ pub struct NativeTopologyProbeReport {
     /// Whether the CRTC had a current framebuffer to reuse. Without one the second
     /// probe cannot run, which is itself worth recording.
     pub reused_current_framebuffer: bool,
+    /// The mode the probe asked for, in pixels.
+    pub mode_size: (u16, u16),
+    /// The reused framebuffer's own size, when there was one. A disagreement
+    /// between these two sizes explains a second-probe rejection that has nothing
+    /// to do with `FB_ID` policy, so reporting one without the other would invite
+    /// exactly the wrong conclusion.
+    pub framebuffer_size: Option<(u32, u32)>,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -74,18 +94,29 @@ impl NativeTopologyProbeReport {
             without_plane_state: NativeTopologyValidationOutcome::NotAttempted,
             with_current_framebuffer: NativeTopologyValidationOutcome::NotAttempted,
             reused_current_framebuffer: false,
+            mode_size: (0, 0),
+            framebuffer_size: None,
         }
     }
 
     pub fn reduced_log_line(&self) -> String {
+        let (framebuffer_width, framebuffer_height) = self.framebuffer_size.unwrap_or((0, 0));
         format!(
-            "sophia_native_topology_probe schema=1 status={:?} connected_connectors={} \
-modes={} without_plane_state={} with_current_framebuffer={} reused_framebuffer={}",
+            "sophia_native_topology_probe schema=2 status={:?} connected_connectors={} \
+modes={} mode_size={}x{} framebuffer_size={}x{} without_plane_state={} \
+without_plane_state_errno={} with_current_framebuffer={} \
+with_current_framebuffer_errno={} reused_framebuffer={}",
             self.status,
             self.connected_connectors,
             self.modes_on_selected_connector,
+            self.mode_size.0,
+            self.mode_size.1,
+            framebuffer_width,
+            framebuffer_height,
             self.without_plane_state.label(),
+            self.without_plane_state.errno(),
             self.with_current_framebuffer.label(),
+            self.with_current_framebuffer.errno(),
             self.reused_current_framebuffer
         )
     }
@@ -159,6 +190,8 @@ pub fn native_topology_probe_report_from_dev_dri(
         without_plane_state: NativeTopologyValidationOutcome::NotAttempted,
         with_current_framebuffer: NativeTopologyValidationOutcome::NotAttempted,
         reused_current_framebuffer: false,
+        mode_size: mode.size(),
+        framebuffer_size: None,
     };
 
     // Probe one: connector and CRTC state only. If the kernel accepts this, a
@@ -195,6 +228,9 @@ pub fn native_topology_probe_report_from_dev_dri(
     // the CRTC already scans out.
     if let Some(framebuffer) = current_framebuffer(&card, selected.crtc) {
         report.reused_current_framebuffer = true;
+        report.framebuffer_size = drm::control::Device::get_framebuffer(&card, framebuffer)
+            .ok()
+            .map(|info| info.size());
         let head = LibdrmNativeAtomicHead::new(
             selected.into_objects(framebuffer, Some(mode_blob)),
             properties,
@@ -205,10 +241,13 @@ pub fn native_topology_probe_report_from_dev_dri(
         );
         if let Some(request) = build.request {
             let (flags, native) = request.test_only().allow_modeset().into_native();
-            report.with_current_framebuffer = match card.submit_atomic_commit(flags, native) {
-                Ok(()) => NativeTopologyValidationOutcome::Accepted,
-                Err(_) => NativeTopologyValidationOutcome::Rejected,
-            };
+            // Probe one already reached the kernel, so the master case is settled and
+            // a second `MasterUnavailable` is unreachable. Leaving the outcome
+            // `NotAttempted` if it somehow occurs beats recording a status that
+            // contradicts the probe that just succeeded.
+            if let Ok(outcome) = classify(card.submit_atomic_commit(flags, native)) {
+                report.with_current_framebuffer = outcome;
+            }
         }
     }
 
@@ -229,7 +268,19 @@ where
         .test_only()
         .allow_modeset();
     let (flags, native) = commit.into_native();
-    match card.submit_atomic_commit(flags, native) {
+    classify(card.submit_atomic_commit(flags, native))
+}
+
+/// Turns one commit result into an outcome, retaining the errno on a refusal.
+///
+/// Not-master is an error about the probe rather than about the topology, so it
+/// leaves as a status and never as a rejection. Everything else is the kernel
+/// judging the request, and the errno is the only thing that says which judgement.
+#[cfg(feature = "libdrm-events")]
+fn classify(
+    result: io::Result<()>,
+) -> Result<NativeTopologyValidationOutcome, NativeTopologyProbeStatus> {
+    match result {
         Ok(()) => Ok(NativeTopologyValidationOutcome::Accepted),
         Err(error)
             if matches!(
@@ -239,7 +290,9 @@ where
         {
             Err(NativeTopologyProbeStatus::MasterUnavailable)
         }
-        Err(_) => Ok(NativeTopologyValidationOutcome::Rejected),
+        Err(error) => Ok(NativeTopologyValidationOutcome::Rejected(
+            error.raw_os_error().unwrap_or(0),
+        )),
     }
 }
 
