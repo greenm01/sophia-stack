@@ -3,7 +3,7 @@ use support::*;
 
 #[test]
 fn chrome_broker_keeps_metadata_separate_from_layout() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(3, 1);
 
     broker.upsert(ChromeDescriptor {
@@ -31,7 +31,7 @@ fn chrome_broker_keeps_metadata_separate_from_layout() {
 
 #[test]
 fn chrome_broker_removes_surface_metadata() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(4, 1);
 
     broker.upsert(ChromeDescriptor {
@@ -50,7 +50,7 @@ fn chrome_broker_removes_surface_metadata() {
 
 #[test]
 fn metadata_broker_output_updates_chrome_descriptor() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(5, 1);
 
     assert_eq!(
@@ -83,7 +83,7 @@ fn metadata_broker_output_updates_chrome_descriptor() {
 
 #[test]
 fn metadata_broker_output_rejects_stale_generation() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(6, 1);
 
     broker.apply_metadata(metadata(surface, "Current", 9));
@@ -104,7 +104,7 @@ fn metadata_broker_output_rejects_stale_generation() {
 
 #[test]
 fn metadata_broker_output_rejects_unsanitized_label() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(7, 1);
     let mut metadata = metadata(surface, "Bad\nTitle", 1);
     metadata.label_redacted = false;
@@ -120,7 +120,7 @@ fn metadata_broker_output_rejects_unsanitized_label() {
 
 #[test]
 fn metadata_broker_removal_clears_descriptor_with_generation_check() {
-    let mut broker = ChromeBroker::default();
+    let mut broker = ChromeDescriptorTable::default();
     let surface = SurfaceId::new(8, 1);
 
     broker.apply_metadata(metadata(surface, "Visible", 4));

@@ -1,7 +1,17 @@
 use crate::prelude::*;
 
+/// Engine's table of chrome descriptors, keyed by surface.
+///
+/// Named a table rather than a broker on purpose. `docs/architecture.md` gives the
+/// metadata broker sanitization and gives Engine chrome presentation and
+/// hit-testing, and adds that no component may acquire another row's authority
+/// merely because it currently runs in the same process. This type does not
+/// sanitize: it validates already-sanitized packets and stores them. Calling it a
+/// broker invited exactly the change the ownership table forbids -- teaching Engine
+/// to accept raw titles, classes, or PIDs because the type sounded like the thing
+/// that handles them.
 #[derive(Clone, Debug, Default)]
-pub struct ChromeBroker {
+pub struct ChromeDescriptorTable {
     descriptors: BTreeMap<SurfaceId, ChromeDescriptor>,
 }
 
@@ -32,7 +42,7 @@ pub enum MetadataChromeRejectReason {
     StaleGeneration,
 }
 
-impl ChromeBroker {
+impl ChromeDescriptorTable {
     pub fn upsert(&mut self, descriptor: ChromeDescriptor) {
         debug!(
             surface_index = descriptor.surface.index(),
