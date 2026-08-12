@@ -71,7 +71,22 @@ mkdir -p "$evidence"
     echo "binary_sha256=$binary_sha"
     echo "tty=$(tty)"
     echo "apply_armed=$APPLY"
+    echo "host=$(uname -n)"
+    echo "kernel=$(uname -r)"
+    echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$evidence/manifest.txt"
+
+# Connector facts straight from sysfs, independent of anything Sophia reports.
+# A transcript whose DRM claims disagree with this host's sysfs is not evidence
+# about this host, whatever else it says.
+for connector in /sys/class/drm/card*-*/; do
+    name="$(basename "$connector")"
+    printf '%s status=%s enabled=%s first_mode=%s\n' \
+        "$name" \
+        "$(cat "$connector/status" 2>/dev/null || echo unknown)" \
+        "$(cat "$connector/enabled" 2>/dev/null || echo unknown)" \
+        "$(head -1 "$connector/modes" 2>/dev/null || echo none)"
+done > "$evidence/connectors.txt"
 
 echo "Evidence: $evidence"
 echo "Binary:   $binary_sha"
@@ -123,9 +138,39 @@ if [[ "$APPLY" == "1" ]]; then
     reduce apply.log '^sophia_native_topology_apply '
 fi
 echo
-echo "sophia_native_output_gate schema=1 commit=${commit:0:12} apply_armed=$APPLY result=$(
-    [[ "$phase_status" -eq 0 ]] && echo passed || echo failed
-)"
+result="$([[ "$phase_status" -eq 0 ]] && echo passed || echo failed)"
+echo "sophia_native_output_gate schema=1 commit=${commit:0:12} apply_armed=$APPLY result=$result"
 echo "Evidence: $evidence"
+echo
+
+# One artifact to hand back. Everything in it is cross-checkable rather than
+# self-asserted: the binary checksum must be what this commit builds, the connector
+# facts must match this host's sysfs, and the phase lines must agree with both.
+transcript="$evidence/transcript.txt"
+{
+    echo "=== sophia native output gate transcript ==="
+    cat "$evidence/manifest.txt"
+    echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "result=$result"
+    echo
+    echo "--- sysfs connectors ---"
+    cat "$evidence/connectors.txt"
+    echo
+    echo "--- probe ---"
+    cat "$evidence/probe.log"
+    echo
+    echo "--- validate ---"
+    cat "$evidence/validate.log"
+    echo
+    echo "--- apply ---"
+    cat "$evidence/apply.log"
+} > "$transcript"
+# Digest last, over everything above it, so a truncated or edited paste stops
+# matching. It proves internal consistency, not provenance.
+printf 'transcript_sha256=%s\n' "$(sha256sum "$transcript" | cut -d' ' -f1)" >> "$transcript"
+
+echo "================ paste everything below this line ================"
+cat "$transcript"
+echo "================ paste everything above this line ================"
 
 exit "$phase_status"
