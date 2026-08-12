@@ -1,7 +1,7 @@
 use sophia_backend_live::{
     LibdrmNativeAtomicCommitDevice, LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead,
-    NativeLibdrmAtomicScanoutCommitter, NativeTopologySubmitIntent, NativeTopologySubmitOutcome,
-    submit_native_multi_head_topology, validate_native_multi_head_topology_on_device,
+    NativeTopologySubmitIntent, NativeTopologySubmitOutcome,
+    submit_native_multi_head_topology_on_device, validate_native_multi_head_topology_on_device,
 };
 
 use crate::desktop_output_activation::{
@@ -113,19 +113,16 @@ where
 /// hardware and then declines, which is the safe configuration for a session that
 /// must not change output state.
 pub struct NativeOutputCommitExecutor<'a, D> {
-    committer: &'a mut NativeLibdrmAtomicScanoutCommitter<D>,
+    device: &'a D,
     heads: &'a NativeOutputHeadSet,
     apply_enabled: bool,
 }
 
 impl<'a, D> NativeOutputCommitExecutor<'a, D> {
     /// Validates without ever applying.
-    pub fn validating(
-        committer: &'a mut NativeLibdrmAtomicScanoutCommitter<D>,
-        heads: &'a NativeOutputHeadSet,
-    ) -> Self {
+    pub const fn validating(device: &'a D, heads: &'a NativeOutputHeadSet) -> Self {
         Self {
-            committer,
+            device,
             heads,
             apply_enabled: false,
         }
@@ -133,12 +130,9 @@ impl<'a, D> NativeOutputCommitExecutor<'a, D> {
 
     /// Validates and then applies. Only for a caller authorized to change output
     /// state, behind its own gate and with rollback heads populated.
-    pub fn activating(
-        committer: &'a mut NativeLibdrmAtomicScanoutCommitter<D>,
-        heads: &'a NativeOutputHeadSet,
-    ) -> Self {
+    pub const fn activating(device: &'a D, heads: &'a NativeOutputHeadSet) -> Self {
         Self {
-            committer,
+            device,
             heads,
             apply_enabled: true,
         }
@@ -169,8 +163,8 @@ where
         _key: NativeOutputActivationKey,
         _plan: &NativeOutputActivationPlan,
     ) -> NativeOutputEffectCompletion {
-        completion(submit_native_multi_head_topology(
-            self.committer,
+        completion(submit_native_multi_head_topology_on_device(
+            self.device,
             &self.heads.apply,
             NativeTopologySubmitIntent::Validate,
         ))
@@ -184,8 +178,8 @@ where
         if !self.apply_enabled {
             return NativeOutputEffectCompletion::Failed(NativeOutputActivationFailure::WouldBlock);
         }
-        completion(submit_native_multi_head_topology(
-            self.committer,
+        completion(submit_native_multi_head_topology_on_device(
+            self.device,
             &self.heads.apply,
             NativeTopologySubmitIntent::Activate,
         ))
@@ -201,8 +195,8 @@ where
         if self.heads.rollback.is_empty() {
             return NativeOutputEffectCompletion::Succeeded;
         }
-        completion(submit_native_multi_head_topology(
-            self.committer,
+        completion(submit_native_multi_head_topology_on_device(
+            self.device,
             &self.heads.rollback,
             NativeTopologySubmitIntent::Activate,
         ))

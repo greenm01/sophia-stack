@@ -93,6 +93,50 @@ impl LibdrmNativeAtomicTopologyHead {
     }
 }
 
+/// Builds a head that scans out whatever the CRTC already displays.
+///
+/// Applying a topology needs plane state, and plane state needs a framebuffer. The
+/// one framebuffer guaranteed to exist before anything has been rendered is the one
+/// the CRTC is already scanning out, so reusing it is how a topology can be applied
+/// without first allocating at the new mode's size.
+///
+/// `None` means this head cannot be built that way: either the CRTC displays
+/// nothing, or what it displays is the wrong size. No primary plane scaling exists
+/// on this path, so a buffer that disagrees with the mode cannot drive it, and
+/// failing here is better than a kernel refusal that says only `EINVAL`.
+#[cfg(feature = "libdrm-events")]
+pub fn compose_native_head_from_current_framebuffer<D>(
+    device: &D,
+    selection: LibdrmNativePrimaryPlaneSelection,
+    properties: LibdrmNativePrimaryPlanePropertyHandles,
+    mode_blob: u64,
+    scanout: Size,
+) -> Option<LibdrmNativeAtomicHead>
+where
+    D: drm::control::Device,
+{
+    let framebuffer = device
+        .get_crtc(selection.crtc_handle())
+        .ok()?
+        .framebuffer()?;
+    let (width, height) = device.get_framebuffer(framebuffer).ok()?.size();
+    if i32::try_from(width).ok()? != scanout.width || i32::try_from(height).ok()? != scanout.height
+    {
+        return None;
+    }
+    Some(LibdrmNativeAtomicHead::new(
+        LibdrmNativePrimaryPlaneObjects::new(
+            selection.connector_handle(),
+            selection.crtc_handle(),
+            selection.plane_handle(),
+            framebuffer,
+            mode_blob,
+            scanout,
+        ),
+        properties,
+    ))
+}
+
 #[cfg(feature = "libdrm-events")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LibdrmNativeMultiHeadRequestBuildStatus {

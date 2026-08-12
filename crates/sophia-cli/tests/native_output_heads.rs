@@ -8,7 +8,8 @@ use sophia_backend_live::{
 };
 use sophia_cli::desktop_output_heads::{
     NativeOutputComposedHead, NativeOutputHeadResolveError, NativeOutputHeadUnavailable,
-    NativeOutputTopologyHardware, resolve_native_output_topology_heads,
+    NativeOutputScanoutHardware, NativeOutputTopologyHardware, resolve_native_output_scanout_heads,
+    resolve_native_output_topology_heads,
 };
 use sophia_cli::desktop_output_topology::{
     NativeOutputActivationPlan, prepare_native_output_activation_plan,
@@ -84,6 +85,91 @@ impl NativeOutputTopologyHardware for FakeHardware {
                 timing,
             },
             mode_blob,
+        })
+    }
+
+    fn release_mode_blob(&self, _output: OutputId, blob: u64) {
+        self.released.borrow_mut().push(blob);
+    }
+}
+
+/// A scanout head as this test sees it: which output, and whether it carries the
+/// requested topology or the one being restored.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TestScanoutHead {
+    output: u64,
+    restores: bool,
+}
+
+#[derive(Debug, Default)]
+struct FakeScanoutHardware {
+    apply_failures: BTreeMap<u64, NativeOutputHeadUnavailable>,
+    rollback_failures: BTreeMap<u64, NativeOutputHeadUnavailable>,
+    next_blob: RefCell<u64>,
+    created: RefCell<Vec<u64>>,
+    released: RefCell<Vec<u64>>,
+}
+
+impl FakeScanoutHardware {
+    fn new() -> Self {
+        Self {
+            next_blob: RefCell::new(900),
+            ..Self::default()
+        }
+    }
+
+    fn live_blobs(&self) -> Vec<u64> {
+        let released = self.released.borrow();
+        self.created
+            .borrow()
+            .iter()
+            .copied()
+            .filter(|blob| !released.contains(blob))
+            .collect()
+    }
+
+    fn take_blob(&self) -> u64 {
+        let mut next = self.next_blob.borrow_mut();
+        let blob = *next;
+        *next += 1;
+        self.created.borrow_mut().push(blob);
+        blob
+    }
+}
+
+impl NativeOutputScanoutHardware for FakeScanoutHardware {
+    type Head = TestScanoutHead;
+
+    fn compose_apply_head(
+        &self,
+        output: OutputId,
+        _timing: LibdrmNativeOutputTiming,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
+        if let Some(cause) = self.apply_failures.get(&output.raw()) {
+            return Err(*cause);
+        }
+        Ok(NativeOutputComposedHead {
+            head: TestScanoutHead {
+                output: output.raw(),
+                restores: false,
+            },
+            mode_blob: self.take_blob(),
+        })
+    }
+
+    fn compose_rollback_head(
+        &self,
+        output: OutputId,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
+        if let Some(cause) = self.rollback_failures.get(&output.raw()) {
+            return Err(*cause);
+        }
+        Ok(NativeOutputComposedHead {
+            head: TestScanoutHead {
+                output: output.raw(),
+                restores: true,
+            },
+            mode_blob: self.take_blob(),
         })
     }
 
@@ -314,4 +400,101 @@ fn a_plan_whose_outputs_have_no_capability_resolves_nothing() {
         hardware.created.borrow().is_empty(),
         "a missing capability is caught before any kernel resource exists"
     );
+}
+
+#[test]
+fn applying_resolves_a_rollback_beside_every_head() {
+    // Rollback is resolved while the previous topology is still on screen. Sourcing
+    // it after an apply has failed would source it from a desktop already wrong.
+    let (plan, capabilities) = plan_for(&[1, 2]);
+    let hardware = FakeScanoutHardware::new();
+
+    let resolved = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
+        .expect("a complete plan resolves");
+
+    assert_eq!(resolved.len(), 2);
+    assert_eq!(
+        resolved.apply(),
+        [
+            TestScanoutHead {
+                output: 1,
+                restores: false
+            },
+            TestScanoutHead {
+                output: 2,
+                restores: false
+            },
+        ]
+    );
+    assert_eq!(
+        resolved.rollback(),
+        [
+            TestScanoutHead {
+                output: 1,
+                restores: true
+            },
+            TestScanoutHead {
+                output: 2,
+                restores: true
+            },
+        ]
+    );
+    // One blob per head, apply and rollback alike: restoring a mode needs that
+    // mode's own blob.
+    assert_eq!(hardware.live_blobs().len(), 4);
+}
+
+#[test]
+fn an_output_with_no_usable_framebuffer_stops_the_apply() {
+    // Reusing what is already on screen only works when the sizes agree. A mode
+    // change needs a buffer allocated at the new size, and declining here is what
+    // keeps a half-applied desktop from being attempted.
+    let (plan, capabilities) = plan_for(&[1, 2]);
+    let mut hardware = FakeScanoutHardware::new();
+    hardware
+        .apply_failures
+        .insert(2, NativeOutputHeadUnavailable::NeedsFramebuffer);
+
+    let error = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
+        .expect_err("an output without a framebuffer cannot be applied");
+
+    assert_eq!(
+        error,
+        NativeOutputHeadResolveError::Unavailable {
+            output: 2,
+            cause: NativeOutputHeadUnavailable::NeedsFramebuffer,
+        }
+    );
+    assert!(
+        hardware.live_blobs().is_empty(),
+        "a rejected apply resolution releases every blob it created"
+    );
+}
+
+#[test]
+fn an_unrestorable_output_stops_the_apply_before_anything_is_submitted() {
+    // No rollback means no way back, so the apply must not start. This is the one
+    // failure that would otherwise be discovered only after the screen changed.
+    let (plan, capabilities) = plan_for(&[1]);
+    let mut hardware = FakeScanoutHardware::new();
+    hardware
+        .rollback_failures
+        .insert(1, NativeOutputHeadUnavailable::NeedsFramebuffer);
+
+    let error = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
+        .expect_err("an output that cannot be restored cannot be applied");
+
+    assert_eq!(
+        error,
+        NativeOutputHeadResolveError::Unavailable {
+            output: 1,
+            cause: NativeOutputHeadUnavailable::NeedsFramebuffer,
+        }
+    );
+    assert_eq!(
+        hardware.created.borrow().len(),
+        1,
+        "the apply head was composed before rollback failed"
+    );
+    assert!(hardware.live_blobs().is_empty());
 }

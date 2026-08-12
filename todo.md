@@ -501,6 +501,23 @@ is excluded; retained product behavior is not.
   `sophia-cli`, and `docs/live-backend-dependency-policy.md` keeps device-facing
   types in `sophia-backend-live`. The submission beneath it and the resolution above
   it are both covered; the seam is covered by that hardware run.
+  Apply now exists behind two gates and remains **unrun**. `native-topology-apply`
+  refuses without `SOPHIA_NATIVE_OUTPUT_APPLY=1`, and
+  `tools/native_topology_apply.sh` refuses again, validates first, and refuses to
+  apply a topology `TEST_ONLY` would not accept. What apply can reach is bounded by
+  construction rather than by care: apply heads reuse the framebuffer each CRTC
+  already scans out, so the only topology expressible is one whose scanout size
+  matches what is displayed, and anything else declines as `NeedsFramebuffer` before
+  a commit is submitted. A mode change needs a buffer allocated at the new size,
+  which is renderer work and is not in this tranche. The first useful run therefore
+  re-applies the topology already on screen, where success looks like nothing
+  happening — the smallest real mutation available, and the right one to take first.
+  Rollback heads are resolved beside apply heads, before anything is submitted,
+  from the topology still on screen. Sourcing them afterwards would source them from
+  a desktop that is already wrong. An output that cannot be restored fails the whole
+  plan closed, so an apply never begins without a way back.
+  Applying blocks and carries no page-flip event: a modeset must complete before a
+  caller may believe it did, and there is no flip to wait on.
   The DRM primitives that executor needs already exist:
   `LibdrmNativeAtomicCommitRequest` exposes `modeset`, `allow_modeset`, and
   `test_only`, and property discovery already finds connector `CRTC_ID` and CRTC

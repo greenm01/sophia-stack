@@ -57,6 +57,49 @@ where
     submit(committer, request)
 }
 
+/// Submits one topology against a device directly.
+///
+/// A running session holds a borrowed card, not a committer, and a committer takes
+/// its device by value. Rather than clone a card so a counter can be incremented,
+/// the device is the primitive and the committer form stays for callers that want
+/// the submit and reject tallies.
+#[cfg(feature = "libdrm-events")]
+pub fn submit_native_multi_head_topology_on_device<D>(
+    device: &D,
+    heads: &[LibdrmNativeAtomicHead],
+    intent: NativeTopologySubmitIntent,
+) -> NativeTopologySubmitOutcome
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let build = build_native_multi_head_atomic_request(
+        heads,
+        LibdrmNativeAtomicCommitRequestScope::Modeset,
+    );
+    if build.status != LibdrmNativeMultiHeadRequestBuildStatus::Built {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    }
+    let Some(request) = build.request else {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    };
+    let request = match intent {
+        NativeTopologySubmitIntent::Validate => request.test_only().allow_modeset(),
+        // A modeset applied for real must complete before the caller can believe it
+        // did, and it carries no page-flip event to wait on, so it blocks.
+        NativeTopologySubmitIntent::Activate => {
+            request.allow_modeset().without_page_flip_event().blocking()
+        }
+    };
+    let (flags, native) = request.into_native();
+    match device.submit_atomic_commit(flags, native) {
+        Ok(()) => NativeTopologySubmitOutcome::Accepted,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            NativeTopologySubmitOutcome::Busy
+        }
+        Err(_) => NativeTopologySubmitOutcome::Rejected,
+    }
+}
+
 /// Validates one topology against real hardware without naming a framebuffer.
 ///
 /// There is no `Activate` counterpart on purpose. A topology request carries no

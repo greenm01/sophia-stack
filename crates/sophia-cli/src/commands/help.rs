@@ -53,6 +53,9 @@ pub(crate) fn print(verbose: bool) {
     #[cfg(feature = "atomic-scanout-live")]
     println!("commands: native-topology-probe (read-only; needs DRM master)");
     println!("commands: native-topology-validate (read-only; needs DRM master)");
+    println!(
+        "commands: native-topology-apply (MUTATES outputs; needs SOPHIA_NATIVE_OUTPUT_APPLY=1)"
+    );
     #[cfg(feature = "atomic-scanout-smoke-live")]
     println!("commands: atomic-vrr-inspect");
     #[cfg(feature = "atomic-scanout-smoke-live")]

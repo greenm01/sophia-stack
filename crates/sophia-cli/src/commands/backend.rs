@@ -44,6 +44,17 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    #[cfg(feature = "atomic-scanout-live")]
+    if args.iter().any(|arg| arg == "native-topology-apply") {
+        if std::env::var_os("SOPHIA_NATIVE_OUTPUT_APPLY").is_none() {
+            return Err(
+                "set SOPHIA_NATIVE_OUTPUT_APPLY=1 to apply a topology to real outputs".into(),
+            );
+        }
+        run_native_topology_apply()?;
+        return Ok(true);
+    }
+
     if args.iter().any(|arg| arg == "atomic-scanout-preflight") {
         let report = sophia_backend_live::real_atomic_scanout_preflight_report();
         println!("{}", report.reduced_log_line());
@@ -338,6 +349,84 @@ outputs={outputs} heads={heads} generation={generation}"
 
     if validation != "accepted" {
         return Err(format!("native topology validation did not pass: {validation}").into());
+    }
+    Ok(())
+}
+
+/// Applies the configured topology to real outputs, with rollback.
+///
+/// This is the first path in the tree that can change what a monitor shows, so what
+/// it can reach is bounded deliberately. Apply heads reuse the framebuffer each CRTC
+/// already scans out, which means a topology whose scanout size matches what is
+/// displayed and nothing else; a mode change needs a buffer allocated at the new
+/// size, and this declines rather than guessing. The first useful run is therefore
+/// re-applying the topology already on screen, where success looks like nothing
+/// happening.
+///
+/// Rollback heads are resolved before apply runs, from the topology still on screen.
+/// Sourcing them afterwards would source them from a desktop that is already wrong.
+#[cfg(feature = "atomic-scanout-live")]
+fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_cli::desktop_output_activation::{
+        NativeOutputActivationSettlement, NativeOutputRollbackSettlement,
+        run_native_output_activation,
+    };
+    use sophia_cli::desktop_output_commit::{NativeOutputCommitExecutor, NativeOutputHeadSet};
+    use sophia_cli::desktop_output_heads::{
+        LiveNativeOutputTopologyHardware, resolve_native_output_scanout_heads,
+    };
+    use sophia_cli::desktop_output_topology::{
+        prepare_native_output_activation_plan, project_native_output_topology,
+    };
+
+    let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
+    let capabilities = native.output_capabilities()?;
+    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let prepared = sophia_config::load_prepared_desktop_profile(
+        None,
+        sophia_config::ConfigGeneration::INITIAL,
+    )?;
+    let reconciled =
+        sophia_config::reconcile_desktop_output_candidate(&prepared.candidates.output, &topology)?;
+    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
+    let generation = plan.generation().raw();
+
+    let hardware = LiveNativeOutputTopologyHardware::new(&native);
+    let resolved = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
+        .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
+    let heads = resolved.len();
+    let card = super::live_session::plan_validation_device(&native, &plan)
+        .ok_or("native topology spans more than one DRM device and cannot be applied as one")?;
+
+    let head_set = NativeOutputHeadSet {
+        apply: resolved.apply().to_vec(),
+        rollback: resolved.rollback().to_vec(),
+    };
+    let mut executor = NativeOutputCommitExecutor::activating(card, &head_set);
+    let report = run_native_output_activation(plan, &mut executor)?;
+
+    let (settlement, rollback) = match report.settlement {
+        NativeOutputActivationSettlement::Activated { .. } => ("activated", "none"),
+        NativeOutputActivationSettlement::Rejected { rollback, .. } => (
+            "not_applied",
+            match rollback {
+                NativeOutputRollbackSettlement::Failed(_) => "failed",
+                NativeOutputRollbackSettlement::NotRequired => "not_required",
+                NativeOutputRollbackSettlement::Succeeded => "restored",
+            },
+        ),
+    };
+
+    println!(
+        "sophia_native_topology_apply schema=1 settlement={settlement} rollback={rollback} \
+heads={heads} generation={generation}"
+    );
+
+    if settlement != "activated" {
+        return Err(format!(
+            "native topology was not applied: settlement={settlement} rollback={rollback}"
+        )
+        .into());
     }
     Ok(())
 }

@@ -1,11 +1,13 @@
 use std::fmt;
 
 use sophia_backend_live::{
-    LibdrmNativeAtomicTopologyHead, LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
+    LibdrmNativeAtomicHead, LibdrmNativeAtomicTopologyHead, LibdrmNativeOutputCapability,
+    LibdrmNativeOutputTiming, LibdrmNativePrimaryPlanePropertyHandles,
     LibdrmNativePrimaryPlaneResourceDevice, LiveProductionNativeScanout,
-    discover_native_primary_plane_property_handles, resolve_native_connector_mode,
+    compose_native_head_from_current_framebuffer, discover_native_primary_plane_property_handles,
+    resolve_native_connector_mode,
 };
-use sophia_protocol::OutputId;
+use sophia_protocol::{OutputId, Size};
 
 use crate::desktop_output_topology::NativeOutputActivationPlan;
 
@@ -25,6 +27,11 @@ pub enum NativeOutputHeadUnavailable {
     UnknownTiming,
     /// The mode exists, but the kernel would not create a blob for it.
     ModeBlobRefused,
+    /// No framebuffer of the right size exists for this output yet.
+    ///
+    /// Only applying hits this. Validation names no framebuffer at all, which is
+    /// exactly why a topology can be checked before one exists.
+    NeedsFramebuffer,
 }
 
 /// One head plus the mode blob it names.
@@ -95,6 +102,9 @@ impl fmt::Display for NativeOutputHeadResolveError {
                         "does not advertise the requested timing"
                     }
                     NativeOutputHeadUnavailable::ModeBlobRefused => "was refused a mode blob",
+                    NativeOutputHeadUnavailable::NeedsFramebuffer => {
+                        "has no framebuffer at the requested mode's size"
+                    }
                 };
                 write!(formatter, "native output {output} {reason}")
             }
@@ -218,6 +228,144 @@ where
     Ok(resolved)
 }
 
+/// The hardware side of resolving a plan into heads that can actually be applied.
+///
+/// Separate from `NativeOutputTopologyHardware` because the two answer different
+/// questions. A topology head asks whether the kernel would accept this desktop; a
+/// scanout head asks what to put on screen, so it carries a framebuffer and can
+/// fail for reasons validation never encounters.
+pub trait NativeOutputScanoutHardware {
+    /// A composed head. Real hardware yields `LibdrmNativeAtomicHead`.
+    type Head;
+
+    /// Composes the head this output should run under the new topology.
+    fn compose_apply_head(
+        &self,
+        output: OutputId,
+        timing: LibdrmNativeOutputTiming,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
+
+    /// Composes the head that restores what this output runs today.
+    ///
+    /// Sourced from current state rather than derived from the apply head, because
+    /// rollback is not the inverse of apply: restoring a mode needs that mode's own
+    /// blob, and a buffer sized for it.
+    fn compose_rollback_head(
+        &self,
+        output: OutputId,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
+
+    fn release_mode_blob(&self, output: OutputId, blob: u64);
+}
+
+/// Apply and rollback heads resolved together, owning every blob they name.
+///
+/// They are resolved together deliberately. A rollback that is sourced after an
+/// apply has failed is sourced from a desktop that is already wrong; taking it
+/// while the previous topology is still running is what makes it a restore rather
+/// than a guess.
+#[derive(Debug)]
+pub struct NativeOutputScanoutHeads<'a, H>
+where
+    H: NativeOutputScanoutHardware,
+{
+    hardware: &'a H,
+    apply: Vec<H::Head>,
+    rollback: Vec<H::Head>,
+    blobs: Vec<(OutputId, u64)>,
+}
+
+impl<H> NativeOutputScanoutHeads<'_, H>
+where
+    H: NativeOutputScanoutHardware,
+{
+    pub fn apply(&self) -> &[H::Head] {
+        &self.apply
+    }
+
+    pub fn rollback(&self) -> &[H::Head] {
+        &self.rollback
+    }
+
+    pub fn len(&self) -> usize {
+        self.apply.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.apply.is_empty()
+    }
+}
+
+impl<H> Drop for NativeOutputScanoutHeads<'_, H>
+where
+    H: NativeOutputScanoutHardware,
+{
+    fn drop(&mut self) {
+        for (output, blob) in self.blobs.drain(..) {
+            self.hardware.release_mode_blob(output, blob);
+        }
+    }
+}
+
+/// Resolves an activation plan into heads that can be applied, plus their rollback.
+///
+/// Fails closed exactly as the validation resolver does, and for the same reason: a
+/// desktop missing one head is a different desktop. Here the stakes are higher,
+/// because a partial apply is visible.
+pub fn resolve_native_output_scanout_heads<'a, H>(
+    plan: &NativeOutputActivationPlan,
+    capabilities: &[LibdrmNativeOutputCapability],
+    hardware: &'a H,
+) -> Result<NativeOutputScanoutHeads<'a, H>, NativeOutputHeadResolveError>
+where
+    H: NativeOutputScanoutHardware,
+{
+    let mut resolved = NativeOutputScanoutHeads {
+        hardware,
+        apply: Vec::new(),
+        rollback: Vec::new(),
+        blobs: Vec::new(),
+    };
+
+    for target in plan.targets() {
+        let requested = target.requested();
+        if !requested.enabled {
+            continue;
+        }
+        let output = target.output();
+        let raw = output.raw();
+
+        if !capabilities
+            .iter()
+            .any(|capability| capability.output() == output)
+        {
+            return Err(NativeOutputHeadResolveError::MissingCapability(raw));
+        }
+
+        let timing = LibdrmNativeOutputTiming::new(
+            requested.mode.width,
+            requested.mode.height,
+            requested.mode.refresh_millihz,
+        );
+        let composed = hardware
+            .compose_apply_head(output, timing)
+            .map_err(|cause| NativeOutputHeadResolveError::Unavailable { output: raw, cause })?;
+        resolved.blobs.push((output, composed.mode_blob));
+        resolved.apply.push(composed.head);
+
+        let restore = hardware
+            .compose_rollback_head(output)
+            .map_err(|cause| NativeOutputHeadResolveError::Unavailable { output: raw, cause })?;
+        resolved.blobs.push((output, restore.mode_blob));
+        resolved.rollback.push(restore.head);
+    }
+
+    if resolved.apply.is_empty() {
+        return Err(NativeOutputHeadResolveError::NoEnabledOutputs);
+    }
+    Ok(resolved)
+}
+
 /// Composes heads from the live scanout's own KMS objects.
 ///
 /// Every output the session drives already has a selection naming its connector,
@@ -234,6 +382,23 @@ impl<'a> LiveNativeOutputTopologyHardware<'a> {
     }
 }
 
+impl LiveNativeOutputTopologyHardware<'_> {
+    fn properties(
+        &self,
+        index: usize,
+    ) -> Result<LibdrmNativePrimaryPlanePropertyHandles, NativeOutputHeadUnavailable> {
+        let selection = self.scanout.selection(index);
+        discover_native_primary_plane_property_handles(
+            self.scanout.card(index),
+            selection.connector_handle(),
+            selection.crtc_handle(),
+            selection.plane_handle(),
+        )
+        .properties
+        .ok_or(NativeOutputHeadUnavailable::MissingProperties)
+    }
+}
+
 impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
     type Head = LibdrmNativeAtomicTopologyHead;
 
@@ -247,16 +412,7 @@ impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
         };
         let selection = self.scanout.selection(index);
         let card = self.scanout.card(index);
-
-        let discovery = discover_native_primary_plane_property_handles(
-            card,
-            selection.connector_handle(),
-            selection.crtc_handle(),
-            selection.plane_handle(),
-        );
-        let Some(properties) = discovery.properties else {
-            return Err(NativeOutputHeadUnavailable::MissingProperties);
-        };
+        let properties = self.properties(index)?;
 
         // A timing this connector never advertised is a configuration error, and it
         // fails here rather than as an opaque kernel refusal later.
@@ -279,8 +435,14 @@ impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
     }
 
     fn release_mode_blob(&self, output: OutputId, blob: u64) {
-        // Release against the card that created it. Failing to release is worth a
-        // line but not worth failing a validation that already completed.
+        self.release(output, blob);
+    }
+}
+
+impl LiveNativeOutputTopologyHardware<'_> {
+    /// Release against the card that created it. Failing to release is worth a line
+    /// but not worth failing work that already completed.
+    fn release(&self, output: OutputId, blob: u64) {
         let Some(index) = self.scanout.output_index(output) else {
             return;
         };
@@ -292,5 +454,87 @@ impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
                 "sophia_native_output_mode_blob release failed"
             );
         }
+    }
+}
+
+impl NativeOutputScanoutHardware for LiveNativeOutputTopologyHardware<'_> {
+    type Head = LibdrmNativeAtomicHead;
+
+    fn compose_apply_head(
+        &self,
+        output: OutputId,
+        timing: LibdrmNativeOutputTiming,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
+        let Some(index) = self.scanout.output_index(output) else {
+            return Err(NativeOutputHeadUnavailable::MissingSelection);
+        };
+        let selection = self.scanout.selection(index);
+        let card = self.scanout.card(index);
+        let properties = self.properties(index)?;
+
+        let Ok(Some(mode)) =
+            resolve_native_connector_mode(card, selection.connector_handle(), timing)
+        else {
+            return Err(NativeOutputHeadUnavailable::UnknownTiming);
+        };
+        let Ok(mode_blob) = card.create_mode_blob(mode) else {
+            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
+        };
+
+        // The only framebuffer that exists before anything is rendered is the one
+        // already on screen, so this can apply a topology whose scanout size matches
+        // what is displayed and nothing else. A mode change needs a buffer allocated
+        // at the new size, which is renderer work, and declining here says so rather
+        // than letting the kernel refuse with EINVAL.
+        let scanout = Size {
+            width: i32::try_from(timing.width)
+                .map_err(|_| NativeOutputHeadUnavailable::NeedsFramebuffer)?,
+            height: i32::try_from(timing.height)
+                .map_err(|_| NativeOutputHeadUnavailable::NeedsFramebuffer)?,
+        };
+        match compose_native_head_from_current_framebuffer(
+            card, selection, properties, mode_blob, scanout,
+        ) {
+            Some(head) => Ok(NativeOutputComposedHead { head, mode_blob }),
+            None => {
+                self.release(output, mode_blob);
+                Err(NativeOutputHeadUnavailable::NeedsFramebuffer)
+            }
+        }
+    }
+
+    fn compose_rollback_head(
+        &self,
+        output: OutputId,
+    ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
+        let Some(index) = self.scanout.output_index(output) else {
+            return Err(NativeOutputHeadUnavailable::MissingSelection);
+        };
+        let selection = self.scanout.selection(index);
+        let card = self.scanout.card(index);
+        let properties = self.properties(index)?;
+
+        // The mode this output runs today, not the one being requested. A rollback
+        // built from the requested mode would restore the failure.
+        let Ok(mode_blob) = card.create_mode_blob_for_selection(selection) else {
+            return Err(NativeOutputHeadUnavailable::ModeBlobRefused);
+        };
+        match compose_native_head_from_current_framebuffer(
+            card,
+            selection,
+            properties,
+            mode_blob,
+            selection.size(),
+        ) {
+            Some(head) => Ok(NativeOutputComposedHead { head, mode_blob }),
+            None => {
+                self.release(output, mode_blob);
+                Err(NativeOutputHeadUnavailable::NeedsFramebuffer)
+            }
+        }
+    }
+
+    fn release_mode_blob(&self, output: OutputId, blob: u64) {
+        self.release(output, blob);
     }
 }
