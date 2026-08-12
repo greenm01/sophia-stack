@@ -159,9 +159,10 @@ echo "sophia_native_output_gate schema=1 commit=${commit:0:12} apply_armed=$APPL
 echo "Evidence: $evidence"
 echo
 
-# One artifact to hand back. Everything in it is cross-checkable rather than
-# self-asserted: the binary checksum must be what this commit builds, the connector
-# facts must match this host's sysfs, and the phase lines must agree with both.
+# One artifact, written where anything on this host can read it. Everything in it is
+# cross-checkable rather than self-asserted: the binary checksum must be what this
+# commit builds, the connector facts must match this host's sysfs, and the phase
+# lines must agree with both.
 transcript="$evidence/transcript.txt"
 {
     echo "=== sophia native output gate transcript ==="
@@ -185,8 +186,13 @@ transcript="$evidence/transcript.txt"
 # matching. It proves internal consistency, not provenance.
 printf 'transcript_sha256=%s\n' "$(sha256sum "$transcript" | cut -d' ' -f1)" >> "$transcript"
 
-echo "================ paste everything below this line ================"
+# The transcript is a file, deliberately. This gate runs on a VT with no clipboard
+# and no shared selection, so anything it asks an operator to copy off the screen is
+# an instruction to retype it by hand. The path is the deliverable; the screen dump
+# below is only so a human at the machine can see the result without opening it.
+echo "Transcript: $transcript"
+echo "Read it from anywhere on this host; nothing needs copying off this VT."
+echo
 cat "$transcript"
-echo "================ paste everything above this line ================"
 
 exit "$phase_status"

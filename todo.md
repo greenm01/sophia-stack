@@ -490,6 +490,13 @@ is excluded; retained product behavior is not.
   A topology spanning two DRM devices is declined rather than validated: one atomic
   request reaches one device, and validating a fragment would answer a question
   nobody asked.
+  `tools/run_native_output_gate_tty4.sh` passed on tty4 at commit `eab7922e`,
+  which is the first identity-pinned evidence for this row:
+  `result=passed`, probe accepted with and without plane state, and
+  `validation=accepted outputs=2 heads=2`. Its transcript carries the commit, the
+  binary's checksum, the sysfs connector facts, and a digest over the body, so the
+  claim can be rechecked rather than believed — the checksum matches what that
+  commit builds and the digest matches the body.
   `tools/native_topology_validate.sh` runs that chain read-only against real
   hardware — capabilities, projection, reconciliation, plan, heads, phase machine —
   differing from startup only in opening the cards directly rather than through a
