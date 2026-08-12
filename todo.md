@@ -527,10 +527,35 @@ is excluded; retained product behavior is not.
   without allocating one. Notably the shared buffer is the mirror-group shape, and
   the two outputs disagree on size, so reusing it for both heads would fail
   `MismatchedMirrorSize` as well — the same constraint reached from the other side.
-  Apply therefore stays unrun, and its hardware evidence is blocked on
-  output-scoped framebuffer allocation rather than on anything in the apply path.
-  Nothing was submitted and no output state changed; the resolver failed closed
-  before the first commit, which is the behavior the gate exists for.
+  Apply therefore stays unrun, and its hardware evidence waits on the renderer
+  rather than on anything in the apply path. Nothing was submitted and no output
+  state changed; the resolver failed closed before the first commit, which is the
+  behavior the gate exists for.
+  **Apply is frame-fed, not scratch-fed.** The obvious unblock — allocate a buffer
+  at the new mode's size so apply can run whenever it likes — is foreclosed by
+  `docs/renderer-import-boundary.md`: native KMS initialization waits for the first
+  committed-state frame rather than requiring a speculative or blank visual
+  bootstrap. A scratch buffer is that bootstrap, and it would put a frame on screen
+  that no committed state produced. The sequence is therefore resize the frame
+  target to the new mode, compose one frame at that size from committed state, then
+  apply the topology naming that frame. `LiveGbmEglFrameTargetRecord` and its
+  created/retained/resized/invalidated/retired lifecycle already model the resize
+  step; what was missing was the precondition tying it to activation.
+  `native_output_apply_admission` is that precondition. It answers whether every
+  enabled output has a valid frame target at its requested mode, and names the
+  output and both sizes when one does not, so a mode change reports where the
+  session is in the transition rather than reporting a hardware defect. Disabled
+  targets owe no frame, for the same reason they contribute no head. Apply consults
+  it before composing anything, which turns a missing framebuffer from a discovery
+  mid-resolution into a refusal before submission: the reference host now reports
+  `native output 2 has a 2560x1440 frame but the requested mode is 1920x1080`.
+  Both the precondition and head composition read the currently scanned-out
+  framebuffer through one reader, `read_native_current_framebuffer`, so they cannot
+  disagree about what "currently displayed" means.
+  What remains for a real apply is the renderer half: resizing the frame target on a
+  configured mode change and recomposing before activation runs. The three-slot
+  recycling pool in Milestone 14 stays gated on its own measurement and is not a
+  prerequisite here.
   Rollback heads are resolved beside apply heads, before anything is submitted,
   from the topology still on screen. Sourcing them afterwards would source them from
   a desktop that is already wrong. An output that cannot be restored fails the whole

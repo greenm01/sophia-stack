@@ -120,6 +120,34 @@ pub enum LibdrmNativeCurrentFramebufferHead {
     Unreadable,
 }
 
+/// What a CRTC is scanning out right now, if anything.
+///
+/// One reader for one fact. Head composition needs the handle and the size
+/// together; a caller deciding whether a topology is ready to apply needs only the
+/// size. Both must agree about what "currently displayed" means, so neither derives
+/// it independently.
+#[cfg(feature = "libdrm-events")]
+pub fn read_native_current_framebuffer<D>(
+    device: &D,
+    selection: LibdrmNativePrimaryPlaneSelection,
+) -> Option<(drm::control::framebuffer::Handle, Size)>
+where
+    D: drm::control::Device,
+{
+    let framebuffer = device
+        .get_crtc(selection.crtc_handle())
+        .ok()?
+        .framebuffer()?;
+    let (width, height) = device.get_framebuffer(framebuffer).ok()?.size();
+    Some((
+        framebuffer,
+        Size {
+            width: i32::try_from(width).ok()?,
+            height: i32::try_from(height).ok()?,
+        },
+    ))
+}
+
 #[cfg(feature = "libdrm-events")]
 pub fn compose_native_head_from_current_framebuffer<D>(
     device: &D,
@@ -131,20 +159,23 @@ pub fn compose_native_head_from_current_framebuffer<D>(
 where
     D: drm::control::Device,
 {
+    // Absent and unreadable are separated by asking the CRTC first: a CRTC with no
+    // framebuffer scans out nothing, which is a different fact from one whose
+    // framebuffer could not be read.
     let Ok(crtc) = device.get_crtc(selection.crtc_handle()) else {
         return LibdrmNativeCurrentFramebufferHead::Unreadable;
     };
-    let Some(framebuffer) = crtc.framebuffer() else {
+    if crtc.framebuffer().is_none() {
         return LibdrmNativeCurrentFramebufferHead::NoFramebuffer;
-    };
-    let Ok(info) = device.get_framebuffer(framebuffer) else {
+    }
+    let Some((framebuffer, current)) = read_native_current_framebuffer(device, selection) else {
         return LibdrmNativeCurrentFramebufferHead::Unreadable;
     };
-    let (width, height) = info.size();
-    if i64::from(width) != i64::from(scanout.width)
-        || i64::from(height) != i64::from(scanout.height)
-    {
-        return LibdrmNativeCurrentFramebufferHead::SizeMismatch { width, height };
+    if current != scanout {
+        return LibdrmNativeCurrentFramebufferHead::SizeMismatch {
+            width: u32::try_from(current.width).unwrap_or(0),
+            height: u32::try_from(current.height).unwrap_or(0),
+        };
     }
     LibdrmNativeCurrentFramebufferHead::Composed(LibdrmNativeAtomicHead::new(
         LibdrmNativePrimaryPlaneObjects::new(

@@ -5,6 +5,8 @@ pub mod desktop_output_activation;
 #[cfg(feature = "atomic-scanout-live")]
 pub mod desktop_output_commit;
 #[cfg(feature = "atomic-scanout-live")]
+pub mod desktop_output_frames;
+#[cfg(feature = "atomic-scanout-live")]
 pub mod desktop_output_heads;
 #[cfg(feature = "atomic-scanout-live")]
 pub mod desktop_output_topology;

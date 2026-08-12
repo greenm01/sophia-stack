@@ -367,11 +367,15 @@ outputs={outputs} heads={heads} generation={generation}"
 /// Sourcing them afterwards would source them from a desktop that is already wrong.
 #[cfg(feature = "atomic-scanout-live")]
 fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_backend_live::LiveGbmEglFrameTargetRecord;
     use sophia_cli::desktop_output_activation::{
         NativeOutputActivationSettlement, NativeOutputRollbackSettlement,
         run_native_output_activation,
     };
     use sophia_cli::desktop_output_commit::{NativeOutputCommitExecutor, NativeOutputHeadSet};
+    use sophia_cli::desktop_output_frames::{
+        NativeOutputFrameTarget, native_output_apply_admission,
+    };
     use sophia_cli::desktop_output_heads::{
         LiveNativeOutputTopologyHardware, resolve_native_output_scanout_heads,
     };
@@ -390,6 +394,34 @@ fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
         sophia_config::reconcile_desktop_output_candidate(&prepared.candidates.output, &topology)?;
     let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
     let generation = plan.generation().raw();
+
+    // Refuse before composing anything if the renderer has not produced a frame at
+    // the requested mode. Discovering it while resolving heads would report a
+    // missing framebuffer as a property of the hardware, when it is really a
+    // statement about where this session is in the mode change.
+    // The frame each output is actually scanning out, not the size its mode says it
+    // should be. Those differ during a mode change, and the difference is the whole
+    // question. A standalone command composes nothing itself, so what is on screen
+    // is the only committed frame available to it.
+    let frame_targets = native
+        .outputs()
+        .into_iter()
+        .filter_map(|output| {
+            let index = native.output_index(output.id)?;
+            let (_, size) = sophia_backend_live::read_native_current_framebuffer(
+                native.card(index),
+                native.selection(index),
+            )?;
+            Some(NativeOutputFrameTarget {
+                output: output.id,
+                target: LiveGbmEglFrameTargetRecord::new(size),
+            })
+        })
+        .collect::<Vec<_>>();
+    let admission = native_output_apply_admission(&plan, &frame_targets);
+    if !admission.is_ready() {
+        return Err(format!("native topology is not ready to apply: {admission}").into());
+    }
 
     let hardware = LiveNativeOutputTopologyHardware::new(&native);
     let resolved = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
