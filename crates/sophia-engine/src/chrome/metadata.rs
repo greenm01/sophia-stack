@@ -15,8 +15,6 @@ pub struct ChromeDescriptorTable {
     descriptors: BTreeMap<SurfaceId, ChromeDescriptor>,
 }
 
-pub const MAX_CHROME_LABEL_LEN: usize = 128;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SanitizedChromeMetadata {
     pub surface: SurfaceId,

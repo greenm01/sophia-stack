@@ -1179,6 +1179,17 @@ blocker. Work on it only when it shortens an active milestone.
   two-worker path or the confined-namespace boundary between the two clients is
   involved. That is where the next attempt should start, and it is worth more than
   the failed patch, which was reverted.
+  A second mechanism is now recorded, and it rules out the tempting fix.
+  `configured_present_child_receives_xlibre_ordered_geometry_notification` fails
+  under full-workspace load inside `read_x_reply`: the reply's 32-byte prefix
+  arrives and the body never does, until the **10-second** `SOCKET_IO_TIMEOUT`
+  expires. Raising timeouts is therefore not the answer — ten seconds is already
+  generous, and a reply that is half-sent for ten seconds is a server withholding a
+  body, not a machine that was briefly busy. Both mechanisms point at the same
+  place: what the routed workers do when more than one client is live.
+  Note also that a failure here truncates the workspace run, because cargo stops
+  before the remaining test binaries. A full-suite total that drops by roughly
+  thirty-six tests is this flake, not a missing suite.
   A suite that fails for non-reasons erodes every other claim in this file, so this
   is worth closing even though it is not on the critical path.
 - [ ] Complete one human-visible `xmonad-interactive` capture proving pointer

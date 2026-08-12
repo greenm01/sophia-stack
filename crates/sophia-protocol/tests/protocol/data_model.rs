@@ -474,3 +474,52 @@ fn broker_health_packet_rejects_unbounded_status_message() {
         })
     );
 }
+
+#[test]
+fn a_surface_without_a_rule_discloses_nothing() {
+    // The default is load-bearing, not a convenience. A surface the broker has not
+    // ruled on must not leak a title because some code path forgot to set a level.
+    assert_eq!(MetadataDisclosure::default(), MetadataDisclosure::None);
+    assert!(!MetadataDisclosure::None.discloses_text());
+    assert!(MetadataDisclosure::ClassOnly.discloses_text());
+    assert!(MetadataDisclosure::Full.discloses_text());
+}
+
+#[test]
+fn disclosure_levels_order_from_least_to_most_revealing() {
+    // Ordered so a policy that wants "at most this much" can compare rather than
+    // enumerate, and so adding a value in the wrong position fails a test instead of
+    // silently widening what some comparison admits.
+    assert!(MetadataDisclosure::None < MetadataDisclosure::ClassOnly);
+    assert!(MetadataDisclosure::ClassOnly < MetadataDisclosure::Full);
+}
+
+#[test]
+fn a_reduced_candidate_carries_its_level_beside_its_label() {
+    // "No title" and "not permitted to tell you the title" are different facts. A
+    // receiver that had to infer the second from an absent label would guess wrong
+    // for every untitled window.
+    let withheld = ReducedMetadataCandidate {
+        surface: SurfaceId::new(9, 1),
+        label: None,
+        disclosure: MetadataDisclosure::None,
+        generation: 3,
+    };
+    let untitled = ReducedMetadataCandidate {
+        surface: SurfaceId::new(9, 1),
+        label: None,
+        disclosure: MetadataDisclosure::Full,
+        generation: 3,
+    };
+
+    assert_ne!(withheld, untitled);
+    assert_eq!(withheld.label, untitled.label);
+}
+
+#[test]
+fn one_label_bound_is_shared_by_every_hop() {
+    // The authority reduces to this bound and Engine validates against it. Two
+    // copies would let a label be valid where it is produced and rejected where it
+    // is stored.
+    assert_eq!(MAX_CHROME_LABEL_LEN, 128);
+}
