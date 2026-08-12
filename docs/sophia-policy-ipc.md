@@ -160,6 +160,31 @@ stated together because each one only holds if the others do.
    interface. The 24-byte envelope is role-neutral, so this costs the WM interface
    nothing.
 
+#### Broker-issued classifications are extension-chunk content
+
+Clause 2 is not hypothetical: it has one named first user. Broker-issued surface
+classifications — the reduced, opaque form of what a host's window rules ask for —
+cross as `(surface, classification)` records in a capability-gated extension chunk,
+never as fields of `SnapshotSurface`.
+
+The reason is that such rules are mostly parametric. A default workspace, a column
+proportion, a named scratchpad, and a floating position are values, not classes, and
+no bitfield or enum carries them. `SnapshotSurface.kind` and `capability_bits`
+therefore stay reserved for what a surface *is*, and remain free for that purpose.
+
+Two consequences follow, and both are the point:
+
+- The classification vocabulary is not frozen with the revision. A rule family
+  recognized after the freeze is a new record in the chunk, gated by the capability
+  a client already negotiated.
+- A client that negotiates nothing receives no classifications and behaves exactly
+  as it did before they existed. Placement rules are advisory to policy; a WM that
+  ignores them still produces a coherent desktop.
+
+Ordinary record kinds stay sequentially allocated from 1 so they cannot collide with
+the reserved range. Classifications never carry title, app ID, PID, path, or the
+match expressions that produced them.
+
 The rule depends on outbound capability gating. A producer that ignores the
 negotiated capability set can send a frozen client something it must reject, which
 would make clause 2 unsound and clause 1 unenforceable. Outbound gating is

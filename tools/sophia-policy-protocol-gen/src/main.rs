@@ -16,6 +16,11 @@ const DOC_PATH: &str = "docs/generated/sophia-wm-v1-wire.md";
 const GOLDEN_PATH: &str = "protocol/golden/sophia-wm-v1.frames";
 const MALFORMED_PATH: &str = "protocol/golden/sophia-wm-v1-malformed.frames";
 const RECORD_GOLDEN_PATH: &str = "protocol/golden/sophia-wm-v1.records";
+
+/// First record kind reserved for capability-gated extension chunks. Ordinary
+/// records are allocated sequentially from 1 and must stay below it; see the
+/// forward-compatibility rule in `docs/sophia-policy-ipc.md`.
+const EXTENSION_RECORD_KIND_FLOOR: u64 = 0xFF00;
 const SMT_FACTS_PATH: &str = "validation/architecture/generated/sophia-wm-v1-facts.smt2";
 
 #[derive(Clone, Debug)]
@@ -394,6 +399,20 @@ fn validate_schema(protocol: &Protocol) -> Result<(), String> {
         }
         if record.kind == 0 || record.kind > u16::MAX as u64 {
             return Err(format!("record `{}` has invalid kind", record.name));
+        }
+        // `0xFF00`-`0xFFFF` belongs to capability-gated extension chunks, which is
+        // what lets a frozen revision carry new facts at all. An ordinary record
+        // allocated here would collide with a future extension, and the collision
+        // would surface as a frozen client rejecting a transfer in the field.
+        // Ordinary kinds are allocated sequentially from 1, so nothing legitimate
+        // reaches this range by accident -- but the rule was review-time only, and
+        // a review-time rule about a number is one typo from being broken.
+        if record.kind >= EXTENSION_RECORD_KIND_FLOOR {
+            return Err(format!(
+                "record `{}` claims kind {:#06x}, which is inside the reserved \
+extension range {:#06x}-0xFFFF",
+                record.name, record.kind, EXTENSION_RECORD_KIND_FLOOR
+            ));
         }
         if !record_names.insert(record.name.as_str())
             || !record_keys.insert((record.transfer.as_str(), record.kind))

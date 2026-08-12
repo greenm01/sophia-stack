@@ -698,11 +698,25 @@ is excluded; retained product behavior is not.
   Before it lands, settle the wire decisions enumerated in
   `docs/wm-v1-freeze-surface.md`. Twenty-three of the 27 rows need no wire change;
   the residue was workspace-name projection, broker classification shape, the
-  continuous-pointer payload, and the output logical-space contract. The last of
-  those is now settled and normative in `docs/sophia-policy-ipc.md` under Stable
-  Spatial Semantics, deliberately ahead of the output-authority tranche that would
-  otherwise be the first thing tempted to widen `SnapshotOutput`. Three remain, and
-  broker classification shape is the only one that can force a layout change. The binding
+  continuous-pointer payload, and the output logical-space contract. Two of the four
+  are now settled and normative in `docs/sophia-policy-ipc.md`. The output
+  logical-space contract landed ahead of the output-authority tranche that would
+  otherwise be the first thing tempted to widen `SnapshotOutput`.
+  Broker classification shape is also settled, and it removed a pre-freeze
+  obligation rather than satisfying one. Reading Triad's `WindowRule` at baseline
+  `fb8fb27e` showed the rules are mostly parametric — a default workspace, a column
+  proportion, a named scratchpad, a floating position — which no bitfield or enum
+  carries, so the "small closed set in spare `capability_bits`" shape was never
+  going to fit. Classifications instead ride a capability-gated extension chunk in
+  the reserved `0xFF00`–`0xFFFF` range, which is uncounted and therefore costs no
+  `*Begin` layout change. Nothing needs reserving in `SnapshotSurface`, and the
+  classification vocabulary is no longer frozen with the revision. This option only
+  became available when outbound gating landed and made clause 2 sound; the original
+  analysis predates it.
+  The generator now rejects any ordinary record declaring a kind in the reserved
+  range, so what was a review-time rule about a number is checked.
+  Two decisions remain: workspace-name projection and the continuous-pointer
+  payload. Neither can force a layout change. The binding
   constraint is server-to-client enum vocabularies, not record kinds: an uncounted
   extension chunk in reserved kinds `0xFF00`–`0xFFFF` stays available after the
   freeze, but enum values sit at fixed offsets inside fixed-width records where no

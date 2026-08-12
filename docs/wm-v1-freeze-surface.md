@@ -293,10 +293,79 @@ PID, path, or regex input. The question is the shape of what crosses:
 exist yet**, because the freeze forecloses the second option. Deciding the
 *shape* now does not require building the broker.
 
-**Recommendation:** commit to the closed-set form and record it as a constraint on
-the broker's eventual design. Expiring per-surface grants are the more powerful
-model, but they buy capability the blind-WM contract does not obviously need, and
-they are the only thing in the ledger that forces a layout change.
+**Settled — and neither option above is what was chosen.** Both were framed before
+outbound capability gating existed, when clause 2 of the forward-compatibility rule
+was unsound and every server-to-client addition was now-or-never. Gating has since
+landed, and reading Triad's actual rule surface showed the first option does not fit
+anyway.
+
+#### What the rules actually contain
+
+`WindowRule` at Triad baseline `fb8fb27e`
+(`src/types/runtime_values.nim:211-283`) carries roughly thirty-five outcomes. They
+do not reduce to a small set of classes:
+
+- **Matching input** — `appIdMatch`, `titleMatch`, `matches`, `excludes`. Never
+  crosses; excluding it is the broker's entire purpose.
+- **Already expressible** — `minWidth`/`minHeight`/`maxWidth`/`maxHeight` and
+  `respectSizeHints` are `SurfaceConstraints.min_size`/`max_size` on the wire today.
+  `openFullscreen` and `openMaximized` are `request_state_bits`. `parentedRole` is
+  the reduced parent/role fact whose ledger row is already complete.
+- **Not WM facts** — `border`, `focusRing`, and `clipToGeometry` are Engine chrome.
+  `keyboardShortcutsInhibit`, `idleInhibitMode`, `presentationMode`, `openOverlay`,
+  and `openUnmanagedGlobal` belong to session and security authorities. Routing any
+  of these through the WM interface would widen it into the general state socket
+  the ledger explicitly forbids.
+- **Genuinely WM-bound booleans** — `openFloating`, `openFocused`,
+  `openMaximizedToEdges`, `openOnAllWorkspaces`, `centerFloating`, `tiledState`,
+  `allowSwallow`, `terminal`, `dialogViewportJump`. Around nine, and the list is a
+  floor rather than a ceiling.
+- **Genuinely WM-bound parameters** — `defaultWorkspace`/`defaultWorkspaces`,
+  `openOnOutput`, `defaultColumnWidth`, `scrollerProportion`,
+  `scrollerSingleProportion`, `defaultWindowWidth`/`Height`, `openNamedScratchpad`,
+  `defaultFloatingPosition`, `maximizePolicy`, `forcedLayout`.
+
+The parameters are what break the first option. `capability_bits` has eleven free
+bits, which the booleans alone would nearly exhaust, and a bitfield cannot carry a
+workspace number, a column proportion, or a scratchpad name at all. "A small closed
+set of policy classes" was an accurate description of a classification vocabulary
+and an inaccurate description of these rules.
+
+#### Where classifications live
+
+**In a capability-gated extension chunk, not in `SnapshotSurface`.** A chunk of
+`(surface, classification)` records takes a kind from the reserved `0xFF00`–`0xFFFF`
+range, is uncounted, and reaches only a client that negotiated the governing
+capability. Chunk data is self-delimiting, so it carries parameters as easily as
+flags.
+
+This is strictly better than either original option:
+
+- Against the closed set in spare bits: it does not spend the eleven remaining
+  `capability_bits`, which stay available for facts that genuinely describe what a
+  surface *is* rather than how one host wants it placed. It also imposes no ceiling,
+  so a rule family discovered after the freeze is an added chunk record rather than
+  an impossibility.
+- Against the expiring grant: it costs no `*Begin` layout change, because the chunk
+  is uncounted. If per-surface grants with generations later prove necessary, they
+  fit the same chunk. The capability that gates it is the revocation mechanism.
+
+`SnapshotSurface` therefore gains nothing for this row, and **nothing needs
+reserving in it before the freeze**. That is the substantive change: the pre-freeze
+obligation this decision was believed to carry has been removed rather than
+satisfied.
+
+#### What remains pre-freeze
+
+Two things, both small:
+
+1. The reserved range is defended only by review. Add a check that no declared
+   record kind falls in `0xFF00`–`0xFFFF`, so an ordinary record cannot be allocated
+   there by accident and collide with a future extension.
+2. The ledger row itself — "Placement, sticky behavior, swallowing, size policy, and
+   window rules" — must still be complete before the freeze, which means the broker
+   and this chunk must both exist by then. What the freeze no longer constrains is
+   the *vocabulary* they carry.
 
 ### Decision 3 — The continuous-pointer payload
 
