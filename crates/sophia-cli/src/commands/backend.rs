@@ -19,6 +19,25 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    if args.iter().any(|arg| arg == "native-topology-probe") {
+        // Read-only. Every commit this issues carries TEST_ONLY, and the only
+        // framebuffer it touches is one the CRTC already scans out, so no output
+        // state changes and nothing is allocated. It does need DRM master, so it
+        // must run with no other compositor holding the card.
+        let report = sophia_backend_live::native_topology_probe_report();
+        println!("{}", report.reduced_log_line());
+
+        if !report.answered() {
+            return Err(format!(
+                "native topology probe reached no conclusion: {:?}",
+                report.status
+            )
+            .into());
+        }
+
+        return Ok(true);
+    }
+
     if args.iter().any(|arg| arg == "atomic-scanout-preflight") {
         let report = sophia_backend_live::real_atomic_scanout_preflight_report();
         println!("{}", report.reduced_log_line());

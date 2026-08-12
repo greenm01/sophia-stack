@@ -426,3 +426,68 @@ fn a_kernel_refusal_and_a_busy_device_are_reported_apart() {
         NativeTopologySubmitOutcome::Busy
     );
 }
+
+#[test]
+fn a_probe_that_lacked_drm_master_is_not_a_rejected_topology() {
+    // The distinction matters operationally: a reader who treats MasterUnavailable
+    // as a rejection would conclude the hardware refused a valid topology, when in
+    // fact nothing was ever validated.
+    let report = NativeTopologyProbeReport {
+        status: NativeTopologyProbeStatus::MasterUnavailable,
+        connected_connectors: 2,
+        modes_on_selected_connector: 14,
+        without_plane_state: NativeTopologyValidationOutcome::NotAttempted,
+        with_current_framebuffer: NativeTopologyValidationOutcome::NotAttempted,
+        reused_current_framebuffer: false,
+    };
+
+    assert!(!report.answered());
+    let line = report.reduced_log_line();
+    assert!(line.contains("status=MasterUnavailable"));
+    assert!(line.contains("without_plane_state=not_attempted"));
+}
+
+#[test]
+fn a_probe_answers_only_when_it_validated_something() {
+    let probed = NativeTopologyProbeReport {
+        status: NativeTopologyProbeStatus::Probed,
+        connected_connectors: 2,
+        modes_on_selected_connector: 14,
+        without_plane_state: NativeTopologyValidationOutcome::Accepted,
+        with_current_framebuffer: NativeTopologyValidationOutcome::Accepted,
+        reused_current_framebuffer: true,
+    };
+    assert!(probed.answered());
+    assert!(
+        probed
+            .reduced_log_line()
+            .contains("without_plane_state=accepted")
+    );
+
+    // Probed, but the first validation never ran: no conclusion either.
+    let inconclusive = NativeTopologyProbeReport {
+        without_plane_state: NativeTopologyValidationOutcome::NotAttempted,
+        ..probed
+    };
+    assert!(!inconclusive.answered());
+}
+
+#[test]
+fn a_rejected_validation_is_still_a_conclusion() {
+    // "The kernel refuses a modeset with no plane state" is exactly the answer the
+    // probe exists to obtain, so it must count as answered.
+    let report = NativeTopologyProbeReport {
+        status: NativeTopologyProbeStatus::Probed,
+        connected_connectors: 1,
+        modes_on_selected_connector: 3,
+        without_plane_state: NativeTopologyValidationOutcome::Rejected,
+        with_current_framebuffer: NativeTopologyValidationOutcome::Accepted,
+        reused_current_framebuffer: true,
+    };
+
+    assert!(report.answered());
+    let line = report.reduced_log_line();
+    assert!(line.contains("without_plane_state=rejected"));
+    assert!(line.contains("with_current_framebuffer=accepted"));
+    assert!(line.contains("reused_framebuffer=true"));
+}

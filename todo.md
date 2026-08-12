@@ -506,10 +506,21 @@ is excluded; retained product behavior is not.
   What remains is the piece that cannot be settled offline: resolving a candidate
   into heads. That means naming connectors, CRTCs, and planes for outputs that may
   not be active yet, sourcing correctly sized framebuffers for a mode that is not
-  running, and sourcing the previous topology's heads for rollback. Whether a
-  `TEST_ONLY` modeset even requires a valid `FB_ID` is driver-dependent and needs
-  hardware to answer. Reservations, a separate power authority, and evidence follow
-  that.
+  running, and sourcing the previous topology's heads for rollback.
+  `native-topology-probe` exists to answer the one question that decides how much
+  of that is needed: whether a `TEST_ONLY` modeset requires plane state and a valid
+  `FB_ID`, which is driver-dependent. It is read-only — every commit carries
+  `TEST_ONLY` and the only framebuffer it names is one the CRTC already scans out,
+  so nothing is allocated and no output state changes. It submits the same modeset
+  twice, once with connector and CRTC state only and once with plane state added,
+  and reports the two outcomes separately.
+  Atomic commits need DRM master even to validate, so the probe reports
+  `MasterUnavailable` rather than a rejection when a compositor holds the card, and
+  refuses to draw a conclusion. Enumeration works without master: on the AMD
+  two-output reference it reports 2 connected connectors and 36 modes on the
+  selected connector while Xorg holds master. Answering the framebuffer question
+  needs one run from a TTY with no compositor running.
+  Reservations, a separate power authority, and evidence follow that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation
