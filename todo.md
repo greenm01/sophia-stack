@@ -592,7 +592,38 @@ is excluded; retained product behavior is not.
   That is also the reason the report now carries errno and both sizes: the first run
   recorded `Rejected` with nothing to diagnose it by, and a rejection that cannot say
   why is indistinguishable from a bug in the asker.
-  Reservations, a separate power authority, and evidence follow that.
+  A separate power authority now exists: `crates/sophia-engine/src/output_power.rs`
+  holds per-output levels for the outputs the desktop currently has. Power is kept
+  apart from enablement because blanking a screen and removing a monitor are
+  different facts — a dark output keeps its bounds, work area, and surfaces, and
+  policy must not see the transition, while a disabled output leaves the complete
+  snapshot and forces a relayout. The distinction is easy to lose at the KMS layer,
+  where atomic modesetting powers a head down by clearing the same CRTC `ACTIVE`
+  that disables one; that is a property of the commit, not a licence to merge the
+  two above it. A topology change preserves the level of every surviving output and
+  keeps none for a departed one, so a mode change cannot relight what was powered
+  down and a reconnected monitor cannot inherit a stale level. Power transitions do
+  not travel through topology activation: they alter no geometry, invalidate no
+  candidate, and need no rollback beyond the previous level. The KMS write waits on
+  the same framebuffer allocation apply does.
+  Reservations turned out to be largely present rather than missing. Work areas are
+  already re-projected from the new output rects as part of topology publication
+  (`owner_loop/topology_phase.rs`), inside the same publication that swaps the
+  outputs, so geometry and work area do commit together on the hotplug path. What
+  was missing was any test pinning it; a mode change that shrinks an output under a
+  live reservation is now covered.
+  One fail-open edge is now documented and pinned rather than fixed. Reservations
+  are root-relative, so a shrink can leave one outside the new root, and such a
+  reservation is filtered *before* reduction — reduction then succeeds and reports
+  the full output as available, silently releasing the reservation. An out-of-root
+  reservation that arrives malformed should indeed be ignored, and the pure reducer
+  cannot tell that case from one that was valid until the mode changed, because it
+  holds no previous state. The fail-closed path exists next door: a reduction that
+  returns `None` makes callers preserve the previous work area. Closing the gap
+  means deciding at the layer that does hold previous state
+  (`SurfaceOutputReservationState`), and it changes behavior for every bar, so it is
+  called out here rather than settled quietly.
+  Evidence follows that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation

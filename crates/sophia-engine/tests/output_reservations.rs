@@ -183,3 +183,87 @@ fn malformed_or_out_of_root_reservations_do_not_change_work_area() {
         Some(full)
     );
 }
+
+#[test]
+fn a_mode_change_reprojects_the_work_area_under_a_live_reservation() {
+    // The output-authority row wants reservations settled with topology, not after
+    // it. Reduction is pure in the output rect, so a mode change is the same
+    // reservation against a different rect -- and the work area must follow the new
+    // mode. A stale work area is worse than none: policy would lay out against
+    // pixels the mode no longer has.
+    let reservations = [reservation(1, OutputEdge::Top, 40, 0, 1920)];
+
+    let before = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1440,
+    };
+    assert_eq!(
+        reduce_output_work_areas(before, [(OutputId::from_raw(1), before)], &reservations),
+        vec![area(
+            1,
+            before,
+            Some(Rect {
+                x: 0,
+                y: 40,
+                width: 1920,
+                height: 1400,
+            })
+        )]
+    );
+
+    // Same surface, same reservation, shorter mode.
+    let after = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    assert_eq!(
+        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations),
+        vec![area(
+            1,
+            after,
+            Some(Rect {
+                x: 0,
+                y: 40,
+                width: 1920,
+                height: 1040,
+            })
+        )],
+        "the work area follows the new mode"
+    );
+}
+
+#[test]
+fn a_shrink_that_invalidates_a_reservation_releases_it_rather_than_preserving_it() {
+    // Documented because it is a fail-open edge in an otherwise fail-closed model,
+    // and it is reachable by an ordinary mode change rather than by malformed input.
+    //
+    // Reservations are root-relative, and a shrink can leave one outside the new
+    // root -- here a span wider than the root that now contains it. Such a
+    // reservation is filtered before reduction, so reduction succeeds and reports
+    // the *full* output as available. An out-of-root reservation that arrives
+    // malformed should be ignored, which is what that filter is for; one that was
+    // valid until the mode changed is a different event with the same shape, and
+    // the reducer cannot tell them apart because it holds no previous state.
+    //
+    // The consequence is bounded but real: between the mode change and the reserving
+    // client republishing, policy may lay out under a bar that still occupies
+    // pixels. Contrast `reduce_output_work_area` returning `None`, which callers
+    // treat as "preserve what you had" -- the fail-closed path this case bypasses.
+    let reservations = [reservation(1, OutputEdge::Top, 40, 0, 2560)];
+    let after = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+
+    assert_eq!(
+        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations),
+        vec![area(1, after, Some(after))],
+        "the reservation is released, not preserved"
+    );
+}
