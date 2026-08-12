@@ -690,12 +690,32 @@ is excluded; retained product behavior is not.
   closed. 112,252 distinct states at depth 19; all 23 models pass. The ratified
   output-scoped presentation invariant in `docs/engine-architecture.md` is
   narrowed to match rather than dropped.
-  Implementation then lifts singular per-output connector selection to a set with
-  per-head page-flip intake, shares the rendered buffer lease that is exclusive
-  today, allows N heads per logical rect in the topology, exempts mirror-group
-  members from the overlap rejection they would otherwise trip, adds a `mirror` arm
-  to the closed named-output KDL match plus fields on the candidate and state, and
-  handles mirror-group member loss in topology settlement. Mirroring is same-mode
+  The configuration half is done. `mirror` is now an arm of the closed named-output
+  KDL match, carrying the connectors a primary drives, and
+  `DesktopNamedOutputCandidate` holds them. The group is named from its primary
+  because policy sees one `SnapshotOutput` and no connector identity, so the group
+  needs a single owner and the configured output is it.
+  Validation is split by what each layer can answer. Parsing rejects a group that
+  names itself, repeats a connector, names none, or exceeds the output bound —
+  mistakes that hold whatever hardware is attached. The whole candidate rejects one
+  connector claimed by two logical outputs, the single arrangement that would make
+  "one logical output backed by N connectors" untrue. The topology rejects an
+  unknown or disconnected member, and a member that cannot present the primary's
+  mode, resolved through the same `resolve_mode` the primary's own reconciliation
+  uses so the two cannot disagree. Same-mode is enforced here rather than later
+  because no plane scaling exists anywhere on this path, and the alternative to
+  refusing is silently letterboxing a screen the operator asked to match.
+  A group that would work is then refused as `MirrorUnsupported` until the scanout
+  half exists. Refused, not dropped: a mirror directive that is accepted and ignored
+  leaves an operator staring at an unmirrored screen with no error to search for.
+  The impossible cases are reported before the unsupported one, because "this asks
+  for something impossible" and "Sophia cannot do this yet" send an operator to
+  different places.
+  What remains lifts singular per-output connector selection to a set with per-head
+  page-flip intake, shares the rendered buffer lease that is exclusive today, allows
+  N heads per logical rect in the topology, exempts mirror-group members from the
+  overlap rejection they would otherwise trip, projects the group into
+  `DesktopOutputState`, and handles mirror-group member loss in topology settlement. Mirroring is same-mode
   only because no plane scaling exists anywhere; mismatched modes must fail closed
   at reconcile time rather than silently letterbox. Hagia's output migrator gains a
   `mirror` arm, which closes a Triad config-migration gap.

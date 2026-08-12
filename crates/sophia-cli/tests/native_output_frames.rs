@@ -68,6 +68,7 @@ fn plan(outputs: &[u64], disabled: &[u64]) -> NativeOutputActivationPlan {
                 enabled: Some(false),
                 focus_at_startup: None,
                 vrr: None,
+                mirror: Vec::new(),
             })
             .collect(),
     };

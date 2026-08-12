@@ -75,6 +75,7 @@ fn named(
         enabled: Some(true),
         focus_at_startup: None,
         vrr: Some(DesktopOutputVrrMode::Disabled),
+        mirror: Vec::new(),
     }
 }
 
@@ -261,4 +262,114 @@ fn reconciliation_validation_rejects_fabricated_state() {
             "DP-1".to_owned()
         ))
     );
+}
+
+fn mirrored(primary: &str, members: &[&str]) -> DesktopOutputCandidate {
+    DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(1),
+        digest: ConfigDigest::new([1; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: primary.to_owned(),
+            mode: None,
+            scale: None,
+            position: None,
+            transform: None,
+            enabled: Some(true),
+            focus_at_startup: None,
+            vrr: None,
+            mirror: members.iter().map(|member| (*member).to_owned()).collect(),
+        }],
+    }
+}
+
+#[test]
+fn a_mirror_member_that_cannot_present_the_primary_mode_fails_closed() {
+    // DP-1 prefers 2560x1440 and DP-2 offers only 1920x1080. No plane scaling exists
+    // on this path, so honoring the request would mean letterboxing a screen the
+    // operator asked to match. Refusing names both connectors.
+    assert_eq!(
+        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &topology()),
+        Err(DesktopOutputReconcileError::MirrorModeMismatch {
+            primary: "DP-1".to_owned(),
+            mirrored: "DP-2".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn a_mirror_group_that_could_work_is_refused_as_unsupported() {
+    // Same mode on both connectors, so the request is expressible and the only
+    // reason to refuse is that the scanout half does not exist yet. It is refused
+    // rather than dropped: a mirror directive that is accepted and ignored leaves an
+    // operator staring at an unmirrored screen with no error to search for.
+    let same_mode = DesktopOutputTopologySnapshot {
+        connectors: vec![
+            connector(
+                "DP-1",
+                DesktopOutputTiming::new(1920, 1080, 60_000),
+                (0, 0),
+                false,
+            ),
+            connector(
+                "DP-2",
+                DesktopOutputTiming::new(1920, 1080, 60_000),
+                (1920, 0),
+                false,
+            ),
+        ],
+    };
+
+    assert_eq!(
+        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &same_mode),
+        Err(DesktopOutputReconcileError::MirrorUnsupported {
+            primary: "DP-1".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn a_mirror_group_naming_an_absent_connector_says_so_before_saying_unsupported() {
+    // "This asks for something impossible" and "Sophia cannot do this yet" send an
+    // operator to different places, so the impossible case is reported first.
+    assert_eq!(
+        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-9"]), &topology()),
+        Err(DesktopOutputReconcileError::UnknownConnector(
+            "DP-9".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn one_connector_cannot_belong_to_two_logical_outputs() {
+    let mut candidate = mirrored("DP-1", &["DP-2"]);
+    candidate.named.push(DesktopNamedOutputCandidate {
+        connector: "DP-2".to_owned(),
+        mode: None,
+        scale: None,
+        position: None,
+        transform: None,
+        enabled: Some(true),
+        focus_at_startup: None,
+        vrr: None,
+        mirror: Vec::new(),
+    });
+
+    // DP-2 is both a mirror member and an output in its own right. Exactly the
+    // arrangement that would make "one logical output backed by N connectors"
+    // untrue, and the only rule the whole candidate is needed to check.
+    assert_eq!(
+        reconcile_desktop_output_candidate(&candidate, &topology()),
+        Err(DesktopOutputReconcileError::MirrorConnectorClaimed {
+            primary: "DP-1".to_owned(),
+            mirrored: "DP-2".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn an_ordinary_candidate_is_unaffected_by_the_mirror_rules() {
+    // The regression that matters: every non-mirrored configuration must reconcile
+    // exactly as it did before mirroring was expressible.
+    assert!(reconcile_desktop_output_candidate(&candidate(), &topology()).is_ok());
 }

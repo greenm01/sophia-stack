@@ -244,6 +244,7 @@ fn plan_with_disabled(
                 enabled: Some(false),
                 focus_at_startup: None,
                 vrr: None,
+                mirror: Vec::new(),
             })
             .collect(),
     };
@@ -378,6 +379,7 @@ fn a_candidate_that_enables_nothing_never_becomes_a_plan() {
             enabled: Some(false),
             focus_at_startup: None,
             vrr: None,
+            mirror: Vec::new(),
         }],
     };
 

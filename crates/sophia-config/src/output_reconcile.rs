@@ -146,7 +146,30 @@ pub enum DesktopOutputReconcileError {
     TransformUnsupported(String),
     VrrUnsupported(String),
     FocusedOutputDisabled(String),
-    OutputOverlap { first: String, second: String },
+    OutputOverlap {
+        first: String,
+        second: String,
+    },
+    /// A mirror group named a connector that another output already claims, or that
+    /// is itself configured as a named output. One connector belongs to one logical
+    /// output.
+    MirrorConnectorClaimed {
+        primary: String,
+        mirrored: String,
+    },
+    /// A mirrored connector cannot present the primary's mode. No plane scaling
+    /// exists on this path, so the alternative to refusing is silently letterboxing
+    /// a screen the operator asked to match.
+    MirrorModeMismatch {
+        primary: String,
+        mirrored: String,
+    },
+    /// The configuration is expressible and Sophia cannot yet drive it. Refused
+    /// rather than dropped: a mirror directive that is accepted and ignored leaves
+    /// an operator staring at an unmirrored screen with no error to search for.
+    MirrorUnsupported {
+        primary: String,
+    },
     NoEnabledOutput,
 }
 
@@ -159,6 +182,18 @@ impl fmt::Display for DesktopOutputReconcileError {
             Self::InvalidTopology(message) => {
                 write!(formatter, "invalid output topology: {message}")
             }
+            Self::MirrorConnectorClaimed { primary, mirrored } => write!(
+                formatter,
+                "output {primary:?} mirrors {mirrored:?}, which another output already claims"
+            ),
+            Self::MirrorModeMismatch { primary, mirrored } => write!(
+                formatter,
+                "output {primary:?} mirrors {mirrored:?}, which cannot present the same mode"
+            ),
+            Self::MirrorUnsupported { primary } => write!(
+                formatter,
+                "output {primary:?} requests mirroring, which Sophia validates but cannot yet drive"
+            ),
             Self::InvalidReconciliation(message) => {
                 write!(formatter, "invalid output reconciliation: {message}")
             }
@@ -217,6 +252,7 @@ pub fn reconcile_desktop_output_candidate(
 ) -> Result<DesktopOutputReconciliation, DesktopOutputReconcileError> {
     validate_candidate(candidate)?;
     validate_topology(topology)?;
+    validate_mirror_against_topology(candidate, topology)?;
     let mut outputs = topology
         .connectors
         .iter()
@@ -438,6 +474,96 @@ fn validate_candidate(
             }
             focused = true;
         }
+    }
+    validate_mirror_groups(candidate, &connectors)?;
+    Ok(())
+}
+
+/// Checks every mirror group against the rest of the candidate.
+///
+/// Parsing already rejected a group that names itself, repeats a connector, or
+/// names none. What only the whole candidate can answer is whether two logical
+/// outputs claim the same head, which is the one arrangement that would make
+/// "one logical output backed by N connectors" untrue.
+fn validate_mirror_groups(
+    candidate: &DesktopOutputCandidate,
+    named: &BTreeSet<String>,
+) -> Result<(), DesktopOutputReconcileError> {
+    let mut claimed = BTreeSet::new();
+    for output in &candidate.named {
+        for mirrored in &output.mirror {
+            // A mirrored connector is driven by its group's primary, so it cannot
+            // also be configured as an output in its own right.
+            if named.contains(mirrored) || !claimed.insert(mirrored.clone()) {
+                return Err(DesktopOutputReconcileError::MirrorConnectorClaimed {
+                    primary: output.connector.clone(),
+                    mirrored: mirrored.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Checks each mirror group against the attached hardware, then refuses it.
+///
+/// The order matters. A configuration that could never work should be reported as
+/// wrong even while mirroring is unimplemented, because "Sophia cannot do this yet"
+/// and "this asks for something impossible" send an operator to different places.
+/// So unknown connectors, disconnected ones, and mode mismatches are named first,
+/// and only a request that would work once the scanout half exists gets the
+/// unsupported refusal.
+///
+/// Mirroring is same-mode only: no plane scaling exists anywhere on this path, so a
+/// member that cannot present the primary's mode would have to be letterboxed, and
+/// silently changing what a screen shows is worse than refusing the configuration.
+fn validate_mirror_against_topology(
+    candidate: &DesktopOutputCandidate,
+    topology: &DesktopOutputTopologySnapshot,
+) -> Result<(), DesktopOutputReconcileError> {
+    for output in &candidate.named {
+        if output.mirror.is_empty() {
+            continue;
+        }
+        let Some(primary) = topology
+            .connectors
+            .iter()
+            .find(|connector| connector.connector == output.connector)
+        else {
+            return Err(DesktopOutputReconcileError::UnknownConnector(
+                output.connector.clone(),
+            ));
+        };
+        // The mode the group will run, resolved exactly as the primary's own
+        // reconciliation resolves it. Two answers to "which mode" is one too many.
+        let mode = resolve_mode(primary, output.mode.unwrap_or(DesktopOutputMode::Preferred))?;
+
+        for mirrored in &output.mirror {
+            let Some(member) = topology
+                .connectors
+                .iter()
+                .find(|connector| &connector.connector == mirrored)
+            else {
+                return Err(DesktopOutputReconcileError::UnknownConnector(
+                    mirrored.clone(),
+                ));
+            };
+            if !member.connected {
+                return Err(DesktopOutputReconcileError::DisconnectedConnector(
+                    mirrored.clone(),
+                ));
+            }
+            if !member.modes.contains(&mode) {
+                return Err(DesktopOutputReconcileError::MirrorModeMismatch {
+                    primary: output.connector.clone(),
+                    mirrored: mirrored.clone(),
+                });
+            }
+        }
+
+        return Err(DesktopOutputReconcileError::MirrorUnsupported {
+            primary: output.connector.clone(),
+        });
     }
     Ok(())
 }

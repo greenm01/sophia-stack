@@ -54,6 +54,13 @@ pub struct DesktopNamedOutputCandidate {
     pub enabled: Option<bool>,
     pub focus_at_startup: Option<bool>,
     pub vrr: Option<DesktopOutputVrrMode>,
+    /// Connectors this output mirrors onto, making one logical output backed by
+    /// many heads. Empty for an ordinary output.
+    ///
+    /// Named from the primary rather than from each member because policy sees one
+    /// `SnapshotOutput` and no connector identity; the group has to have a single
+    /// owner, and the configured output is it.
+    pub mirror: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -263,6 +270,44 @@ fn output_transform(node: &KdlNode) -> Result<DesktopOutputTransform, DesktopPro
     })
 }
 
+/// Parses `mirror "DP-2" "DP-3"` into the connectors a primary drives.
+///
+/// Every rule here is about the request being expressible at all, so it is checked
+/// before the topology is consulted: a group with no members, a connector that
+/// mirrors itself, or the same connector twice are configuration mistakes whatever
+/// hardware is attached.
+fn output_mirror(node: &KdlNode, primary: &str) -> Result<Vec<String>, DesktopProfileError> {
+    if node.entries().is_empty() || node.ty().is_some() {
+        return Err(schema_error(
+            "output mirror requires at least one connector",
+        ));
+    }
+    if node.entries().len() >= DESKTOP_OUTPUT_MAX_NAMED {
+        return Err(schema_error("output mirror names too many connectors"));
+    }
+    let mut mirrored = Vec::with_capacity(node.entries().len());
+    for entry in node.entries() {
+        let connector = entry
+            .value()
+            .as_string()
+            .filter(|value| !value.is_empty() && value.len() <= 64)
+            .ok_or_else(|| schema_error("output mirror connector identity is invalid"))?;
+        if !valid_desktop_output_connector(connector) {
+            return Err(schema_error(
+                "output mirror connector contains unsupported characters",
+            ));
+        }
+        if connector == primary {
+            return Err(schema_error("output mirror names its own connector"));
+        }
+        if mirrored.iter().any(|seen| seen == connector) {
+            return Err(schema_error("output mirror repeats a connector"));
+        }
+        mirrored.push(connector.to_owned());
+    }
+    Ok(mirrored)
+}
+
 fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopProfileError> {
     let connector = connector_name(node)?;
     let mut result = DesktopNamedOutputCandidate {
@@ -274,6 +319,7 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
         enabled: None,
         focus_at_startup: None,
         vrr: None,
+        mirror: Vec::new(),
     };
     let children = children(node, "named output")?;
     if children.nodes().is_empty() {
@@ -303,8 +349,11 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
                     _ => unreachable!("bounded VRR mode"),
                 })
             }
+            "mirror" if result.mirror.is_empty() => {
+                result.mirror = output_mirror(child, &result.connector)?;
+            }
             "mode" | "scale" | "position" | "transform" | "enabled" | "focus-at-startup"
-            | "vrr" => {
+            | "vrr" | "mirror" => {
                 return Err(schema_error("duplicate named output setting"));
             }
             _ => return Err(schema_error("unsupported named output setting")),
