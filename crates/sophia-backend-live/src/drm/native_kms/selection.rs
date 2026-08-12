@@ -35,6 +35,17 @@ impl LibdrmNativePrimaryPlaneSelection {
         self.connector.into()
     }
 
+    /// The connector and CRTC as handles, for callers composing atomic requests.
+    /// `connector_id`/`crtc_id` remain the right choice for evidence, where a
+    /// stable number is wanted rather than a handle.
+    pub const fn connector_handle(self) -> drm::control::connector::Handle {
+        self.connector
+    }
+
+    pub const fn crtc_handle(self) -> drm::control::crtc::Handle {
+        self.crtc
+    }
+
     pub fn crtc_id(self) -> u32 {
         self.crtc.into()
     }

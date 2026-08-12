@@ -54,6 +54,41 @@ where
         NativeTopologySubmitIntent::Validate => request.test_only().allow_modeset(),
         NativeTopologySubmitIntent::Activate => request.allow_modeset(),
     };
+    submit(committer, request)
+}
+
+/// Validates one topology against real hardware without naming a framebuffer.
+///
+/// There is no `Activate` counterpart on purpose. A topology request carries no
+/// plane state, so applying it would leave CRTCs active with nothing to scan out.
+/// Validation is the only thing this shape is for, which is why the intent is
+/// fixed here rather than passed in.
+#[cfg(feature = "libdrm-events")]
+pub fn validate_native_multi_head_topology<D>(
+    committer: &mut NativeLibdrmAtomicScanoutCommitter<D>,
+    heads: &[LibdrmNativeAtomicTopologyHead],
+) -> NativeTopologySubmitOutcome
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let build = build_native_multi_head_topology_request(heads);
+    if build.status != LibdrmNativeMultiHeadRequestBuildStatus::Built {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    }
+    let Some(request) = build.request else {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    };
+    submit(committer, request.test_only().allow_modeset())
+}
+
+#[cfg(feature = "libdrm-events")]
+fn submit<D>(
+    committer: &mut NativeLibdrmAtomicScanoutCommitter<D>,
+    request: LibdrmNativeAtomicCommitRequest,
+) -> NativeTopologySubmitOutcome
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
     match committer.submit_native_atomic_commit(request).status {
         LibdrmNativeAtomicCommitSubmitStatus::Submitted => NativeTopologySubmitOutcome::Accepted,
         LibdrmNativeAtomicCommitSubmitStatus::WouldBlock => NativeTopologySubmitOutcome::Busy,

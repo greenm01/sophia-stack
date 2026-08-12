@@ -507,6 +507,105 @@ fn a_rejected_validation_is_still_a_conclusion() {
     assert!(line.contains("framebuffer_size=2560x1440"));
 }
 
+fn topology_head(connector: u32, crtc: u32, mode_blob: u64) -> LibdrmNativeAtomicTopologyHead {
+    LibdrmNativeAtomicTopologyHead::new(
+        drm::control::from_u32(connector).expect("connector handle should be nonzero"),
+        drm::control::from_u32(crtc).expect("crtc handle should be nonzero"),
+        mode_blob,
+        primary_plane_properties(),
+    )
+}
+
+#[test]
+fn a_topology_validates_without_naming_a_framebuffer() {
+    // The shape hardware accepted: connector CRTC_ID plus CRTC MODE_ID and ACTIVE,
+    // no plane state. This is what lets an inactive output be validated before a
+    // framebuffer exists for it.
+    let build = build_native_multi_head_topology_request(&[
+        topology_head(21, 41, 71),
+        topology_head(22, 42, 72),
+    ]);
+
+    assert_eq!(build.status, LibdrmNativeMultiHeadRequestBuildStatus::Built);
+    assert_eq!(build.heads, 2);
+    let flags = build
+        .request
+        .expect("a built topology carries a request")
+        .test_only()
+        .allow_modeset()
+        .reduced_flags();
+    assert!(flags.test_only);
+    assert!(flags.allow_modeset);
+    assert!(!flags.page_flip_event);
+}
+
+#[test]
+fn a_topology_still_gives_each_connector_and_crtc_to_one_head() {
+    assert_eq!(
+        build_native_multi_head_topology_request(&[
+            topology_head(21, 41, 71),
+            topology_head(21, 42, 72),
+        ])
+        .status,
+        LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects
+    );
+    assert_eq!(
+        build_native_multi_head_topology_request(&[
+            topology_head(21, 41, 71),
+            topology_head(22, 41, 72),
+        ])
+        .status,
+        LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects
+    );
+}
+
+#[test]
+fn a_topology_without_a_mode_blob_is_unbuildable() {
+    assert_eq!(
+        build_native_multi_head_topology_request(&[topology_head(21, 41, 0)]).status,
+        LibdrmNativeMultiHeadRequestBuildStatus::MissingModeBlob
+    );
+    assert_eq!(
+        build_native_multi_head_topology_request(&[]).status,
+        LibdrmNativeMultiHeadRequestBuildStatus::NoHeads
+    );
+}
+
+#[test]
+fn an_unbuildable_topology_validation_never_reaches_the_device() {
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::default());
+
+    let outcome = validate_native_multi_head_topology(
+        &mut committer,
+        &[topology_head(21, 41, 71), topology_head(21, 42, 72)],
+    );
+
+    assert_eq!(
+        outcome,
+        NativeTopologySubmitOutcome::Unbuildable(
+            LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects
+        )
+    );
+    assert!(submitted_flags(&committer).is_empty());
+}
+
+#[test]
+fn a_validated_topology_reaches_the_device_as_one_test_only_request() {
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(RecordingCommitDevice::default());
+
+    let outcome = validate_native_multi_head_topology(
+        &mut committer,
+        &[topology_head(21, 41, 71), topology_head(22, 42, 72)],
+    );
+
+    assert_eq!(outcome, NativeTopologySubmitOutcome::Accepted);
+    let flags = submitted_flags(&committer);
+    assert_eq!(flags.len(), 1, "one topology is one request");
+    assert!(flags[0].contains(drm::control::AtomicCommitFlags::TEST_ONLY));
+    assert!(flags[0].contains(drm::control::AtomicCommitFlags::ALLOW_MODESET));
+    assert!(!flags[0].contains(drm::control::AtomicCommitFlags::PAGE_FLIP_EVENT));
+}
+
 #[test]
 fn a_validation_only_commit_never_asks_for_a_page_flip_event() {
     // The kernel rejects TEST_ONLY together with PAGE_FLIP_EVENT with EINVAL before

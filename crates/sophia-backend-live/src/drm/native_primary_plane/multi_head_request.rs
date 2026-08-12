@@ -35,6 +35,64 @@ impl LibdrmNativeAtomicHead {
     }
 }
 
+/// One head's contribution to a topology-only request: which connector a CRTC
+/// drives, at which mode. No plane and no framebuffer.
+///
+/// This shape exists because hardware proved it validates. `native-topology-probe`
+/// established that a `TEST_ONLY` modeset naming only the connector's `CRTC_ID` and
+/// the CRTC's `MODE_ID` and `ACTIVE` is accepted, so a topology can be checked
+/// before any framebuffer exists for it. An output that is not active yet has no
+/// framebuffer to name, and inventing a handle to satisfy `LibdrmNativeAtomicHead`
+/// would put a lie in the request. Validation therefore takes this type, and only
+/// apply — which happens once buffers exist — takes a full head.
+///
+/// The property handles come from primary-plane discovery because that is where
+/// connector and CRTC handles are already found together; only the connector and
+/// CRTC entries are read here.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug)]
+pub struct LibdrmNativeAtomicTopologyHead {
+    pub connector: drm::control::connector::Handle,
+    pub crtc: drm::control::crtc::Handle,
+    pub mode_blob: u64,
+    pub properties: LibdrmNativePrimaryPlanePropertyHandles,
+}
+
+#[cfg(feature = "libdrm-events")]
+impl LibdrmNativeAtomicTopologyHead {
+    pub const fn new(
+        connector: drm::control::connector::Handle,
+        crtc: drm::control::crtc::Handle,
+        mode_blob: u64,
+        properties: LibdrmNativePrimaryPlanePropertyHandles,
+    ) -> Self {
+        Self {
+            connector,
+            crtc,
+            mode_blob,
+            properties,
+        }
+    }
+
+    /// Builds a head from the selection that already routes this output.
+    ///
+    /// A selection names the connector and CRTC together, which is exactly the
+    /// pair a topology head needs, and it lets a caller outside this crate compose
+    /// a head without naming DRM handle types.
+    pub const fn from_selection(
+        selection: LibdrmNativePrimaryPlaneSelection,
+        mode_blob: u64,
+        properties: LibdrmNativePrimaryPlanePropertyHandles,
+    ) -> Self {
+        Self::new(
+            selection.connector_handle(),
+            selection.crtc_handle(),
+            mode_blob,
+            properties,
+        )
+    }
+}
+
 #[cfg(feature = "libdrm-events")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LibdrmNativeMultiHeadRequestBuildStatus {
@@ -145,6 +203,75 @@ pub fn build_native_multi_head_atomic_request(
         }),
         heads: count,
     }
+}
+
+/// Folds every topology head into one validation-shaped atomic request.
+///
+/// Same guarantee as the full builder: one request means the kernel judges the
+/// complete topology, so a partially applied desktop is never observable. The
+/// difference is what the request omits. With no plane state there is no scanout
+/// size to check and no mirror group to detect, because sharing a framebuffer is
+/// what makes heads a group and no framebuffer is named. Connector and CRTC
+/// exclusivity still holds: each belongs to exactly one head in one request.
+///
+/// The result carries `ALLOW_MODESET` and is intended for `test_only` submission.
+/// Applying it would activate CRTCs with no plane, which is not a desktop.
+#[cfg(feature = "libdrm-events")]
+pub fn build_native_multi_head_topology_request(
+    heads: &[LibdrmNativeAtomicTopologyHead],
+) -> LibdrmNativeMultiHeadRequestBuildResult {
+    let count = heads.len();
+    if heads.is_empty() {
+        return LibdrmNativeMultiHeadRequestBuildResult::rejected(
+            LibdrmNativeMultiHeadRequestBuildStatus::NoHeads,
+            count,
+        );
+    }
+    if let Some(status) = reject_invalid_topology_heads(heads) {
+        return LibdrmNativeMultiHeadRequestBuildResult::rejected(status, count);
+    }
+
+    let mut request = drm::control::atomic::AtomicModeReq::new();
+    for head in heads {
+        request.add_property(
+            head.connector,
+            head.properties.connector_crtc_id,
+            drm::control::property::Value::CRTC(Some(head.crtc)),
+        );
+        request.add_property(
+            head.crtc,
+            head.properties.crtc_mode_id,
+            drm::control::property::Value::Blob(head.mode_blob),
+        );
+        request.add_property(
+            head.crtc,
+            head.properties.crtc_active,
+            drm::control::property::Value::Boolean(true),
+        );
+    }
+
+    LibdrmNativeMultiHeadRequestBuildResult {
+        status: LibdrmNativeMultiHeadRequestBuildStatus::Built,
+        request: Some(LibdrmNativeAtomicCommitRequest::modeset(request)),
+        heads: count,
+    }
+}
+
+#[cfg(feature = "libdrm-events")]
+fn reject_invalid_topology_heads(
+    heads: &[LibdrmNativeAtomicTopologyHead],
+) -> Option<LibdrmNativeMultiHeadRequestBuildStatus> {
+    for (index, head) in heads.iter().enumerate() {
+        if head.mode_blob == 0 {
+            return Some(LibdrmNativeMultiHeadRequestBuildStatus::MissingModeBlob);
+        }
+        for other in heads.iter().skip(index + 1) {
+            if head.connector == other.connector || head.crtc == other.crtc {
+                return Some(LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(feature = "libdrm-events")]
