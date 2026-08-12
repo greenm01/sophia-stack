@@ -21,6 +21,66 @@ impl LibdrmNativeOutputTiming {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibdrmNativeModeResolutionStatus {
+    Resolved,
+    /// The requested timing is not one this connector advertises. A planned
+    /// candidate that cannot name a real mode must not reach a commit.
+    UnknownTiming,
+    /// The request itself carried a zero dimension or refresh.
+    InvalidTiming,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibdrmNativeModeResolution {
+    pub status: LibdrmNativeModeResolutionStatus,
+    /// Index into the connector's mode list, in the order the kernel reported it.
+    pub index: Option<usize>,
+}
+
+impl LibdrmNativeModeResolution {
+    const fn rejected(status: LibdrmNativeModeResolutionStatus) -> Self {
+        Self {
+            status,
+            index: None,
+        }
+    }
+}
+
+/// Resolves a planned timing to a position in a connector's reported mode list.
+///
+/// A configured candidate names a timing, but a KMS commit needs the mode object
+/// that produced it, and the reduction from mode to timing is lossy: several modes
+/// can share one width, height, and integer refresh. This returns the **first**
+/// match, which is the same choice the capability reader makes when it dedupes
+/// reduced timings and keeps the first occurrence. So any timing a capability
+/// advertises resolves back to exactly the mode that advertised it.
+///
+/// Invalid modes are skipped rather than matched, for the same reason the
+/// capability reader skips them: a zero dimension or refresh cannot drive a head.
+pub fn resolve_native_output_mode_index(
+    modes: &[LibdrmNativeOutputTiming],
+    requested: LibdrmNativeOutputTiming,
+) -> LibdrmNativeModeResolution {
+    if !requested.valid() {
+        return LibdrmNativeModeResolution::rejected(
+            LibdrmNativeModeResolutionStatus::InvalidTiming,
+        );
+    }
+    match modes
+        .iter()
+        .position(|mode| mode.valid() && *mode == requested)
+    {
+        Some(index) => LibdrmNativeModeResolution {
+            status: LibdrmNativeModeResolutionStatus::Resolved,
+            index: Some(index),
+        },
+        None => {
+            LibdrmNativeModeResolution::rejected(LibdrmNativeModeResolutionStatus::UnknownTiming)
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibdrmNativeOutputCapability {
     output: OutputId,
@@ -156,6 +216,33 @@ where
         selected_mode,
         vrr_status,
     )
+}
+
+/// Reads a connector's modes and returns the one matching a planned timing.
+///
+/// This is the bridge from a configured candidate to a KMS mode object. It reduces
+/// each reported mode exactly as `read_native_output_capability` does and defers
+/// the choice to `resolve_native_output_mode_index`, so capability advertisement
+/// and commit selection cannot disagree. Returning `None` is a fail-closed
+/// outcome, not an error: the connector simply does not offer that timing.
+#[cfg(feature = "libdrm-events")]
+pub fn resolve_native_connector_mode<D>(
+    device: &D,
+    connector: drm::control::connector::Handle,
+    requested: LibdrmNativeOutputTiming,
+) -> io::Result<Option<drm::control::Mode>>
+where
+    D: drm::control::Device,
+{
+    let reported = device.get_connector(connector, false)?;
+    let modes = reported.modes();
+    let reduced = modes
+        .iter()
+        .copied()
+        .map(native_output_timing)
+        .collect::<Vec<_>>();
+    let resolution = resolve_native_output_mode_index(&reduced, requested);
+    Ok(resolution.index.map(|index| modes[index]))
 }
 
 fn native_output_timing(mode: drm::control::Mode) -> LibdrmNativeOutputTiming {

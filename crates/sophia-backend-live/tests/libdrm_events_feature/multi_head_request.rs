@@ -207,3 +207,93 @@ fn a_combined_request_can_be_tested_without_touching_hardware() {
     assert!(flags.test_only);
     assert!(flags.allow_modeset);
 }
+
+fn timing(width: u32, height: u32, refresh_millihz: u32) -> LibdrmNativeOutputTiming {
+    LibdrmNativeOutputTiming::new(width, height, refresh_millihz)
+}
+
+#[test]
+fn a_planned_timing_resolves_to_its_position_in_the_connector_mode_list() {
+    let modes = [
+        timing(3840, 2160, 60_000),
+        timing(2560, 1440, 144_000),
+        timing(1920, 1080, 60_000),
+    ];
+
+    let resolution = resolve_native_output_mode_index(&modes, timing(2560, 1440, 144_000));
+
+    assert_eq!(
+        resolution.status,
+        LibdrmNativeModeResolutionStatus::Resolved
+    );
+    assert_eq!(resolution.index, Some(1));
+}
+
+#[test]
+fn a_timing_the_connector_does_not_offer_fails_closed() {
+    let modes = [timing(1920, 1080, 60_000)];
+
+    // Right resolution, wrong refresh: still not a mode this connector has.
+    let resolution = resolve_native_output_mode_index(&modes, timing(1920, 1080, 75_000));
+
+    assert_eq!(
+        resolution.status,
+        LibdrmNativeModeResolutionStatus::UnknownTiming
+    );
+    assert!(resolution.index.is_none());
+}
+
+#[test]
+fn an_invalid_request_is_rejected_before_matching() {
+    let modes = [timing(1920, 1080, 60_000)];
+
+    for requested in [
+        timing(0, 1080, 60_000),
+        timing(1920, 0, 60_000),
+        timing(1920, 1080, 0),
+    ] {
+        let resolution = resolve_native_output_mode_index(&modes, requested);
+        assert_eq!(
+            resolution.status,
+            LibdrmNativeModeResolutionStatus::InvalidTiming
+        );
+    }
+}
+
+#[test]
+fn resolution_picks_the_first_of_several_modes_sharing_one_reduced_timing() {
+    // Reducing a DRM mode to width, height, and integer refresh is lossy, so two
+    // distinct modes can collide here. The capability reader dedupes and keeps the
+    // first, so resolution must make the same choice or advertisement and commit
+    // would disagree about which mode a timing names.
+    let modes = [
+        timing(1920, 1080, 60_000),
+        timing(1920, 1080, 60_000),
+        timing(1280, 720, 60_000),
+    ];
+
+    let resolution = resolve_native_output_mode_index(&modes, timing(1920, 1080, 60_000));
+
+    assert_eq!(resolution.index, Some(0));
+}
+
+#[test]
+fn an_invalid_advertised_mode_is_skipped_rather_than_matched() {
+    // A connector can report a degenerate mode. It must never be selected, even
+    // when a caller asks for something that would compare equal after reduction.
+    let modes = [timing(0, 0, 0), timing(1920, 1080, 60_000)];
+
+    let resolution = resolve_native_output_mode_index(&modes, timing(1920, 1080, 60_000));
+
+    assert_eq!(resolution.index, Some(1));
+}
+
+#[test]
+fn an_empty_mode_list_resolves_nothing() {
+    let resolution = resolve_native_output_mode_index(&[], timing(1920, 1080, 60_000));
+
+    assert_eq!(
+        resolution.status,
+        LibdrmNativeModeResolutionStatus::UnknownTiming
+    );
+}

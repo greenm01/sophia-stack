@@ -345,6 +345,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for DeterministicPrimaryPlaneScanout
         self.resources.create_mode_blob_for_selection(selection)
     }
 
+    fn create_mode_blob(&self, mode: drm::control::Mode) -> std::io::Result<u64> {
+        self.resources.create_mode_blob(mode)
+    }
+
     fn add_scanout_framebuffer_with_modifiers<B>(
         &self,
         buffer: &B,
@@ -523,6 +527,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for DeterministicPrimaryPlaneResourc
         &self,
         _selection: LibdrmNativePrimaryPlaneSelection,
     ) -> std::io::Result<u64> {
+        Ok(15)
+    }
+
+    fn create_mode_blob(&self, _mode: drm::control::Mode) -> std::io::Result<u64> {
         Ok(15)
     }
 

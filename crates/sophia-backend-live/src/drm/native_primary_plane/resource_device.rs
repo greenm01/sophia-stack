@@ -9,6 +9,14 @@ pub trait LibdrmNativePrimaryPlaneResourceDevice {
         selection: LibdrmNativePrimaryPlaneSelection,
     ) -> io::Result<u64>;
 
+    /// Creates a mode blob from a mode the caller already resolved.
+    ///
+    /// `create_mode_blob_for_selection` can only reach the mode a selection
+    /// already carries, which is the mode a head is running. Changing a topology
+    /// needs a blob for a mode chosen from what a connector offers, so the caller
+    /// resolves the mode and this creates its blob.
+    fn create_mode_blob(&self, mode: drm::control::Mode) -> io::Result<u64>;
+
     fn add_scanout_framebuffer_with_modifiers<B>(
         &self,
         buffer: &B,
@@ -66,6 +74,10 @@ where
                 "selected KMS target does not carry a native mode",
             ));
         };
+        self.create_mode_blob(mode)
+    }
+
+    fn create_mode_blob(&self, mode: drm::control::Mode) -> io::Result<u64> {
         match self.create_property_blob(&mode)? {
             drm::control::property::Value::Blob(blob) => Ok(blob),
             _ => Err(io::Error::new(

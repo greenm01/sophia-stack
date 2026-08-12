@@ -190,6 +190,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneResourceDe
         clone_io_result(&self.mode_blob)
     }
 
+    fn create_mode_blob(&self, _mode: drm::control::Mode) -> io::Result<u64> {
+        clone_io_result(&self.mode_blob)
+    }
+
     fn add_scanout_framebuffer_with_modifiers<B>(
         &self,
         _buffer: &B,
@@ -248,6 +252,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeModifierOnlyPrimaryPlaneReso
         &self,
         _selection: sophia_backend_live::LibdrmNativePrimaryPlaneSelection,
     ) -> io::Result<u64> {
+        clone_io_result(&self.mode_blob)
+    }
+
+    fn create_mode_blob(&self, _mode: drm::control::Mode) -> io::Result<u64> {
         clone_io_result(&self.mode_blob)
     }
 
@@ -317,6 +325,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakePrimePrimaryPlaneResourceDev
         &self,
         _selection: sophia_backend_live::LibdrmNativePrimaryPlaneSelection,
     ) -> io::Result<u64> {
+        clone_io_result(&self.mode_blob)
+    }
+
+    fn create_mode_blob(&self, _mode: drm::control::Mode) -> io::Result<u64> {
         clone_io_result(&self.mode_blob)
     }
 
@@ -460,6 +472,10 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneScanoutDev
         selection: sophia_backend_live::LibdrmNativePrimaryPlaneSelection,
     ) -> io::Result<u64> {
         self.resources.create_mode_blob_for_selection(selection)
+    }
+
+    fn create_mode_blob(&self, mode: drm::control::Mode) -> io::Result<u64> {
+        self.resources.create_mode_blob(mode)
     }
 
     fn add_scanout_framebuffer_with_modifiers<B>(
