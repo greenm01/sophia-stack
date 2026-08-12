@@ -513,13 +513,25 @@ is excluded; retained product behavior is not.
   `TEST_ONLY` and the only framebuffer it names is one the CRTC already scans out,
   so nothing is allocated and no output state changes. It submits the same modeset
   twice, once with connector and CRTC state only and once with plane state added,
-  and reports the two outcomes separately.
+  and reports the two outcomes separately. `tools/native_topology_probe.sh` runs it
+  as one step: it refuses to start while a display server holds the card, because a
+  `MasterUnavailable` run proves nothing, then builds, captures the report, and
+  states the conclusion.
   Atomic commits need DRM master even to validate, so the probe reports
   `MasterUnavailable` rather than a rejection when a compositor holds the card, and
-  refuses to draw a conclusion. Enumeration works without master: on the AMD
-  two-output reference it reports 2 connected connectors and 36 modes on the
-  selected connector while Xorg holds master. Answering the framebuffer question
-  needs one run from a TTY with no compositor running.
+  refuses to draw a conclusion.
+  The first run that reached the kernel took master from a bare TTY on the AMD
+  two-output reference: 2 connected connectors, 36 modes, and both probes rejected.
+  That is a real refusal rather than a master failure, since `validate` maps the
+  not-master errors to `MasterUnavailable` before anything can be called rejected.
+  It leaves the framebuffer question open instead of answering it, and the report
+  cannot say why: it records `Accepted`/`Rejected` only and discards the error once
+  the master case is ruled out. Two candidates remain. The selected mode's size may
+  disagree with the framebuffer the CRTC currently scans out, which would fail the
+  second probe on plane sizing rather than on `FB_ID` policy; or amdgpu may refuse
+  an active CRTC carrying no primary plane, which would reject the first probe by
+  construction. Carrying the raw errno and both sizes into the report separates
+  them. Re-run the script once that lands.
   Reservations, a separate power authority, and evidence follow that.
   `PolicyRefreshLifecycle.tla` additionally proves that newer dirty
   generations survive an older in-flight refresh and that active output
