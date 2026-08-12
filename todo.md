@@ -680,12 +680,25 @@ is excluded; retained product behavior is not.
 - [ ] Remove API v7 and Engine-owned workspace policy only after both freeze
   conditions below hold. Keep the adapter and its deterministic xmonad
   regressions until classical-WM migration resumes.
-  Extraction is not gated and comes first: the public path still fabricates a
-  v7 `WmHello` stamped `WM_API_VERSION` to build the Engine shortcut registry,
-  and still constructs Engine-owned `WmWorkspaceState`. Lift
-  `WmShortcutRegistry`, `WmShortcutRouter`, and `WmSocketTransport` out of the
-  v7 module before any deletion; `crates/sophia-engine/src/wm.rs` cannot be
-  removed while the public path depends on them.
+  Extraction was not gated and came first. The shortcut half is done:
+  `WmShortcutRegistry` and `WmShortcutRouter` now live in
+  `crates/sophia-engine/src/shortcut.rs`, which mentions no API version, hello, or
+  wire frame. `WmShortcutRegistry::new` takes the bindings, capabilities,
+  generation, and chrome a caller already resolved, so the public path builds its
+  registry from configuration instead of fabricating a `WmHello` stamped
+  `WM_API_VERSION`. No such fabrication remains outside tests. The v7 adapters —
+  `from_hello`, which adds only the API-version check, and `apply_policy_update`,
+  which speaks `WmPolicyUpdate` and `WmPolicyAck` — stay in `wm.rs` as `impl`
+  blocks on the extracted types, so deleting that module deletes the adapters and
+  not the behavior.
+  `WmSocketTransport` was deliberately **not** lifted, against the ledger pointer's
+  wording. It exists to encode and decode v7 frames, eleven call sites of them, and
+  is reached only by the legacy bridge; the public path uses `PolicyTransport` and
+  never touches it. Moving it would relocate v7 code rather than free anything, and
+  it should be deleted with v7 once the xmonad profile migrates to the public
+  projection transport.
+  Still to extract: Engine-owned `WmWorkspaceState`, which the public path also
+  constructs.
 - [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart

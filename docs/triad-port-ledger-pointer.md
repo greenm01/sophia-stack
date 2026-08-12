@@ -53,10 +53,14 @@ underestimate it by nine rows. `hagia-shell` does not exist as source.
 ## Consequences For Work In This Repository
 
 - **API v7 cannot be removed until the freeze conditions hold.** Because the
-  freeze is far off, v7 is load-bearing for a long time. Extraction of
-  `WmShortcutRegistry`, `WmShortcutRouter`, and `WmSocketTransport` from the v7
-  module is *not* gated and should happen early; the public path currently
-  fabricates a v7 `WmHello` to build the Engine shortcut registry.
+  freeze is far off, v7 is load-bearing for a long time. Extraction from the v7
+  module is *not* gated and happened early: `WmShortcutRegistry` and
+  `WmShortcutRouter` now live in `crates/sophia-engine/src/shortcut.rs`, and the
+  public path builds its registry from configuration rather than fabricating a
+  `WmHello`. `WmSocketTransport` was left in place on purpose — it is v7 frame
+  coding reached only by the legacy bridge, so lifting it would move v7 code
+  rather than free anything. Engine-owned `WmWorkspaceState` is the remaining
+  extraction.
 - **Several items filed under `todo.md`'s Post-Promotion Capability Roadmap are
   pre-freeze requirements**, because the ledger names the same behavior as a
   retained row. Check the ledger before treating an item there as post-freeze

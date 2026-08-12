@@ -67,12 +67,14 @@ fn resolve_public_shortcuts(
             },
         });
     }
-    sophia_engine::WmShortcutRegistry::from_hello(&sophia_protocol::WmHello {
-        api_version: sophia_protocol::WM_API_VERSION,
-        capabilities: sophia_protocol::WmCapabilities::all_supported(),
-        policy_generation: configuration.generation,
-        bindings,
-        chrome: configuration.chrome,
-    })
+    // Built from configuration, so there is no protocol revision to declare and no
+    // hello to fabricate. The public path never spoke API v7; it only borrowed its
+    // constructor.
+    sophia_engine::WmShortcutRegistry::new(
+        &bindings,
+        sophia_protocol::WmCapabilities::all_supported(),
+        configuration.generation,
+        configuration.chrome,
+    )
     .map_err(|_| "resolved shortcut registry is invalid")
 }
