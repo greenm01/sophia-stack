@@ -66,6 +66,9 @@ pub enum NativeOutputTopologyProjectionError {
     MissingCapability(u64),
     UnexpectedCapability(u64),
     PixelSizeMismatch(u64),
+    /// Connectors sharing one logical output disagree on their selected mode. A
+    /// mirror group scans out one framebuffer, and no plane scaling exists here.
+    MirrorModeMismatch(u64),
     ScaleUnsupported(u64),
     PositionExhausted,
     InvalidTopology(DesktopOutputReconcileError),
@@ -83,6 +86,12 @@ impl fmt::Display for NativeOutputTopologyProjectionError {
             }
             Self::UnexpectedCapability(output) => {
                 write!(formatter, "DRM capability {output} has no Engine output")
+            }
+            Self::MirrorModeMismatch(output) => {
+                write!(
+                    formatter,
+                    "native output {output} mirrors connectors with different modes"
+                )
             }
             Self::PixelSizeMismatch(output) => {
                 write!(
@@ -237,12 +246,16 @@ pub fn project_native_output_topology(
     if capabilities.is_empty() || outputs.is_empty() {
         return Err(NativeOutputTopologyProjectionError::Empty);
     }
-    let mut capabilities_by_output = BTreeMap::new();
+    // Capabilities sharing one logical output are a mirror group: N connectors
+    // driving one `SnapshotOutput`. Grouping rather than rejecting is what admits
+    // mirroring at all; the members are validated against each other below.
+    let mut capabilities_by_output: BTreeMap<u64, Vec<&LibdrmNativeOutputCapability>> =
+        BTreeMap::new();
     for capability in capabilities {
-        let output = capability.output().raw();
-        if capabilities_by_output.insert(output, capability).is_some() {
-            return Err(NativeOutputTopologyProjectionError::DuplicateOutput(output));
-        }
+        capabilities_by_output
+            .entry(capability.output().raw())
+            .or_default()
+            .push(capability);
     }
 
     let mut seen_outputs = BTreeSet::new();
@@ -255,10 +268,22 @@ pub fn project_native_output_topology(
                 output_id,
             ));
         }
-        let capability = capabilities_by_output.remove(&output_id).ok_or(
+        let group = capabilities_by_output.remove(&output_id).ok_or(
             NativeOutputTopologyProjectionError::MissingCapability(output_id),
         )?;
+        let capability = group[0];
         let selected = timing(capability.selected_mode());
+        // Every head in a group scans out one framebuffer, and no plane scaling
+        // exists on this path, so a member on a different mode could only be
+        // letterboxed. Refusing here keeps that from reaching the commit.
+        if group
+            .iter()
+            .any(|member| timing(member.selected_mode()) != selected)
+        {
+            return Err(NativeOutputTopologyProjectionError::MirrorModeMismatch(
+                output_id,
+            ));
+        }
         if u32::try_from(output.size.width).ok() != Some(selected.width)
             || u32::try_from(output.size.height).ok() != Some(selected.height)
         {
@@ -277,29 +302,34 @@ pub fn project_native_output_topology(
         logical_x = logical_x
             .checked_add(logical_extent(selected.width, scale_milli)?)
             .ok_or(NativeOutputTopologyProjectionError::PositionExhausted)?;
-        connectors.push(DesktopOutputTopologyConnector {
-            connector: capability.connector_name().to_owned(),
-            connected: true,
-            modes: capability.modes().iter().copied().map(timing).collect(),
-            preferred_mode: capability.preferred_mode().map(timing),
-            scales: DesktopOutputScaleCapabilities {
-                minimum_milli: 1_000,
-                maximum_milli: 8_000,
-                step_milli: 1_000,
-                automatic_milli: scale_milli,
-            },
-            transforms: DesktopOutputTransformSet::NORMAL,
-            vrr_capable: capability.vrr_configurable(),
-            current: DesktopOutputState {
-                connector: capability.connector_name().to_owned(),
-                enabled: true,
-                mode: selected,
-                scale_milli,
-                position,
-                transform: DesktopOutputTransform::Normal,
-                vrr: DesktopOutputVrrMode::Disabled,
-            },
-        });
+        // Each member keeps its own connector row, because the topology describes
+        // hardware and the hardware is N connectors. They share one position, which
+        // is what makes them one logical output rather than N side by side.
+        for member in group {
+            connectors.push(DesktopOutputTopologyConnector {
+                connector: member.connector_name().to_owned(),
+                connected: true,
+                modes: member.modes().iter().copied().map(timing).collect(),
+                preferred_mode: member.preferred_mode().map(timing),
+                scales: DesktopOutputScaleCapabilities {
+                    minimum_milli: 1_000,
+                    maximum_milli: 8_000,
+                    step_milli: 1_000,
+                    automatic_milli: scale_milli,
+                },
+                transforms: DesktopOutputTransformSet::NORMAL,
+                vrr_capable: member.vrr_configurable(),
+                current: DesktopOutputState {
+                    connector: member.connector_name().to_owned(),
+                    enabled: true,
+                    mode: selected,
+                    scale_milli,
+                    position,
+                    transform: DesktopOutputTransform::Normal,
+                    vrr: DesktopOutputVrrMode::Disabled,
+                },
+            });
+        }
     }
     if let Some(output) = capabilities_by_output.keys().next().copied() {
         return Err(NativeOutputTopologyProjectionError::UnexpectedCapability(

@@ -125,6 +125,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
                 enabled: Some(true),
                 focus_at_startup: Some(true),
                 vrr: Some(DesktopOutputVrrMode::Automatic),
+                mirror: Vec::new(),
             },
             DesktopNamedOutputCandidate {
                 connector: "DP-2".to_owned(),
@@ -139,6 +140,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
                 enabled: Some(true),
                 focus_at_startup: None,
                 vrr: None,
+                mirror: Vec::new(),
             },
         ],
     };
@@ -175,6 +177,7 @@ fn native_activation_plan_retains_stable_targets_and_rollback_state() {
             enabled: None,
             focus_at_startup: Some(true),
             vrr: Some(DesktopOutputVrrMode::Always),
+            mirror: Vec::new(),
         }],
     };
     let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology).unwrap();
@@ -246,5 +249,98 @@ fn native_activation_plan_rejects_capability_drift_and_aliases() {
     assert_eq!(
         prepare_native_output_activation_plan(&invalid_output, &topology, &reconciliation),
         Err(NativeOutputActivationPlanError::InvalidOutput(0))
+    );
+}
+
+#[test]
+fn two_connectors_on_one_logical_output_are_a_mirror_group() {
+    // One SnapshotOutput backed by N connectors. Both rows describe real hardware,
+    // and they share a position, which is what makes them one logical output rather
+    // than two side by side.
+    let mode = LibdrmNativeOutputTiming::new(1920, 1080, 60_000);
+    let capabilities = [
+        LibdrmNativeOutputCapability::new(
+            OutputId::from_raw(1),
+            1,
+            "DP-1",
+            [mode],
+            Some(mode),
+            mode,
+            LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+        )
+        .unwrap(),
+        LibdrmNativeOutputCapability::new(
+            OutputId::from_raw(1),
+            2,
+            "DP-2",
+            [mode],
+            Some(mode),
+            mode,
+            LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+        )
+        .unwrap(),
+    ];
+    let outputs = [HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 1920,
+            height: 1080,
+        },
+        scale: 1,
+    }];
+
+    let topology = project_native_output_topology(&capabilities, &outputs)
+        .expect("a same-mode mirror group projects");
+
+    assert_eq!(topology.connectors.len(), 2);
+    assert_eq!(topology.connectors[0].connector, "DP-1");
+    assert_eq!(topology.connectors[1].connector, "DP-2");
+    assert_eq!(
+        topology.connectors[0].current.position, topology.connectors[1].current.position,
+        "mirror group members occupy the same logical rect"
+    );
+}
+
+#[test]
+fn a_mirror_group_disagreeing_on_mode_fails_closed() {
+    // One framebuffer cannot satisfy two scanout sizes, and no plane scaling exists
+    // on this path, so the alternative to refusing is letterboxing a screen the
+    // operator asked to match.
+    let first = LibdrmNativeOutputTiming::new(1920, 1080, 60_000);
+    let second = LibdrmNativeOutputTiming::new(2560, 1440, 60_000);
+    let capabilities = [
+        LibdrmNativeOutputCapability::new(
+            OutputId::from_raw(1),
+            1,
+            "DP-1",
+            [first],
+            Some(first),
+            first,
+            LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+        )
+        .unwrap(),
+        LibdrmNativeOutputCapability::new(
+            OutputId::from_raw(1),
+            2,
+            "DP-2",
+            [second],
+            Some(second),
+            second,
+            LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+        )
+        .unwrap(),
+    ];
+    let outputs = [HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 1920,
+            height: 1080,
+        },
+        scale: 1,
+    }];
+
+    assert_eq!(
+        project_native_output_topology(&capabilities, &outputs),
+        Err(NativeOutputTopologyProjectionError::MirrorModeMismatch(1))
     );
 }
