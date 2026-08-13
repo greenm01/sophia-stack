@@ -143,6 +143,32 @@ candidate, allow later rescan/rebuild, and require input to remain disabled.
 **Priority**: High. Terminating the desktop or routing against retired pixels
 is unacceptable; bounded degraded recovery is required.
 
+### Scenario 6: A Mirror Group Loses One Connector
+
+**Mechanism**: mirroring is one logical output backed by several connectors, so
+a connector can disappear while the logical output survives. The output list is
+unchanged, which means every consumer that compares output lists sees nothing.
+
+**Evidence**:
+
+- Code analysis: `observe_rebuild` compares `Vec<HeadlessOutput>` equality
+  (`output_topology_owner.rs:94`), so a surviving-head topology yields the same
+  vector, no epoch advance, and no republication.
+- Ratified policy: `VisualRetirement.tla` already carries the rule verbatim --
+  a surviving-head topology is a new candidate -- and requires a mirror group to
+  commit only with every head.
+
+**Affected code paths**: owner topology reduction, scanout head composition,
+per-output lease and framebuffer ownership, and page-flip retirement.
+
+**Suggested modeling approach**: give the logical output a live head count and
+record the head set at publication, so head loss advances the observed epoch and
+what consumers hold is checked against the heads that are actually live.
+
+**Priority**: High. A head lost without republication leaves a connector dark
+with no state anywhere saying so, which is indistinguishable from a working
+mirror until someone looks at the second screen.
+
 ## 3. Modeling Recommendations
 
 ### 3.1 Model
@@ -153,6 +179,7 @@ is unacceptable; bounded degraded recovery is required.
 - Atomic consumer publication (Scenario 3).
 - Stale policy rejection and presentation-fenced input enablement (Scenario 4).
 - No-output/rebuild-failure recovery (Scenario 5).
+- Head loss inside a surviving logical output (Scenario 6).
 
 ### 3.2 Do Not Model
 
@@ -174,6 +201,7 @@ is unacceptable; bounded degraded recovery is required.
 | Consumer bundle | `pointerEpoch`, `randrEpoch`, `policyEpoch`, `ownedEpoch` | Prevent mixed publication | 3 |
 | Presentation fence | `policyCommittedEpoch`, `presentedEpoch`, `inputEnabled` | Require exact committed and presented replacement | 4 |
 | Degraded recovery | `candidateLive`, `phase = "awaiting"` | Retain state without routing against absent output | 5 |
+| Head layer | `liveHeads`, `publishedHeads` | Make a surviving-head topology a new candidate | 6 |
 
 ## 5. Proposed Invariants
 
@@ -184,6 +212,7 @@ is unacceptable; bounded degraded recovery is required.
 | OldWorkCannotCrossEpoch | Safety | callbacks and policy outcomes from an older epoch never become authoritative | 2, 4 |
 | ReturnedOutputGenerationAdvances | Safety | a removed raw output identity returns only at a higher generation | 1, 3 |
 | AwaitingRecoveryIsQuarantined | Safety | no-output or rebuild failure never enables application input | 5 |
+| PublishedHeadsAreCurrent | Safety | a settled candidate's published head set is the head set that is live | 6 |
 | ValidReplacementCanRecover | Liveness | a stable replacement can progress from awaiting recovery to presented state | 5 |
 
 ## 6. Findings Pending Verification
@@ -196,6 +225,7 @@ is unacceptable; bounded degraded recovery is required.
 | MC2 | Can a late page-flip callback or policy outcome cross replacement if only its raw output/request identity matches? | OldWorkCannotCrossEpoch | 2, 4 |
 | MC3 | Can input resume after RandR publication but before policy presentation? | InputRequiresPresentedPolicy | 3, 4 |
 | MC4 | Can a no-output failure accidentally preserve the old input-enabled flag? | AwaitingRecoveryIsQuarantined | 5 |
+| MC5 | Can a mirror group lose a connector and keep serving the epoch published for the wider group? | PublishedHeadsAreCurrent | 6 |
 
 ### 6.2 Test-Verifiable
 

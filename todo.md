@@ -759,6 +759,35 @@ is excluded; retained product behavior is not.
   only because no plane scaling exists anywhere; mismatched modes must fail closed
   at reconcile time rather than silently letterbox. Hagia's output migrator gains a
   `mirror` arm, which closes a Triad config-migration gap.
+  The scanout foundation is now in place. `outputs()` returns logical outputs
+  rather than one per head, and the first-match lookups that silently addressed
+  head 0 -- the callback router, presentation feedback, stable present, and head
+  composition -- resolve a head explicitly. Head composition is keyed by connector
+  name, not by `OutputId`: two activation targets in a group share an `OutputId`,
+  so keying by output composed the same head twice and left the group's other
+  connector dark. `NativeMirrorGrouping` is keyed by connector name for the same
+  reason it has to be -- configuration speaks names, and the name-to-id map lives
+  on a capability that is only readable after the sessions the grouping is needed
+  to build.
+  The two models that could not express head loss now can.
+  `OutputTopologyLifecycle.tla` carries a live head count and the head set recorded
+  at publication, so losing one connector of a group republishes the full epoch
+  exactly as losing an output does; `PublishedHeadsAreCurrent` fails when it does
+  not. `PolicyOutputSettlement.tla` gives each output a head set that feeds the
+  canonical scene, so a head-set change makes an in-flight candidate stale and
+  `CommittedTopologyWasCurrent` keeps its meaning under mirroring. Both new
+  invariants were confirmed non-vacuous by negative controls that let a head loss
+  leave the scene alone. `VisualRetirement.tla` needed no change; it was already
+  ahead of the code.
+  What remains is the render path -- lease and framebuffer ownership per logical
+  output retired when the last head flips, head identity on page-flip callbacks, a
+  multi-head page-flip submit, one exporter per group, a head fingerprint in
+  `observe_rebuild`, and a head-loss arm -- and then the config tranche: `mirror_of`
+  on `DesktopOutputState`, the same-group overlap exemption, and deleting
+  `MirrorUnsupported`. The config tranche is what makes an end-to-end mirror test
+  reachable at all; until it lands, reconciliation refuses both the shared position
+  and the `mirror` directive, so the head-composition test asserts the projection
+  shape those changes must preserve.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

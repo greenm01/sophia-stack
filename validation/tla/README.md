@@ -109,14 +109,18 @@ violates `LastGoodIsCoherent`, preserving the implementation defect found by
 the modeling pass as a negative control.
 
 `PolicyOutputSettlement.tla` isolates output loss and exact-identity return
-during a complete two-output policy settlement. It requires the canonical
-scene generation to fence the staged candidate, both Engine layout and reducer
-projections to promote as one last-good state, and a returned output to carry a
-new generation. The bounded configuration explores 86 generated states and 64
-distinct states to depth 13. Temporary negative controls independently allowed
-a prepared candidate to skip its final topology recheck and allowed an output
-to return without advancing generation. TLC violated
-`CommittedTopologyWasCurrent` and `ReappearedOutputIsFresh`, respectively.
+during a complete two-output policy settlement. Each output carries the head
+set backing it, so a mirror group that loses one connector while keeping its
+identity is a scene change like any other. It requires the canonical scene
+generation to fence the staged candidate against both the output set and the
+head sets, both Engine layout and reducer projections to promote as one
+last-good state, and a returned output to carry a new generation. The bounded
+configuration explores 2,070 generated states and 1,369 distinct states to
+depth 13. Temporary negative controls independently allowed a prepared
+candidate to skip its final topology recheck, allowed an output to return
+without advancing generation, and allowed a head loss not to advance the scene.
+TLC violated `CommittedTopologyWasCurrent`, `ReappearedOutputIsFresh`, and
+`StagedHeadsCannotGoStaleSilently`, respectively.
 
 `OutputTopologyLifecycle.tla` carries that policy-level topology rule through
 the native session owner's split ownership-transfer boundary. It separates a
@@ -126,10 +130,14 @@ barrier, current policy settlement, and exact first presentation. The logical
 barrier abstracts sequential cross-process settlement while input is
 quarantined; it does not assert simultaneous IPC visibility. No-output and one
 bounded rebuild failure remain input-quarantined and can recover after a later
-valid rescan. Scenario correspondence and exclusions are recorded in
+valid rescan. A logical output carries a live head count, so losing one
+connector of a mirror group republishes the full epoch exactly as losing an
+output does; what consumers hold is checked against the head set that is
+actually live. Scenario correspondence and exclusions are recorded in
 `validation/specula/output-topology-lifecycle-modeling-brief.md`.
-The bounded configuration explores 1,484,394 generated and 230,797 distinct
-states to depth 32.
+The bounded configuration explores 5,109,131 generated and 784,338 distinct
+states to depth 32. A temporary negative control let a head loss leave the
+observed epoch alone; TLC violated `PublishedHeadsAreCurrent`.
 
 `PolicyRefreshLifecycle.tla` isolates the revision-1 refresh contract added for
 native Hagia policy. It admits only strictly increasing private generations,

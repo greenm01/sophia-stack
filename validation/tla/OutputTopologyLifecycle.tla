@@ -10,26 +10,29 @@ EXTENDS Naturals, Sequences
  * No-output and bounded rebuild failure remain fail-closed.                *
  *************************************************************************)
 
-CONSTANTS MaxEpoch, MaxEvents, MaxRebuildFailures
+CONSTANTS MaxEpoch, MaxEvents, MaxRebuildFailures, MaxHeads
 
 ASSUME /\ MaxEpoch \in Nat
        /\ MaxEpoch >= 4
        /\ MaxEvents \in (Nat \ {0})
        /\ MaxRebuildFailures \in Nat
+       /\ MaxHeads \in (Nat \ {0})
 
 VARIABLES phase, observedEpoch, transitionEpoch, ownedEpoch,
           scanoutEpoch, pointerEpoch, randrEpoch, policyEpoch,
           policyCommittedEpoch, presentedEpoch, inputControlEpoch,
           inputEnabled, noticePending, candidateHasOutput,
           rightLive, rightGeneration, rightEverLost, oldWorkEpoch,
-          rebuildFailures, callbackLog, policyLog
+          rebuildFailures, callbackLog, policyLog,
+          liveHeads, publishedHeads
 
 vars == <<phase, observedEpoch, transitionEpoch, ownedEpoch,
           scanoutEpoch, pointerEpoch, randrEpoch, policyEpoch,
           policyCommittedEpoch, presentedEpoch, inputControlEpoch,
           inputEnabled, noticePending, candidateHasOutput,
           rightLive, rightGeneration, rightEverLost, oldWorkEpoch,
-          rebuildFailures, callbackLog, policyLog>>
+          rebuildFailures, callbackLog, policyLog,
+          liveHeads, publishedHeads>>
 
 TransitionPhases ==
     {"revoked", "quiesced", "rebuilt", "published",
@@ -61,6 +64,8 @@ Init ==
     /\ rebuildFailures = 0
     /\ callbackLog = <<>>
     /\ policyLog = <<>>
+    /\ liveHeads = MaxHeads
+    /\ publishedHeads = MaxHeads
 
 \* LiveDrmTopologyMonitor::enqueue_notice: a capacity-one notice is a rescan
 \* hint; later physical facts replace earlier pending facts.
@@ -76,7 +81,8 @@ ObserveRightLoss ==
                     pointerEpoch, randrEpoch, policyEpoch,
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, rightGeneration, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 ObserveRightReturn ==
     /\ observedEpoch < MaxEpoch
@@ -91,7 +97,8 @@ ObserveRightReturn ==
                     pointerEpoch, randrEpoch, policyEpoch,
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 ObserveNoOutput ==
     /\ observedEpoch < MaxEpoch
@@ -105,7 +112,8 @@ ObserveNoOutput ==
                     pointerEpoch, randrEpoch, policyEpoch,
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, rightGeneration, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 ObserveOutputRecovery ==
     /\ observedEpoch < MaxEpoch
@@ -117,7 +125,31 @@ ObserveOutputRecovery ==
                     pointerEpoch, randrEpoch, policyEpoch,
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, rightLive, rightGeneration, rightEverLost,
-                    oldWorkEpoch, rebuildFailures, callbackLog, policyLog>>
+                    oldWorkEpoch, rebuildFailures, callbackLog, policyLog, liveHeads, publishedHeads>>
+
+\* A mirror group loses one connector while the logical output survives. The
+\* output set is unchanged, so nothing above the head layer can see this from the
+\* output list alone -- which is exactly why it advances the observed epoch. A
+\* surviving-head topology is a new candidate, not the old one with a gap.
+ObserveHeadLoss ==
+    /\ observedEpoch < MaxEpoch
+    /\ candidateHasOutput
+    /\ liveHeads > 1
+    /\ observedEpoch' = observedEpoch + 1
+    /\ liveHeads' = liveHeads - 1
+    /\ noticePending' = TRUE
+    /\ UNCHANGED <<phase, transitionEpoch, ownedEpoch, scanoutEpoch, pointerEpoch, randrEpoch, policyEpoch, policyCommittedEpoch, presentedEpoch, inputControlEpoch, inputEnabled, candidateHasOutput, rightLive, rightGeneration, rightEverLost, oldWorkEpoch, rebuildFailures, callbackLog, policyLog, publishedHeads>>
+
+\* The connector comes back. A regained head is as much a new candidate as a lost
+\* one: the group scans out to a different set of connectors than it did before.
+ObserveHeadReturn ==
+    /\ observedEpoch < MaxEpoch
+    /\ candidateHasOutput
+    /\ liveHeads < MaxHeads
+    /\ observedEpoch' = observedEpoch + 1
+    /\ liveHeads' = liveHeads + 1
+    /\ noticePending' = TRUE
+    /\ UNCHANGED <<phase, transitionEpoch, ownedEpoch, scanoutEpoch, pointerEpoch, randrEpoch, policyEpoch, policyCommittedEpoch, presentedEpoch, inputControlEpoch, inputEnabled, candidateHasOutput, rightLive, rightGeneration, rightEverLost, oldWorkEpoch, rebuildFailures, callbackLog, policyLog, publishedHeads>>
 
 \* run_session_loop topology boundary: advance the frontend input epoch before
 \* any old KMS or policy ownership is released.
@@ -138,7 +170,8 @@ BeginTopologyTransition ==
     /\ UNCHANGED <<observedEpoch, ownedEpoch, scanoutEpoch, pointerEpoch, randrEpoch,
                     policyEpoch, policyCommittedEpoch, presentedEpoch,
                     candidateHasOutput, rightLive, rightGeneration,
-                    rightEverLost, rebuildFailures, callbackLog, policyLog>>
+                    rightEverLost, rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 \* A newer complete observation supersedes every not-yet-presented candidate.
 SupersedeTopologyTransition ==
@@ -153,7 +186,7 @@ SupersedeTopologyTransition ==
                     policyEpoch, policyCommittedEpoch, presentedEpoch,
                     inputControlEpoch, candidateHasOutput, rightLive,
                     rightGeneration, rightEverLost, rebuildFailures,
-                    callbackLog, policyLog>>
+                    callbackLog, policyLog, liveHeads, publishedHeads>>
 
 \* LiveProductionVisualRuntime::suspend_native_scanout.
 QuiesceNativeScanout ==
@@ -165,7 +198,8 @@ QuiesceNativeScanout ==
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, noticePending, candidateHasOutput,
                     rightLive, rightGeneration, rightEverLost,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 \* LiveProductionNativeScanout replacement plus runtime resume. The complete
 \* output set is still private to the owner at this boundary.
@@ -180,7 +214,8 @@ RebuildNativeRuntime ==
                     presentedEpoch, inputControlEpoch, inputEnabled,
                     noticePending, candidateHasOutput, rightLive,
                     rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 \* Bounded construction failure retains state and re-arms one rescan without
 \* re-enabling application input.
@@ -196,7 +231,8 @@ FailNativeRuntimeRebuild ==
                     randrEpoch, policyEpoch, policyCommittedEpoch,
                     presentedEpoch, inputControlEpoch, inputEnabled,
                     candidateHasOutput, rightLive, rightGeneration,
-                    rightEverLost, oldWorkEpoch, callbackLog, policyLog>>
+                    rightEverLost, oldWorkEpoch, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 EnterNoOutputRecovery ==
     /\ phase = "quiesced"
@@ -208,7 +244,8 @@ EnterNoOutputRecovery ==
                     presentedEpoch, inputControlEpoch, inputEnabled,
                     noticePending, candidateHasOutput, rightLive,
                     rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 \* One logical owner completion point records that every consumer received the
 \* validated complete epoch. Production IPC settles sequentially while input
@@ -221,12 +258,12 @@ PublishCompleteTopology ==
     /\ pointerEpoch' = transitionEpoch
     /\ randrEpoch' = transitionEpoch
     /\ policyEpoch' = transitionEpoch
+    \* The head set is part of what is published. Recording it here is what makes
+    \* "a surviving-head topology is a new candidate" checkable: a group that lost
+    \* a head and was not republished shows up as published heads out of date.
+    /\ publishedHeads' = liveHeads
     /\ phase' = "published"
-    /\ UNCHANGED <<observedEpoch, transitionEpoch, scanoutEpoch,
-                    policyCommittedEpoch, presentedEpoch, inputControlEpoch,
-                    inputEnabled, noticePending, candidateHasOutput,
-                    rightLive, rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+    /\ UNCHANGED <<observedEpoch, transitionEpoch, scanoutEpoch, policyCommittedEpoch, presentedEpoch, inputControlEpoch, inputEnabled, noticePending, candidateHasOutput, rightLive, rightGeneration, rightEverLost, oldWorkEpoch, rebuildFailures, callbackLog, policyLog, liveHeads>>
 
 CommitCurrentPolicyLayout ==
     /\ phase = "published"
@@ -241,7 +278,8 @@ CommitCurrentPolicyLayout ==
                     pointerEpoch, randrEpoch, policyEpoch, presentedEpoch,
                     inputControlEpoch, inputEnabled, noticePending,
                     candidateHasOutput, rightLive, rightGeneration,
-                    rightEverLost, oldWorkEpoch, rebuildFailures, callbackLog>>
+                    rightEverLost, oldWorkEpoch, rebuildFailures, callbackLog,
+                    liveHeads, publishedHeads>>
 
 RejectStalePolicyOutcome(epoch) ==
     /\ epoch \in 1..MaxEpoch
@@ -253,7 +291,7 @@ RejectStalePolicyOutcome(epoch) ==
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, noticePending, candidateHasOutput,
                     rightLive, rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog>>
+                    rebuildFailures, callbackLog, liveHeads, publishedHeads>>
 
 PresentReplacementLayout ==
     /\ phase = "policy_committed"
@@ -266,7 +304,8 @@ PresentReplacementLayout ==
                     policyCommittedEpoch, inputControlEpoch, inputEnabled,
                     noticePending, candidateHasOutput, rightLive,
                     rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 EnablePresentedInput ==
     /\ phase = "presented"
@@ -284,7 +323,8 @@ EnablePresentedInput ==
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     noticePending, candidateHasOutput, rightLive,
                     rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, callbackLog, policyLog>>
+                    rebuildFailures, callbackLog, policyLog,
+                    liveHeads, publishedHeads>>
 
 AcceptCurrentPageFlip(epoch) ==
     /\ epoch \in 1..MaxEpoch
@@ -297,7 +337,7 @@ AcceptCurrentPageFlip(epoch) ==
                     policyCommittedEpoch, presentedEpoch, inputControlEpoch,
                     inputEnabled, noticePending, candidateHasOutput,
                     rightLive, rightGeneration, rightEverLost, oldWorkEpoch,
-                    rebuildFailures, policyLog>>
+                    rebuildFailures, policyLog, liveHeads, publishedHeads>>
 
 RejectStalePageFlip(epoch) ==
     /\ epoch \in 1..MaxEpoch
@@ -309,6 +349,8 @@ Next ==
     \/ ObserveRightReturn
     \/ ObserveNoOutput
     \/ ObserveOutputRecovery
+    \/ ObserveHeadLoss
+    \/ ObserveHeadReturn
     \/ BeginTopologyTransition
     \/ SupersedeTopologyTransition
     \/ QuiesceNativeScanout
@@ -358,6 +400,8 @@ TypeOK ==
     /\ rebuildFailures \in 0..MaxRebuildFailures
     /\ Len(callbackLog) <= MaxEvents
     /\ Len(policyLog) <= MaxEvents
+    /\ liveHeads \in 1..MaxHeads
+    /\ publishedHeads \in 1..MaxHeads
 
 InputRequiresPresentedPolicy ==
     inputEnabled =>
@@ -388,6 +432,16 @@ ReturnedOutputGenerationAdvances ==
 
 AwaitingRecoveryIsQuarantined ==
     phase = "awaiting" => ~inputEnabled
+
+\* Losing a head republishes the full epoch exactly as losing an output does.
+\* Once a candidate is settled -- nothing newer observed -- what consumers hold
+\* must be the head set that is actually live. The `transitionEpoch = observedEpoch`
+\* conjunct is what admits the window between the observation and the transition
+\* it arms; without it this would forbid observing anything.
+PublishedHeadsAreCurrent ==
+    (/\ phase \in {"published", "policy_committed", "presented", "stable"}
+     /\ transitionEpoch = observedEpoch)
+        => publishedHeads = liveHeads
 
 RecoveryReady ==
     /\ phase = "awaiting"
