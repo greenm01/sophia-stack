@@ -45,9 +45,12 @@ fn validate_renderer_image_handoff_ids(
 impl LiveProductionNativeScanout {
     pub fn queue_present_cpu_frame(
         &mut self,
-        index: usize,
+        output: OutputId,
         frame: LiveProductionComposedFrame,
     ) -> Result<LiveProductionNativeFrameId, &'static str> {
+        let index = self
+            .primary_head_index(output)
+            .ok_or("native output has no head")?;
         if self.heads[index].exporter.pending_frame() {
             return Err("native output already has pending frame work");
         }
@@ -70,10 +73,13 @@ impl LiveProductionNativeScanout {
 
     pub fn queue_mixed_frame(
         &mut self,
-        index: usize,
+        output: OutputId,
         transaction: TransactionId,
         frame: crate::LiveOwnedMixedCompositionFrame,
     ) -> LiveProductionNativeFrameId {
+        let index = self
+            .primary_head_index(output)
+            .expect("native mixed frame targets a registered output");
         let frame_id = self.allocate_frame_id();
         let head = &mut self.heads[index];
         let pending_before = head.exporter.pending_frame();
@@ -104,9 +110,12 @@ impl LiveProductionNativeScanout {
 
     pub fn queue_retained_mixed_frame(
         &mut self,
-        index: usize,
+        output: OutputId,
         frame: crate::LiveOwnedMixedCompositionFrame,
     ) -> LiveProductionNativeFrameId {
+        let index = self
+            .primary_head_index(output)
+            .expect("native retained frame targets a registered output");
         let frame_id = self.allocate_frame_id();
         let head = &mut self.heads[index];
         if let Some(superseded) = head.pending_content {
@@ -126,7 +135,7 @@ impl LiveProductionNativeScanout {
 
     pub fn diagnose_mixed_frame(
         &mut self,
-        index: usize,
+        output: OutputId,
         frame: crate::LiveOwnedMixedCompositionFrame,
     ) -> (
         crate::LiveRendererScanoutBufferExportStatus,
@@ -134,6 +143,9 @@ impl LiveProductionNativeScanout {
     ) {
         use crate::LiveRenderedScanoutBufferExporter as _;
 
+        let index = self
+            .primary_head_index(output)
+            .expect("native mixed-frame diagnosis targets a registered output");
         let head = &mut self.heads[index];
         head.exporter.set_pending_mixed_frame(frame);
         let export =
@@ -191,7 +203,7 @@ impl LiveProductionNativeScanout {
     ) -> Result<LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
         validate_renderer_image_handoff_ids(expected, expected)?;
         let index = self
-            .output_index(output)
+            .primary_head_index(output)
             .ok_or("renderer-image handoff selected an unknown output")?;
         let mut snapshots = Vec::with_capacity(expected.len());
         for image_id in expected {
@@ -218,7 +230,7 @@ impl LiveProductionNativeScanout {
         handoff: LiveProductionRendererImageHandoff,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let index = self
-            .output_index(handoff.output)
+            .primary_head_index(handoff.output)
             .ok_or("renderer-image handoff target output is unavailable")?;
         if !self.heads[index]
             .exporter

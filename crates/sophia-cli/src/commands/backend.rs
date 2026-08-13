@@ -407,7 +407,7 @@ fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
         .outputs()
         .into_iter()
         .filter_map(|output| {
-            let index = native.output_index(output.id)?;
+            let index = native.primary_head_index(output.id)?;
             let (_, size) = sophia_backend_live::read_native_current_framebuffer(
                 native.card(index),
                 native.selection(index),

@@ -240,11 +240,7 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .primary_output()
                 .ok_or("persistent backend runtime has no primary output")?;
-            let primary_index = self
-                .outputs
-                .output_index(primary)
-                .ok_or("persistent backend primary output was not registered")?;
-            native_scanout.queue_retained_mixed_frame(primary_index, frame);
+            native_scanout.queue_retained_mixed_frame(primary, frame);
         }
         Ok(restored)
     }
@@ -279,6 +275,11 @@ impl LiveProductionVisualRuntime {
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
+                // The adapter counts logical outputs; the scanout is addressed by
+                // output identity.
+                let output_id = outputs
+                    .output_id(index)
+                    .ok_or("production output index was not registered")?;
                 let output = outputs
                     .values_mut()
                     .nth(index)
@@ -287,7 +288,7 @@ impl LiveProductionVisualRuntime {
                     .runtime
                     .assembly_mut()
                     .replace_committed_surfaces(committed.to_vec());
-                native_scanout.release_displayed_output(index, &mut output.runtime)
+                native_scanout.release_displayed_output(output_id, &mut output.runtime)
             },
         );
         let _ = production.run_outputs(&mut adapter)?;
@@ -304,7 +305,7 @@ impl LiveProductionVisualRuntime {
             .outputs
             .output_index(selected_output)
             .ok_or("frame service selected an unknown output")?;
-        if !native_scanout.pending_frame(index) {
+        if !native_scanout.pending_frame(selected_output) {
             self.stage_software_present_frame(native_scanout, selected_output)?;
         }
         let committed = self.production.committed_surfaces().to_vec();
@@ -321,12 +322,12 @@ impl LiveProductionVisualRuntime {
             || output
                 .runtime
                 .rendered_primary_plane_scanout_cleanup_pending()
-            || !native_scanout.pending_frame(index)
+            || !native_scanout.pending_frame(selected_output)
         {
             return Err("frame service selected an output that is not ready".into());
         }
         let report = native_scanout.run_tick(
-            index,
+            selected_output,
             &mut output.runtime,
             compositor_tick_input(&layer_templates, 0, Vec::new(), None),
         )?;
@@ -343,7 +344,7 @@ impl LiveProductionVisualRuntime {
                         .mark_submitted(transaction)?;
                 }
                 let submitted = native_scanout
-                    .submitted_content(index)
+                    .submitted_content(selected_output)
                     .ok_or("native submit did not retain its frame identity")?;
                 self.observe_software_present_frame_submitted(submitted.frame())?;
             }
@@ -387,7 +388,7 @@ impl LiveProductionVisualRuntime {
         // Authority and repaint cycles may submit a staged frame between
         // frame-service passes. The scanout owner retains that exact identity
         // until retirement, so observe it before consuming the callback.
-        if let Some(submitted) = native_scanout.submitted_content(index) {
+        if let Some(submitted) = native_scanout.submitted_content(selected_output) {
             self.observe_software_present_frame_submitted(submitted.frame())?;
         }
         let committed = self.production.committed_surfaces().to_vec();
@@ -400,7 +401,7 @@ impl LiveProductionVisualRuntime {
             .runtime
             .assembly_mut()
             .replace_committed_surfaces(committed);
-        native_scanout.retire_ready_and_retry_cleanup(index, &mut output.runtime)?;
+        native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
         self.publish_presented_input_layers(native_scanout);
         if self.outputs.primary_output() == Some(selected_output)
             && let Some(retirement) = native_scanout.take_presentation_feedback(selected_output)

@@ -248,7 +248,7 @@ impl LiveProductionVisualRuntime {
                     output,
                     primary: output == primary,
                     native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
-                    pending_frame: native_scanout.pending_frame(index)
+                    pending_frame: native_scanout.pending_frame(output)
                         || software_frame_waiting.is_some_and(|frame| frame.output == output),
                 })
             })

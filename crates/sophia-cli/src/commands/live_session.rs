@@ -183,7 +183,7 @@ pub(super) fn plan_validation_device<'a>(
         if !target.requested().enabled {
             continue;
         }
-        let card = scanout.card(scanout.output_index(target.output())?);
+        let card = scanout.card(scanout.primary_head_index(target.output())?);
         match device {
             Some(existing) if !std::ptr::eq(existing, card) => return None,
             Some(_) => {}

@@ -362,11 +362,15 @@ mod persistent_native_scanout {
 
         /// The first head driving a logical output.
         ///
-        /// Correct only where any head of a group will do — reading a card, or a
+        /// Named for what it returns. It was `output_index`, which read like a
+        /// position in the output list and was passed one by four callers -- a
+        /// coincidence that holds only while every output has exactly one head.
+        ///
+        /// Correct only where any head of a group will do: reading a card, or a
         /// selection's connector and CRTC. A caller that submits, retires, or
         /// releases per head must use `head_indices` instead, or it will address
         /// head zero and silently ignore the rest of a mirror group.
-        pub fn output_index(&self, output: OutputId) -> Option<usize> {
+        pub fn primary_head_index(&self, output: OutputId) -> Option<usize> {
             self.heads.iter().position(|head| head.output.id == output)
         }
 
@@ -448,6 +452,31 @@ mod persistent_native_scanout {
             self.groups[self.heads[index].group].session.card()
         }
 
+        /// The head this logical output is addressed through.
+        ///
+        /// Every per-head entry point below resolves through this rather than
+        /// taking a position, because the caller's position is an index into
+        /// *outputs* and the two stop agreeing the moment a mirror group exists.
+        fn primary_head(&self, output: OutputId) -> Result<usize, Box<dyn std::error::Error>> {
+            self.primary_head_index(output)
+                .ok_or_else(|| format!("native output {} has no head", output.raw()).into())
+        }
+
+        /// The card driving a logical output.
+        pub fn card_for_output(&self, output: OutputId) -> Option<&crate::RealAtomicScanoutCard> {
+            self.primary_head_index(output)
+                .map(|index| self.card(index))
+        }
+
+        /// The primary connector selection of a logical output.
+        pub fn selection_for_output(
+            &self,
+            output: OutputId,
+        ) -> Option<crate::LibdrmNativePrimaryPlaneSelection> {
+            self.primary_head_index(output)
+                .map(|index| self.heads[index].selection)
+        }
+
         pub fn take_output_receiver(
             &mut self,
             output: OutputId,
@@ -459,13 +488,14 @@ mod persistent_native_scanout {
 
         pub fn run_tick(
             &mut self,
-            index: usize,
+            output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+            let index = self.primary_head(output)?;
             self.ensure_page_flip_progress()?;
             if !self.heads[index].exporter.pending_frame() {
-                self.retire_ready_and_retry_cleanup(index, runtime)?;
+                self.retire_ready_and_retry_cleanup(output, runtime)?;
                 return Ok(runtime.run_tick(input)?);
             }
             let group = self.heads[index].group;
@@ -632,9 +662,10 @@ mod persistent_native_scanout {
 
         pub fn retire_ready(
             &mut self,
-            index: usize,
+            output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            let index = self.primary_head(output)?;
             self.ensure_page_flip_progress()?;
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
@@ -650,10 +681,11 @@ mod persistent_native_scanout {
 
         pub fn retire_ready_and_retry_cleanup(
             &mut self,
-            index: usize,
+            output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            self.retire_ready(index, runtime)?;
+            let index = self.primary_head(output)?;
+            self.retire_ready(output, runtime)?;
             if runtime.rendered_primary_plane_scanout_cleanup_pending() {
                 let cleanup =
                     runtime.retry_tracked_rendered_primary_plane_scanout_cleanup(self.card(index));
@@ -666,9 +698,10 @@ mod persistent_native_scanout {
 
         pub fn release_displayed_output(
             &mut self,
-            index: usize,
+            output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            let index = self.primary_head(output)?;
             trace_live_native_lifecycle("displayed_scanout_retire_started");
             let retired = runtime.retire_displayed_rendered_primary_plane_scanout(self.card(index));
             if retired.cleanup_pending {
@@ -818,11 +851,12 @@ mod persistent_native_scanout {
 
         pub fn initialize(
             &mut self,
-            index: usize,
+            output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
             frame: LiveProductionComposedFrame,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            self.queue_frame(index, frame);
+            let index = self.primary_head(output)?;
+            self.queue_frame(output, frame);
             let group = self.heads[index].group;
             let groups = &mut self.groups;
             let head = &mut self.heads[index];
@@ -868,9 +902,12 @@ mod persistent_native_scanout {
 
         pub fn queue_frame(
             &mut self,
-            index: usize,
+            output: OutputId,
             frame: LiveProductionComposedFrame,
         ) -> LiveProductionCpuFrameQueueStatus {
+            let Some(index) = self.primary_head_index(output) else {
+                return LiveProductionCpuFrameQueueStatus::NoHead;
+            };
             let status = {
                 let head = &self.heads[index];
                 reduce_live_production_cpu_frame_queue(
@@ -911,7 +948,7 @@ mod persistent_native_scanout {
             output: OutputId,
         ) -> Option<LiveProductionNativeFrameRetirement> {
             let retirement = self.production_page_flips.take_retirement(output)?;
-            let index = self.output_index(output)?;
+            let index = self.primary_head_index(output)?;
             let content = self.heads[index].presented_content?;
             Some(LiveProductionNativeFrameRetirement {
                 output,
@@ -931,12 +968,13 @@ mod persistent_native_scanout {
             self.production_page_flips.discard_retirements(output);
         }
 
-        pub fn pending_frame(&self, index: usize) -> bool {
-            self.heads[index].exporter.pending_frame()
+        pub fn pending_frame(&self, output: OutputId) -> bool {
+            self.primary_head_index(output)
+                .is_some_and(|index| self.heads[index].exporter.pending_frame())
         }
 
-        pub fn submitted_content(&self, index: usize) -> Option<LiveProductionScanoutContent> {
-            self.heads[index].submitted_content
+        pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
+            self.heads[self.primary_head_index(output)?].submitted_content
         }
 
         /// Returns the immutable scene snapshot retired by the latest accepted
@@ -944,13 +982,15 @@ mod persistent_native_scanout {
         /// intentionally invisible here.
         pub fn presented_output_frame(
             &self,
-            index: usize,
+            output: OutputId,
         ) -> Option<&sophia_engine::OutputFrameDamageSnapshot> {
-            self.heads[index].output_frames.presented()
+            self.heads[self.primary_head_index(output)?]
+                .output_frames
+                .presented()
         }
 
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
-            let Some(index) = self.output_index(output) else {
+            let Some(index) = self.primary_head_index(output) else {
                 return false;
             };
             let head = &self.heads[index];

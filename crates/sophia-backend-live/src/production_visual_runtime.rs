@@ -304,11 +304,7 @@ impl LiveProductionVisualRuntime {
                         .outputs
                         .primary_output()
                         .ok_or("persistent backend runtime has no primary output")?;
-                    let primary_index = self
-                        .outputs
-                        .output_index(primary)
-                        .ok_or("persistent backend primary output was not registered")?;
-                    native_scanout.queue_retained_mixed_frame(primary_index, frame);
+                    native_scanout.queue_retained_mixed_frame(primary, frame);
                     true
                 }
                 _ => false,
@@ -406,6 +402,9 @@ impl LiveProductionVisualRuntime {
                     |index,
                      snapshot: &[CommittedSurfaceState]|
                      -> Result<_, Box<dyn std::error::Error>> {
+                        let output_id = outputs
+                            .output_id(index)
+                            .ok_or("production output index was not registered")?;
                         outputs.run_output(index, snapshot, |runtime| {
                             let layer_templates =
                                 projection::committed_layer_snapshots(snapshot, &surface_metadata);
@@ -418,12 +417,12 @@ impl LiveProductionVisualRuntime {
                             Ok(match native_scanout.as_deref_mut() {
                                 Some(native_scanout) => {
                                     if let Some(next_frame) = native_frames.next() {
-                                        native_scanout.queue_frame(index, next_frame);
+                                        native_scanout.queue_frame(output_id, next_frame);
                                     }
                                     if runtime.rendered_primary_plane_scanout_in_flight() {
                                         runtime.run_tick(input)?
                                     } else {
-                                        native_scanout.run_tick(index, runtime, input)?
+                                        native_scanout.run_tick(output_id, runtime, input)?
                                     }
                                 }
                                 None => runtime.run_tick(input)?,
@@ -737,15 +736,18 @@ impl LiveProductionVisualRuntime {
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, snapshot: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
+                let output_id = outputs
+                    .output_id(index)
+                    .ok_or("production output index was not registered")?;
                 outputs.run_output(index, snapshot, |runtime| {
                     if let Some(frame) = frames.next() {
-                        native_scanout.queue_frame(index, frame);
+                        native_scanout.queue_frame(output_id, frame);
                     }
                     let input = compositor_tick_input(&layer_templates, 0, Vec::new(), None);
                     Ok(if runtime.rendered_primary_plane_scanout_in_flight() {
                         runtime.run_tick(input)?
                     } else {
-                        native_scanout.run_tick(index, runtime, input)?
+                        native_scanout.run_tick(output_id, runtime, input)?
                     })
                 })
             },

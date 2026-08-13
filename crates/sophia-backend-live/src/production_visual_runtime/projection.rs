@@ -53,7 +53,7 @@ impl LiveProductionVisualRuntime {
                 continue;
             };
             let (input_layers, presented_scene_surfaces) =
-                native_scanout.presented_output_frame(index).map_or_else(
+                native_scanout.presented_output_frame(output).map_or_else(
                     || (Vec::new(), 0),
                     |presented| {
                         (

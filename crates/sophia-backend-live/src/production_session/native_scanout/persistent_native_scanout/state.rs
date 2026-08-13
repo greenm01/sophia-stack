@@ -91,6 +91,10 @@ pub struct LiveProductionNativeFrameRetirement {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionCpuFrameQueueStatus {
     Queued,
+    /// The named logical output has no head to queue against. Distinct from every
+    /// other status here, which describe a head declining the frame: this one says
+    /// the frame was addressed to something that is not a screen.
+    NoHead,
     BaselineRequired,
     GpuFrameOwned,
     UnchangedPending,

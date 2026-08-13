@@ -476,6 +476,11 @@ impl LiveProductionVisualRuntime {
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
+                // The adapter counts logical outputs, and every native entry point
+                // is addressed by output identity rather than by that count.
+                let output_id = outputs
+                    .output_id(index)
+                    .ok_or("production output index was not registered")?;
                 let output = outputs
                     .values_mut()
                     .nth(index)
@@ -493,12 +498,12 @@ impl LiveProductionVisualRuntime {
                 Ok(match native_scanout.as_deref_mut() {
                     Some(native_scanout) => {
                         if let Some(frame) = native_frames.next() {
-                            native_scanout.queue_frame(index, frame);
+                            native_scanout.queue_frame(output_id, frame);
                         }
                         if output.runtime.rendered_primary_plane_scanout_in_flight() {
                             output.runtime.run_tick(input)?
                         } else {
-                            native_scanout.run_tick(index, &mut output.runtime, input)?
+                            native_scanout.run_tick(output_id, &mut output.runtime, input)?
                         }
                     }
                     None => output.runtime.run_tick(input)?,

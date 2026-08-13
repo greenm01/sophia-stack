@@ -60,9 +60,10 @@ impl LiveProductionVisualRuntime {
             .outputs
             .output_index(primary_output)
             .ok_or("persistent backend primary output was not registered")?;
-        if native_scanout.output_index(primary_output) != Some(primary_index) {
-            return Err("persistent backend and native primary output ordering diverged".into());
-        }
+        // The two index spaces no longer have to agree: everything below addresses
+        // the scanout by output identity, and the runtime set by its own position.
+        // Under mirroring they cannot agree, because one is per screen and the
+        // other is per cable.
         if self
             .outputs
             .output_native_scanout_in_flight(primary_index)
@@ -226,7 +227,7 @@ impl LiveProductionVisualRuntime {
                         }
                         crate::LiveOwnedMixedCompositionLayer::Solid { .. } => (cpu, dmabuf),
                     });
-            let (status, detail) = native_scanout.diagnose_mixed_frame(primary_index, mixed);
+            let (status, detail) = native_scanout.diagnose_mixed_frame(primary_output, mixed);
             native_scanout.rollback_renderer_image(current_layer.image_id)?;
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction);
@@ -242,7 +243,7 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
-        let frame = native_scanout.queue_mixed_frame(primary_index, transaction, mixed);
+        let frame = native_scanout.queue_mixed_frame(primary_output, transaction, mixed);
 
         let layer_templates = self.compositor_layer_templates();
         let production = &self.production;
@@ -250,9 +251,12 @@ impl LiveProductionVisualRuntime {
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
+                let output_id = outputs
+                    .output_id(index)
+                    .ok_or("production output index was not registered")?;
                 outputs.run_output(index, committed, |runtime| {
                     native_scanout.run_tick(
-                        index,
+                        output_id,
                         runtime,
                         compositor_tick_input(&layer_templates, 0, Vec::new(), None),
                     )

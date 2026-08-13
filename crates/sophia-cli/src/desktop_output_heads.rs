@@ -449,7 +449,7 @@ impl LiveNativeOutputTopologyHardware<'_> {
         mode_blob: u64,
         scanout: Size,
     ) -> Result<NativeOutputComposedHead<LibdrmNativeAtomicHead>, NativeOutputHeadUnavailable> {
-        let Some(index) = self.scanout.output_index(output) else {
+        let Some(index) = self.scanout.primary_head_index(output) else {
             self.release(output, mode_blob);
             return Err(NativeOutputHeadUnavailable::MissingSelection);
         };
@@ -524,7 +524,7 @@ impl LiveNativeOutputTopologyHardware<'_> {
     /// Release against the card that created it. Failing to release is worth a line
     /// but not worth failing work that already completed.
     fn release(&self, output: OutputId, blob: u64) {
-        let Some(index) = self.scanout.output_index(output) else {
+        let Some(index) = self.scanout.primary_head_index(output) else {
             return;
         };
         if let Err(error) = self.scanout.card(index).destroy_mode_blob(blob) {

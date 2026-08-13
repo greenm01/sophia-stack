@@ -57,11 +57,7 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .primary_output()
                 .ok_or("persistent backend runtime has no primary output")?;
-            let primary_index = self
-                .outputs
-                .output_index(primary)
-                .ok_or("persistent backend primary output was not registered")?;
-            native_scanout.queue_retained_mixed_frame(primary_index, frame);
+            native_scanout.queue_retained_mixed_frame(primary, frame);
         }
         Ok(true)
     }

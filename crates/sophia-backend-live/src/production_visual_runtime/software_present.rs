@@ -127,10 +127,10 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         output: OutputId,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let Some(index) = native_scanout.output_index(output) else {
+        if native_scanout.primary_head_index(output).is_none() {
             return Err("software Present targeted an unknown native output".into());
-        };
-        if native_scanout.pending_frame(index) {
+        }
+        if native_scanout.pending_frame(output) {
             return Ok(false);
         }
         let Some(waiting) = self.software_present_frames_waiting.front() else {
@@ -145,10 +145,10 @@ impl LiveProductionVisualRuntime {
             .expect("software Present frame front checked above");
         let frame = match waiting.payload {
             LiveProductionSoftwarePresentFramePayload::Cpu(frame) => {
-                native_scanout.queue_present_cpu_frame(index, frame)?
+                native_scanout.queue_present_cpu_frame(output, frame)?
             }
             LiveProductionSoftwarePresentFramePayload::Mixed(frame) => {
-                native_scanout.queue_retained_mixed_frame(index, frame)
+                native_scanout.queue_retained_mixed_frame(output, frame)
             }
         };
         if self

@@ -72,7 +72,7 @@ impl LiveProductionOutputRuntimeSet {
                     return Err("production native output heads were not registered".into());
                 }
                 if let Some(initial_frame) = initial_native_frames.next() {
-                    native_scanout.initialize(primary_head, &mut runtime, initial_frame)?;
+                    native_scanout.initialize(output.id, &mut runtime, initial_frame)?;
                     native_initialized = true;
                 }
             }
@@ -101,13 +101,7 @@ impl LiveProductionOutputRuntimeSet {
             if output.native_initialized {
                 continue;
             }
-            // Frames are per logical output; heads are per connector. Resolving the
-            // head through the output is what keeps a group from initializing the
-            // wrong connector once the two counts differ.
-            let Some(&head) = native_scanout.head_indices(*id).first() else {
-                return Err("production native output has no head".into());
-            };
-            native_scanout.initialize(head, &mut output.runtime, frames[index].clone())?;
+            native_scanout.initialize(*id, &mut output.runtime, frames[index].clone())?;
             output.native_initialized = true;
         }
         Ok(())
