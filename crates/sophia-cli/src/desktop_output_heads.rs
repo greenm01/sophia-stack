@@ -58,11 +58,17 @@ pub trait NativeOutputTopologyHardware {
     /// A composed head. Real hardware yields `LibdrmNativeAtomicTopologyHead`.
     type Head;
 
-    /// Composes one head for `output` at `timing`, creating the mode blob it
+    /// Composes one head for `connector` at `timing`, creating the mode blob it
     /// needs.
+    ///
+    /// Keyed by connector rather than by output because a mirror group is several
+    /// heads behind one output: keying by output would compose the same head twice
+    /// and leave the group's other connector dark. The output travels alongside
+    /// because blobs are released against the card that owns it.
     fn compose_head(
         &self,
         output: OutputId,
+        connector: &str,
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
 
@@ -222,7 +228,7 @@ where
             requested.mode.height,
             requested.mode.refresh_millihz,
         );
-        match hardware.compose_head(output, timing) {
+        match hardware.compose_head(output, &requested.connector, timing) {
             Ok(composed) => {
                 resolved.blobs.push((output, composed.mode_blob));
                 resolved.heads.push(composed.head);
@@ -249,10 +255,11 @@ pub trait NativeOutputScanoutHardware {
     /// A composed head. Real hardware yields `LibdrmNativeAtomicHead`.
     type Head;
 
-    /// Composes the head this output should run under the new topology.
+    /// Composes the head this connector should run under the new topology.
     fn compose_apply_head(
         &self,
         output: OutputId,
+        connector: &str,
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
 
@@ -264,6 +271,7 @@ pub trait NativeOutputScanoutHardware {
     fn compose_rollback_head(
         &self,
         output: OutputId,
+        connector: &str,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable>;
 
     fn release_mode_blob(&self, output: OutputId, blob: u64);
@@ -359,13 +367,13 @@ where
             requested.mode.refresh_millihz,
         );
         let composed = hardware
-            .compose_apply_head(output, timing)
+            .compose_apply_head(output, &requested.connector, timing)
             .map_err(|cause| NativeOutputHeadResolveError::Unavailable { output: raw, cause })?;
         resolved.blobs.push((output, composed.mode_blob));
         resolved.apply.push(composed.head);
 
         let restore = hardware
-            .compose_rollback_head(output)
+            .compose_rollback_head(output, &requested.connector)
             .map_err(|cause| NativeOutputHeadResolveError::Unavailable { output: raw, cause })?;
         resolved.blobs.push((output, restore.mode_blob));
         resolved.rollback.push(restore.head);
@@ -385,11 +393,33 @@ where
 /// session runs on.
 pub struct LiveNativeOutputTopologyHardware<'a> {
     scanout: &'a LiveProductionNativeScanout,
+    capabilities: &'a [LibdrmNativeOutputCapability],
 }
 
 impl<'a> LiveNativeOutputTopologyHardware<'a> {
-    pub const fn new(scanout: &'a LiveProductionNativeScanout) -> Self {
-        Self { scanout }
+    pub const fn new(
+        scanout: &'a LiveProductionNativeScanout,
+        capabilities: &'a [LibdrmNativeOutputCapability],
+    ) -> Self {
+        Self {
+            scanout,
+            capabilities,
+        }
+    }
+
+    /// The head driving a named connector.
+    ///
+    /// Capabilities carry both the connector's name and its DRM id, and they are
+    /// readable by the time a plan exists, so this is where a configured name
+    /// becomes an exact head without reintroducing the id-to-name circularity that
+    /// the grouping had.
+    fn head_for_connector(&self, connector: &str) -> Option<usize> {
+        let capability = self
+            .capabilities
+            .iter()
+            .find(|capability| capability.connector_name() == connector)?;
+        self.scanout
+            .head_index_for_connector_id(capability.connector_id())
     }
 }
 
@@ -454,11 +484,13 @@ impl NativeOutputTopologyHardware for LiveNativeOutputTopologyHardware<'_> {
     fn compose_head(
         &self,
         output: OutputId,
+        connector: &str,
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
-        let Some(index) = self.scanout.output_index(output) else {
+        let Some(index) = self.head_for_connector(connector) else {
             return Err(NativeOutputHeadUnavailable::MissingSelection);
         };
+        let _ = output;
         let selection = self.scanout.selection(index);
         let card = self.scanout.card(index);
         let properties = self.properties(index)?;
@@ -512,9 +544,10 @@ impl NativeOutputScanoutHardware for LiveNativeOutputTopologyHardware<'_> {
     fn compose_apply_head(
         &self,
         output: OutputId,
+        connector: &str,
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
-        let Some(index) = self.scanout.output_index(output) else {
+        let Some(index) = self.head_for_connector(connector) else {
             return Err(NativeOutputHeadUnavailable::MissingSelection);
         };
         let selection = self.scanout.selection(index);
@@ -552,8 +585,9 @@ impl NativeOutputScanoutHardware for LiveNativeOutputTopologyHardware<'_> {
     fn compose_rollback_head(
         &self,
         output: OutputId,
+        connector: &str,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
-        let Some(index) = self.scanout.output_index(output) else {
+        let Some(index) = self.head_for_connector(connector) else {
             return Err(NativeOutputHeadUnavailable::MissingSelection);
         };
         let selection = self.scanout.selection(index);

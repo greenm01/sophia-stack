@@ -37,6 +37,10 @@ struct FakeHardware {
     next_blob: RefCell<u64>,
     created: RefCell<Vec<u64>>,
     released: RefCell<Vec<u64>>,
+    /// Connectors a head was composed for, in order. Under mirroring two heads
+    /// share an `OutputId`, so the connector is the only thing that distinguishes
+    /// them -- recording it is how a test can see that both were driven.
+    composed: RefCell<Vec<String>>,
 }
 
 impl FakeHardware {
@@ -70,11 +74,13 @@ impl NativeOutputTopologyHardware for FakeHardware {
     fn compose_head(
         &self,
         output: OutputId,
+        connector: &str,
         timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
         if let Some(cause) = self.failures.get(&output.raw()) {
             return Err(*cause);
         }
+        self.composed.borrow_mut().push(connector.to_string());
         let mut next = self.next_blob.borrow_mut();
         let mode_blob = *next;
         *next += 1;
@@ -108,6 +114,8 @@ struct FakeScanoutHardware {
     next_blob: RefCell<u64>,
     created: RefCell<Vec<u64>>,
     released: RefCell<Vec<u64>>,
+    /// See `FakeHardware::composed`.
+    composed: RefCell<Vec<String>>,
 }
 
 impl FakeScanoutHardware {
@@ -143,11 +151,13 @@ impl NativeOutputScanoutHardware for FakeScanoutHardware {
     fn compose_apply_head(
         &self,
         output: OutputId,
+        connector: &str,
         _timing: LibdrmNativeOutputTiming,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
         if let Some(cause) = self.apply_failures.get(&output.raw()) {
             return Err(*cause);
         }
+        self.composed.borrow_mut().push(connector.to_string());
         Ok(NativeOutputComposedHead {
             head: TestScanoutHead {
                 output: output.raw(),
@@ -160,10 +170,12 @@ impl NativeOutputScanoutHardware for FakeScanoutHardware {
     fn compose_rollback_head(
         &self,
         output: OutputId,
+        connector: &str,
     ) -> Result<NativeOutputComposedHead<Self::Head>, NativeOutputHeadUnavailable> {
         if let Some(cause) = self.rollback_failures.get(&output.raw()) {
             return Err(*cause);
         }
+        self.composed.borrow_mut().push(connector.to_string());
         Ok(NativeOutputComposedHead {
             head: TestScanoutHead {
                 output: output.raw(),
@@ -255,6 +267,54 @@ fn plan_with_disabled(
     (plan, capabilities)
 }
 
+/// A capability for a connector that shares its logical output with another.
+///
+/// The `output` and `connector_id` differ deliberately: under mirroring one
+/// `OutputId` covers several connectors, which is exactly the case where keying
+/// head composition by output rather than by connector goes wrong.
+fn mirror_capability(
+    output: u64,
+    connector_id: u32,
+    connector: &str,
+) -> LibdrmNativeOutputCapability {
+    LibdrmNativeOutputCapability::new(
+        OutputId::from_raw(output),
+        connector_id,
+        connector,
+        [timing()],
+        Some(timing()),
+        timing(),
+        LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+    )
+    .expect("capability fixture is valid")
+}
+
+#[test]
+fn a_mirror_group_projects_two_connectors_behind_one_output() {
+    // The shape head composition has to survive: one `OutputId`, two connector
+    // rows, one shared position. Keying composition by output would address the
+    // same head twice here and leave the second connector dark.
+    //
+    // The plan cannot yet be built from this topology -- reconciliation refuses
+    // both the overlap and the `mirror:` declaration itself -- so this asserts the
+    // projection, and the end-to-end case lands with the config tranche.
+    let capabilities = vec![
+        mirror_capability(1, 1, "DP-1"),
+        mirror_capability(1, 2, "DP-2"),
+    ];
+
+    let topology = project_native_output_topology(&capabilities, &[headless(1)])
+        .expect("a mirror group projects");
+
+    assert_eq!(topology.connectors.len(), 2);
+    assert_eq!(topology.connectors[0].connector, "DP-1");
+    assert_eq!(topology.connectors[1].connector, "DP-2");
+    assert_eq!(
+        topology.connectors[0].current.position, topology.connectors[1].current.position,
+        "one logical output means one position"
+    );
+}
+
 #[test]
 fn every_enabled_output_contributes_one_head() {
     let (plan, capabilities) = plan_for(&[1, 2]);
@@ -277,6 +337,9 @@ fn every_enabled_output_contributes_one_head() {
             },
         ]
     );
+    // Composition is addressed by connector, which is what keeps a mirror group's
+    // second head from being lost to the first.
+    assert_eq!(*hardware.composed.borrow(), ["DP-1", "DP-2"]);
     assert_eq!(hardware.live_blobs().len(), 2);
 }
 

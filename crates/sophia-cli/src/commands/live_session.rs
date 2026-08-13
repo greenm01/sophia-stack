@@ -288,7 +288,7 @@ pub(crate) fn run_persistent_xterm_session(
         // desktop. Startup still performs no KMS mutation, because a validation
         // executor has no apply. What it settles as is now evidence about the
         // topology rather than evidence that nothing was attempted.
-        let hardware = LiveNativeOutputTopologyHardware::new(native);
+        let hardware = LiveNativeOutputTopologyHardware::new(native, &capabilities);
         let resolved = resolve_native_output_topology_heads(&activation, &capabilities, &hardware);
         let (report, executor, validation) = match &resolved {
             Ok(heads) => match plan_validation_device(native, &activation) {

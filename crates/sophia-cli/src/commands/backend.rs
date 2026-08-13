@@ -325,7 +325,7 @@ fn run_native_topology_validation() -> Result<(), Box<dyn std::error::Error>> {
     let outputs = plan.targets().len();
     let generation = plan.generation().raw();
 
-    let hardware = LiveNativeOutputTopologyHardware::new(&native);
+    let hardware = LiveNativeOutputTopologyHardware::new(&native, &capabilities);
     let resolved = resolve_native_output_topology_heads(&plan, &capabilities, &hardware)
         .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
     let heads = resolved.len();
@@ -423,7 +423,7 @@ fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("native topology is not ready to apply: {admission}").into());
     }
 
-    let hardware = LiveNativeOutputTopologyHardware::new(&native);
+    let hardware = LiveNativeOutputTopologyHardware::new(&native, &capabilities);
     let resolved = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
         .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
     let heads = resolved.len();

@@ -354,6 +354,17 @@ mod persistent_native_scanout {
             self.heads.iter().position(|head| head.output.id == output)
         }
 
+        /// The head driving a named connector.
+        ///
+        /// The one lookup that is exact for a mirror group: every head has its own
+        /// connector even when several share a logical output, so a caller that must
+        /// address one specific head asks by connector rather than by output.
+        pub fn head_index_for_connector_id(&self, connector_id: u32) -> Option<usize> {
+            self.heads
+                .iter()
+                .position(|head| head.selection.connector_id() == connector_id)
+        }
+
         /// Every head driving a logical output, in head order.
         pub fn head_indices(&self, output: OutputId) -> Vec<usize> {
             self.heads
