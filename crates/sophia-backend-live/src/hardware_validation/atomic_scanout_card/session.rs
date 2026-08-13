@@ -612,7 +612,17 @@ impl RealAtomicScanoutSelectionSet {
                         output_count: 0,
                     };
                 };
-                let group = grouping.group_of(selection.connector_id());
+                // The card answers the connector's name directly, which is what
+                // configuration named it. Resolving here rather than upstream is
+                // what keeps the grouping free of the id-to-name circularity.
+                let connector_name = drm::control::Device::get_connector(
+                    &target_set.card,
+                    selection.connector_handle(),
+                    false,
+                )
+                .map(|connector| connector.to_string())
+                .unwrap_or_default();
+                let group = grouping.group_of(&connector_name);
                 let output = match group.and_then(|group| group_outputs.get(&group).copied()) {
                     Some((output, owning_card)) => {
                         if owning_card != card_index {

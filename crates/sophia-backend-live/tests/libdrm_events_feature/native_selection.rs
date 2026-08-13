@@ -459,22 +459,25 @@ fn an_ungrouped_connector_is_its_own_logical_output() {
     let grouping = NativeMirrorGrouping::none();
 
     assert!(grouping.is_empty());
-    assert_eq!(grouping.group_of(41), None);
-    assert!(!grouping.is_mirrored(41));
+    assert_eq!(grouping.group_of("DP-1"), None);
+    assert!(!grouping.is_mirrored("DP-1"));
 }
 
 #[test]
 fn connectors_in_one_group_share_a_logical_output() {
-    let grouping =
-        NativeMirrorGrouping::new([vec![41, 42], vec![43]]).expect("the grouping is well formed");
+    let grouping = NativeMirrorGrouping::new([
+        vec!["DP-1".to_owned(), "DP-2".to_owned()],
+        vec!["DP-3".to_owned()],
+    ])
+    .expect("the grouping is well formed");
 
-    assert_eq!(grouping.group_of(41), grouping.group_of(42));
-    assert_ne!(grouping.group_of(41), grouping.group_of(43));
-    assert!(grouping.is_mirrored(41));
+    assert_eq!(grouping.group_of("DP-1"), grouping.group_of("DP-2"));
+    assert_ne!(grouping.group_of("DP-1"), grouping.group_of("DP-3"));
+    assert!(grouping.is_mirrored("DP-1"));
     // A one-member group shares its output with nobody, so it is not mirrored even
     // though it was named. Reporting it as mirrored would make the mirror path
     // reachable for a desktop that asked for nothing.
-    assert!(!grouping.is_mirrored(43));
+    assert!(!grouping.is_mirrored("DP-3"));
 }
 
 #[test]
@@ -482,15 +485,18 @@ fn one_connector_cannot_belong_to_two_groups() {
     // Two groups claiming a connector leaves the identity of its logical output
     // undefined, which is the one thing a grouping exists to settle.
     assert_eq!(
-        NativeMirrorGrouping::new([vec![41, 42], vec![42, 43]]),
-        Err(NativeMirrorGroupingError::ConnectorInTwoGroups(42))
+        NativeMirrorGrouping::new([
+            vec!["DP-1".to_owned(), "DP-2".to_owned()],
+            vec!["DP-2".to_owned(), "DP-3".to_owned()],
+        ]),
+        Err(NativeMirrorGroupingError::ConnectorInTwoGroups("DP-2".to_owned()))
     );
 }
 
 #[test]
 fn an_empty_group_identifies_no_output() {
     assert_eq!(
-        NativeMirrorGrouping::new([vec![41], Vec::new()]),
+        NativeMirrorGrouping::new([vec!["DP-1".to_owned()], Vec::new()]),
         Err(NativeMirrorGroupingError::EmptyGroup)
     );
 }

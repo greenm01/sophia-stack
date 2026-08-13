@@ -3,7 +3,7 @@ mod persistent_native_scanout {
     use crate::*;
     use sophia_engine::{CompositorBackendTickInput, OutputFramePresentationState};
     use sophia_protocol::{OutputId, TransactionId};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
@@ -153,11 +153,20 @@ mod persistent_native_scanout {
                 .into());
             }
             let outputs = sophia_engine::discover_drm_kms_outputs_from_sysfs("/sys/class/drm")?;
-            if sessions.output_count != outputs.len() {
+            // Ownership is complete when every discovered connector has a head, not
+            // when the logical-output count matches. A mirror group is several heads
+            // behind one logical output, so comparing logical outputs to connectors
+            // would call a correctly mirrored desktop partial.
+            let head_count: usize = sessions
+                .sessions
+                .iter()
+                .map(|session| session.selections().len())
+                .sum();
+            if head_count != outputs.len() {
                 return Err(format!(
-                    "persistent native ownership is partial: discovered={} native={}",
+                    "persistent native ownership is partial: discovered={} heads={}",
                     outputs.len(),
-                    sessions.output_count
+                    head_count
                 )
                 .into());
             }
@@ -320,12 +329,52 @@ mod persistent_native_scanout {
                 .try_clone_file()
         }
 
+        /// The desktop's logical outputs, one per `OutputId`.
+        ///
+        /// Heads are per connector and a mirror group has several sharing one
+        /// logical output, so returning one entry per head would present a group as
+        /// two outputs side by side. Everything above this is a topology, and a
+        /// topology counts screens rather than cables.
         pub fn outputs(&self) -> Vec<sophia_engine::HeadlessOutput> {
-            self.heads.iter().map(|head| head.output).collect()
+            let mut seen = BTreeSet::new();
+            self.heads
+                .iter()
+                .filter(|head| seen.insert(head.output.id))
+                .map(|head| head.output)
+                .collect()
         }
 
+        /// The first head driving a logical output.
+        ///
+        /// Correct only where any head of a group will do — reading a card, or a
+        /// selection's connector and CRTC. A caller that submits, retires, or
+        /// releases per head must use `head_indices` instead, or it will address
+        /// head zero and silently ignore the rest of a mirror group.
         pub fn output_index(&self, output: OutputId) -> Option<usize> {
             self.heads.iter().position(|head| head.output.id == output)
+        }
+
+        /// Every head driving a logical output, in head order.
+        pub fn head_indices(&self, output: OutputId) -> Vec<usize> {
+            self.heads
+                .iter()
+                .enumerate()
+                .filter(|(_, head)| head.output.id == output)
+                .map(|(index, _)| index)
+                .collect()
+        }
+
+        /// How many connectors drive each logical output, in output order.
+        ///
+        /// The topology owner compares this beside the output list: losing one head
+        /// of a mirror group leaves the logical outputs unchanged, so a comparison
+        /// on outputs alone would call that no change at all.
+        pub fn head_fingerprint(&self) -> Vec<(OutputId, usize)> {
+            let mut counts: BTreeMap<OutputId, usize> = BTreeMap::new();
+            for head in &self.heads {
+                *counts.entry(head.output.id).or_default() += 1;
+            }
+            counts.into_iter().collect()
         }
 
         fn allocate_frame_id(&mut self) -> LiveProductionNativeFrameId {

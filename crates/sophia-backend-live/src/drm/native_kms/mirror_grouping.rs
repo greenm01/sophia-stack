@@ -14,22 +14,23 @@ use std::collections::BTreeSet;
 
 /// Connector sets that each drive one logical output.
 ///
-/// Connectors are named by their DRM connector id rather than by name, because this
-/// layer sees ids and the configuration layer that speaks names has already
-/// resolved them.
+/// Keyed by connector name, which is what configuration speaks and what a card can
+/// answer directly from a selection. Keying by DRM connector id looked tidier and
+/// was circular: the id-to-name map lives on a capability, capabilities are readable
+/// only after sessions are built, and the grouping is needed to build them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NativeMirrorGrouping {
-    groups: Vec<Vec<u32>>,
+    groups: Vec<Vec<String>>,
 }
 
 /// Why a proposed grouping cannot be used.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeMirrorGroupingError {
     /// A group named no connector, so it identifies no output.
     EmptyGroup,
     /// One connector appeared in two groups. A connector drives one logical output
     /// or the identity of that output is undefined.
-    ConnectorInTwoGroups(u32),
+    ConnectorInTwoGroups(String),
 }
 
 impl NativeMirrorGrouping {
@@ -40,7 +41,7 @@ impl NativeMirrorGrouping {
 
     /// Builds a grouping, rejecting one that cannot describe a desktop.
     pub fn new(
-        groups: impl IntoIterator<Item = Vec<u32>>,
+        groups: impl IntoIterator<Item = Vec<String>>,
     ) -> Result<Self, NativeMirrorGroupingError> {
         let groups = groups.into_iter().collect::<Vec<_>>();
         let mut claimed = BTreeSet::new();
@@ -49,8 +50,10 @@ impl NativeMirrorGrouping {
                 return Err(NativeMirrorGroupingError::EmptyGroup);
             }
             for connector in group {
-                if !claimed.insert(*connector) {
-                    return Err(NativeMirrorGroupingError::ConnectorInTwoGroups(*connector));
+                if !claimed.insert(connector.clone()) {
+                    return Err(NativeMirrorGroupingError::ConnectorInTwoGroups(
+                        connector.clone(),
+                    ));
                 }
             }
         }
@@ -62,14 +65,14 @@ impl NativeMirrorGrouping {
     /// A connector in no group is its own logical output, which is why this returns
     /// `None` rather than inventing a single-member group: the caller allocates a
     /// fresh identity for it, and a group index would imply a shared one.
-    pub fn group_of(&self, connector: u32) -> Option<usize> {
+    pub fn group_of(&self, connector: &str) -> Option<usize> {
         self.groups
             .iter()
-            .position(|group| group.contains(&connector))
+            .position(|group| group.iter().any(|member| member == connector))
     }
 
     /// Whether this connector shares its logical output with another.
-    pub fn is_mirrored(&self, connector: u32) -> bool {
+    pub fn is_mirrored(&self, connector: &str) -> bool {
         self.group_of(connector)
             .is_some_and(|index| self.groups[index].len() > 1)
     }
