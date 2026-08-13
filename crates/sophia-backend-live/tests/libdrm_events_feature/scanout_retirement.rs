@@ -83,6 +83,63 @@ fn persistent_rendered_scanout_retires_only_the_replaced_displayed_buffer() {
 }
 
 #[test]
+fn live_runtime_assembly_retires_a_mirror_group_only_after_its_last_head_flips() {
+    // The heads of a group scan out one framebuffer. Retiring after the first
+    // flip would release a buffer the sibling connector is still displaying, so
+    // the group waits for its last head.
+    let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-group-retire");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    let device = full_primary_plane_scanout_device();
+    let mut exporter = FakeRenderedScanoutExporter::exported(Size {
+        width: 1280,
+        height: 720,
+    });
+    let output = OutputId::from_raw(1);
+    assert!(assembly.configure_native_output_heads(output, [11, 12]));
+
+    let submitted =
+        assembly.submit_and_track_rendered_primary_plane_scanout_with(&device, &mut exporter);
+    assert_eq!(
+        submitted.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+
+    let first = assembly.observe_page_flip_callback(LivePageFlipCallback {
+        output,
+        connector_id: 11,
+        frame_serial: 70,
+    });
+    assert_eq!(first.decision, LivePageFlipCallbackDecision::Accepted);
+    let waiting =
+        assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &first);
+    assert_eq!(
+        waiting.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip
+    );
+    assert_eq!(waiting.destroy, None);
+    assert!(assembly.rendered_primary_plane_scanout_in_flight());
+
+    let second = assembly.observe_page_flip_callback(LivePageFlipCallback {
+        output,
+        connector_id: 12,
+        frame_serial: 70,
+    });
+    assert_eq!(second.decision, LivePageFlipCallbackDecision::Accepted);
+    let retired =
+        assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &second);
+    assert_eq!(
+        retired.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
+    );
+    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn live_runtime_assembly_rejects_page_flip_replay_at_submission_baseline() {
     let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-baseline-replay");
     let report = discover_live_backend(&LiveBackendConfig::new(&root));

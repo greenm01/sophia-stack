@@ -30,7 +30,7 @@ impl LiveProductionOutputRuntimeSet {
         }
         let mut initial_native_frames = initial_native_frames.unwrap_or_default().into_iter();
         let mut output_runtimes = BTreeMap::new();
-        for (index, output) in outputs.iter().copied().enumerate() {
+        for output in outputs.iter().copied() {
             let assembly = HeadlessCompositorBackendAssembly::new(output)
                 .with_committed_surfaces(committed_surfaces.to_vec());
             let renderer = LiveRendererRuntimeObservation::from_startup_status(
@@ -45,16 +45,34 @@ impl LiveProductionOutputRuntimeSet {
                     .with_persistent_rendered_primary_plane_scanout();
             let mut native_initialized = native_scanout.is_none();
             if let Some(native_scanout) = native_scanout.as_deref_mut() {
+                // Heads are addressed through the output, not through this loop's
+                // position. They coincide only until a mirror group puts two heads
+                // behind one logical output, and then the position would name the
+                // wrong connector for every output after the group.
+                let head_indices = native_scanout.head_indices(output.id);
+                let Some(&primary_head) = head_indices.first() else {
+                    return Err("production native output has no head".into());
+                };
                 runtime = runtime.with_page_flip_callback_queue(LivePageFlipCallbackQueue::new(
-                    native_scanout.take_receiver(index),
+                    native_scanout.take_output_receiver(output.id),
                     64,
                 ));
-                let selection = native_scanout.selection(index);
+                let selection = native_scanout.selection(primary_head);
                 if !runtime.configure_native_output_selection(output.id, selection) {
                     return Err("production native output selection was not registered".into());
                 }
+                // Every connector of the group, so retirement can wait for the last
+                // head rather than the first.
+                if !runtime.configure_native_output_heads(
+                    output.id,
+                    head_indices
+                        .iter()
+                        .map(|head| native_scanout.selection(*head).connector_id()),
+                ) {
+                    return Err("production native output heads were not registered".into());
+                }
                 if let Some(initial_frame) = initial_native_frames.next() {
-                    native_scanout.initialize(index, &mut runtime, initial_frame)?;
+                    native_scanout.initialize(primary_head, &mut runtime, initial_frame)?;
                     native_initialized = true;
                 }
             }
@@ -79,11 +97,18 @@ impl LiveProductionOutputRuntimeSet {
         if frames.len() != self.outputs.len() {
             return Err("production native initialization frame count mismatch".into());
         }
-        for (index, output) in self.outputs.values_mut().enumerate() {
-            if !output.native_initialized {
-                native_scanout.initialize(index, &mut output.runtime, frames[index].clone())?;
-                output.native_initialized = true;
+        for (index, (id, output)) in self.outputs.iter_mut().enumerate() {
+            if output.native_initialized {
+                continue;
             }
+            // Frames are per logical output; heads are per connector. Resolving the
+            // head through the output is what keeps a group from initializing the
+            // wrong connector once the two counts differ.
+            let Some(&head) = native_scanout.head_indices(*id).first() else {
+                return Err("production native output has no head".into());
+            };
+            native_scanout.initialize(head, &mut output.runtime, frames[index].clone())?;
+            output.native_initialized = true;
         }
         Ok(())
     }

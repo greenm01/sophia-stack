@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::collections::BTreeSet;
 
 pub const LIVE_RENDERED_OUTPUT_CAPACITY: usize = 16;
 
@@ -12,6 +13,12 @@ pub struct LiveRenderedOutputState {
     pub(crate) gbm_egl_frame_target_allocation: Option<LiveGbmEglFrameTargetAllocationReport>,
     pub(crate) page_flip_event: LivePageFlipEvent,
     pub(crate) page_flip_callback_intake: LivePageFlipCallbackIntake,
+    /// Connectors backing this logical output.
+    ///
+    /// One entry is the ordinary desktop; several is a mirror group. Empty means
+    /// no head has been configured, which is the headless path -- there is no
+    /// hardware to wait for and nothing to be joint about.
+    pub(crate) head_connectors: BTreeSet<u32>,
     pub(crate) vrr_decision: OutputVrrDecision,
     pub(crate) vrr_property_request: Option<bool>,
     #[cfg(feature = "libdrm-events")]
@@ -62,6 +69,7 @@ impl LiveRenderedOutputState {
                 kms_scanout_target.status,
             ),
             page_flip_callback_intake: LivePageFlipCallbackIntake::new(output.id),
+            head_connectors: BTreeSet::new(),
             vrr_decision: OutputVrrDecision::DisabledByPolicy,
             vrr_property_request: None,
             #[cfg(feature = "libdrm-events")]
@@ -108,6 +116,35 @@ impl LiveRenderedOutputState {
     #[cfg(feature = "libdrm-events")]
     pub const fn native_selection(&self) -> Option<LibdrmNativePrimaryPlaneSelection> {
         self.native_selection
+    }
+
+    /// The connectors backing this output.
+    pub fn head_connectors(&self) -> impl Iterator<Item = u32> + '_ {
+        self.head_connectors.iter().copied()
+    }
+
+    /// Whether a mirror group still has a head that has not flipped this submission.
+    ///
+    /// Derived rather than counted: the intake already records the newest serial
+    /// per head, and the submission already records the serial it was submitted
+    /// after, so "this head has flipped since we submitted" is a comparison rather
+    /// than a second tally that could disagree with the first.
+    ///
+    /// Only a group can be waiting. With one head there is nothing joint about
+    /// retirement and the single-head rules decide it, so this deliberately cannot
+    /// change what an unmirrored desktop does.
+    pub fn group_awaiting_flip(&self, submitted_after_page_flip_serial: Option<u64>) -> bool {
+        self.head_connectors.len() > 1
+            && self.head_connectors.iter().any(|connector| {
+                match (
+                    self.page_flip_callback_intake.head_frame_serial(*connector),
+                    submitted_after_page_flip_serial,
+                ) {
+                    (None, _) => true,
+                    (Some(serial), Some(baseline)) => serial <= baseline,
+                    (Some(_), None) => false,
+                }
+            })
     }
 }
 

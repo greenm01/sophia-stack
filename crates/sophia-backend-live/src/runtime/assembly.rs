@@ -76,6 +76,25 @@ where
             return false;
         };
         state.native_selection = Some(selection);
+        state.head_connectors.insert(selection.connector_id());
+        true
+    }
+
+    /// Registers every connector backing one logical output.
+    ///
+    /// A mirror group has several, and the group is what retires together, so the
+    /// runtime has to know the whole set rather than inferring it from whichever
+    /// selection was configured last.
+    #[cfg(feature = "libdrm-events")]
+    pub fn configure_native_output_heads(
+        &mut self,
+        output: OutputId,
+        connectors: impl IntoIterator<Item = u32>,
+    ) -> bool {
+        let Some(state) = self.outputs.get_mut(output) else {
+            return false;
+        };
+        state.head_connectors.extend(connectors);
         true
     }
 

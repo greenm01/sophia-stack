@@ -274,6 +274,21 @@ where
         };
     };
 
+    // A mirror group retires when its last head flips, not its first. The heads
+    // scan out one framebuffer, so releasing it after one flip would destroy a
+    // buffer a sibling connector is still displaying.
+    if state.group_awaiting_flip(submission.submitted_after_page_flip_serial) {
+        state.rendered_primary_plane_scanout_submission = Some(submission);
+        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
+            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip,
+            destroy: None,
+            runtime_scanout_state: None,
+            in_flight: true,
+            in_flight_ticks: state.rendered_primary_plane_scanout_in_flight_ticks,
+            cleanup_pending: state.cleanup_pending(),
+        };
+    }
+
     if !state.retain_rendered_primary_plane_displayed_submission {
         let retired =
             retire_rendered_primary_plane_scanout_after_page_flip(device, submission, callback);

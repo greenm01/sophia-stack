@@ -32,6 +32,11 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
+        /// One callback channel per logical output, taken once when its runtime is
+        /// built. Per output rather than per head because a mirror group's heads
+        /// feed one runtime: two queues would make the group's flips arrive as two
+        /// unrelated streams that nothing joins back up.
+        output_callbacks: BTreeMap<OutputId, Receiver<crate::LivePageFlipCallback>>,
         next_frame_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
         pub presentation_started: Instant,
@@ -61,8 +66,9 @@ mod persistent_native_scanout {
         pub exporter: crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
             crate::RealAtomicScanoutRenderDeviceDiscovery,
         >,
+        /// Feeds this head's logical output. Every head of a mirror group holds a
+        /// clone of the same sender.
         pub sender: SyncSender<crate::LivePageFlipCallback>,
-        pub receiver: Option<Receiver<crate::LivePageFlipCallback>>,
         pub output: sophia_engine::HeadlessOutput,
         pub submitted_at: Option<Instant>,
         pub submitted_ust_usec: Option<u64>,
@@ -215,6 +221,9 @@ mod persistent_native_scanout {
                 crate::LiveProductionPageFlipTracker::from_outputs(&presentation_outputs);
             let mut groups = Vec::new();
             let mut heads = Vec::new();
+            let mut output_senders: BTreeMap<OutputId, SyncSender<crate::LivePageFlipCallback>> =
+                BTreeMap::new();
+            let mut output_callbacks = BTreeMap::new();
             for session in sessions.sessions.drain(..) {
                 let group = groups.len();
                 for (selection, output_id) in session
@@ -231,13 +240,19 @@ mod persistent_native_scanout {
                                 session
                                     .preferred_xrgb8888_scanout_modifiers_for_selection(selection),
                             );
-                    let (sender, receiver) = sync_channel(64);
+                    let sender = output_senders
+                        .entry(output_id)
+                        .or_insert_with(|| {
+                            let (sender, receiver) = sync_channel(64);
+                            output_callbacks.insert(output_id, receiver);
+                            sender
+                        })
+                        .clone();
                     heads.push(LiveProductionNativeHead {
                         group,
                         selection,
                         exporter,
                         sender,
-                        receiver: Some(receiver),
                         output: sophia_engine::HeadlessOutput {
                             id: output_id,
                             size,
@@ -302,6 +317,7 @@ mod persistent_native_scanout {
                 callback_rejected: 0,
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
+                output_callbacks,
                 next_frame_id: 1,
                 production_page_flips,
                 presentation_started: Instant::now(),
@@ -432,11 +448,13 @@ mod persistent_native_scanout {
             self.groups[self.heads[index].group].session.card()
         }
 
-        pub fn take_receiver(&mut self, index: usize) -> Receiver<crate::LivePageFlipCallback> {
-            self.heads[index]
-                .receiver
-                .take()
-                .expect("native page-flip receiver must attach once")
+        pub fn take_output_receiver(
+            &mut self,
+            output: OutputId,
+        ) -> Receiver<crate::LivePageFlipCallback> {
+            self.output_callbacks
+                .remove(&output)
+                .expect("native page-flip receiver must attach once per logical output")
         }
 
         pub fn run_tick(
