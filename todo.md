@@ -779,15 +779,40 @@ is excluded; retained product behavior is not.
   invariants were confirmed non-vacuous by negative controls that let a head loss
   leave the scene alone. `VisualRetirement.tla` needed no change; it was already
   ahead of the code.
-  What remains is the render path -- lease and framebuffer ownership per logical
-  output retired when the last head flips, head identity on page-flip callbacks, a
-  multi-head page-flip submit, one exporter per group, a head fingerprint in
-  `observe_rebuild`, and a head-loss arm -- and then the config tranche: `mirror_of`
-  on `DesktopOutputState`, the same-group overlap exemption, and deleting
-  `MirrorUnsupported`. The config tranche is what makes an end-to-end mirror test
-  reachable at all; until it lands, reconciliation refuses both the shared position
-  and the `mirror` directive, so the head-composition test asserts the projection
-  shape those changes must preserve.
+  Most of the render path is now in place. Page-flip callbacks carry the connector,
+  which the decode already had as a slot and threw away; the router matches on it
+  instead of taking the first head with the right output, and the monotonic
+  frame-serial guard is per connector so a sibling's flip is no longer rejected as
+  a stale repeat of the first. A group retires when its last head flips rather than
+  its first, which is what keeps a framebuffer from being destroyed while a sibling
+  connector still scans it out; whether a head has flipped is derived from the
+  intake's per-head serials against the submission baseline rather than tallied a
+  second time. The callback channel is per logical output, because a group's heads
+  feed one runtime. The topology owner carries a head count beside the output list,
+  so losing one connector of a group is a new candidate rather than no change at
+  all -- the code answer to `PublishedHeadsAreCurrent`.
+  One fault found on the way was wider than mirroring. Nine call sites passed a
+  position in the logical-output list into a parameter that indexes the head table.
+  The two agree exactly while every output has one head, so it never failed; a
+  group ends the coincidence and every output after it would be driven through the
+  wrong connector. Every per-head entry point now takes an `OutputId` and resolves
+  the head itself, and the lookup is renamed `primary_head_index` because
+  `output_index` is the name that invited the mistake.
+  What remains of the render path is buffer sharing: one exporter per group rather
+  than per head, so a group renders one frame into one buffer instead of two; a
+  multi-head page-flip submit, since `build_native_multi_head_atomic_request`
+  supports `Scope::PageFlip` but only the modeset entry points are exposed; and the
+  head-loss arm that drops the lease without counting a flip and fails the
+  candidate closed. The framebuffer is created inside each head's submit, so two
+  heads sharing a buffer object would each `ADD_FB2` and get distinct handles, and
+  `RM_FB` would then run twice against one handle -- the second failing and latching
+  cleanup permanently. Both have to be resolved together with the lease, which is a
+  move-only affine token whose `Drop` is the release.
+  Then the config tranche: `mirror_of` on `DesktopOutputState`, the same-group
+  overlap exemption, and deleting `MirrorUnsupported`. That tranche is what makes
+  an end-to-end mirror test reachable at all; until it lands, reconciliation
+  refuses both the shared position and the `mirror` directive, so the
+  head-composition test asserts the projection shape those changes must preserve.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
