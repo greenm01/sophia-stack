@@ -77,7 +77,7 @@
         };
         match replacement {
             Err(error) => {
-                let _ = output_topology_owner.observe_rebuild(Vec::new())?;
+                let _ = output_topology_owner.observe_rebuild(Vec::new(), Vec::new())?;
                 suspended_renderer_images = renderer_handoff;
                 output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
                 tracing::warn!(
@@ -87,7 +87,8 @@
             }
             Ok(mut replacement) => {
                 let replacement_outputs = replacement.outputs();
-                let rebuild = output_topology_owner.observe_rebuild(replacement_outputs.clone())?;
+                let rebuild = output_topology_owner
+                    .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
                 let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
                 let replacement_primary = replacement_outputs[0];
                 if scene.reconfigure_output_size(replacement_primary.size)? {

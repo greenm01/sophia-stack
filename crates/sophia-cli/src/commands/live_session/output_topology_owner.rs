@@ -22,6 +22,12 @@ struct LiveOutputTopologyOwner {
     topology_epoch: u64,
     publication_generation: u64,
     outputs: Vec<sophia_engine::HeadlessOutput>,
+    /// How many connectors drive each logical output.
+    ///
+    /// Held beside the output list because losing one head of a mirror group
+    /// leaves that list identical: the logical output survives, one of its screens
+    /// goes dark, and a comparison on outputs alone calls it no change at all.
+    heads: Vec<(sophia_protocol::OutputId, usize)>,
     policy_committed: bool,
     policy_settlement_pending: bool,
     presentation_baseline: usize,
@@ -30,6 +36,7 @@ struct LiveOutputTopologyOwner {
 impl LiveOutputTopologyOwner {
     fn new_at_generation(
         outputs: Vec<sophia_engine::HeadlessOutput>,
+        heads: Vec<(sophia_protocol::OutputId, usize)>,
         publication_generation: u64,
     ) -> Result<Self, &'static str> {
         if outputs.is_empty() {
@@ -45,6 +52,7 @@ impl LiveOutputTopologyOwner {
             topology_epoch: 1,
             publication_generation,
             outputs,
+            heads,
             policy_committed: true,
             policy_settlement_pending: false,
             presentation_baseline: 0,
@@ -84,6 +92,7 @@ impl LiveOutputTopologyOwner {
     fn observe_rebuild(
         &mut self,
         outputs: Vec<sophia_engine::HeadlessOutput>,
+        heads: Vec<(sophia_protocol::OutputId, usize)>,
     ) -> Result<LiveOutputTopologyRebuild, &'static str> {
         if self.phase != LiveOutputTopologyPhase::Quarantined {
             return Err("live topology rebuild was observed outside quarantine");
@@ -91,7 +100,10 @@ impl LiveOutputTopologyOwner {
         if outputs.is_empty() {
             return Ok(LiveOutputTopologyRebuild::Unavailable);
         }
-        let changed = outputs != self.outputs;
+        // A surviving-head topology is a new candidate. Comparing the head counts
+        // as well as the outputs is what makes that true here rather than only in
+        // the model that requires it.
+        let changed = outputs != self.outputs || heads != self.heads;
         if changed {
             self.topology_epoch = self
                 .topology_epoch
@@ -102,6 +114,7 @@ impl LiveOutputTopologyOwner {
                 .checked_add(1)
                 .ok_or("live output publication generation exhausted")?;
             self.outputs = outputs;
+            self.heads = heads;
         }
         self.phase = LiveOutputTopologyPhase::Rebuilt;
         Ok(if changed {

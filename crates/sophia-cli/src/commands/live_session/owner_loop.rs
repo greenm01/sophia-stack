@@ -162,10 +162,17 @@ fn run_session_loop(
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
     let mut output = outputs[0];
+    // Headless has no connectors, so every output is its own single head. That is
+    // the same shape hardware reports for an unmirrored desktop.
+    let heads = native_scanout
+        .as_ref()
+        .map(LiveProductionNativeScanout::head_fingerprint)
+        .unwrap_or_else(|| outputs.iter().map(|output| (output.id, 1)).collect());
     let initial_output_publication_generation =
         1u64.saturating_add(u64::from(config.inject_output_size.is_some()));
     let mut output_topology_owner = LiveOutputTopologyOwner::new_at_generation(
         outputs.clone(),
+        heads,
         initial_output_publication_generation,
     )?;
     let mut output_topology_monitor = native_scanout

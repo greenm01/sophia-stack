@@ -636,7 +636,8 @@ macro_rules! schedule_output_topology_rebuild {
 macro_rules! publish_resumed_topology_transport {
     ($native:expr) => {{
         if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined {
-            let rebuild = output_topology_owner.observe_rebuild(outputs.clone())?;
+            let rebuild = output_topology_owner
+                .observe_rebuild(outputs.clone(), $native.head_fingerprint())?;
             debug_assert_eq!(rebuild, LiveOutputTopologyRebuild::TransportReplaced);
             output_topology_owner.mark_published($native.retirements, false)?;
             output_topology_retry_at = None;
