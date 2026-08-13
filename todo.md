@@ -322,12 +322,26 @@ is excluded; retained product behavior is not.
   authority for them. Decision 2 settled the neighbouring question for the WM side:
   classifications reach policy through a capability-gated extension chunk, so the
   broker's design is no longer constrained by what fits in `SnapshotSurface`.
-  One structural question is open and should be settled before code: which crate
-  owns the broker. `docs/style-guide.md` assigns `portal` cross-namespace transfer
-  policy, which is the closest existing layer, but a metadata broker is a
-  disclosure authority rather than a transfer one. Picking wrong is expensive
-  because it decides who may see client metadata, so this is a decision to take
-  deliberately rather than by whichever module was open at the time.
+  The crate question is settled: `sophia-broker`, its own crate and its own
+  `PolicyRole::Broker` socket. Not `sophia-portal`, whose broker is a single-use
+  transfer grant lifecycle with nothing in common beyond the word, and whose own
+  ownership row forbids the client-global visibility a metadata broker needs.
+  **Built so far**, all with the authority reducing and the broker never holding raw
+  identity: the disclosure vocabulary in `sophia-protocol`; authority-side reduction
+  in `sophia-x-authority`; the `sophia-broker` crate owning trust, icon tokens,
+  disclosure rules, and descriptor emission; `PolicyRole::Broker` with its own socket
+  and env var; and the metadata broker health smoke reporting the real broker.
+  The chain is proven to compose end to end in `crates/sophia-cli/tests/metadata_chain.rs`
+  — authority reduction, broker, `ChromeDescriptorTable` — including that a title
+  never reaches Engine under a `ClassOnly` rule, and that the Engine ingress needed
+  no widening to accept broker output.
+  **Not yet hosted.** Neither `ChromeDescriptorTable` nor `MetadataBroker` has a
+  production instance; both live in tests. Hosting them needs a session owner and,
+  because they are separate authorities, the broker interface family's own wire —
+  schema, codec, and revision line under clause 3, which is its own tranche rather
+  than a loose end of this one. Until that lands the chain is proven and unwired,
+  which is worth stating plainly: no running session produces a chrome descriptor
+  today.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its
