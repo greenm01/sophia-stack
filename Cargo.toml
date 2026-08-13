@@ -2,6 +2,7 @@
 members = [
     "crates/sophia-cli",
     "crates/sophia-backend-live",
+    "crates/sophia-broker",
     "crates/sophia-config",
     "crates/sophia-engine",
     "crates/sophia-portal",
@@ -19,6 +20,7 @@ members = [
 default-members = [
     "crates/sophia-cli",
     "crates/sophia-backend-live",
+    "crates/sophia-broker",
     "crates/sophia-config",
     "crates/sophia-engine",
     "crates/sophia-portal",

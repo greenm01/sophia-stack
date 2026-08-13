@@ -16,17 +16,6 @@ pub struct ChromeDescriptorTable {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SanitizedChromeMetadata {
-    pub surface: SurfaceId,
-    pub label: Option<String>,
-    pub label_redacted: bool,
-    pub icon: Option<IconTokenId>,
-    pub trust_level: TrustLevel,
-    pub attention: AttentionState,
-    pub generation: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MetadataChromeUpdate {
     Upserted { surface: SurfaceId },
     Removed { surface: SurfaceId },

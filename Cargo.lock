@@ -509,6 +509,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-broker"
+version = "0.1.0"
+dependencies = [
+ "sophia-protocol",
+]
+
+[[package]]
 name = "sophia-cli"
 version = "0.1.0"
 dependencies = [

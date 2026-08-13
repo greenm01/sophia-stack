@@ -79,6 +79,27 @@ pub struct ReducedMetadataCandidate {
     pub generation: u64,
 }
 
+/// What the metadata broker sends Engine about one surface.
+///
+/// A boundary packet, so it lives with the other packets rather than inside the
+/// crate that happens to receive it. The broker produces it and Engine consumes it;
+/// putting it in Engine would make the producer depend on its own consumer.
+///
+/// The label arrives as plain text plus a redaction bit rather than a `DisplayLabel`
+/// because Engine validates before it trusts: `ChromeDescriptorTable` is where the
+/// bound and the control-character rule are enforced, and a pre-built `DisplayLabel`
+/// would imply that check already happened.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SanitizedChromeMetadata {
+    pub surface: SurfaceId,
+    pub label: Option<String>,
+    pub label_redacted: bool,
+    pub icon: Option<IconTokenId>,
+    pub trust_level: TrustLevel,
+    pub attention: AttentionState,
+    pub generation: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChromeDescriptor {
     pub surface: SurfaceId,
