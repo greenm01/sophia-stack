@@ -557,12 +557,28 @@ pub enum RealAtomicScanoutPageFlipSessionSetStatus {
     SelectionFailed,
     CardCloneFailed,
     CapacityExceeded,
+    /// A mirror group named connectors on different cards. One atomic request
+    /// reaches one device, so such a group could never be committed as a unit.
+    MirrorGroupSpansDevices,
 }
 
 impl RealAtomicScanoutSelectionSet {
     pub fn into_page_flip_sessions(
         self,
         authority: LibdrmBackendFdAuthority,
+    ) -> RealAtomicScanoutPageFlipSessionSetResult {
+        self.into_page_flip_sessions_with_mirroring(authority, &NativeMirrorGrouping::none())
+    }
+
+    /// Builds sessions, giving every connector in a mirror group one logical output.
+    ///
+    /// Slots stay per connector because each head has its own page flip to intake;
+    /// only the output identity is shared. That is what makes a mirror group one
+    /// `SnapshotOutput` to policy while remaining N heads to the kernel.
+    pub fn into_page_flip_sessions_with_mirroring(
+        self,
+        authority: LibdrmBackendFdAuthority,
+        grouping: &NativeMirrorGrouping,
     ) -> RealAtomicScanoutPageFlipSessionSetResult {
         if self.status != RealAtomicScanoutSelectionSetStatus::SelectedAll {
             return RealAtomicScanoutPageFlipSessionSetResult {
@@ -574,7 +590,10 @@ impl RealAtomicScanoutSelectionSet {
         let mut sessions = Vec::new();
         let mut next_output = 1u64;
         let mut next_slot = 1u16;
-        for target_set in self.cards {
+        // Logical outputs already handed to a mirror group, so its later members
+        // join it instead of taking a fresh identity.
+        let mut group_outputs: BTreeMap<usize, (OutputId, usize)> = BTreeMap::new();
+        for (card_index, target_set) in self.cards.into_iter().enumerate() {
             let Ok(reader_card) = target_set.card.try_clone() else {
                 return RealAtomicScanoutPageFlipSessionSetResult {
                     status: RealAtomicScanoutPageFlipSessionSetStatus::CardCloneFailed,
@@ -593,11 +612,31 @@ impl RealAtomicScanoutSelectionSet {
                         output_count: 0,
                     };
                 };
-                let output = OutputId::from_raw(next_output);
+                let group = grouping.group_of(selection.connector_id());
+                let output = match group.and_then(|group| group_outputs.get(&group).copied()) {
+                    Some((output, owning_card)) => {
+                        if owning_card != card_index {
+                            return RealAtomicScanoutPageFlipSessionSetResult {
+                                status:
+                                    RealAtomicScanoutPageFlipSessionSetStatus::MirrorGroupSpansDevices,
+                                sessions: Vec::new(),
+                                output_count: 0,
+                            };
+                        }
+                        output
+                    }
+                    None => {
+                        let output = OutputId::from_raw(next_output);
+                        next_output = next_output.saturating_add(1);
+                        if let Some(group) = group {
+                            group_outputs.insert(group, (output, card_index));
+                        }
+                        output
+                    }
+                };
                 crtc_routes.push(selection.crtc_route(slot));
                 output_routes.push(LibdrmNativeOutputRoute { slot, output });
                 outputs.push(output);
-                next_output = next_output.saturating_add(1);
                 next_slot = next_slot.saturating_add(1);
             }
             let reader =
