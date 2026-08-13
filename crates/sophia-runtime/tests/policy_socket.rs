@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use sophia_runtime::{
-    PolicyPeerIdentity, PolicyRoleEndpoint, PolicyRoleEndpointError, SOPHIA_WM_SOCKET_ENV,
+    PolicyPeerIdentity, PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError,
+    SOPHIA_WM_SOCKET_ENV,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -135,4 +136,30 @@ fn unique_directory(label: &str) -> std::path::PathBuf {
         "sophia-policy-{label}-{}-{serial}",
         std::process::id()
     ))
+}
+
+#[test]
+fn every_role_has_its_own_socket_and_environment_variable() {
+    // A role is an interface family and an admission boundary at once. Two roles
+    // sharing a socket would let one authority's peer connect where another's was
+    // authorized, which is the conflation the split exists to prevent -- and a
+    // shared env var would send it there by accident rather than by attack.
+    let roles = [PolicyRole::Wm, PolicyRole::Shell, PolicyRole::Broker];
+
+    let mut names = roles.map(PolicyRole::socket_file_name).to_vec();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(
+        names.len(),
+        roles.len(),
+        "socket file names must be distinct"
+    );
+
+    let mut envs = roles.map(PolicyRole::socket_env).to_vec();
+    envs.sort_unstable();
+    envs.dedup();
+    assert_eq!(envs.len(), roles.len(), "socket env vars must be distinct");
+
+    assert_eq!(PolicyRole::Broker.socket_file_name(), "broker.sock");
+    assert_eq!(PolicyRole::Broker.socket_env(), "SOPHIA_BROKER_SOCKET");
 }

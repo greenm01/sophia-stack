@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 pub const SOPHIA_WM_SOCKET_ENV: &str = "SOPHIA_WM_SOCKET";
 pub const SOPHIA_SHELL_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
+pub const SOPHIA_BROKER_SOCKET_ENV: &str = "SOPHIA_BROKER_SOCKET";
 
 /// One exclusive policy role, and therefore one interface family.
 ///
@@ -20,6 +21,14 @@ pub enum PolicyRole {
     Wm,
     /// The reserved shell family. Its interface is not yet published.
     Shell,
+    /// The metadata broker family.
+    ///
+    /// A separate role rather than a message inside another family, because the
+    /// broker is a separate authority with its own disclosure budget: it publishes
+    /// rules to authorities and descriptors to Engine, and neither of those is
+    /// spatial policy. Sharing the WM socket would also give a broker peer the WM's
+    /// admission, which is exactly the conflation the role split exists to prevent.
+    Broker,
 }
 
 impl PolicyRole {
@@ -28,6 +37,7 @@ impl PolicyRole {
         match self {
             Self::Wm => "wm.sock",
             Self::Shell => "shell.sock",
+            Self::Broker => "broker.sock",
         }
     }
 
@@ -36,6 +46,7 @@ impl PolicyRole {
         match self {
             Self::Wm => SOPHIA_WM_SOCKET_ENV,
             Self::Shell => SOPHIA_SHELL_SOCKET_ENV,
+            Self::Broker => SOPHIA_BROKER_SOCKET_ENV,
         }
     }
 }

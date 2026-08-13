@@ -52,13 +52,25 @@ fn run_broker_health_smoke(
     broker: BrokerKind,
     _args: &[String],
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let packet = BrokerHealthPacket::new(
-        broker,
-        BrokerHealthState::Ready,
-        1,
-        Some("placeholder ready".to_owned()),
-    )
-    .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+    // The metadata broker reports its own state now. The portal broker still has no
+    // health source of its own, so it keeps a stated placeholder rather than
+    // borrowing the metadata broker's -- a health line that describes a different
+    // component is worse than one that admits it is a stand-in.
+    let (state, message) = match broker {
+        BrokerKind::Metadata => {
+            let broker = sophia_broker::MetadataBroker::new();
+            (
+                BrokerHealthState::Ready,
+                Some(format!("metadata broker ready, surfaces={}", broker.len())),
+            )
+        }
+        BrokerKind::Portal => (
+            BrokerHealthState::Ready,
+            Some("placeholder ready".to_owned()),
+        ),
+    };
+    let packet = BrokerHealthPacket::new(broker, state, 1, message)
+        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
     let frame = encode_broker_health_frame(&packet)
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
     let decoded = decode_broker_health_frame(&frame)

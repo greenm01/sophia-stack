@@ -521,6 +521,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sophia-backend-live",
+ "sophia-broker",
  "sophia-config",
  "sophia-engine",
  "sophia-portal",

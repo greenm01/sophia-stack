@@ -14,17 +14,16 @@ mod prelude {
         MAX_NOTIFICATION_SUMMARY_LEN, NotificationRequest, NotificationUrgency, PortalCommand,
     };
     pub(crate) use sophia_protocol::{
-        AttentionState, AxisSpan, BrokerHealthPacket, BufferSource, ChromeActionKind,
-        ChromeActionRequest, ChromeDescriptor, CommittedSurfaceState, DamageFrame, DeviceId,
-        DisplayLabel, FrameSnapshot, IconTokenId, InputEventKind, InputEventPacket, InputRoute,
-        InputRouteOutcome, IpcCodecError, LayerSnapshot, LayoutNodeSnapshot, LayoutTransaction,
-        MAX_CHROME_LABEL_LEN, OutputEdge, OutputId, OutputReservation, Point, PortalTransferId,
-        Rect, Region, RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
+        AxisSpan, BrokerHealthPacket, BufferSource, ChromeActionKind, ChromeActionRequest,
+        ChromeDescriptor, CommittedSurfaceState, DamageFrame, DeviceId, DisplayLabel,
+        FrameSnapshot, InputEventKind, InputEventPacket, InputRoute, InputRouteOutcome,
+        IpcCodecError, LayerSnapshot, LayoutNodeSnapshot, LayoutTransaction, MAX_CHROME_LABEL_LEN,
+        OutputEdge, OutputId, OutputReservation, Point, PortalTransferId, Rect, Region,
+        RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
         SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SanitizedChromeMetadata, SeatId, Size,
         SurfaceId, SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
         SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
-        TransactionOutcome, TrustLevel, WmRequestKind, WmRequestPacket, WmResponsePacket,
-        WorkspaceId,
+        TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
     };
     pub(crate) use sophia_runtime::{
         RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,
