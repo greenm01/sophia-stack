@@ -52,6 +52,8 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: atomic-scanout-preflight");
     #[cfg(feature = "atomic-scanout-live")]
     println!("commands: native-topology-probe (read-only; needs DRM master)");
+    println!("          native-mirror-probe (validation-only; needs DRM master)");
+    println!("          native-mirror-page-flip (real commit; opt-in; needs DRM master)");
     println!("commands: native-topology-validate (read-only; needs DRM master)");
     println!(
         "commands: native-topology-apply (MUTATES outputs; needs SOPHIA_NATIVE_OUTPUT_APPLY=1)"

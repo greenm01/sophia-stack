@@ -38,6 +38,51 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    if args.iter().any(|arg| arg == "native-mirror-probe") {
+        // Validation-only. Every commit carries TEST_ONLY, so nothing reaches a
+        // screen. Unlike the topology probe this does allocate: a shared
+        // framebuffer cannot be tested without one. The buffers are dumb buffers
+        // created and destroyed inside the probe and are never shown. It needs
+        // DRM master, so no other compositor may hold the card.
+        let report = sophia_backend_live::native_mirror_probe_report();
+        println!("{}", report.reduced_log_line());
+
+        if !report.answered() {
+            return Err(format!(
+                "native mirror probe reached no conclusion: {:?}",
+                report.status
+            )
+            .into());
+        }
+
+        return Ok(true);
+    }
+
+    if args.iter().any(|arg| arg == "native-mirror-page-flip") {
+        // This one commits for real, so it is gated behind an explicit opt-in.
+        // It is still as close to a no-op as the question allows: each CRTC is
+        // flipped to the framebuffer it is already scanning out, at its current
+        // mode, with no ALLOW_MODESET. Nothing on screen changes. It cannot be
+        // answered with TEST_ONLY, because the kernel rejects that together with
+        // PAGE_FLIP_EVENT before looking at anything else -- and the event
+        // behaviour is exactly what is being asked.
+        if std::env::var_os("SOPHIA_NATIVE_MIRROR_PAGE_FLIP").is_none() {
+            return Err("set SOPHIA_NATIVE_MIRROR_PAGE_FLIP=1 to commit a real page flip".into());
+        }
+        let report = sophia_backend_live::native_mirror_page_flip_report();
+        println!("{}", report.reduced_log_line());
+
+        if !report.attempted {
+            return Err(format!(
+                "native mirror page flip was not attempted: {:?}",
+                report.skipped
+            )
+            .into());
+        }
+
+        return Ok(true);
+    }
+
     #[cfg(feature = "atomic-scanout-live")]
     if args.iter().any(|arg| arg == "native-topology-validate") {
         run_native_topology_validation()?;

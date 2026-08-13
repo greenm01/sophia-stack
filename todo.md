@@ -798,6 +798,23 @@ is excluded; retained product behavior is not.
   wrong connector. Every per-head entry point now takes an `OutputId` and resolves
   the head itself, and the lookup is renamed `primary_head_index` because
   `output_index` is the name that invited the mistake.
+  The hardware has now answered the question buffer sharing rests on. On card0,
+  DP-1 and DP-2 share modes up to 1920x1080, and a validation-only two-head modeset
+  naming one framebuffer for both primary planes is accepted -- as is one mode blob
+  serving both CRTCs. The control ran beside it, two heads with a framebuffer each,
+  and was also accepted, so the acceptance is about sharing rather than about the
+  driver being indifferent to two-CRTC commits. A mirror group can therefore own a
+  single buffer, which is what the exporter-per-group and single-`ADD_FB2` design
+  assumes. `tools/native_mirror_probe.sh` is the probe; it allocates dumb buffers
+  and destroys them, and every commit carries `TEST_ONLY`, so it changes nothing.
+  One hardware question is still open, and joint retirement already depends on the
+  answer: does a two-CRTC page-flip commit deliver one event per CRTC or one event
+  per commit? If it is one per commit, a group waiting for every head waits forever.
+  It cannot be asked with `TEST_ONLY`, which the kernel rejects together with
+  `PAGE_FLIP_EVENT`, so the probe's second phase commits for real -- flipping each
+  CRTC to the framebuffer it is already scanning out, at its current mode, with no
+  `ALLOW_MODESET`, so nothing on screen changes. It is opt-in behind
+  `SOPHIA_NATIVE_MIRROR_PAGE_FLIP=1`.
   What remains of the render path is buffer sharing: one exporter per group rather
   than per head, so a group renders one frame into one buffer instead of two; a
   multi-head page-flip submit, since `build_native_multi_head_atomic_request`
