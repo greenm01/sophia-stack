@@ -157,6 +157,10 @@ pub struct NativeMirrorPageFlipReport {
     /// Why not, when the flip could not be attempted at all.
     pub skipped: Option<NativeMirrorPageFlipSkip>,
     pub commit: NativeMirrorValidation,
+    /// What the request builder said. A commit that was never submitted has a
+    /// reason, and swallowing it leaves "not_attempted" looking like a refusal by
+    /// the driver when it was a refusal by our own validation.
+    pub build: LibdrmNativeMultiHeadRequestBuildStatus,
     pub events_on_first_crtc: usize,
     pub events_on_second_crtc: usize,
     /// Events that decoded to neither CRTC. Nonzero means the reader saw traffic
@@ -174,6 +178,17 @@ pub enum NativeMirrorPageFlipSkip {
     /// probe deliberately will not modeset to create the condition: that would
     /// change what is on the display to answer a question about events.
     CrtcInactive,
+    /// The two CRTCs already share one framebuffer but run different modes.
+    ///
+    /// Worth stating plainly, because it is evidence rather than an obstacle: the
+    /// kernel console is driving two connectors from a single buffer right now, on
+    /// this hardware, which is a stronger demonstration that sharing works than a
+    /// validation-only commit can give. What it is not is a mirror group -- a group
+    /// is same-mode, and these two are not -- so re-presenting the current state
+    /// cannot answer a question about how a group completes. Reshaping the planes
+    /// to make it one would change what is on the display, which this probe will
+    /// not do.
+    SharedFramebufferSizeMismatch,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -183,6 +198,7 @@ impl NativeMirrorPageFlipReport {
             attempted: false,
             skipped: Some(reason),
             commit: NativeMirrorValidation::NotAttempted,
+            build: LibdrmNativeMultiHeadRequestBuildStatus::NoHeads,
             events_on_first_crtc: 0,
             events_on_second_crtc: 0,
             unattributed_events: 0,
@@ -194,14 +210,18 @@ impl NativeMirrorPageFlipReport {
             None => "attempted",
             Some(NativeMirrorPageFlipSkip::NotRequested) => "not_requested",
             Some(NativeMirrorPageFlipSkip::CrtcInactive) => "crtc_inactive",
+            Some(NativeMirrorPageFlipSkip::SharedFramebufferSizeMismatch) => {
+                "shared_framebuffer_size_mismatch"
+            }
         }
     }
 
     pub fn reduced_log_line(&self) -> String {
         format!(
-            "sophia_native_mirror_page_flip schema=1 phase={} commit={} commit_errno={} \
-events_first_crtc={} events_second_crtc={} unattributed_events={}",
+            "sophia_native_mirror_page_flip schema=1 phase={} build={:?} commit={} \
+commit_errno={} events_first_crtc={} events_second_crtc={} unattributed_events={}",
             self.label(),
+            self.build,
             self.commit.label(),
             self.commit.errno(),
             self.events_on_first_crtc,
@@ -294,6 +314,7 @@ pub fn native_mirror_page_flip_report_from_dev_dri(
         attempted: true,
         skipped: None,
         commit: NativeMirrorValidation::NotAttempted,
+        build: LibdrmNativeMultiHeadRequestBuildStatus::NoHeads,
         events_on_first_crtc: 0,
         events_on_second_crtc: 0,
         unattributed_events: 0,
@@ -307,7 +328,12 @@ pub fn native_mirror_page_flip_report_from_dev_dri(
         &heads,
         LibdrmNativeAtomicCommitRequestScope::PageFlip,
     );
+    report.build = build.status;
     let Some(request) = build.request else {
+        if build.status == LibdrmNativeMultiHeadRequestBuildStatus::MismatchedMirrorSize {
+            report.attempted = false;
+            report.skipped = Some(NativeMirrorPageFlipSkip::SharedFramebufferSizeMismatch);
+        }
         return report;
     };
 

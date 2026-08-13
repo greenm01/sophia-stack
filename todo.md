@@ -807,14 +807,22 @@ is excluded; retained product behavior is not.
   single buffer, which is what the exporter-per-group and single-`ADD_FB2` design
   assumes. `tools/native_mirror_probe.sh` is the probe; it allocates dumb buffers
   and destroys them, and every commit carries `TEST_ONLY`, so it changes nothing.
-  One hardware question is still open, and joint retirement already depends on the
-  answer: does a two-CRTC page-flip commit deliver one event per CRTC or one event
-  per commit? If it is one per commit, a group waiting for every head waits forever.
-  It cannot be asked with `TEST_ONLY`, which the kernel rejects together with
-  `PAGE_FLIP_EVENT`, so the probe's second phase commits for real -- flipping each
-  CRTC to the framebuffer it is already scanning out, at its current mode, with no
-  `ALLOW_MODESET`, so nothing on screen changes. It is opt-in behind
-  `SOPHIA_NATIVE_MIRROR_PAGE_FLIP=1`.
+  The probe's second phase found something better than it went looking for. Both
+  CRTCs on this machine already scan out **the same framebuffer handle** -- the
+  kernel console drives two connectors from one buffer -- which is a stronger
+  demonstration that sharing works on this hardware than any validation-only commit
+  can give. It is not a mirror group, because the two run different modes
+  (2560x1440 and 1920x1080), and `MismatchedMirrorSize` refused the request exactly
+  as it should: one buffer cannot satisfy two scanout sizes without plane scaling.
+  So one hardware question stays open, and joint retirement already depends on the
+  answer: does a two-CRTC page-flip commit deliver one event per CRTC, or one per
+  commit? One per commit and a group waiting for every head waits forever. It
+  cannot be asked with `TEST_ONLY`, which the kernel rejects together with
+  `PAGE_FLIP_EVENT`, and it cannot be asked of the current desktop, which is not a
+  group. It belongs in the tty4 output gate, where Sophia owns the modeset and both
+  heads are same-mode by construction -- which is the condition the question is
+  about. Until it is answered, treat one-event-per-CRTC as an assumption the
+  retirement rule rests on rather than a fact.
   What remains of the render path is buffer sharing: one exporter per group rather
   than per head, so a group renders one frame into one buffer instead of two; a
   multi-head page-flip submit, since `build_native_multi_head_atomic_request`

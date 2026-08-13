@@ -141,6 +141,20 @@ run_page_flip_phase() {
     echo "Events:     first CRTC $first, second CRTC $second, unattributed $unattributed"
     echo
 
+    if [[ "$phase" == "shared_framebuffer_size_mismatch" ]]; then
+        echo "The two CRTCs already share one framebuffer but run different modes."
+        echo
+        echo "That is evidence, not an obstacle: the kernel console is driving two"
+        echo "connectors from a single buffer on this hardware right now, which is a"
+        echo "stronger demonstration that sharing works than a TEST_ONLY commit gives."
+        echo "What it is not is a mirror group -- a group is same-mode, and these are not --"
+        echo "so re-presenting the current state cannot answer how a group completes."
+        echo "Reshaping the planes to make it one would change what is on the display."
+        echo
+        echo "Answer the event question inside the tty4 output gate instead, where Sophia"
+        echo "owns the modeset and both heads are same-mode by construction."
+        return 2
+    fi
     if [[ "$phase" == "crtc_inactive" ]]; then
         echo "One of the two CRTCs is not currently scanning out, so there was nothing to"
         echo "re-flip. The probe will not modeset to create the condition -- that would"
