@@ -116,6 +116,7 @@ fn live_runtime_tick_native_gbm_rendered_scanout_reads_native_page_flips_before_
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
+            connector_id: 1,
         }]);
     let mut reader =
         FakeLibdrmNativePageFlipReader::new([LibdrmNativePageFlipCallback::new(slot, 100)]);

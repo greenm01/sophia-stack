@@ -164,12 +164,14 @@ fn runtime_page_flip_observation_prefers_accepted_callback_over_later_stale_reje
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
+            connector_id: 1,
             frame_serial: 62,
         })
         .expect("test channel should accept first callback");
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
+            connector_id: 1,
             frame_serial: 61,
         })
         .expect("test channel should accept stale callback");

@@ -518,7 +518,11 @@ impl RealAtomicScanoutCardSelection {
         let poller = NativeLibdrmPageFlipEventPoller::new(
             LibdrmNativePageFlipSource::from_authority(authority),
         )
-        .with_routes([LibdrmNativeOutputRoute { slot, output }]);
+        .with_routes([LibdrmNativeOutputRoute {
+            slot,
+            output,
+            connector_id: selection.connector_id(),
+        }]);
 
         RealAtomicScanoutPageFlipSessionResult {
             status: RealAtomicScanoutPageFlipSessionStatus::Ready,
@@ -645,7 +649,11 @@ impl RealAtomicScanoutSelectionSet {
                     }
                 };
                 crtc_routes.push(selection.crtc_route(slot));
-                output_routes.push(LibdrmNativeOutputRoute { slot, output });
+                output_routes.push(LibdrmNativeOutputRoute {
+                    slot,
+                    output,
+                    connector_id: selection.connector_id(),
+                });
                 outputs.push(output);
                 next_slot = next_slot.saturating_add(1);
             }

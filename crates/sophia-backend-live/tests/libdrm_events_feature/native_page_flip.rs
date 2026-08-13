@@ -86,6 +86,7 @@ fn native_libdrm_poller_drains_injected_callback_batch_without_fd_polling() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(4);
 
@@ -113,6 +114,7 @@ fn native_libdrm_poller_drains_injected_callback_batch_without_fd_polling() {
             .expect("first callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -122,6 +124,7 @@ fn native_libdrm_poller_drains_injected_callback_batch_without_fd_polling() {
             .expect("second callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 82,
         }
     );
@@ -227,6 +230,7 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let mut reader = FakeLibdrmNativePageFlipReader::new([
         LibdrmNativePageFlipCallback::new_with_kernel_timestamp(
@@ -265,6 +269,7 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
             .expect("callback should be reduced and queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -288,6 +293,7 @@ fn native_libdrm_poller_preserves_would_block_diagnostics_after_empty_read() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let mut reader = FakeLibdrmNativePageFlipReader::new([]);
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -322,6 +328,7 @@ fn native_libdrm_poller_drains_pending_callbacks_before_reading_more() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let mut reader = FakeLibdrmNativePageFlipReader::new([
         LibdrmNativePageFlipCallback::new(slot, 82),
@@ -344,6 +351,7 @@ fn native_libdrm_poller_drains_pending_callbacks_before_reading_more() {
             .expect("retained callback should emit before native read"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -369,6 +377,7 @@ fn native_libdrm_poller_drains_pending_callbacks_before_reading_more() {
             .expect("first newly read callback should emit"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 82,
         }
     );
@@ -384,6 +393,7 @@ fn native_libdrm_poller_reports_read_failure_after_pending_backlog_drains() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let mut reader =
         FakeLibdrmNativePageFlipReader::new([LibdrmNativePageFlipCallback::new(slot, 81)]);
@@ -407,6 +417,7 @@ fn native_libdrm_poller_reports_read_failure_after_pending_backlog_drains() {
             .expect("retained callback should be queued before native read"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 80,
         }
     );
@@ -433,6 +444,7 @@ fn native_libdrm_poller_retains_injected_callbacks_on_backpressure() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(1);
 
@@ -453,6 +465,7 @@ fn native_libdrm_poller_retains_injected_callbacks_on_backpressure() {
             .expect("first callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -468,6 +481,7 @@ fn native_libdrm_poller_retains_injected_callbacks_on_backpressure() {
             .expect("retained callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 82,
         }
     );
@@ -483,6 +497,7 @@ fn native_libdrm_poller_retains_injected_callbacks_on_disconnected_queue() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(1);
 
@@ -511,6 +526,7 @@ fn native_libdrm_poller_replaces_routes_without_dropping_pending_callbacks() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(2);
 
@@ -518,6 +534,7 @@ fn native_libdrm_poller_replaces_routes_without_dropping_pending_callbacks() {
     poller.replace_routes([LibdrmNativeOutputRoute {
         slot,
         output: OutputId::from_raw(9),
+        connector_id: 1,
     }]);
 
     assert_eq!(poller.route_count(), 1);
@@ -533,6 +550,7 @@ fn native_libdrm_poller_replaces_routes_without_dropping_pending_callbacks() {
             .expect("callback should use replaced route"),
         LivePageFlipCallback {
             output: OutputId::from_raw(9),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -548,6 +566,7 @@ fn native_libdrm_poller_rejects_pending_callbacks_after_route_removal() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(2);
 
@@ -578,6 +597,7 @@ fn native_libdrm_poller_diagnostics_report_only_reduced_counts() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot: first_slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(2);
 
@@ -599,10 +619,12 @@ fn native_libdrm_poller_diagnostics_report_only_reduced_counts() {
         LibdrmNativeOutputRoute {
             slot: first_slot,
             output: OutputId::from_raw(7),
+            connector_id: 1,
         },
         LibdrmNativeOutputRoute {
             slot: second_slot,
             output: OutputId::from_raw(9),
+            connector_id: 1,
         },
     ]);
     let report = poller.poll_page_flip_events(&sender, 4);
@@ -623,6 +645,7 @@ fn native_libdrm_poller_diagnostics_report_only_reduced_counts() {
             .expect("first callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
         }
     );
@@ -632,6 +655,7 @@ fn native_libdrm_poller_diagnostics_report_only_reduced_counts() {
             .expect("second callback should be queued"),
         LivePageFlipCallback {
             output: OutputId::from_raw(9),
+            connector_id: 1,
             frame_serial: 82,
         }
     );
@@ -649,6 +673,7 @@ fn live_runtime_assembly_reports_reduced_native_libdrm_poller_diagnostics() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
+            connector_id: 1,
         }]);
     let (sender, receiver) = mpsc::sync_channel(2);
 

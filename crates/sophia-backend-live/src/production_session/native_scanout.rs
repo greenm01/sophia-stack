@@ -987,12 +987,15 @@ mod persistent_native_scanout {
                 );
             }
             for callback in callbacks {
+                // By connector, not by output. Two heads of a mirror group share an
+                // output, so matching on it delivered both flips to whichever head
+                // came first and left the sibling looking like it never flipped.
                 let Some(head) = self
                     .heads
                     .iter()
-                    .find(|head| head.output.id == callback.output)
+                    .find(|head| head.selection.connector_id() == callback.connector_id)
                 else {
-                    return Err("native callback referenced an unknown output".into());
+                    return Err("native callback referenced an unknown connector".into());
                 };
                 head.sender
                     .try_send(callback)

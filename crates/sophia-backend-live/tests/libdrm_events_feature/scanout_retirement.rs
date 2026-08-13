@@ -97,6 +97,7 @@ fn live_runtime_assembly_rejects_page_flip_replay_at_submission_baseline() {
 
     let baseline = assembly.observe_page_flip_callback(LivePageFlipCallback {
         output: OutputId::from_raw(1),
+        connector_id: 1,
         frame_serial: 55,
     });
     assert_eq!(baseline.decision, LivePageFlipCallbackDecision::Accepted);

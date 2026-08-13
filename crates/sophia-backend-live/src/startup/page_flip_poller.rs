@@ -13,6 +13,7 @@ impl LiveBackendStartupReport {
                 .map(|slot| LibdrmNativeOutputRoute {
                     slot,
                     output: output.output,
+                    connector_id: output.connector_id,
                 })
             })
             .collect()

@@ -26,9 +26,15 @@ impl LibdrmNativeOutputSlot {
 
 #[cfg(feature = "libdrm-events")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Which logical output a CRTC's flip belongs to, and which connector it is.
+///
+/// The slot already distinguishes heads -- it is assigned per selection, and a
+/// selection is one connector. What was missing is that the decode threw that
+/// away, so a mirror group's two flips arrived indistinguishable.
 pub struct LibdrmNativeOutputRoute {
     pub slot: LibdrmNativeOutputSlot,
     pub output: OutputId,
+    pub connector_id: u32,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -119,6 +125,7 @@ impl LibdrmNativePageFlipCallback {
             status: LibdrmNativePageFlipDecodeStatus::Decoded,
             callback: Some(LivePageFlipCallback {
                 output: route.output,
+                connector_id: route.connector_id,
                 frame_serial: self.frame_serial,
             }),
         }
