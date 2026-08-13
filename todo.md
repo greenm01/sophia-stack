@@ -823,12 +823,46 @@ is excluded; retained product behavior is not.
   heads are same-mode by construction -- which is the condition the question is
   about. Until it is answered, treat one-event-per-CRTC as an assumption the
   retirement rule rests on rather than a fact.
+  Three implementations were read as references, and the result narrows the design.
+  **niri** and **river** do not implement mirroring at all: niri keys surfaces by
+  `crtc::Handle` and river creates one `Output` per `wlr_output`, so both are one
+  logical output per connector with no group concept. niri's only mention is a
+  comment allowing for the possibility. Neither offers a model to copy.
+  **X.Org's modesetting driver does**, and has for a long time
+  (`hw/xfree86/drivers/video/modesetting/pageflip.c`). What it does differs from the
+  plan on one point that matters. Even with `atomic_modeset` enabled,
+  `drmmode_crtc_flip` builds a request holding **one CRTC's** plane properties and
+  commits it alone with its own cookie; `ms_do_pageflip` loops over every enabled
+  CRTC issuing one such commit each. X deliberately does not name several CRTCs in a
+  single atomic commit. It joins them afterwards with `flipdata->flip_count`, a
+  refcount incremented per queued flip, and `ms_pageflip_handler` notifies the
+  extension and calls `drmModeRmFB` on the old framebuffer only when the last
+  completion arrives -- which is joint retirement, arrived at independently and
+  already the shape `group_awaiting_flip` has.
+  So item 8 changes: submit **per head** and join by count, rather than building a
+  multi-head page-flip commit. That also closes the open hardware question, because
+  one commit per CRTC unambiguously yields one event per CRTC; the ambiguity only
+  ever existed for the multi-CRTC commit nobody ships. Three further details are
+  worth taking: X holds a local reference across the submit loop so a first-flip
+  failure cannot free the shared state still in use; on partial failure it does not
+  try to cancel flips already queued, and removes the new framebuffer only if none
+  were; and it offers `async_flip_secondaries` because a group otherwise throttles
+  to its slowest head, judder that X names as specifically a clone/mirror problem.
+  The architectures differ where Sophia's contract requires it. X has no logical
+  output at all: the screen is one canvas, CRTCs are viewports at an `(x, y)` offset
+  into a single shared framebuffer, and mirroring is two CRTCs given the same
+  offset -- which RandR clients see as two CRTCs. Sophia's one-logical-output-backed-
+  by-N-heads exists so policy sees one screen and no connector identity, so the
+  grouping cannot simply be borrowed even though the buffer sharing and the
+  retirement count can.
   What remains of the render path is buffer sharing: one exporter per group rather
   than per head, so a group renders one frame into one buffer instead of two; a
-  multi-head page-flip submit, since `build_native_multi_head_atomic_request`
-  supports `Scope::PageFlip` but only the modeset entry points are exposed; and the
-  head-loss arm that drops the lease without counting a flip and fails the
-  candidate closed. The framebuffer is created inside each head's submit, so two
+  per-head page-flip submit joined by a completion count, on X's model rather than
+  the single multi-head commit originally planned; and the head-loss arm that drops
+  the lease without counting a flip and fails the candidate closed. X documents the
+  failure this last one prevents without preventing it: flips queued on a
+  misconfigured display "may never complete", which it calls a configuration error
+  and leaves hanging. The framebuffer is created inside each head's submit, so two
   heads sharing a buffer object would each `ADD_FB2` and get distinct handles, and
   `RM_FB` would then run twice against one handle -- the second failing and latching
   cleanup permanently. Both have to be resolved together with the lease, which is a
