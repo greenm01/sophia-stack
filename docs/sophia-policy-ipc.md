@@ -150,10 +150,8 @@ stated together because each one only holds if the others do.
    kinds; that fail-closed behavior is preserved precisely because gating
    guarantees they are never sent one they did not ask for.
 
-   The schema generator does not enforce this range — it validates only that record
-   kinds are non-zero, within `u16`, and unique per transfer. Keeping `0xFF00`+ free
-   of ordinary records is therefore a review-time rule, and a declared record in
-   that range is a schema-review error.
+   The schema generator enforces this partition: an ordinary record declaration in
+   `0xFF00`+ is rejected before bindings, facts, or corpora can be regenerated.
 3. **New authorities take new interface families.** Shell, broker, portal, and
    session interfaces get their own family, their own role socket, and their own
    revision line. They never appear as placeholder messages inside the WM
@@ -340,8 +338,13 @@ independent clients do not have to retain wire-only state. It is still reduced
 policy input: Engine owns physical events, capture, pacing, and cancellation.
 Replaceable `Update` values may coalesce only for the same exact target, kind,
 axis, capture, and authority epoch. Ordered begin/end and ordinary cancellation
-never coalesce. A security transition revokes the epoch and discards pending old-
-epoch values without emitting a final delta.
+never coalesce. The live owner now applies that rule to Engine-captured move and
+resize: it retains at most one latest queued update behind the in-flight request.
+A security transition clears local capture, discards queued values for that
+interaction, and prioritizes one `Cancel`; Hagia treats cancellation as a no-op on
+spatial state rather than applying its payload as a final delta. A policy restart
+also advances the locally observed capture epoch before physical input resumes.
+Drag and scroll have fixed wire meanings but do not yet have live Engine producers.
 
 An opaque action token is not a global `u64` authority. Acceptance is scoped by
 issuer role and authority, issuer connection and revocation epochs, recipient

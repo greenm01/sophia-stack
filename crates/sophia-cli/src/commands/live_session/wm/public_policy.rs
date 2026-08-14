@@ -122,6 +122,83 @@ struct StartedPublicPolicyRuntime {
     checkpoint_path: std::path::PathBuf,
 }
 
+fn enqueue_public_policy_cause(
+    queue: &mut VecDeque<LivePublicPolicyCause>,
+    in_flight_source: Option<LiveWmProposalSource>,
+    in_flight: bool,
+    cause: LivePublicPolicyCause,
+) -> LiveWmRequestAdmission {
+    let replaceable_interaction_update = matches!(
+        cause.cause,
+        sophia_protocol::PolicyRequestCause::Interaction {
+            phase: sophia_protocol::PolicyInteractionPhase::Update,
+            ..
+        }
+    );
+    if replaceable_interaction_update
+        && let Some(pending) = queue.iter_mut().rev().find(|pending| {
+            pending.source == cause.source
+                && matches!(
+                    pending.cause,
+                    sophia_protocol::PolicyRequestCause::Interaction {
+                        phase: sophia_protocol::PolicyInteractionPhase::Update,
+                        ..
+                    }
+                )
+        })
+    {
+        *pending = cause;
+        return LiveWmRequestAdmission::Duplicate;
+    }
+    if !matches!(
+        cause.source,
+        LiveWmProposalSource::Action(_) | LiveWmProposalSource::PointerGesture { .. }
+    ) && (in_flight_source == Some(cause.source)
+        || queue.iter().any(|pending| pending.source == cause.source))
+    {
+        return LiveWmRequestAdmission::Duplicate;
+    }
+    if queue.len().saturating_add(usize::from(in_flight)) >= WM_OWNER_REQUEST_CAPACITY {
+        return LiveWmRequestAdmission::RejectedCapacity;
+    }
+    queue.push_back(cause);
+    LiveWmRequestAdmission::Admitted
+}
+
+fn enqueue_public_policy_security_cancel(
+    queue: &mut VecDeque<LivePublicPolicyCause>,
+    in_flight: bool,
+    cause: LivePublicPolicyCause,
+) -> LiveWmRequestAdmission {
+    debug_assert!(matches!(
+        cause.cause,
+        sophia_protocol::PolicyRequestCause::Interaction {
+            phase: sophia_protocol::PolicyInteractionPhase::Cancel,
+            ..
+        }
+    ));
+    queue.retain(|pending| pending.source != cause.source);
+    if queue.len().saturating_add(usize::from(in_flight)) >= WM_OWNER_REQUEST_CAPACITY
+        && let Some(index) = queue.iter().rposition(|pending| {
+            matches!(pending.source, LiveWmProposalSource::Relayout)
+                || matches!(
+                    pending.cause,
+                    sophia_protocol::PolicyRequestCause::Interaction {
+                        phase: sophia_protocol::PolicyInteractionPhase::Update,
+                        ..
+                    }
+                )
+        })
+    {
+        queue.remove(index);
+    }
+    if queue.len().saturating_add(usize::from(in_flight)) >= WM_OWNER_REQUEST_CAPACITY {
+        return LiveWmRequestAdmission::RejectedCapacity;
+    }
+    queue.push_front(cause);
+    LiveWmRequestAdmission::Admitted
+}
+
 fn policy_profile_identity(
     connection_epoch: u64,
     key: sophia_config::DesktopProfileActivationKey,
@@ -371,19 +448,23 @@ impl LivePublicPolicyState {
     }
 
     fn queue_cause(&mut self, cause: LivePublicPolicyCause) -> LiveWmRequestAdmission {
-        if !matches!(cause.source, LiveWmProposalSource::Action(_))
-            && (self.in_flight_source == Some(cause.source)
-                || self.queue.iter().any(|pending| pending.source == cause.source))
-        {
-            return LiveWmRequestAdmission::Duplicate;
-        }
-        if self.queue.len().saturating_add(usize::from(self.in_flight_request.is_some()))
-            >= WM_OWNER_REQUEST_CAPACITY
-        {
-            return LiveWmRequestAdmission::RejectedCapacity;
-        }
-        self.queue.push_back(cause);
-        LiveWmRequestAdmission::Admitted
+        enqueue_public_policy_cause(
+            &mut self.queue,
+            self.in_flight_source,
+            self.in_flight_request.is_some(),
+            cause,
+        )
+    }
+
+    fn queue_security_cancel(
+        &mut self,
+        cause: LivePublicPolicyCause,
+    ) -> LiveWmRequestAdmission {
+        enqueue_public_policy_security_cancel(
+            &mut self.queue,
+            self.in_flight_request.is_some(),
+            cause,
+        )
     }
 
     fn admit_dirty(

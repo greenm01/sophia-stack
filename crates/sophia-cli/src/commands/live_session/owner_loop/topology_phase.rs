@@ -15,6 +15,7 @@
                 &layout.client_routes,
                 route_lease_release_sender,
             )?;
+            revoke_floating_pointer_interaction!("output_topology");
             pointer_focus_handoff = PointerFocusHandoffState::default();
             keyboard_focus_handoff = KeyboardFocusHandoffState::default();
             deferred_physical_key_timings.clear();

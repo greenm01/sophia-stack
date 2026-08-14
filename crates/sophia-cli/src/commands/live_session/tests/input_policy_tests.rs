@@ -1,6 +1,6 @@
 use super::super::{InputDeliveryPhase, InputDeliveryState};
 use super::*;
-use crate::commands::live_session::pointer_focus_surface;
+use crate::commands::live_session::{FloatingPointerPolicyInteraction, pointer_focus_surface};
 use sophia_engine::InputFocusDecision;
 use sophia_protocol::TransactionId;
 use sophia_x_authority::{
@@ -50,6 +50,17 @@ fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {
     assert!(press.consumed);
     assert!(press.completed.is_none());
     assert_eq!(
+        press.interaction,
+        Some(FloatingPointerPolicyInteraction {
+            surface,
+            mode: sophia_protocol::WmPointerGestureMode::Resize,
+            phase: sophia_protocol::PolicyInteractionPhase::Begin,
+            start,
+            current: start,
+            geometry: initial_geometry,
+        })
+    );
+    assert_eq!(
         press.outline,
         FloatingPointerOutlineUpdate::Set(FloatingPointerOutline {
             surface,
@@ -69,6 +80,10 @@ fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {
     );
     assert!(motion.consumed);
     assert!(motion.completed.is_none());
+    assert_eq!(
+        motion.interaction.map(|interaction| interaction.phase),
+        Some(sophia_protocol::PolicyInteractionPhase::Update)
+    );
     assert_eq!(
         motion.outline,
         FloatingPointerOutlineUpdate::Set(FloatingPointerOutline {
@@ -98,6 +113,10 @@ fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {
     assert!(release.consumed);
     assert_eq!(release.outline, FloatingPointerOutlineUpdate::Clear);
     assert_eq!(
+        release.interaction.map(|interaction| interaction.phase),
+        Some(sophia_protocol::PolicyInteractionPhase::End)
+    );
+    assert_eq!(
         release.completed,
         Some(sophia_protocol::WmPointerGestureCompleted {
             surface,
@@ -120,6 +139,60 @@ fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {
     );
     assert!(!ordinary_motion.consumed);
     assert!(ordinary_motion.completed.is_none());
+}
+
+#[test]
+fn floating_pointer_security_cancel_uses_the_latest_reduced_geometry() {
+    let surface = SurfaceId::new(42, 1);
+    let start = sophia_protocol::WmPointerPosition { x: 100, y: 100 };
+    let current = sophia_protocol::WmPointerPosition { x: 180, y: 140 };
+    let initial = Rect {
+        x: 20,
+        y: 30,
+        width: 400,
+        height: 300,
+    };
+    let mut state = FloatingPointerGestureState::default();
+    let begin = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerButton {
+            button: 0x110,
+            pressed: true,
+        },
+        Some(start),
+        Some(surface),
+        Some(sophia_protocol::SurfacePresentationRole::PolicyManaged),
+        Some(initial),
+        true,
+    );
+    assert!(begin.interaction.is_some());
+    let update = observe_floating_pointer_gesture(
+        &mut state,
+        InputEventKind::PointerMotion,
+        Some(current),
+        None,
+        None,
+        None,
+        false,
+    );
+    assert!(update.interaction.is_some());
+
+    assert_eq!(
+        state.cancel(),
+        Some(FloatingPointerPolicyInteraction {
+            surface,
+            mode: sophia_protocol::WmPointerGestureMode::Move,
+            phase: sophia_protocol::PolicyInteractionPhase::Cancel,
+            start,
+            current,
+            geometry: Rect {
+                x: 100,
+                y: 70,
+                ..initial
+            },
+        })
+    );
+    assert!(state.cancel().is_none());
 }
 
 #[test]

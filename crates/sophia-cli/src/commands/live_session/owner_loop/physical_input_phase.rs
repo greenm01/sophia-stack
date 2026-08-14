@@ -1,6 +1,7 @@
 {
 macro_rules! drain_physical_input {
     ($routing_mode:expr) => {{
+        synchronize_wm_pointer_epoch!();
         let emergency_exit = false;
         let lease_updates = drain_application_route_lease_updates(
             route_lease_update_receiver,
@@ -379,6 +380,31 @@ macro_rules! drain_physical_input {
                     }
                 }
             }
+            for interaction in report.wm_pointer_interactions.iter().copied() {
+                let wm = wm_session
+                    .as_mut()
+                    .ok_or("WM pointer interaction activated without a live WM session")?;
+                match LivePhysicalWmActionDisposition::from(
+                    wm.enqueue_pointer_interaction(interaction, &layout)?,
+                ) {
+                    LivePhysicalWmActionDisposition::Admitted => {
+                        println!(
+                            "sophia_live_wm_pointer schema=2 status=interaction_admitted phase={:?} mode={:?} surface={}",
+                            interaction.phase,
+                            interaction.mode,
+                            interaction.surface.index(),
+                        );
+                    }
+                    LivePhysicalWmActionDisposition::RejectedCapacity => {
+                        eprintln!(
+                            "sophia_live_wm_pointer schema=2 status=request_rejected reason=capacity phase={:?} surface={}",
+                            interaction.phase,
+                            interaction.surface.index(),
+                        );
+                    }
+                    LivePhysicalWmActionDisposition::Coalesced => {}
+                }
+            }
             for gesture in report.wm_pointer_gestures.iter().copied() {
                 let wm = wm_session
                     .as_mut()
@@ -614,6 +640,7 @@ macro_rules! schedule_output_topology_rebuild {
                 &layout.client_routes,
                 route_lease_release_sender,
             )?;
+            revoke_floating_pointer_interaction!("output_topology");
             pointer_focus_handoff = PointerFocusHandoffState::default();
             keyboard_focus_handoff = KeyboardFocusHandoffState::default();
             key_repeat.cancel_seat(seat);

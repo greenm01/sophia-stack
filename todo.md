@@ -1272,9 +1272,13 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   Revision 3 now permanently fixes `Drag = 3`, `Scroll = 4`, and the in-place
   `interaction_axis` values (`None = 0`, `Horizontal = 1`, `Vertical = 2`) in
   Rust, generated C, and Hagia's independent Nim decoder. The codecs reject
-  ambiguous geometry/axis combinations; live Begin/Update coalescing, End, and
-  security-epoch Cancel behavior remain open, so this row is intentionally not
-  complete.
+  ambiguous geometry/axis combinations. Engine-captured move/resize now send
+  ordered Begin/Update/End values; only the latest matching queued Update is
+  retained behind an in-flight request. Output-topology, VT, and seat security
+  transitions clear capture, purge its queued values, and prioritize Cancel;
+  policy restart clears capture before the next physical input drain. Hagia
+  applies continuous geometry and treats Cancel as a spatial no-op. Live
+  drag/scroll production remains open, so this row is intentionally not complete.
 - [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
   client, and permanent-compatibility process. Keep its endpoint and
   capabilities separate from `sophia_wm_v1`. Begin experimental modeling and

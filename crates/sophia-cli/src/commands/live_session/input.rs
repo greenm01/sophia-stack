@@ -7,6 +7,7 @@ struct PhysicalInputRouteReport {
     events: usize,
     wm_actions: Vec<WmActionId>,
     wm_pointer_gestures: Vec<sophia_protocol::WmPointerGestureCompleted>,
+    wm_pointer_interactions: Vec<FloatingPointerPolicyInteraction>,
     floating_outline: FloatingPointerOutlineUpdate,
     keys_observed: usize,
     keys_suppressed_no_focus: usize,
@@ -500,6 +501,7 @@ fn route_input_events_with_pointer_focus(
         events: events.len(),
         wm_actions: Vec::new(),
         wm_pointer_gestures: Vec::new(),
+        wm_pointer_interactions: Vec::new(),
         floating_outline: FloatingPointerOutlineUpdate::Unchanged,
         keys_observed: 0,
         keys_suppressed_no_focus: 0,
@@ -984,6 +986,9 @@ fn route_input_events_with_pointer_focus(
                     );
                     if let Some(completed) = observation.completed {
                         report.wm_pointer_gestures.push(completed);
+                    }
+                    if let Some(interaction) = observation.interaction {
+                        report.wm_pointer_interactions.push(interaction);
                     }
                     if observation.outline != FloatingPointerOutlineUpdate::Unchanged {
                         report.floating_outline = observation.outline;

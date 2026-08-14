@@ -25,19 +25,153 @@ fn completed_pointer_geometry_reduces_raw_motion_to_one_bounded_target() {
         }
     );
 }
+
+#[test]
+fn public_pointer_updates_replace_only_the_latest_matching_update() {
+    let surface = SurfaceId::new(91, 1);
+    let source = LiveWmProposalSource::PointerGesture {
+        surface,
+        mode: sophia_protocol::WmPointerGestureMode::Move,
+    };
+    let cause = |phase, x| LivePublicPolicyCause {
+        source,
+        cause: sophia_protocol::PolicyRequestCause::Interaction {
+            phase,
+            kind: sophia_protocol::PolicyInteractionKind::Move,
+            axis: sophia_protocol::PolicyInteractionAxis::None,
+            target: surface,
+            geometry: Rect {
+                x,
+                y: 20,
+                width: 300,
+                height: 200,
+            },
+        },
+        affected_outputs: vec![OutputId::from_raw(1)],
+    };
+    let mut queue = VecDeque::new();
+
+    assert_eq!(
+        enqueue_public_policy_cause(
+            &mut queue,
+            None,
+            false,
+            cause(sophia_protocol::PolicyInteractionPhase::Begin, 10),
+        ),
+        LiveWmRequestAdmission::Admitted
+    );
+    assert_eq!(
+        enqueue_public_policy_cause(
+            &mut queue,
+            Some(source),
+            true,
+            cause(sophia_protocol::PolicyInteractionPhase::Update, 20),
+        ),
+        LiveWmRequestAdmission::Admitted
+    );
+    assert_eq!(
+        enqueue_public_policy_cause(
+            &mut queue,
+            Some(source),
+            true,
+            cause(sophia_protocol::PolicyInteractionPhase::Update, 30),
+        ),
+        LiveWmRequestAdmission::Duplicate
+    );
+    assert_eq!(queue.len(), 2);
+    assert!(matches!(
+        queue.back().map(|pending| &pending.cause),
+        Some(sophia_protocol::PolicyRequestCause::Interaction {
+            phase: sophia_protocol::PolicyInteractionPhase::Update,
+            geometry: Rect { x: 30, .. },
+            ..
+        })
+    ));
+    assert_eq!(
+        enqueue_public_policy_cause(
+            &mut queue,
+            Some(source),
+            true,
+            cause(sophia_protocol::PolicyInteractionPhase::End, 40),
+        ),
+        LiveWmRequestAdmission::Admitted
+    );
+    assert_eq!(queue.len(), 3);
+}
+
+#[test]
+fn public_security_cancel_purges_stale_values_and_preempts_unrelated_work() {
+    let surface = SurfaceId::new(92, 1);
+    let source = LiveWmProposalSource::PointerGesture {
+        surface,
+        mode: sophia_protocol::WmPointerGestureMode::Resize,
+    };
+    let interaction = |phase, width| LivePublicPolicyCause {
+        source,
+        cause: sophia_protocol::PolicyRequestCause::Interaction {
+            phase,
+            kind: sophia_protocol::PolicyInteractionKind::Resize,
+            axis: sophia_protocol::PolicyInteractionAxis::None,
+            target: surface,
+            geometry: Rect {
+                x: 10,
+                y: 20,
+                width,
+                height: 200,
+            },
+        },
+        affected_outputs: vec![OutputId::from_raw(1)],
+    };
+    let mut queue = VecDeque::from([
+        interaction(sophia_protocol::PolicyInteractionPhase::Begin, 300),
+        LivePublicPolicyCause {
+            source: LiveWmProposalSource::Action(WmActionId::from_raw(7)),
+            cause: sophia_protocol::PolicyRequestCause::Action {
+                activation_serial: 9,
+                action: WmActionId::from_raw(7),
+            },
+            affected_outputs: vec![OutputId::from_raw(1)],
+        },
+        interaction(sophia_protocol::PolicyInteractionPhase::Update, 350),
+        interaction(sophia_protocol::PolicyInteractionPhase::End, 400),
+    ]);
+
+    assert_eq!(
+        enqueue_public_policy_security_cancel(
+            &mut queue,
+            true,
+            interaction(sophia_protocol::PolicyInteractionPhase::Cancel, 350),
+        ),
+        LiveWmRequestAdmission::Admitted
+    );
+    assert_eq!(queue.len(), 2);
+    assert!(matches!(
+        queue.front().map(|pending| &pending.cause),
+        Some(sophia_protocol::PolicyRequestCause::Interaction {
+            phase: sophia_protocol::PolicyInteractionPhase::Cancel,
+            ..
+        })
+    ));
+    assert!(matches!(
+        queue.back().map(|pending| pending.source),
+        Some(LiveWmProposalSource::Action(_))
+    ));
+}
 use crate::commands::live_session::{
-    LivePolicyMapMode, LivePolicySettlementIdentity, LiveWmLayoutFingerprint, LiveWmProposal,
-    LiveWmProposalSource, LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout,
-    ResizeVisualCommit, committed_relayout_nodes, live_layout_node_from_facts,
-    ordered_wm_action_request, planning_state_for_response, public_policy_surface_snapshots,
-    reconcile_public_policy_proposal, wm_transport_requires_reseed,
+    LivePolicyMapMode, LivePolicySettlementIdentity, LivePublicPolicyCause,
+    LiveWmLayoutFingerprint, LiveWmProposal, LiveWmProposalSource, LiveWmRequestAdmission,
+    LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
+    committed_relayout_nodes, enqueue_public_policy_cause, enqueue_public_policy_security_cancel,
+    live_layout_node_from_facts, ordered_wm_action_request, planning_state_for_response,
+    public_policy_surface_snapshots, reconcile_public_policy_proposal,
+    wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
 use sophia_protocol::{
     BufferHandle, SurfaceConstraints, TransactionCommit, TransactionId, TransactionOutcome,
     WorkspaceId,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     LayerSnapshot {

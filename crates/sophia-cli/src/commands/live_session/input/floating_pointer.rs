@@ -6,6 +6,7 @@ struct ActiveFloatingPointerGesture {
     mode: sophia_protocol::WmPointerGestureMode,
     button: u32,
     start: sophia_protocol::WmPointerPosition,
+    current: sophia_protocol::WmPointerPosition,
     initial_geometry: Rect,
 }
 
@@ -18,7 +19,18 @@ pub(super) struct FloatingPointerGestureState {
 pub(super) struct FloatingPointerGestureObservation {
     pub consumed: bool,
     pub completed: Option<sophia_protocol::WmPointerGestureCompleted>,
+    pub interaction: Option<FloatingPointerPolicyInteraction>,
     pub outline: FloatingPointerOutlineUpdate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct FloatingPointerPolicyInteraction {
+    pub surface: SurfaceId,
+    pub mode: sophia_protocol::WmPointerGestureMode,
+    pub phase: sophia_protocol::PolicyInteractionPhase,
+    pub start: sophia_protocol::WmPointerPosition,
+    pub current: sophia_protocol::WmPointerPosition,
+    pub geometry: Rect,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +70,30 @@ fn floating_pointer_outline(
         surface: active.surface,
         start: active.start,
         geometry,
+    }
+}
+
+fn floating_pointer_interaction(
+    active: ActiveFloatingPointerGesture,
+    phase: sophia_protocol::PolicyInteractionPhase,
+) -> FloatingPointerPolicyInteraction {
+    FloatingPointerPolicyInteraction {
+        surface: active.surface,
+        mode: active.mode,
+        phase,
+        start: active.start,
+        current: active.current,
+        geometry: floating_pointer_outline(active, active.current).geometry,
+    }
+}
+
+impl FloatingPointerGestureState {
+    pub(super) fn cancel(&mut self) -> Option<FloatingPointerPolicyInteraction> {
+        let active = self.active.take()?;
+        Some(floating_pointer_interaction(
+            active,
+            sophia_protocol::PolicyInteractionPhase::Cancel,
+        ))
     }
 }
 
@@ -103,7 +139,10 @@ pub(super) fn observe_floating_pointer_gesture(
     target_geometry: Option<Rect>,
     super_held: bool,
 ) -> FloatingPointerGestureObservation {
-    if let Some(active) = state.active {
+    if let Some(mut active) = state.active {
+        if let Some(position) = position {
+            active.current = position;
+        }
         let release_matches = matches!(
             kind,
             sophia_protocol::InputEventKind::PointerButton {
@@ -119,12 +158,28 @@ pub(super) fn observe_floating_pointer_gesture(
                 workspace: sophia_protocol::WorkspaceId::INVALID,
                 mode: active.mode,
                 start: active.start,
-                end: position.unwrap_or(active.start),
+                end: active.current,
             }
         });
+        let interaction = if release_matches {
+            Some(floating_pointer_interaction(
+                active,
+                sophia_protocol::PolicyInteractionPhase::End,
+            ))
+        } else if matches!(kind, sophia_protocol::InputEventKind::PointerMotion) {
+            state.active = Some(active);
+            Some(floating_pointer_interaction(
+                active,
+                sophia_protocol::PolicyInteractionPhase::Update,
+            ))
+        } else {
+            state.active = Some(active);
+            None
+        };
         return FloatingPointerGestureObservation {
             consumed: true,
             completed,
+            interaction,
             outline: if release_matches {
                 FloatingPointerOutlineUpdate::Clear
             } else if matches!(kind, sophia_protocol::InputEventKind::PointerMotion) {
@@ -168,11 +223,20 @@ pub(super) fn observe_floating_pointer_gesture(
         mode,
         button,
         start: position,
+        current: position,
         initial_geometry,
     });
     FloatingPointerGestureObservation {
         consumed: true,
         completed: None,
+        interaction: Some(FloatingPointerPolicyInteraction {
+            surface,
+            mode,
+            phase: sophia_protocol::PolicyInteractionPhase::Begin,
+            start: position,
+            current: position,
+            geometry: initial_geometry,
+        }),
         outline: FloatingPointerOutlineUpdate::Set(FloatingPointerOutline {
             surface,
             start: position,

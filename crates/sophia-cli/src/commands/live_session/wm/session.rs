@@ -21,6 +21,7 @@ enum LiveWmProposalSource {
     Relayout,
 }
 
+#[cfg(test)]
 fn completed_pointer_gesture_geometry(
     gesture: sophia_protocol::WmPointerGestureCompleted,
     initial: Rect,
@@ -812,6 +813,72 @@ impl LiveWmSession {
         }
     }
 
+    fn enqueue_pointer_interaction(
+        &mut self,
+        interaction: FloatingPointerPolicyInteraction,
+        layout: &PersistentLiveLayout,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        if !layout.is_policy_managed(interaction.surface) {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        }
+        let source = LiveWmProposalSource::PointerGesture {
+            surface: interaction.surface,
+            mode: interaction.mode,
+        };
+        let Some(public) = self.public.as_mut() else {
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        };
+        let outline = clamp_floating_pointer_outline(
+            FloatingPointerOutline {
+                surface: interaction.surface,
+                start: interaction.start,
+                geometry: interaction.geometry,
+            },
+            &wm_output_bounds(&public.outputs),
+        )
+        .ok_or("pointer interaction started outside every public-policy output")?;
+        let output = public
+            .reducer
+            .committed()
+            .into_iter()
+            .find(|projection| {
+                projection
+                    .placements
+                    .iter()
+                    .any(|placement| placement.surface == interaction.surface)
+            })
+            .map(|projection| projection.output)
+            .ok_or("pointer interaction target is absent from public-policy state")?;
+        let affected_outputs = if output == public.active_output {
+            vec![output]
+        } else {
+            vec![public.active_output, output]
+        };
+        let cause = LivePublicPolicyCause {
+            source,
+            cause: sophia_protocol::PolicyRequestCause::Interaction {
+                phase: interaction.phase,
+                kind: match interaction.mode {
+                    sophia_protocol::WmPointerGestureMode::Move => {
+                        sophia_protocol::PolicyInteractionKind::Move
+                    }
+                    sophia_protocol::WmPointerGestureMode::Resize => {
+                        sophia_protocol::PolicyInteractionKind::Resize
+                    }
+                },
+                axis: sophia_protocol::PolicyInteractionAxis::None,
+                target: interaction.surface,
+                geometry: outline.geometry,
+            },
+            affected_outputs,
+        };
+        Ok(if interaction.phase == sophia_protocol::PolicyInteractionPhase::Cancel {
+            public.queue_security_cancel(cause)
+        } else {
+            public.queue_cause(cause)
+        })
+    }
+
     fn enqueue_pointer_gesture(
         &mut self,
         mut gesture: sophia_protocol::WmPointerGestureCompleted,
@@ -827,56 +894,10 @@ impl LiveWmSession {
         if self.has_request_source(source) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        if let Some(public) = self.public.as_mut() {
-            let initial = layout
-                .layers
-                .get(&gesture.surface)
-                .ok_or("pointer interaction target is missing from the live layout")?
-                .geometry;
-            let outline = clamp_floating_pointer_outline(
-                FloatingPointerOutline {
-                    surface: gesture.surface,
-                    start: gesture.start,
-                    geometry: completed_pointer_gesture_geometry(gesture, initial),
-                },
-                &wm_output_bounds(&public.outputs),
-            )
-            .ok_or("pointer interaction started outside every public-policy output")?;
-            let output = public
-                .reducer
-                .committed()
-                .into_iter()
-                .find(|projection| {
-                    projection
-                        .placements
-                        .iter()
-                        .any(|placement| placement.surface == gesture.surface)
-                })
-                .map(|projection| projection.output)
-                .ok_or("pointer interaction target is absent from public-policy state")?;
-            let affected_outputs = if output == public.active_output {
-                vec![output]
-            } else {
-                vec![public.active_output, output]
-            };
-            return Ok(public.queue_cause(LivePublicPolicyCause {
-                source,
-                cause: sophia_protocol::PolicyRequestCause::Interaction {
-                    phase: sophia_protocol::PolicyInteractionPhase::End,
-                    kind: match gesture.mode {
-                        sophia_protocol::WmPointerGestureMode::Move => {
-                            sophia_protocol::PolicyInteractionKind::Move
-                        }
-                        sophia_protocol::WmPointerGestureMode::Resize => {
-                            sophia_protocol::PolicyInteractionKind::Resize
-                        }
-                    },
-                    axis: sophia_protocol::PolicyInteractionAxis::None,
-                    target: gesture.surface,
-                    geometry: outline.geometry,
-                },
-                affected_outputs,
-            }));
+        if self.public.is_some() {
+            // The public path receives Begin/Update/End observations above;
+            // this legacy completion is retained only for API-v7 adapters.
+            return Ok(LiveWmRequestAdmission::Duplicate);
         }
         let workspace = self
             .workspace_state

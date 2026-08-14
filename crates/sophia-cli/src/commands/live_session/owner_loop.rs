@@ -356,6 +356,48 @@ fn run_session_loop(
     let mut requested_virtual_terminal = None;
     let mut seat_release_prepared = false;
     let mut suspended_renderer_images = None;
+    let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
+
+    macro_rules! revoke_floating_pointer_interaction {
+        ($reason:literal) => {{
+            if let Some(interaction) = floating_pointer_gesture.cancel() {
+                if let Some(wm) = wm_session.as_mut()
+                    && matches!(
+                        wm.enqueue_pointer_interaction(interaction, &layout)?,
+                        LiveWmRequestAdmission::RejectedCapacity
+                    )
+                {
+                    return Err(format!(
+                        "security cancellation exceeded WM owner capacity: {}",
+                        $reason
+                    )
+                    .into());
+                }
+                if let Some(runtime) = runtime.as_mut() {
+                    let _ = runtime.set_floating_outline(
+                        None,
+                        &scene,
+                        native_scanout.as_mut(),
+                    )?;
+                }
+                println!(
+                    "sophia_live_wm_pointer schema=2 status=interaction_cancelled reason={} surface={}",
+                    $reason,
+                    interaction.surface.index(),
+                );
+            }
+        }};
+    }
+
+    macro_rules! synchronize_wm_pointer_epoch {
+        () => {{
+            let restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
+            if restart_count != observed_wm_restart_count {
+                observed_wm_restart_count = restart_count;
+                revoke_floating_pointer_interaction!("policy_restart");
+            }
+        }};
+    }
 
     include!("owner_loop/session_control.rs")
 }

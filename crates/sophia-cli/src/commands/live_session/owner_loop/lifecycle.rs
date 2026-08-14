@@ -44,6 +44,7 @@
                     &layout.client_routes,
                     route_lease_release_sender,
                 )?;
+                revoke_floating_pointer_interaction!("virtual_terminal");
                 keyboard_focus_handoff = KeyboardFocusHandoffState::default();
                 deferred_physical_key_timings.clear();
                 println!(
@@ -235,6 +236,7 @@
                         &layout.client_routes,
                         route_lease_release_sender,
                     )?;
+                    revoke_floating_pointer_interaction!("seat_release");
                     keyboard_focus_handoff = KeyboardFocusHandoffState::default();
                     deferred_physical_key_timings.clear();
                     println!(
