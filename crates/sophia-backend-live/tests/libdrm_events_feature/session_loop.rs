@@ -341,6 +341,8 @@ fn live_runtime_direct_rendered_scanout_submit_rechecks_native_kms_snapshot_befo
         .into_live_runtime_assembly(QueuedInputPoller::default())
         .expect("ready backend should seed live assembly");
     let device = FakeNativePrimaryPlaneScanoutDevice {
+        commits: std::cell::Cell::new(0),
+        accept_commits: None,
         selection: FakeNativeKmsSelectionDevice {
             connector_snapshot: Ok(LibdrmNativeConnectorSnapshot::new(
                 false,

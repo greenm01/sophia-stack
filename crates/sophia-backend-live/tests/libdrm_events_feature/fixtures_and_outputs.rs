@@ -118,6 +118,7 @@ fn full_kms_selection_device() -> FakeNativeKmsSelectionDevice {
 
 fn full_primary_plane_resource_device() -> FakeNativePrimaryPlaneResourceDevice {
     FakeNativePrimaryPlaneResourceDevice {
+        destroyed_framebuffers: std::cell::Cell::new(0),
         mode_blob: Ok(15),
         framebuffer: Ok(framebuffer_handle()),
         destroy_framebuffer: Ok(()),
@@ -147,6 +148,8 @@ fn test_dma_buf_plane_fds() -> [Option<OwnedFd>; 4] {
 
 fn full_primary_plane_scanout_device() -> FakeNativePrimaryPlaneScanoutDevice {
     FakeNativePrimaryPlaneScanoutDevice {
+        commits: std::cell::Cell::new(0),
+        accept_commits: None,
         selection: full_kms_selection_device(),
         properties: full_property_lookup_device(),
         resources: full_primary_plane_resource_device(),

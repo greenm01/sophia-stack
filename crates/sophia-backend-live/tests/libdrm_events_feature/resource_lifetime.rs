@@ -15,6 +15,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let oversized_modeset = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             destroy_framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
@@ -32,6 +33,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let oversized_page_flip = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             destroy_framebuffer: Ok(()),
@@ -66,6 +68,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let invalid_pitch = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             framebuffer: Ok(framebuffer_handle()),
             destroy_framebuffer: Ok(()),
@@ -83,6 +86,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let argb_format = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
             destroy_framebuffer: Ok(()),
@@ -100,6 +104,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let invalid_format = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             destroy_framebuffer: Ok(()),
@@ -117,6 +122,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let multi_plane_without_modifier = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
             destroy_framebuffer: Ok(()),
@@ -138,6 +144,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let multi_plane_linear_modifier = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
             destroy_framebuffer: Ok(()),
@@ -203,6 +210,7 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let zero_mode_blob = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(0),
             framebuffer: Ok(framebuffer_handle()),
             destroy_framebuffer: Ok(()),
@@ -245,6 +253,7 @@ fn native_libdrm_primary_plane_page_flip_resources_do_not_require_mode_blob() {
         .selection
         .expect("complete KMS path should select a target");
     let mode_unavailable = FakeNativePrimaryPlaneResourceDevice {
+        destroyed_framebuffers: std::cell::Cell::new(0),
         mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
         destroy_mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
         ..full_primary_plane_resource_device()
@@ -463,6 +472,7 @@ fn native_libdrm_primary_plane_resource_creation_fails_closed() {
         .expect("complete KMS path should select a target");
 
     let mode_failed = FakeNativePrimaryPlaneResourceDevice {
+        destroyed_framebuffers: std::cell::Cell::new(0),
         mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
         ..full_primary_plane_resource_device()
     };
@@ -478,6 +488,7 @@ fn native_libdrm_primary_plane_resource_creation_fails_closed() {
     assert!(created.resources.is_none());
 
     let mode_missing = FakeNativePrimaryPlaneResourceDevice {
+        destroyed_framebuffers: std::cell::Cell::new(0),
         mode_blob: Err(io::Error::from(io::ErrorKind::InvalidInput)),
         ..full_primary_plane_resource_device()
     };

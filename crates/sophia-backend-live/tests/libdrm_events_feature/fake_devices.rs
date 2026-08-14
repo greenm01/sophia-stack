@@ -180,6 +180,7 @@ struct FakeNativePrimaryPlaneResourceDevice {
     framebuffer: io::Result<drm::control::framebuffer::Handle>,
     destroy_framebuffer: io::Result<()>,
     destroy_mode_blob: io::Result<()>,
+    destroyed_framebuffers: std::cell::Cell<usize>,
 }
 
 impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneResourceDevice {
@@ -230,6 +231,8 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneResourceDe
         &self,
         _framebuffer: drm::control::framebuffer::Handle,
     ) -> io::Result<()> {
+        self.destroyed_framebuffers
+            .set(self.destroyed_framebuffers.get().saturating_add(1));
         clone_io_result(&self.destroy_framebuffer)
     }
 
@@ -399,6 +402,8 @@ struct FakeNativePrimaryPlaneScanoutDevice {
     properties: FakeNativePropertyLookupDevice,
     resources: FakeNativePrimaryPlaneResourceDevice,
     submit: io::Result<()>,
+    commits: std::cell::Cell<usize>,
+    accept_commits: Option<usize>,
 }
 
 impl LibdrmNativeKmsSelectionDevice for FakeNativePrimaryPlaneScanoutDevice {
@@ -531,6 +536,31 @@ impl LibdrmNativeAtomicCommitDevice for FakeNativePrimaryPlaneScanoutDevice {
         _flags: drm::control::AtomicCommitFlags,
         _request: drm::control::atomic::AtomicModeReq,
     ) -> io::Result<()> {
+        let taken = self.commits.get();
+        self.commits.set(taken.saturating_add(1));
+        if self.accept_commits.is_some_and(|accept| taken >= accept) {
+            return Err(io::Error::other("synthetic head commit refusal"));
+        }
         clone_io_result(&self.submit)
+    }
+}
+
+impl FakeNativePrimaryPlaneScanoutDevice {
+    /// Accepts the first `accept` commits and refuses every later one.
+    ///
+    /// A mirror group submits once per head, so this is how a test reaches the
+    /// case that matters: one connector scanning the framebuffer while another
+    /// head was refused.
+    fn accepting_commits(mut self, accept: usize) -> Self {
+        self.accept_commits = Some(accept);
+        self
+    }
+
+    fn commits(&self) -> usize {
+        self.commits.get()
+    }
+
+    fn destroyed_framebuffers(&self) -> usize {
+        self.resources.destroyed_framebuffers.get()
     }
 }
