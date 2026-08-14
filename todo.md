@@ -860,13 +860,28 @@ is excluded; retained product behavior is not.
   advertises would make a buffer its sibling cannot display, so the intersection is
   the only safe set. Several counts moved with it, from per head to per exporter,
   because a group's single exporter was being counted once per connector.
-  What remains of the render path is a
-  per-head page-flip submit joined by a completion count, on X's model rather than
-  the single multi-head commit originally planned; and the head-loss arm that drops
-  the lease without counting a flip and fails the candidate closed. X documents the
-  failure this last one prevents without preventing it: flips queued on a
-  misconfigured display "may never complete", which it calls a configuration error
-  and leaves hanging. The framebuffer is created inside each head's submit, so two
+  The render path is complete. Submission is per head joined by a completion count,
+  on X's model: the export and the framebuffer happen once, and only objects,
+  request, and commit loop. The hazard there was ownership -- every failure path
+  destroyed the resource bundle, which is right for one head and catastrophic for a
+  group, because once any head's commit lands a connector is scanning that buffer.
+  Ownership now transfers to the submission on the first successful commit and
+  later failures keep it, with `PartiallySubmitted` carrying that through three
+  layers so the candidate fails closed without the buffer being freed.
+  Head loss fails closed rather than hanging. X leaves a flip queued on a display
+  that went away waiting forever and calls it a configuration error;
+  `VisualRetirement.tla` settles such a generation as removed, so the lost head
+  leaves the awaited set, never counts as a flip, and a survivor's flip cannot
+  retire the frame as displayed.
+  The config gate is open. `MirrorUnsupported` is gone, `mirror_of` names each
+  group's primary, members take the primary's whole visual state rather than merely
+  being allowed to overlap it, and `reject_overlaps` skips same-group pairs because
+  members share a position by definition. The activation plan admits capabilities
+  sharing an `OutputId`, which is what a group is.
+  What remains is the hardware run: `tools/run_native_output_gate_tty4.sh` on tty4
+  with DP-1 and DP-2 grouped at 1920x1080, the highest mode both present. Two
+  screens showing the same thing is the only evidence that counts, and it needs a
+  real modeset. The framebuffer is created inside each head's submit, so two
   heads sharing a buffer object would each `ADD_FB2` and get distinct handles, and
   `RM_FB` would then run twice against one handle -- the second failing and latching
   cleanup permanently. Both have to be resolved together with the lease, which is a
