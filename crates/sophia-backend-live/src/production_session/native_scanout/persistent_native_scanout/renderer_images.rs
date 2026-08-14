@@ -165,7 +165,7 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut evicted = 0usize;
-        for exporter in self.exporters.values_mut() {
+        for exporter in self.exporters.iter_mut() {
             evicted = evicted.saturating_add(usize::from(exporter.evict_renderer_image(image_id)?));
         }
         Ok(evicted)
@@ -176,7 +176,7 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut promoted = 0usize;
-        for exporter in self.exporters.values_mut() {
+        for exporter in self.exporters.iter_mut() {
             promoted =
                 promoted.saturating_add(usize::from(exporter.promote_renderer_image(image_id)?));
         }
@@ -188,7 +188,7 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut rolled_back = 0usize;
-        for exporter in self.exporters.values_mut() {
+        for exporter in self.exporters.iter_mut() {
             rolled_back = rolled_back
                 .saturating_add(usize::from(exporter.rollback_renderer_image(image_id)?));
         }
@@ -258,7 +258,7 @@ impl LiveProductionNativeScanout {
         !self.exporters.is_empty()
             && self
                 .exporters
-                .values()
+                .iter()
                 .all(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::renderer_image_owner_initialized)
     }
 
@@ -266,7 +266,7 @@ impl LiveProductionNativeScanout {
         &mut self,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut evicted = 0usize;
-        for exporter in self.exporters.values_mut() {
+        for exporter in self.exporters.iter_mut() {
             evicted = evicted.saturating_add(exporter.clear_renderer_images()?);
         }
         Ok(evicted)
@@ -274,9 +274,9 @@ impl LiveProductionNativeScanout {
 
     pub fn export_attempts(&self) -> usize {
         self.exporters
-            .values()
+            .iter()
             .map(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::cpu_frame_export_attempts)
-            .chain(self.exporters.values().map(
+            .chain(self.exporters.iter().map(
                 crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::mixed_frame_export_attempts,
             ))
             .sum()
@@ -284,13 +284,13 @@ impl LiveProductionNativeScanout {
 
     pub fn mixed_exports(&self) -> usize {
         self.exporters
-            .values()
+            .iter()
             .map(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::mixed_frame_exports)
             .sum()
     }
 
     pub fn persistent_render_metrics(&self) -> LivePersistentRenderMetrics {
-        self.exporters.values().fold(
+        self.exporters.iter().fold(
             LivePersistentRenderMetrics::default(),
             |mut metrics, exporter| {
                 let stats = exporter.persistent_render_stats();

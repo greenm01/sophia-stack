@@ -32,15 +32,17 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
-        /// One scanout buffer exporter per logical output.
+        /// One scanout buffer exporter per head, parallel to `heads`.
         ///
-        /// Per output rather than per head: a mirror group's connectors scan out
-        /// one buffer, so an exporter each would render the same frame twice into
-        /// two buffers and only one of them would ever reach a screen. Note that
-        /// `LiveProductionNativeGroup` is a *card session* and not a mirror group;
-        /// the exporter belongs to neither, but to the logical output.
-        exporters: BTreeMap<
-            OutputId,
+        /// Per head because each connector scans out its own buffer at its own
+        /// mode. A group's heads show one *scene*, not one buffer: sharing a buffer
+        /// would force every head onto a single mode, which is the design this
+        /// replaced -- it could not mirror displays of different resolutions
+        /// without degrading the better one.
+        ///
+        /// `LiveProductionNativeGroup` is a *card session*, not a mirror group. The
+        /// exporter belongs to neither: it belongs to a head.
+        exporters: Vec<
             crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
                 crate::RealAtomicScanoutRenderDeviceDiscovery,
             >,
@@ -255,7 +257,7 @@ mod persistent_native_scanout {
             let mut output_senders: BTreeMap<OutputId, SyncSender<crate::LivePageFlipCallback>> =
                 BTreeMap::new();
             let mut output_callbacks = BTreeMap::new();
-            let mut exporters = BTreeMap::new();
+            let mut exporters = Vec::new();
             for session in sessions.sessions.drain(..) {
                 let group = groups.len();
                 for (selection, output_id) in session
@@ -265,28 +267,18 @@ mod persistent_native_scanout {
                     .zip(session.outputs().iter().copied())
                 {
                     let size = selection.size();
-                    if !exporters.contains_key(&output_id) {
-                        // One exporter for the whole logical output, built against
-                        // the modifiers every one of its heads can scan out.
-                        let group_selections = session
-                            .selections()
-                            .iter()
-                            .copied()
-                            .zip(session.outputs().iter().copied())
-                            .filter(|(_, id)| *id == output_id)
-                            .map(|(selection, _)| selection)
-                            .collect::<Vec<_>>();
-                        let discovery = session.render_device_discovery()?;
-                        exporters.insert(
-                            output_id,
-                            crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::new(discovery)
-                                .with_preferred_modifiers(
-                                    session.preferred_xrgb8888_scanout_modifiers_for_group(
-                                        &group_selections,
-                                    ),
-                                ),
-                        );
-                    }
+                    // This head's own exporter, against this head's own plane
+                    // formats. The group-wide modifier intersection went with the
+                    // shared buffer that needed it: a head scanning out its own
+                    // buffer is constrained only by its own plane.
+                    let discovery = session.render_device_discovery()?;
+                    exporters.push(
+                        crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::new(discovery)
+                            .with_preferred_modifiers(
+                                session
+                                    .preferred_xrgb8888_scanout_modifiers_for_selection(selection),
+                            ),
+                    );
                     let sender = output_senders
                         .entry(output_id)
                         .or_insert_with(|| {
@@ -514,15 +506,20 @@ mod persistent_native_scanout {
                 crate::RealAtomicScanoutRenderDeviceDiscovery,
             >,
         ) {
+            let _ = output;
             (
                 &mut self.heads[index],
                 self.exporters
-                    .get_mut(&output)
-                    .expect("a registered output has an exporter"),
+                    .get_mut(index)
+                    .expect("a registered head has an exporter"),
             )
         }
 
-        /// The exporter backing a logical output, for reads.
+        /// The exporter backing an output's first head, for reads.
+        ///
+        /// Addressing an output rather than a head is correct only where any head
+        /// of a group will do. A caller that composes or exports per head must
+        /// resolve the head first, or a group's other connectors get nothing.
         fn exporter(
             &self,
             output: OutputId,
@@ -531,10 +528,10 @@ mod persistent_native_scanout {
                 crate::RealAtomicScanoutRenderDeviceDiscovery,
             >,
         > {
-            self.exporters.get(&output)
+            self.exporters.get(self.primary_head_index(output)?)
         }
 
-        /// The exporter backing a logical output.
+        /// The exporter backing an output's first head.
         fn exporter_mut(
             &mut self,
             output: OutputId,
@@ -544,8 +541,9 @@ mod persistent_native_scanout {
             >,
             Box<dyn std::error::Error>,
         > {
+            let index = self.primary_head(output)?;
             self.exporters
-                .get_mut(&output)
+                .get_mut(index)
                 .ok_or_else(|| format!("native output {} has no exporter", output.raw()).into())
         }
 
@@ -602,7 +600,7 @@ mod persistent_native_scanout {
                 let head = &mut self.heads[index];
                 let exporter = self
                     .exporters
-                    .get_mut(&output)
+                    .get_mut(index)
                     .ok_or_else(|| format!("native output {} has no exporter", output.raw()))?;
                 let worker_was_in_flight = exporter.worker_in_flight();
                 let export_attempts_before = exporter.cpu_frame_export_attempts();
@@ -974,7 +972,7 @@ mod persistent_native_scanout {
             let head = &mut self.heads[index];
             let exporter = self
                 .exporters
-                .get_mut(&output)
+                .get_mut(index)
                 .ok_or_else(|| format!("native output {} has no exporter", output.raw()))?;
             let export_attempts_before = exporter.cpu_frame_export_attempts();
             groups[group]
