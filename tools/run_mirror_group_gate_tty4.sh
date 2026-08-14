@@ -77,7 +77,10 @@ echo
 set +e
 (
     cd "$ROOT_DIR"
-    ./target/release/sophia sophia-live-session \
+    # Native scanout is armed separately from the session itself, because a
+    # session that drives real KMS is a different act from one that does not.
+    SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        ./target/release/sophia sophia-live-session \
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --desktop-profile="$PROFILE" \
