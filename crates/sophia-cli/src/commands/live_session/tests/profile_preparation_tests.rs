@@ -268,7 +268,6 @@ fn public_profile_prepare_failure_rolls_every_owner_back_without_activation() {
 #[test]
 fn pregraphics_policy_launch_failure_rolls_back_before_returning() {
     let mut config = public_profile_test_config("sophia-profile-launch-failure-test");
-    config.wm_profile_activation = true;
     let directory_path = config.wm_socket_path.with_extension("policy");
     let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
     let started = Instant::now();
@@ -310,7 +309,6 @@ fn hagia_pregraphics_profile_admission_activates_every_owner() {
     };
     let mut config = public_profile_test_config("sophia-hagia-profile-admission-test");
     config.wm_process = Some(hagia_bin.to_string_lossy().into_owned());
-    config.wm_profile_activation = true;
     let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
     let directory_path = config.wm_socket_path.with_extension("policy");
 
@@ -318,9 +316,7 @@ fn hagia_pregraphics_profile_admission_activates_every_owner() {
     let launch = LiveWmSession::activate_public_launch(&mut config, prepared)
         .unwrap()
         .unwrap();
-    let PublicPolicyLaunch::Started(started) = &launch else {
-        panic!("profile activation did not retain the started Hagia runtime");
-    };
+    let started = &launch;
 
     assert_eq!(started.profile_key, Some(key));
     assert_eq!(

@@ -285,13 +285,10 @@ impl LiveWmSession {
     fn activate_public_launch(
         config: &mut PersistentXtermSessionConfig,
         prepared_launch: Option<PreparedPublicPolicyLaunch>,
-    ) -> Result<Option<PublicPolicyLaunch>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<StartedPublicPolicyLaunch>, Box<dyn std::error::Error>> {
         let Some(mut prepared) = prepared_launch else {
             return Ok(None);
         };
-        if !config.wm_profile_activation {
-            return Ok(Some(PublicPolicyLaunch::Prepared(prepared)));
-        }
         let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
         let activation = prepared.activate_startup_until_policy(
             &mut config.session_profile,
@@ -373,15 +370,13 @@ impl LiveWmSession {
             return Err("desktop profile activation emitted effects after promotion".into());
         }
         config.desktop_profile_activation = settled.model;
-        Ok(Some(PublicPolicyLaunch::Started(
-            prepared.into_started(runtime, Some(key)),
-        )))
+        Ok(Some(prepared.into_started(runtime, Some(key))))
     }
 
     fn from_config(
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
-        public_launch: Option<PublicPolicyLaunch>,
+        public_launch: Option<StartedPublicPolicyLaunch>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(process) = config.wm_process.as_deref() else {
             if public_launch.is_some() {
@@ -390,16 +385,8 @@ impl LiveWmSession {
             return Ok(None);
         };
         if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            let public_launch = public_launch
-                .ok_or("public WM launch requires prepared profile fragments")?;
-            let started = match public_launch {
-                PublicPolicyLaunch::Prepared(prepared) => {
-                    prepared.start_runtime(config, process, None).map(|runtime| {
-                        prepared.into_started(runtime, None)
-                    })?
-                }
-                PublicPolicyLaunch::Started(started) => started,
-            };
+            let started = public_launch
+                .ok_or("public WM launch requires an activated desktop profile")?;
             return Self::from_started_public_config(config, outputs, started).map(Some);
         }
         if public_launch.is_some() {

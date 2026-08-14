@@ -169,34 +169,20 @@ fn live_x_session_profiles_are_explicit_and_fail_closed() {
 }
 
 #[test]
-fn profile_activation_is_explicit_and_requires_the_public_policy_interface() {
-    assert!(
-        !PersistentXtermSessionConfig::from_args(&[])
-            .unwrap()
-            .wm_profile_activation
-    );
-    let enabled = PersistentXtermSessionConfig::from_args(&[
+fn public_policy_profile_activation_is_mandatory() {
+    PersistentXtermSessionConfig::from_args(&[
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+    ])
+    .unwrap();
+    // Retain the old proof switch as a harmless compatibility argument. It no
+    // longer controls whether the activation barrier runs.
+    PersistentXtermSessionConfig::from_args(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
         "--wm-profile-activation".to_owned(),
     ])
     .unwrap();
-    assert!(enabled.wm_profile_activation);
-    assert!(
-        PersistentXtermSessionConfig::from_args(&["--wm-profile-activation".to_owned()])
-            .unwrap_err()
-            .to_string()
-            .contains("requires --wm-process and --wm-interface=sophia_wm_v1")
-    );
-    assert!(
-        PersistentXtermSessionConfig::from_args(&[
-            "--wm-interface=sophia_wm_v1".to_owned(),
-            "--wm-profile-activation".to_owned(),
-        ])
-        .unwrap_err()
-        .to_string()
-        .contains("--wm-interface=sophia_wm_v1 requires --wm-process")
-    );
 }
 
 #[test]

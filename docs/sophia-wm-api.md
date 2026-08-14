@@ -109,11 +109,12 @@ candidate it loaded from Sophia's owner-only fragment. Every command and
 completion carries the connection epoch and a nonzero transaction; rejection,
 timeout, disconnect, or rollback leaves the graphical startup gate closed.
 Prepare, activate, and rollback outcomes use a profile-specific closed enum and
-do not share the action/chrome configuration generation namespace. Sophia does
-not advertise the capability during normal policy startup. The explicit
-`--wm-profile-activation` path negotiates it before graphical resources are
-opened, and supervised restart reattaches the same generation and digest under
-a fresh connection epoch.
+do not share the action/chrome configuration generation namespace. Every
+`sophia_wm_v1` startup requires the capability and negotiates it before
+graphical resources are opened. The former `--wm-profile-activation` proof
+switch is accepted as a compatibility no-op; it cannot bypass or strengthen
+the mandatory barrier. Supervised restart reattaches the same generation and
+digest under a fresh connection epoch.
 
 ## Complete Scene Snapshot
 

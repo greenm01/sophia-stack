@@ -96,11 +96,6 @@ struct PreparedPublicPolicyLaunch {
     broker_profile: PreparedAuthorityFragment,
 }
 
-enum PublicPolicyLaunch {
-    Prepared(PreparedPublicPolicyLaunch),
-    Started(StartedPublicPolicyLaunch),
-}
-
 struct StartedPublicPolicyLaunch {
     runtime: StartedPublicPolicyRuntime,
     profile_fragments: sophia_config::DesktopProfileFragments,

@@ -61,7 +61,6 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     wm_interface: sophia_config::ExternalWmInterface,
-    wm_profile_activation: bool,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_socket_path: std::path::PathBuf,
     input_quiet_msec: u64,
@@ -530,13 +529,6 @@ impl PersistentXtermSessionConfig {
         if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
             applications.validate_shortcuts(&shortcut_profile_candidate)?;
         }
-        let wm_profile_activation = args.iter().any(|arg| arg == "--wm-profile-activation");
-        if wm_profile_activation
-            && (wm_process.is_none()
-                || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1)
-        {
-            return Err("--wm-profile-activation requires --wm-process and --wm-interface=sophia_wm_v1".into());
-        }
         let wm_public_fault_after = arg_value(args, "--wm-proof-fault-after")
             .as_deref()
             .map(PublicPolicyFaultPoint::parse)
@@ -699,7 +691,6 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             wm_interface,
-            wm_profile_activation,
             wm_public_fault_after,
             wm_socket_path: std::env::temp_dir().join(format!(
                 "sophia-live-wm-{}-{display_number}.sock",

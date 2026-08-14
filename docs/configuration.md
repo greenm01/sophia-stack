@@ -66,15 +66,17 @@ generations advance monotonically even after rejection, so delayed completion
 cannot alias a retry.
 An injected startup executor boundary converts each typed effect into its
 matching authority call and returns the exact typed completion message. Its
-prepare and rollback handlers now borrow the public Hagia startup owners;
-activation and cross-process authority transports remain unpopulated. The seam
-keeps filesystem or process work from re-entering the reducer implicitly.
+prepare, activate, and rollback handlers borrow the seven public Hagia startup
+owners. Six authorities settle through their authority-local participant
+slots; Policy settles only after Hagia acknowledges the exact staged identity
+over its private transport. The seam keeps filesystem or process work from
+re-entering the reducer implicitly.
 A synchronous startup driver now drains that boundary through the complete
 prepare and activate barriers. The first failed operation cancels the
 remaining phase, dispatches rollback to every authority, and retains the prior
 active identity. Even when one rollback fails, every remaining rollback is
 attempted and the exact unresolved recovery set is returned as an error.
-The prepare barrier is now also exposed as a separate typed startup driver. It
+The prepare barrier is also exposed as a separate typed startup driver. It
 settles all seven prepare effects and returns either `Prepared` or `Rejected`
 without emitting an activation effect. The existing full driver calls this same
 function before requesting activation, so offline proofs and future
@@ -85,7 +87,13 @@ devices, or processes. The dispatcher has seven fixed authority fields that
 borrow the separate policy, shell, shortcut, session, input, output, and broker
 owners. Success retains the coordinator and every participant at the same
 `Prepared` key with no active identity; any local failure rolls all seven slots
-back and aborts startup. The dispatcher deliberately rejects activation calls.
+back and aborts startup. Before graphical construction, the launch gate then
+activates the six local owners, starts Hagia with the exact owner-only Policy
+fragment, and promotes the coordinator only after Hagia's matching completion.
+Timeout, disconnect, identity rejection, or local failure rolls every owner
+back and leaves the graphical gate closed. There is no prepared-only
+`sophia_wm_v1` production branch; the former proof switch is a compatibility
+no-op.
 Each authority now has one shared pure participant model behind that contract.
 It admits only a strictly newer generation and a different digest, makes exact
 prepare, activate, and rollback retries idempotent, restores the exact previous
@@ -179,11 +187,13 @@ the exact profile generation and digest in the expected phase. Test rejection
 discards the candidate without rollback; an apply failure cannot settle until
 rollback succeeds or reports a terminal recovery failure. No executor is wired
 to these effects yet, so startup behavior remains unchanged.
-The production session does not yet invoke this driver or the participant
-transitions. At startup, a future executor may expose authority-local activated
-state only because graphical launch remains gated until every authority has
-activated the same key; failure rolls all participants back before launch.
-That synchronous visibility rule is not a live-reload protocol. Watched
+The production public-policy session invokes this driver and the participant
+transitions before graphical construction. Authority-local state may become
+active while the synchronous batch is settling, but no graphical consumer is
+admitted until every authority has activated the same key; failure rolls all
+participants back before launch. This identity promotion does not itself apply
+an output modeset or install a watched reload source.
+That synchronous startup visibility rule is not a live-reload protocol. Watched
 desktop-profile reload remains disabled until cross-authority transports,
 durable recovery, and an explicit global visibility barrier populate the
 executor handlers; Sophia's existing core and native WM reload behavior is

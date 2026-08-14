@@ -1279,6 +1279,14 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   policy restart clears capture before the next physical input drain. Hagia
   applies continuous geometry and treats Cancel as a spatial no-op. Live
   drag/scroll production remains open, so this row is intentionally not complete.
+- [x] Make exact desktop-profile activation mandatory for every public
+  `sophia_wm_v1` launch. The pre-graphical gate prepares all seven authorities,
+  activates the six Sophia-local owner slots, admits Hagia against the exact
+  Policy fragment, and promotes only after its matching completion. Timeout,
+  disconnect, rejection, or any local failure rolls the generation back before
+  graphical construction. The old opt-in switch remains only as a harmless
+  compatibility argument. This closes startup visibility; watched reload still
+  requires its separate message-53+ visibility and durable-recovery protocol.
 - [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
   client, and permanent-compatibility process. Keep its endpoint and
   capabilities separate from `sophia_wm_v1`. Begin experimental modeling and

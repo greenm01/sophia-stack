@@ -545,7 +545,18 @@ Completed evidence is archived in `research-log-archive.md`.
   all seven participants and the coordinator at the same `Prepared` key before
   display setup. Injected failure at every authority proves generation-wide
   rollback, empty candidates, unchanged active identity, cleanup, and no
-  process launch. Activation remains fail-closed and unwired.
+  process launch.
+- The retained activation driver is now the only public-policy launch path.
+  After the complete prepare barrier, six Sophia-local owner slots activate in
+  canonical order and Hagia is started with the exact staged Policy identity;
+  the coordinator promotes only after Hagia's matching completion. A launch
+  timeout, disconnect, rejection, or participant failure drains generation-wide
+  rollback before graphical construction. Removing the prepared-only branch is
+  deliberately limited to synchronous startup visibility: watched reload still
+  needs a separate global visibility and durable-recovery protocol. The former
+  `--wm-profile-activation` proof switch remains accepted as a compatibility
+  no-op, so installed launch profiles do not break while the unsafe choice is
+  gone.
 - `load_desktop_profile` had already run the shared preparation boundary before
   returning, so live-session startup's immediate second preparation was pure
   duplication. `load_prepared_desktop_profile` now returns a typed aggregate
