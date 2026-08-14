@@ -918,6 +918,34 @@ is excluded; retained product behavior is not.
   an end-to-end mirror test reachable at all; until it lands, reconciliation
   refuses both the shared position and the `mirror` directive, so the
   head-composition test asserts the projection shape those changes must preserve.
+- [ ] Apply a desktop output configuration change to a *running* session, so an
+  operator can change a mode, position, scale, or transform without restarting.
+  None of this exists today, and the pieces that look like it are startup-only.
+  Four gaps, in dependency order, all found by tracing rather than assumed:
+  Frame targets never resize. `observe_gbm_egl_frame_target_size_for` and
+  `observe_output_size_for` (`runtime/frame_target.rs:39`, `:57`) have no
+  production callers at all, so an output's frame is fixed at the size it had when
+  the runtime was built. The only way a size changes is tearing the whole runtime
+  set down and rebuilding it, which is what hotplug rescan does.
+  No session can apply a modeset. The live session drives activation with
+  `NativeOutputTopologyValidationExecutor`, whose apply is a hard refusal --
+  "Apply is not gated here, it is absent" (`desktop_output_commit.rs:35`). The one
+  apply-capable executor, `NativeOutputCommitExecutor::activating`, is built only
+  by the standalone `native-topology-apply` command, which opens its own DRM
+  master and therefore cannot run against a live session at all.
+  Nothing triggers an activation after startup. The activation block runs once in
+  `run_persistent_xterm_session` before the event loop; there is no reload, no
+  signal handler, and no control-socket message that reaches it. The output
+  profile is read once at construction and never re-read.
+  And nothing reconciles after a successful apply: the engine topology, the
+  session's `initial_outputs`, and the policy scene would all still describe the
+  old modes.
+  Ordering note: this is **not** a prerequisite for mirroring. A group's heads can
+  come up at their own modes during the session's initial modeset, which needs
+  none of the above. The two were conflated once already, and the frame-target
+  gap was misdiagnosed as mirroring's blocker when the real one was that the
+  standalone apply command composes nothing and can only re-apply what is already
+  on screen.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
