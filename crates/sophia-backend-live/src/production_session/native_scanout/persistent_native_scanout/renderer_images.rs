@@ -111,6 +111,68 @@ impl LiveProductionNativeScanout {
         frame_id
     }
 
+    /// Queues one composed frame onto every head of a logical output, each at the
+    /// rect that frame lands on for that head.
+    ///
+    /// This is mirroring's whole visual behaviour. A group's heads show one
+    /// *scene*, not one buffer: the same composed pixels are placed into each
+    /// head's own buffer at its own mode, scaled and centred by `fit`. Nothing is
+    /// captured and nothing is composed twice -- the frame is already a single
+    /// flat buffer, and the placement is what differs per head.
+    ///
+    /// It goes through the mixed door rather than the CPU one deliberately. The
+    /// pure-CPU path carries no destination rect and would upload the frame at its
+    /// own size, which is right for a head whose mode matches the scene and wrong
+    /// for every other head of a group.
+    ///
+    /// Returns how many heads took the frame.
+    pub fn queue_projected_frame(
+        &mut self,
+        output: OutputId,
+        frame: &sophia_renderer_live::LiveCpuComposedFrame,
+        fit: crate::NativeMirrorFit,
+    ) -> usize {
+        let heads = self.head_indices(output);
+        let mut queued = 0usize;
+        for head_index in heads {
+            let destination = self.heads[head_index].output.size;
+            let target = crate::project_mirror_rect(frame.size, destination, fit);
+            if target.width <= 0 || target.height <= 0 {
+                continue;
+            }
+            let layer = sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu {
+                buffer: sophia_renderer_live::LiveCpuBufferSource {
+                    handle: 0,
+                    size: frame.size,
+                    stride: frame.stride,
+                    format: frame.format,
+                    generation: 0,
+                    bytes: frame.bytes.as_ref().clone(),
+                },
+                placement: sophia_renderer_live::LiveCompositionPlacement {
+                    target,
+                    clip: None,
+                    transform: sophia_protocol::Transform::IDENTITY,
+                    alpha: 1.0,
+                },
+            };
+            let frame_id = self.allocate_frame_id();
+            let (head, exporter) = self.head_and_exporter(head_index, output);
+            head.pending_content = Some(LiveProductionScanoutContent::Cpu {
+                frame: frame_id,
+                checksum: 0,
+            });
+            exporter.set_pending_mixed_frame(
+                sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+                    layers: vec![layer],
+                    output_damage_snapshot: None,
+                },
+            );
+            queued = queued.saturating_add(1);
+        }
+        queued
+    }
+
     pub fn queue_retained_mixed_frame(
         &mut self,
         output: OutputId,

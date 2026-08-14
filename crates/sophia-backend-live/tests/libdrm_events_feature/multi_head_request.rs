@@ -721,3 +721,29 @@ fn a_head_with_no_area_yields_an_empty_rect_rather_than_dividing_by_zero() {
         }
     );
 }
+
+#[test]
+fn one_composed_frame_lands_on_two_heads_at_two_sizes() {
+    // The claim the whole projection design rests on: a group composes once and
+    // each head receives that same frame placed for its own mode. Asserted on the
+    // geometry, which is what decides it -- the draw is a scaled blit that takes
+    // this rect verbatim.
+    let scene = size(2560, 1440);
+
+    // The head whose mode matches the scene takes the buffer whole.
+    let primary = project_mirror_rect(scene, size(2560, 1440), NativeMirrorFit::Fit);
+    // The head at a different mode takes the same frame, scaled to its own buffer.
+    let mirrored = project_mirror_rect(scene, size(1920, 1080), NativeMirrorFit::Fit);
+
+    assert_eq!(primary.width, 2560);
+    assert_eq!(mirrored.width, 1920);
+    assert_ne!(
+        (primary.width, primary.height),
+        (mirrored.width, mirrored.height),
+        "one frame, two differently sized destinations -- if these match, \
+         nothing is being projected and both heads would need one mode"
+    );
+    // Neither head is cropped or offset, because the modes share an aspect.
+    assert_eq!((primary.x, primary.y), (0, 0));
+    assert_eq!((mirrored.x, mirrored.y), (0, 0));
+}
