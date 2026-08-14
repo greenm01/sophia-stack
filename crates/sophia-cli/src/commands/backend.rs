@@ -388,9 +388,6 @@ fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::er
         prepare_native_output_activation_plan, project_native_output_topology,
     };
 
-    let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
-    let capabilities = native.output_capabilities()?;
-    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
     let profile_source = topology_desktop_profile_source(args)?;
     // Evidence has to say which configuration was tested. A run against the
     // compiled default and a run against the operator's file are different
@@ -403,10 +400,35 @@ fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::er
         profile_source.as_deref(),
         sophia_config::ConfigGeneration::INITIAL,
     )?;
+    // The card set is built with the grouping the profile asks for, or the command
+    // would reconcile a configured group against a desktop that has none.
+    let grouping =
+        sophia_backend_live::NativeMirrorGrouping::new(prepared.candidates.output.mirror_groups())
+            .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
+    let native = sophia_backend_live::LiveProductionNativeScanout::new_with_mirroring(&grouping)?;
+    let capabilities = native.output_capabilities()?;
+    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let profile_source = topology_desktop_profile_source(args)?;
+    // Evidence has to say which configuration was tested. A run against the
+    // compiled default and a run against the operator's file are different
+    // claims, and the log line was unable to tell them apart.
+    let prepared = sophia_config::load_prepared_desktop_profile(
+        profile_source.as_deref(),
+        sophia_config::ConfigGeneration::INITIAL,
+    )?;
     let reconciled =
         sophia_config::reconcile_desktop_output_candidate(&prepared.candidates.output, &topology)?;
     let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
-    let outputs = plan.targets().len();
+    // Logical outputs, not activation targets. A mirror group is several targets
+    // behind one output, so counting targets reported a grouped desktop as an
+    // ungrouped one -- which is exactly the claim this line exists to make.
+    let outputs = plan
+        .targets()
+        .iter()
+        .map(sophia_cli::desktop_output_topology::NativeOutputActivationTarget::output)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let connectors = plan.targets().len();
     let generation = plan.generation().raw();
 
     let hardware = LiveNativeOutputTopologyHardware::new(&native, &capabilities);
@@ -428,7 +450,8 @@ fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::er
 
     println!(
         "sophia_native_topology_validate schema=2 validation={validation} settlement={settlement} \
-outputs={outputs} heads={heads} generation={generation} profile={profile}"
+outputs={outputs} connectors={connectors} heads={heads} generation={generation} \
+profile={profile}"
     );
 
     if validation != "accepted" {
@@ -467,9 +490,6 @@ fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::
         prepare_native_output_activation_plan, project_native_output_topology,
     };
 
-    let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
-    let capabilities = native.output_capabilities()?;
-    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
     let profile_source = topology_desktop_profile_source(args)?;
     // Evidence has to say which configuration was tested. A run against the
     // compiled default and a run against the operator's file are different
@@ -478,6 +498,22 @@ fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::
         || "<compiled>".to_owned(),
         |path| path.display().to_string(),
     );
+    let prepared = sophia_config::load_prepared_desktop_profile(
+        profile_source.as_deref(),
+        sophia_config::ConfigGeneration::INITIAL,
+    )?;
+    // The card set is built with the grouping the profile asks for, or the command
+    // would reconcile a configured group against a desktop that has none.
+    let grouping =
+        sophia_backend_live::NativeMirrorGrouping::new(prepared.candidates.output.mirror_groups())
+            .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
+    let native = sophia_backend_live::LiveProductionNativeScanout::new_with_mirroring(&grouping)?;
+    let capabilities = native.output_capabilities()?;
+    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let profile_source = topology_desktop_profile_source(args)?;
+    // Evidence has to say which configuration was tested. A run against the
+    // compiled default and a run against the operator's file are different
+    // claims, and the log line was unable to tell them apart.
     let prepared = sophia_config::load_prepared_desktop_profile(
         profile_source.as_deref(),
         sophia_config::ConfigGeneration::INITIAL,

@@ -276,6 +276,13 @@ pub(crate) fn run_persistent_xterm_session(
         config.output_profile.candidate().mirror_groups(),
     )
     .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
+    let mirror_fit = match config.output_profile.candidate().mirror_fit() {
+        Some(sophia_config::DesktopMirrorFit::Cover) => sophia_backend_live::NativeMirrorFit::Cover,
+        Some(sophia_config::DesktopMirrorFit::Exact) => sophia_backend_live::NativeMirrorFit::Exact,
+        Some(sophia_config::DesktopMirrorFit::Fit) | None => {
+            sophia_backend_live::NativeMirrorFit::Fit
+        }
+    };
     let mut native_scanout = seat_controller
         .as_ref()
         .map(|controller| {
@@ -285,6 +292,9 @@ pub(crate) fn run_persistent_xterm_session(
             )
         })
         .transpose()?;
+    if let Some(native) = native_scanout.as_mut() {
+        native.mirror_fit = mirror_fit;
+    }
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
         let topology = project_native_output_topology(&capabilities, &native.outputs())?;

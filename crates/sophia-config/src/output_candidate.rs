@@ -100,6 +100,19 @@ impl DesktopOutputCandidate {
     /// Returned as plain connector names rather than a KMS type, because
     /// configuration is the wrong layer to know what a DRM connector handle is.
     /// The session that builds the cards turns these into a grouping.
+    /// The fit policy this configuration asks for.
+    ///
+    /// One policy per session rather than per group: a desktop with two groups
+    /// wanting different placement is a shape nobody has asked for, and carrying
+    /// it would mean threading a policy per logical output through the scanout for
+    /// no operator benefit. The first group that states one wins; the rest default.
+    pub fn mirror_fit(&self) -> Option<DesktopMirrorFit> {
+        self.named
+            .iter()
+            .filter(|output| !output.mirror.is_empty())
+            .find_map(|output| output.mirror_fit)
+    }
+
     pub fn mirror_groups(&self) -> Vec<Vec<String>> {
         self.named
             .iter()

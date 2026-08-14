@@ -164,27 +164,6 @@ pub enum DesktopOutputReconcileError {
         primary: String,
         mirrored: String,
     },
-    /// A mirrored connector cannot present the primary's mode. No plane scaling
-    /// exists on this path, so the alternative to refusing is silently letterboxing
-    /// a screen the operator asked to match.
-    MirrorModeMismatch {
-        primary: String,
-        mirrored: String,
-    },
-    /// The configuration is expressible and the render path behind it is not
-    /// finished. Refused rather than dropped: a mirror directive that is accepted
-    /// and ignored leaves an operator staring at an unmirrored screen with no
-    /// error to search for.
-    ///
-    /// This was removed once already, on the stated grounds that the render path
-    /// worked. It did not -- the configured grouping reached a layer hardcoded to
-    /// ignore it, so nothing mirrored and nothing said so. It comes back until a
-    /// group's heads can come up at their own modes with the scene composed into
-    /// each, and the thing that removes it is that work landing, not a judgement
-    /// that it has.
-    MirrorUnsupported {
-        primary: String,
-    },
     NoEnabledOutput,
 }
 
@@ -200,14 +179,6 @@ impl fmt::Display for DesktopOutputReconcileError {
             Self::MirrorConnectorClaimed { primary, mirrored } => write!(
                 formatter,
                 "output {primary:?} mirrors {mirrored:?}, which another output already claims"
-            ),
-            Self::MirrorModeMismatch { primary, mirrored } => write!(
-                formatter,
-                "output {primary:?} mirrors {mirrored:?}, which cannot present the same mode"
-            ),
-            Self::MirrorUnsupported { primary } => write!(
-                formatter,
-                "output {primary:?} requests mirroring, which Sophia validates but cannot yet drive"
             ),
             Self::InvalidReconciliation(message) => {
                 write!(formatter, "invalid output reconciliation: {message}")
@@ -551,9 +522,11 @@ fn validate_mirror_against_topology(
                 output.connector.clone(),
             ));
         };
-        // The mode the group will run, resolved exactly as the primary's own
-        // reconciliation resolves it. Two answers to "which mode" is one too many.
-        let mode = resolve_mode(primary, output.mode.unwrap_or(DesktopOutputMode::Preferred))?;
+        // The primary's own mode still has to resolve, because the group's scene is
+        // composed at it. What no longer has to hold is that every member can
+        // present it: each head runs its own mode and the scene is placed onto it,
+        // so a member that cannot match is the ordinary case rather than a refusal.
+        let _ = resolve_mode(primary, output.mode.unwrap_or(DesktopOutputMode::Preferred))?;
 
         for mirrored in &output.mirror {
             let Some(member) = topology
@@ -570,20 +543,7 @@ fn validate_mirror_against_topology(
                     mirrored.clone(),
                 ));
             }
-            if !member.modes.contains(&mode) {
-                return Err(DesktopOutputReconcileError::MirrorModeMismatch {
-                    primary: output.connector.clone(),
-                    mirrored: mirrored.clone(),
-                });
-            }
         }
-
-        // Every impossible case is reported above first, because "this asks for
-        // something impossible" and "Sophia cannot do this yet" send an operator
-        // to different places.
-        return Err(DesktopOutputReconcileError::MirrorUnsupported {
-            primary: output.connector.clone(),
-        });
     }
     Ok(())
 }
@@ -687,11 +647,12 @@ fn resolve_mode(
 
 /// Binds each group's members to its primary and makes them agree.
 ///
-/// The members take the primary's whole visual state, not just its position. A
-/// group is one logical output backed by several connectors, so a member running
-/// its own mode or scale would not be a mirror of anything -- and there is no
-/// plane scaling on this path to reconcile a difference. Taking rather than
-/// checking also means the group cannot be configured into disagreement.
+/// The members take the primary's logical state -- position, scale, transform,
+/// enabled -- because a group is one logical output and those describe the output
+/// rather than the cable. They keep their own *mode*, because that describes the
+/// cable, and the group's scene is placed onto each head at whatever mode it runs.
+/// Taking rather than checking means the group cannot be configured into
+/// disagreement about the things that must agree.
 fn apply_mirror_groups(
     candidate: &DesktopOutputCandidate,
     outputs: &mut [DesktopOutputState],
@@ -719,7 +680,9 @@ fn apply_mirror_groups(
                 ));
             };
             state.enabled = primary.enabled;
-            state.mode = primary.mode;
+            // Not the mode. Each head runs its own and the group's scene is placed
+            // onto it -- taking the primary's was the shared-buffer assumption, and
+            // it is what made a group of mismatched panels impossible.
             state.scale_milli = primary.scale_milli;
             state.position = primary.position;
             state.transform = primary.transform;

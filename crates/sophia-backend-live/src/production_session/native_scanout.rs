@@ -33,8 +33,8 @@ mod persistent_native_scanout {
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
         /// How a group's frame is placed on a head whose mode differs from the
-        /// scene. One policy for the session, from configuration.
-        mirror_fit: crate::NativeMirrorFit,
+        /// scene, from configuration.
+        pub mirror_fit: crate::NativeMirrorFit,
         /// One scanout buffer exporter per head, parallel to `heads`.
         ///
         /// Per head because each connector scans out its own buffer at its own
@@ -149,10 +149,19 @@ mod persistent_native_scanout {
 
     impl LiveProductionNativeScanout {
         pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-            Self::new_with_selection(
-                crate::select_real_atomic_scanout_cards(),
-                &crate::NativeMirrorGrouping::none(),
-            )
+            Self::new_with_mirroring(&crate::NativeMirrorGrouping::none())
+        }
+
+        /// Builds without a seat, with connectors grouped into logical outputs.
+        ///
+        /// The standalone topology commands need this: they read the operator's
+        /// profile to reconcile against, so building the card set without the
+        /// grouping that profile asks for would validate a different desktop than
+        /// the one configured -- two outputs where the operator asked for one.
+        pub fn new_with_mirroring(
+            grouping: &crate::NativeMirrorGrouping,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            Self::new_with_selection(crate::select_real_atomic_scanout_cards(), grouping)
         }
 
         #[cfg(feature = "seat-control")]

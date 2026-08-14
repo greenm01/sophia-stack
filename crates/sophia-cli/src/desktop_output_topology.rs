@@ -66,9 +66,6 @@ pub enum NativeOutputTopologyProjectionError {
     MissingCapability(u64),
     UnexpectedCapability(u64),
     PixelSizeMismatch(u64),
-    /// Connectors sharing one logical output disagree on their selected mode. A
-    /// mirror group scans out one framebuffer, and no plane scaling exists here.
-    MirrorModeMismatch(u64),
     ScaleUnsupported(u64),
     PositionExhausted,
     InvalidTopology(DesktopOutputReconcileError),
@@ -86,12 +83,6 @@ impl fmt::Display for NativeOutputTopologyProjectionError {
             }
             Self::UnexpectedCapability(output) => {
                 write!(formatter, "DRM capability {output} has no Engine output")
-            }
-            Self::MirrorModeMismatch(output) => {
-                write!(
-                    formatter,
-                    "native output {output} mirrors connectors with different modes"
-                )
             }
             Self::PixelSizeMismatch(output) => {
                 write!(
@@ -269,17 +260,9 @@ pub fn project_native_output_topology(
         )?;
         let capability = group[0];
         let selected = timing(capability.selected_mode());
-        // Every head in a group scans out one framebuffer, and no plane scaling
-        // exists on this path, so a member on a different mode could only be
-        // letterboxed. Refusing here keeps that from reaching the commit.
-        if group
-            .iter()
-            .any(|member| timing(member.selected_mode()) != selected)
-        {
-            return Err(NativeOutputTopologyProjectionError::MirrorModeMismatch(
-                output_id,
-            ));
-        }
+        // Heads of a group need not share a mode. The logical output is sized by
+        // its primary, because that is what the scene is composed at, and each
+        // other head runs its own mode with the scene placed onto it.
         if u32::try_from(output.size.width).ok() != Some(selected.width)
             || u32::try_from(output.size.height).ok() != Some(selected.height)
         {
@@ -317,12 +300,16 @@ pub fn project_native_output_topology(
                 vrr_capable: member.vrr_configurable(),
                 current: DesktopOutputState {
                     connector: member.connector_name().to_owned(),
+                    // This head's own mode, which is the one it is actually
+                    // scanning out. Stamping the group's mode here described a
+                    // state the connector could not present, and the snapshot
+                    // validator said so.
                     // The projection describes hardware, not configuration. Group
                     // membership arrives from the candidate, so the topology's own
                     // view of a connector never claims one.
                     mirror_of: None,
                     enabled: true,
-                    mode: selected,
+                    mode: timing(member.selected_mode()),
                     scale_milli,
                     position,
                     transform: DesktopOutputTransform::Normal,
