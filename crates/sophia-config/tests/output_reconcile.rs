@@ -321,26 +321,16 @@ fn mirror_groups_lead_with_their_primary_and_omit_ungrouped_outputs() {
 }
 
 #[test]
-fn a_mirror_member_that_cannot_present_the_primary_mode_fails_closed() {
-    // DP-1 prefers 2560x1440 and DP-2 offers only 1920x1080. No plane scaling exists
-    // on this path, so honoring the request would mean letterboxing a screen the
-    // operator asked to match. Refusing names both connectors.
-    assert_eq!(
-        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &topology()),
-        Err(DesktopOutputReconcileError::MirrorModeMismatch {
-            primary: "DP-1".to_owned(),
-            mirrored: "DP-2".to_owned(),
-        })
-    );
-}
-
-#[test]
-fn a_mirror_group_becomes_one_logical_output() {
-    // Same mode on both connectors, so the request is expressible -- and now
-    // driveable. The members take the primary's whole visual state rather than
-    // merely being allowed to overlap it: a member running its own mode or scale
-    // would not be a mirror of anything, and no plane scaling exists here to
-    // reconcile a difference.
+fn a_mirror_group_that_could_work_is_still_refused_until_the_render_path_lands() {
+    // Same mode on both connectors, so the request is expressible and the only
+    // reason to refuse is that a group's heads cannot yet come up at their own
+    // modes with the scene composed into each. Refused rather than dropped: a
+    // mirror directive accepted and ignored leaves an operator staring at an
+    // unmirrored screen with no error to search for.
+    //
+    // The binding this used to assert -- members taking the primary's state, one
+    // shared position -- is still implemented and returns to being observable
+    // through reconciliation when this refusal is removed for the right reason.
     let same_mode = DesktopOutputTopologySnapshot {
         connectors: vec![
             connector(
@@ -358,30 +348,26 @@ fn a_mirror_group_becomes_one_logical_output() {
         ],
     };
 
-    let reconciliation =
-        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &same_mode)
-            .expect("a same-mode group is one logical output");
+    assert_eq!(
+        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &same_mode),
+        Err(DesktopOutputReconcileError::MirrorUnsupported {
+            primary: "DP-1".to_owned(),
+        })
+    );
+}
 
-    let primary = reconciliation
-        .outputs
-        .iter()
-        .find(|output| output.connector == "DP-1")
-        .expect("the primary survives reconciliation");
-    let member = reconciliation
-        .outputs
-        .iter()
-        .find(|output| output.connector == "DP-2")
-        .expect("the member survives reconciliation");
-
-    assert_eq!(primary.mirror_of, None, "the primary owns the group");
-    assert_eq!(member.mirror_of.as_deref(), Some("DP-1"));
-    // One logical output means one position, which is exactly the arrangement
-    // reject_overlaps would otherwise refuse.
-    assert_eq!(member.position, primary.position);
-    assert_eq!(member.mode, primary.mode);
-    assert_eq!(member.scale_milli, primary.scale_milli);
-    assert_eq!(member.transform, primary.transform);
-    assert_eq!(member.enabled, primary.enabled);
+#[test]
+fn a_mirror_member_that_cannot_present_the_primary_mode_fails_closed() {
+    // DP-1 prefers 2560x1440 and DP-2 offers only 1920x1080. No plane scaling exists
+    // on this path, so honoring the request would mean letterboxing a screen the
+    // operator asked to match. Refusing names both connectors.
+    assert_eq!(
+        reconcile_desktop_output_candidate(&mirrored("DP-1", &["DP-2"]), &topology()),
+        Err(DesktopOutputReconcileError::MirrorModeMismatch {
+            primary: "DP-1".to_owned(),
+            mirrored: "DP-2".to_owned(),
+        })
+    );
 }
 
 #[test]

@@ -171,6 +171,20 @@ pub enum DesktopOutputReconcileError {
         primary: String,
         mirrored: String,
     },
+    /// The configuration is expressible and the render path behind it is not
+    /// finished. Refused rather than dropped: a mirror directive that is accepted
+    /// and ignored leaves an operator staring at an unmirrored screen with no
+    /// error to search for.
+    ///
+    /// This was removed once already, on the stated grounds that the render path
+    /// worked. It did not -- the configured grouping reached a layer hardcoded to
+    /// ignore it, so nothing mirrored and nothing said so. It comes back until a
+    /// group's heads can come up at their own modes with the scene composed into
+    /// each, and the thing that removes it is that work landing, not a judgement
+    /// that it has.
+    MirrorUnsupported {
+        primary: String,
+    },
     NoEnabledOutput,
 }
 
@@ -190,6 +204,10 @@ impl fmt::Display for DesktopOutputReconcileError {
             Self::MirrorModeMismatch { primary, mirrored } => write!(
                 formatter,
                 "output {primary:?} mirrors {mirrored:?}, which cannot present the same mode"
+            ),
+            Self::MirrorUnsupported { primary } => write!(
+                formatter,
+                "output {primary:?} requests mirroring, which Sophia validates but cannot yet drive"
             ),
             Self::InvalidReconciliation(message) => {
                 write!(formatter, "invalid output reconciliation: {message}")
@@ -559,6 +577,13 @@ fn validate_mirror_against_topology(
                 });
             }
         }
+
+        // Every impossible case is reported above first, because "this asks for
+        // something impossible" and "Sophia cannot do this yet" send an operator
+        // to different places.
+        return Err(DesktopOutputReconcileError::MirrorUnsupported {
+            primary: output.connector.clone(),
+        });
     }
     Ok(())
 }
