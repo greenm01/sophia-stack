@@ -32,6 +32,19 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
+        /// One scanout buffer exporter per logical output.
+        ///
+        /// Per output rather than per head: a mirror group's connectors scan out
+        /// one buffer, so an exporter each would render the same frame twice into
+        /// two buffers and only one of them would ever reach a screen. Note that
+        /// `LiveProductionNativeGroup` is a *card session* and not a mirror group;
+        /// the exporter belongs to neither, but to the logical output.
+        exporters: BTreeMap<
+            OutputId,
+            crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
+                crate::RealAtomicScanoutRenderDeviceDiscovery,
+            >,
+        >,
         /// One callback channel per logical output, taken once when its runtime is
         /// built. Per output rather than per head because a mirror group's heads
         /// feed one runtime: two queues would make the group's flips arrive as two
@@ -63,9 +76,6 @@ mod persistent_native_scanout {
     pub struct LiveProductionNativeHead {
         pub group: usize,
         pub selection: crate::LibdrmNativePrimaryPlaneSelection,
-        pub exporter: crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
-            crate::RealAtomicScanoutRenderDeviceDiscovery,
-        >,
         /// Feeds this head's logical output. Every head of a mirror group holds a
         /// clone of the same sender.
         pub sender: SyncSender<crate::LivePageFlipCallback>,
@@ -224,6 +234,7 @@ mod persistent_native_scanout {
             let mut output_senders: BTreeMap<OutputId, SyncSender<crate::LivePageFlipCallback>> =
                 BTreeMap::new();
             let mut output_callbacks = BTreeMap::new();
+            let mut exporters = BTreeMap::new();
             for session in sessions.sessions.drain(..) {
                 let group = groups.len();
                 for (selection, output_id) in session
@@ -233,13 +244,28 @@ mod persistent_native_scanout {
                     .zip(session.outputs().iter().copied())
                 {
                     let size = selection.size();
-                    let discovery = session.render_device_discovery()?;
-                    let exporter =
-                        crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::new(discovery)
-                            .with_preferred_modifiers(
-                                session
-                                    .preferred_xrgb8888_scanout_modifiers_for_selection(selection),
-                            );
+                    if !exporters.contains_key(&output_id) {
+                        // One exporter for the whole logical output, built against
+                        // the modifiers every one of its heads can scan out.
+                        let group_selections = session
+                            .selections()
+                            .iter()
+                            .copied()
+                            .zip(session.outputs().iter().copied())
+                            .filter(|(_, id)| *id == output_id)
+                            .map(|(selection, _)| selection)
+                            .collect::<Vec<_>>();
+                        let discovery = session.render_device_discovery()?;
+                        exporters.insert(
+                            output_id,
+                            crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::new(discovery)
+                                .with_preferred_modifiers(
+                                    session.preferred_xrgb8888_scanout_modifiers_for_group(
+                                        &group_selections,
+                                    ),
+                                ),
+                        );
+                    }
                     let sender = output_senders
                         .entry(output_id)
                         .or_insert_with(|| {
@@ -251,7 +277,6 @@ mod persistent_native_scanout {
                     heads.push(LiveProductionNativeHead {
                         group,
                         selection,
-                        exporter,
                         sender,
                         output: sophia_engine::HeadlessOutput {
                             id: output_id,
@@ -317,6 +342,7 @@ mod persistent_native_scanout {
                 callback_rejected: 0,
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
+                exporters,
                 output_callbacks,
                 next_frame_id: 1,
                 production_page_flips,
@@ -452,6 +478,56 @@ mod persistent_native_scanout {
             self.groups[self.heads[index].group].session.card()
         }
 
+        /// One head and its output's exporter together.
+        ///
+        /// They live in different tables now, and most work touches both. Handing
+        /// out the pair from one place keeps every caller from having to spell out
+        /// the disjoint borrow itself.
+        fn head_and_exporter(
+            &mut self,
+            index: usize,
+            output: OutputId,
+        ) -> (
+            &mut LiveProductionNativeHead,
+            &mut crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
+                crate::RealAtomicScanoutRenderDeviceDiscovery,
+            >,
+        ) {
+            (
+                &mut self.heads[index],
+                self.exporters
+                    .get_mut(&output)
+                    .expect("a registered output has an exporter"),
+            )
+        }
+
+        /// The exporter backing a logical output, for reads.
+        fn exporter(
+            &self,
+            output: OutputId,
+        ) -> Option<
+            &crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
+                crate::RealAtomicScanoutRenderDeviceDiscovery,
+            >,
+        > {
+            self.exporters.get(&output)
+        }
+
+        /// The exporter backing a logical output.
+        fn exporter_mut(
+            &mut self,
+            output: OutputId,
+        ) -> Result<
+            &mut crate::NativeGbmRenderedScanoutBufferDiscoveryExporter<
+                crate::RealAtomicScanoutRenderDeviceDiscovery,
+            >,
+            Box<dyn std::error::Error>,
+        > {
+            self.exporters
+                .get_mut(&output)
+                .ok_or_else(|| format!("native output {} has no exporter", output.raw()).into())
+        }
+
         /// The head this logical output is addressed through.
         ///
         /// Every per-head entry point below resolves through this rather than
@@ -494,7 +570,7 @@ mod persistent_native_scanout {
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
             let index = self.primary_head(output)?;
             self.ensure_page_flip_progress()?;
-            if !self.heads[index].exporter.pending_frame() {
+            if !self.exporter_mut(output)?.pending_frame() {
                 self.retire_ready_and_retry_cleanup(output, runtime)?;
                 return Ok(runtime.run_tick(input)?);
             }
@@ -503,18 +579,22 @@ mod persistent_native_scanout {
             let (report, exported_nonzero, worker_was_in_flight) = {
                 let groups = &mut self.groups;
                 let head = &mut self.heads[index];
-                let worker_was_in_flight = head.exporter.worker_in_flight();
-                let export_attempts_before = head.exporter.cpu_frame_export_attempts();
+                let exporter = self
+                    .exporters
+                    .get_mut(&output)
+                    .ok_or_else(|| format!("native output {} has no exporter", output.raw()))?;
+                let worker_was_in_flight = exporter.worker_in_flight();
+                let export_attempts_before = exporter.cpu_frame_export_attempts();
                 let report = runtime
                     .run_tick_with_native_gbm_rendered_primary_plane_scanout_exporter_with(
                         input,
                         groups[group].session.card(),
-                        &mut head.exporter,
+                        exporter,
                     )?;
-                let exported_nonzero = head.exporter.cpu_frame_export_attempts()
+                let exported_nonzero = exporter.cpu_frame_export_attempts()
                     > export_attempts_before
                     && head.pending_nonzero_pixel_bytes > 0;
-                if !head.exporter.pending_cpu_frame() {
+                if !exporter.pending_cpu_frame() {
                     head.pending_nonzero_pixel_bytes = 0;
                 }
                 (report, exported_nonzero, worker_was_in_flight)
@@ -531,7 +611,9 @@ mod persistent_native_scanout {
             if let Some(submit) = report.rendered_primary_plane_scanout_submit {
                 self.heads[index].last_submit_report = Some(submit);
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
-                let worker_is_in_flight = self.heads[index].exporter.worker_in_flight();
+                let worker_is_in_flight = self.exporter(output).is_some_and(
+                    crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::worker_in_flight,
+                );
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
                         let content = if worker_was_in_flight {
@@ -541,7 +623,9 @@ mod persistent_native_scanout {
                         };
                         let content = content.map(|content| {
                             content.with_nonzero_rgb_pixels(
-                                self.heads[index].exporter.composition_nonzero_rgb_pixels(),
+                                self.exporter(output).map_or(0, |exporter| {
+                                    exporter.composition_nonzero_rgb_pixels()
+                                }),
                             )
                         });
                         if worker_was_in_flight
@@ -860,25 +944,29 @@ mod persistent_native_scanout {
             let group = self.heads[index].group;
             let groups = &mut self.groups;
             let head = &mut self.heads[index];
-            let export_attempts_before = head.exporter.cpu_frame_export_attempts();
+            let exporter = self
+                .exporters
+                .get_mut(&output)
+                .ok_or_else(|| format!("native output {} has no exporter", output.raw()))?;
+            let export_attempts_before = exporter.cpu_frame_export_attempts();
             groups[group]
                 .session
                 .initialize_persistent_native_gbm_scanout_for_selection(
                     runtime,
-                    &mut head.exporter,
+                    exporter,
                     head.selection,
                 )
                 .map_err(|evidence| {
                     format!("persistent native initial modeset failed: {evidence:?}")
                 })?;
-            head.exporter.enable_worker()?;
-            if head.exporter.cpu_frame_export_attempts() > export_attempts_before
+            exporter.enable_worker()?;
+            if exporter.cpu_frame_export_attempts() > export_attempts_before
                 && head.pending_nonzero_pixel_bytes > 0
             {
                 self.nonzero_exports = self.nonzero_exports.saturating_add(1);
                 head.nonzero_exports = head.nonzero_exports.saturating_add(1);
             }
-            if !head.exporter.pending_cpu_frame() {
+            if !exporter.pending_cpu_frame() {
                 head.pending_nonzero_pixel_bytes = 0;
             }
             self.submissions = self.submissions.saturating_add(1);
@@ -914,7 +1002,9 @@ mod persistent_native_scanout {
                     head.pending_content,
                     head.submitted_content,
                     head.presented_content,
-                    head.exporter.worker_in_flight(),
+                    self.exporter(output).is_some_and(
+                        crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::worker_in_flight,
+                    ),
                     head.callback_accepted != 0 || head.initial_modeset_submission.is_some(),
                     frame.checksum,
                 )
@@ -927,7 +1017,7 @@ mod persistent_native_scanout {
                 return status;
             }
             let frame_id = self.allocate_frame_id();
-            let head = &mut self.heads[index];
+            let (head, exporter) = self.head_and_exporter(index, output);
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
             head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
@@ -935,7 +1025,7 @@ mod persistent_native_scanout {
                 frame: frame_id,
                 checksum: frame.checksum,
             });
-            head.exporter.set_pending_cpu_frame_with_damage(
+            exporter.set_pending_cpu_frame_with_damage(
                 frame.frame,
                 frame.checksum,
                 frame.output_damage_snapshot,
@@ -970,7 +1060,8 @@ mod persistent_native_scanout {
 
         pub fn pending_frame(&self, output: OutputId) -> bool {
             self.primary_head_index(output)
-                .is_some_and(|index| self.heads[index].exporter.pending_frame())
+                .and_then(|_| self.exporter(output))
+                .is_some_and(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::pending_frame)
         }
 
         pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
@@ -997,7 +1088,9 @@ mod persistent_native_scanout {
             live_production_scanout_is_stable_present(
                 head.presented_content,
                 head.submitted_content,
-                head.exporter.pending_frame(),
+                self.exporter(output).is_some_and(
+                    crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::pending_frame,
+                ),
                 transaction,
             )
         }

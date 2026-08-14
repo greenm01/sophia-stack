@@ -51,11 +51,14 @@ impl LiveProductionNativeScanout {
         let index = self
             .primary_head_index(output)
             .ok_or("native output has no head")?;
-        if self.heads[index].exporter.pending_frame() {
+        if self
+            .exporter(output)
+            .is_some_and(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::pending_frame)
+        {
             return Err("native output already has pending frame work");
         }
         let frame_id = self.allocate_frame_id();
-        let head = &mut self.heads[index];
+        let (head, exporter) = self.head_and_exporter(index, output);
         head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
         head.last_checksum = frame.checksum;
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
@@ -63,7 +66,7 @@ impl LiveProductionNativeScanout {
             frame: frame_id,
             checksum: frame.checksum,
         });
-        head.exporter.set_pending_cpu_frame_with_damage(
+        exporter.set_pending_cpu_frame_with_damage(
             frame.frame,
             frame.checksum,
             frame.output_damage_snapshot,
@@ -81,9 +84,9 @@ impl LiveProductionNativeScanout {
             .primary_head_index(output)
             .expect("native mixed frame targets a registered output");
         let frame_id = self.allocate_frame_id();
-        let head = &mut self.heads[index];
-        let pending_before = head.exporter.pending_frame();
-        let worker_in_flight = head.exporter.worker_in_flight();
+        let (head, exporter) = self.head_and_exporter(index, output);
+        let pending_before = exporter.pending_frame();
+        let worker_in_flight = exporter.worker_in_flight();
         if let Some(superseded) = head.pending_content {
             tracing::warn!(
                 "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
@@ -97,7 +100,7 @@ impl LiveProductionNativeScanout {
             nonzero_rgb_pixels: 0,
         });
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-        head.exporter.set_pending_mixed_frame(frame);
+        exporter.set_pending_mixed_frame(frame);
         tracing::debug!(
             "sophia_live_retained_projection schema=1 status=native_queued output={} frame={} pending_before={} worker_in_flight={}",
             head.output.id.raw(),
@@ -117,7 +120,7 @@ impl LiveProductionNativeScanout {
             .primary_head_index(output)
             .expect("native retained frame targets a registered output");
         let frame_id = self.allocate_frame_id();
-        let head = &mut self.heads[index];
+        let (head, exporter) = self.head_and_exporter(index, output);
         if let Some(superseded) = head.pending_content {
             tracing::warn!(
                 "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=RetainedMixed",
@@ -129,7 +132,7 @@ impl LiveProductionNativeScanout {
             nonzero_rgb_pixels: 0,
         });
         head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-        head.exporter.set_pending_mixed_frame(frame);
+        exporter.set_pending_mixed_frame(frame);
         frame_id
     }
 
@@ -146,13 +149,11 @@ impl LiveProductionNativeScanout {
         let index = self
             .primary_head_index(output)
             .expect("native mixed-frame diagnosis targets a registered output");
-        let head = &mut self.heads[index];
-        head.exporter.set_pending_mixed_frame(frame);
+        let (head, exporter) = self.head_and_exporter(index, output);
+        exporter.set_pending_mixed_frame(frame);
+        let size = head.output.size;
         let export =
-            head.exporter
-                .export_rendered_scanout_buffer(crate::LiveGbmEglFrameTargetRecord::new(
-                    head.output.size,
-                ));
+            exporter.export_rendered_scanout_buffer(crate::LiveGbmEglFrameTargetRecord::new(size));
         let status = export.status;
         let detail = export.detail;
         drop(export);
@@ -164,9 +165,8 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut evicted = 0usize;
-        for head in &mut self.heads {
-            evicted =
-                evicted.saturating_add(usize::from(head.exporter.evict_renderer_image(image_id)?));
+        for exporter in self.exporters.values_mut() {
+            evicted = evicted.saturating_add(usize::from(exporter.evict_renderer_image(image_id)?));
         }
         Ok(evicted)
     }
@@ -176,9 +176,9 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut promoted = 0usize;
-        for head in &mut self.heads {
-            promoted = promoted
-                .saturating_add(usize::from(head.exporter.promote_renderer_image(image_id)?));
+        for exporter in self.exporters.values_mut() {
+            promoted =
+                promoted.saturating_add(usize::from(exporter.promote_renderer_image(image_id)?));
         }
         Ok(promoted)
     }
@@ -188,10 +188,9 @@ impl LiveProductionNativeScanout {
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut rolled_back = 0usize;
-        for head in &mut self.heads {
-            rolled_back = rolled_back.saturating_add(usize::from(
-                head.exporter.rollback_renderer_image(image_id)?,
-            ));
+        for exporter in self.exporters.values_mut() {
+            rolled_back = rolled_back
+                .saturating_add(usize::from(exporter.rollback_renderer_image(image_id)?));
         }
         Ok(rolled_back)
     }
@@ -202,13 +201,10 @@ impl LiveProductionNativeScanout {
         expected: &[sophia_renderer_live::LiveRendererImageId],
     ) -> Result<LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
         validate_renderer_image_handoff_ids(expected, expected)?;
-        let index = self
-            .primary_head_index(output)
-            .ok_or("renderer-image handoff selected an unknown output")?;
         let mut snapshots = Vec::with_capacity(expected.len());
         for image_id in expected {
-            let snapshot = self.heads[index]
-                .exporter
+            let snapshot = self
+                .exporter_mut(output)?
                 .export_promoted_renderer_image(*image_id)?
                 .ok_or("retained scene refers to an unavailable promoted renderer image")?;
             snapshots.push(snapshot);
@@ -229,11 +225,8 @@ impl LiveProductionNativeScanout {
         &mut self,
         handoff: LiveProductionRendererImageHandoff,
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        let index = self
-            .primary_head_index(handoff.output)
-            .ok_or("renderer-image handoff target output is unavailable")?;
-        if !self.heads[index]
-            .exporter
+        if !self
+            .exporter_mut(handoff.output)?
             .renderer_image_owner_initialized()
         {
             return Err("replacement renderer image owner is not initialized".into());
@@ -246,8 +239,8 @@ impl LiveProductionNativeScanout {
         validate_renderer_image_handoff_ids(&handoff.expected, &actual)?;
         let expected_count = handoff.expected.len();
         for snapshot in handoff.snapshots {
-            if !self.heads[index]
-                .exporter
+            if !self
+                .exporter_mut(handoff.output)?
                 .restore_promoted_renderer_image(snapshot)?
             {
                 return Err("replacement renderer rejected a retained image snapshot".into());
@@ -256,48 +249,51 @@ impl LiveProductionNativeScanout {
         Ok(expected_count)
     }
 
+    /// Every logical output's exporter has an initialized renderer-image owner.
+    ///
+    /// Counted over exporters rather than heads: a mirror group has one exporter
+    /// and several heads, so counting heads would ask the same exporter twice and
+    /// call an empty desktop initialized.
     pub fn renderer_image_owners_initialized(&self) -> bool {
-        !self.heads.is_empty()
+        !self.exporters.is_empty()
             && self
-                .heads
-                .iter()
-                .all(|head| head.exporter.renderer_image_owner_initialized())
+                .exporters
+                .values()
+                .all(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::renderer_image_owner_initialized)
     }
 
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, crate::LiveRendererScanoutBufferExportDetail> {
         let mut evicted = 0usize;
-        for head in &mut self.heads {
-            evicted = evicted.saturating_add(head.exporter.clear_renderer_images()?);
+        for exporter in self.exporters.values_mut() {
+            evicted = evicted.saturating_add(exporter.clear_renderer_images()?);
         }
         Ok(evicted)
     }
 
     pub fn export_attempts(&self) -> usize {
-        self.heads
-            .iter()
-            .map(|head| head.exporter.cpu_frame_export_attempts())
-            .chain(
-                self.heads
-                    .iter()
-                    .map(|head| head.exporter.mixed_frame_export_attempts()),
-            )
+        self.exporters
+            .values()
+            .map(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::cpu_frame_export_attempts)
+            .chain(self.exporters.values().map(
+                crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::mixed_frame_export_attempts,
+            ))
             .sum()
     }
 
     pub fn mixed_exports(&self) -> usize {
-        self.heads
-            .iter()
-            .map(|head| head.exporter.mixed_frame_exports())
+        self.exporters
+            .values()
+            .map(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::mixed_frame_exports)
             .sum()
     }
 
     pub fn persistent_render_metrics(&self) -> LivePersistentRenderMetrics {
-        self.heads.iter().fold(
+        self.exporters.values().fold(
             LivePersistentRenderMetrics::default(),
-            |mut metrics, head| {
-                let stats = head.exporter.persistent_render_stats();
+            |mut metrics, exporter| {
+                let stats = exporter.persistent_render_stats();
                 metrics.target_creations = metrics
                     .target_creations
                     .saturating_add(stats.target_creations);
@@ -365,7 +361,7 @@ impl LiveProductionNativeScanout {
                 metrics.import_cache_capacity_rejections = metrics
                     .import_cache_capacity_rejections
                     .saturating_add(stats.import_cache.capacity_rejections);
-                if let Some(worker) = head.exporter.worker_metrics() {
+                if let Some(worker) = exporter.worker_metrics() {
                     metrics.worker_requests =
                         metrics.worker_requests.saturating_add(worker.requests);
                     metrics.worker_completions = metrics

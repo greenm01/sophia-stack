@@ -309,6 +309,27 @@ impl RealAtomicScanoutPageFlipSession {
     }
 
     #[cfg(all(feature = "gbm-probe", feature = "libdrm-events"))]
+    /// Modifiers every head of a group can scan out.
+    ///
+    /// A mirror group shares one buffer, so a modifier only one plane advertises
+    /// would produce a buffer its sibling cannot display. The intersection is the
+    /// only safe set, ordered by the first head's preference so the group still
+    /// gets that head's best available choice.
+    pub fn preferred_xrgb8888_scanout_modifiers_for_group(
+        &self,
+        selections: &[LibdrmNativePrimaryPlaneSelection],
+    ) -> Vec<u64> {
+        let mut preferred: Vec<u64> = match selections.split_first() {
+            Some((first, _)) => self.preferred_xrgb8888_scanout_modifiers_for_selection(*first),
+            None => return Vec::new(),
+        };
+        for selection in selections.iter().skip(1) {
+            let supported = self.preferred_xrgb8888_scanout_modifiers_for_selection(*selection);
+            preferred.retain(|modifier| supported.contains(modifier));
+        }
+        preferred
+    }
+
     pub fn preferred_xrgb8888_scanout_modifiers_for_selection(
         &self,
         selection: LibdrmNativePrimaryPlaneSelection,
