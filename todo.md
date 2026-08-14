@@ -878,10 +878,37 @@ is excluded; retained product behavior is not.
   being allowed to overlap it, and `reject_overlaps` skips same-group pairs because
   members share a position by definition. The activation plan admits capabilities
   sharing an `OutputId`, which is what a group is.
-  What remains is the hardware run: `tools/run_native_output_gate_tty4.sh` on tty4
-  with DP-1 and DP-2 grouped at 1920x1080, the highest mode both present. Two
-  screens showing the same thing is the only evidence that counts, and it needs a
-  real modeset. The framebuffer is created inside each head's submit, so two
+  **Not reachable from any live path, which an earlier note in this entry got
+  wrong by calling it complete.** Three disconnections, found by tracing rather
+  than assumed. The config side and the KMS side are not wired together:
+  `LiveProductionNativeScanout` builds sessions through `into_page_flip_sessions`,
+  which hardcodes `NativeMirrorGrouping::none()`
+  (`hardware_validation/atomic_scanout_card/session.rs:591`); the mirroring-aware
+  constructor beside it is called only from tests. So a configured group parses,
+  validates, and then reaches a KMS layer that is always told there are no groups.
+  Frame targets never resize: `observe_gbm_egl_frame_target_size_for` and
+  `observe_output_size_for` (`runtime/frame_target.rs:39`, `:57`) have no
+  production callers at all, so an output's frame is fixed at the size it had when
+  the runtime was built, and the only way a size changes is tearing the runtime set
+  down and rebuilding it on hotplug.
+  And no session can apply a modeset. The live session uses
+  `NativeOutputTopologyValidationExecutor`, whose `apply` is a hard refusal --
+  "Apply is not gated here, it is absent" (`desktop_output_commit.rs:35`). The one
+  apply-capable executor is built only by the standalone `native-topology-apply`
+  command, which opens its own DRM master and so cannot run against a live session.
+  Nothing triggers an activation after startup either: no reload, no signal, no
+  control-socket message.
+  The tty4 gate cannot express any of this. Both `native-topology-validate` and
+  `native-topology-apply` pin the profile source to `None`
+  (`backend.rs:363`, `:434`), which means the compiled default
+  `output { inherit-sophia #true; }` rather than the operator's config, so the gate
+  can never request a group.
+  The shortest path to visible mirroring avoids runtime mode changes entirely:
+  wire config groups into `NativeMirrorGrouping` at session construction, and let
+  the session's *initial* modeset bring each head up at its own mode, composing the
+  scene into each head's buffer at a fitted rect. That needs no apply executor, no
+  runtime trigger, and no frame-target resize, because nothing changes mode after
+  startup. The framebuffer is created inside each head's submit, so two
   heads sharing a buffer object would each `ADD_FB2` and get distinct handles, and
   `RM_FB` would then run twice against one handle -- the second failing and latching
   cleanup permanently. Both have to be resolved together with the lease, which is a
