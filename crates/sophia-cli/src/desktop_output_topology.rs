@@ -116,7 +116,6 @@ impl fmt::Display for NativeOutputTopologyProjectionError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeOutputActivationPlanError {
     InvalidOutput(u64),
-    DuplicateOutput(u64),
     DuplicateConnector(String),
     MissingCapability(String),
     UnexpectedCapability(String),
@@ -128,9 +127,6 @@ impl fmt::Display for NativeOutputActivationPlanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidOutput(output) => write!(formatter, "native output {output} is invalid"),
-            Self::DuplicateOutput(output) => {
-                write!(formatter, "native output {output} is duplicated")
-            }
             Self::DuplicateConnector(connector) => {
                 write!(formatter, "native connector {connector:?} is duplicated")
             }
@@ -165,16 +161,16 @@ pub fn prepare_native_output_activation_plan(
     validate_desktop_output_reconciliation(reconciliation, topology)
         .map_err(NativeOutputActivationPlanError::InvalidReconciliation)?;
 
-    let mut output_ids = BTreeSet::new();
     let mut capabilities_by_connector = BTreeMap::new();
     for capability in capabilities {
         let output = capability.output().raw();
         if output == 0 {
             return Err(NativeOutputActivationPlanError::InvalidOutput(output));
         }
-        if !output_ids.insert(output) {
-            return Err(NativeOutputActivationPlanError::DuplicateOutput(output));
-        }
+        // Capabilities sharing an output are a mirror group, which is admitted:
+        // one logical output backed by several connectors. What must stay unique
+        // is the connector below -- a cable drives one head, and two capabilities
+        // naming one would make that head's state ambiguous.
         let connector = capability.connector_name();
         if capabilities_by_connector
             .insert(connector, capability)
@@ -321,6 +317,10 @@ pub fn project_native_output_topology(
                 vrr_capable: member.vrr_configurable(),
                 current: DesktopOutputState {
                     connector: member.connector_name().to_owned(),
+                    // The projection describes hardware, not configuration. Group
+                    // membership arrives from the candidate, so the topology's own
+                    // view of a connector never claims one.
+                    mirror_of: None,
                     enabled: true,
                     mode: selected,
                     scale_milli,

@@ -105,6 +105,13 @@ pub struct DesktopOutputState {
     pub position: (i32, i32),
     pub transform: DesktopOutputTransform,
     pub vrr: DesktopOutputVrrMode,
+    /// The primary of the mirror group this connector belongs to, if any.
+    ///
+    /// Named for its primary because policy sees one `SnapshotOutput` and no
+    /// connector identity, so the group needs a single owner and the configured
+    /// output is it. `None` is the ordinary desktop: this connector is its own
+    /// logical output.
+    pub mirror_of: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -164,12 +171,6 @@ pub enum DesktopOutputReconcileError {
         primary: String,
         mirrored: String,
     },
-    /// The configuration is expressible and Sophia cannot yet drive it. Refused
-    /// rather than dropped: a mirror directive that is accepted and ignored leaves
-    /// an operator staring at an unmirrored screen with no error to search for.
-    MirrorUnsupported {
-        primary: String,
-    },
     NoEnabledOutput,
 }
 
@@ -189,10 +190,6 @@ impl fmt::Display for DesktopOutputReconcileError {
             Self::MirrorModeMismatch { primary, mirrored } => write!(
                 formatter,
                 "output {primary:?} mirrors {mirrored:?}, which cannot present the same mode"
-            ),
-            Self::MirrorUnsupported { primary } => write!(
-                formatter,
-                "output {primary:?} requests mirroring, which Sophia validates but cannot yet drive"
             ),
             Self::InvalidReconciliation(message) => {
                 write!(formatter, "invalid output reconciliation: {message}")
@@ -268,6 +265,7 @@ pub fn reconcile_desktop_output_candidate(
                     position: (0, 0),
                     transform: DesktopOutputTransform::Normal,
                     vrr: DesktopOutputVrrMode::Disabled,
+                    mirror_of: None,
                 }
             }
         })
@@ -338,6 +336,7 @@ pub fn reconcile_desktop_output_candidate(
             focused_connector = Some(connector.connector.clone());
         }
     }
+    apply_mirror_groups(candidate, &mut outputs)?;
     if !outputs.iter().any(|output| output.enabled) {
         return Err(DesktopOutputReconcileError::NoEnabledOutput);
     }
@@ -560,10 +559,6 @@ fn validate_mirror_against_topology(
                 });
             }
         }
-
-        return Err(DesktopOutputReconcileError::MirrorUnsupported {
-            primary: output.connector.clone(),
-        });
     }
     Ok(())
 }
@@ -665,6 +660,56 @@ fn resolve_mode(
     Ok(selected)
 }
 
+/// Binds each group's members to its primary and makes them agree.
+///
+/// The members take the primary's whole visual state, not just its position. A
+/// group is one logical output backed by several connectors, so a member running
+/// its own mode or scale would not be a mirror of anything -- and there is no
+/// plane scaling on this path to reconcile a difference. Taking rather than
+/// checking also means the group cannot be configured into disagreement.
+fn apply_mirror_groups(
+    candidate: &DesktopOutputCandidate,
+    outputs: &mut [DesktopOutputState],
+) -> Result<(), DesktopOutputReconcileError> {
+    for requested in &candidate.named {
+        if requested.mirror.is_empty() {
+            continue;
+        }
+        let Some(primary) = outputs
+            .iter()
+            .find(|output| output.connector == requested.connector)
+            .cloned()
+        else {
+            return Err(DesktopOutputReconcileError::UnknownConnector(
+                requested.connector.clone(),
+            ));
+        };
+        for member in &requested.mirror {
+            let Some(state) = outputs
+                .iter_mut()
+                .find(|output| &output.connector == member)
+            else {
+                return Err(DesktopOutputReconcileError::UnknownConnector(
+                    member.clone(),
+                ));
+            };
+            state.enabled = primary.enabled;
+            state.mode = primary.mode;
+            state.scale_milli = primary.scale_milli;
+            state.position = primary.position;
+            state.transform = primary.transform;
+            state.vrr = primary.vrr;
+            state.mirror_of = Some(primary.connector.clone());
+        }
+    }
+    Ok(())
+}
+
+/// The logical output a connector belongs to: its group's primary, or itself.
+fn mirror_group_of(output: &DesktopOutputState) -> &str {
+    output.mirror_of.as_deref().unwrap_or(&output.connector)
+}
+
 fn reject_overlaps(outputs: &[DesktopOutputState]) -> Result<(), DesktopOutputReconcileError> {
     for (index, first) in outputs
         .iter()
@@ -676,6 +721,12 @@ fn reject_overlaps(outputs: &[DesktopOutputState]) -> Result<(), DesktopOutputRe
             .skip(index + 1)
             .filter(|output| output.enabled)
         {
+            // Members of one mirror group share a position by definition -- that
+            // is what makes them one logical output rather than two side by side.
+            // The overlap rule is about distinct screens landing on each other.
+            if mirror_group_of(first) == mirror_group_of(second) {
+                continue;
+            }
             if output_rect(first).overlaps(output_rect(second)) {
                 return Err(DesktopOutputReconcileError::OutputOverlap {
                     first: first.connector.clone(),

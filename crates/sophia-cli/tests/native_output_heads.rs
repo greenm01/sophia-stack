@@ -290,29 +290,46 @@ fn mirror_capability(
 }
 
 #[test]
-fn a_mirror_group_projects_two_connectors_behind_one_output() {
-    // The shape head composition has to survive: one `OutputId`, two connector
-    // rows, one shared position. Keying composition by output would address the
-    // same head twice here and leave the second connector dark.
-    //
-    // The plan cannot yet be built from this topology -- reconciliation refuses
-    // both the overlap and the `mirror:` declaration itself -- so this asserts the
-    // projection, and the end-to-end case lands with the config tranche.
+fn a_mirror_group_composes_one_head_per_connector() {
+    // The end-to-end case, reachable at last: reconciliation used to refuse both
+    // the shared position and the mirror directive itself, so this could only
+    // assert the projection shape. Both targets carry the same `OutputId`, which
+    // is why head composition is keyed by connector -- keying by output would
+    // compose the same head twice and leave the group's other connector dark.
     let capabilities = vec![
         mirror_capability(1, 1, "DP-1"),
         mirror_capability(1, 2, "DP-2"),
     ];
-
     let topology = project_native_output_topology(&capabilities, &[headless(1)])
         .expect("a mirror group projects");
+    let candidate = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(7),
+        digest: ConfigDigest::new([9; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: "DP-1".to_owned(),
+            mode: None,
+            scale: None,
+            position: None,
+            transform: None,
+            enabled: None,
+            focus_at_startup: None,
+            vrr: None,
+            mirror: vec!["DP-2".to_owned()],
+        }],
+    };
+    let reconciliation = reconcile_desktop_output_candidate(&candidate, &topology)
+        .expect("a same-mode group reconciles");
+    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciliation)
+        .expect("plan prepares");
+    let hardware = FakeHardware::new();
 
-    assert_eq!(topology.connectors.len(), 2);
-    assert_eq!(topology.connectors[0].connector, "DP-1");
-    assert_eq!(topology.connectors[1].connector, "DP-2");
-    assert_eq!(
-        topology.connectors[0].current.position, topology.connectors[1].current.position,
-        "one logical output means one position"
-    );
+    let resolved = resolve_native_output_topology_heads(&plan, &capabilities, &hardware)
+        .expect("a mirror group resolves");
+
+    assert_eq!(resolved.len(), 2);
+    assert_eq!(*hardware.composed.borrow(), ["DP-1", "DP-2"]);
+    assert_eq!(hardware.live_blobs().len(), 2);
 }
 
 #[test]
