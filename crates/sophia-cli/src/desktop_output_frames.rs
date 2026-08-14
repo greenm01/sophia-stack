@@ -25,9 +25,15 @@ use sophia_protocol::OutputId;
 
 use crate::desktop_output_topology::NativeOutputActivationPlan;
 
-/// One output's frame target, as the renderer reduced it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One head's frame target, as the renderer reduced it.
+///
+/// Keyed by connector rather than by output, because a mirror group is several
+/// connectors behind one `OutputId` and each of them scans out its own buffer at
+/// its own mode. Keyed by output, a group's second head was checked against its
+/// primary's frame and refused for a size difference that is the ordinary case.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeOutputFrameTarget {
+    pub connector: String,
     pub output: OutputId,
     pub target: LiveGbmEglFrameTargetRecord,
 }
@@ -112,7 +118,7 @@ pub fn native_output_apply_admission(
 
         let Some(frame) = frame_targets
             .iter()
-            .find(|frame| frame.output == output)
+            .find(|frame| frame.connector == requested.connector)
             .map(|frame| frame.target)
         else {
             return NativeOutputApplyAdmission::NoFrameTarget { output: raw };

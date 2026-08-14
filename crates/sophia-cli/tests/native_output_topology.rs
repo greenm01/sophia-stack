@@ -305,7 +305,10 @@ fn two_connectors_on_one_logical_output_are_a_mirror_group() {
 }
 
 #[test]
-fn a_mirror_group_disagreeing_on_mode_fails_closed() {
+fn a_mirror_group_admits_heads_running_different_modes() {
+    // What used to be MirrorModeMismatch. Heads of a group no longer share a mode:
+    // the logical output is sized by its primary, because that is what the scene is
+    // composed at, and every other head runs its own with the scene placed onto it.
     // One framebuffer cannot satisfy two scanout sizes, and no plane scaling exists
     // on this path, so the alternative to refusing is letterboxing a screen the
     // operator asked to match.
@@ -342,8 +345,18 @@ fn a_mirror_group_disagreeing_on_mode_fails_closed() {
         scale: 1,
     }];
 
+    let topology =
+        project_native_output_topology(&capabilities, &outputs).expect("a group projects");
+
+    assert_eq!(topology.connectors.len(), 2);
+    // Each connector reports the mode it actually scans out, not the group's.
+    assert_ne!(
+        topology.connectors[0].current.mode, topology.connectors[1].current.mode,
+        "heads keep their own modes"
+    );
+    // One logical output still means one position.
     assert_eq!(
-        project_native_output_topology(&capabilities, &outputs),
-        Err(NativeOutputTopologyProjectionError::MirrorModeMismatch(1))
+        topology.connectors[0].current.position,
+        topology.connectors[1].current.position
     );
 }

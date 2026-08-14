@@ -1,7 +1,14 @@
 schema 1
 output {
+  // DP-1 drives the group and keeps its own mode. Deliberately no `mode` line:
+  // pinning one here would ask the primary to change modes, which is both the
+  // degradation projection exists to avoid and something the apply path declines,
+  // since it reuses the framebuffer each CRTC already scans out.
+  //
+  // DP-2 keeps its own mode too. The group's scene is composed at the primary's
+  // size and placed onto each head at whatever mode that head runs.
   named "DP-1" {
-    mode "1920x1080@60"
     mirror "DP-2"
+    mirror-fit "fit"
   }
 }

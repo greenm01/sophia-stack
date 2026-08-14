@@ -527,20 +527,35 @@ fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::
     // the requested mode. Discovering it while resolving heads would report a
     // missing framebuffer as a property of the hardware, when it is really a
     // statement about where this session is in the mode change.
-    // The frame each output is actually scanning out, not the size its mode says it
+    // The frame each HEAD is actually scanning out, not the size its mode says it
     // should be. Those differ during a mode change, and the difference is the whole
     // question. A standalone command composes nothing itself, so what is on screen
     // is the only committed frame available to it.
+    //
+    // Per head rather than per output: a mirror group's connectors run their own
+    // modes and own buffers, so checking the group's second head against its
+    // primary's frame refused a size difference that is now the ordinary case.
     let frame_targets = native
         .outputs()
         .into_iter()
-        .filter_map(|output| {
-            let index = native.primary_head_index(output.id)?;
+        .flat_map(|output| {
+            native
+                .head_indices(output.id)
+                .into_iter()
+                .map(move |index| (output, index))
+        })
+        .filter_map(|(output, index)| {
+            let selection = native.selection(index);
             let (_, size) = sophia_backend_live::read_native_current_framebuffer(
                 native.card(index),
-                native.selection(index),
+                selection,
             )?;
             Some(NativeOutputFrameTarget {
+                connector: capabilities
+                    .iter()
+                    .find(|capability| capability.connector_id() == selection.connector_id())?
+                    .connector_name()
+                    .to_owned(),
                 output: output.id,
                 target: LiveGbmEglFrameTargetRecord::new(size),
             })

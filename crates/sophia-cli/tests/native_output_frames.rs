@@ -81,6 +81,7 @@ fn plan(outputs: &[u64], disabled: &[u64]) -> NativeOutputActivationPlan {
 
 fn frame(output: u64, width: i32, height: i32) -> NativeOutputFrameTarget {
     NativeOutputFrameTarget {
+        connector: format!("DP-{output}"),
         output: OutputId::from_raw(output),
         target: LiveGbmEglFrameTargetRecord::new(Size { width, height }),
     }
@@ -135,6 +136,7 @@ fn a_frame_sized_for_the_old_mode_is_not_ready() {
 #[test]
 fn an_unusable_frame_target_is_not_ready() {
     let unusable = NativeOutputFrameTarget {
+        connector: "DP-1".to_owned(),
         output: OutputId::from_raw(1),
         target: LiveGbmEglFrameTargetRecord::new(Size {
             width: 0,
