@@ -3,18 +3,29 @@ set -euo pipefail
 
 # One-shot: prove native output mirroring on real hardware.
 #
-# Runs the output gate with a profile that groups DP-1 and DP-2 into one logical
-# output. Each head keeps its own mode -- DP-1 at 2560x1440 and DP-2 at 1920x1080
-# -- and the group's scene is placed onto each. Neither monitor is downgraded,
-# which is the whole point of the projection architecture.
+# Runs a bounded live session with a profile that groups DP-1 and DP-2 into one
+# logical output. Each head keeps its own mode -- DP-1 at 2560x1440 and DP-2 at
+# 1920x1080 -- and the group's composed scene is placed onto each. Neither monitor
+# is downgraded, which is the point of the projection architecture.
+#
+# It drives the live session rather than `native-topology-apply`, and that matters:
+# the standalone apply command composes nothing and can only reuse the framebuffer
+# each CRTC already scans out. This machine's console puts BOTH CRTCs on one
+# 2560x1440 buffer, so DP-2's frame is 1440p while its mode is 1080p, and the apply
+# admission refuses that forever. Establishing a group needs a buffer per head at
+# that head's mode, which only something that composes can produce.
 #
 # This performs a REAL MODESET. Run it from /dev/tty4 with no compositor holding
-# DRM master. Your screens will change.
+# DRM master. Your screens will change for the duration.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${SOPHIA_MIRROR_PROFILE:-$ROOT_DIR/tools/fixtures/mirror_group_probe.kdl}"
+RUNTIME_MSEC="${SOPHIA_MIRROR_RUNTIME_MSEC:-15000}"
+DISPLAY_NAME="${SOPHIA_MIRROR_DISPLAY:-:191}"
+EVIDENCE="${SOPHIA_MIRROR_EVIDENCE:-/tmp/sophia-mirror-group.log}"
+TTY_REQUIRED="${SOPHIA_MIRROR_TTY:-/dev/tty4}"
 
-echo "=== Sophia mirror-group gate ==="
+echo "=== Sophia mirror-group proof ==="
 echo
 
 if [[ ! -r "$PROFILE" ]]; then
@@ -34,36 +45,51 @@ echo "Profile: $PROFILE"
 sed 's/^/  | /' "$PROFILE"
 echo
 
-echo "Connectors as sysfs sees them, before anything is committed:"
-for connector in /sys/class/drm/card*-*/status; do
-    name="${connector%/status}"
-    name="${name##*/}"
-    state="$(cat "$connector" 2>/dev/null || echo unknown)"
-    [[ "$state" == "connected" ]] || continue
-    first_mode="$(head -1 "${connector%/status}/modes" 2>/dev/null || true)"
-    printf '  %-20s %s  first_mode=%s\n' "$name" "$state" "${first_mode:-none}"
+echo "Connected connectors, straight from sysfs:"
+for status in /sys/class/drm/card*-*/status; do
+    [[ "$(cat "$status" 2>/dev/null)" == "connected" ]] || continue
+    name="${status%/status}"
+    printf '  %-20s first_mode=%s\n' "${name##*/}" \
+        "$(head -1 "${name}/modes" 2>/dev/null || echo none)"
 done
 echo
 
-echo "What success looks like:"
-echo "  - BOTH monitors showing the same thing"
-echo "  - DP-1 still at 2560x1440 and DP-2 still at 1920x1080 (neither downgraded)"
-echo "  - the evidence line reporting outputs=1 connectors=2 heads=2"
-echo
-echo "Known limit: the apply path reuses the framebuffer each CRTC already scans"
-echo "out, so it declines a mode CHANGE. This group needs none. If apply reports a"
-echo "size mismatch, that is that limit and not a mirroring fault."
-echo
-
-if [[ "$(tty)" != "${SOPHIA_NATIVE_OUTPUT_GATE_TTY:-/dev/tty4}" ]]; then
-    echo "NOTE: you are on $(tty), and the gate requires ${SOPHIA_NATIVE_OUTPUT_GATE_TTY:-/dev/tty4}."
-    echo "Switch with Ctrl+Alt+F4, log in, and run this again from there."
-    echo
+if [[ "$(tty)" != "$TTY_REQUIRED" ]]; then
+    echo "You are on $(tty); this needs $TTY_REQUIRED and DRM master." >&2
+    echo "Switch with Ctrl+Alt+F4, log in, and run this again from there." >&2
+    exit 2
 fi
 
-echo "Running the gate. This commits to your displays."
+echo "Building..."
+(cd "$ROOT_DIR" && cargo build --quiet --release --offline -p sophia-cli \
+    --features "atomic-scanout-live" --bin sophia)
 echo
-exec env \
-    SOPHIA_NATIVE_OUTPUT_GATE_PROFILE="$PROFILE" \
-    SOPHIA_NATIVE_OUTPUT_APPLY=1 \
-    "$ROOT_DIR/tools/run_native_output_gate_tty4.sh"
+
+echo "What success looks like, and only you can judge it:"
+echo "  - BOTH monitors showing the same thing for ~$((RUNTIME_MSEC / 1000))s"
+echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
+echo "  - DP-2 may show black bars if the aspects differ; that is 'fit' working"
+echo
+echo "Evidence: $EVIDENCE"
+echo "Running now."
+echo
+
+set +e
+(
+    cd "$ROOT_DIR"
+    ./target/release/sophia sophia-live-session \
+        --display="$DISPLAY_NAME" \
+        --native-scanout \
+        --desktop-profile="$PROFILE" \
+        --max-runtime-ms="$RUNTIME_MSEC"
+) 2>&1 | tee "$EVIDENCE"
+status="${PIPESTATUS[0]}"
+set -e
+
+echo
+echo "=== exit=$status ==="
+grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE" \
+    | tail -20 || true
+echo
+echo "Full log at $EVIDENCE -- it is a file, so it can be read from another VT."
+exit "$status"
