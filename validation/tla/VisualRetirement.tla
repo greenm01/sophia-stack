@@ -11,11 +11,22 @@ EXTENDS Integers, FiniteSets
  * protocol objects, pixels, renderer handles, and KMS details.            *
  *                                                                         *
  * The head layer exists because mirroring makes a logical output's         *
- * retirement a join over its heads: one framebuffer is scanned out by      *
- * every head in the group, so the buffer stays leased until the last head  *
- * flips. Presentation therefore remains output-scoped, and retirement is   *
- * joint within a mirror group and independent between groups. Sophia still *
- * claims no globally simultaneous multi-output retirement instant.         *
+ * retirement a join over its heads: a group has not presented a frame      *
+ * until every one of its heads has flipped, so the candidate is not        *
+ * committed until the last of them does. Presentation therefore remains    *
+ * output-scoped, and retirement is joint within a mirror group and         *
+ * independent between groups. Sophia still claims no globally simultaneous *
+ * multi-output retirement instant.                                        *
+ *                                                                         *
+ * That join is deliberately stated over heads and flips rather than over   *
+ * buffers, and the distinction is load-bearing. It held when a group       *
+ * shared one framebuffer, where the buffer stayed leased until the last    *
+ * head flipped; it holds unchanged when each head owns a buffer at its own *
+ * mode and the scene is composed into each, because what makes a group     *
+ * presented is that every screen is showing the frame, not that they are   *
+ * reading it from the same memory. A model written over buffer lifetime    *
+ * would have had to be rewritten to change scanout architecture. This one  *
+ * does not.                                                               *
  ****************************************************************************)
 
 CONSTANTS Outputs, Generations, NoGeneration

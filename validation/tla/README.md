@@ -10,6 +10,11 @@ exercises joint retirement within a group and independent retirement between
 groups. That is the smallest scope that still explores out-of-order retirement,
 supersession, and mirror-group member loss. It excludes X11 objects, application
 metadata, pixel content, renderer handles, and native KMS objects.
+The join is stated over heads and flips rather than over buffers, which is what
+lets the scanout architecture change without the model changing. It held when a
+mirror group shared one framebuffer and holds unchanged when each head owns a
+buffer at its own mode: what makes a group presented is that every screen shows
+the frame, not that they read it from the same memory.
 
 The model checks that:
 
