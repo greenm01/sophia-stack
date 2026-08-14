@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::collections::BTreeSet;
 
 pub const LIVE_RENDERED_OUTPUT_CAPACITY: usize = 16;
 
@@ -13,16 +12,20 @@ pub struct LiveRenderedOutputState {
     pub(crate) gbm_egl_frame_target_allocation: Option<LiveGbmEglFrameTargetAllocationReport>,
     pub(crate) page_flip_event: LivePageFlipEvent,
     pub(crate) page_flip_callback_intake: LivePageFlipCallbackIntake,
-    /// Connectors backing this logical output.
+
+    pub(crate) vrr_decision: OutputVrrDecision,
+    pub(crate) vrr_property_request: Option<bool>,
+    /// Every connector backing this logical output, in head order.
     ///
     /// One entry is the ordinary desktop; several is a mirror group. Empty means
     /// no head has been configured, which is the headless path -- there is no
     /// hardware to wait for and nothing to be joint about.
-    pub(crate) head_connectors: BTreeSet<u32>,
-    pub(crate) vrr_decision: OutputVrrDecision,
-    pub(crate) vrr_property_request: Option<bool>,
+    ///
+    /// This is the single source of truth for the group. The connector set that
+    /// retirement waits on is derived from it rather than stored beside it, so the
+    /// heads that were submitted and the heads that are awaited cannot disagree.
     #[cfg(feature = "libdrm-events")]
-    pub(crate) native_selection: Option<LibdrmNativePrimaryPlaneSelection>,
+    pub(crate) native_selections: Vec<LibdrmNativePrimaryPlaneSelection>,
     #[cfg(feature = "libdrm-events")]
     pub(crate) rendered_primary_plane_scanout_submission:
         Option<BoxedRenderedPrimaryPlaneScanoutSubmission>,
@@ -69,11 +72,10 @@ impl LiveRenderedOutputState {
                 kms_scanout_target.status,
             ),
             page_flip_callback_intake: LivePageFlipCallbackIntake::new(output.id),
-            head_connectors: BTreeSet::new(),
             vrr_decision: OutputVrrDecision::DisabledByPolicy,
             vrr_property_request: None,
             #[cfg(feature = "libdrm-events")]
-            native_selection: None,
+            native_selections: Vec::new(),
             #[cfg(feature = "libdrm-events")]
             rendered_primary_plane_scanout_submission: None,
             #[cfg(feature = "libdrm-events")]
@@ -113,14 +115,24 @@ impl LiveRenderedOutputState {
         self.rendered_primary_plane_scanout_cleanup.is_some()
     }
 
+    /// The head this output is addressed through, which is its first.
     #[cfg(feature = "libdrm-events")]
-    pub const fn native_selection(&self) -> Option<LibdrmNativePrimaryPlaneSelection> {
-        self.native_selection
+    pub fn native_selection(&self) -> Option<LibdrmNativePrimaryPlaneSelection> {
+        self.native_selections.first().copied()
     }
 
-    /// The connectors backing this output.
+    /// Every head of this output beyond the first.
+    #[cfg(feature = "libdrm-events")]
+    pub fn native_peer_selections(&self) -> &[LibdrmNativePrimaryPlaneSelection] {
+        self.native_selections.get(1..).unwrap_or_default()
+    }
+
+    /// The connectors backing this output, derived from its selections.
+    #[cfg(feature = "libdrm-events")]
     pub fn head_connectors(&self) -> impl Iterator<Item = u32> + '_ {
-        self.head_connectors.iter().copied()
+        self.native_selections
+            .iter()
+            .map(|selection| selection.connector_id())
     }
 
     /// Whether a mirror group still has a head that has not flipped this submission.
@@ -133,11 +145,12 @@ impl LiveRenderedOutputState {
     /// Only a group can be waiting. With one head there is nothing joint about
     /// retirement and the single-head rules decide it, so this deliberately cannot
     /// change what an unmirrored desktop does.
+    #[cfg(feature = "libdrm-events")]
     pub fn group_awaiting_flip(&self, submitted_after_page_flip_serial: Option<u64>) -> bool {
-        self.head_connectors.len() > 1
-            && self.head_connectors.iter().any(|connector| {
+        self.native_selections.len() > 1
+            && self.head_connectors().any(|connector| {
                 match (
-                    self.page_flip_callback_intake.head_frame_serial(*connector),
+                    self.page_flip_callback_intake.head_frame_serial(connector),
                     submitted_after_page_flip_serial,
                 ) {
                     (None, _) => true,

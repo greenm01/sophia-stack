@@ -217,6 +217,7 @@ impl RealAtomicScanoutPageFlipSession {
                     status: LibdrmNativePrimaryPlaneSelectionStatus::Selected,
                     selection: Some(selected),
                 },
+                &[],
                 descriptor,
                 prime_fds.into_plane_fds(),
                 submit_policy,
@@ -228,6 +229,7 @@ impl RealAtomicScanoutPageFlipSession {
                     status: LibdrmNativePrimaryPlaneSelectionStatus::Selected,
                     selection: Some(selected),
                 },
+                &[],
                 descriptor,
                 submit_policy,
             )

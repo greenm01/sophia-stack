@@ -74,6 +74,7 @@ fn native_libdrm_primary_plane_scanout_submit_page_flip_policy_disallows_modeset
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
+            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -120,6 +121,7 @@ fn native_libdrm_primary_plane_scanout_submit_page_flip_policy_disallows_modeset
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &mode_unavailable,
             selection,
+            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -156,6 +158,7 @@ fn native_libdrm_primary_plane_scanout_submit_retains_cleanup_after_submit_failu
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
+            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -196,6 +199,7 @@ fn native_libdrm_primary_plane_scanout_submit_retains_resource_creation_cleanup(
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
+            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,

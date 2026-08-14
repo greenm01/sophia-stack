@@ -67,7 +67,7 @@ impl LiveProductionOutputRuntimeSet {
                     output.id,
                     head_indices
                         .iter()
-                        .map(|head| native_scanout.selection(*head).connector_id()),
+                        .map(|head| native_scanout.selection(*head)),
                 ) {
                     return Err("production native output heads were not registered".into());
                 }

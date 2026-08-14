@@ -27,6 +27,27 @@ pub struct LibdrmNativePrimaryPlaneSelection {
 }
 
 impl LibdrmNativePrimaryPlaneSelection {
+    /// Builds a selection from raw KMS object handles.
+    ///
+    /// Discovery produces these in the ordinary path; this exists so a caller
+    /// composing a head set by hand can too, the same way
+    /// `LibdrmNativePrimaryPlaneObjects::new` already allows.
+    pub const fn new(
+        connector: drm::control::connector::Handle,
+        crtc: drm::control::crtc::Handle,
+        plane: drm::control::plane::Handle,
+        size: Size,
+        mode: Option<drm::control::Mode>,
+    ) -> Self {
+        Self {
+            connector,
+            crtc,
+            plane,
+            size,
+            mode,
+        }
+    }
+
     pub const fn size(self) -> Size {
         self.size
     }

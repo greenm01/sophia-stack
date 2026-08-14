@@ -147,7 +147,8 @@ where
         E::Owner: LiveRenderedScanoutBufferPrimeSource,
     {
         let state = self.primary_output_state();
-        let selection = state.native_selection.map_or_else(
+        let peers = state.native_peer_selections().to_vec();
+        let selection = state.native_selection().map_or_else(
             || select_native_primary_plane_target(device),
             |selection| LibdrmNativePrimaryPlaneSelectionResult {
                 status: LibdrmNativePrimaryPlaneSelectionStatus::Selected,
@@ -158,6 +159,7 @@ where
             state.kms_scanout_target.status,
             state.gbm_egl_frame_target,
             selection,
+            &peers,
             state.vrr_property_request,
             device,
             exporter,
@@ -178,7 +180,8 @@ where
         E::Owner: LiveRenderedScanoutBufferPrimeSource + 'static,
     {
         let state = self.primary_output_state_mut();
-        let selection = state.native_selection.map_or_else(
+        let peers = state.native_peer_selections().to_vec();
+        let selection = state.native_selection().map_or_else(
             || select_native_primary_plane_target(device),
             |selection| LibdrmNativePrimaryPlaneSelectionResult {
                 status: LibdrmNativePrimaryPlaneSelectionStatus::Selected,
@@ -196,6 +199,7 @@ where
             state.page_flip_callback_intake.last_frame_serial(),
             Some(&mut state.pending_runtime_scanout_states),
             selection,
+            &peers,
             state.vrr_property_request,
             device,
             exporter,

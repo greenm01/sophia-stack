@@ -98,7 +98,21 @@ fn live_runtime_assembly_retires_a_mirror_group_only_after_its_last_head_flips()
         height: 720,
     });
     let output = OutputId::from_raw(1);
-    assert!(assembly.configure_native_output_heads(output, [11, 12]));
+    // Two heads behind one logical output: a mirror group, built by hand because
+    // the fake device offers one connector.
+    let head = |connector: u32| {
+        LibdrmNativePrimaryPlaneSelection::new(
+            drm::control::from_u32(connector).expect("connector handle should be nonzero"),
+            drm::control::from_u32(connector + 100).expect("crtc handle should be nonzero"),
+            drm::control::from_u32(connector + 200).expect("plane handle should be nonzero"),
+            Size {
+                width: 1280,
+                height: 720,
+            },
+            None,
+        )
+    };
+    assert!(assembly.configure_native_output_heads(output, [head(11), head(12)]));
 
     let submitted =
         assembly.submit_and_track_rendered_primary_plane_scanout_with(&device, &mut exporter);

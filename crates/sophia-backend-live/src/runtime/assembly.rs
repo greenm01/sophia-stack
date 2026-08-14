@@ -75,26 +75,29 @@ where
         let Some(state) = self.outputs.get_mut(output) else {
             return false;
         };
-        state.native_selection = Some(selection);
-        state.head_connectors.insert(selection.connector_id());
+        if state.native_selections.is_empty() {
+            state.native_selections.push(selection);
+        } else {
+            state.native_selections[0] = selection;
+        }
         true
     }
 
-    /// Registers every connector backing one logical output.
+    /// Registers every head backing one logical output, in head order.
     ///
-    /// A mirror group has several, and the group is what retires together, so the
-    /// runtime has to know the whole set rather than inferring it from whichever
-    /// selection was configured last.
+    /// A mirror group has several and retires as one, so the runtime needs the
+    /// whole set rather than whichever selection was configured last. The first is
+    /// the head the output is addressed through.
     #[cfg(feature = "libdrm-events")]
     pub fn configure_native_output_heads(
         &mut self,
         output: OutputId,
-        connectors: impl IntoIterator<Item = u32>,
+        selections: impl IntoIterator<Item = LibdrmNativePrimaryPlaneSelection>,
     ) -> bool {
         let Some(state) = self.outputs.get_mut(output) else {
             return false;
         };
-        state.head_connectors.extend(connectors);
+        state.native_selections = selections.into_iter().collect();
         true
     }
 

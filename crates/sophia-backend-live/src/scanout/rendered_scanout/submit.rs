@@ -8,6 +8,7 @@ pub(crate) fn submit_rendered_primary_plane_scanout_from_scanout_target_and_sele
     scanout_target: LiveKmsScanoutTargetStatus,
     target: Option<LiveGbmEglFrameTargetRecord>,
     selection: LibdrmNativePrimaryPlaneSelectionResult,
+    peers: &[LibdrmNativePrimaryPlaneSelection],
     vrr_enabled: Option<bool>,
     device: &D,
     exporter: &mut E,
@@ -91,6 +92,7 @@ where
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             device,
             selection,
+            peers,
             descriptor,
             rendered_page_flip_policy(vrr_enabled),
         )
@@ -98,6 +100,7 @@ where
         submit_native_primary_plane_scanout_from_selection_and_renderer_dma_bufs_with_policy(
             device,
             selection,
+            peers,
             descriptor,
             prime_fds.into_plane_fds(),
             rendered_page_flip_policy(vrr_enabled),
@@ -105,7 +108,15 @@ where
     } else {
         unreachable!("independent DRM files require PRIME transport")
     };
-    if submit.status != LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip {
+    // A partial group commit is a failed candidate that still owns its buffer, so
+    // it falls through to the success path below rather than being treated as a
+    // submit that produced nothing. Returning here would drop the submission and
+    // leak a framebuffer a connector is scanning out.
+    let partially_submitted =
+        submit.status == LibdrmNativePrimaryPlaneScanoutSubmitStatus::PartiallySubmitted;
+    if !partially_submitted
+        && submit.status != LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    {
         return LiveRenderedPrimaryPlaneScanoutSubmitResult {
             status: LiveRenderedPrimaryPlaneScanoutSubmitStatus::PrimaryPlaneSubmitFailed,
             scanout_target,
@@ -159,7 +170,11 @@ where
     };
 
     LiveRenderedPrimaryPlaneScanoutSubmitResult {
-        status: LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip,
+        status: if partially_submitted {
+            LiveRenderedPrimaryPlaneScanoutSubmitStatus::PartiallySubmitted
+        } else {
+            LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+        },
         scanout_target,
         target: Some(target.status),
         export: Some(export.status),
