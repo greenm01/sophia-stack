@@ -82,11 +82,30 @@ if ! flock -n 9; then
     exit 1
 fi
 
+# Which desktop profile the topology phases read. Both commands used to pin this
+# to the compiled default, so the gate could only ever test the topology Sophia
+# ships with -- not the operator's, and therefore never a mirror group, which is
+# the one thing it most needs to prove. Empty means discover the same profile a
+# live session would use; SOPHIA_NATIVE_OUTPUT_GATE_PROFILE names one explicitly,
+# and --no-config forces the compiled default for a run that wants it.
+profile_args=()
+if [[ -n "${SOPHIA_NATIVE_OUTPUT_GATE_PROFILE:-}" ]]; then
+    if [[ "$SOPHIA_NATIVE_OUTPUT_GATE_PROFILE" == "compiled" ]]; then
+        profile_args=(--no-config)
+    elif [[ "$SOPHIA_NATIVE_OUTPUT_GATE_PROFILE" != /* ]]; then
+        echo "SOPHIA_NATIVE_OUTPUT_GATE_PROFILE must be an absolute path or 'compiled'" >&2
+        exit 2
+    else
+        profile_args=("--desktop-profile=$SOPHIA_NATIVE_OUTPUT_GATE_PROFILE")
+    fi
+fi
+
 {
     echo "commit=$commit"
     echo "binary_sha256=$binary_sha"
     echo "tty=$(tty)"
     echo "apply_armed=$APPLY"
+    echo "profile=${SOPHIA_NATIVE_OUTPUT_GATE_PROFILE:-<discovered>}"
     echo "host=$(uname -n)"
     echo "kernel=$(uname -r)"
     echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -131,10 +150,10 @@ run_phase() {
 }
 
 run_phase probe read-only "$sophia_bin" native-topology-probe
-run_phase validate read-only "$sophia_bin" native-topology-validate
+run_phase validate read-only "$sophia_bin" native-topology-validate "${profile_args[@]}"
 
 if [[ "$APPLY" == "1" ]]; then
-    run_phase apply mutates env SOPHIA_NATIVE_OUTPUT_APPLY=1 "$sophia_bin" native-topology-apply
+    run_phase apply mutates env SOPHIA_NATIVE_OUTPUT_APPLY=1 "$sophia_bin" native-topology-apply "${profile_args[@]}"
 else
     echo "== apply =="
     echo "Not armed. Re-run with SOPHIA_NATIVE_OUTPUT_APPLY=1 to drive the outputs."

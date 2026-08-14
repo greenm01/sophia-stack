@@ -85,7 +85,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 
     #[cfg(feature = "atomic-scanout-live")]
     if args.iter().any(|arg| arg == "native-topology-validate") {
-        run_native_topology_validation()?;
+        run_native_topology_validation(args)?;
         return Ok(true);
     }
 
@@ -96,7 +96,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
                 "set SOPHIA_NATIVE_OUTPUT_APPLY=1 to apply a topology to real outputs".into(),
             );
         }
-        run_native_topology_apply()?;
+        run_native_topology_apply(args)?;
         return Ok(true);
     }
 
@@ -344,8 +344,39 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 /// It is read-only. The executor is the validation one, which has no apply, and
 /// bringing the scanout up performs no modeset. It does need DRM master, so no
 /// other compositor may hold the card.
+/// The desktop profile these topology commands should read.
+///
+/// They pinned this to `None`, which means the compiled default rather than the
+/// operator's file, so they could only ever describe the topology Sophia ships
+/// with. That made the tty4 gate unable to test any configured topology at all --
+/// including a mirror group, which is the whole point of running it.
+///
+/// Discovery is the same one the live session uses, so a profile that a session
+/// would honour is the profile these commands validate. `--desktop-profile=PATH`
+/// overrides it, and `--no-config` forces the compiled default for a run that
+/// deliberately wants it.
 #[cfg(feature = "atomic-scanout-live")]
-fn run_native_topology_validation() -> Result<(), Box<dyn std::error::Error>> {
+fn topology_desktop_profile_source(args: &[String]) -> Result<Option<std::path::PathBuf>, String> {
+    if args.iter().any(|arg| arg == "--no-config") {
+        return Ok(None);
+    }
+    let explicit = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--desktop-profile="))
+        .map(std::path::PathBuf::from);
+    if let Some(path) = explicit.as_ref()
+        && !path.is_absolute()
+    {
+        return Err("--desktop-profile requires an absolute path".to_owned());
+    }
+    Ok(sophia_config::discover_desktop_profile_source(
+        explicit.as_deref(),
+        sophia_config::default_user_config_root().as_deref(),
+    ))
+}
+
+#[cfg(feature = "atomic-scanout-live")]
+fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_cli::desktop_output_activation::{
         NativeOutputActivationSettlement, run_native_output_activation,
     };
@@ -360,8 +391,16 @@ fn run_native_topology_validation() -> Result<(), Box<dyn std::error::Error>> {
     let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
     let capabilities = native.output_capabilities()?;
     let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let profile_source = topology_desktop_profile_source(args)?;
+    // Evidence has to say which configuration was tested. A run against the
+    // compiled default and a run against the operator's file are different
+    // claims, and the log line was unable to tell them apart.
+    let profile = profile_source.as_deref().map_or_else(
+        || "<compiled>".to_owned(),
+        |path| path.display().to_string(),
+    );
     let prepared = sophia_config::load_prepared_desktop_profile(
-        None,
+        profile_source.as_deref(),
         sophia_config::ConfigGeneration::INITIAL,
     )?;
     let reconciled =
@@ -388,8 +427,8 @@ fn run_native_topology_validation() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!(
-        "sophia_native_topology_validate schema=1 validation={validation} settlement={settlement} \
-outputs={outputs} heads={heads} generation={generation}"
+        "sophia_native_topology_validate schema=2 validation={validation} settlement={settlement} \
+outputs={outputs} heads={heads} generation={generation} profile={profile}"
     );
 
     if validation != "accepted" {
@@ -411,7 +450,7 @@ outputs={outputs} heads={heads} generation={generation}"
 /// Rollback heads are resolved before apply runs, from the topology still on screen.
 /// Sourcing them afterwards would source them from a desktop that is already wrong.
 #[cfg(feature = "atomic-scanout-live")]
-fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
+fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_backend_live::LiveGbmEglFrameTargetRecord;
     use sophia_cli::desktop_output_activation::{
         NativeOutputActivationSettlement, NativeOutputRollbackSettlement,
@@ -431,8 +470,16 @@ fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
     let native = sophia_backend_live::LiveProductionNativeScanout::new()?;
     let capabilities = native.output_capabilities()?;
     let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let profile_source = topology_desktop_profile_source(args)?;
+    // Evidence has to say which configuration was tested. A run against the
+    // compiled default and a run against the operator's file are different
+    // claims, and the log line was unable to tell them apart.
+    let profile = profile_source.as_deref().map_or_else(
+        || "<compiled>".to_owned(),
+        |path| path.display().to_string(),
+    );
     let prepared = sophia_config::load_prepared_desktop_profile(
-        None,
+        profile_source.as_deref(),
         sophia_config::ConfigGeneration::INITIAL,
     )?;
     let reconciled =
@@ -495,8 +542,8 @@ fn run_native_topology_apply() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!(
-        "sophia_native_topology_apply schema=1 settlement={settlement} rollback={rollback} \
-heads={heads} generation={generation}"
+        "sophia_native_topology_apply schema=2 settlement={settlement} rollback={rollback} \
+heads={heads} generation={generation} profile={profile}"
     );
 
     if settlement != "activated" {
