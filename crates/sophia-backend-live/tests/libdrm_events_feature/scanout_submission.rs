@@ -1,79 +1,4 @@
 #[test]
-fn a_mirror_group_commits_once_per_head_against_one_framebuffer() {
-    let device = full_primary_plane_scanout_device();
-    let selection = select_native_primary_plane_target(&device);
-    let primary = selection.selection.expect("the fake device selects a target");
-    let peer = LibdrmNativePrimaryPlaneSelection::new(
-        drm::control::from_u32(0x51).expect("connector handle should be nonzero"),
-        drm::control::from_u32(0x52).expect("crtc handle should be nonzero"),
-        drm::control::from_u32(0x53).expect("plane handle should be nonzero"),
-        primary.size(),
-        None,
-    );
-
-    let result =
-        submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
-            &device,
-            selection,
-            &[peer],
-            scanout_descriptor(primary.size()),
-            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
-        );
-
-    assert_eq!(
-        result.status,
-        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
-    );
-    // One buffer, one framebuffer, one commit per connector.
-    assert_eq!(result.heads_committed, 2);
-    assert_eq!(device.commits(), 2);
-    assert_eq!(device.destroyed_framebuffers(), 0);
-    assert!(result.submission.is_some());
-}
-
-#[test]
-fn a_refused_second_head_keeps_the_framebuffer_the_first_is_scanning() {
-    // The hazard the ownership rule exists for. Once one connector has taken the
-    // frame it is scanning that buffer, so a later head's refusal must not destroy
-    // it -- while still failing the candidate, because a group showing the frame on
-    // one of its screens is not a presented group.
-    let device = full_primary_plane_scanout_device().accepting_commits(1);
-    let selection = select_native_primary_plane_target(&device);
-    let primary = selection.selection.expect("the fake device selects a target");
-    let peer = LibdrmNativePrimaryPlaneSelection::new(
-        drm::control::from_u32(0x61).expect("connector handle should be nonzero"),
-        drm::control::from_u32(0x62).expect("crtc handle should be nonzero"),
-        drm::control::from_u32(0x63).expect("plane handle should be nonzero"),
-        primary.size(),
-        None,
-    );
-
-    let result =
-        submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
-            &device,
-            selection,
-            &[peer],
-            scanout_descriptor(primary.size()),
-            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
-        );
-
-    assert_eq!(
-        result.status,
-        LibdrmNativePrimaryPlaneScanoutSubmitStatus::PartiallySubmitted
-    );
-    assert_eq!(result.heads_committed, 1);
-    assert!(
-        result.submission.is_some(),
-        "the submission owns the framebuffer the first head is scanning"
-    );
-    assert_eq!(
-        device.destroyed_framebuffers(),
-        0,
-        "destroying it would pull the buffer out from under a live connector"
-    );
-}
-
-#[test]
 fn native_libdrm_primary_plane_scanout_submit_chains_renderer_descriptor_to_atomic_commit() {
     let device = full_primary_plane_scanout_device();
     let result = submit_native_primary_plane_scanout_from_renderer_descriptor(
@@ -149,7 +74,6 @@ fn native_libdrm_primary_plane_scanout_submit_page_flip_policy_disallows_modeset
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -197,7 +121,6 @@ fn native_libdrm_primary_plane_scanout_submit_page_flip_policy_disallows_modeset
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &mode_unavailable,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -234,7 +157,6 @@ fn native_libdrm_primary_plane_scanout_submit_retains_cleanup_after_submit_failu
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -275,7 +197,6 @@ fn native_libdrm_primary_plane_scanout_submit_retains_resource_creation_cleanup(
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,

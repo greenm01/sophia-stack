@@ -93,7 +93,6 @@ fn native_atomic_scanout_steady_state_evidence_requires_page_flip_request_scope(
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,
@@ -453,7 +452,6 @@ fn native_atomic_scanout_smoke_evidence_requires_phase_commit_flags() {
         submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
             &device,
             selection,
-            &[],
             scanout_descriptor(Size {
                 width: 1280,
                 height: 720,

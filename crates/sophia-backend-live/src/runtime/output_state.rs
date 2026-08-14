@@ -133,12 +133,6 @@ impl LiveRenderedOutputState {
         self.native_selections.first().copied()
     }
 
-    /// Every head of this output beyond the first.
-    #[cfg(feature = "libdrm-events")]
-    pub fn native_peer_selections(&self) -> &[LibdrmNativePrimaryPlaneSelection] {
-        self.native_selections.get(1..).unwrap_or_default()
-    }
-
     /// Whether a head of this output was lost while work was in flight.
     ///
     /// The candidate cannot succeed once this is true. It stays true until the
@@ -154,31 +148,6 @@ impl LiveRenderedOutputState {
         self.native_selections
             .iter()
             .map(|selection| selection.connector_id())
-    }
-
-    /// Whether a mirror group still has a head that has not flipped this submission.
-    ///
-    /// Derived rather than counted: the intake already records the newest serial
-    /// per head, and the submission already records the serial it was submitted
-    /// after, so "this head has flipped since we submitted" is a comparison rather
-    /// than a second tally that could disagree with the first.
-    ///
-    /// Only a group can be waiting. With one head there is nothing joint about
-    /// retirement and the single-head rules decide it, so this deliberately cannot
-    /// change what an unmirrored desktop does.
-    #[cfg(feature = "libdrm-events")]
-    pub fn group_awaiting_flip(&self, submitted_after_page_flip_serial: Option<u64>) -> bool {
-        self.native_selections.len() > 1
-            && self.head_connectors().any(|connector| {
-                match (
-                    self.page_flip_callback_intake.head_frame_serial(connector),
-                    submitted_after_page_flip_serial,
-                ) {
-                    (None, _) => true,
-                    (Some(serial), Some(baseline)) => serial <= baseline,
-                    (Some(_), None) => false,
-                }
-            })
     }
 }
 

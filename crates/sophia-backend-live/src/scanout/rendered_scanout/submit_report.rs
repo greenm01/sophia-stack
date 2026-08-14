@@ -70,12 +70,6 @@ pub enum LiveRenderedPrimaryPlaneScanoutSubmitStatus {
     FrameTargetUnavailable,
     ScanoutExportFailed,
     PrimaryPlaneSubmitFailed,
-    /// A mirror group took the frame on some heads and not all of them.
-    ///
-    /// The candidate has failed -- a group showing the frame on one of its screens
-    /// is not a presented group -- but the submission is alive and owns the
-    /// framebuffer, because a connector is scanning it out.
-    PartiallySubmitted,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -92,7 +86,6 @@ pub fn runtime_scanout_state_from_rendered_primary_plane_submit_status(
         LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutTargetNotReady
         | LiveRenderedPrimaryPlaneScanoutSubmitStatus::FrameTargetUnavailable
         | LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportFailed
-        | LiveRenderedPrimaryPlaneScanoutSubmitStatus::PartiallySubmitted
         | LiveRenderedPrimaryPlaneScanoutSubmitStatus::PrimaryPlaneSubmitFailed => {
             RuntimeScanoutState::Rejected
         }

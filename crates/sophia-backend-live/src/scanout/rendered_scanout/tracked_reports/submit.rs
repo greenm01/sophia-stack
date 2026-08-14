@@ -90,10 +90,6 @@ pub enum LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus {
     FrameTargetUnavailable,
     ScanoutExportFailed,
     PrimaryPlaneSubmitFailed,
-    /// A mirror group took the frame on some heads and not all of them. Kept
-    /// distinct from `PrimaryPlaneSubmitFailed` because the submission survives:
-    /// a connector is scanning the framebuffer out.
-    PartiallySubmitted,
     AlreadyInFlight,
     CleanupPending,
 }
@@ -120,9 +116,6 @@ impl From<LiveRenderedPrimaryPlaneScanoutSubmitStatus>
             }
             LiveRenderedPrimaryPlaneScanoutSubmitStatus::PrimaryPlaneSubmitFailed => {
                 Self::PrimaryPlaneSubmitFailed
-            }
-            LiveRenderedPrimaryPlaneScanoutSubmitStatus::PartiallySubmitted => {
-                Self::PartiallySubmitted
             }
         }
     }

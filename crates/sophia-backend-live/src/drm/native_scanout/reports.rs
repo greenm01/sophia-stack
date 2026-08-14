@@ -18,11 +18,6 @@ pub struct LibdrmNativePrimaryPlaneScanoutSubmitResult {
     pub submit: Option<LibdrmNativeAtomicCommitSubmitStatus>,
     pub submission: Option<LibdrmNativePrimaryPlaneScanoutSubmission>,
     pub cleanup: Option<LibdrmNativePrimaryPlaneResourceCleanup>,
-    /// How many of the group's heads accepted the commit.
-    ///
-    /// One for an ordinary output. For a group it is the fact the singular fields
-    /// above cannot carry: they describe one commit, and a group is several.
-    pub heads_committed: usize,
 }
 
 impl LibdrmNativePrimaryPlaneScanoutSubmitResult {
@@ -48,7 +43,6 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitResult {
             submit: None,
             submission: None,
             cleanup: None,
-            heads_committed: 0,
         }
     }
 
@@ -153,13 +147,6 @@ impl LibdrmNativePrimaryPlaneFormatTableStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LibdrmNativePrimaryPlaneScanoutSubmitStatus {
     SubmittedWaitingForPageFlip,
-    /// Some heads of a mirror group took the frame and at least one did not.
-    ///
-    /// Distinct from `AtomicSubmitFailed`, and the distinction is load-bearing:
-    /// a connector is scanning the framebuffer, so the submission owns it and it
-    /// must not be destroyed. The candidate still fails closed -- a group that
-    /// shows the frame on some of its screens is not a presented group.
-    PartiallySubmitted,
     KmsTargetUnavailable,
     ScanoutBufferUnavailable,
     PropertyDiscoveryUnavailable,

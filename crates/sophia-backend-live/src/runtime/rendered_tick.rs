@@ -38,7 +38,6 @@ where
             .expect("live runtime primary output must remain registered");
         let target = state.gbm_egl_frame_target;
         let output_size = state.output_size;
-        let peers = state.native_peer_selections().to_vec();
         let native_selection = state.native_selection();
         let scanout_target = state.kms_scanout_target.status;
         let rendered_primary_plane_scanout_submission =
@@ -75,7 +74,6 @@ where
                     rendered_primary_plane_scanout_in_flight_ticks,
                     submitted_after_page_flip_serial,
                     selection,
-                    peers: &peers,
                     vrr_enabled,
                     device,
                     exporter,

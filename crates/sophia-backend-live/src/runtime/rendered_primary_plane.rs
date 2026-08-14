@@ -147,7 +147,6 @@ where
         E::Owner: LiveRenderedScanoutBufferPrimeSource,
     {
         let state = self.primary_output_state();
-        let peers = state.native_peer_selections().to_vec();
         let selection = state.native_selection().map_or_else(
             || select_native_primary_plane_target(device),
             |selection| LibdrmNativePrimaryPlaneSelectionResult {
@@ -159,7 +158,6 @@ where
             state.kms_scanout_target.status,
             state.gbm_egl_frame_target,
             selection,
-            &peers,
             state.vrr_property_request,
             device,
             exporter,
@@ -180,7 +178,6 @@ where
         E::Owner: LiveRenderedScanoutBufferPrimeSource + 'static,
     {
         let state = self.primary_output_state_mut();
-        let peers = state.native_peer_selections().to_vec();
         let selection = state.native_selection().map_or_else(
             || select_native_primary_plane_target(device),
             |selection| LibdrmNativePrimaryPlaneSelectionResult {
@@ -199,7 +196,6 @@ where
             state.page_flip_callback_intake.last_frame_serial(),
             Some(&mut state.pending_runtime_scanout_states),
             selection,
-            &peers,
             state.vrr_property_request,
             device,
             exporter,
@@ -277,21 +273,6 @@ where
             cleanup_pending: state.cleanup_pending(),
         };
     };
-
-    // A mirror group retires when its last head flips, not its first. The heads
-    // scan out one framebuffer, so releasing it after one flip would destroy a
-    // buffer a sibling connector is still displaying.
-    if state.group_awaiting_flip(submission.submitted_after_page_flip_serial) {
-        state.rendered_primary_plane_scanout_submission = Some(submission);
-        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip,
-            destroy: None,
-            runtime_scanout_state: None,
-            in_flight: true,
-            in_flight_ticks: state.rendered_primary_plane_scanout_in_flight_ticks,
-            cleanup_pending: state.cleanup_pending(),
-        };
-    }
 
     // A group that lost a head never presented, so a survivor's flip cannot retire
     // the submission as displayed. The model settles such a generation `removed`

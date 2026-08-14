@@ -83,83 +83,11 @@ fn persistent_rendered_scanout_retires_only_the_replaced_displayed_buffer() {
 }
 
 #[test]
-fn live_runtime_assembly_retires_a_mirror_group_only_after_its_last_head_flips() {
-    // The heads of a group scan out one framebuffer. Retiring after the first
-    // flip would release a buffer the sibling connector is still displaying, so
-    // the group waits for its last head.
-    let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-group-retire");
-    let report = discover_live_backend(&LiveBackendConfig::new(&root));
-    let mut assembly = report
-        .into_live_runtime_assembly(QueuedInputPoller::default())
-        .expect("ready backend should seed live assembly");
-    let device = full_primary_plane_scanout_device();
-    let mut exporter = FakeRenderedScanoutExporter::exported(Size {
-        width: 1280,
-        height: 720,
-    });
-    let output = OutputId::from_raw(1);
-    // Two heads behind one logical output: a mirror group, built by hand because
-    // the fake device offers one connector.
-    let head = |connector: u32| {
-        LibdrmNativePrimaryPlaneSelection::new(
-            drm::control::from_u32(connector).expect("connector handle should be nonzero"),
-            drm::control::from_u32(connector + 100).expect("crtc handle should be nonzero"),
-            drm::control::from_u32(connector + 200).expect("plane handle should be nonzero"),
-            Size {
-                width: 1280,
-                height: 720,
-            },
-            None,
-        )
-    };
-    assert!(assembly.configure_native_output_heads(output, [head(11), head(12)]));
-
-    let submitted =
-        assembly.submit_and_track_rendered_primary_plane_scanout_with(&device, &mut exporter);
-    assert_eq!(
-        submitted.status,
-        LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
-    );
-
-    let first = assembly.observe_page_flip_callback(LivePageFlipCallback {
-        output,
-        connector_id: 11,
-        frame_serial: 70,
-    });
-    assert_eq!(first.decision, LivePageFlipCallbackDecision::Accepted);
-    let waiting =
-        assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &first);
-    assert_eq!(
-        waiting.status,
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip
-    );
-    assert_eq!(waiting.destroy, None);
-    assert!(assembly.rendered_primary_plane_scanout_in_flight());
-
-    let second = assembly.observe_page_flip_callback(LivePageFlipCallback {
-        output,
-        connector_id: 12,
-        frame_serial: 70,
-    });
-    assert_eq!(second.decision, LivePageFlipCallbackDecision::Accepted);
-    let retired =
-        assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &second);
-    assert_eq!(
-        retired.status,
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
-    );
-    assert!(!assembly.rendered_primary_plane_scanout_in_flight());
-
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
 fn losing_a_head_ends_the_wait_and_fails_the_candidate() {
-    // X leaves a flip queued on a display that went away hanging forever and calls
-    // it a configuration error. This fails closed instead: the lost head leaves the
-    // set retirement waits on, never counts as a flip, and a surviving sibling's
-    // flip cannot retire the frame as displayed -- the group never showed it on
-    // every screen, and one of those screens is gone.
+    // A group that lost a head never presented, whoever owns the buffers. Each
+    // head now scans out its own, so nothing waits for a sibling -- but a
+    // survivor's flip still cannot retire the frame as displayed, because the
+    // frame never reached every screen and one of those screens is gone.
     let root = ready_drm_sysfs_fixture("runtime-rendered-primary-plane-head-loss");
     let report = discover_live_backend(&LiveBackendConfig::new(&root));
     let mut assembly = report
@@ -192,26 +120,22 @@ fn losing_a_head_ends_the_wait_and_fails_the_candidate() {
         LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
     );
 
-    // One head flips; the group is still waiting for its sibling.
+    // A head goes away before the frame it was submitted for reaches a screen.
+    assert!(assembly.lose_native_output_head(output, 22));
+    assert!(
+        !assembly.lose_native_output_head(output, 22),
+        "a loss reported twice is a no-op, not a second failure"
+    );
+
+    // The surviving head flips. Its own buffer is fine, but the group never
+    // showed the frame on every screen and one of those screens is gone, so the
+    // candidate cannot retire as displayed.
     let first = assembly.observe_page_flip_callback(LivePageFlipCallback {
         output,
         connector_id: 21,
         frame_serial: 80,
     });
     assert_eq!(first.decision, LivePageFlipCallbackDecision::Accepted);
-    assert_eq!(
-        assembly
-            .retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &first)
-            .status,
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip
-    );
-
-    // The sibling goes away rather than flipping.
-    assert!(assembly.lose_native_output_head(output, 22));
-    assert!(
-        !assembly.lose_native_output_head(output, 22),
-        "a loss reported twice is a no-op, not a second failure"
-    );
 
     let retired =
         assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &first);
