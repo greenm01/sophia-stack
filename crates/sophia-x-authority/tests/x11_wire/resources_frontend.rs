@@ -417,7 +417,6 @@ fn x_server_frontend_dri3_open_sends_backend_owned_render_device_fd() {
     use std::io::{IoSliceMut, Write};
     use std::mem::MaybeUninit;
     use std::os::fd::OwnedFd;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -447,7 +446,7 @@ fn x_server_frontend_dri3_open_sends_backend_owned_render_device_fd() {
     let server = thread::spawn(move || frontend.serve_next());
 
     wait_for_socket(&path);
-    let mut stream = UnixStream::connect(&path).unwrap();
+    let mut stream = connect_x_socket(&path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -500,7 +499,6 @@ fn x_server_frontend_assigns_batched_scm_rights_to_fd_bearing_requests() {
     use std::mem::MaybeUninit;
     use std::net::Shutdown;
     use std::os::fd::AsFd;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -517,7 +515,7 @@ fn x_server_frontend_assigns_batched_scm_rights_to_fd_bearing_requests() {
     let server = thread::spawn(move || frontend.serve_next());
 
     wait_for_socket(&path);
-    let mut stream = UnixStream::connect(&path).unwrap();
+    let mut stream = connect_x_socket(&path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -603,8 +601,7 @@ fn x_server_frontend_binds_an_owner_only_socket_and_preserves_regular_files() {
 #[cfg(unix)]
 #[test]
 fn x_server_frontend_rejects_bad_cookie_then_accepts_the_configured_cookie() {
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixStream;
+    use std::io::Write;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -640,7 +637,7 @@ fn x_server_frontend_rejects_bad_cookie_then_accepts_the_configured_cookie() {
     });
 
     wait_for_socket(&socket_path);
-    let mut rejected = UnixStream::connect(&socket_path).unwrap();
+    let mut rejected = connect_x_socket(&socket_path);
     rejected
         .write_all(&setup_request(
             XByteOrder::LittleEndian,
@@ -651,16 +648,16 @@ fn x_server_frontend_rejects_bad_cookie_then_accepts_the_configured_cookie() {
         ))
         .unwrap();
     let mut rejected_prefix = [0; X_SETUP_REPLY_PREFIX_LEN];
-    rejected.read_exact(&mut rejected_prefix).unwrap();
+    fill_from_socket(&mut rejected, &mut rejected_prefix);
     assert_eq!(rejected_prefix[0], 0);
     let rejected_body_len =
         usize::from(read_u16(XByteOrder::LittleEndian, &rejected_prefix[6..8])) * 4;
     let mut rejected_body = vec![0; rejected_body_len];
-    rejected.read_exact(&mut rejected_body).unwrap();
+    fill_from_socket(&mut rejected, &mut rejected_body);
     assert!(String::from_utf8_lossy(&rejected_body).contains("authorization failed"));
     drop(rejected);
 
-    let mut accepted = UnixStream::connect(&socket_path).unwrap();
+    let mut accepted = connect_x_socket(&socket_path);
     accepted
         .write_all(&setup_request(
             XByteOrder::LittleEndian,

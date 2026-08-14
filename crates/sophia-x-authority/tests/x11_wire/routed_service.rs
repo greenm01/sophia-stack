@@ -3,7 +3,6 @@
 fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -42,7 +41,7 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -68,7 +67,7 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
         ))
         .unwrap();
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -117,7 +116,7 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
         })
         .unwrap();
     first
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     let mut disconnected = [0u8; 1];
     match first.read(&mut disconnected) {
@@ -142,7 +141,7 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
         .write_all(&resource_request(XByteOrder::LittleEndian, 8, 0x0020_0801))
         .unwrap();
     let mut error = [0; 32];
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadWindow.wire_code());
     second
@@ -183,10 +182,9 @@ fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer
 fn routed_service_retains_revocation_requested_before_admission_attaches() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-early-revocation-test-{}-{}.sock",
@@ -226,13 +224,13 @@ fn routed_service_retains_revocation_requested_before_admission_attaches() {
             admission: ClientAdmissionId::from_raw(1),
         })
         .unwrap();
-    let mut client = UnixStream::connect(&socket_path).unwrap();
+    let mut client = connect_x_socket(&socket_path);
     client
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     read_setup_success(&mut client, XByteOrder::LittleEndian);
     client
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     let mut disconnected = [0u8; 1];
     match client.read(&mut disconnected) {

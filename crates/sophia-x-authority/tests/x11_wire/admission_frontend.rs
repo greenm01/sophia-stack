@@ -85,8 +85,7 @@ impl XServerFrontendAdmissionPolicy for SequencedXAdmissionPolicy {
 #[cfg(unix)]
 #[test]
 fn x_server_frontend_reports_admission_denial_as_x11_setup_failure() {
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixStream;
+    use std::io::Write;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -115,16 +114,16 @@ fn x_server_frontend_reports_admission_denial_as_x11_setup_failure() {
     });
 
     wait_for_socket(&socket_path);
-    let mut client = UnixStream::connect(&socket_path).unwrap();
+    let mut client = connect_x_socket(&socket_path);
     client
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     let mut prefix = [0; X_SETUP_REPLY_PREFIX_LEN];
-    client.read_exact(&mut prefix).unwrap();
+    fill_from_socket(&mut client, &mut prefix);
     assert_eq!(prefix[0], 0);
     let body_len = usize::from(read_u16(XByteOrder::LittleEndian, &prefix[6..8])) * 4;
     let mut body = vec![0; body_len];
-    client.read_exact(&mut body).unwrap();
+    fill_from_socket(&mut client, &mut body);
     assert!(String::from_utf8_lossy(&body).contains("admission failed"));
     drop(client);
 
@@ -145,7 +144,6 @@ fn x_server_frontend_reports_admission_denial_as_x11_setup_failure() {
 fn x_server_frontend_revokes_distinct_admissions_for_concurrent_clients() {
     use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -178,12 +176,12 @@ fn x_server_frontend_revokes_distinct_admissions_for_concurrent_clients() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     read_setup_success(&mut first, XByteOrder::LittleEndian);
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -205,9 +203,8 @@ fn x_server_frontend_revokes_distinct_admissions_for_concurrent_clients() {
 #[test]
 fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and_selection_access()
 {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -258,7 +255,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -278,7 +275,11 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
         ))
         .unwrap();
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    // `second` asks about a window `first` created. Without a barrier the two
+    // requests race and the answer is BadWindow -- correct, and about a different
+    // question than the access control this test is checking.
+    sync_x_connection(&mut first, XByteOrder::LittleEndian, first_window);
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -290,7 +291,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
         .write_all(&resource_request(XByteOrder::LittleEndian, 8, first_window))
         .unwrap();
     let mut error = [0; 32];
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
 
@@ -301,7 +302,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
             (1 << 0) | (1 << 1),
         ))
         .unwrap();
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
 
@@ -316,7 +317,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
             b"foreign title",
         ))
         .unwrap();
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
 
@@ -328,7 +329,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
             1,
         ))
         .unwrap();
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
 
@@ -342,7 +343,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
             2,
         ))
         .unwrap();
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 31);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &error[20..24]), 0);
 
@@ -365,7 +366,6 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
 #[test]
 fn x_server_frontend_revokes_admission_after_dispatch_failure() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -397,7 +397,7 @@ fn x_server_frontend_revokes_admission_after_dispatch_failure() {
     });
 
     wait_for_socket(&socket_path);
-    let mut client = UnixStream::connect(&socket_path).unwrap();
+    let mut client = connect_x_socket(&socket_path);
     client
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -422,7 +422,6 @@ fn x_server_frontend_revokes_admission_after_dispatch_failure() {
 #[test]
 fn x_server_frontend_assigns_disjoint_setup_resource_ranges_to_clients() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -442,14 +441,14 @@ fn x_server_frontend_assigns_disjoint_setup_resource_ranges_to_clients() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     let first_base = read_setup_resource_id_base(&mut first, XByteOrder::LittleEndian);
     drop(first);
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -472,7 +471,6 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     use std::io::{Read, Write};
     use std::net::Shutdown;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -505,7 +503,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     });
 
     wait_for_socket(&socket_path);
-    let mut owner = UnixStream::connect(&socket_path).unwrap();
+    let mut owner = connect_x_socket(&socket_path);
     owner
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -529,7 +527,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
 
-    let mut requestor = UnixStream::connect(&socket_path).unwrap();
+    let mut requestor = connect_x_socket(&socket_path);
     requestor
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -696,10 +694,10 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     // either client. Real PRIMARY workflows switch ownership as users select
     // the return token, so a one-way transfer does not cover this boundary.
     owner
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     requestor
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     owner
         .write_all(&convert_selection_request(

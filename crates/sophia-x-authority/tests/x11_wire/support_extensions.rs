@@ -549,8 +549,80 @@ fn wait_for_socket(path: &std::path::Path) {
 }
 
 #[cfg(unix)]
-fn read_setup_success(stream: &mut std::os::unix::net::UnixStream, byte_order: XByteOrder) {
+fn read_setup_success(stream: &mut std::os::unix::net::UnixStream,
+    byte_order: XByteOrder) {
     let _ = read_setup_resource_id_base(stream, byte_order);
+}
+
+/// How long a record read waits with nothing arriving before calling it a hang.
+///
+/// Generous on purpose. These sockets carry a timeout for one reason -- so a test
+/// waiting on a record that will never come fails with a message instead of
+/// hanging until the harness kills it. It is not a latency assertion, and the
+/// second-scale values it replaced were being read as one: under a loaded machine
+/// a threaded service can take longer than a second to deliver, and tests failed
+/// for being slow rather than wrong.
+///
+/// Tests that prove *silence* need the opposite and set their own short window
+/// inline, reading the socket directly rather than through the helpers here.
+#[cfg(unix)]
+const X_RECORD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Fills `buffer` from a socket that carries a read timeout.
+///
+/// `read_exact` cannot be used on these streams. They all set `SO_RCVTIMEO`, and
+/// when it expires part-way through a record `read_exact` returns `WouldBlock`
+/// having already consumed an unspecified number of bytes -- the read fails *and*
+/// leaves the stream mid-record, so every later read on it is garbage. Under load
+/// a writer is slow enough for a record to straddle that boundary, which is the
+/// whole of the flake: whichever test lost the race failed, and never the same one
+/// twice.
+///
+/// The timeout is treated as an idle budget rather than a deadline for the record.
+/// That is what it was there to express: a peer that has stopped talking is a
+/// failure, a peer that is merely slow is not. Bytes that arrive reset it, so a
+/// record split across the boundary is resumed rather than lost.
+#[cfg(unix)]
+fn fill_from_socket(stream: &mut std::os::unix::net::UnixStream,
+    buffer: &mut [u8]) {
+    use std::io::Read;
+
+    let budget = stream
+        .read_timeout()
+        .expect("socket read timeout is readable")
+        .unwrap_or(X_RECORD_READ_TIMEOUT);
+    let mut filled = 0;
+    let mut last_progress = std::time::Instant::now();
+    while filled < buffer.len() {
+        match stream.read(&mut buffer[filled..]) {
+            Ok(0) => panic!(
+                "peer closed mid-record after {filled} of {} bytes",
+                buffer.len()
+            ),
+            Ok(read) => {
+                filled += read;
+                last_progress = std::time::Instant::now();
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                assert!(
+                    last_progress.elapsed() < budget,
+                    "no bytes for {budget:?} with {filled} of {} read",
+                    buffer.len()
+                );
+            }
+            Err(error) => panic!(
+                "record read failed after {filled} of {} bytes: {error}",
+                buffer.len()
+            ),
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -558,35 +630,118 @@ fn read_setup_resource_id_base(
     stream: &mut std::os::unix::net::UnixStream,
     byte_order: XByteOrder,
 ) -> u32 {
-    use std::io::Read;
-
     let mut prefix = [0; X_SETUP_REPLY_PREFIX_LEN];
-    stream.read_exact(&mut prefix).unwrap();
+    fill_from_socket(stream, &mut prefix);
     assert_eq!(prefix[0], 1);
     let body_len = usize::from(read_u16(byte_order, &prefix[6..8])) * 4;
     let mut body = vec![0; body_len];
-    stream.read_exact(&mut body).unwrap();
+    fill_from_socket(stream, &mut body);
     read_u32(byte_order, &body[4..8])
 }
 
 #[cfg(unix)]
 fn read_x_record(stream: &mut std::os::unix::net::UnixStream) -> [u8; 32] {
-    use std::io::Read;
-
     let mut record = [0; 32];
-    stream.read_exact(&mut record).unwrap();
+    fill_from_socket(stream, &mut record);
     record
 }
 
+/// Connects to a listening authority, tolerating a listener that is still starting.
+///
+/// `wait_for_socket` waits for the path to appear, which is not the same as the
+/// server having called `listen`, and is not the same as its backlog having room.
+/// On a loaded machine a connect can arrive in the gap and be refused. Retrying is
+/// the honest response: a refused connect at startup is a race, and only a connect
+/// that keeps being refused is a failure.
 #[cfg(unix)]
-fn read_x_reply(stream: &mut std::os::unix::net::UnixStream, byte_order: XByteOrder) -> Vec<u8> {
-    use std::io::Read;
+fn connect_x_socket(path: &std::path::Path) -> std::os::unix::net::UnixStream {
+    let deadline = std::time::Instant::now() + X_RECORD_READ_TIMEOUT;
+    loop {
+        match std::os::unix::net::UnixStream::connect(path) {
+            Ok(stream) => return stream,
+            Err(error) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "could not connect to {}: {error}",
+                    path.display()
+                );
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+    }
+}
 
-    let mut prefix = [0; 32];
-    stream.read_exact(&mut prefix).unwrap();
-    let body_len = usize::try_from(read_u32(byte_order, &prefix[4..8])).unwrap() * 4;
-    let mut reply = prefix.to_vec();
-    reply.resize(32 + body_len, 0);
-    stream.read_exact(&mut reply[32..]).unwrap();
-    reply
+/// Waits until everything already written on this connection has been processed.
+///
+/// X orders requests within a connection and says nothing about ordering between
+/// them. A test that creates a window on one connection and then asks about it
+/// from a second is asserting an ordering the protocol does not provide: under
+/// load the second connection's request can reach the authority first and be
+/// answered, correctly, with `BadWindow`.
+///
+/// A round trip is the only barrier available. `GetGeometry` is the cheapest one
+/// that names a window, and its reply cannot arrive before the requests queued
+/// ahead of it on the same connection have been handled.
+#[cfg(unix)]
+fn sync_x_connection(
+    stream: &mut std::os::unix::net::UnixStream,
+    byte_order: XByteOrder,
+    window: u32,
+) {
+    use std::io::Write;
+
+    stream
+        .write_all(&resource_request(byte_order, 14, window))
+        .unwrap();
+    expect_x_reply(&read_x_reply(stream, byte_order), byte_order);
+}
+
+/// Asserts a record is a reply, and says what it actually was when it is not.
+///
+/// An X error is a 32-byte record whose first byte is zero, and every field that
+/// identifies it -- which error, which resource, which request -- is in the bytes
+/// after that. `assert_eq!(record[0], 1)` throws all of it away and reports
+/// `left: 0, right: 1`, which says a record was not a reply without saying
+/// anything about why.
+#[cfg(unix)]
+fn expect_x_reply(record: &[u8], byte_order: XByteOrder) {
+    assert!(
+        record[0] != 0,
+        "expected a reply, got X error code {} for resource {:#010x} \
+(major opcode {}, minor {}, sequence {})",
+        record[1],
+        read_u32(byte_order, &record[4..8]),
+        record[10],
+        read_u16(byte_order, &record[8..10]),
+        read_u16(byte_order, &record[2..4]),
+    );
+    assert_eq!(record[0], 1, "expected a reply, got record type");
+}
+
+/// Reads one record of any class off the wire.
+///
+/// Every X record is 32 bytes, and exactly two classes carry more: a reply
+/// (`0`-indexed byte zero of `1`) and a GenericEvent (`35`), which share the
+/// extended length at bytes 4..8. Errors and core events do not -- those four
+/// bytes are payload. Reading them as a length is how a 32-byte core event turned
+/// into a demand for eight megabytes that never arrived.
+///
+/// So the class is read from the wire rather than assumed by the caller. A test
+/// that receives a record it did not expect now fails on its own assertion about
+/// `record[0]`, with the stream still framed, instead of desynchronising and
+/// failing somewhere unrelated later.
+#[cfg(unix)]
+fn read_x_reply(stream: &mut std::os::unix::net::UnixStream,
+    byte_order: XByteOrder) -> Vec<u8> {
+    let mut record = vec![0; 32];
+    fill_from_socket(stream, &mut record);
+    // Bit 7 marks an event as sent by SendEvent and is not part of the class.
+    let extended = matches!(record[0], 1) || record[0] & 0x7f == 35;
+    if !extended {
+        return record;
+    }
+    let body_len = usize::try_from(read_u32(byte_order, &record[4..8])).unwrap() * 4;
+    record.resize(32 + body_len, 0);
+    fill_from_socket(stream, &mut record[32..]);
+    record
 }

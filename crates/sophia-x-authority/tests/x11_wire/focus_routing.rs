@@ -3,7 +3,6 @@
 fn routed_focus_notifies_both_clients_across_repeated_transitions() {
     use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -38,7 +37,7 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -78,7 +77,7 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         ))
         .unwrap();
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -236,15 +235,13 @@ fn assert_xi_focus_event(
     focused: bool,
     window: u32,
 ) {
-    use std::io::Read;
-
     let mut event = vec![0; 32];
-    stream.read_exact(&mut event).unwrap();
+    fill_from_socket(stream, &mut event);
     assert_eq!(event[0], 35);
     assert_eq!(event[1], X_INPUT_MAJOR_OPCODE);
     let body_len = usize::try_from(read_u32(XByteOrder::LittleEndian, &event[4..8])).unwrap() * 4;
     event.resize(32 + body_len, 0);
-    stream.read_exact(&mut event[32..]).unwrap();
+    fill_from_socket(stream, &mut event[32..]);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &event[8..10]), if focused { 9 } else { 10 });
     assert_eq!(read_u16(XByteOrder::LittleEndian, &event[10..12]), 3);
     assert_ne!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 0);

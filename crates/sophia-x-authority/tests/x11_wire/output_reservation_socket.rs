@@ -2,7 +2,6 @@
 #[test]
 fn x11_core_socket_channel_emits_complete_strut_replacement_and_clear() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,7 +22,7 @@ fn x11_core_socket_channel_emits_complete_strut_replacement_and_clear() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();

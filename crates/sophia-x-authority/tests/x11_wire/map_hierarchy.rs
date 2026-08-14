@@ -4,7 +4,6 @@ fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() 
     use std::collections::BTreeMap;
     use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -40,7 +39,7 @@ fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() 
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -341,9 +340,8 @@ fn deferred_map_subwindows_maps_children_without_bypassing_toplevel_admission() 
 fn routed_lifecycle_events_follow_structure_and_substructure_masks() {
     use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-lifecycle-routing-test-{}-{}.sock",
@@ -371,13 +369,13 @@ fn routed_lifecycle_events_follow_structure_and_substructure_masks() {
     });
 
     wait_for_socket(&socket_path);
-    let mut observer = UnixStream::connect(&socket_path).unwrap();
+    let mut observer = connect_x_socket(&socket_path);
     observer
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     read_setup_success(&mut observer, XByteOrder::LittleEndian);
     observer
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     observer
         .write_all(&change_window_event_mask_request(
@@ -387,13 +385,17 @@ fn routed_lifecycle_events_follow_structure_and_substructure_masks() {
         ))
         .unwrap();
 
-    let mut owner = UnixStream::connect(&socket_path).unwrap();
+    // The observer's interest in the root has to be registered before the owner
+    // creates anything, or the creation is processed first and no notification is
+    // ever owed -- a wait that only ends when the read budget runs out.
+    sync_x_connection(&mut observer, XByteOrder::LittleEndian, X_SETUP_DEFAULT_ROOT);
+    let mut owner = connect_x_socket(&socket_path);
     owner
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
     read_setup_success(&mut owner, XByteOrder::LittleEndian);
     owner
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     let window = 0x0040_0801;
     owner

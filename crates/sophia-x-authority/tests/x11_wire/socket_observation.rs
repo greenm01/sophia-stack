@@ -2,7 +2,6 @@
 #[test]
 fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,7 +24,7 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -42,7 +41,7 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
         .unwrap();
     drop(first);
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -64,7 +63,6 @@ fn x11_core_listener_reclaims_disconnected_client_window_before_next_client() {
 #[test]
 fn x11_core_socket_recreated_xid_receives_a_fresh_surface_generation() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -95,7 +93,7 @@ fn x11_core_socket_recreated_xid_receives_a_fresh_surface_generation() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -157,7 +155,6 @@ fn x11_core_socket_recreated_xid_receives_a_fresh_surface_generation() {
 #[test]
 fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -186,7 +183,7 @@ fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -228,7 +225,6 @@ fn x11_core_socket_observer_sees_poly_fill_rectangle_transaction() {
 #[test]
 fn x11_core_socket_observer_sees_put_image_transaction() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -257,7 +253,7 @@ fn x11_core_socket_observer_sees_put_image_transaction() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -305,7 +301,6 @@ fn x11_core_socket_observer_sees_put_image_transaction() {
 #[test]
 fn x11_core_socket_returns_large_get_image_reply() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -328,7 +323,7 @@ fn x11_core_socket_returns_large_get_image_reply() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -402,7 +397,6 @@ fn x11_core_socket_returns_large_get_image_reply() {
 #[test]
 fn x11_core_socket_observer_sees_sophia_present_transaction() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -431,7 +425,7 @@ fn x11_core_socket_observer_sees_sophia_present_transaction() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -478,7 +472,6 @@ fn x11_core_socket_observer_sees_sophia_present_transaction() {
 #[test]
 fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -499,7 +492,7 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -579,7 +572,6 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
 fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -635,9 +627,9 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -679,9 +671,14 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         ))
         .unwrap();
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    // The window and its event mask exist only once this connection's writes are
+    // processed. Without the barrier `second` can arrive first and be told
+    // BadWindow, which is a correct answer to a different question than the one
+    // this test is asking.
+    sync_x_connection(&mut first, XByteOrder::LittleEndian, 0x0020_0701);
+    let mut second = connect_x_socket(&socket_path);
     second
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -705,7 +702,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
         ))
         .unwrap();
     let mut error = [0; 32];
-    second.read_exact(&mut error).unwrap();
+    fill_from_socket(&mut second, &mut error);
     assert_eq!(error[0], 0);
     assert_eq!(error[1], XErrorCode::BadAccess.wire_code());
     second
@@ -981,7 +978,6 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
 fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1013,7 +1009,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream.set_read_timeout(Some(SOCKET_IO_TIMEOUT)).unwrap();
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -1058,7 +1054,11 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
             1,
         ))
         .unwrap();
-    let mut peer = UnixStream::connect(&socket_path).unwrap();
+    // The child exists only once this connection's writes have been processed.
+    // Without the barrier the peer below can reach the authority first and be
+    // told, correctly, that the window does not exist.
+    sync_x_connection(&mut stream, XByteOrder::LittleEndian, child);
+    let mut peer = connect_x_socket(&socket_path);
     peer.set_read_timeout(Some(SOCKET_IO_TIMEOUT)).unwrap();
     peer.write_all(&setup_request(
         XByteOrder::LittleEndian,
@@ -1083,7 +1083,7 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
         child,
     ))
     .unwrap();
-    assert_eq!(read_x_reply(&mut peer, XByteOrder::LittleEndian)[0], 1);
+    expect_x_reply(&read_x_reply(&mut peer, XByteOrder::LittleEndian), XByteOrder::LittleEndian);
     stream
         .write_all(&configure_window_request(
             XByteOrder::LittleEndian,
@@ -1192,7 +1192,6 @@ fn configured_present_child_receives_xlibre_ordered_geometry_notification() {
 fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
     use std::io::Write;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1221,7 +1220,7 @@ fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -1240,7 +1239,7 @@ fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
             X_SETUP_DEFAULT_ROOT,
         ))
         .unwrap();
-    assert_eq!(read_x_reply(&mut stream, XByteOrder::LittleEndian)[0], 1);
+    expect_x_reply(&read_x_reply(&mut stream, XByteOrder::LittleEndian), XByteOrder::LittleEndian);
 
     let snapshot = OutputTopologySnapshot {
         generation: 2,

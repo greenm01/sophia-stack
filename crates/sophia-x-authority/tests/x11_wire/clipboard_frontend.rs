@@ -4,10 +4,9 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
     use std::io::Write;
     use std::net::Shutdown;
     use std::num::NonZeroUsize;
-    use std::os::unix::net::UnixStream;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     let socket_path = std::env::temp_dir().join(format!(
         "sophia-x11-cross-selection-test-{}-{}.sock",
@@ -129,9 +128,9 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         )
     });
     wait_for_socket(&portal_path);
-    let mut owner = UnixStream::connect(&socket_path).unwrap();
+    let mut owner = connect_x_socket(&socket_path);
     owner
-        .set_read_timeout(Some(Duration::from_secs(2)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     owner
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -173,9 +172,9 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         ))
         .unwrap();
 
-    let mut requestor = UnixStream::connect(&socket_path).unwrap();
+    let mut requestor = connect_x_socket(&socket_path);
     requestor
-        .set_read_timeout(Some(Duration::from_secs(2)))
+        .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
         .unwrap();
     requestor
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -377,7 +376,6 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
 #[test]
 fn x_server_frontend_assigns_distinct_connection_identities() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -406,7 +404,7 @@ fn x_server_frontend_assigns_distinct_connection_identities() {
 
     wait_for_socket(&socket_path);
     for name in ["FIRST_CLIENT", "SECOND_CLIENT"] {
-        let mut stream = UnixStream::connect(&socket_path).unwrap();
+        let mut stream = connect_x_socket(&socket_path);
         stream
             .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
             .unwrap();
@@ -450,7 +448,6 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     use std::{
         io::Write,
         num::NonZeroUsize,
-        os::unix::net::UnixStream,
         sync::{Arc, Mutex},
         thread,
         time::{SystemTime, UNIX_EPOCH},
@@ -491,7 +488,7 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     });
 
     wait_for_socket(&socket_path);
-    let mut first = UnixStream::connect(&socket_path).unwrap();
+    let mut first = connect_x_socket(&socket_path);
     first
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -511,7 +508,7 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         ))
         .unwrap();
 
-    let mut second = UnixStream::connect(&socket_path).unwrap();
+    let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -526,7 +523,7 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         .write_all(&resource_request(XByteOrder::LittleEndian, 3, first_window))
         .unwrap();
     let attributes = read_x_reply(&mut second, XByteOrder::LittleEndian);
-    assert_eq!(attributes[0], 1);
+    expect_x_reply(&attributes, XByteOrder::LittleEndian);
     assert_eq!(attributes[26], 2);
 
     drop(first);
@@ -544,7 +541,6 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
 #[test]
 fn x_server_frontend_emits_surface_removal_when_a_client_disconnects() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -581,7 +577,7 @@ fn x_server_frontend_emits_surface_removal_when_a_client_disconnects() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -609,7 +605,6 @@ fn x_server_frontend_emits_surface_removal_when_a_client_disconnects() {
 #[test]
 fn x_server_frontend_rejects_create_window_outside_client_resource_range() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -628,7 +623,7 @@ fn x_server_frontend_rejects_create_window_outside_client_resource_range() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -658,8 +653,7 @@ fn x_server_frontend_rejects_create_window_outside_client_resource_range() {
 #[cfg(unix)]
 #[test]
 fn x11_setup_socket_smoke_completes_handshake() {
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixStream;
+    use std::io::Write;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -675,7 +669,7 @@ fn x11_setup_socket_smoke_completes_handshake() {
     let server = thread::spawn(move || run_x11_setup_socket_server_once(&server_path).unwrap());
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(
             XByteOrder::LittleEndian,
@@ -687,11 +681,11 @@ fn x11_setup_socket_smoke_completes_handshake() {
         .unwrap();
 
     let mut prefix = [0; X_SETUP_REPLY_PREFIX_LEN];
-    stream.read_exact(&mut prefix).unwrap();
+    fill_from_socket(&mut stream, &mut prefix);
     assert_eq!(prefix[0], 1);
     let body_len = usize::from(read_u16(XByteOrder::LittleEndian, &prefix[6..8])) * 4;
     let mut body = vec![0; body_len];
-    stream.read_exact(&mut body).unwrap();
+    fill_from_socket(&mut stream, &mut body);
 
     assert_eq!(read_u32(XByteOrder::LittleEndian, &body[4..8]), 0x0020_0000);
     assert_eq!(
@@ -706,7 +700,6 @@ fn x11_setup_socket_smoke_completes_handshake() {
 #[test]
 fn x11_core_socket_smoke_round_trips_atom_property_and_window_events() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -724,7 +717,7 @@ fn x11_core_socket_smoke_round_trips_atom_property_and_window_events() {
     });
 
     wait_for_socket(&socket_path);
-    let mut stream = UnixStream::connect(&socket_path).unwrap();
+    let mut stream = connect_x_socket(&socket_path);
     stream
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
         .unwrap();
@@ -818,7 +811,7 @@ fn x11_core_socket_smoke_round_trips_atom_property_and_window_events() {
         ))
         .unwrap();
     let property = read_x_reply(&mut stream, XByteOrder::LittleEndian);
-    assert_eq!(property[0], 1);
+    expect_x_reply(&property, XByteOrder::LittleEndian);
     assert_eq!(property[1], 8);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &property[8..12]), utf8);
     assert_eq!(&property[32..45], b"Sophia Socket");

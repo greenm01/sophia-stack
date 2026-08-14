@@ -2,11 +2,11 @@
 #[cfg(unix)]
 #[test]
 fn x11_request_reader_receives_bounded_scm_rights_with_the_request_header() {
+    use std::os::unix::net::UnixStream;
     use std::fs::File;
     use std::io::IoSlice;
     use std::mem::MaybeUninit;
     use std::os::fd::AsFd;
-    use std::os::unix::net::UnixStream;
 
     let (sender, mut receiver) = UnixStream::pair().unwrap();
     let request =
@@ -37,11 +37,11 @@ fn x11_request_reader_receives_bounded_scm_rights_with_the_request_header() {
 #[cfg(unix)]
 #[test]
 fn x11_output_record_sends_bounded_scm_rights_with_the_first_bytes() {
+    use std::os::unix::net::UnixStream;
     use std::fs::File;
     use std::io::IoSliceMut;
     use std::mem::MaybeUninit;
     use std::os::fd::OwnedFd;
-    use std::os::unix::net::UnixStream;
 
     for fd_count in [1, sophia_protocol::DMA_BUF_MAX_PLANES] {
         let (mut sender, receiver) = UnixStream::pair().unwrap();
@@ -100,7 +100,6 @@ fn x11_output_record_rejects_empty_bytes_and_excess_descriptors() {
 #[cfg(unix)]
 #[test]
 fn x11_output_record_preserves_byte_only_output() {
-    use std::io::Read;
     use std::os::unix::net::UnixStream;
 
     let (mut sender, mut receiver) = UnixStream::pair().unwrap();
@@ -108,7 +107,7 @@ fn x11_output_record_preserves_byte_only_output() {
     let record = X11SocketOutputRecord::try_from(payload.clone()).unwrap();
     write_x11_socket_output_record(&mut sender, record).unwrap();
     let mut observed = vec![0; payload.len()];
-    receiver.read_exact(&mut observed).unwrap();
+    fill_from_socket(&mut receiver, &mut observed);
     assert_eq!(observed, payload);
 }
 
