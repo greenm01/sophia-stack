@@ -266,9 +266,24 @@ pub(crate) fn run_persistent_xterm_session(
             controller.name()
         );
     }
+    // The grouping is what makes mirroring happen at all: connectors named by a
+    // `mirror` directive share one logical output, and without it every connector
+    // is its own. It is fixed for the session's life because it comes from the
+    // profile loaded at startup, so it is built once and reused by every rebuild
+    // below -- a rescan that regrouped differently would change the desktop's
+    // identity behind policy's back.
+    let mirror_grouping = sophia_backend_live::NativeMirrorGrouping::new(
+        config.output_profile.candidate().mirror_groups(),
+    )
+    .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
     let mut native_scanout = seat_controller
         .as_ref()
-        .map(|controller| LiveProductionNativeScanout::new_with_seat(&controller.device_opener()))
+        .map(|controller| {
+            LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                &controller.device_opener(),
+                &mirror_grouping,
+            )
+        })
         .transpose()?;
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
@@ -762,6 +777,7 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout: &mut native_scanout,
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
+            mirror_grouping: &mirror_grouping,
         },
         SessionLoopStartup {
             xauthority: xauthority.path(),

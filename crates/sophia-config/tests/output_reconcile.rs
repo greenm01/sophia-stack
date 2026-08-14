@@ -285,6 +285,42 @@ fn mirrored(primary: &str, members: &[&str]) -> DesktopOutputCandidate {
 }
 
 #[test]
+fn mirror_groups_lead_with_their_primary_and_omit_ungrouped_outputs() {
+    // The connection between configuration and the KMS layer. A group reaches the
+    // session as connector names led by the primary, because the primary is the
+    // output policy sees and the one members take their state from. An output
+    // with no `mirror` contributes nothing: it is its own logical output, and a
+    // single-member group would imply a shared identity it does not have.
+    let mut candidate = mirrored("DP-1", &["DP-2", "DP-3"]);
+    candidate.named.push(DesktopNamedOutputCandidate {
+        connector: "HDMI-A-1".to_owned(),
+        mode: None,
+        scale: None,
+        position: None,
+        transform: None,
+        enabled: Some(true),
+        focus_at_startup: None,
+        vrr: None,
+        mirror: Vec::new(),
+    });
+
+    assert_eq!(
+        candidate.mirror_groups(),
+        vec![vec![
+            "DP-1".to_owned(),
+            "DP-2".to_owned(),
+            "DP-3".to_owned()
+        ]],
+        "one group, led by its primary, and the ungrouped output absent"
+    );
+
+    // An unmirrored desktop asks for no grouping at all, which is what leaves
+    // every connector as its own logical output.
+    let plain = mirrored("DP-1", &[]);
+    assert!(plain.mirror_groups().is_empty());
+}
+
+#[test]
 fn a_mirror_member_that_cannot_present_the_primary_mode_fails_closed() {
     // DP-1 prefers 2560x1440 and DP-2 offers only 1920x1080. No plane scaling exists
     // on this path, so honoring the request would mean letterboxing a screen the

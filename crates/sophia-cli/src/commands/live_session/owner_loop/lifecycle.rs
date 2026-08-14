@@ -95,8 +95,9 @@
                             }
                             Err(error) => {
                                 seat_release_prepared = false;
-                                let mut resumed = LiveProductionNativeScanout::new_with_seat(
+                                let mut resumed = LiveProductionNativeScanout::new_with_seat_and_mirroring(
                                     &controller.device_opener(),
+                                    mirror_grouping,
                                 )?;
                                 if resumed.outputs() != outputs {
                                     schedule_output_topology_rebuild!("switch_rejected", true);
@@ -171,7 +172,10 @@
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
+                    LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                    &controller.device_opener(),
+                    &mirror_grouping,
+                )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("switch_timeout", true);
                     drop(resumed);
@@ -274,7 +278,10 @@
             if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
                 println!("sophia_live_seat schema=1 status=acquire_pending");
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat(&controller.device_opener())?;
+                    LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                    &controller.device_opener(),
+                    &mirror_grouping,
+                )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("seat_resume", true);
                     drop(resumed);

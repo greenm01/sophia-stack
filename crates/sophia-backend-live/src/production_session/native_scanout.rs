@@ -144,23 +144,44 @@ mod persistent_native_scanout {
 
     impl LiveProductionNativeScanout {
         pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-            Self::new_with_selection(crate::select_real_atomic_scanout_cards())
+            Self::new_with_selection(
+                crate::select_real_atomic_scanout_cards(),
+                &crate::NativeMirrorGrouping::none(),
+            )
         }
 
         #[cfg(feature = "seat-control")]
         pub fn new_with_seat(
             opener: &crate::LiveSeatDeviceOpener,
         ) -> Result<Self, Box<dyn std::error::Error>> {
-            Self::new_with_selection(crate::select_real_atomic_scanout_cards_with_seat(opener))
+            Self::new_with_seat_and_mirroring(opener, &crate::NativeMirrorGrouping::none())
+        }
+
+        /// Builds the scanout with connectors grouped into logical outputs.
+        ///
+        /// The grouping comes from configuration and is the only thing that makes
+        /// mirroring happen: without it every connector is its own logical output,
+        /// which is the ordinary desktop and was the only shape reachable before.
+        #[cfg(feature = "seat-control")]
+        pub fn new_with_seat_and_mirroring(
+            opener: &crate::LiveSeatDeviceOpener,
+            grouping: &crate::NativeMirrorGrouping,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            Self::new_with_selection(
+                crate::select_real_atomic_scanout_cards_with_seat(opener),
+                grouping,
+            )
         }
 
         fn new_with_selection(
             selection: crate::RealAtomicScanoutSelectionSet,
+            grouping: &crate::NativeMirrorGrouping,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let authority = crate::RealAtomicScanoutSmokeConfig::default_primary_output()
                 .ok_or("persistent native scanout config is invalid")?
                 .authority;
-            let mut sessions = selection.into_page_flip_sessions(authority);
+            let mut sessions =
+                selection.into_page_flip_sessions_with_mirroring(authority, grouping);
             if sessions.status != crate::RealAtomicScanoutPageFlipSessionSetStatus::Ready {
                 return Err(format!(
                     "persistent native scanout could not open all KMS outputs: {:?}",

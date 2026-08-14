@@ -16,6 +16,10 @@ struct SessionLoopResources<'a> {
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
     seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
+    /// Which connectors share one logical output, from the profile loaded at
+    /// startup. Fixed for the session's life: a rescan that regrouped differently
+    /// would change the desktop's identity behind policy's back.
+    mirror_grouping: &'a sophia_backend_live::NativeMirrorGrouping,
 }
 
 struct SessionLoopStartup<'a> {
@@ -135,6 +139,7 @@ fn run_session_loop(
         native_scanout,
         seat_controller,
         wm_session,
+        mirror_grouping,
     } = resources;
     let SessionLoopStartup {
         xauthority,

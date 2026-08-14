@@ -70,7 +70,10 @@
 
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
-                LiveProductionNativeScanout::new_with_seat(&controller.device_opener())
+                LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                    &controller.device_opener(),
+                    &mirror_grouping,
+                )
                     .map_err(|error| error.to_string())
             }
             None => Err("DRM topology rescan lost its seat controller".to_owned()),

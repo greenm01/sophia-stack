@@ -71,6 +71,31 @@ pub struct DesktopOutputCandidate {
     pub named: Vec<DesktopNamedOutputCandidate>,
 }
 
+impl DesktopOutputCandidate {
+    /// The connector sets this configuration asks to drive as one logical output.
+    ///
+    /// Each group leads with its primary, because that is the output policy sees
+    /// and the one the members take their state from. An output with no `mirror`
+    /// contributes no group: it is its own logical output, and saying so with a
+    /// single-member group would imply a shared identity it does not have.
+    ///
+    /// Returned as plain connector names rather than a KMS type, because
+    /// configuration is the wrong layer to know what a DRM connector handle is.
+    /// The session that builds the cards turns these into a grouping.
+    pub fn mirror_groups(&self) -> Vec<Vec<String>> {
+        self.named
+            .iter()
+            .filter(|output| !output.mirror.is_empty())
+            .map(|output| {
+                let mut group = Vec::with_capacity(output.mirror.len() + 1);
+                group.push(output.connector.clone());
+                group.extend(output.mirror.iter().cloned());
+                group
+            })
+            .collect()
+    }
+}
+
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
     DesktopProfileError::Schema(format!("output candidate: {}", message.into()))
 }

@@ -15,11 +15,12 @@ let renderer_handoff = capture_renderer_image_handoff(
     output.id,
 )?;
 drop(current);
-let mut replacement = LiveProductionNativeScanout::new_with_seat(
+let mut replacement = LiveProductionNativeScanout::new_with_seat_and_mirroring(
     &seat_controller
         .as_ref()
         .ok_or("startup native recovery lost the seat controller")?
         .device_opener(),
+    mirror_grouping,
 )?;
 if replacement.outputs() != outputs {
     suspended_renderer_images = Some(renderer_handoff);
