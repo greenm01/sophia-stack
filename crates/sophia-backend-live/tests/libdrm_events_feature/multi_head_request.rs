@@ -627,3 +627,97 @@ fn a_validation_only_commit_never_asks_for_a_page_flip_event() {
     assert!(flags.allow_modeset);
     assert!(!flags.page_flip_event);
 }
+
+fn size(width: i32, height: i32) -> Size {
+    Size { width, height }
+}
+
+#[test]
+fn a_head_matching_the_scene_takes_the_whole_buffer() {
+    // The ordinary desktop, and the case a regression here would break for
+    // everyone: a head whose mode equals the scene must get the entire buffer
+    // under every policy, with no bars and no offset.
+    for fit in [
+        NativeMirrorFit::Fit,
+        NativeMirrorFit::Cover,
+        NativeMirrorFit::Exact,
+    ] {
+        assert_eq!(
+            project_mirror_rect(size(1920, 1080), size(1920, 1080), fit),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080
+            },
+            "{fit:?} must fill a head that matches the scene"
+        );
+    }
+}
+
+#[test]
+fn a_matching_aspect_scales_to_exact_pixels() {
+    // 2560x1440 into 1920x1080 is this machine's own pair. The aspects match, so
+    // a correct fit lands on the buffer exactly -- no bars, no rounding short by
+    // a row, which is what the rational scaling exists to guarantee.
+    assert_eq!(
+        project_mirror_rect(size(2560, 1440), size(1920, 1080), NativeMirrorFit::Fit),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080
+        }
+    );
+}
+
+#[test]
+fn a_taller_scene_is_letterboxed_and_centred() {
+    // The case that actually exercises the policy. A 16:10 scene on a 16:9 head
+    // fits by height and leaves pillarbox bars, centred to the pixel.
+    let rect = project_mirror_rect(size(1920, 1200), size(1920, 1080), NativeMirrorFit::Fit);
+    assert_eq!(rect.height, 1080, "fit by the constrained axis");
+    assert_eq!(rect.width, 1728);
+    assert_eq!(rect.x, (1920 - 1728) / 2, "centred, so the bars match");
+    assert_eq!(rect.y, 0);
+
+    // Cover is the same geometry inverted: fill the head and crop the overflow.
+    let covered = project_mirror_rect(size(1920, 1200), size(1920, 1080), NativeMirrorFit::Cover);
+    assert_eq!(covered.width, 1920);
+    assert_eq!(covered.height, 1200);
+    assert!(covered.y < 0, "the crop hangs off both edges equally");
+}
+
+#[test]
+fn exact_never_resamples_and_centres_what_it_has() {
+    // A scene larger than the head is cropped rather than shrunk, and one smaller
+    // sits centred rather than stretched.
+    let cropped = project_mirror_rect(size(2560, 1440), size(1920, 1080), NativeMirrorFit::Exact);
+    assert_eq!(cropped.width, 2560);
+    assert_eq!(cropped.height, 1440);
+    assert!(cropped.x < 0 && cropped.y < 0);
+
+    let inset = project_mirror_rect(size(1280, 720), size(1920, 1080), NativeMirrorFit::Exact);
+    assert_eq!(
+        inset,
+        Rect {
+            x: 320,
+            y: 180,
+            width: 1280,
+            height: 720
+        }
+    );
+}
+
+#[test]
+fn a_head_with_no_area_yields_an_empty_rect_rather_than_dividing_by_zero() {
+    assert_eq!(
+        project_mirror_rect(size(1920, 1080), size(0, 1080), NativeMirrorFit::Fit),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0
+        }
+    );
+}
