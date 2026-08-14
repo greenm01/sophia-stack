@@ -113,6 +113,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
         inherit_sophia: true,
         named: vec![
             DesktopNamedOutputCandidate {
+                mirror_fit: None,
                 connector: "DP-1".to_owned(),
                 mode: Some(DesktopOutputMode::Exact {
                     width: 2560,
@@ -128,6 +129,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
                 mirror: Vec::new(),
             },
             DesktopNamedOutputCandidate {
+                mirror_fit: None,
                 connector: "DP-2".to_owned(),
                 mode: Some(DesktopOutputMode::Exact {
                     width: 1920,
@@ -165,6 +167,7 @@ fn native_activation_plan_retains_stable_targets_and_rollback_state() {
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            mirror_fit: None,
             connector: "DP-1".to_owned(),
             mode: Some(DesktopOutputMode::Exact {
                 width: 2560,

@@ -68,6 +68,7 @@ fn named(
     position: (i32, i32),
 ) -> DesktopNamedOutputCandidate {
     DesktopNamedOutputCandidate {
+        mirror_fit: None,
         connector: connector.to_owned(),
         mode: Some(mode),
         scale: Some(DesktopOutputScale::Automatic),
@@ -271,6 +272,7 @@ fn mirrored(primary: &str, members: &[&str]) -> DesktopOutputCandidate {
         digest: ConfigDigest::new([1; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            mirror_fit: None,
             connector: primary.to_owned(),
             mode: None,
             scale: None,
@@ -293,6 +295,7 @@ fn mirror_groups_lead_with_their_primary_and_omit_ungrouped_outputs() {
     // single-member group would imply a shared identity it does not have.
     let mut candidate = mirrored("DP-1", &["DP-2", "DP-3"]);
     candidate.named.push(DesktopNamedOutputCandidate {
+        mirror_fit: None,
         connector: "HDMI-A-1".to_owned(),
         mode: None,
         scale: None,
@@ -386,6 +389,7 @@ fn a_mirror_group_naming_an_absent_connector_says_so_first() {
 fn one_connector_cannot_belong_to_two_logical_outputs() {
     let mut candidate = mirrored("DP-1", &["DP-2"]);
     candidate.named.push(DesktopNamedOutputCandidate {
+        mirror_fit: None,
         connector: "DP-2".to_owned(),
         mode: None,
         scale: None,

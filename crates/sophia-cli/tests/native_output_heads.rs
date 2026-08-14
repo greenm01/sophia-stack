@@ -248,6 +248,7 @@ fn plan_with_disabled(
         named: disabled
             .iter()
             .map(|output| DesktopNamedOutputCandidate {
+                mirror_fit: None,
                 connector: format!("DP-{output}"),
                 mode: None,
                 scale: None,
@@ -435,6 +436,7 @@ fn a_candidate_that_enables_nothing_never_becomes_a_plan() {
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            mirror_fit: None,
             connector: "DP-1".to_owned(),
             mode: None,
             scale: None,

@@ -44,6 +44,21 @@ pub enum DesktopOutputVrrMode {
     Always,
 }
 
+/// How a mirror group's frame is placed on a head whose mode differs from the
+/// scene. `wl-mirror`'s vocabulary, which operators of other mirroring tools
+/// already know.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopMirrorFit {
+    /// Scale until the whole frame fits, accepting black bars. Nothing is hidden,
+    /// which is why it is the default.
+    #[default]
+    Fit,
+    /// Scale until the frame covers the head, cropping the overflow.
+    Cover,
+    /// No scaling; centred at its own size and cropped if the head is smaller.
+    Exact,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopNamedOutputCandidate {
     pub connector: String,
@@ -54,6 +69,9 @@ pub struct DesktopNamedOutputCandidate {
     pub enabled: Option<bool>,
     pub focus_at_startup: Option<bool>,
     pub vrr: Option<DesktopOutputVrrMode>,
+    /// How this group's frame lands on a head at a different mode. Meaningless
+    /// without `mirror`, and `None` means the default rather than a third state.
+    pub mirror_fit: Option<DesktopMirrorFit>,
     /// Connectors this output mirrors onto, making one logical output backed by
     /// many heads. Empty for an ordinary output.
     ///
@@ -295,6 +313,23 @@ fn output_transform(node: &KdlNode) -> Result<DesktopOutputTransform, DesktopPro
     })
 }
 
+/// Parses `mirror-fit "fit"` into how a group's frame lands on a head.
+///
+/// Named rather than inferred, so an operator who would rather crop than see
+/// black bars can say so. Refusing an unknown name matters more here than most
+/// config: silently defaulting would put the wrong thing on a screen and give
+/// nothing to search for.
+fn output_mirror_fit(node: &KdlNode) -> Result<DesktopMirrorFit, DesktopProfileError> {
+    match one_string(node, "output mirror-fit")?.as_ref() {
+        "fit" => Ok(DesktopMirrorFit::Fit),
+        "cover" => Ok(DesktopMirrorFit::Cover),
+        "exact" => Ok(DesktopMirrorFit::Exact),
+        _ => Err(schema_error(
+            "output mirror-fit must be fit, cover, or exact",
+        )),
+    }
+}
+
 /// Parses `mirror "DP-2" "DP-3"` into the connectors a primary drives.
 ///
 /// Every rule here is about the request being expressible at all, so it is checked
@@ -343,6 +378,7 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
         transform: None,
         enabled: None,
         focus_at_startup: None,
+        mirror_fit: None,
         vrr: None,
         mirror: Vec::new(),
     };
@@ -377,8 +413,11 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
             "mirror" if result.mirror.is_empty() => {
                 result.mirror = output_mirror(child, &result.connector)?;
             }
+            "mirror-fit" if result.mirror_fit.is_none() => {
+                result.mirror_fit = Some(output_mirror_fit(child)?);
+            }
             "mode" | "scale" | "position" | "transform" | "enabled" | "focus-at-startup"
-            | "vrr" | "mirror" => {
+            | "vrr" | "mirror" | "mirror-fit" => {
                 return Err(schema_error("duplicate named output setting"));
             }
             _ => return Err(schema_error("unsupported named output setting")),

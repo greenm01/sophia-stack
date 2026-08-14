@@ -32,6 +32,9 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
+        /// How a group's frame is placed on a head whose mode differs from the
+        /// scene. One policy for the session, from configuration.
+        mirror_fit: crate::NativeMirrorFit,
         /// One scanout buffer exporter per head, parallel to `heads`.
         ///
         /// Per head because each connector scans out its own buffer at its own
@@ -355,6 +358,7 @@ mod persistent_native_scanout {
                 callback_rejected: 0,
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
+                mirror_fit: crate::NativeMirrorFit::default(),
                 exporters,
                 output_callbacks,
                 next_frame_id: 1,
@@ -1022,6 +1026,18 @@ mod persistent_native_scanout {
             let Some(index) = self.primary_head_index(output) else {
                 return LiveProductionCpuFrameQueueStatus::NoHead;
             };
+            // A group's heads need the frame placed for each of their modes, which
+            // the pure-CPU path below cannot express -- it uploads at the frame's
+            // own size. An output with one head keeps that path exactly, so no
+            // ordinary desktop changes.
+            if self.head_indices(output).len() > 1 {
+                let projected = self.queue_projected_frame(output, &frame.frame, self.mirror_fit);
+                return if projected > 0 {
+                    LiveProductionCpuFrameQueueStatus::Queued
+                } else {
+                    LiveProductionCpuFrameQueueStatus::NoHead
+                };
+            }
             let status = {
                 let head = &self.heads[index];
                 reduce_live_production_cpu_frame_queue(

@@ -5,14 +5,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
     ConfigDigest, ConfigGeneration, ConfigIoError, DESKTOP_PROFILE_MAX_BYTES, DesktopAuthority,
-    DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform, DesktopOutputVrrMode,
-    DesktopPointerAccelProfile, DesktopProfileActivationKey, DesktopProfileError,
-    DesktopSessionShortcut, DesktopShortcutBindingKind, DesktopShortcutModifiers,
-    DesktopShortcutTarget, discover_desktop_profile_source, load_desktop_authority_fragment,
-    load_desktop_profile, load_prepared_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
-    validate_desktop_profile_fragments,
+    DesktopMirrorFit, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
+    DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
+    DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
+    DesktopShortcutModifiers, DesktopShortcutTarget, discover_desktop_profile_source,
+    load_desktop_authority_fragment, load_desktop_profile, load_prepared_desktop_profile,
+    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
+    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
+    prepare_desktop_shortcut_candidate, stage_desktop_profile, validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -350,6 +350,65 @@ input {
             Err(DesktopProfileError::Schema(message)) if message.contains("input candidate")
         ));
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_mirror_group_carries_its_fit_policy() {
+    // Named rather than inferred: an operator who would rather crop than see
+    // black bars says so. An unknown name is refused, because silently defaulting
+    // would put the wrong thing on a screen and give nothing to search for.
+    let root = temporary_directory("output-mirror-fit");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+output {
+  named "DP-1" {
+    mode "1920x1080@60"
+    mirror "DP-2"
+    mirror-fit "cover"
+  }
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let output = prepare_desktop_output_candidate(
+        profile.candidates.get(&DesktopAuthority::Output).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(output.named[0].mirror, vec!["DP-2".to_owned()]);
+    assert_eq!(output.named[0].mirror_fit, Some(DesktopMirrorFit::Cover));
+
+    // Omitted means the default rather than a third state.
+    write_profile(
+        &profile_path,
+        r#"schema 1
+output {
+  named "DP-1" { mode "1920x1080@60" ; mirror "DP-2" }
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let output = prepare_desktop_output_candidate(
+        profile.candidates.get(&DesktopAuthority::Output).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(output.named[0].mirror_fit, None);
+
+    write_profile(
+        &profile_path,
+        r#"schema 1
+output {
+  named "DP-1" { mirror "DP-2" ; mirror-fit "stretch" }
+}
+"#,
+    );
+    assert!(
+        load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).is_err(),
+        "an unknown fit is refused rather than defaulted"
+    );
+
     fs::remove_dir_all(root).unwrap();
 }
 
