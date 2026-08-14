@@ -91,7 +91,7 @@
 (define-fun projection_request_field_cause_kind_width () Int 2)
 (define-fun projection_request_field_interaction_phase_width () Int 2)
 (define-fun projection_request_field_interaction_kind_width () Int 2)
-(define-fun projection_request_field_reserved_cause_width () Int 2)
+(define-fun projection_request_field_interaction_axis_width () Int 2)
 (define-fun projection_request_field_activation_serial_width () Int 8)
 (define-fun projection_request_field_action_width () Int 8)
 (define-fun projection_request_field_target_index_width () Int 4)

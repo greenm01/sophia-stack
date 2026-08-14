@@ -324,6 +324,25 @@ Engine matches physical input and sends only the action token plus reduced
 policy context. A client cannot provide executable paths, arguments, signals,
 protocol handles, or raw input.
 
+### Continuous Policy Interactions
+
+Revision 3's interaction vocabulary is permanently `Move`, `Resize`, `Drag`,
+and `Scroll`. `Begin`, `Update`, `End`, and `Cancel` are the complete phase
+vocabulary. Move, resize, and drag carry output-local geometry and use axis zero.
+Scroll carries a signed delta pair in `interaction_x`/`interaction_y`, leaves
+width and height zero, and identifies a horizontal or vertical source axis in
+`interaction_axis`. A non-cancelled zero scroll is invalid; cancellation may
+carry a zero delta because it terminates authority rather than motion.
+
+This consumes the `u16` formerly named `reserved_cause` without changing the
+fixed `ProjectionRequest` layout. The Rust semantic packet exposes the axis so
+independent clients do not have to retain wire-only state. It is still reduced
+policy input: Engine owns physical events, capture, pacing, and cancellation.
+Replaceable `Update` values may coalesce only for the same exact target, kind,
+axis, capture, and authority epoch. Ordered begin/end and ordinary cancellation
+never coalesce. A security transition revokes the epoch and discards pending old-
+epoch values without emitting a final delta.
+
 An opaque action token is not a global `u64` authority. Acceptance is scoped by
 issuer role and authority, issuer connection and revocation epochs, recipient
 role and authority epoch, operation class, and—when the operation names

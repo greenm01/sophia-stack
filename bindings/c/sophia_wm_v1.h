@@ -237,6 +237,7 @@ struct sophia_wm_v1_projection_request {
     uint16_t cause_kind;
     uint16_t interaction_phase;
     uint16_t interaction_kind;
+    uint16_t interaction_axis;
     uint64_t activation_serial;
     uint64_t action;
     uint32_t target_index;

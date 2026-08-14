@@ -3,6 +3,24 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-14: revision 3 spends its last pointer slot before the freeze
+
+- The freeze analysis had already fixed four interaction kinds and four phases,
+  but the code still exposed only move/resize and still rejected the proposed
+  axis slot as reserved. Leaving the decision in prose would have made the frozen
+  enum permanently smaller than the retained Triad input vocabulary.
+- `PolicyInteractionKind` now fixes `Drag = 3` and `Scroll = 4`. The existing
+  phases remain `Begin`, `Update`, `End`, and `Cancel`; a fifth kind or phase
+  requires a new interface family after the freeze.
+- `ProjectionRequest.reserved_cause` is consumed in place as
+  `interaction_axis`: zero for move/resize/drag, one horizontal, two vertical.
+  Scroll reuses X/Y as signed deltas and requires zero width/height. This changes
+  no offset or payload size. The semantic packet carries the axis explicitly so
+  Rust, C, and Nim clients agree without retaining an unnamed wire value.
+- This closes only the irreversible vocabulary decision. Live replaceable-update
+  coalescing and security-epoch cancellation remain coupled to the explicit-grab
+  and lock boundary and are not claimed by the wire change.
+
 ## 2026-08-12: The authority reduces; the broker never holds raw identity
 
 - Four documents disagreed about who sanitizes client metadata, and the

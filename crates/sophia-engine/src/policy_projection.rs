@@ -890,8 +890,16 @@ fn validate_request_cause(
         } if activation_serial != 0 && action.is_valid() => Ok(()),
         PolicyRequestCause::Focus { target } if live(target) => Ok(()),
         PolicyRequestCause::Interaction {
-            target, geometry, ..
-        } if live(target) && !geometry.is_empty() => Ok(()),
+            phase,
+            kind,
+            axis,
+            target,
+            geometry,
+        } if live(target)
+            && sophia_protocol::valid_policy_interaction_payload(phase, kind, axis, geometry) =>
+        {
+            Ok(())
+        }
         _ => Err(PolicyProjectionError::InvalidRequestCause),
     }
 }

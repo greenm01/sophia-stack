@@ -91,7 +91,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 32 | `cause_kind` | `u16` | little-endian |
 | 34 | `interaction_phase` | `u16` | little-endian |
 | 36 | `interaction_kind` | `u16` | little-endian |
-| 38 | `reserved_cause` | `u16` | must be zero |
+| 38 | `interaction_axis` | `u16` | little-endian |
 | 40 | `activation_serial` | `u64` | little-endian |
 | 48 | `action` | `u64` | little-endian |
 | 56 | `target_index` | `u32` | little-endian |

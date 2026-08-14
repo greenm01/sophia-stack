@@ -1030,6 +1030,7 @@ pub struct WmV1ProjectionRequest {
     pub cause_kind: u16,
     pub interaction_phase: u16,
     pub interaction_kind: u16,
+    pub interaction_axis: u16,
     pub activation_serial: u64,
     pub action: u64,
     pub target_index: u32,
@@ -1064,7 +1065,7 @@ pub fn encode_wm_v1_projection_request_frame(
     push_u16(&mut payload, message.cause_kind);
     push_u16(&mut payload, message.interaction_phase);
     push_u16(&mut payload, message.interaction_kind);
-    push_u16(&mut payload, 0);
+    push_u16(&mut payload, message.interaction_axis);
     push_u64(&mut payload, message.activation_serial);
     push_u64(&mut payload, message.action);
     push_u32(&mut payload, message.target_index);
@@ -1100,10 +1101,7 @@ pub fn decode_wm_v1_projection_request_frame(
     let cause_kind = cursor.u16()?;
     let interaction_phase = cursor.u16()?;
     let interaction_kind = cursor.u16()?;
-    let reserved = cursor.u16()?;
-    if reserved != 0 {
-        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
-    }
+    let interaction_axis = cursor.u16()?;
     let activation_serial = cursor.u64()?;
     let action = cursor.u64()?;
     let target_index = cursor.u32()?;
@@ -1135,6 +1133,7 @@ pub fn decode_wm_v1_projection_request_frame(
         cause_kind,
         interaction_phase,
         interaction_kind,
+        interaction_axis,
         activation_serial,
         action,
         target_index,

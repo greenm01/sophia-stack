@@ -511,7 +511,7 @@ enum sophia_wm_v1_status sophia_wm_v1_encode_projection_request(uint64_t transac
     put_u16(cursor + 32, message->cause_kind);
     put_u16(cursor + 34, message->interaction_phase);
     put_u16(cursor + 36, message->interaction_kind);
-    put_u16(cursor + 38, 0);
+    put_u16(cursor + 38, message->interaction_axis);
     put_u64(cursor + 40, message->activation_serial);
     put_u64(cursor + 48, message->action);
     put_u32(cursor + 56, message->target_index);
@@ -544,7 +544,7 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_projection_request(const uint8_t *f
     message->cause_kind = get_u16(cursor + 32);
     message->interaction_phase = get_u16(cursor + 34);
     message->interaction_kind = get_u16(cursor + 36);
-    if (get_u16(cursor + 38) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
+    message->interaction_axis = get_u16(cursor + 38);
     message->activation_serial = get_u64(cursor + 40);
     message->action = get_u64(cursor + 48);
     message->target_index = get_u32(cursor + 56);

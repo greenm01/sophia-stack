@@ -2,14 +2,15 @@ use core::mem::size_of;
 
 use crate::{
     LayoutNodeCapabilities, OutputId, PolicyActionRegistration, PolicyConfiguration,
-    PolicyDirtyRequest, PolicyInteractionKind, PolicyInteractionPhase, PolicyOutputProjection,
-    PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionIndicator,
-    PolicyProjectionOutcome, PolicyProjectionOutputStatus, PolicyProjectionProposal,
-    PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation, PolicySessionOperationOutcome,
-    PolicySessionOperationRequest, PolicySurfaceKind, PolicySurfacePlacement,
-    PolicySurfaceSnapshot, PolicyTransform, Rect, SOPHIA_WM_CAPABILITY_ACTIONS,
-    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmRgb8,
+    PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind, PolicyInteractionPhase,
+    PolicyOutputProjection, PolicyOutputSnapshot, PolicyPresentationState,
+    PolicyProjectionIndicator, PolicyProjectionOutcome, PolicyProjectionOutputStatus,
+    PolicyProjectionProposal, PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation,
+    PolicySessionOperationOutcome, PolicySessionOperationRequest, PolicySurfaceKind,
+    PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size,
+    SurfaceConstraints, SurfaceId, TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle,
+    WmFrameStyle, WmRgb8, valid_policy_interaction_payload,
 };
 
 use super::{
@@ -107,13 +108,14 @@ pub fn encode_wm_v1_policy_projection_request(
         cause_kind,
         interaction_phase,
         interaction_kind,
+        interaction_axis,
         activation_serial,
         action,
         target_index,
         target_generation,
         interaction,
     ) = match request.cause {
-        PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, 0, Rect::default()),
+        PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, 0, 0, Rect::default()),
         PolicyRequestCause::Action {
             activation_serial,
             action,
@@ -123,6 +125,7 @@ pub fn encode_wm_v1_policy_projection_request(
             }
             (
                 1,
+                0,
                 0,
                 0,
                 activation_serial,
@@ -142,6 +145,7 @@ pub fn encode_wm_v1_policy_projection_request(
                 0,
                 0,
                 0,
+                0,
                 target.index(),
                 target.generation(),
                 Rect::default(),
@@ -150,16 +154,19 @@ pub fn encode_wm_v1_policy_projection_request(
         PolicyRequestCause::Interaction {
             phase,
             kind,
+            axis,
             target,
             geometry,
         } => {
-            if !target.is_valid() || geometry.width <= 0 || geometry.height <= 0 {
+            if !target.is_valid() || !valid_policy_interaction_payload(phase, kind, axis, geometry)
+            {
                 return Err(invalid("interaction_cause", 0));
             }
             (
                 3,
                 phase as u16,
                 kind as u16,
+                axis as u16,
                 0,
                 0,
                 target.index(),
@@ -176,6 +183,7 @@ pub fn encode_wm_v1_policy_projection_request(
         cause_kind,
         interaction_phase,
         interaction_kind,
+        interaction_axis,
         activation_serial,
         action,
         target_index,
@@ -234,6 +242,7 @@ pub fn decode_wm_v1_policy_projection_request(
     let cause = match request.cause_kind {
         0 if request.interaction_phase == 0
             && request.interaction_kind == 0
+            && request.interaction_axis == 0
             && request.activation_serial == 0
             && request.action == 0
             && request.target_index == 0
@@ -247,6 +256,7 @@ pub fn decode_wm_v1_policy_projection_request(
         }
         1 if request.interaction_phase == 0
             && request.interaction_kind == 0
+            && request.interaction_axis == 0
             && request.activation_serial != 0
             && request.action != 0
             && request.target_index == 0
@@ -263,6 +273,7 @@ pub fn decode_wm_v1_policy_projection_request(
         }
         2 if request.interaction_phase == 0
             && request.interaction_kind == 0
+            && request.interaction_axis == 0
             && request.activation_serial == 0
             && request.action == 0
             && request.interaction_x == 0
@@ -272,31 +283,42 @@ pub fn decode_wm_v1_policy_projection_request(
         {
             PolicyRequestCause::Focus { target: target()? }
         }
-        3 if request.activation_serial == 0
-            && request.action == 0
-            && request.interaction_width > 0
-            && request.interaction_height > 0 =>
-        {
+        3 if request.activation_serial == 0 && request.action == 0 => {
+            let phase = match request.interaction_phase {
+                1 => PolicyInteractionPhase::Begin,
+                2 => PolicyInteractionPhase::Update,
+                3 => PolicyInteractionPhase::End,
+                4 => PolicyInteractionPhase::Cancel,
+                other => return Err(invalid("interaction_phase", u32::from(other))),
+            };
+            let kind = match request.interaction_kind {
+                1 => PolicyInteractionKind::Move,
+                2 => PolicyInteractionKind::Resize,
+                3 => PolicyInteractionKind::Drag,
+                4 => PolicyInteractionKind::Scroll,
+                other => return Err(invalid("interaction_kind", u32::from(other))),
+            };
+            let axis = match request.interaction_axis {
+                0 => PolicyInteractionAxis::None,
+                1 => PolicyInteractionAxis::Horizontal,
+                2 => PolicyInteractionAxis::Vertical,
+                other => return Err(invalid("interaction_axis", u32::from(other))),
+            };
+            let geometry = Rect {
+                x: request.interaction_x,
+                y: request.interaction_y,
+                width: request.interaction_width,
+                height: request.interaction_height,
+            };
+            if !valid_policy_interaction_payload(phase, kind, axis, geometry) {
+                return Err(invalid("interaction_cause", 0));
+            }
             PolicyRequestCause::Interaction {
-                phase: match request.interaction_phase {
-                    1 => PolicyInteractionPhase::Begin,
-                    2 => PolicyInteractionPhase::Update,
-                    3 => PolicyInteractionPhase::End,
-                    4 => PolicyInteractionPhase::Cancel,
-                    other => return Err(invalid("interaction_phase", u32::from(other))),
-                },
-                kind: match request.interaction_kind {
-                    1 => PolicyInteractionKind::Move,
-                    2 => PolicyInteractionKind::Resize,
-                    other => return Err(invalid("interaction_kind", u32::from(other))),
-                },
+                phase,
+                kind,
+                axis,
                 target: target()?,
-                geometry: Rect {
-                    x: request.interaction_x,
-                    y: request.interaction_y,
-                    width: request.interaction_width,
-                    height: request.interaction_height,
-                },
+                geometry,
             }
         }
         other => return Err(invalid("projection_request_cause", u32::from(other))),

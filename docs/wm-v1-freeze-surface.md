@@ -62,7 +62,7 @@ capability gating. New client-to-server messages are additive without ceremony.
 
 ### 2. Reserved-field consumption — cheap, but asymmetric and finite
 
-Fourteen reserved fields exist and are validated as zero on decode, so they are
+Thirteen reserved fields remain and are validated as zero on decode, so they are
 genuinely held for future use rather than ignored padding. Note that the
 generated Rust structs **omit** reserved fields while the wire still carries and
 checks them — `WmV1ProjectionOutputRecord` has four fields but
@@ -84,9 +84,10 @@ Reserved space is distributed unevenly:
 | `ProjectionIndicator` | projection 3 | 64 | **none** |
 | `ProjectionOutputStatus` | projection 4 | 48 | `u32` |
 
-Twelve of the twenty-one messages carry a reserved `u16`. `ProjectionRequest`
-carries two — `reserved_cause` and `reserved` — which matters for the pointer row
-below. `capabilities` is a `u64` with bits 0 through 9 assigned, leaving 54.
+Eleven of the twenty-one messages carry one reserved `u16`. `ProjectionRequest`'s
+former `reserved_cause` slot is now `interaction_axis`; the other `reserved` field
+remains zero-checked. `capabilities` is a `u64` with bits 0 through 9 assigned,
+leaving 54.
 
 **Six of the eight record kinds have no reserved space at all.** Any new
 per-output, per-surface, per-placement, or per-indicator fact is therefore either
@@ -110,9 +111,9 @@ The extensible fields are `SnapshotSurface.kind`,
 
 Three of these are near-empty today and are the standing one-way doors:
 
-- `PolicyInteractionKind` has only `Move = 1` and `Resize = 2`
-  (`crates/sophia-protocol/src/packets/policy.rs:135-141`). Drag and scrolling
-  need values here.
+- `PolicyInteractionKind` now spends its planned values on `Move = 1`,
+  `Resize = 2`, `Drag = 3`, and `Scroll = 4`. This vocabulary is fixed before
+  the freeze; live drag and scroll production still needs implementation.
 - `PolicyTransform` has only `Identity = 1` (`:185-188`).
 - `PolicyInteractionPhase` has all four of `Begin`/`Update`/`End`/`Cancel`
   (`:125-132`), but only `End` is ever constructed, so the other three are
@@ -391,17 +392,15 @@ Two things, both small:
 `PolicyInteractionPhase`'s existing `Begin`/`Update`/`Cancel` need
 implementations. Both are pre-freeze **Enum** work.
 
-The payload question is better than feared. `ProjectionRequest` already carries
+The payload question was better than feared. `ProjectionRequest` already carries
 `interaction_x`, `interaction_y`, `interaction_width`, `interaction_height` as
-four `i32`s, plus two reserved `u16`s including `reserved_cause`. A scroll axis
-plus delta fits the existing integer fields, and an axis discriminant fits
-`reserved_cause`. **No layout change is required** provided the continuous
-payload is expressed within that budget.
+four `i32`s, plus the `u16` that was formerly `reserved_cause`. A scroll axis plus
+delta fits those existing fields. The slot is now named `interaction_axis`; the
+fixed layout did not change.
 
-**Recommendation:** bind scroll and drag into the existing interaction fields and
-spend `reserved_cause` on the axis discriminant. Do not add a field to
-`PolicyRequestCause::Interaction`, and do not introduce a parallel cause message.
-Record the field reuse in the schema so the meaning is not rediscovered later.
+The semantic `PolicyRequestCause::Interaction` carries the decoded axis explicitly;
+that is an in-process type addition, not a wire-layout addition. No parallel cause
+message exists.
 
 Two coupling notes that constrain *when*, not *what*:
 
@@ -414,20 +413,20 @@ Two coupling notes that constrain *when*, not *what*:
   latest-value, matching the reduced-continuous-value discipline already ratified
   for target-resolved input — not a queue-capacity increase.
 
-**Settled as recommended, with the vocabulary fixed now and the behavior later.**
-The wire half must land before the freeze because it is enum widening, which no
-gate reaches; the implementation half can follow, because values that exist but are
-never sent break nothing.
+**Settled and implemented at the wire boundary, with live behavior later.** The
+wire half landed before the freeze because it is enum widening, which no gate
+reaches; values that are not yet emitted do not change live behavior.
 
 Fixed now:
 
-- `PolicyInteractionKind` gains `Drag` and `Scroll` beside `Move = 1` and
+- `PolicyInteractionKind` has `Drag = 3` and `Scroll = 4` beside `Move = 1` and
   `Resize = 2`. Four values is the whole vocabulary — a gesture Sophia later wants
   that is none of these needs a new interface family, not a fifth value.
 - The continuous payload rides `interaction_x`/`y`/`width`/`height` with the axis
-  discriminant in `reserved_cause`. Scroll uses `interaction_x`/`y` as the delta
+  discriminant in `interaction_axis`. Scroll uses `interaction_x`/`y` as the delta
   pair and leaves the size fields zero; drag uses all four exactly as move and
-  resize do. Record the reuse in the schema so it is not rediscovered as a mystery.
+  resize do. Horizontal and vertical are 1 and 2; zero is reserved for non-scroll
+  geometry interactions.
 - `PolicyInteractionPhase` needs nothing: `Begin`, `Update`, `End`, and `Cancel`
   are already wire-reachable and only `End` is constructed.
 

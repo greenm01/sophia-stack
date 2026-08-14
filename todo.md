@@ -1064,8 +1064,9 @@ is excluded; retained product behavior is not.
   The continuous-pointer payload fixes its vocabulary now and its behavior later.
   `PolicyInteractionKind` gains `Drag` and `Scroll`, and four values is the whole
   vocabulary; the payload rides the existing `interaction_*` fields with the axis
-  discriminant in `reserved_cause`, scroll using the coordinate pair as its delta
-  and leaving the size fields zero. `PolicyInteractionPhase` needs nothing — all
+  discriminant in the former `reserved_cause` slot, now named `interaction_axis`,
+  scroll using the coordinate pair as its delta and leaving the size fields zero.
+  `PolicyInteractionPhase` needs nothing — all
   four phases are already wire-reachable and only `End` is ever constructed. The
   coalescing rule and `Cancel`'s revocation semantics are behavior rather than
   layout, and both stay gated on the lock and security-authority epoch barrier: a
@@ -1268,6 +1269,12 @@ Launcher, And Shell Integration are pre-freeze port requirements.
 - [ ] Add bounded policy interactions for move, resize, drag, and scrolling.
   Engine owns hit-testing, grabs, raw physical input, cursor state, and
   animation; Hagia receives only opaque targets and reduced geometry updates.
+  Revision 3 now permanently fixes `Drag = 3`, `Scroll = 4`, and the in-place
+  `interaction_axis` values (`None = 0`, `Horizontal = 1`, `Vertical = 2`) in
+  Rust, generated C, and Hagia's independent Nim decoder. The codecs reject
+  ambiguous geometry/axis combinations; live Begin/Update coalescing, End, and
+  security-epoch Cancel behavior remain open, so this row is intentionally not
+  complete.
 - [ ] Model and publish `sophia_shell_v1` through the same formal, schema, C
   client, and permanent-compatibility process. Keep its endpoint and
   capabilities separate from `sophia_wm_v1`. Begin experimental modeling and

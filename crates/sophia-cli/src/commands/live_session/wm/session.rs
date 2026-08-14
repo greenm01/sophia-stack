@@ -871,6 +871,7 @@ impl LiveWmSession {
                             sophia_protocol::PolicyInteractionKind::Resize
                         }
                     },
+                    axis: sophia_protocol::PolicyInteractionAxis::None,
                     target: gesture.surface,
                     geometry: outline.geometry,
                 },

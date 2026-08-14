@@ -136,6 +136,17 @@ pub enum PolicyInteractionKind {
     #[default]
     Move = 1,
     Resize = 2,
+    Drag = 3,
+    Scroll = 4,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicyInteractionAxis {
+    #[default]
+    None = 0,
+    Horizontal = 1,
+    Vertical = 2,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -152,9 +163,40 @@ pub enum PolicyRequestCause {
     Interaction {
         phase: PolicyInteractionPhase,
         kind: PolicyInteractionKind,
+        axis: PolicyInteractionAxis,
         target: SurfaceId,
         geometry: Rect,
     },
+}
+
+/// Validates the fixed revision-3 interaction payload without interpreting it.
+///
+/// Move, resize, and drag carry geometry. Scroll reuses X/Y as a signed delta
+/// pair, leaves width/height zero, and names the source axis in the wire slot
+/// formerly reserved beside the interaction discriminants.
+pub const fn valid_policy_interaction_payload(
+    phase: PolicyInteractionPhase,
+    kind: PolicyInteractionKind,
+    axis: PolicyInteractionAxis,
+    payload: Rect,
+) -> bool {
+    match kind {
+        PolicyInteractionKind::Move
+        | PolicyInteractionKind::Resize
+        | PolicyInteractionKind::Drag => {
+            matches!(axis, PolicyInteractionAxis::None) && payload.width > 0 && payload.height > 0
+        }
+        PolicyInteractionKind::Scroll => {
+            matches!(
+                axis,
+                PolicyInteractionAxis::Horizontal | PolicyInteractionAxis::Vertical
+            ) && payload.width == 0
+                && payload.height == 0
+                && (matches!(phase, PolicyInteractionPhase::Cancel)
+                    || payload.x != 0
+                    || payload.y != 0)
+        }
+    }
 }
 
 /// Identity of one server-issued projection request.

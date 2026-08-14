@@ -267,6 +267,7 @@ fn reduced_interaction_preserves_kind_phase_and_geometry() {
         cause: PolicyRequestCause::Interaction {
             phase: PolicyInteractionPhase::Cancel,
             kind: PolicyInteractionKind::Resize,
+            axis: PolicyInteractionAxis::None,
             target: SurfaceId::new(3, 1),
             geometry: Rect {
                 x: 20,
@@ -282,6 +283,169 @@ fn reduced_interaction_preserves_kind_phase_and_geometry() {
         decode_wm_v1_policy_projection_request(&encoded),
         Ok(request)
     );
+}
+
+#[test]
+fn revision_three_interaction_vocabulary_has_one_fixed_payload_contract() {
+    let target = SurfaceId::new(3, 1);
+    for kind in [
+        PolicyInteractionKind::Move,
+        PolicyInteractionKind::Resize,
+        PolicyInteractionKind::Drag,
+    ] {
+        let request = PolicyProjectionRequest {
+            connection_epoch: 2,
+            request_id: 6,
+            scene_generation: 7,
+            policy_generation: 3,
+            affected_outputs: vec![OutputId::from_raw(1)],
+            cause: PolicyRequestCause::Interaction {
+                phase: PolicyInteractionPhase::Update,
+                kind,
+                axis: PolicyInteractionAxis::None,
+                target,
+                geometry: Rect {
+                    x: 20,
+                    y: 30,
+                    width: 800,
+                    height: 600,
+                },
+            },
+        };
+        let encoded = encode_wm_v1_policy_projection_request(&request).unwrap();
+        assert_eq!(
+            decode_wm_v1_policy_projection_request(&encoded),
+            Ok(request)
+        );
+    }
+
+    for (phase, delta) in [
+        (PolicyInteractionPhase::Begin, -120),
+        (PolicyInteractionPhase::Update, -60),
+        (PolicyInteractionPhase::End, -30),
+        (PolicyInteractionPhase::Cancel, 0),
+    ] {
+        let request = PolicyProjectionRequest {
+            connection_epoch: 2,
+            request_id: 6,
+            scene_generation: 7,
+            policy_generation: 3,
+            affected_outputs: vec![OutputId::from_raw(1)],
+            cause: PolicyRequestCause::Interaction {
+                phase,
+                kind: PolicyInteractionKind::Scroll,
+                axis: PolicyInteractionAxis::Vertical,
+                target,
+                geometry: Rect {
+                    x: 0,
+                    y: delta,
+                    width: 0,
+                    height: 0,
+                },
+            },
+        };
+        let encoded = encode_wm_v1_policy_projection_request(&request).unwrap();
+        assert_eq!(
+            decode_wm_v1_policy_projection_request(&encoded),
+            Ok(request)
+        );
+    }
+}
+
+#[test]
+fn revision_three_interaction_payload_rejects_ambiguous_encodings() {
+    let target = SurfaceId::new(3, 1);
+    let request = |phase, kind, axis, geometry| PolicyProjectionRequest {
+        connection_epoch: 2,
+        request_id: 6,
+        scene_generation: 7,
+        policy_generation: 3,
+        affected_outputs: vec![OutputId::from_raw(1)],
+        cause: PolicyRequestCause::Interaction {
+            phase,
+            kind,
+            axis,
+            target,
+            geometry,
+        },
+    };
+
+    for invalid in [
+        request(
+            PolicyInteractionPhase::Update,
+            PolicyInteractionKind::Scroll,
+            PolicyInteractionAxis::None,
+            Rect {
+                x: 0,
+                y: -60,
+                width: 0,
+                height: 0,
+            },
+        ),
+        request(
+            PolicyInteractionPhase::Update,
+            PolicyInteractionKind::Scroll,
+            PolicyInteractionAxis::Vertical,
+            Rect {
+                x: 0,
+                y: -60,
+                width: 1,
+                height: 0,
+            },
+        ),
+        request(
+            PolicyInteractionPhase::Update,
+            PolicyInteractionKind::Move,
+            PolicyInteractionAxis::Horizontal,
+            Rect {
+                x: 20,
+                y: 30,
+                width: 800,
+                height: 600,
+            },
+        ),
+        request(
+            PolicyInteractionPhase::End,
+            PolicyInteractionKind::Scroll,
+            PolicyInteractionAxis::Horizontal,
+            Rect::default(),
+        ),
+    ] {
+        assert!(encode_wm_v1_policy_projection_request(&invalid).is_err());
+    }
+
+    let valid = request(
+        PolicyInteractionPhase::Update,
+        PolicyInteractionKind::Scroll,
+        PolicyInteractionAxis::Vertical,
+        Rect {
+            x: 0,
+            y: -60,
+            width: 0,
+            height: 0,
+        },
+    );
+    let encoded = encode_wm_v1_policy_projection_request(&valid).unwrap();
+
+    let mut unknown_axis = encoded.clone();
+    unknown_axis.interaction_axis = 3;
+    assert!(matches!(
+        decode_wm_v1_policy_projection_request(&unknown_axis),
+        Err(IpcCodecError::InvalidEnum {
+            field: "interaction_axis",
+            value: 3,
+        })
+    ));
+
+    let mut unknown_kind = encoded;
+    unknown_kind.interaction_kind = 5;
+    assert!(matches!(
+        decode_wm_v1_policy_projection_request(&unknown_kind),
+        Err(IpcCodecError::InvalidEnum {
+            field: "interaction_kind",
+            value: 5,
+        })
+    ));
 }
 
 /// Pins what the producer emits for a given capability set.

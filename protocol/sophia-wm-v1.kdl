@@ -153,7 +153,9 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "cause_kind" type="u16" sample=1
         field "interaction_phase" type="u16" sample=0
         field "interaction_kind" type="u16" sample=0
-        field "reserved_cause" type="u16" reserved=#true sample=0
+        // 0 for geometry interactions, 1 horizontal, 2 vertical. Scroll spends
+        // this formerly reserved slot so the fixed request layout does not grow.
+        field "interaction_axis" type="u16" sample=0
         field "activation_serial" type="u64" sample=23
         field "action" type="u64" sample=5
         field "target_index" type="u32" sample=3
