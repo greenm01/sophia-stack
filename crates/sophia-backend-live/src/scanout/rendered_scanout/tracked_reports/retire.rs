@@ -32,6 +32,13 @@ pub enum LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus {
     RetiredAfterPageFlip,
     WaitingForAcceptedPageFlip,
     ResourceRetireFailed,
+    /// A head of a mirror group went away while this submission was in flight.
+    ///
+    /// The frame is gone rather than presented: the group never showed it on
+    /// every screen, and one of those screens no longer exists. The resources are
+    /// released instead of being promoted to displayed, so this is a terminal
+    /// outcome and not a retire failure.
+    HeadLost,
 }
 
 impl From<LibdrmNativePrimaryPlaneScanoutRetireStatus>

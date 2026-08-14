@@ -824,6 +824,13 @@ mod persistent_native_scanout {
                     self.retirements = self.retirements.saturating_add(1);
                     self.heads[index].retirements = self.heads[index].retirements.saturating_add(1);
                 }
+                Status::HeadLost => {
+                    trace_live_native_lifecycle("kms_buffer_released_after_head_loss");
+                    tracing::warn!(
+                        "sophia_live_native_page_flip schema=1 status=head_lost output={}",
+                        self.heads[index].output.id.raw(),
+                    );
+                }
                 Status::NoSubmission | Status::WaitingForAcceptedPageFlip => {}
                 Status::ResourceRetireFailed => {
                     self.retire_failures = self.retire_failures.saturating_add(1);

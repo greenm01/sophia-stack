@@ -293,6 +293,40 @@ where
         };
     }
 
+    // A group that lost a head never presented, so a survivor's flip cannot retire
+    // the submission as displayed. The model settles such a generation `removed`
+    // and releases only once the remaining heads have drained, which is what
+    // retiring the resources here rather than promoting them does.
+    if state.lost_a_head() {
+        let LiveRenderedPrimaryPlaneScanoutSubmission {
+            scanout_buffer,
+            primary_plane,
+            ..
+        } = submission;
+        let retired = primary_plane.retire(device);
+        let destroy = retired.status;
+        if let Some(primary_plane) = retired.cleanup {
+            state.rendered_primary_plane_scanout_cleanup =
+                Some(LiveRenderedPrimaryPlaneScanoutCleanup {
+                    scanout_buffer,
+                    primary_plane,
+                });
+        }
+        state.rendered_primary_plane_scanout_in_flight_ticks = 0;
+        state.rendered_primary_plane_runtime_scanout_state = Some(RuntimeScanoutState::Rejected);
+        state
+            .pending_runtime_scanout_states
+            .push_back(RuntimeScanoutState::Rejected);
+        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
+            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::HeadLost,
+            destroy: Some(destroy),
+            runtime_scanout_state: Some(RuntimeScanoutState::Rejected),
+            in_flight: state.in_flight(),
+            in_flight_ticks: 0,
+            cleanup_pending: state.cleanup_pending(),
+        };
+    }
+
     if !state.retain_rendered_primary_plane_displayed_submission {
         let retired =
             retire_rendered_primary_plane_scanout_after_page_flip(device, submission, callback);
@@ -384,7 +418,8 @@ where
         LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::ResourceRetireFailed => {
             RuntimeScanoutState::Rejected
         }
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::HeadLost
+        | LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission
         | LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip => {
             unreachable!("terminal retire statuses are constructed above")
         }

@@ -101,6 +101,36 @@ where
         true
     }
 
+    /// Records that one connector of an output has gone away.
+    ///
+    /// The head leaves the set retirement waits on, so the group stops waiting for
+    /// a flip that will never arrive -- X leaves exactly this hanging and calls it
+    /// a configuration error. It never counts as a flip, and the candidate fails
+    /// closed: a group cannot have presented a frame to a screen that is gone.
+    ///
+    /// Returns false when the output or the head is not registered, which makes a
+    /// loss reported twice a no-op rather than a second failure.
+    #[cfg(feature = "libdrm-events")]
+    pub fn lose_native_output_head(&mut self, output: OutputId, connector_id: u32) -> bool {
+        let Some(state) = self.outputs.get_mut(output) else {
+            return false;
+        };
+        let Some(index) = state
+            .native_selections
+            .iter()
+            .position(|selection| selection.connector_id() == connector_id)
+        else {
+            return false;
+        };
+        state.native_selections.remove(index);
+        state.lost_heads.insert(connector_id);
+        state.rendered_primary_plane_runtime_scanout_state = Some(RuntimeScanoutState::Rejected);
+        state
+            .pending_runtime_scanout_states
+            .push_back(RuntimeScanoutState::Rejected);
+        true
+    }
+
     pub(crate) fn primary_output_state(&self) -> &LiveRenderedOutputState {
         self.outputs
             .get(self.primary_output)

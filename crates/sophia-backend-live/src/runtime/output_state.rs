@@ -1,4 +1,6 @@
 use crate::prelude::*;
+#[cfg(feature = "libdrm-events")]
+use std::collections::BTreeSet;
 
 pub const LIVE_RENDERED_OUTPUT_CAPACITY: usize = 16;
 
@@ -26,6 +28,14 @@ pub struct LiveRenderedOutputState {
     /// heads that were submitted and the heads that are awaited cannot disagree.
     #[cfg(feature = "libdrm-events")]
     pub(crate) native_selections: Vec<LibdrmNativePrimaryPlaneSelection>,
+    /// Heads that went away while this output had work in flight.
+    ///
+    /// `VisualRetirement.tla` settles such a generation as `removed`: the lost
+    /// head leaves the in-flight set, never counts as a flip, and the candidate
+    /// fails closed. A surviving sibling's flip must not be read as the group
+    /// having presented, because it did not -- one of its screens is gone.
+    #[cfg(feature = "libdrm-events")]
+    pub(crate) lost_heads: BTreeSet<u32>,
     #[cfg(feature = "libdrm-events")]
     pub(crate) rendered_primary_plane_scanout_submission:
         Option<BoxedRenderedPrimaryPlaneScanoutSubmission>,
@@ -77,6 +87,8 @@ impl LiveRenderedOutputState {
             #[cfg(feature = "libdrm-events")]
             native_selections: Vec::new(),
             #[cfg(feature = "libdrm-events")]
+            lost_heads: BTreeSet::new(),
+            #[cfg(feature = "libdrm-events")]
             rendered_primary_plane_scanout_submission: None,
             #[cfg(feature = "libdrm-events")]
             rendered_primary_plane_displayed_submission: None,
@@ -125,6 +137,15 @@ impl LiveRenderedOutputState {
     #[cfg(feature = "libdrm-events")]
     pub fn native_peer_selections(&self) -> &[LibdrmNativePrimaryPlaneSelection] {
         self.native_selections.get(1..).unwrap_or_default()
+    }
+
+    /// Whether a head of this output was lost while work was in flight.
+    ///
+    /// The candidate cannot succeed once this is true. It stays true until the
+    /// output is rebuilt, which is what a topology transition does.
+    #[cfg(feature = "libdrm-events")]
+    pub fn lost_a_head(&self) -> bool {
+        !self.lost_heads.is_empty()
     }
 
     /// The connectors backing this output, derived from its selections.
