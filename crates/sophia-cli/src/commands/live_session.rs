@@ -297,6 +297,19 @@ pub(crate) fn run_persistent_xterm_session(
     }
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
+        for capability in &capabilities {
+            let mode = capability.selected_mode();
+            println!(
+                "sophia_live_native_head schema=1 status=ready output={} connector={} connector_id={} mode={}x{} refresh_millihz={} mirrored={}",
+                capability.output().raw(),
+                capability.connector_name(),
+                capability.connector_id(),
+                mode.width,
+                mode.height,
+                mode.refresh_millihz,
+                mirror_grouping.is_mirrored(capability.connector_name()),
+            );
+        }
         let topology = project_native_output_topology(&capabilities, &native.outputs())?;
         let reconciled = sophia_config::reconcile_desktop_output_candidate(
             config.output_profile.candidate(),

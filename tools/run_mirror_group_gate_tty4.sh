@@ -65,6 +65,17 @@ echo "Building..."
     --features "atomic-scanout-live" --bin sophia)
 echo
 
+if [[ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]]; then
+    echo "The Sophia worktree must be clean so the binary has one exact source identity." >&2
+    exit 2
+fi
+source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
+profile_sha256="$(sha256sum "$PROFILE" | awk '{ print $1 }')"
+: >"$EVIDENCE"
+printf 'sophia_mirror_group_gate schema=1 status=starting source_commit=%s sophia_sha256=%s profile_sha256=%s\n' \
+    "$source_commit" "$sophia_sha256" "$profile_sha256" | tee -a "$EVIDENCE"
+
 echo "What success looks like, and only you can judge it:"
 echo "  - BOTH monitors showing the same thing for ~$((RUNTIME_MSEC / 1000))s"
 echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
@@ -85,14 +96,30 @@ set +e
         --native-scanout \
         --desktop-profile="$PROFILE" \
         --max-runtime-ms="$RUNTIME_MSEC"
-) 2>&1 | tee "$EVIDENCE"
+) 2>&1 | tee -a "$EVIDENCE"
 status="${PIPESTATUS[0]}"
 set -e
 
 echo
 echo "=== exit=$status ==="
+if (( status != 0 )); then
+    printf 'sophia_mirror_group_gate schema=1 status=failed exit=%s\n' "$status" | tee -a "$EVIDENCE"
+    exit "$status"
+fi
 grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE" \
     | tail -20 || true
 echo
-echo "Full log at $EVIDENCE -- it is a file, so it can be read from another VT."
-exit "$status"
+echo "Did both monitors show the same scene, with DP-1 at 2560x1440 and DP-2 at 1920x1080?"
+echo "Type yes to record visible-pixel acceptance."
+read -r visual_confirmation </dev/tty
+if [[ "$visual_confirmation" != "yes" ]]; then
+    printf 'sophia_mirror_group_gate schema=1 status=failed reason=visual_confirmation\n' | tee -a "$EVIDENCE"
+    echo "Visible mirroring was not confirmed; evidence remains at $EVIDENCE." >&2
+    exit 1
+fi
+printf '%s\n' \
+    'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' \
+    'sophia_mirror_group_gate schema=1 status=passed exit=0' | tee -a "$EVIDENCE"
+"$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$EVIDENCE"
+"$ROOT_DIR/tools/archive_mirror_group_physical_run.sh" "$EVIDENCE"
+echo "Full verified log at $EVIDENCE."

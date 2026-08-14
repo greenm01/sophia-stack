@@ -812,6 +812,16 @@
                 head.callback_accepted,
                 head.nonzero_exports,
             );
+            println!(
+                "sophia_live_native_head schema=1 status=complete output={} connector_id={} checksum={} submissions={} retirements={} callbacks={} nonzero_exports={}",
+                head.output.id.raw(),
+                head.selection.connector_id(),
+                head.last_checksum,
+                head.submissions,
+                head.retirements,
+                head.callback_accepted,
+                head.nonzero_exports,
+            );
         }
         if native_scanout.heads.iter().any(|head| {
             !independent_native_output_presented(

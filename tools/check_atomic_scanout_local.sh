@@ -62,6 +62,12 @@ bash -n tools/atomic_scanout_smoke.sh
 bash -n tools/runtime_rendered_scanout_evidence.sh
 bash -n tools/atomic_scanout_hardware_proof.sh
 bash -n tools/atomic_scanout_hardware_status.sh
+bash -n tools/run_mirror_group_gate_tty4.sh \
+    tools/verify_mirror_group_physical.sh \
+    tools/verify_mirror_group_physical_archive.sh \
+    tools/archive_mirror_group_physical_run.sh \
+    tools/check_mirror_group_physical_verifier.sh
+tools/check_mirror_group_physical_verifier.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
