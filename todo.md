@@ -855,8 +855,12 @@ is excluded; retained product behavior is not.
   by-N-heads exists so policy sees one screen and no connector identity, so the
   grouping cannot simply be borrowed even though the buffer sharing and the
   retirement count can.
-  What remains of the render path is buffer sharing: one exporter per group rather
-  than per head, so a group renders one frame into one buffer instead of two; a
+  The exporter now belongs to the logical output rather than the head, built from
+  the modifiers every head of the group can scan out -- a modifier only one plane
+  advertises would make a buffer its sibling cannot display, so the intersection is
+  the only safe set. Several counts moved with it, from per head to per exporter,
+  because a group's single exporter was being counted once per connector.
+  What remains of the render path is a
   per-head page-flip submit joined by a completion count, on X's model rather than
   the single multi-head commit originally planned; and the head-loss arm that drops
   the lease without counting a flip and fails the candidate closed. X documents the
